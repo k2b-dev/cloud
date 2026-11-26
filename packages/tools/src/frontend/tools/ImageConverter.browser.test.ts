@@ -1,121 +1,89 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { appHostCss } from "../../../../ui/test/app-host-fixture";
 import { browserName, launchBrowser } from "../../../../ui/test/browser";
 import type {} from "./ImageConverter.browser-harness";
-import { buildHarness, uiRoot } from "./image-intake/browser-harness";
+import { buildHarness } from "./image-intake/browser-harness";
 
 const harness = await buildHarness(new URL("./ImageConverter.browser-harness.tsx", import.meta.url));
 const fixture = Buffer.from(await Bun.file(new URL("./image-intake/fixtures/sample-48x32.heic", import.meta.url)).arrayBuffer());
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMQaPgPAAIzAZDtHsO2AAAAAElFTkSuQmCC", "base64");
-const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../../cloud/", import.meta.url).pathname))).default;
-const css = (
-  await Promise.all(
-    ["../../../../../styles.css", "../../styles/app.css"].map(async (path) => {
-      const build = await Bun.build({ entrypoints: [new URL(path, import.meta.url).pathname], plugins: [tailwind] });
-      if (!build.success) throw new AggregateError(build.logs, "Tools CSS build failed");
-      return build.outputs[0]!.text();
-    }),
-  )
-).join("\n");
-const assets: Record<string, [string, string | Buffer]> = {
-  "/harness.js": ["text/javascript; charset=utf-8", harness],
-  "/app.css": ["text/css", css],
-  "/styles.css": ["text/css", readFileSync(`${uiRoot}dist/styles.css`, "utf8")],
-};
+let css = "";
 let browser: Awaited<ReturnType<typeof launchBrowser>>;
 beforeAll(async () => {
+  css = await appHostCss(resolve(import.meta.dir, "../../styles/app.css"));
   browser = await launchBrowser();
-}, 30_000);
+}, 60_000);
 afterAll(async () => {
   await browser?.close();
 });
 
-test("mixed image intake keeps every outcome in drop order in the main area without moving the first card", async () => {
-  const tab = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+const open = async (lang: "en" | "de", width: number, search = "") => {
+  const tab = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+  await tab.route("http://image-converter.test/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
+    if (path === "/app.css") return route.fulfill({ contentType: "text/css", body: css });
+    if (path === "/")
+      return route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html lang="${lang}" class="light"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"></head><body class="k2b-ui" style="margin:0;height:100vh"><div id="root" class="k2-ui" style="height:100vh;display:flex"></div><script src="/harness.js"></script></body></html>`,
+      });
+    return route.fulfill({ status: 404 });
+  });
+  await tab.goto(`http://image-converter.test/${search}`);
+  await tab.locator('[data-k2-part="Workspace"]').waitFor();
+  return tab;
+};
+
+test("mixed image intake keeps every outcome in drop order without moving the first row", async () => {
+  const tab = await open("en", 1280);
   try {
-    await tab.route("http://image-converter.test/**", (route) => {
-      const path = new URL(route.request().url()).pathname;
-      if (path === "/")
-        return route.fulfill({
-          contentType: "text/html",
-          body: '<!doctype html><html lang="en"><head><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><div id="root" style="height:100vh;display:flex"></div><script src="/harness.js"></script></body></html>',
-        });
-      const asset = assets[path];
-      return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
-    });
-    await tab.goto("http://image-converter.test/");
-    await tab.locator('.tools-image-converter input[type="file"]').setInputFiles([
+    const chooser = tab.waitForEvent("filechooser");
+    await tab.getByRole("button", { name: "Add images" }).first().click();
+    await (await chooser).setFiles([
       { name: "first.heic", mimeType: "image/heic", buffer: fixture },
       { name: "second.png", mimeType: "image/png", buffer: png },
       { name: "broken.heic", mimeType: "image/heic", buffer: fixture.subarray(0, 64) },
     ]);
-    const cards = tab.locator('.tools-image-converter [role="listitem"]');
-    await tab.waitForFunction(() => document.querySelectorAll('.tools-image-converter [role="listitem"]').length === 3);
-    const firstNode = await cards.first().elementHandle();
-    const before = await cards.first().boundingBox();
+    const rows = tab.locator('[data-k2-part="List"] [data-k2-part="Row"]');
+    await tab.waitForFunction(() => document.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]').length >= 2);
+    const before = await rows.first().boundingBox();
     expect(before).not.toBeNull();
-    if (browserName === "chromium") expect(await cards.first().getAttribute("data-status")).toBe("loading");
     // Safari can finish the native path before this point. Order and geometry still hold.
     await tab.evaluate(() => window.releaseDecodes());
-    await tab.waitForFunction(
-      () =>
-        document.querySelectorAll('.tools-image-converter [data-status="ready"]').length === 2 &&
-        document.querySelectorAll('.tools-image-converter [data-status="failed"]').length === 1,
-    );
-    expect(await cards.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-status")))).toEqual(["ready", "ready", "failed"]);
-    expect(await cards.evaluateAll((nodes) => nodes.map((node) => node.querySelector("p[title]")?.getAttribute("title")))).toEqual([
-      "first.heic",
-      "second.png",
-      "broken.heic",
-    ]);
-    expect(await cards.first().textContent()).toContain("HEIC");
-    expect(await cards.last().textContent()).toContain("This image could not be read.");
-    expect(await cards.last().textContent()).toContain("Export it again from the source app");
-    expect(await cards.last().getByRole("button", { name: "Remove broken.heic" }).count()).toBe(1);
-    expect(await cards.first().boundingBox()).toEqual(before);
-    expect(await firstNode?.evaluate((node) => node === document.querySelector('.tools-image-converter [role="listitem"]'))).toBe(true);
+    await tab.locator('[data-k2-part="Notice"]').filter({ hasText: "broken.heic" }).waitFor();
+    await tab.waitForFunction(() => document.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]').length === 2);
+    const texts = await rows.allTextContents();
+    expect(texts[0]).toContain("first.heic");
+    expect(texts[1]).toContain("second.png");
+    if (browserName === "chromium")
+      await tab.waitForFunction(() => document.querySelector('[data-k2-part="Row"]')?.textContent?.includes("HEIC"));
+    const failure = tab.locator('[data-k2-part="Notice"]').filter({ hasText: "broken.heic" });
+    expect(await failure.textContent()).toContain("This image could not be read.");
+    expect(await failure.textContent()).toContain("Export it again from the source app");
+    expect(await failure.getByRole("button", { name: "Remove broken.heic" }).count()).toBe(1);
+    expect(await rows.first().boundingBox()).toEqual(before);
   } finally {
     await tab.context().close();
   }
 }, 30_000);
 
-test("failure cards keep their whole reason and recovery hint visible from the narrowest card width up", async () => {
-  for (const lang of ["en", "de"]) {
-    for (const width of [12, 13, 14, 16, 20]) {
-      const tab = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+test("a file that cannot be added keeps its whole reason and recovery hint, from a phone up", async () => {
+  for (const lang of ["en", "de"] as const) {
+    for (const width of [320, 390, 1280]) {
+      const tab = await open(lang, width, "?failures");
       try {
-        await tab.route("http://image-converter.test/**", (route) => {
-          const path = new URL(route.request().url()).pathname;
-          if (path === "/")
-            return route.fulfill({
-              contentType: "text/html",
-              // The grid never makes a card narrower than 12rem; pin every column to one width from that minimum up.
-              body: `<!doctype html><html lang="${lang}"><head><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><style>.tools-image-converter [role="list"]{grid-template-columns:repeat(auto-fill,${width}rem)!important}</style></head><body class="k2b-ui"><div id="root" style="height:100vh;display:flex"></div><script src="/harness.js"></script></body></html>`,
-            });
-          const asset = assets[path];
-          return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
-        });
-        await tab.goto("http://image-converter.test/?failures");
-        await tab.waitForFunction(() => document.querySelectorAll('.tools-image-converter [data-status="failed"]').length === 4);
-        const cards = await tab.evaluate(() =>
-          Array.from(document.querySelectorAll('.tools-image-converter [data-status="failed"]')).map((card) => {
-            const failure = card.querySelector(".tools-image-converter-card__failure")!;
-            const box = failure.getBoundingClientRect();
-            const texts = Array.from(failure.querySelectorAll("p"));
-            return {
-              width: Math.round(card.getBoundingClientRect().width),
-              texts: texts.length,
-              overflow: failure.scrollHeight - failure.clientHeight,
-              clipped: texts
-                .filter((text) => {
-                  const line = text.getBoundingClientRect();
-                  return line.top < box.top - 0.5 || line.bottom > box.bottom + 0.5;
-                })
-                .map((text) => text.textContent),
-            };
-          }),
+        const notices = await tab.evaluate(() =>
+          Array.from(document.querySelectorAll('[data-k2-part="Notice"]')).map((notice) => ({
+            overflow: notice.scrollHeight - notice.clientHeight,
+            sideways: notice.scrollWidth - notice.clientWidth,
+            words: (notice.textContent ?? "").length > 40,
+          })),
         );
-        for (const card of cards) expect({ lang, ...card }).toEqual({ lang, width: width * 16, texts: 2, overflow: 0, clipped: [] });
+        expect(notices).toHaveLength(4);
+        for (const notice of notices) expect({ lang, width, ...notice }).toEqual({ lang, width, overflow: 0, sideways: 0, words: true });
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       } finally {
         await tab.context().close();
       }

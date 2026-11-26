@@ -1,28 +1,29 @@
 import { clipboard as browserClipboard, files as fileTools, type ImgData, images as imageTools } from "@k2b/stdlib/browser";
 import { mutation } from "@k2b/stdlib/solid";
+import { useLocale } from "@k2b/ui";
 import {
-  AppWorkspace,
+  Band,
+  Bar,
   Button,
-  Checkbox,
-  ColorInput,
-  DetailPanel,
-  FileDropTarget,
-  FileDropzone,
-  IconButton,
-  NoticeCard,
-  NumberInput,
-  ProgressBar,
-  prompts,
-  ScrollArea,
+  Choice,
+  Dialog,
+  Empty,
+  Field,
+  Input,
+  List,
+  Menu,
+  type MenuEntry,
+  Notice,
+  Pane,
+  Progress,
+  Row,
   Section,
-  SegmentedControl,
-  Slider,
-  SplitButton,
-  Tooltip,
-  toast,
-  useLocale,
-} from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+  StatusRow,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
 import {
   buildBase64ImageTag,
   fitWithin,
@@ -64,6 +65,13 @@ type ExportDestination = "download" | "clipboard";
 type ExportRequest = { scope: ExportScope; destination: ExportDestination };
 type ExportResult = { destination: ExportDestination; message: string };
 
+const FORMATS: readonly ImageConverterFormat[] = ["jpeg", "png", "webp"];
+/** A limit in pixels from a field: empty is no limit, anything else must be a whole positive number. */
+const pixels = (value: string): number | null => {
+  const number = Number(value);
+  return value.trim() && Number.isInteger(number) && number > 0 ? number : null;
+};
+
 let nextImageId = 0;
 const imageId = () => `image-converter-${++nextImageId}`;
 
@@ -88,6 +96,7 @@ const rotateImage = (data: ImgData, rotation: ImageConverterRotation): Promise<I
 export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const locale = useLocale();
   const t = () => imageConverterMessages.resolve([locale()]).t;
+  const toast = useToast();
   const intakeT = () => imageIntakeMessages.resolve([locale()]).t;
   const [items, setItems] = createSignal<ImageConverterItem[]>(
     props.initialItems
@@ -109,7 +118,6 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const [maxHeight, setMaxHeight] = createSignal<number | null>(null);
   const [progress, setProgress] = createSignal<number | null>(null);
   const [error, setError] = createSignal("");
-  const [success, setSuccess] = createSignal("");
   const [exportLocked, setExportLocked] = createSignal(false);
   const managedPreviewUrls = new Set<string>();
 
@@ -173,7 +181,6 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
       return;
     }
     setError("");
-    setSuccess("");
     setItems((current) => [
       ...current,
       ...files.map((file) => ({ status: "loading" as const, id: imageId(), file, stage: "waiting" as const })),
@@ -204,17 +211,16 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   };
 
   const clearImages = async () => {
-    const confirmed = await prompts.confirm(t().clearConfirm({ count: items().length }), {
+    const confirmed = await Dialog.confirm({
       title: t().clearConfirmTitle,
-      icon: "ti ti-trash",
-      confirmText: t().clearConfirmAction,
-      variant: "danger",
+      description: t().clearConfirm({ count: items().length }),
+      confirm: t().clearConfirmAction,
+      cancel: t().cancel,
     });
     if (!confirmed || loading() || exportLocked()) return;
     for (const image of images()) releasePreview(image.previewUrl);
     setItems([]);
     setError("");
-    setSuccess("");
   };
 
   const toggleImage = (id: string, selected: boolean) =>
@@ -317,15 +323,8 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
       setExportLocked(true);
       setProgress(null);
       setError("");
-      setSuccess("");
     },
-    onSuccess: ({ destination, message }) => {
-      if (destination === "clipboard") {
-        toast.success(message, { title: t().copiedToClipboard });
-        return;
-      }
-      setSuccess(message);
-    },
+    onSuccess: ({ destination }) => toast(destination === "clipboard" ? t().copiedShort : t().downloadedShort, { status: "ok" }),
     onError: (cause) => setError(cause.message),
     onFinally: () => setExportLocked(false),
   });
@@ -342,364 +341,309 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
     managedPreviewUrls.clear();
   });
 
-  return (
-    <>
-      <AppWorkspace.Main class="tools-main" scroll={false}>
-        <section
-          class="tools-image-converter relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--ui-surface)]"
-          aria-label={t().workspaceLabel}
-        >
-          <FileDropTarget label={t().dropToAdd} accept={IMAGE_ACCEPT} onDrop={addFiles} />
-          <header class="flex flex-none flex-wrap items-center justify-between gap-3 px-[var(--ui-space-shell)] py-[var(--ui-space-section)]">
-            <div class="min-w-0">
-              <h1 class="text-base font-semibold text-primary">{t().heading}</h1>
-              <p class="text-xs text-dimmed">
-                {items().length === 0
-                  ? t().emptySubtitle
-                  : [
-                      t().imageCount({ count: images().length }),
-                      ...(loadingCount() > 0 ? [t().preparing({ count: loadingCount() })] : []),
-                      ...(failedCount() > 0 ? [t().notAdded({ count: failedCount() })] : []),
-                    ].join(" · ")}
-              </p>
-            </div>
-            <div class="flex items-center gap-2">
-              <Show when={items().length > 0}>
-                <Button variant="secondary" size="sm" onClick={selectFiles} disabled={exportMutation.loading()}>
-                  <i class="ti ti-photo-plus" aria-hidden="true" /> {t().addImages}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={clearImages} disabled={loading() || exportMutation.loading()}>
-                  {t().clearAll}
-                </Button>
-              </Show>
-            </div>
-          </header>
+  // k2b-ui gap: v2 has no file drop target; the page takes dropped images itself and the status row says so.
+  const [dragging, setDragging] = createSignal(false);
+  onMount(() => {
+    let depth = 0;
+    const carriesFiles = (event: DragEvent) => Boolean(event.dataTransfer?.types.includes("Files"));
+    const enter = (event: DragEvent) => {
+      if (!carriesFiles(event)) return;
+      depth += 1;
+      setDragging(true);
+    };
+    const leave = (event: DragEvent) => {
+      if (!carriesFiles(event)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    const over = (event: DragEvent) => {
+      if (carriesFiles(event)) event.preventDefault();
+    };
+    const dropped = (event: DragEvent) => {
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length === 0) return;
+      event.preventDefault();
+      depth = 0;
+      setDragging(false);
+      addFiles(files);
+    };
+    document.addEventListener("dragenter", enter);
+    document.addEventListener("dragleave", leave);
+    document.addEventListener("dragover", over);
+    document.addEventListener("drop", dropped);
+    onCleanup(() => {
+      document.removeEventListener("dragenter", enter);
+      document.removeEventListener("dragleave", leave);
+      document.removeEventListener("dragover", over);
+      document.removeEventListener("drop", dropped);
+    });
+  });
+  const busy = () => loading() || exportMutation.loading();
+  const scope = (): ExportScope => (hasSelection() ? "selected" : "all");
+  const exportWord = () => (hasSelection() ? t().exportSelected({ count: selectedCount() }) : t().exportAll({ count: images().length }));
+  const copyWord = () =>
+    hasSelection() ? t().copySelectedBase64({ count: selectedCount() }) : t().copyAllBase64({ count: images().length });
+  const lead = () =>
+    dragging()
+      ? t().dropToAdd
+      : items().length === 0
+        ? t().emptySubtitle
+        : [
+            t().imageCount({ count: images().length }),
+            ...(loadingCount() > 0 ? [t().preparing({ count: loadingCount() })] : []),
+            ...(failedCount() > 0 ? [t().notAdded({ count: failedCount() })] : []),
+          ].join(" · ");
+  const lineOf = (item: ImageConverterItem) => {
+    if (item.status === "loading") return intakeT()[item.stage];
+    if (item.status === "failed") return intakeT()[`${item.reason}Hint`];
+    const size = rotatedDimensions(item.width, item.height, item.rotation);
+    return `${sourceFormat(item.file)} · ${size.width} × ${size.height} px · ${formatBytes(item.file.size)}${
+      item.rotation ? ` · ${item.rotation}°` : ""
+    }`;
+  };
+  const selectedOf = (item: ImageConverterItem) => item.status === "ready" && item.selected;
+  const deedsOf = (item: ImageConverterItem): MenuEntry[] => [
+    ...(item.status === "ready"
+      ? [
+          // a selection starts here or with the box of the status row; while it runs every row has its box
+          { label: t().selectImage({ name: item.file.name }), icon: "square-check", onClick: () => toggleImage(item.id, true) },
+          { label: t().rotateImageClockwise({ name: item.file.name }), icon: "rotate-clockwise", onClick: () => rotateClockwise(item.id) },
+        ]
+      : []),
+    {
+      label: t().removeNamed({ name: item.file.name }),
+      icon: "trash",
+      danger: true,
+      disabled: item.status === "loading" || exportMutation.loading(),
+      onClick: () => removeImage(item.id),
+    },
+  ];
 
+  return (
+    <ToolsScreen
+      tool="image-converter"
+      primary={{ label: t().addImages, icon: "photo-plus", onClick: () => void selectFiles(), disabled: exportMutation.loading() }}
+      end={
+        <>
+          <Button icon="photo-plus" onClick={() => void selectFiles()} disabled={exportMutation.loading()}>
+            {t().addImages}
+          </Button>
+          <Show when={items().length > 0}>
+            <Menu
+              label={t().moreExportAll}
+              items={[{ label: t().clearAll, icon: "trash", danger: true, disabled: busy(), onClick: () => void clearImages() }]}
+            />
+          </Show>
+        </>
+      }
+    >
+      <Pane.Split>
+        <Pane
+          label={t().listLabel}
+          scrollKey="tools-image-converter"
+          status={
+            <StatusRow
+              lead={lead()}
+              loading={loading()}
+              select={
+                images().length > 0
+                  ? {
+                      label: t().selectAll,
+                      checked: allSelected() ? true : hasSelection() ? "mixed" : false,
+                      onChange: (checked) => {
+                        if (!busy()) toggleAll(checked);
+                      },
+                    }
+                  : undefined
+              }
+              selection={
+                hasSelection()
+                  ? {
+                      count: t().selectedCount({ count: selectedCount() }),
+                      actions: [
+                        { label: exportWord(), icon: "download", onClick: () => startExport("selected", "download"), disabled: busy() },
+                        { label: copyWord(), icon: "copy", onClick: () => startExport("selected", "clipboard"), disabled: busy() },
+                      ],
+                      clear: { label: t().clearSelection, onClick: () => toggleAll(false) },
+                    }
+                  : undefined
+              }
+            />
+          }
+        >
           <Show
             when={items().length > 0}
             fallback={
-              <div class="flex min-h-80 flex-1 items-center justify-center p-[var(--ui-space-shell)]">
-                <FileDropzone
-                  class="w-full max-w-xl"
-                  aria-label={t().dropzoneLabel}
-                  accept={IMAGE_ACCEPT}
-                  multiple
-                  busy={loading() || exportLocked()}
-                  title={t().dropzoneTitle}
-                  subtitle={t().dropzoneSubtitle}
-                  hint={t().dropzoneHint}
-                  icon="ti ti-photo-plus"
-                  dropLabel={t().dropToAdd}
-                  onDrop={addFiles}
-                />
-              </div>
+              <Empty
+                icon="photo-plus"
+                text={t().dropzoneHint}
+                action={{ label: t().addImages, icon: "photo-plus", onClick: () => void selectFiles() }}
+              />
             }
           >
-            <div class="flex flex-none items-center justify-between gap-3 px-[var(--ui-space-shell)] py-2">
-              <Checkbox
-                label={t().selectAll}
-                value={allSelected}
-                indeterminate={hasSelection() && !allSelected()}
-                disabled={loading() || exportMutation.loading()}
-                onValueChange={toggleAll}
-              />
-              <Show when={hasSelection()}>
-                <span class="text-xs tabular-nums text-dimmed">{t().selectedCount({ count: selectedCount() })}</span>
-              </Show>
-            </div>
-
-            <ScrollArea class="min-h-0 flex-1 p-[var(--ui-space-shell)]">
-              <div
-                class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-[var(--ui-space-section)]"
-                role="list"
-                aria-label={t().listLabel}
-              >
-                <For each={items().map((item) => item.id)}>
+            {/* k2b-ui gap: no thumbnail in a v2 row yet (DP: Row mark / Tiles media); each image shows its type sign. */}
+            <Show when={items().some((item) => item.status !== "failed")}>
+              <List label={t().listLabel}>
+                <For
+                  each={items()
+                    .filter((item) => item.status !== "failed")
+                    .map((item) => item.id)}
+                >
                   {(id) => {
-                    // A removed card can read the list once more before it is disposed.
+                    // A removed row can read the list once more before it is disposed.
                     const item = createMemo(() => itemsById().get(id));
-                    const file = () => item()?.file;
-                    const ready = () => {
-                      const value = item();
-                      return value?.status === "ready" ? value : undefined;
-                    };
-                    const failed = () => {
-                      const value = item();
-                      return value?.status === "failed" ? value : undefined;
-                    };
-                    const stage = () => {
-                      const value = item();
-                      return value?.status === "loading" ? intakeT()[value.stage] : "";
-                    };
-                    const dimensions = () => {
-                      const image = ready();
-                      return image ? rotatedDimensions(image.width, image.height, image.rotation) : null;
-                    };
                     return (
-                      <article
-                        class="tools-image-converter-card group min-w-0 overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)]"
-                        role="listitem"
-                        data-status={item()?.status}
-                        data-selected={ready()?.selected ? "true" : undefined}
-                        data-selection-active={hasSelection() ? "true" : undefined}
-                      >
-                        <div class="tools-image-converter-card__preview relative aspect-square overflow-hidden bg-[var(--ui-surface)] p-3">
-                          <Show when={ready()}>
-                            {(image) => (
-                              <>
-                                <img
-                                  src={image().previewUrl}
-                                  alt={t().previewAlt({ name: image().file.name })}
-                                  class="h-full w-full object-contain transition-transform"
-                                  style={{ transform: `rotate(${image().rotation}deg)` }}
-                                  draggable={false}
-                                />
-                                <div class="tools-image-converter-card__selection absolute left-2 top-2">
-                                  <Checkbox
-                                    aria-label={t().selectImage({ name: image().file.name })}
-                                    value={image().selected}
-                                    disabled={loading() || exportMutation.loading()}
-                                    onValueChange={(selected) => toggleImage(id, selected)}
-                                  />
-                                </div>
-                                <div class="tools-image-converter-card__actions absolute right-2 top-2 flex gap-1">
-                                  <Tooltip.Anchor content={t().rotateClockwise}>
-                                    <IconButton
-                                      label={t().rotateImageClockwise({ name: image().file.name })}
-                                      size="sm"
-                                      onClick={() => rotateClockwise(id)}
-                                      disabled={loading() || exportMutation.loading()}
-                                    >
-                                      <i class="ti ti-rotate-clockwise" aria-hidden="true" />
-                                    </IconButton>
-                                  </Tooltip.Anchor>
-                                  <Tooltip.Anchor content={t().removeImage}>
-                                    <IconButton
-                                      label={t().removeNamed({ name: image().file.name })}
-                                      size="sm"
-                                      class="text-red-600 dark:text-red-400"
-                                      onClick={() => removeImage(id)}
-                                      disabled={loading() || exportMutation.loading()}
-                                    >
-                                      <i class="ti ti-trash" aria-hidden="true" />
-                                    </IconButton>
-                                  </Tooltip.Anchor>
-                                </div>
-                              </>
-                            )}
-                          </Show>
-                          <Show when={item()?.status === "loading"}>
-                            <div class="flex h-full items-center justify-center text-dimmed">
-                              <i class="ti ti-loader-2 animate-spin text-2xl" aria-hidden="true" />
-                            </div>
-                          </Show>
-                          <Show when={failed()}>
-                            {(image) => (
-                              <>
-                                <div class="tools-image-converter-card__failure flex h-full flex-col items-center gap-1 px-2 text-center">
-                                  <span class="tools-image-converter-card__failure-icon mb-1.5" aria-hidden="true">
-                                    <i class="ti ti-photo-x" />
-                                  </span>
-                                  <p class="text-sm font-medium text-primary">{intakeT()[`${image().reason}Title`]}</p>
-                                  <p class="text-xs text-dimmed">{intakeT()[`${image().reason}Hint`]}</p>
-                                </div>
-                                <div class="tools-image-converter-card__actions absolute right-2 top-2 flex gap-1">
-                                  <Tooltip.Anchor content={t().removeImage}>
-                                    <IconButton
-                                      label={t().removeNamed({ name: image().file.name })}
-                                      size="sm"
-                                      class="text-red-600 dark:text-red-400"
-                                      onClick={() => removeImage(id)}
-                                      disabled={exportMutation.loading()}
-                                    >
-                                      <i class="ti ti-trash" aria-hidden="true" />
-                                    </IconButton>
-                                  </Tooltip.Anchor>
-                                </div>
-                              </>
-                            )}
-                          </Show>
-                        </div>
-                        <div class="min-w-0 border-t border-[var(--ui-border)] px-3 py-2">
-                          <p class="truncate text-sm font-medium text-primary" title={file()?.name}>
-                            {file()?.name}
-                          </p>
-                          <p class="truncate text-xs tabular-nums text-dimmed">
-                            <Show
-                              when={ready()}
-                              fallback={
-                                <span aria-live="polite">
-                                  {stage() || (file() ? `${sourceFormat(file()!)} · ${formatBytes(file()!.size)}` : "")}
-                                </span>
+                      <Show when={item()}>
+                        {(current) => (
+                          <Menu.Context items={deedsOf(current())}>
+                            <Row
+                              icon="photo"
+                              color="#0e7490"
+                              lines={[current().file.name, lineOf(current())]}
+                              select={
+                                current().status === "ready" && hasSelection()
+                                  ? { selected: selectedOf(current()), onChange: (selected) => toggleImage(id, selected) }
+                                  : undefined
                               }
-                            >
-                              {(image) => (
-                                <>
-                                  {sourceFormat(image().file)} · {dimensions()?.width} × {dimensions()?.height} px ·{" "}
-                                  {formatBytes(image().file.size)}
-                                </>
-                              )}
-                            </Show>
-                          </p>
-                        </div>
-                      </article>
+                              end={<Menu label={t().imageActions({ name: current().file.name })} items={deedsOf(current())} />}
+                            />
+                          </Menu.Context>
+                        )}
+                      </Show>
                     );
                   }}
                 </For>
-              </div>
-            </ScrollArea>
+              </List>
+            </Show>
+            {/* A file that could not be added says why and what to do, whole, and can be removed; below the list, so no row moves. */}
+            <For each={items().filter((item) => item.status === "failed")}>
+              {(item) => (
+                <Notice
+                  tone="bad"
+                  title={`${item.file.name}: ${item.status === "failed" ? intakeT()[`${item.reason}Title`] : ""}`}
+                  actions={[
+                    {
+                      label: t().removeNamed({ name: item.file.name }),
+                      onClick: () => removeImage(item.id),
+                      disabled: exportMutation.loading(),
+                    },
+                  ]}
+                >
+                  {lineOf(item)}
+                </Notice>
+              )}
+            </For>
           </Show>
-        </section>
-      </AppWorkspace.Main>
-
-      <AppWorkspace.Detail
-        id="image-converter-settings"
-        // Open from the drop on, so the cards do not move when the first image is ready; a batch of only failed files
-        // keeps them closed, because on a phone the settings would cover the cards that say what went wrong.
-        open={items().some((item) => item.status !== "failed")}
-        width="md"
-        minWidth={288}
-        viewTransitionName="tools-image-converter-settings"
-      >
-        <DetailPanel>
-          <DetailPanel.Header
-            title={t().panelTitle}
-            subtitle={images().length > 0 ? t().imagesReady({ count: images().length }) : loading() ? t().panelPreparing : t().panelEmpty}
-          />
-
-          <DetailPanel.Body scrollPreserveKey="image-converter-settings">
-            <DetailPanel.Group label={t().groupOutput}>
-              <Section title={t().sectionFormat}>
-                <SegmentedControl<ImageConverterFormat>
+          <Band>
+            <Text type="meta" muted>
+              {t().dropzoneSubtitle}
+            </Text>
+          </Band>
+        </Pane>
+        <Show when={items().some((item) => item.status !== "failed")}>
+          <Pane label={t().panelTitle} width={{ min: 288, default: 340 }} scrollKey="tools-image-converter-settings">
+            <Show when={progress() !== null}>
+              <Bar start={<Progress value={Math.round(progress() ?? 0)} of={100} label={t().exportProgress} />} />
+            </Show>
+            <Show when={error()}>
+              {(message) => (
+                <Notice tone="bad" title={t().conversionFailed}>
+                  {message()}
+                </Notice>
+              )}
+            </Show>
+            <Section icon="file-export" title={t().sectionFormat}>
+              <Field label={t().targetFormat}>
+                <Choice
+                  name="image-converter-format"
+                  value={format()}
+                  disabled={exportMutation.loading()}
+                  onChange={(value) => setFormat(FORMATS.find((each) => each === value) ?? "webp")}
                   options={[
                     { value: "jpeg", label: "JPEG" },
                     { value: "png", label: "PNG" },
                     { value: "webp", label: "WebP" },
                   ]}
-                  value={format}
-                  onValueChange={setFormat}
-                  ariaLabel={t().targetFormat}
-                  disabled={exportMutation.loading()}
                 />
-                <Show when={format() !== "png"}>
-                  <div class="mt-3">
-                    <Slider
-                      label={t().quality}
-                      value={quality}
-                      onValueChange={setQuality}
-                      min={0.1}
-                      max={1}
-                      step={0.05}
-                      formatValue={(value) => `${Math.round(value * 100)}%`}
-                      disabled={exportMutation.loading()}
-                    />
-                  </div>
-                </Show>
-                <Show when={format() === "jpeg"}>
-                  <div class="mt-3">
-                    <ColorInput
-                      label={t().transparencyBackground}
-                      description={t().transparencyDescription}
-                      value={jpegBackground}
-                      onValueChange={setJpegBackground}
-                      disabled={exportMutation.loading()}
-                    />
-                  </div>
-                </Show>
-              </Section>
-            </DetailPanel.Group>
-
-            <DetailPanel.Group label={t().groupSize}>
-              <Section title={t().maxDimensions} description={t().maxDimensionsDescription}>
-                <div class="grid grid-cols-2 gap-2">
-                  <NumberInput
-                    name="image-converter-max-width"
-                    label={t().maxWidth}
-                    placeholder={t().original}
-                    suffix="px"
-                    value={maxWidth}
-                    onValueChange={setMaxWidth}
-                    min={1}
-                    allowNegative={false}
-                    showSteppers={false}
-                    clearable
+              </Field>
+              <Show when={format() !== "png"}>
+                {/* k2b-ui gap: no v2 slider (lane Y, #4191); the quality is a number in percent. */}
+                <Field label={t().quality} optional="%">
+                  <Input
+                    type="number"
+                    min={10}
+                    max={100}
+                    value={String(Math.round(quality() * 100))}
                     disabled={exportMutation.loading()}
+                    onInput={(value) => {
+                      const percent = Number(value);
+                      if (Number.isFinite(percent) && percent >= 10 && percent <= 100) setQuality(percent / 100);
+                    }}
                   />
-                  <NumberInput
-                    name="image-converter-max-height"
-                    label={t().maxHeight}
-                    placeholder={t().original}
-                    suffix="px"
-                    value={maxHeight}
-                    onValueChange={setMaxHeight}
-                    min={1}
-                    allowNegative={false}
-                    showSteppers={false}
-                    clearable
-                    disabled={exportMutation.loading()}
-                  />
-                </div>
-              </Section>
-            </DetailPanel.Group>
-
-            <Show when={error()}>
-              <NoticeCard tone="danger" title={t().conversionFailed} detail={error()} />
-            </Show>
-            <Show when={success()}>
-              <NoticeCard tone="success" title={success()} />
-            </Show>
-            <Show when={progress() !== null}>
-              <ProgressBar value={progress() ?? 0} label={t().exportProgress} size="sm" showValue />
-            </Show>
-          </DetailPanel.Body>
-
-          <Show when={images().length > 0}>
-            <footer class="tools-image-converter-export flex flex-none flex-col gap-2">
-              <Show when={hasSelection()}>
-                <SplitButton
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => startExport("all", "download")}
-                  items={[
-                    {
-                      label: t().copyAllBase64({ count: images().length }),
-                      icon: "ti ti-copy",
-                      action: () => startExport("all", "clipboard"),
-                    },
-                  ]}
-                  menuLabel={t().moreExportAll}
-                  disabled={loading()}
-                  loading={exportMutation.loading()}
-                  loadingLabel={t().exporting}
-                >
-                  <i class="ti ti-download" aria-hidden="true" /> {t().exportAll({ count: images().length })}
-                </SplitButton>
+                </Field>
               </Show>
-              <SplitButton
-                size="sm"
-                onClick={() => startExport(hasSelection() ? "selected" : "all", "download")}
-                items={[
-                  {
-                    label: hasSelection()
-                      ? t().copySelectedBase64({ count: selectedCount() })
-                      : t().copyAllBase64({ count: images().length }),
-                    icon: "ti ti-copy",
-                    action: () => startExport(hasSelection() ? "selected" : "all", "clipboard"),
-                  },
-                ]}
-                menuLabel={hasSelection() ? t().moreExportSelected : t().moreExportAll}
-                disabled={loading()}
-                loading={exportMutation.loading()}
-                loadingLabel={t().exporting}
-              >
-                <i class="ti ti-download" aria-hidden="true" />
-                {hasSelection() ? t().exportSelected({ count: selectedCount() }) : t().exportAll({ count: images().length })}
-              </SplitButton>
-            </footer>
-          </Show>
-        </DetailPanel>
-      </AppWorkspace.Detail>
-    </>
+              <Show when={format() === "jpeg"}>
+                {/* k2b-ui gap: no v2 colour picker (lane Y, #4191); the background is a hex colour. */}
+                <Field label={t().transparencyBackground} hint={t().transparencyDescription}>
+                  <Input
+                    value={jpegBackground()}
+                    spellcheck={false}
+                    disabled={exportMutation.loading()}
+                    onInput={(value) => {
+                      if (/^#[0-9a-f]{6}$/i.test(value.trim())) setJpegBackground(value.trim());
+                    }}
+                  />
+                </Field>
+              </Show>
+            </Section>
+            <Section icon="dimensions" title={t().maxDimensions} summary={t().maxDimensionsDescription}>
+              <Field.Row>
+                <Field label={t().maxWidth} optional="px">
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder={t().original}
+                    value={maxWidth() === null ? "" : String(maxWidth())}
+                    disabled={exportMutation.loading()}
+                    onInput={(value) => setMaxWidth(pixels(value))}
+                  />
+                </Field>
+                <Field label={t().maxHeight} optional="px">
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder={t().original}
+                    value={maxHeight() === null ? "" : String(maxHeight())}
+                    disabled={exportMutation.loading()}
+                    onInput={(value) => setMaxHeight(pixels(value))}
+                  />
+                </Field>
+              </Field.Row>
+            </Section>
+            <Show when={images().length > 0}>
+              <Bar
+                end={
+                  <>
+                    <Button icon="copy" disabled={loading()} onClick={() => startExport(scope(), "clipboard")}>
+                      {t().copyShort}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      icon="download"
+                      busy={exportMutation.loading()}
+                      disabled={loading()}
+                      onClick={() => startExport(scope(), "download")}
+                    >
+                      {exportWord()}
+                    </Button>
+                  </>
+                }
+              />
+            </Show>
+          </Pane>
+        </Show>
+      </Pane.Split>
+    </ToolsScreen>
   );
 }
 

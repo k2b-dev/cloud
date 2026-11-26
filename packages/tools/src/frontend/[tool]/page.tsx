@@ -31,7 +31,6 @@ const toolComponents: Record<
 > = {
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
-  "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
   speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
   webhooks: (props) => <WebhookTester initialState={props.webhookState} baseHref={props.baseHref} />,
@@ -39,6 +38,7 @@ const toolComponents: Record<
 
 /** The tools on v2; each island renders the whole Tools screen with its own panes. */
 const v2Tools: Partial<Record<string, () => JSX.Element>> = {
+  "image-converter": () => <ImageConverter />,
   password: () => <PasswordGenerator />,
   uuid: () => <UuidGenerator />,
   lorem: () => <LoremIpsumGenerator />,

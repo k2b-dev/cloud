@@ -1,4 +1,4 @@
-import { AppWorkspace } from "@k2b/ui";
+import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { type ImageConverterItem, ImageConverterView } from "./ImageConverter.island";
 import type { ImageIntakeFailure } from "./image-intake/intake";
@@ -33,9 +33,9 @@ const initialItems: ImageConverterItem[] | undefined = new URLSearchParams(locat
   : undefined;
 render(
   () => (
-    <AppWorkspace aria-label="Image tools">
+    <LocaleProvider locale={document.documentElement.lang}>
       <ImageConverterView initialItems={initialItems} />
-    </AppWorkspace>
+    </LocaleProvider>
   ),
   document.getElementById("root")!,
 );
