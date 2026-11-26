@@ -23,6 +23,8 @@ import {
 declare global {
   interface Window {
     __deeds?: string[];
+    /** While set, reading a picked image waits for this promise (a slow conversion). */
+    __k2Gate?: Promise<void>;
   }
 }
 
@@ -37,6 +39,7 @@ export function Demo() {
   const [dim, setDim] = createSignal(30);
   const [accent, setAccent] = createSignal("#b45309");
   const [banner, setBanner] = createSignal<string | null>(null);
+  const [zoom, setZoom] = createSignal(30);
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -117,14 +120,20 @@ export function Demo() {
               <ImageInput
                 value={banner()}
                 onChange={setBanner}
-                transform={async (file) => `data:text/plain,${encodeURIComponent(await file.text())}`}
+                transform={async (file) => {
+                  await window.__k2Gate;
+                  return `data:text/plain,${encodeURIComponent(await file.text())}`;
+                }}
               />
             </Field>
             <Field name="level" label="Stufe" hint="Wie stark abgedunkelt wird.">
               <Slider value={30} step={10} />
             </Field>
+            <Field name="zoom" label="Zoom">
+              <Slider value={zoom()} onChange={setZoom} step={10} />
+            </Field>
             <Field name="tone" label="Ton">
-              <ColorInput value="#1d4ed8" />
+              <ColorInput value="#000000" />
             </Field>
           </Band>
         </form>

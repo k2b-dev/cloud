@@ -654,7 +654,9 @@ export const ImageInput = (props: ImageInputProps) => {
   // there is no image yet. What the form sends is the value, in a hidden input under the name.
   const pick = useFilePick(() => ({
     accept: props.accept ?? imageAccept,
-    disabled: props.disabled || busy(),
+    // not disabled while a picked file is read: a disabled input is left out of the form's checks, so a required
+    // field would let the form go without its image (`take` ignores a second pick meanwhile)
+    disabled: props.disabled,
     required: (field?.required && !value()) || undefined,
     onValueChange: (files: File[]) => void take(files[0]),
     onReject: () => setFailed(true),
@@ -813,15 +815,9 @@ export const ColorInput = (props: ColorInputProps) => {
   const field = useField();
   field?.group();
   const t = useControlMessages();
-  // the colour as it stands, for the words of its thumbs (the core's own words are English)
-  const [own, setOwn] = createSignal(props.value ?? "#000000");
-  const shown = () => hsv((props.onChange ? props.value : own()) ?? "#000000");
   const color = useColor(() => ({
     ...(props.onChange ? { value: props.value ?? "#000000" } : { defaultValue: props.value ?? "#000000" }),
-    onValueChange: (next: string) => {
-      setOwn(next);
-      props.onChange?.(next);
-    },
+    onValueChange: (next: string) => props.onChange?.(next),
     onValueCommit: (next: string) => props.onCommit?.(next),
     disabled: props.disabled,
     name: props.name ?? field?.name,
@@ -840,18 +836,14 @@ export const ColorInput = (props: ColorInputProps) => {
         </span>
       </span>
       <color.Area class="k2-color-area">
-        <color.AreaThumb
-          class="k2-color-thumb"
-          aria-label={t().colorArea}
-          aria-valuetext={t().areaValue({ saturation: shown().saturation, brightness: shown().brightness })}
-        />
+        <color.AreaThumb class="k2-color-thumb" aria-label={t().colorArea} valueText={(attrs) => t().areaValue(areaPercents(attrs))} />
       </color.Area>
       <color.Slider class="k2-color-hue" channel="hue">
         <color.SliderThumb
           class="k2-color-thumb"
           channel="hue"
           aria-label={t().hue}
-          aria-valuetext={t().hueValue({ degrees: shown().hue })}
+          valueText={(attrs) => t().hueValue({ degrees: Math.round(Number(attrs["aria-valuenow"] ?? 0)) })}
         />
       </color.Slider>
       <Show when={props.swatches?.length}>
@@ -866,18 +858,14 @@ export const ColorInput = (props: ColorInputProps) => {
   );
 };
 
-/** Hue in degrees, saturation and brightness in percent of a `#rrggbb` colour, rounded as the thumbs say them. */
-const hsv = (hex: string) => {
-  const channels = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
-  const [r, g, b] = channels ? channels.slice(1).map((pair) => Number.parseInt(pair, 16) / 255) : [0, 0, 0];
-  const max = Math.max(r!, g!, b!);
-  const spread = max - Math.min(r!, g!, b!);
-  const hue = spread === 0 ? 0 : max === r ? ((g! - b!) / spread) % 6 : max === g ? (b! - r!) / spread + 2 : (r! - g!) / spread + 4;
-  return {
-    hue: Math.round((hue * 60 + 360) % 360),
-    saturation: Math.round(max === 0 ? 0 : (spread / max) * 100),
-    brightness: Math.round(max * 100),
-  };
+/**
+ * Saturation and brightness in percent, read from where core puts the thumb of the colour surface (`--area-x` and
+ * `--area-y`, fractions of the surface): the words follow the colour core holds, also on black or white.
+ */
+const areaPercents = (attrs: Record<string, unknown>) => {
+  const style = typeof attrs.style === "string" ? attrs.style : "";
+  const fraction = (axis: "x" | "y") => Number(new RegExp(`--area-${axis}:\\s*([\\d.]+)`).exec(style)?.[1] ?? 0);
+  return { saturation: Math.round(fraction("x") * 100), brightness: Math.round(fraction("y") * 100) };
 };
 
 export type DateInputProps = {

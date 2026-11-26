@@ -179,21 +179,19 @@ const callUser = (handler: unknown, event: Event) => {
 const host = { by: "framework", attaches: "all" } as const;
 
 /**
- * Core writes some words for assistive technology in English only, such as a colour slider's "26 degrees". Where the
- * author gives the same attribute (in the page's language), the author's words win, as core lets authors own a label.
+ * Core writes some words for assistive technology in English only, such as a colour slider's "26 degrees". An author's
+ * `valueText` makes them from core's own attributes for the slot (its `aria-valuenow`, its style), in the page's
+ * language, so the words always follow the value core holds.
  */
-const authorWords = ["aria-valuetext"] as const;
-const wordsOfAuthor = (attrs: Props, user: PartProps): Props => {
-  if (!authorWords.some((name) => user[name] != null && attrs[name] !== undefined)) return attrs;
-  const out = { ...attrs };
-  for (const name of authorWords) if (user[name] != null) delete out[name];
-  return out;
-};
+const wordsOfAuthor = (attrs: Props, user: PartProps): Props =>
+  typeof user.valueText === "function" ? { ...attrs, "aria-valuetext": user.valueText(attrs) } : attrs;
 
 /** Element props for a part: attributes, `class`, author handlers (`onKeyDown` …), `ref`, and children. */
 export type PartProps = Props & {
   children?: JSX.Element | ((state: Props) => JSX.Element);
   ref?: (el: HTMLElement) => void;
+  /** The slot's `aria-valuetext`, made from core's attributes for it (see `wordsOfAuthor`). */
+  valueText?: (attrs: Props) => string;
 };
 
 /**
@@ -216,7 +214,7 @@ export function part<P extends Primitive>(
   // Handlers go on the element as native listeners (`on:type`), so core sees the same event order as on a plain
   // element. The author's handler for the same type runs first; `preventDefault` there skips core's.
   const handlers: Props = {};
-  const taken = new Set<string>(["children", "ref"]);
+  const taken = new Set<string>(["children", "ref", "valueText"]);
   for (const type of Object.keys(partHandlers(record))) {
     const authorKey = Object.keys(user).find((key) => key.toLowerCase() === `on${type}`);
     if (authorKey) taken.add(authorKey);

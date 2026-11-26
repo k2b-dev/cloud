@@ -106,7 +106,7 @@ test("tags: Enter adds the typed text as a chip, Backspace in the empty field ta
     expect(
       await page
         .locator('input[type="hidden"][name="domains"]')
-        .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value)),
+        .evaluateAll((inputs) => inputs.map((input) => (input instanceof HTMLInputElement ? input.value : ""))),
     ).toEqual(["werkstatt.example"]);
     await page.getByRole("button", { name: "werkstatt.example entfernen" }).click();
     await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 0);
@@ -206,14 +206,19 @@ test("disclosure and folded group open and close in place and say so", async () 
 // What a form sends and what its reset puts back, read as the browser sends it.
 const sent = (page: Page) =>
   page.evaluate(() => {
-    const form = document.getElementById("sent") as HTMLFormElement;
+    const form = document.getElementById("sent");
+    if (!(form instanceof HTMLFormElement)) return { entries: [], valid: false };
     const entries = [...new FormData(form)].map(([name, value]) => ({
       name,
       value: typeof value === "string" ? value : `file:${value.name}`,
     }));
     return { entries, valid: form.checkValidity() };
   });
-const reset = (page: Page) => page.evaluate(() => (document.getElementById("sent") as HTMLFormElement).reset());
+const reset = (page: Page) =>
+  page.evaluate(() => {
+    const form = document.getElementById("sent");
+    if (form instanceof HTMLFormElement) form.reset();
+  });
 type Entry = { name: string; value: string };
 const entriesOf = (entries: Entry[], name: string) => entries.filter((entry) => entry.name === name).map((entry) => entry.value);
 const files = (entries: Entry[]) => entries.filter((entry) => entry.value.startsWith("file:"));
@@ -263,12 +268,56 @@ test("slider: its thumb carries the field's label and hint; a form's reset puts 
     );
     await thumb.focus();
     await page.keyboard.press("End");
-    await page.waitForFunction(() => (document.querySelector("#sent .k2-slider-value") as HTMLElement | null)?.textContent === "100");
+    await page.waitForFunction(() => document.querySelector("#sent .k2-slider-value")?.textContent === "100");
     expect(entriesOf((await sent(page)).entries, "level")).toEqual(["100"]);
     await reset(page);
-    await page.waitForFunction(() => (document.querySelector("#sent .k2-slider-value") as HTMLElement | null)?.textContent === "30");
+    await page.waitForFunction(() => document.querySelector("#sent .k2-slider-value")?.textContent === "30");
     expect(await thumb.inputValue()).toBe("30");
     expect(entriesOf((await sent(page)).entries, "level")).toEqual(["30"]);
+  });
+});
+
+test("image: while a picked image is still being read, the required field keeps the form from being sent", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__k2Gate = new Promise((done) => {
+        Reflect.set(window, "__k2Open", done);
+      });
+    });
+    await field(page, "Banner")
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await page.waitForFunction(() => document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
+    expect((await sent(page)).valid).toBe(false);
+    await page.evaluate(() => Reflect.get(window, "__k2Open")?.());
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    expect((await sent(page)).valid).toBe(true);
+  });
+});
+
+test("slider held by the page: after a form reset the input, the number shown and the value sent all show the page's value", async () => {
+  await withPage(async (page) => {
+    const thumb = page.getByRole("slider", { name: "Zoom" });
+    await thumb.focus();
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-slider-value")[1]?.textContent === "100");
+    await reset(page);
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 50)));
+    expect(await thumb.inputValue()).toBe("100");
+    expect(await page.evaluate(() => document.querySelectorAll("#sent .k2-slider-value")[1]?.textContent)).toBe("100");
+    expect(entriesOf((await sent(page)).entries, "zoom")).toEqual(["100"]);
+  });
+});
+
+test("colour on black: a hue step says the hue core holds, not the black of the code", async () => {
+  await withPage(async (page) => {
+    const hue = field(page, "Ton").getByRole("slider", { name: "Farbton" });
+    await hue.focus();
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('#sent [aria-label="Farbton"]')].some((thumb) => thumb.getAttribute("aria-valuenow") === "1"),
+    );
+    expect(await hue.getAttribute("aria-valuetext")).toBe("1 Grad");
   });
 });
 
