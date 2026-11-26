@@ -17,6 +17,27 @@ state that shows an open menu, panel, dialog or toast is `{ render, press }`:
 the screen, and the names of the buttons and menu entries a person presses,
 in order, to open it.
 
+## The recipes and the look
+
+Every screen must meet [the look](look.md), recipes included. The recipes
+and pictures of this version show the structure of each screen (which
+primitive stands where, the states, the phone), not yet its identity: by
+the wireframe check in look.md, each of them is still a wireframe. Copy
+the structure, then add what look.md asks. Where a part is missing, write
+the gap at its place and name it in your report. Never copy a recipe's
+bare look as the result.
+
+| Recipe | What it still lacks (rule in look.md) |
+| --- | --- |
+| `frame`, `list-detail`, `mail`, `actions` | hero (1), marks and one data picture per row (3), tinted head of the open entry (5), two-column detail on a large screen (12) |
+| `table`, `filtered-table`, `states` | hero with its trend (1), marks and a data column (3), the screen filled with real data, a context column on a large screen (12) |
+| `record`, `record-groups` | tinted object head with sign and key facts (5), people beside what they did (3) |
+| `form`, `form-detail`, `settings` | the object's tinted head (5); settings as `Setting` rows (10) |
+| `dialogs`, `content` | marks and people in rows (3), a large screen that uses its room (12) |
+
+Each rebuilt recipe carries its screen brief (look.md, "Write the screen
+brief") at the top of its section here.
+
 ## frame.tsx: the frame of an app
 
 ![frame at 1440 px](../images/frame-1440.png)

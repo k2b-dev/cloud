@@ -21,6 +21,15 @@ That is the point: two agents building the same screen get the same result.
 `@k2b/ui/v2` is **provisional** until the maintainer approves it. Names and
 props may change in any release; check the types of the installed version.
 
+## The look is part of done
+
+Every screen follows [the look](references/look.md): a screen brief before
+code, one hero with its real trend, the app's colour where it means
+something, one data picture per row, a tinted head for the open object, and
+a large screen that uses its room. Run its wireframe check on your pictures
+before you call a screen ready: a screen that fails it is not done, however
+clean it is.
+
 ## Start here
 
 1. Find the screen in the task table below and open its recipe in
