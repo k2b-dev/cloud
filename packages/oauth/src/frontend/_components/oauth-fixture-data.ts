@@ -179,7 +179,7 @@ const days = (seed: number, active: number) =>
 export const fixtureConnections = (clients: readonly ClientRow[]): Record<string, ClientConnections> =>
   Object.fromEntries(
     clients.map((client, index) => {
-      const use = USE[client.name] ?? { active: (index * 7) % 13, minutesAgo: 30 + index * 11 };
+      const use = USE[client.name] ?? { active: 1 + ((index * 7) % 13), minutesAgo: 30 + index * 11 };
       const people = PEOPLE.slice(index % 4, (index % 4) + Math.min(3, use.active)).map((name) => ({ name }));
       return [
         client.clientId,
