@@ -6,7 +6,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { transparentIslands } from "../../scripts/v2-island-css";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { describeV2Page, measureV2Layout } from "./testing";
 
@@ -95,6 +95,7 @@ const page = async (css: string, html: string, width: number, wrap?: string) => 
         island.append(element);
       });
     }, wrap);
+  await settled(opened);
   return opened;
 };
 
