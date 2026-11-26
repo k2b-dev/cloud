@@ -2427,19 +2427,24 @@
   );
   border-radius: 0.5rem;
   color: var(--k2b-text);
-  background: var(--k2b-calendar-event-surface);
-  /* The edge lies inside, so the entry inside keeps its box. */
-  box-shadow: inset 0 0 0 1px var(--k2b-calendar-edge);
+  /* Filled in the entry's colour, with a colour edge of 3 px at its start (Apple Calendar's band); the edge lies
+     inside, so the entry inside keeps its box. */
+  background: color-mix(in srgb, var(--k2b-calendar-accent) 12%, var(--k2b-surface));
+  box-shadow: inset 3px 0 0 var(--k2b-calendar-edge);
   transition: background-color 150ms ease, opacity 180ms ease, box-shadow 180ms ease;
 }
 
+.k2b-ui [dir="rtl"] .k2b-calendar-band {
+  box-shadow: inset -3px 0 0 var(--k2b-calendar-edge);
+}
+
 .k2b-ui .k2b-calendar-band:hover {
-  background: var(--k2b-calendar-event-hover);
+  background: color-mix(in srgb, var(--k2b-calendar-accent) 18%, var(--k2b-surface));
 }
 
 .k2b-ui .k2b-calendar-band:has(> .k2b-calendar-event[data-selected="true"]) {
-  background: color-mix(in srgb, var(--k2b-calendar-accent) 12%, var(--k2b-surface));
-  box-shadow: inset 0 0 0 2px var(--k2b-calendar-edge);
+  background: color-mix(in srgb, var(--k2b-calendar-accent) 22%, var(--k2b-surface));
+  box-shadow: inset 3px 0 0 var(--k2b-calendar-edge), inset 0 0 0 1px var(--k2b-calendar-edge);
 }
 
 .k2b-ui .k2b-calendar-band:focus-within {
@@ -2650,7 +2655,7 @@
 /* The running event fills up with the time that passed. */
 .k2b-ui .k2b-calendar-band[data-running="true"] {
   box-shadow:
-    inset 0 0 0 1px var(--k2b-calendar-edge),
+    inset 3px 0 0 var(--k2b-calendar-edge),
     0 0 0 1px var(--k2b-calendar-edge);
 }
 

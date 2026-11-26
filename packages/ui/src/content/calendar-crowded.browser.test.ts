@@ -5,8 +5,9 @@ import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // A day with 30 entries that overlap many deep (the worst week and day of Spaces, W3): in the day and week views a
-// band's title never ends in a cut line or in "…" after every word, and beyond a few columns side by side the rest of
-// the overlapping entries collapse into "+n", which opens the list of that hour.
+// band is filled in its colour with a colour edge at its start, its title (at most two whole lines) never ends in a cut
+// line or in "…" after every word, and from the third overlapping entry on the rest collapse into "+n", which opens their
+// list.
 const packageRoot = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(packageRoot, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "calendar-crowded.fixture.ts");
@@ -31,7 +32,13 @@ const events = Array.from({ length: 30 }, (_, index) => {
 });
 render(() => createComponent(Calendar, { view: options.view, date: "2026-11-05", events, timeZone: "Europe/Berlin", dayHours: [7, 21] }), document.getElementById("host"));
 `;
-const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", conditions: ["browser"], format: "iife" });
+const build = await Bun.build({
+  entrypoints: [entry],
+  files: { [entry]: fixture },
+  target: "browser",
+  conditions: ["browser"],
+  format: "iife",
+});
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the crowded calendar fixture.");
 const script = await build.outputs[0]!.text();
 
@@ -101,7 +108,13 @@ const bands = (page: Page) =>
           // a title of several lines has no line wider than itself: then no word ends in "…" of its own (a title of one
           // line may end in "…" once)
           wide: getComputedStyle(title).whiteSpace !== "nowrap" && title.scrollWidth > title.clientWidth + 1,
-          titleFirst: Boolean(title.nextElementSibling?.matches(".k2b-calendar-event__meta") || !band.querySelector(".k2b-calendar-event__meta")),
+          titleFirst: Boolean(
+            title.nextElementSibling?.matches(".k2b-calendar-event__meta") || !band.querySelector(".k2b-calendar-event__meta"),
+          ),
+          lines: Math.round(box.height / line),
+          // filled in its colour, with a colour edge of 3 px at its start
+          filled: getComputedStyle(band).backgroundColor !== "rgb(255, 255, 255)",
+          edge: getComputedStyle(band).boxShadow.includes("3px 0px 0px"),
         },
       ];
     }),
@@ -115,17 +128,29 @@ for (const view of ["week", "day"] as const)
         const shown = await bands(page);
         expect(shown.length).toBeGreaterThan(0);
         for (const band of shown) {
-          expect({ id: band.id, inside: band.inside, whole: band.whole, wide: band.wide, titleFirst: band.titleFirst }).toEqual({
+          expect({
+            id: band.id,
+            inside: band.inside,
+            whole: band.whole,
+            wide: band.wide,
+            titleFirst: band.titleFirst,
+            twoLinesAtMost: band.lines <= 2,
+            filled: band.filled,
+            edge: band.edge,
+          }).toEqual({
             id: band.id,
             inside: true,
             whole: true,
             wide: false,
             titleFirst: true,
+            twoLinesAtMost: true,
+            filled: true,
+            edge: true,
           });
         }
         // at most a few columns side by side; the rest are counted in "+n" buttons, and together they are all 30
         const columns = new Set(shown.map((band) => band.left)).size;
-        expect(columns).toBeLessThanOrEqual(view === "week" ? 3 : 4);
+        expect(columns).toBeLessThanOrEqual(2);
         const more = page.locator(".k2b-calendar-more");
         expect(await more.count()).toBeGreaterThan(0);
         const counts = await more.evaluateAll((buttons) => buttons.map((button) => Number(button.textContent?.replace("+", "") ?? 0)));

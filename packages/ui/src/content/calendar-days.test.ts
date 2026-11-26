@@ -307,7 +307,7 @@ describe("lanes and geometry", () => {
     ]);
   });
 
-  test("beyond the cap an overlap keeps its first lanes and collapses the rest into +n by the hour they start in", () => {
+  test("beyond the cap an overlap keeps its first lanes and collapses the rest into one +n", () => {
     const band = (item: string, start: number, end: number) => ({ item, start, end });
     const lanes = dayLanes(
       [band("a", 600, 720), band("b", 600, 720), band("c", 610, 720), band("d", 620, 720), band("e", 670, 720), band("f", 800, 860)],
@@ -321,10 +321,7 @@ describe("lanes and geometry", () => {
       // a band alone keeps the whole width and no "+n"
       ["f", 0, 1, false],
     ]);
-    expect(more.map((entry) => [entry.hour, entry.minute, entry.bands.map((each) => each.item)])).toEqual([
-      [600, 620, ["d"]],
-      [660, 670, ["e"]],
-    ]);
+    expect(more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([[620, ["d", "e"]]]);
     // within the cap nothing collapses
     expect(capLanes(lanes, 5).more).toEqual([]);
   });

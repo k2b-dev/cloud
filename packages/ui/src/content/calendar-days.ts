@@ -270,17 +270,16 @@ export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayL
     ({ item, lane, lanes, groupId }) => ({ ...item, lane, lanes, group: groupId }),
   );
 
-/** The entries of an overlap that do not fit side by side, by the hour they start in: one "+n" each. */
-export type DayMore<T> = { group: number; hour: number; minute: number; bands: DayLane<T>[] };
+/** The entries of an overlap that do not fit side by side: one "+n" for them, at the first one's start. */
+export type DayMore<T> = { group: number; minute: number; bands: DayLane<T>[] };
 
 /**
  * At most `max` bands side by side: in an overlap with more lanes, the bands of the first `max` lanes stay (with room
- * for "+n" beside them), and the others collapse by the hour they start in. Each "+n" stands at its first entry's
- * start and stands for the entries of that hour.
+ * for "+n" beside them), and the others collapse into one "+n" per overlap, which stands at their first start.
  */
 export const capLanes = <T>(lanes: readonly DayLane<T>[], max: number): { shown: DayLane<T>[]; more: DayMore<T>[] } => {
   const shown: DayLane<T>[] = [];
-  const more = new Map<string, DayMore<T>>();
+  const more = new Map<number, DayMore<T>>();
   for (const band of lanes) {
     if (band.lanes <= max) {
       shown.push(band);
@@ -290,12 +289,10 @@ export const capLanes = <T>(lanes: readonly DayLane<T>[], max: number): { shown:
       shown.push({ ...band, lanes: max, more: true });
       continue;
     }
-    const hour = Math.floor(Math.max(0, band.start) / 60) * 60;
-    const key = `${band.group}:${hour}`;
-    const entry = more.get(key) ?? { group: band.group, hour, minute: Math.max(0, band.start), bands: [] };
+    const entry = more.get(band.group) ?? { group: band.group, minute: Math.max(0, band.start), bands: [] };
     entry.bands.push(band);
     entry.minute = Math.min(entry.minute, Math.max(0, band.start));
-    more.set(key, entry);
+    more.set(band.group, entry);
   }
   return { shown, more: [...more.values()].sort((left, right) => left.minute - right.minute) };
 };

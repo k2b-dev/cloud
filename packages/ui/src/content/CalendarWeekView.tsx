@@ -50,6 +50,7 @@ import {
   TimeCheck,
   TimeGap,
   TimeMarker,
+  TimeMore,
   TimeOverlays,
   TimeQuickCreate,
   type TimeView,
@@ -1049,7 +1050,8 @@ const WeekColumn = (props: {
   const timeline = createMemo(() =>
     [
       ...gaps().map((gap) => ({ at: gap.start, kind: "gap" as const, gap })),
-      ...bands().map((band) => ({ at: Math.max(0, band.start), kind: "band" as const, band })),
+      ...bands().shown.map((band) => ({ at: Math.max(0, band.start), kind: "band" as const, band })),
+      ...bands().more.map((more) => ({ at: more.minute, kind: "more" as const, more })),
       ...markers().map((marker) => ({ at: marker.minute, kind: "marker" as const, marker })),
     ].sort((left, right) => left.at - right.at),
   );
@@ -1129,6 +1131,15 @@ const WeekColumn = (props: {
               tabIndex={props.tabOf(`b:${entry.band.item.id}:${props.dayKey}`)}
               stop={{ id: `b:${entry.band.item.id}:${props.dayKey}`, column: props.column, minute: entry.band.start }}
               scroller={props.scroller}
+            />
+          ) : entry.kind === "more" ? (
+            <TimeMore
+              view={view}
+              more={entry.more}
+              dayKey={props.dayKey}
+              expanded={props.expanded}
+              tabIndex={props.tabOf(`x:${props.dayKey}:${entry.more.minute}`)}
+              stop={{ id: `x:${props.dayKey}:${entry.more.minute}`, column: props.column, minute: entry.more.minute }}
             />
           ) : (
             <TimeMarker

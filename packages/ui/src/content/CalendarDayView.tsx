@@ -47,6 +47,7 @@ import {
   TimeCheck,
   TimeGap,
   TimeMarker,
+  TimeMore,
   TimeOverlays,
   TimeQuickCreate,
   type TimeView,
@@ -601,7 +602,8 @@ const DaySection = (props: {
   const timeline = createMemo<
     Array<
       | { at: number; kind: "gap"; gap: ReturnType<typeof gaps>[number] }
-      | { at: number; kind: "band"; band: ReturnType<typeof bands>[number] }
+      | { at: number; kind: "band"; band: ReturnType<typeof bands>["shown"][number] }
+      | { at: number; kind: "more"; more: ReturnType<typeof bands>["more"][number] }
       | { at: number; kind: "marker"; marker: ReturnType<typeof markers>[number] }
     >
   >(
@@ -613,7 +615,7 @@ const DaySection = (props: {
               (row) => row.kind === "gap" && row.gap.start === gap.start && row.gap.end === gap.end && row.gap.past === gap.past,
             ) ?? { at: gap.start, kind: "gap" as const, gap },
         ),
-        ...bands().map(
+        ...bands().shown.map(
           (band) =>
             previous.find((row) => row.kind === "band" && row.band === band) ?? {
               at: Math.max(0, band.start),
@@ -621,6 +623,7 @@ const DaySection = (props: {
               band,
             },
         ),
+        ...bands().more.map((more) => ({ at: more.minute, kind: "more" as const, more })),
         ...markers().map(
           (marker) =>
             previous.find((row) => row.kind === "marker" && row.marker === marker) ?? {
@@ -872,6 +875,8 @@ const DaySection = (props: {
                 hourPx={56}
                 scroller={props.scroller}
               />
+            ) : entry.kind === "more" ? (
+              <TimeMore view={view} more={entry.more} dayKey={props.dayKey} expanded={expanded()} />
             ) : (
               <TimeMarker
                 view={view}

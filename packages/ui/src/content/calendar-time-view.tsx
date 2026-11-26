@@ -6,6 +6,7 @@ import {
   addDayKeys,
   buildDays,
   type CalendarDayHours,
+  capLanes,
   clockAt,
   DAY_MINUTES,
   type DayEntry,
@@ -13,6 +14,7 @@ import {
   type DayGeometry,
   type DayLane,
   type DayModel,
+  type DayMore,
   type DaySpan,
   dayKeyOf,
   dayLanes,
@@ -865,7 +867,12 @@ export const TimeBand = (props: {
   const size = () => (pixels() < 27 ? "xs" : pixels() < 40 ? "s" : "m");
   const checked = () => view.checkedOf(event());
   const remaining = () => (running() ? view.messages().calendarRemaining({ duration: view.duration(props.band.end - now()) }) : undefined);
-  const lines = () => Math.max(1, Math.floor((pixels() - 24) / 15));
+  // The title takes whole lines, at most two, and the time stands below it when a line of it fits too: a line of the
+  // title is 15 px in the week, 16 px in the day view (see the band's CSS), the time takes 19 px with its margin, and
+  // the band's padding 10 px. Nothing is cut through its letters.
+  const titleLine = () => (props.hourPx >= 56 ? 16 : 15);
+  const meta = () => pixels() >= 10 + titleLine() + 19;
+  const lines = () => Math.min(2, Math.max(1, Math.floor((pixels() - 10 - (meta() ? 19 : 0)) / titleLine())));
   return (
     <div
       class="k2b-calendar-band"
@@ -880,7 +887,9 @@ export const TimeBand = (props: {
       data-cut-bottom={props.band.end > limit() ? "true" : undefined}
       data-moving={view.movingId() === event().id ? "true" : undefined}
       data-display={event().display}
+      data-meta={meta() ? undefined : "none"}
       style={{
+        "--k2b-calendar-more": props.band.more ? "1.75rem" : undefined,
         "--k2b-calendar-accent": eventAccent(event()),
         "--k2b-calendar-lane": String(props.band.lane),
         "--k2b-calendar-lanes": String(props.band.lanes),
@@ -940,6 +949,88 @@ export const TimeBand = (props: {
         </Show>
       </Show>
     </div>
+  );
+};
+
+/**
+ * "+n": the entries of an overlap beyond two side by side, at the column's end where the first of them starts. It opens
+ * a popover with each of them, its time and its title, as the month view's "+n" opens its day.
+ */
+export const TimeMore = (props: {
+  view: TimeView;
+  more: DayMore<CalendarEvent>;
+  dayKey: string;
+  expanded: boolean;
+  tabIndex?: number;
+  stop?: CalendarStop;
+}) => {
+  const view = props.view;
+  const messages = useCalendarMessages();
+  let button: HTMLButtonElement | undefined;
+  let list: HTMLDivElement | undefined;
+  const [open, setOpen] = createSignal(false);
+  const label = () => messages().calendarMoreEventsAt({ count: props.more.bands.length, time: view.clock(props.more.minute) });
+  const top = () => dayTopTerms(view.wake(), props.expanded, props.more.minute);
+  const toggle = () => {
+    if (!list || !button) return;
+    if (list.matches(":popover-open")) {
+      list.hidePopover();
+      return;
+    }
+    list.showPopover();
+    placeCalendarPopover(button, list);
+    list.querySelector<HTMLElement>("a,button,[tabindex]:not([tabindex='-1'])")?.focus();
+  };
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        class="k2b-calendar-more"
+        style={{ top: `calc(${termsCss(top())} + 1px)` }}
+        aria-label={label()}
+        aria-haspopup="dialog"
+        aria-expanded={open() ? "true" : "false"}
+        tabIndex={props.tabIndex}
+        data-stop={props.stop?.id}
+        data-col={props.stop?.column}
+        data-minute={props.stop?.minute}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={toggle}
+      >
+        +{props.more.bands.length}
+      </button>
+      <div
+        ref={list}
+        class="k2b-calendar-popover"
+        popover="auto"
+        role="dialog"
+        aria-label={label()}
+        data-kind="more"
+        onToggle={(event) => {
+          const opened = event.newState === "open";
+          setOpen(opened);
+          if (!opened && list?.contains(document.activeElement)) button?.focus({ preventScroll: true });
+        }}
+      >
+        <h2>{label()}</h2>
+        <ul>
+          <For each={props.more.bands}>
+            {(band) => (
+              <li>
+                <EventChip
+                  event={view.normalized(band.item, props.dayKey)}
+                  owner={view.props.owner}
+                  href={eventHref(view.props.owner, band.item)}
+                  compact
+                  leadingTime={`${view.clock(band.start)}–${view.clock(band.end)}`}
+                />
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+    </>
   );
 };
 
@@ -1184,11 +1275,14 @@ const startDraftResize = (view: TimeView, pointerEvent: PointerEvent, edge: "sta
 /** Free time of a day with the gap of now trimmed, as both views draw it. */
 export const dayGaps = (view: TimeView, key: string) => freeGaps(view.dayOf(key).bands, view.wake(), view.nowIn(key));
 
-/** The bands of a day with their lanes, cut to what its timeline draws. */
+/** How many entries stand side by side in a day's timeline; from the third overlapping one on, they collapse into "+n". */
+export const MAX_LANES = 2;
+
+/** The bands of a day with their lanes, cut to what its timeline draws; an overlap beyond two lanes gives a "+n". */
 export const dayBands = (view: TimeView, key: string, expanded: boolean) => {
   const limit = expanded ? DAY_MINUTES : view.wake();
   const visible = view.dayOf(key).bands.filter((band) => Math.min(limit, band.end) > Math.max(0, band.start));
-  return dayLanes(visible, LANE_MINUTES);
+  return capLanes(dayLanes(visible, LANE_MINUTES), MAX_LANES);
 };
 
 /** Entries the folded night hides, as chips with their time. */
