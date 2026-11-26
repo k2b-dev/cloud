@@ -648,6 +648,10 @@
   min-width: 0;
   flex: none;
 }
+/* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
+.k2-ui .k2-scroll > .k2-bar:last-child {
+  border-bottom: 0;
+}
 .k2-ui .k2-bar-start,
 .k2-ui .k2-bar-end {
   display: flex;
