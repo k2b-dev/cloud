@@ -30,8 +30,8 @@ export const Empty = (props: EmptyProps) => (
 
 export type FailedProps = {
   /**
-   * What could not be loaded and what stays as it is, such as "Unterhaltungen konnten nicht geladen werden. Deine
-   * Ansicht und Auswahl bleiben erhalten."
+   * What could not be loaded and what stays as it is, in one or two sentences. Example: "Unterhaltungen konnten nicht
+   * geladen werden. Deine Ansicht und Auswahl bleiben erhalten."
    */
   text: string;
   /** Loads again; the button says "Erneut versuchen" in the language of the page. */

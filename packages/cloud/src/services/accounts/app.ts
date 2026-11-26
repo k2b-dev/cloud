@@ -11,6 +11,7 @@ import type {
   ServiceAccountKind,
   ServiceAccountStatus,
   User,
+  UserDirectoryEntry,
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
@@ -340,6 +341,20 @@ export const accountsAppService = {
         total: result.total,
         hasNext: result.pagination.has_next,
       };
+    },
+    /**
+     * The administration's user list with its filters and sort: the one query its page, its API and its CLI share.
+     * It checks the administrator role itself, so a page, an API or a CLI reaching it gets the same answer.
+     */
+    directory: async (
+      config: Omit<users.UserDirectoryQuery, "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
+    ): Promise<Result<Paginated<UserDirectoryEntry>>> => {
+      // The list names every account with its sign-ins and groups: administrators only, whichever way it is reached.
+      if (!isAdminActor(config.actor)) return fail(err.forbidden("Admin access required"));
+      const { actor: _actor, pagination, ...query } = config;
+      const { page, perPage } = paginate(pagination);
+      const result = await users.directory({ ...query, page, perPage });
+      return ok({ items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total });
     },
     get: async (config: { id: string } | { uid: string }, options?: Parameters<typeof users.get>[1]): Promise<User | null> =>
       users.get(config, options),

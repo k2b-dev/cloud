@@ -42,6 +42,30 @@ export const BaseUserSchema = z.object({
 });
 export type BaseUser = z.infer<typeof BaseUserSchema>;
 
+/** Where an account stands: it signed in, it was created and never signed in, or its validity ran out. */
+export const UserDirectoryStatusSchema = z.enum(["active", "invited", "expired"]);
+export type UserDirectoryStatus = z.infer<typeof UserDirectoryStatusSchema>;
+
+/** A role as the user list names it: administrators, other full accounts, and guests. */
+export const UserDirectoryRoleSchema = z.enum(["admin", "member", "guest"]);
+export type UserDirectoryRole = z.infer<typeof UserDirectoryRoleSchema>;
+
+/** One account of the administration's user list, with what the list shows and filters by. */
+export const UserDirectoryEntrySchema = BaseUserSchema.extend({
+  role: UserDirectoryRoleSchema,
+  status: UserDirectoryStatusSchema,
+  /** The last Cloud sign-in, or null when the account never signed in. */
+  lastLogin: z.string().nullable(),
+  accountExpires: z.string().nullable(),
+  /** Whether the account has at least one passkey. */
+  passkey: z.boolean(),
+  /** Its direct groups by name, personal Linux groups left out; at most `USER_DIRECTORY_GROUPS_MAX`. */
+  groups: z.array(z.object({ id: z.string(), name: z.string() })),
+  /** How many such groups it has in all. */
+  groupCount: z.number().int().nonnegative(),
+});
+export type UserDirectoryEntry = z.infer<typeof UserDirectoryEntrySchema>;
+
 export const IpaUserDataSchema = z.object({
   uidNumber: z.number().nullable(),
   phone: z.string().nullable(),

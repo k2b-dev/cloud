@@ -203,6 +203,6 @@ test("opening a group from page 2 of the list shows its first page of members in
     expect(response.status).toBe(200);
     expect(pages).toEqual([1]);
     for (const name of ["team-1", "team-2", "team-3"]) expect(html).toContain(`>${name}<`);
-    expect(html).toContain('href="/app/accounts/groups?search=fin&amp;page=2&amp;scope=managed"');
+    expect(html).toContain('href="/app/accounts/groups?q=fin&amp;page=2&amp;scope=managed"');
   });
 });

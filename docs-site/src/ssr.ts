@@ -13,6 +13,8 @@ export type PageOptions = {
   path: string;
   theme: ThemeMode;
   styles?: string[];
+  /** The page's language (`<html lang>`); English when not set. */
+  lang?: string;
 };
 
 const escapeAttribute = (value: string) =>
@@ -22,14 +24,14 @@ export const { config, html, plugin } = createConfig<PageOptions>({
   dev: process.env.NODE_ENV !== "production",
   rootDir: import.meta.dir,
   external: solidExternals,
-  template: ({ body, scripts, title, description, path, theme, styles = [] }) => {
+  template: ({ body, scripts, title, description, path, theme, styles = [], lang = "en" }) => {
     const canonical = siteUrl ? `${siteUrl}${path}` : path;
     const stylesheets = ["/assets/homepage.css", ...styles]
       .map((href) => `<link rel="stylesheet" href="${escapeAttribute(href)}">`)
       .join("\n    ");
 
     return `<!doctype html>
-<html lang="en" class="${theme}" data-theme="${theme}" style="color-scheme:${theme}">
+<html lang="${escapeAttribute(lang)}" class="${theme}" data-theme="${theme}" style="color-scheme:${theme}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
