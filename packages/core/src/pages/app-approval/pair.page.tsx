@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { accounts, appApproval, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { accounts, appApproval } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { z } from "zod";
 import { ssr } from "../../config";
@@ -18,7 +18,6 @@ export default ssr<AuthContext>(async (c) => {
   if (id !== actor.id && !config?.adminPairing) return ssr.error(c, 403);
   const user = id === actor.id ? actor : await accounts.users.get({ id });
   if (!user) return ssr.error(c, 404);
-  const policy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = appApprovalMessages.resolve([locale]);
   c.header("Referrer-Policy", "no-referrer");
@@ -29,7 +28,7 @@ export default ssr<AuthContext>(async (c) => {
     // The pairing dialog's close returns to `returnTo`, so the shell draws no way up above it.
     <Layout c={c} fullWidth ui="v2" title={t.pair}>
       <PairScreen
-        self={id === actor.id ? { user: accountUserView(actor, policy.login.label, accountMessages.resolve([locale]).t) } : null}
+        self={id === actor.id ? { user: accountUserView(actor, accountMessages.resolve([locale]).t) } : null}
         userId={id}
         actorId={actor.id}
         name={`${user.displayName || user.uid} (${user.uid})`}

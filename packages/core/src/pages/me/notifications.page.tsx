@@ -1,5 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale, getTimeZone } from "@k2b/cloud/server";
-import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { notifications } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { accountUserView } from "./account-view";
@@ -8,7 +8,6 @@ import NotificationsScreen from "./NotificationsScreen.island";
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
-  const categoryPolicy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
   const [preferences, quiet] = await Promise.all([
@@ -25,7 +24,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.notifications }]}>
       <NotificationsScreen
-        user={accountUserView(user, categoryPolicy.login.label, t)}
+        user={accountUserView(user, t)}
         preferences={preferences}
         apps={apps}
         quiet={quiet}

@@ -32,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.access }]}>
       <AccessScreen
-        user={accountUserView(user, categoryPolicy.login.label, t)}
+        user={accountUserView(user, t)}
         actionsUser={profileActionsUser(user)}
         appName={rawAppName || "Cloud"}
         freeIpaEnabled={freeIpaEnabled}

@@ -50,10 +50,10 @@ export default function ActivityScreen(props: ActivityScreenProps) {
         ? t().deliveryCount({ count: content.total })
         : t().activityCount({ count: content.total });
   };
+  const hasEntries = () => (props.content.kind === "open" ? props.content.approvals.items.length > 0 : props.content.total > 0);
   const lead = () => {
     const content = props.content;
-    if (content.kind === "open")
-      return content.approvals.items.length > 0 ? t().waitingForYou({ count: content.approvals.items.length }) : t().nothingWaiting;
+    if (content.kind === "open") return t().waitingForYou({ count: content.approvals.items.length });
     const problems = content.rows.filter((row) => row.state.tone === "bad" || row.state.tone === "warn").length;
     if (content.kind === "deliveries") return problems > 0 ? t().notDelivered({ count: problems }) : t().allDelivered;
     return problems > 0 ? t().deniedAttempts({ count: problems }) : t().nothingUnusual;
@@ -78,7 +78,10 @@ export default function ActivityScreen(props: ActivityScreenProps) {
                 void swapPage(activityPageHref(t(), next, 1), { replace: true, scroll: "preserve" });
               }}
             />
-            <StatusRow lead={lead()} facts={[{ value: count() }]} />
+            {/* with nothing to show the empty state speaks alone, so the lead never says it a second time */}
+            <Show when={hasEntries()}>
+              <StatusRow lead={lead()} facts={[{ value: count() }]} />
+            </Show>
           </>
         }
       >

@@ -1,14 +1,6 @@
 import { cloudMcpResourceUri, publicCloudOrigin } from "@k2b/cloud/api";
 import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
-import {
-  appApproval,
-  audit,
-  coreSettings,
-  pwaDevices,
-  readAccountCategoryPolicy,
-  serviceAccountCredentials,
-  webauthn,
-} from "@k2b/cloud/services";
+import { appApproval, audit, coreSettings, pwaDevices, serviceAccountCredentials, webauthn } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
@@ -42,33 +34,21 @@ export default ssr<AuthContext>(async (c) => {
   const appToken = phonesAvailable ? auth.session.getAppToken(c) : undefined;
   const appSession = appToken ? await auth.session.authenticateRequest(c, appToken) : null;
   const currentDeviceId = appSession?.data.kind === "app" && appSession.user.id === user.id ? appSession.data.deviceId : undefined;
-  const [
-    categoryPolicy,
-    approvalConfig,
-    devices,
-    freeIpaEnabledRaw,
-    passkeys,
-    phones,
-    apiKeys,
-    rawAppName,
-    rawAppUrl,
-    openAiApiEnabled,
-    activityPage,
-  ] = await Promise.all([
-    readAccountCategoryPolicy(),
-    appApproval.config(false).catch(() => null),
-    session
-      ? appApproval.listDevices({ userId: session.user.id, sid: session.data.sid, admin: isAdmin }).catch(() => null)
-      : Promise.resolve(null),
-    coreSettings.get<boolean>("freeipa.enable"),
-    webauthn.listForUser({ userId: user.id }),
-    phonesAvailable ? pwaDevices.list({ userId: user.id }, currentDeviceId) : Promise.resolve(null),
-    serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
-    coreSettings.get<string>("app.name"),
-    coreSettings.get<string>("app.url"),
-    coreSettings.get<boolean>("ai.openai_api_enabled"),
-    audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 4 } }),
-  ]);
+  const [approvalConfig, devices, freeIpaEnabledRaw, passkeys, phones, apiKeys, rawAppName, rawAppUrl, openAiApiEnabled, activityPage] =
+    await Promise.all([
+      appApproval.config(false).catch(() => null),
+      session
+        ? appApproval.listDevices({ userId: session.user.id, sid: session.data.sid, admin: isAdmin }).catch(() => null)
+        : Promise.resolve(null),
+      coreSettings.get<boolean>("freeipa.enable"),
+      webauthn.listForUser({ userId: user.id }),
+      phonesAvailable ? pwaDevices.list({ userId: user.id }, currentDeviceId) : Promise.resolve(null),
+      serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
+      coreSettings.get<string>("app.name"),
+      coreSettings.get<string>("app.url"),
+      coreSettings.get<boolean>("ai.openai_api_enabled"),
+      audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 4 } }),
+    ]);
   const now = new Date();
   // relative to the time of this answer, so the server and the first paint agree
   const recent = activityPage.items.map((entry) => ({
@@ -88,7 +68,7 @@ export default ssr<AuthContext>(async (c) => {
       title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.securityAndDevices }]}
     >
       <SecurityScreen
-        user={accountUserView(user, categoryPolicy.login.label, t)}
+        user={accountUserView(user, t)}
         userId={user.id}
         provider={user.provider}
         profile={user.profile}

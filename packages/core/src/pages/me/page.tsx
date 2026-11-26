@@ -14,7 +14,7 @@ import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { keyboardPlatform } from "@k2b/ui";
 import { ssr } from "../../config";
-import { accountUserView } from "./account-view";
+import { accountRoles, accountUserView } from "./account-view";
 import { activityLabel } from "./activity-labels";
 import { type AccountMessages, accountMessages } from "./messages";
 import ProfileScreen from "./ProfileScreen.island";
@@ -87,7 +87,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account }]}>
       <ProfileScreen
-        user={accountUserView(user, categoryPolicy.login.label, t, now)}
+        user={accountUserView(user, t, now)}
         actionsUser={profileActionsUser(user)}
         appName={appName}
         freeIpaEnabled={freeIpaEnabled}
@@ -115,6 +115,7 @@ export default ssr<AuthContext>(async (c) => {
         ]}
         accountFacts={[
           { label: t.accountType, value: accountCategoryLabel(user, categoryPolicy.login.label) },
+          ...(accountRoles(user, t).length > 0 ? [{ label: t.roles, value: accountRoles(user, t).join(", ") }] : []),
           ...(user.ipa?.passwordExpires ? [{ label: t.passwordExpiry, value: formatted(user.ipa.passwordExpires, t.notApplicable) }] : []),
           { label: t.sshKeys, value: t.configuredKeys({ count: user.ipa?.sshPublicKeys.length ?? 0 }) },
         ]}

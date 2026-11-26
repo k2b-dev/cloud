@@ -1,7 +1,7 @@
 import type { NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 import { ApprovalListQuerySchema } from "@k2b/cloud/contracts/approvals";
 import { type AuthContext, getLocale, loadPendingApprovals } from "@k2b/cloud/server";
-import { audit, notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { audit, notifications } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
@@ -115,11 +115,11 @@ export default ssr<AuthContext>(async (c) => {
       })),
     };
   };
-  const [categoryPolicy, content] = await Promise.all([readAccountCategoryPolicy(), loadContent()]);
+  const content = await loadContent();
 
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.activity }]}>
-      <ActivityScreen user={accountUserView(user, categoryPolicy.login.label, t)} state={state} content={content} />
+      <ActivityScreen user={accountUserView(user, t)} state={state} content={content} />
     </Layout>
   );
 });

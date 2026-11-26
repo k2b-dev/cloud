@@ -1,5 +1,5 @@
 import { cloudAvatarImage } from "@k2b/cloud/account/ui";
-import { accountCategoryLabel, type User } from "@k2b/cloud/contracts";
+import type { User } from "@k2b/cloud/contracts";
 import type { AccountMessages } from "./messages";
 
 /** The person in the head of an account page, as the server read them: plain data an island takes as props. */
@@ -7,21 +7,22 @@ export type AccountUserView = {
   name: string;
   uid: string;
   image: string | undefined;
-  /** The account's category, its extra roles and "Expired", in that order. */
+  /** Only an exception stands beside the name: "Expired". The category and roles are facts of the profile. */
   kinds: string[];
 };
 
-export const accountUserView = (user: User, loginLabel: string, t: AccountMessages, now = new Date()): AccountUserView => {
-  const roles = user.roles.filter((role) => role === "admin" || role === "group-manager");
+/** The extra roles of the account in words, such as "Admin". */
+export const accountRoles = (user: User, t: AccountMessages): string[] =>
+  user.roles
+    .filter((role) => role === "admin" || role === "group-manager")
+    .map((role) => (role === "group-manager" ? t.roleGroupManager : t.roleAdmin));
+
+export const accountUserView = (user: User, t: AccountMessages, now = new Date()): AccountUserView => {
   const expired = user.accountExpires ? new Date(user.accountExpires) < now : false;
   return {
     name: user.displayName || user.uid,
     uid: user.uid,
     image: cloudAvatarImage({ kind: "user", userId: user.id, avatarHash: user.avatarHash }),
-    kinds: [
-      accountCategoryLabel(user, loginLabel),
-      ...roles.map((role) => (role === "group-manager" ? t.roleGroupManager : t.roleAdmin)),
-      ...(expired ? [t.expired] : []),
-    ],
+    kinds: expired ? [t.expired] : [],
   };
 };
