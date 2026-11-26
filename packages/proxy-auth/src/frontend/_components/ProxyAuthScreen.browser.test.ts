@@ -110,7 +110,19 @@ const open = async (view: View, address: string, state = "normal", failEntities 
     if (url.pathname.startsWith("/api/proxy-auth")) {
       calls.push(`${route.request().method()} ${url.pathname}`);
       bodies.push(route.request().postDataJSON());
-      return route.fulfill({ json: route.request().method() === "POST" ? { clientId: "pa_new" } : { message: "ok" } });
+      return route.fulfill({
+        json:
+          route.request().method() === "POST"
+            ? {
+                id: "00000000-0000-4000-8000-000000000998",
+                name: "Neu",
+                clientId: "pa_new",
+                description: null,
+                allowedGroups: [],
+                createdAt: "2026-11-26T09:00:00.000Z",
+              }
+            : { message: "ok" },
+      });
     }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     return route.fulfill({ status: 404, contentType: "text/html", body: "<!doctype html><title>elsewhere</title>" });

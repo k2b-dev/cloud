@@ -27,6 +27,7 @@ import {
 import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { clientRow } from "../client-row";
 import { proxyAuthMessages } from "../messages";
 
 /** One client in the list, worded by the server. */
@@ -70,8 +71,6 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const known = (): LookupItem[] =>
     props.clients.flatMap((client) => client.groups).map((group) => ({ value: group.id, label: group.label }));
 
-  // the labels of groups seen in searches, so a new client's row names its groups at once
-  const seen = new Map<string, string>();
   // groups come from the directory, as the access editors search them
   const loadGroups = async (text: string, context: { signal: AbortSignal; limit: number }) => {
     const url = new URL("/api/accounts/entities", location.origin);
@@ -84,7 +83,6 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     const items = (data.items ?? []).flatMap((item) =>
       item.kind === "group" && item.group ? [{ value: item.group.id, label: groupDisplayName(item.group.name, locale()) }] : [],
     );
-    for (const item of items) seen.set(item.value, item.label);
     return { items };
   };
 
@@ -128,20 +126,10 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     if (!response.ok) return setFailure(target === "new" ? t().failedCreate : t().failedUpdate);
     setEditing(null);
     if (target === "new") {
+      // the service's answer is the whole client: its row is built as the page builds its rows
       const body = await response.json();
       if ("clientId" in body) {
-        const labels = new Map(known().map((item) => [item.value, item.label]));
-        setAdded((rows) => [
-          ...rows,
-          {
-            id: body.clientId,
-            clientId: body.clientId,
-            name: values.name.trim(),
-            description: values.description.trim() || null,
-            groups: values.groups.map((id) => ({ id, label: seen.get(id) ?? labels.get(id) ?? id })),
-            created: new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date()),
-          },
-        ]);
+        setAdded((rows) => [...rows, clientRow(body, locale())]);
         setCreated(body.clientId);
       }
     } else {

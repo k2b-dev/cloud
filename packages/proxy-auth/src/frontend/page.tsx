@@ -1,10 +1,10 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
-import { formatDate, groupDisplayName } from "@k2b/cloud/shared";
 import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { proxyAuthService } from "../service";
 import ProxyAuthScreen from "./_components/ProxyAuthScreen.island";
+import { clientRow } from "./client-row";
 import { proxyAuthMessages } from "./messages";
 
 /** Proxy Auth on v2: the ForwardAuth clients, one open beside the list (`client=<id>`), and the Traefik setup. */
@@ -26,14 +26,7 @@ export default ssr<AuthContext>(async (c) => {
         figures={{
           withoutGroups: clients.filter((client) => client.allowedGroups.length === 0).length,
         }}
-        clients={clients.map((client) => ({
-          id: client.id,
-          clientId: client.clientId,
-          name: client.name,
-          description: client.description,
-          groups: client.allowedGroups.map((group) => ({ id: group.id, label: groupDisplayName(group.name, locale) })),
-          created: formatDate(client.createdAt, { locale }),
-        }))}
+        clients={clients.map((client) => clientRow(client, locale))}
       />
     </AdminLayout>
   );

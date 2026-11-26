@@ -192,7 +192,18 @@ describe("Proxy Auth in the Cloud shell", () => {
                 ),
               }),
             },
-            "/api/proxy-auth": { type: "application/json", body: JSON.stringify({ clientId: "pa_wiki" }) },
+            // the service answers a create with the whole client, as the API does
+            "/api/proxy-auth": {
+              type: "application/json",
+              body: JSON.stringify({
+                id: "00000000-0000-4000-8000-000000000999",
+                name: "Wiki",
+                clientId: "pa_wiki",
+                description: null,
+                allowedGroups: [{ id: "00000000-0000-4000-8000-0000000000b1", name: "betrieb", provider: "local" }],
+                createdAt: "2026-11-26T09:00:00.000Z",
+              }),
+            },
           },
         },
       });
@@ -206,8 +217,9 @@ describe("Proxy Auth in the Cloud shell", () => {
         const done = tab.getByRole("dialog", { name: "Client erstellt" });
         await done.getByText("https://cloud.example.test/proxy-auth/verify/pa_wiki").waitFor();
         await settled(tab);
-        // the new client stands in the list behind its dialog
+        // the new client stands in the list behind its dialog, opened by its id like every other row
         expect(await tab.locator("[data-k2-workspace]").getByText("Wiki", { exact: true }).count()).toBeGreaterThan(0);
+        expect(await tab.locator('a[href="/admin/proxy-auth?client=00000000-0000-4000-8000-000000000999"]').count()).toBeGreaterThan(0);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-client-angelegt-${width}.png`) });
         expect(errors).toEqual([]);
       } finally {
