@@ -1863,6 +1863,12 @@
   width: var(--k2-p);
   background: var(--k2-ok);
 }
+.k2-ui .k2-progress[data-status="warn"] .k2-progress-track > i {
+  background: var(--k2-warn-dot);
+}
+.k2-ui .k2-progress[data-status="bad"] .k2-progress-track > i {
+  background: var(--k2-bad-dot);
+}
 
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
 .k2-ui .k2-btn {
