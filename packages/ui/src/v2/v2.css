@@ -1873,11 +1873,18 @@
   background: var(--k2-n200);
   overflow: hidden;
 }
+/* data in the soft colour of the app it belongs to; green and red only as states the caller names */
 .k2-ui .k2-progress-track > i {
   display: block;
   height: 100%;
   width: var(--k2-p);
+  background: color-mix(in srgb, var(--k2-app, var(--k2-blue)) 55%, var(--k2-surface));
+}
+.k2-ui .k2-progress[data-status="ok"] .k2-progress-track > i {
   background: var(--k2-ok);
+}
+.k2-ui .k2-progress[data-status="bad"] .k2-progress-track > i {
+  background: var(--k2-bad);
 }
 
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */

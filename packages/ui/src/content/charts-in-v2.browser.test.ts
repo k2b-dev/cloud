@@ -239,7 +239,7 @@ for (const shape of shapes)
       const { page, errors } = await open(shape, width, "light");
       try {
         const ready = await places(page);
-        expect(ready.map((place) => place.inside)).toEqual(Array.from({ length: 6 }, () => "k2b-chart"));
+        expect(ready.map((place) => place.inside)).toEqual(Array.from({ length: 7 }, () => "k2b-chart"));
         for (const [state, part] of [
           ["loading", "Loading"],
           ["failed", "Failed"],
@@ -333,6 +333,49 @@ for (const shape of shapes)
       // the band behind the weekday labels is the dark surface, not white
       expect(found.band).toBeLessThan(0.05);
       expect(found.label).toBeGreaterThanOrEqual(4.5);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+// Cloud puts its palette on the chart's svg itself (packages/cloud/src/styles/global.css), so a colour on a parent
+// never reached the drawing; the owner colour must win over it.
+const cloudPalette = ":root :is(.k2b-ui, .stdlib-chart, .k2b-chart-legend) { --stdlib-chart-c1: #14b8a6; --stdlib-chart-c2: #f97316; }";
+
+for (const shape of shapes)
+  test(`${shape}: the first series takes the colour of the app the chart belongs to; other series keep the palette`, async () => {
+    const { page, errors } = await open(shape, 1440, "light");
+    try {
+      await page.addStyleTag({ content: cloudPalette });
+      // the page's app is weather blue
+      await page.evaluate(() => document.getElementById("root")?.style.setProperty("--k2-app", "#0369a1"));
+      await settled(page);
+      const drawn = await page.evaluate(() => {
+        const stroke = (selector: string) => {
+          const element = document.querySelector(selector);
+          return element ? getComputedStyle(element).stroke : "missing";
+        };
+        const fill = (selector: string) => {
+          const element = document.querySelector(selector);
+          return element ? getComputedStyle(element).fill : "missing";
+        };
+        return {
+          first: stroke(".charts-v2-line .stdlib-chart-line.stdlib-chart-series-0"),
+          second: stroke(".charts-v2-line .stdlib-chart-line.stdlib-chart-series-1"),
+          bar: fill(".charts-v2-bar .stdlib-chart-bar"),
+          swatch: fill(".charts-v2-line .k2b-chart__legend-swatch rect"),
+          owned: stroke(".charts-v2-owned .stdlib-chart-line.stdlib-chart-series-0"),
+        };
+      });
+      expect(drawn).toEqual({
+        first: "rgb(3, 105, 161)",
+        second: "rgb(249, 115, 22)",
+        bar: "rgb(3, 105, 161)",
+        swatch: "rgb(3, 105, 161)",
+        // a chart of another app: its own `color`
+        owned: "rgb(180, 83, 9)",
+      });
       expect(errors).toEqual([]);
     } finally {
       await page.close();

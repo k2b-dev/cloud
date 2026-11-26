@@ -19,6 +19,18 @@
 
 /* HTML legends (above a line or area chart, below a state timeline) share the caller's height with the plot.
  * Geometry remains SVG-owned: inspection uses real SVG transforms and axis bounds, including this vertical offset. */
+/* The first series takes the colour of the app the chart belongs to: in a v2 screen the app of the page (the v2 blue
+   without one), anywhere the chart's own `color`. A series with its own colour keeps it, the others keep the palette.
+   The chart core and Cloud put the palette on each svg itself (the drawing and the legend swatches), so it is set
+   there too, one class stronger. */
+.k2-ui .k2b-chart,
+.k2-ui .k2b-chart .stdlib-chart {
+  --stdlib-chart-c1: var(--k2-app, var(--k2-blue));
+}
+.k2b-chart[data-k2-owner],
+.k2b-chart[data-k2-owner] .stdlib-chart {
+  --stdlib-chart-c1: var(--k2-app);
+}
 :is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement] {
   display: flex;
   flex-direction: column;

@@ -108,6 +108,11 @@ export type ChartProps = {
   [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> & {
     class?: string;
     style?: JSX.CSSProperties | string;
+    /**
+     * The colour of the app the chart belongs to: its first series takes it, a series with its own colour keeps
+     * that. In a v2 screen the app of the page by default.
+     */
+    color?: string;
     labels?: K extends "pareto" ? [string, string] : ChartLabels;
     /**
      * Navigation for maps and state timelines: pan, zoom and reset controls.
@@ -170,7 +175,17 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
   const drawingProps = () => {
     // Pareto's labels name its two measures; other kinds use labels only for host controls.
     if (props.kind === "pareto") return props;
-    const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
+    const [, drawing] = splitProps(props, [
+      "class",
+      "style",
+      "color",
+      "labels",
+      "interactive",
+      "selected",
+      "onSelect",
+      "tooltip",
+      "cursor",
+    ]);
     // A state timeline names its states in the HTML legend below the drawing, and its definitions get the ids of this
     // instance (unique per page, on the server and in the browser).
     return drawing.kind === "stateTimeline" ? { ...drawing, legend: false, idPrefix: `${chartTooltipId}-drawing` } : drawing;
@@ -613,7 +628,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     );
   });
 
-  const chartStyle = () =>
+  const sizeStyle = () =>
     props.style ??
     (props.kind === "stateTimeline"
       ? {
@@ -621,6 +636,13 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           height: `${stateTimelineHeight(props.rows.length, false) + (stateLegend().length > 0 ? 30 : 0)}px`,
         }
       : undefined);
+  // the colour of the app the chart belongs to rides on the wrapper, where chart.css hands it to the first series
+  const chartStyle = () => {
+    const size = sizeStyle();
+    if (!props.color) return size;
+    if (typeof size === "string") return `${size};--k2-app:${props.color}`;
+    return { ...size, "--k2-app": props.color };
+  };
 
   const control = (label: string, shortcut: string, icon: string, action: () => void) => (
     <IconButton variant="secondary" label={label} tooltip={`${label} (${shortcut})`} onClick={action}>
@@ -632,7 +654,12 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     <Show
       when={!isEmpty(props)}
       fallback={
-        <div ref={containerRef} class={`k2b-chart k2b-chart__empty ${props.class ?? ""}`} style={chartStyle()}>
+        <div
+          ref={containerRef}
+          class={`k2b-chart k2b-chart__empty ${props.class ?? ""}`}
+          data-k2-owner={props.color ? "" : undefined}
+          style={chartStyle()}
+        >
           {labels().empty ?? messages().noData}
         </div>
       }
@@ -643,6 +670,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
         ref={containerRef}
         id={calendar() ? `${chartTooltipId}-scroll` : undefined}
         class={`k2b-chart ${props.class ?? ""}`}
+        data-k2-owner={props.color ? "" : undefined}
         data-chart-kind={props.kind}
         data-legend-placement={topLegend() ? "top-start" : stateLegend().length > 0 ? "bottom-start" : undefined}
         data-drag={draggable() ? (dragging() ? "active" : "idle") : undefined}
