@@ -368,9 +368,15 @@ export const Row = (props: RowProps) => {
         ...row.querySelectorAll<HTMLElement>(":scope > .k2-row-open"),
         ...row.querySelectorAll<HTMLElement>(".k2-mark-input:not(:disabled)"),
       ];
-      // only what can be seen takes the focus; a focus that does not take moves on to the next place
+      // only what can be seen takes the focus (a box of some size, visible, not hidden or inert); a focus that does not
+      // take moves on to the next place
+      const reachable = (next: HTMLElement) => {
+        if (!next.isConnected || next.closest("[hidden], [inert]")) return false;
+        const box = next.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && getComputedStyle(next).visibility === "visible";
+      };
       for (const next of candidates) {
-        if (!next.isConnected || next.closest("[hidden], [inert]") || next.getClientRects().length === 0) continue;
+        if (!reachable(next)) continue;
         next.focus();
         if (document.activeElement === next) return;
       }

@@ -50,7 +50,7 @@ const focusedIn = (page: Page) =>
   });
 
 test("server markup: an empty status is already a status, so later words are heard; keycaps carry the keys' names", () => {
-  expect(markup.match(/class="k2-row-status" role="status"/g)?.length).toBe(6);
+  expect(markup.match(/class="k2-row-status" role="status"/g)?.length).toBe(8);
   expect(markup).toContain("Befehlstaste K");
   expect(markup).toContain(">⌘<");
   expect(markup).toContain(">Strg<");
@@ -92,6 +92,15 @@ test("focus after a leaving action: a button of the row before its link, past a 
     // a hidden button is passed over: the row's link takes the focus
     await withdraw("Jonas Wolf");
     expect(await page.evaluate(() => document.activeElement?.classList.contains("k2-row-open"))).toBe(true);
+    // a button of 0 x 0 px and an invisible one cannot take the focus either: the row's link takes it
+    await page.addStyleTag({
+      content:
+        '[aria-label="Lea anrufen"] { width: 0 !important; height: 0 !important; min-width: 0 !important; padding: 0 !important; border: 0 !important; overflow: hidden !important; } [aria-label="Tim anrufen"] { visibility: hidden; }',
+    });
+    for (const title of ["Lea Brandt", "Tim Kern"]) {
+      await withdraw(title);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("href"))).toBe(title === "Lea Brandt" ? "#lea" : "#tim");
+    }
     // the deed moved the focus to the search on purpose: it stays there
     await withdraw("Mira Aydın");
     expect(await focusedIn(page)).toBe("Person suchen");

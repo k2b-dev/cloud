@@ -35,7 +35,7 @@ export function Demo() {
             />
           </List>
         </Section>
-        <Section icon="users" title="Freigaben" count={3}>
+        <Section icon="users" title="Freigaben" count={5}>
           <List label="Freigaben">
             {/* a row that opens a page and keeps a button: the button comes before the row's link */}
             <Row
@@ -58,6 +58,23 @@ export function Demo() {
                   <Button variant="ghost" icon="mail" label="Jonas schreiben" />
                 </span>
               }
+            />
+            {/* buttons the test shrinks to 0 x 0 px and makes invisible: neither can take the focus */}
+            <Row
+              icon="user"
+              lines={["Lea Brandt", "Lesen"]}
+              href="#lea"
+              status={gone("lea-b") ? "Entzogen" : ""}
+              action={gone("lea-b") ? undefined : { label: "Entziehen", icon: "x", onClick: withdraw("lea-b") }}
+              end={<Button variant="ghost" icon="phone" label="Lea anrufen" />}
+            />
+            <Row
+              icon="user"
+              lines={["Tim Kern", "Lesen"]}
+              href="#tim"
+              status={gone("tim") ? "Entzogen" : ""}
+              action={gone("tim") ? undefined : { label: "Entziehen", icon: "x", onClick: withdraw("tim") }}
+              end={<Button variant="ghost" icon="phone" label="Tim anrufen" />}
             />
             {/* a deed that moves the focus on purpose: the row leaves it where it went */}
             <Row
