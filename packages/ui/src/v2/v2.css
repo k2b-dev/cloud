@@ -3678,6 +3678,17 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
+  /* a section's deeds that do not fit beside its title go under it, by layout alone (nothing is measured, so the server
+     already sends the final head); the head is one line while they fit (review of #4287) */
+  .k2-ui .k2-sh {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--k2-h-status);
+    row-gap: 4px;
+  }
+  .k2-ui .k2-sh > .k2-sh-end {
+    max-width: 100%;
+  }
   /* a section's deed with a symbol before its words keeps only the symbol in sight; its words stay its name for
      assistive technology. A deed without a symbol, or with one after its words (it leads on, ›), keeps its words
      (W2 26.11.). */

@@ -111,3 +111,38 @@ test("a section deed whose words have no room at 390 px is still reported as cut
     "cut",
   );
 });
+
+// Review of #4287: a deed without a symbol keeps its words on the phone, so a long one did not fit beside the title and
+// ran past the screen, and no rule said so. On the phone the deeds go under the title when they do not fit (by layout,
+// nothing measured); at 1440 they stay beside it. A deed that runs past its row is a finding.
+for (const width of [390, 1440])
+  test(`a long deed without a symbol stays inside its section at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const head = document.querySelector(".k2-sh")!.getBoundingClientRect();
+          const title = document.querySelector(".k2-sh > h3")!.getBoundingClientRect();
+          const deed = document.querySelector(".k2-sh .k2-btn")!.getBoundingClientRect();
+          return { inside: deed.right <= head.right + 0.5 && deed.left >= head.left - 0.5, under: deed.top >= title.bottom - 0.5 };
+        });
+        expect(found).toEqual({ inside: true, under: width < 768 });
+        expect(await describeV2Page(page, "#root")).not.toContain("Problems (");
+        expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+      },
+      "long",
+    );
+  });
+
+test("a deed that runs past its row is a finding", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      // the head held on one line, as it was before the deeds could go under the title
+      await page.addStyleTag({ content: ".k2-ui .k2-sh { flex-wrap: nowrap !important; }" });
+      await settled(page);
+      expect(await describeV2Page(page, "#root")).toMatch(/runs \d+ px past its row/);
+    },
+    "long",
+  );
+});
