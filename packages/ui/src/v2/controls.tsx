@@ -426,29 +426,6 @@ export type SelectProps = {
  * its field. The value reaches a form through core's form input: sent under the field's name, validated when the
  * field is required, put back by the form's reset, with a `change` event.
  */
-/**
- * A value in one line that keeps what tells it apart: an address like `Anna Berg <anna@werkstatt.example>` shows its
- * start and its domain, and gives way in its middle (`Anna Be…@werkstatt.example>`); any other value gives way at its
- * end. The whole value is its hint, and its words stay whole for assistive technology.
- */
-const Ends = (props: { text: string }) => {
-  const at = () => props.text.lastIndexOf("@");
-  return (
-    <Show when={at() > 0} fallback={<span title={props.text}>{props.text}</span>}>
-      <span class="k2-ends" title={props.text}>
-        {/* the two parts are boxes, which assistive technology would read with a space between: it reads the whole */}
-        <span class="k2-ends-start" data-start="" aria-hidden="true">
-          {props.text.slice(0, at())}
-        </span>
-        <span class="k2-ends-end" data-end="" aria-hidden="true">
-          {props.text.slice(at())}
-        </span>
-        <span class="k2-hidden-text">{props.text}</span>
-      </span>
-    </Show>
-  );
-};
-
 export const Select = (props: SelectProps) => {
   const field = useField();
   let trigger: HTMLElement | undefined;
@@ -488,12 +465,7 @@ export const Select = (props: SelectProps) => {
         aria-invalid={field?.invalid ? "true" : undefined}
       >
         <span class="k2-input-value" data-placeholder={value() === null ? "" : undefined}>
-          {/* the value part of core, with the chosen label in a form that keeps its start and its domain */}
-          <select.Value placeholder={props.placeholder ?? ""}>
-            <Show when={items().find((item) => item.value === value())} fallback={props.placeholder ?? ""}>
-              {(item) => <Ends text={item().label} />}
-            </Show>
-          </select.Value>
+          <select.Value placeholder={props.placeholder ?? ""} />
         </span>
         <Icon name="chevron-down" />
       </select.Trigger>
@@ -506,9 +478,7 @@ export const Select = (props: SelectProps) => {
         collisionPadding={8}
         option={(item: ChoiceItem) => (
           <select.Item class="k2-mi" value={item.value} label={item.label} disabled={item.disabled}>
-            <span class="k2-mi-label">
-              <Ends text={item.label} />
-            </span>
+            {item.label}
             <select.ItemIndicator item={item.value} class="k2-mi-meta">
               <Icon name="check" />
             </select.ItemIndicator>

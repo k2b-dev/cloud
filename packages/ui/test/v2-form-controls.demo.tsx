@@ -79,16 +79,6 @@ export function Demo() {
               onChange={(value) => did(`plan:${value}`)}
             />
           </Field>
-          <Field name="sender" label="Absender">
-            <Select
-              options={[
-                "Annabelle Wohlgemuth-Lindqvist <annabelle.wohlgemuth-lindqvist@tischlerei-wohlgemuth-lindqvist.example>",
-                "Büro <buero@tischlerei-wohlgemuth-lindqvist.example>",
-              ]}
-              value="Annabelle Wohlgemuth-Lindqvist <annabelle.wohlgemuth-lindqvist@tischlerei-wohlgemuth-lindqvist.example>"
-              onChange={(value) => did(`sender:${value}`)}
-            />
-          </Field>
           <Field name="domains" label="Erlaubte Domains">
             <TagsInput
               value={tags()}

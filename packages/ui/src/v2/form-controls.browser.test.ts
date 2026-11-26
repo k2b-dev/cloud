@@ -74,43 +74,6 @@ test("field action: in the 20 px label line, the field keeps its height, a press
   });
 });
 
-test("select: a long sender address keeps its start and its domain readable, the whole address as a hint, also in the list", async () => {
-  const full = "Annabelle Wohlgemuth-Lindqvist <annabelle.wohlgemuth-lindqvist@tischlerei-wohlgemuth-lindqvist.example>";
-  await withPage(async (page) => {
-    // what a box shows of a value: its words, whether its start and its domain stand whole in it, and its hint
-    const shown = (selector: string) =>
-      page
-        .locator(selector)
-        .first()
-        .evaluate((box) => {
-          const inner = box.getBoundingClientRect();
-          const clipped = (element: Element | null) => !element || element.scrollWidth > element.clientWidth + 1;
-          const domain = box.querySelector("[data-end]");
-          const end = domain?.getBoundingClientRect();
-          return {
-            text: box.querySelector(".k2-hidden-text")?.textContent ?? box.textContent,
-            title: box.querySelector("[title]")?.getAttribute("title") ?? box.getAttribute("title"),
-            start: (box.querySelector("[data-start]")?.textContent ?? "").slice(0, 9),
-            domain: domain?.textContent ?? "",
-            domainWhole: !clipped(domain) && !!end && end.right <= inner.right + 1,
-          };
-        });
-    const trigger = field(page, "Absender").locator(".k2-input-value");
-    expect(await shown(".k2-field:has(.k2-field-label:text-is('Absender')) .k2-input-value")).toEqual({
-      text: full,
-      title: full,
-      start: "Annabelle",
-      domain: "@tischlerei-wohlgemuth-lindqvist.example>",
-      domainWhole: true,
-    });
-    await trigger.click();
-    await page.locator('[role="option"]').first().waitFor();
-    // assistive technology hears each address whole, as written
-    expect(await page.getByRole("listbox", { name: "Absender" }).ariaSnapshot()).toContain(`- option "${full}" [selected]`);
-    expect(await shown('[role="option"]')).toMatchObject({ title: full, start: "Annabelle", domainWhole: true });
-  }, 390);
-});
-
 test("select: a locked select takes no focus and opens nothing; a dimmed option is skipped", async () => {
   await withPage(async (page) => {
     const locked = field(page, "Verfahren").locator("[data-select]");
