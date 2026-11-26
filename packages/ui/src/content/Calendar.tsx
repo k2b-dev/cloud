@@ -6,6 +6,7 @@ import { Button } from "../actions/Button";
 import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSection } from "../actions/Dropdown";
 import { GestureMenu } from "../actions/GestureMenu";
 import SegmentedControl from "../actions/SegmentedControl";
+import { cssColor } from "../internal/color";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { isWeekendColumn, isWeekendKey } from "../intl/weekend";
@@ -1279,7 +1280,7 @@ const MonthPickerView = (props: {
                           <span
                             class="k2b-calendar-dot"
                             data-color={event.colorHex ? undefined : event.color}
-                            style={event.colorHex ? { "background-color": event.colorHex } : undefined}
+                            style={cssColor(event.colorHex) ? { "background-color": cssColor(event.colorHex) } : undefined}
                           />
                         )}
                       </For>
@@ -3497,7 +3498,11 @@ const YearView = (props: { owner: CalendarOwner; date: Date; now: Date; events: 
                           class="k2b-calendar-year__indicator"
                           data-color={event().colorHex ? undefined : event().color}
                           data-today={day.isToday ? "true" : undefined}
-                          style={event().colorHex ? { "background-color": day.isToday ? "white" : event().colorHex } : undefined}
+                          style={
+                            cssColor(event().colorHex)
+                              ? { "background-color": day.isToday ? "white" : cssColor(event().colorHex) }
+                              : undefined
+                          }
                         />
                       )}
                     </Show>

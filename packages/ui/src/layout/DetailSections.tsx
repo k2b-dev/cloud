@@ -1,6 +1,7 @@
 import { children, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import type { DropdownItem } from "../actions/Dropdown";
+import { cssColor } from "../internal/color";
 import { Avatar, type AvatarShape } from "../surfaces/Avatar";
 import { AvatarStack, type AvatarStackPerson } from "../surfaces/AvatarStack";
 import { personColor } from "../surfaces/person-color";
@@ -83,7 +84,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
   const others = createMemo(() => props.people.filter((person) => !person.self));
   const self = createMemo(() => props.people.find((person) => person.self));
   const short = (person: DetailPresencePerson) => person.shortName ?? person.name;
-  const color = (person: DetailPresencePerson) => person.color ?? personColor(person.name);
+  const color = (person: DetailPresencePerson) => cssColor(person.color) ?? personColor(person.name);
   const [hidden, setHidden] = createSignal(0);
   let chips: HTMLDivElement | undefined;
 

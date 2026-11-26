@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Button } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
+import { cssColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { optionDescription } from "../internal/option-description";
 import { LocaleProvider, useLocale } from "../intl/locale";
@@ -114,7 +115,7 @@ function RichSelectVisual(props: { item: RichSelectItem }): JSX.Element {
       <Match when={props.item.color}>
         {(color) => (
           <span class="k2b-rich-select__visual" aria-hidden="true">
-            <span class="k2b-rich-select__dot" style={{ "background-color": color() }} />
+            <span class="k2b-rich-select__dot" style={{ "background-color": cssColor(color()) }} />
           </span>
         )}
       </Match>
