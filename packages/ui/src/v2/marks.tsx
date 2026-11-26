@@ -200,15 +200,23 @@ export type ProgressProps = {
   of: number;
   /** The words next to the bar, such as "Arbeitstag 5 von 22". */
   label?: string;
+  /**
+   * The colour of the app the value belongs to; the bar is drawn in its soft tone. The app of the page by default.
+   */
+  color?: string;
+  /** A bar that says a state: `ok` green (done, within its limit), `bad` red (over its limit). Without, it is data. */
+  status?: "ok" | "bad";
 };
 
-/** A thin bar with its value. */
+/** A thin bar with its value: data in the soft colour of its app, green or red only as a named state. */
 export const Progress = (props: ProgressProps) => {
   const share = () => (props.of > 0 ? Math.max(0, Math.min(1, props.value / props.of)) : 0);
   return (
     <span
       class="k2-progress"
       data-k2-part="Progress"
+      data-status={props.status}
+      style={custom({ "--k2-app": props.color })}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={props.of}

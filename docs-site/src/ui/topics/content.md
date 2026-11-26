@@ -14,7 +14,7 @@ A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the 
 
 ## A chart in a screen
 
-A chart is the `Chart` of `@k2b/ui` (data types in `@k2b/ui/charts`, every kind in [Charts](/en/ui/charts)) in a `Canvas` with a height, directly in its `Section`. The chart fills the `Canvas`; with no data, `Empty` stands in place of the `Canvas`.
+A chart is the `Chart` of `@k2b/ui` (data types in `@k2b/ui/charts`, every kind in [Charts](/en/ui/charts)) in a `Canvas` with a height, directly in its `Section`. The chart fills the `Canvas`; with no data, `Empty` stands in place of the `Canvas`. Its first series takes the colour of the app it belongs to: the page's app, or `color` for a chart of another app.
 
 ```tsx
 <Section icon="chart-line" title="Einlieferungen je Monat">

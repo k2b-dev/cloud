@@ -21,6 +21,7 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Saturation ${saturation} %, brightness ${brightness} %`,
       imageChosen: "Image chosen",
+      characters: ({ count, max }: { count: number; max: number }) => `${count} of ${max} characters`,
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
@@ -38,6 +39,7 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Sättigung ${saturation} %, Helligkeit ${brightness} %`,
       imageChosen: "Bild gewählt",
+      characters: ({ count, max }: { count: number; max: number }) => `${count} von ${max} Zeichen`,
     },
   },
 });

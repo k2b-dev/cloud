@@ -120,7 +120,9 @@ The only place for own drawing and own CSS (a map, a chart). `label`
 (required), `height` in px. It must stand directly in a primitive
 (`<Band><Canvas …/></Band>` or directly in a `Pane`), never as a
 component's root and never in a plain element. A `Chart` of `@k2b/ui`
-fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
+fills it (`style={{ height: "100%" }}`) with `v2.css` alone; its first
+series takes the colour of the app the chart belongs to (the page's app,
+or the chart's own `color`), the others keep the palette. While the
 drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
 moves.
@@ -266,7 +268,9 @@ lines instead of cutting a thing.
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
-- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22"). Data in the
+  soft colour of its app (`color` for another app's value); `status`
+  `ok` (green) or `bad` (red) only where the bar says a state.
 
 ## Controls
 
@@ -312,7 +316,10 @@ lines instead of cutting a thing.
   `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
   phone keyboard, such as `numeric` for a code), `spellcheck` and
   `autocapitalize` (`false` and `off` for names, codes and keys). Never set
-  them through `ref` after hydration.
+  them through `ref` after hydration. `count` with `maxLength`: once the
+  text nears the limit (its last fifth) the field shows "18 / 20" at its
+  end and a screen reader hears it; for text a person writes (a title, a
+  message), not for a code.
 - `Select`: `options` (strings or `{ value, label, disabled }`), `value`,
   `onChange`, `placeholder`, `disabled` (a grey well, the value still
   shown, while it cannot be changed).

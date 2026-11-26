@@ -235,6 +235,12 @@ type InputBase = {
   autocomplete?: JSX.InputHTMLAttributes<HTMLInputElement>["autocomplete"];
   /** The most characters the field takes. */
   maxLength?: number;
+  /**
+   * With `maxLength`: once the text nears the limit (its last fifth) the field shows how many characters it holds,
+   * such as "18 / 20", at its end, and a screen reader hears it with the field. For text a person writes, such as a
+   * title or a message; a code needs none.
+   */
+  count?: boolean;
   /** The keyboard a phone shows, such as `numeric` for a code or `email`; the kind of text (`type`) stays. */
   inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
   /** Whether the browser marks misspelt words; `false` for names, codes, keys and addresses. */
@@ -318,14 +324,50 @@ export const Input = (props: InputProps) => {
   );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
+  const t = useControlMessages();
+  // The length of the text, for the count near the limit: the given value, each change in the field, a value a script
+  // sets and a form's reset. A count needs a limit of 5 or more; below, the limit says enough.
+  const [length, setLength] = createSignal((props.value ?? "").length);
+  createRenderEffect(() => setLength((props.value ?? "").length));
+  const counted = (event: { currentTarget: { value: string } }) => setLength(event.currentTarget.value.length);
+  const counting = () => props.count === true && props.maxLength !== undefined && props.maxLength >= 5;
+  const max = () => props.maxLength ?? 0;
+  const near = () => counting() && length() >= max() - Math.ceil(max() / 5);
+  // a value over the limit (one the server sent): the count shows it, and the field says it is wrong
+  const over = () => counting() && length() > max();
+  const countId = createUniqueId();
+  const followValue = (element: HTMLInputElement | HTMLTextAreaElement) => {
+    if (!counting()) return;
+    // a value a script sets fires no input event: the field's own value setter tells the count
+    const own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value");
+    if (own?.get && own.set) {
+      const { get, set } = own;
+      Object.defineProperty(element, "value", {
+        configurable: true,
+        get() {
+          return get.call(this);
+        },
+        set(next: string) {
+          set.call(this, next);
+          setLength(String(get.call(this)).length);
+        },
+      });
+    }
+    // a form's reset puts the value back without an event of the field
+    const reset = (event: Event) => {
+      if (event.target instanceof HTMLFormElement && event.target.contains(element)) setTimeout(() => setLength(element.value.length));
+    };
+    document.addEventListener("reset", reset);
+    onCleanup(() => document.removeEventListener("reset", reset));
+  };
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
     placeholder: props.placeholder,
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
-    "aria-invalid": field?.invalid ? ("true" as const) : undefined,
-    "aria-describedby": field?.described,
+    "aria-invalid": field?.invalid || over() ? ("true" as const) : undefined,
+    "aria-describedby": [field?.described, near() ? countId : undefined].filter(Boolean).join(" ") || undefined,
     required: field?.required || undefined,
     disabled: props.disabled,
     // written as attributes, so the first markup from the server already carries them (password managers read it)
@@ -357,7 +399,7 @@ export const Input = (props: InputProps) => {
       }}
       class="k2-input"
       data-k2-part="Input"
-      data-invalid={field?.invalid ? "" : undefined}
+      data-invalid={field?.invalid || over() ? "" : undefined}
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
@@ -371,13 +413,17 @@ export const Input = (props: InputProps) => {
             {...shared()}
             ref={(element) => {
               input = element;
+              followValue(element);
               forwardRef(props.ref, element);
             }}
             tabIndex={hosted() ? -1 : undefined}
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
-            onInput={(event) => props.onInput?.(event.currentTarget.value)}
+            onInput={(event) => {
+              counted(event);
+              props.onInput?.(event.currentTarget.value);
+            }}
             onKeyDown={(event) => {
               props.onKeyDown?.(event);
               if (props.type === "search") foldHeadSearch(event);
@@ -390,12 +436,30 @@ export const Input = (props: InputProps) => {
             one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
-          ref={(element) => forwardRef(props.ref, element)}
-          onInput={(event) => props.onInput?.(event.currentTarget.value)}
+          ref={(element) => {
+            followValue(element);
+            forwardRef(props.ref, element);
+          }}
+          onInput={(event) => {
+            counted(event);
+            props.onInput?.(event.currentTarget.value);
+          }}
           onKeyDown={(event) => props.onKeyDown?.(event)}
         >
           {isServer ? `\n${props.value ?? ""}` : undefined}
         </textarea>
+      </Show>
+      {/* The count near the limit: seen as "18 / 20", described as "18 von 20 Zeichen". Its room is kept from the start
+          (as wide as the largest count), so the text never changes its width while someone types. */}
+      <Show when={counting()}>
+        <span class="k2-input-count" id={countId} style={{ "inline-size": `${2 * String(max()).length + 3}ch` }}>
+          <span aria-hidden="true" data-shown={near() ? "" : undefined}>
+            {length()} / {max()}
+          </span>
+          <Show when={near()}>
+            <span class="k2-hidden-text">{t().characters({ count: length(), max: max() })}</span>
+          </Show>
+        </span>
       </Show>
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>

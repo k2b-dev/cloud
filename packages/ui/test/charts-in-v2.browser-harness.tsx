@@ -147,6 +147,19 @@ render(
             />
           ))}
         </Section>
+        {/* a chart of another app on this screen: its first series in that app's colour */}
+        <Section icon="cloud-rain" title="Regen aus dem Wetter">
+          {place(160, "Regenmenge je Monat", () => (
+            <Chart
+              kind="line"
+              class="charts-v2-owned"
+              color="#b45309"
+              style={{ height: "100%" }}
+              series={empty() ? [] : [{ label: "Regen", data: returns.map((y, x) => ({ x, y })) }]}
+              xAxis={{ format: (x: number) => months[x] ?? "" }}
+            />
+          ))}
+        </Section>
         <Section icon="calendar" title="Einlieferungen je Tag">
           {place(200, "Einlieferungen je Tag", () => (
             <Chart.Calendar class="charts-v2-calendar" style={{ height: "100%" }} locale="de" scale="sequential" data={calendarDays} />
