@@ -358,14 +358,22 @@ export const hostgroupListWithHosts = async (params: {
   const perPage = params.perPage ?? 100;
   const offset = (page - 1) * perPage;
   const search = toLike(params.search);
+  // a group matches by its name, its description, or the name of one of its hosts, so a host is found in its groups
+  const matches = sql`
+    LOWER(hg.cn) LIKE ${search} ESCAPE '\\'
+    OR LOWER(COALESCE(hg.description, '')) LIKE ${search} ESCAPE '\\'
+    OR EXISTS (
+      SELECT 1 FROM ipa_hosts.host_hostgroups hh
+      WHERE hh.hostgroup_cn = hg.cn AND LOWER(hh.host_fqdn) LIKE ${search} ESCAPE '\\'
+    )
+  `;
 
   const [countRows, rows] = await Promise.all([
     search
       ? sql<DbRow[]>`
           SELECT COUNT(*)::int AS count
           FROM ipa_hosts.hostgroups hg
-          WHERE LOWER(hg.cn) LIKE ${search} ESCAPE '\\'
-             OR LOWER(COALESCE(hg.description, '')) LIKE ${search} ESCAPE '\\'
+          WHERE ${matches}
         `
       : sql<DbRow[]>`SELECT COUNT(*)::int AS count FROM ipa_hosts.hostgroups`,
     search
@@ -373,8 +381,7 @@ export const hostgroupListWithHosts = async (params: {
           WITH paged_hostgroups AS (
             SELECT hg.cn, hg.description
             FROM ipa_hosts.hostgroups hg
-            WHERE LOWER(hg.cn) LIKE ${search} ESCAPE '\\'
-               OR LOWER(COALESCE(hg.description, '')) LIKE ${search} ESCAPE '\\'
+            WHERE ${matches}
             ORDER BY hg.cn
             LIMIT ${perPage} OFFSET ${offset}
           )

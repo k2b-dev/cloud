@@ -27,6 +27,9 @@ suiteFor("database")("the host mirror's records", () => {
     try {
       const search = await hostgroupListWithHosts({ search: `${prefix}-`, perPage: 50 });
       expect(search.hostgroups.some((group) => group.cn === target)).toBe(false);
+      // a host's name finds the groups that hold it
+      const byHost = await hostgroupListWithHosts({ search: `${prefix}-db2`, perPage: 50 });
+      expect({ groups: byHost.hostgroups.map((group) => group.cn), total: byHost.total }).toEqual({ groups: [target], total: 1 });
 
       const sorted = [...hosts].sort();
       const meter = await meterSql();

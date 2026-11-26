@@ -251,8 +251,8 @@ export default function HostsScreen(props: HostsScreenProps) {
   const place = (host: IpaHost) => [host.locality, host.location].filter(Boolean).join(" · ");
   /** A group's own colour, the same on every visit: its mark in lists and records. */
   const PALETTE = ["#2563eb", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#0891b2", "#ca8a04"];
-  const KEYS_STORED = "#0d9488";
-  const KEYS_MISSING = "#d97706";
+  const KEYS_STORED = "var(--k2-ok)";
+  const KEYS_MISSING = "var(--k2-warn)";
   const groupColor = (cn: string) => PALETTE[[...cn].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
   /** A row marks only the exception: a host whose client stored no SSH keys yet (symbol and word). */
   const hostState = (host: IpaHost) =>
@@ -277,13 +277,31 @@ export default function HostsScreen(props: HostsScreenProps) {
       href={open}
     />
   );
-  /** A row names one short sub-group; several or long ones it counts, and the open group lists them all. */
-  const nestedChips = (group: IpaHostgroup) =>
-    group.hostgroups.length === 1 && group.hostgroups[0]!.length <= 18 ? (
-      <Chip icon="folder">{group.hostgroups[0]}</Chip>
-    ) : (
-      <Chip icon="folders">{t().nestedCount({ count: group.hostgroups.length })}</Chip>
-    );
+  /** The sub-groups in words: one or two by name, more by their number; the open group lists them all. */
+  const nestedWords = (group: IpaHostgroup) =>
+    group.hostgroups.length === 0
+      ? ""
+      : t().contains({
+          what: group.hostgroups.length <= 2 ? group.hostgroups.join(", ") : t().nestedCount({ count: group.hostgroups.length }),
+        });
+  /** The hosts of a group whose names hold the search: a search finds a host in its groups and the row says which. */
+  const foundHosts = (group: IpaHostgroup & { hostDetails: IpaHost[] }) => {
+    const query = props.search.toLowerCase();
+    // a group found by its own name or description needs no host to explain it
+    if (!query || `${group.cn} ${group.description ?? ""}`.toLowerCase().includes(query)) return "";
+    const found = group.hostDetails.filter((host) => host.fqdn.toLowerCase().includes(query)).map((host) => host.fqdn);
+    if (found.length === 0) return "";
+    return t().foundHosts({ names: found.length <= 2 ? found.join(", ") : t().hostCount({ count: found.length }) });
+  };
+  /** The second line of a group: what was found in it, its description and its sub-groups, else its first hosts. */
+  const groupLine = (group: IpaHostgroup & { hostDetails: IpaHost[] }) =>
+    [foundHosts(group), group.description, nestedWords(group)].filter(Boolean).join(" · ") ||
+    (group.hostDetails.length > 0
+      ? group.hostDetails
+          .slice(0, 3)
+          .map((host) => host.fqdn)
+          .join(", ")
+      : t().noHostsInGroup);
 
   // a mirror that holds nothing yet: its one way on is a sync
   const emptyMirror = () => props.figures.hostsTotal === 0 && props.figures.groups === 0 && !props.search;
@@ -301,9 +319,9 @@ export default function HostsScreen(props: HostsScreenProps) {
                 : t().assignedLead({ count: props.figures.hostsTotal })
           }
           facts={[
-            ...(props.search ? [{ before: t().searchFact, value: props.search }] : []),
-            // the list's count is a quiet fact; on the hosts without a group the lead already counts them
-            ...(emptyMirror() || props.tab !== "groups" ? [] : [{ value: t().groupCount({ count: props.figures.groups }) }]),
+            ...(props.search ? [{ before: t().searchFact, after: props.search }] : []),
+            // the list's count is quiet meta; on the hosts without a group the lead already counts them
+            ...(emptyMirror() || props.tab !== "groups" ? [] : [{ before: t().groupCount({ count: props.figures.groups }) }]),
           ]}
         />
       }
@@ -355,11 +373,11 @@ export default function HostsScreen(props: HostsScreenProps) {
                 <Row
                   icon="folders"
                   color={groupColor(group.cn)}
-                  // one height: the second line holds the description, else the hosts it counts
-                  lines={[group.cn, group.description || t().hostCount({ count: group.hostDetails.length })]}
-                  time={group.description ? t().hostCount({ count: group.hostDetails.length }) : undefined}
-                  marks={group.hostgroups.length > 0 ? nestedChips(group) : undefined}
-                  current={openGroup() === group.cn}
+                  // one height and one right column: the number of hosts always stands right, the words below the name
+                  lines={[group.cn, groupLine(group)]}
+                  time={t().hostCount({ count: group.hostDetails.length })}
+                  // the open group, or the first group of the open host: the list shows where the detail belongs
+                  current={(openGroup() ?? props.host?.found?.memberofHostgroup[0]) === group.cn}
                   href={href({ group: group.cn })}
                 />
               )}
@@ -422,7 +440,7 @@ export default function HostsScreen(props: HostsScreenProps) {
         items={[
           ...(group.description ? [{ label: t().description, value: group.description }] : []),
           ...(group.hostgroups.length > 0
-            ? [{ label: t().nested, value: <For each={group.hostgroups}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For> }]
+            ? [{ label: t().nested, value: group.hostgroups.join(", ") }]
             : []),
         ]}
       />
@@ -506,31 +524,45 @@ export default function HostsScreen(props: HostsScreenProps) {
             ...(host.platform || host.osVersion
               ? [{ label: t().platform, value: [host.osVersion, host.platform].filter(Boolean).join(" · ") }]
               : []),
-            ...(host.macAddress.length > 0
-              ? [{ label: t().macAddressesLabel, value: <For each={host.macAddress}>{(mac) => <Chip icon="network">{mac}</Chip>}</For> }]
-              : []),
+            ...host.macAddress.map((mac, index) => ({
+              label: index === 0 ? t().macAddressesLabel : "",
+              value: mac,
+              mono: true,
+              copy: mac,
+            })),
           ]}
         />
         <Section
           icon="folders"
           title={t().memberOf}
-          actions={[{ label: t().addToGroup, icon: "folder-plus", onClick: () => (setFailure(null), setAdding([])) }]}
+          actions={
+            host.memberofHostgroup.length > 0
+              ? [{ label: t().addToGroup, icon: "folder-plus", onClick: () => (setFailure(null), setAdding([])) }]
+              : undefined
+          }
         >
-          <Show when={host.memberofHostgroup.length > 0} fallback={<Notice tone="warn">{t().withoutGroup}</Notice>}>
+          <Show
+            when={host.memberofHostgroup.length > 0}
+            fallback={
+              <Empty
+                icon="folder-off"
+                text={t().noGroupYet}
+                action={{ label: t().addToGroup, icon: "folder-plus", onClick: () => (setFailure(null), setAdding([])) }}
+              />
+            }
+          >
             <List label={t().memberOf}>
               <For each={host.memberofHostgroup}>
                 {(cn) => (
                   <Row
-                    icon="folder"
+                    icon="folders"
+                    color={groupColor(cn)}
                     lines={[cn]}
                     href={href({ group: cn })}
                     end={
-                      <Button
-                        variant="ghost"
-                        icon="folder-minus"
-                        label={t().removeFromGroup}
-                        onClick={() => void removeFromGroup(host.fqdn, cn)}
-                      />
+                      <Button variant="ghost" icon="folder-minus" onClick={() => void removeFromGroup(host.fqdn, cn)}>
+                        {t().remove}
+                      </Button>
                     }
                   />
                 )}

@@ -67,10 +67,14 @@ const firstHtml = async (search: string, data: Data) => {
   const hosts = [...groups.flatMap((group) => group.hostDetails), ...ungrouped];
   const spies = [
     stubRailSnapshot(),
-    // a search finds groups by name or description, as the mirror's query does
+    // a search finds groups by name, description or the name of one of their hosts, as the mirror's query does
     spyOn(ipaHostsService.hostgroup, "listWithHosts").mockImplementation(async ({ filter }) => {
       const query = filter?.query?.toLowerCase();
-      const found = query ? groups.filter((group) => `${group.cn} ${group.description ?? ""}`.toLowerCase().includes(query)) : groups;
+      const found = query
+        ? groups.filter((group) =>
+            [group.cn, group.description ?? "", ...group.hostDetails.map((host) => host.fqdn)].some((text) => text.toLowerCase().includes(query)),
+          )
+        : groups;
       return {
         items: found.slice(0, 100),
         page: 1,
@@ -169,7 +173,8 @@ describe("Hosts in the Cloud shell", () => {
       ["gruppe-offen", "?group=server", "normal"],
       ["host-offen", "?group=server&host=db1.werkstatt.example", "normal"],
       ["ohne-gruppe", "?tab=ungrouped", "normal"],
-      ["suche", "?search=a", "normal"],
+      // a host's name finds its groups, and each row says which of its hosts was found
+      ["suche", "?search=db1", "normal"],
       ["leer", "", "empty"],
       ["worst-case", "", "worst"],
       ["worst-case-gruppe", `?group=${LONG_GROUP}`, "worst"],

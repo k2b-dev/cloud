@@ -236,10 +236,10 @@ describe("Hosts on v2", () => {
       { request: "DELETE /api/ipa-hosts/db1.werkstatt.example", times: 1 },
     ]);
     try {
-      await tab.getByRole("button", { name: "Aus Gruppe entfernen" }).first().click();
+      await tab.getByRole("button", { name: "Entfernen", exact: true }).first().click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
       expect(calls).toEqual([]);
-      await tab.getByRole("button", { name: "Aus Gruppe entfernen" }).first().click();
+      await tab.getByRole("button", { name: "Entfernen", exact: true }).first().click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Entfernen" }).click();
       await tab.waitForFunction(() => window.document.body.dataset.ready === "true");
       expect(calls).toEqual(["DELETE /api/ipa-hosts/db1.werkstatt.example/hostgroups server"]);
