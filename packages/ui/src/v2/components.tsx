@@ -18,7 +18,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon } from "./marks";
+import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
@@ -28,7 +28,9 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 // ── Nav ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 type NavEntryBase = {
+  /** The words of the entry. */
   label: string;
+  /** A count at the end, such as unread mails. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -46,10 +48,18 @@ type NavEntryBase = {
 export type NavItem = NavEntryBase &
   (
     | {
+        /** A Tabler icon before the words. */
         icon: string;
+        /**
+         * The data colour of the place, such as a base, a storage or a mailbox: the symbol then stands on a tint of it,
+         * as the place's mark (`Mark`), so the same thing looks the same in the sidebar, a list and a tile.
+         */
+        color?: string;
+        /** The page the entry leads to. */
         href?: string;
         /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
         onNavigate?: OnNavigate;
+        /** A deed instead of a page, for what has no address. */
         onClick?: () => void;
         /**
          * The deeds of this entry, such as "Anheften" and "Ausblenden" of a mailbox: a "…" at its end that shows
@@ -62,6 +72,7 @@ export type NavItem = NavEntryBase &
         /** The entries it folds away; they stand one level further in. */
         items: readonly NavItem[];
         icon?: undefined;
+        color?: undefined;
         href?: undefined;
         onNavigate?: undefined;
         onClick?: undefined;
@@ -70,19 +81,23 @@ export type NavItem = NavEntryBase &
   );
 
 export type NavGroup = {
+  /** A quiet heading over the group, such as "Postfächer". */
   label?: string;
   /**
    * The group's one deed as a quiet icon button, or, with `items`, a "…" with the group's deeds, such as "Neues
    * Postfach" and "Gelöschte Postfächer"; `label` names the button.
    */
   action?: Action | { label: string; items: readonly MenuEntry[] };
+  /** The entries of the group. */
   items: readonly NavItem[];
 };
 
 export type NavProps = {
   /** The app's name and symbol at the top. */
   title: string;
+  /** A Tabler icon beside the app's name. */
   icon: string;
+  /** The app's places in groups, each with an optional heading and deed. */
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
@@ -136,7 +151,9 @@ const NavLink = (props: { item: NavItem; level: number }) => (
     aria-current={props.item.current ? "page" : undefined}
     data-level={props.level > 1 ? String(props.level) : undefined}
   >
-    <Icon name={props.item.icon ?? "point"} />
+    <Show when={props.item.color} fallback={<Icon name={props.item.icon ?? "point"} />}>
+      {(color) => <Mark icon={props.item.icon ?? "point"} color={color()} />}
+    </Show>
     <NavEnd item={props.item} />
   </Dynamic>
 );
@@ -211,8 +228,11 @@ export const Nav = (props: NavProps) => (
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Tab = {
+  /** The name of the view. */
   label: string;
+  /** A Tabler icon before the name. */
   icon?: string;
+  /** A quiet count after the name. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -220,6 +240,7 @@ export type Tab = {
   onNavigate?: OnNavigate;
   /** … or switches the view in place. */
   onClick?: () => void;
+  /** The view shown now. */
   current?: boolean;
   /**
    * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href` and
@@ -229,7 +250,12 @@ export type Tab = {
   menu?: readonly MenuEntry[];
 };
 
-export type TabsProps = { items: readonly Tab[]; label: string };
+export type TabsProps = {
+  /** The tabs in their order; a tab with `menu` stands at the end. */
+  items: readonly Tab[];
+  /** The name of the tab list, such as "Ansichten", for assistive technology. */
+  label: string;
+};
 
 /** The words of a tab: its symbol, its name and its count. */
 const TabFace = (props: { tab: Tab }) => (
@@ -398,7 +424,14 @@ export const Path = (props: PathProps) => (
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A key figure: words before and after, the value itself in 600 (leave it out for words alone, such as "12 offen"). */
-export type StatusFact = { before?: string; value?: string | number; after?: string };
+export type StatusFact = {
+  /** Words before the value, such as "Summe". */
+  before?: string;
+  /** The value itself, in 600. */
+  value?: string | number;
+  /** Words after the value, such as "überfällig". */
+  after?: string;
+};
 
 export type StatusRowProps = {
   /** The one main statement, such as "7 unread". */
@@ -505,6 +538,7 @@ export type NoticeProps = {
   meta?: string;
   /** Text buttons at the end; at most two. */
   actions?: TwoActions;
+  /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
 
@@ -541,7 +575,9 @@ export const Notice = (props: NoticeProps) => (
 // ── Digest ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type DigestEntry = {
+  /** A Tabler icon for the kind of thing. */
   icon: string;
+  /** The data colour of its area. */
   color?: string;
   /** A short date, such as "17. Nov.". */
   date: string;
@@ -551,12 +587,52 @@ export type DigestEntry = {
   state: { icon: string; label: string; tone?: Status };
   /** One sentence about it; `<Text weight="strong">` stresses a word. */
   text: JSX.Element;
+  /** The page of the thing: its number becomes a link. */
+  href?: string;
+};
+
+/** One thing a person (or a form, a workflow) did: who, a sentence, where and when. */
+export type ActivityEntry = {
+  /** Who did it: a person, or a form or workflow shown as one (`{ name: "Webformular" }`). */
+  person: Person;
+  /**
+   * What they did, as one sentence: `<Text weight="strong">` for names, and the thing itself as
+   * `<Mark icon color />` followed by its name, so it looks the same as in its list.
+   */
+  text: JSX.Element;
+  /** When, such as "09:42" or "gestern, 16:40". */
+  time: string;
+  /** Where, quiet before the time, such as the base "Werkstatt". */
+  place?: string;
+  /** The page of the thing that changed: the sentence becomes the link. */
   href?: string;
 };
 
 export type DigestProps =
-  | { items: readonly DigestEntry[]; children?: never; label?: string }
-  | { items?: never; children: JSX.Element; label?: string };
+  | {
+      /** The dated entries, newest first. */
+      items: readonly DigestEntry[];
+      activity?: never;
+      children?: never;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    }
+  | {
+      items?: never;
+      /** What people did, newest first: an avatar, a sentence that may wrap, then place and time. */
+      activity: readonly ActivityEntry[];
+      children?: never;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    }
+  | {
+      items?: never;
+      activity?: never;
+      /** Plain `Row`s whose second line is a sentence, instead of dated entries. */
+      children: JSX.Element;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    };
 
 /**
  * The newest few on a first page, without lines (decided 22.11.): dated entries in a grid of date, number with state
@@ -565,9 +641,34 @@ export type DigestProps =
 export const Digest = (props: DigestProps) => {
   // the entries hold JSX (their sentence): made once, here
   const items = createMemo(() => props.items);
+  const activity = createMemo(() => props.activity);
   return (
     <div class="k2-list k2-digest" data-k2-part="Digest" role="list" aria-label={props.label}>
-      <Show when={items()} fallback={props.children}>
+      <Show when={activity()}>
+        {(list) => (
+          <For each={list()}>
+            {(entry) => (
+              <div
+                class="k2-row"
+                data-k2-part="Digest.Entry"
+                data-activity=""
+                data-lines="2"
+                data-open={entry.href !== undefined ? "" : undefined}
+                role="listitem"
+              >
+                <span class="k2-row-lead">
+                  <Avatar {...entry.person} />
+                </span>
+                <span class="k2-row-l1">
+                  <RowOpen href={entry.href}>{entry.text}</RowOpen>
+                </span>
+                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
+              </div>
+            )}
+          </For>
+        )}
+      </Show>
+      <Show when={items()} fallback={activity() ? undefined : props.children}>
         {(list) => (
           <For each={list()}>
             {(entry) => (
@@ -606,6 +707,7 @@ export const Digest = (props: DigestProps) => {
 // ── Steps ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Step = {
+  /** The name of the step, such as "Angekommen". */
   label: string;
   /** A quiet line under the step, such as a date or "10 von 18". */
   meta?: string;
@@ -614,7 +716,12 @@ export type Step = {
 };
 
 /** A way of a few steps: done ones grey with a tick, the running one a blue ring, the coming ones empty. */
-export type StepsProps = { items: readonly Step[]; label: string };
+export type StepsProps = {
+  /** The steps in their order. */
+  items: readonly Step[];
+  /** The name of the way, such as "Weg der Einlieferung", for assistive technology. */
+  label: string;
+};
 
 export const Steps = (props: StepsProps) => (
   <ol
@@ -644,10 +751,21 @@ export const Steps = (props: StepsProps) => (
 
 // ── RecordHead ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type RecordId = { label?: string; value: string; icon?: string; copy?: boolean };
+export type RecordId = {
+  /** A quiet word before the value, such as "Kunde". */
+  label?: string;
+  /** The identifier itself. */
+  value: string;
+  /** A Tabler icon instead of the label, such as `phone`. */
+  icon?: string;
+  /** Offers a copy button for the value. */
+  copy?: boolean;
+};
 
 export type RecordHeadProps = {
+  /** The name of the record, the page's heading. */
   name: string;
+  /** The picture or initials before the name. */
   avatar?: Person;
   /** Kinds of the record, such as "Private". */
   kinds?: readonly string[];

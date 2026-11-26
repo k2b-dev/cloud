@@ -17,11 +17,11 @@ import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
-import { custom, Icon } from "./marks";
+import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { ConfirmDialog } from "./overlays";
 import { Empty } from "./states";
 import { Toasts } from "./toast";
-import type { Action, Width } from "./types";
+import type { Action, OnNavigate, Person, Status, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -452,7 +452,10 @@ export const Pane = (props: PaneProps) => {
  * Panes side by side inside content: a list beside its reader, a main column beside its info column. One hairline
  * between them; where a pane has a `width`, its line carries a grip.
  */
-Pane.Split = (props: { children: JSX.Element }) => {
+Pane.Split = (props: {
+  /** The panes side by side; a pane that is not there is `undefined`. */
+  children: JSX.Element;
+}) => {
   const [entries, setEntries] = createSignal<readonly SplitEntry[]>([]);
   const register = (entry: SplitEntry) => {
     setEntries((list) => [...list, entry]);
@@ -553,7 +556,9 @@ export const Bar = (props: BarProps) => {
 export type BandProps = {
   /** A tone only by meaning: a note, AI, "yours", wrong, waiting. */
   tone?: "note" | "ai" | "yours" | "bad" | "warn";
+  /** A name for the band, for assistive technology. */
   label?: string;
+  /** `Text`, `Row`s, `Prose`, `Tiles` or fields. */
   children: JSX.Element;
 };
 
@@ -567,19 +572,27 @@ export const Band = (props: BandProps) => (
 // ── Cells ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type CellProps = {
+  /** A Tabler icon before the label. */
   icon: string;
   /** The data colour of the symbol, such as the colour of an area. */
   color?: string;
+  /** What the cell is about, such as "Geld heute". */
   label: string;
+  /** The key statement: words, a number or a `Chip`. */
   value: JSX.Element;
   /** A quiet line under the value. */
   meta?: JSX.Element;
   /** The cell leads to this page: a chevron at its end. */
   href?: string;
+  /** A short history beside the value, such as orders per day this week (`Spark`). */
+  trend?: SparkProps;
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
-export const Cells = (props: { children: JSX.Element }) => (
+export const Cells = (props: {
+  /** Two to four `Cells.Cell`. */
+  children: JSX.Element;
+}) => (
   <div class="k2-cells" data-k2-part="Cells">
     {props.children}
   </div>
@@ -602,7 +615,10 @@ Cells.Cell = (props: CellProps) => {
       <Show when={props.href} fallback={<span />}>
         <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
       </Show>
-      <span class="k2-cell-value">{props.value}</span>
+      <span class="k2-cell-value">
+        {props.value}
+        <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
+      </span>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">{meta()}</span>
       </Show>
@@ -612,28 +628,171 @@ Cells.Cell = (props: CellProps) => {
 
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Tile = { icon: string; title: string; meta?: string; href?: string };
+/** A figure on a card, such as "6 Tabellen" or a state such as "8 knapp". */
+export type TileStat = {
+  /** A Tabler icon before the words. */
+  icon?: string;
+  /** The figure in words, such as "6 Tabellen". */
+  label: string;
+  /** A state: its colour, with the words (never a colour alone). */
+  status?: Status;
+  /** "Waits for you", in the blue of selection, such as "3 Anträge". */
+  yours?: boolean;
+};
+
+export type Tile = {
+  /** A Tabler icon for the kind of thing, such as `file-type-pdf`. */
+  icon: string;
+  /** The name, such as a file name. */
+  title: string;
+  /** A quiet line under the name, such as the size or a description. */
+  meta?: string;
+  /** The tile opens this page or file … */
+  href?: string;
+  /** … in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+  /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
+  color?: string;
+  /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
+  stats?: readonly TileStat[];
+  /** Cards only: the people at the foot, such as who changed it last (`Avatar.Stack`). */
+  people?: readonly Person[];
+  /** Cards only: quiet words at the end of the foot, such as "Felix · vor 2 Min". */
+  foot?: string;
+  /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
+  trend?: SparkProps;
+};
+
+/** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
+export type TileCreate = {
+  /** What it makes, such as "Neue Base". */
+  title: string;
+  /** A quiet line, such as "Leer beginnen oder aus einer Vorlage". */
+  meta?: string;
+  /** The page that makes it … */
+  href?: string;
+  /** … or the deed. */
+  onClick?: () => void;
+  /** Quick choices as round chips, such as the templates "CRM" and "Lager". */
+  choices?: readonly Action[];
+};
 
 /** Like things side by side, such as attachments. Each is pressed, so each is round; never nested. */
-export type TilesProps = { items: readonly Tile[]; more?: Action; label?: string };
+export type TilesProps = {
+  /** The tiles, in order. */
+  items: readonly Tile[];
+  /**
+   * `card`: each thing a card in a grid (at least 240 px a card), with its mark, figures, people and a short history,
+   * such as the bases of Grids or the projects of a team. Without it: small tiles in one wrapping line (attachments).
+   */
+  variant?: "card";
+  /** Cards only: the last card makes a new thing. */
+  create?: TileCreate;
+  /** One deed after the tiles, such as "Alle herunterladen". */
+  more?: Action;
+  /** A name for the tiles, for assistive technology. */
+  label?: string;
+};
+
+const TileName = (props: { tile: Tile }) => (
+  <span class="k2-tile-name">
+    <span class="k2-tile-title">
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+        {props.tile.title}
+      </RowOpen>
+    </span>
+    <Show when={props.tile.meta}>
+      <span class="k2-tile-meta">{props.tile.meta}</span>
+    </Show>
+  </span>
+);
+
+const TileCard = (props: { tile: Tile }) => (
+  <div
+    class="k2-tile"
+    role="listitem"
+    data-open={props.tile.href !== undefined ? "" : undefined}
+    style={custom({ "--k2-c": props.tile.color })}
+  >
+    <span class="k2-tile-top">
+      <Mark icon={props.tile.icon} color={props.tile.color} />
+      <TileName tile={props.tile} />
+      <Show when={props.tile.trend}>{(trend) => <Spark {...trend()} />}</Show>
+    </span>
+    <Show when={props.tile.stats?.length}>
+      <span class="k2-tile-stats">
+        <For each={props.tile.stats}>
+          {(stat) => (
+            <span class="k2-tile-stat" data-status={stat.status} data-yours={stat.yours ? "" : undefined}>
+              <Show when={stat.icon}>{(name) => <Icon name={name()} />}</Show>
+              {stat.label}
+            </span>
+          )}
+        </For>
+      </span>
+    </Show>
+    <Show when={props.tile.people?.length || props.tile.foot}>
+      <span class="k2-tile-foot">
+        <Show when={props.tile.people?.length}>
+          <Avatar.Stack people={props.tile.people ?? []} />
+        </Show>
+        <Show when={props.tile.foot}>
+          <span class="k2-tile-foot-text">{props.tile.foot}</span>
+        </Show>
+      </span>
+    </Show>
+  </div>
+);
+
+const TileMake = (props: { create: TileCreate }) => (
+  <div class="k2-tile" role="listitem" data-create="" data-open={props.create.href !== undefined || props.create.onClick ? "" : undefined}>
+    <span class="k2-tile-top">
+      <Mark icon="plus" />
+      <span class="k2-tile-name">
+        <span class="k2-tile-title">
+          <RowOpen href={props.create.href} onOpen={props.create.onClick}>
+            {props.create.title}
+          </RowOpen>
+        </span>
+        <Show when={props.create.meta}>
+          <span class="k2-tile-meta">{props.create.meta}</span>
+        </Show>
+      </span>
+    </span>
+    <Show when={props.create.choices?.length}>
+      <span class="k2-tile-choices">
+        <For each={props.create.choices}>
+          {(choice) => (
+            <Chip href={choice.href} onNavigate={choice.onNavigate} onClick={choice.onClick} icon={choice.icon}>
+              {choice.label}
+            </Chip>
+          )}
+        </For>
+      </span>
+    </Show>
+  </div>
+);
 
 export const Tiles = (props: TilesProps) => (
-  <div class="k2-tiles" data-k2-part="Tiles" role="list" aria-label={props.label}>
-    <For each={props.items}>
-      {(tile) => (
-        <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
-          <Icon name={tile.icon} />
-          <span>
-            <span class="k2-tile-title">
-              <RowOpen href={tile.href}>{tile.title}</RowOpen>
-            </span>
-            <Show when={tile.meta}>
-              <span class="k2-t-meta">{tile.meta}</span>
-            </Show>
-          </span>
-        </div>
-      )}
-    </For>
+  <div class="k2-tiles" data-k2-part="Tiles" data-variant={props.variant} role="list" aria-label={props.label}>
+    <Show
+      when={props.variant === "card"}
+      fallback={
+        <For each={props.items}>
+          {(tile) => (
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+              <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
+                {(color) => <Mark icon={tile.icon} color={color()} />}
+              </Show>
+              <TileName tile={tile} />
+            </div>
+          )}
+        </For>
+      }
+    >
+      <For each={props.items}>{(tile) => <TileCard tile={tile} />}</For>
+      <Show when={props.create}>{(create) => <TileMake create={create()} />}</Show>
+    </Show>
     <Show when={props.more}>{(more) => <ActionButton action={more()} variant="text" />}</Show>
   </div>
 );
@@ -645,6 +804,7 @@ export type CanvasProps = {
   label: string;
   /** The height of the drawing in px; the width comes from its place. */
   height?: number;
+  /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
 

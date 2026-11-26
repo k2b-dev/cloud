@@ -25,14 +25,18 @@ props may change in any release; check the types of the installed version.
 
 1. Find the screen in the task table below and open its recipe in
    `recipes/` (code) and `images/` (picture at 1440 and 390 px). Read
-   [recipes](references/recipes.md) for what each one shows.
+   [recipes](references/recipes.md) for what each one shows. The same
+   recipes stand live, with their states and generated props, on the topic
+   pages of the UI section in Fibel (`/en/ui/v2/<topic>`; `read_doc`
+   returns each as Markdown with the code).
 2. Copy the recipe, keep its structure, replace the data. Change the
    arrangement only where the task really differs.
 3. Check it, cheapest first (see "See what you built"). Fix every finding
    before you look at a picture.
 4. Something has no primitive? Do not write CSS or a wrapper. Use the
    nearest primitive, write `// k2b-ui gap: <what is missing>` at that
-   place, and name the gap in your report.
+   place, and name the gap in your report. The section "Not in v2 yet" of
+   each topic page lists the gaps known now; it stays current.
 
 Read [primitives](references/primitives.md) for every prop and place,
 [mistakes](references/mistakes.md) when a check reports something, and
@@ -64,6 +68,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
+| a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
+| an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
+| several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
+| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
@@ -82,24 +91,27 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
-| reading text, an email body | `Prose` | `mail.tsx` |
-| attachments, like things to press | `Tiles` | `mail.tsx` |
+| reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
+| attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
-| a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | – |
-| a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | – |
+| a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
+| a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
-| a free drawing (map, chart) | `Canvas` inside a primitive | `record.tsx` |
-| nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | – |
-| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | – |
+| a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
+| a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
+| nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
+| data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
+| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
-| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | – |
-| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | – |
-| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | – |
-| a short hint on a button | `Popover tip` around the `Button` | – |
-| "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | – |
+| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | `actions.tsx` |
+| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | `actions.tsx` |
+| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | `actions.tsx` |
+| a short hint on a button | `Popover tip` around the `Button` | `actions.tsx` |
+| "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | `dialogs.tsx` |
+| a short task above the page (invite, save as a template) | `Dialog` with `title`, `foot`, `open`; a sheet on the phone | `dialogs.tsx` |
+| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })` | `dialogs.tsx` |
 
 ## The rules, and why
 
@@ -144,6 +156,29 @@ that failed to load once would stand. A connection that retries on its own
 says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
+## How a screen looks: dense, clear, with faces
+
+The target (design pass 26.11.): dense, clear, space-efficient, tailored
+and appealing. Dense is not busy: show more, never the same thing twice.
+
+1. **Each thing carries its mark.** Every row, card and sidebar entry for a
+   thing leads with its `Mark` (colour and symbol, or thumbnail) or a
+   person's `Avatar`; without its own colour it takes its kind's, never grey.
+2. **The first line says what counts today.** `StatusRow` lead or `Cells`:
+   a statement with a number, chips with a tone for what lets one act. A
+   count such as "6 Einträge" is never the biggest text.
+3. **A state is colour, symbol and word.** A value with a limit gets a bar,
+   a short history a `Spark`.
+4. **Space structures, lines separate groups.** Group heads are text;
+   no box inside a card.
+5. **No empty half.** A detail only while something is open, a side column
+   only when it is full.
+6. **People stand beside what they did:** avatars, stacks, `Digest
+   activity` with the thing's mark.
+7. **Four type sizes** (12, 13, 14, 18), set by the primitives.
+8. **Sample data is dense and real**: colours, people, states; never
+   "Tabelle 1".
+
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
@@ -151,25 +186,22 @@ a `Notice` that names the deed.
   (`tone`), `Cells`, `Tiles`, `Canvas`.
 - **Structure:** `Section`, `Group`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Steps`.
+  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  `Chip`, `Progress`, `Spark`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
-- **Overlays:** `Menu`, `Menu.Context`, `Popover` (panel or `tip`),
-  `useToast`.
+- **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
+  `Popover` (panel or `tip`), `useToast`.
 - **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-`Dialog` (its behaviour exists inside `@k2b/ui`, the v2 component
-follows), the mail
-and chat composer (comes from `@k2b/editor`), and an assistant message or
-answer card.
-How to stand in until then: a dialog is a `Pane detail` (see
-[primitives](references/primitives.md), "Pane.Split").
+the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
+a code block with highlighting, an image or video viewer, and an assistant
+message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with
 `defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
@@ -211,6 +243,7 @@ Details, the outline format and use outside the monorepo:
 | Finding | Fix |
 | --- | --- |
 | `class on <div> in a v2 screen` | delete it; pick the primitive that owns that look |
+| a segmented control (or a row of pressed buttons or chips) that switches views or panels | `Tabs`; a segmented control only chooses a value, such as a state or a width |
 | own `URLSearchParams`, filter state beside the address, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` (`filtered-table.tsx`) |
 | `plain <div> in Pane` | put the content in `Band`, `Section`, `Group`, `List`, `Table` or `Notice` |
 | `loose text in Pane` | wrap it in `<Text>` |

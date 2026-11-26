@@ -17,7 +17,7 @@ import { useLocale } from "../intl/locale";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, custom, Dot, Icon } from "./marks";
+import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
 import type { Action, OnNavigate, Person, Status } from "./types";
@@ -41,6 +41,7 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /** The words. */
   children: JSX.Element;
 };
 
@@ -77,7 +78,11 @@ export type ProseProps =
       markdown: string;
       children?: never;
     }
-  | { markdown?: never; children: JSX.Element };
+  | {
+      markdown?: never;
+      /** Reading text as elements, when it is not Markdown. */
+      children: JSX.Element;
+    };
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
 export const Prose = (props: ProseProps) => {
@@ -116,7 +121,9 @@ export const Inline = (props: InlineProps) => (
 // ── Facts ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Fact = {
+  /** The quiet label before the value. */
   label: string;
+  /** The value: words, a `Chip` or a link. */
   value: JSX.Element;
   /** A quiet word under the value, such as "Standard". */
   hint?: string;
@@ -130,6 +137,7 @@ export type Fact = {
 };
 
 export type FactsProps = {
+  /** The labels with their values, in their order. */
   items: readonly Fact[];
   /** All facts on one line, labels quiet before their values. */
   inline?: boolean;
@@ -178,7 +186,12 @@ export const Facts = (props: FactsProps) => {
 
 const ListContext = createContext(false);
 
-export type ListProps = { children: JSX.Element; label?: string };
+export type ListProps = {
+  /** The entries, each a `Row`. */
+  children: JSX.Element;
+  /** A name for the list, for assistive technology. */
+  label?: string;
+};
 
 /**
  * Rows that come or go above the place someone works on (a new mail on top) leave that place where it was: the
@@ -264,10 +277,13 @@ export type RowProps = {
   lines: RowLines;
   /** A quiet note after the title, such as a count or an address. */
   meta?: JSX.Element;
-  /** The lead: a symbol in the colour of its area … */
+  /** The lead: a quiet symbol for what the row is … */
   icon?: string;
-  /** … the data colour of that symbol … */
-  color?: string;
+  /**
+   * … the mark of the thing the row stands for (a base, a file with its thumbnail, a table): its symbol on a tint of
+   * its colour, or its picture; 24 px in a row of one line, 32 px in a row of two or three …
+   */
+  mark?: MarkProps;
   /** … or a person. */
   avatar?: Person;
   /** Unread: a dot leads and the first two lines turn 600. */
@@ -347,9 +363,9 @@ export const Row = (props: RowProps) => {
       data-yours={props.yours ? "" : undefined}
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
+      data-mark={props.mark && !props.avatar && !props.select ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
-      style={custom({ "--k2-c": props.color })}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}
@@ -377,14 +393,21 @@ export const Row = (props: RowProps) => {
               when={props.avatar}
               fallback={
                 <Show
-                  when={props.icon}
+                  when={props.mark}
                   fallback={
-                    <Show when={props.unread}>
-                      <Dot status="ok" />
+                    <Show
+                      when={props.icon}
+                      fallback={
+                        <Show when={props.unread}>
+                          <Dot status="ok" />
+                        </Show>
+                      }
+                    >
+                      {(name) => <Icon name={name()} />}
                     </Show>
                   }
                 >
-                  {(name) => <Icon name={name()} />}
+                  {(mark) => <Mark {...mark()} />}
                 </Show>
               }
             >
@@ -434,7 +457,9 @@ export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
 export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
+  /** The head of the column. */
   title: string;
+  /** What a cell shows: one line, or two lines named as such. */
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
@@ -467,7 +492,9 @@ export type OpenTarget =
   | { href?: undefined; onNavigate?: undefined; onOpen: () => void };
 
 type TableBase<T> = {
+  /** The columns, in order; see `Column`. */
   columns: readonly Column<T>[];
+  /** The rows. */
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;
@@ -481,7 +508,14 @@ type TableBase<T> = {
    * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
    * the second line, such as the state of the entry as a chip.
    */
-  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element; marks?: JSX.Element };
+  phone?: (row: T) => {
+    lines: readonly [JSX.Element, JSX.Element];
+    avatar?: Person;
+    /** The thing's mark (a file's thumbnail, a base's symbol), as `Row mark`. */
+    mark?: MarkProps;
+    time?: JSX.Element;
+    marks?: JSX.Element;
+  };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
    * come; `rows` (3 when not set) and `lines` (1 or 2) say how many and how high.
@@ -828,6 +862,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                           <Row
                             lines={form.lines}
                             avatar={form.avatar}
+                            mark={form.mark}
                             time={form.time}
                             marks={form.marks}
                             strong

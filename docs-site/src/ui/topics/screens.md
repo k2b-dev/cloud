@@ -1,0 +1,63 @@
+# Whole screens
+
+Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`: open it, switch the width and the state, copy the code.
+
+## The frame of an app
+
+<Example recipe="frame" height="560" default="Open" />
+
+## List with detail
+
+<Example recipe="list-detail" height="560" default="Open" />
+
+## An overview of things
+
+<Example recipe="overview" height="720" default="Bases" />
+
+## The home of one place
+
+<Example recipe="home" height="720" default="Busy" />
+
+## Table with a status row
+
+<Example recipe="table" height="440" default="Rows" />
+
+## Table people filter
+
+<Example recipe="filtered-table" height="520" default="Filtered" />
+
+## Record
+
+<Example recipe="record" height="720" default="Customer" />
+
+## Record with groups
+
+<Example recipe="record-groups" height="720" default="Deliveries" />
+
+## Form
+
+<Example recipe="form" height="640" default="Conflict" />
+
+## Form beside a list
+
+<Example recipe="form-detail" height="640" default="Filled" />
+
+## Deeds and menus
+
+<Example recipe="actions" height="560" default="List" />
+
+## Dialogs, questions and toasts
+
+<Example recipe="dialogs" height="560" default="Members" />
+
+## The states of a list
+
+<Example recipe="states" height="440" default="Rows" />
+
+## A page to read
+
+<Example recipe="content" height="560" default="Text" />
+
+## Mail
+
+<Example recipe="mail" height="720" />

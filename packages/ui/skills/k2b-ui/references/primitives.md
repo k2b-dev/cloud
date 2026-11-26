@@ -71,14 +71,8 @@ grip where a pane has `width`. A `Pane.Split` may stand inside a `Pane`
 under that pane's `Tabs` head, after content that spans both columns (see
 `record.tsx`).
 
-Until v2 has a `Dialog`, a screen "with the dialog open" shows the dialog's
-form as one more `Pane detail` at the end of the split: a head `Bar` with
-its title and a close button, `Band`s of fields, a footer `Bar`. Mark it
-with a `k2b-ui gap` comment. `detail` makes it leave on the phone, where the
-form is its own route. Its confirm button is a default (framed) button: the
-page's one primary stays in the head, and `Workspace primary` must never
-confirm a dialog. When the list beside it is a table, give the dialog pane
-a `width` so the table keeps its columns.
+A short task above the page is a `Dialog` (see "Overlays"), not one more
+pane; `Workspace primary` never confirms a dialog.
 
 ### Bar
 
@@ -105,12 +99,24 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron). Use for the key statements of a record.
+`href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
+as orders per day this week). Use for the key statements of a record or
+the home of a place.
 
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href? }[]`, `more` (an action after them), `label`. Never nested.
+href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+Never nested. With `color` the symbol becomes the thing's `Mark`.
+
+`variant="card"`: each thing a card in a grid (at least 240 px a card) for
+an overview of things with a face, such as the bases of Grids. A card
+adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
+in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
+at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
+the card's colour). The whole card opens its `href`. `create` adds the last
+card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
+and `choices` as round chips (templates). Cards hold no box and no line.
 
 ### Canvas
 
@@ -154,7 +160,9 @@ inside it.
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
-- lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
+- lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
+  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -260,6 +268,18 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
+  the colour of its kind: table, form, PDF), `image` (a thumbnail over the
+  symbol; while it loads and when it fails the symbol shows), `kind` (the
+  type on its corner: `PDF`), `label` (without one it is decoration beside
+  its name). The place sets the size: 20 in the sidebar and in a sentence,
+  24 leading a row of one line, 32 leading a row of two or three, 36 on a
+  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+- `Avatar.Stack`: `people`, `max` (3), `label`. People over each other with
+  a ring and "+n"; one picture with every name.
+- `Spark`: `values` (oldest first), `label` (what the bars show). A few bars
+  of a short history, the last in full colour; beside a number, never
+  instead of it.
 
 ## Controls
 
@@ -308,7 +328,8 @@ lines instead of cutting a thing.
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there). An item with `items` instead of `icon` and a link folds
+  problem there), `color` (the place's data colour: its symbol becomes its
+  `Mark`, the same as in its rows and on its card). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
@@ -345,7 +366,11 @@ lines instead of cutting a thing.
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
-  title, state: { icon, label, tone? }, text, href? }[]`.
+  title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
+  who did what, `{ person, text, time, place?, href? }[]`. The sentence
+  names the person in `<Text weight="strong">` and the thing with its
+  `Mark` and name; place and time stand quiet under it. A form or a
+  workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
   optional `base` (the view's state, where "Zurücksetzen" returns),
@@ -364,40 +389,22 @@ lines instead of cutting a thing.
   ids give way first (always on the phone), then the name is cut with "…";
   the head's actions keep their place.
 
-## Overlays: Menu, Popover, Toast
+## Overlays: Dialog, Menu, Popover, Toast
 
-- `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
-  `variant`, `disabled`; children are the words). Without words it is the
-  quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
-  Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
-  (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
-  first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
-- `Menu.Context`: `items`, and one element as child, such as a `Row`. A
-  right-click or a long press opens the menu at the pointer, Shift+F10 at
-  the element. It adds no wrapper, so a `Row` stays a child of its `List`.
-  Give the same entries to a "…" in the row's `end` for those who do not
-  right-click.
-- `Popover`: a panel behind a button: the button's look like `Menu`,
-  `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
-  child (a `Button`) after a moment on hover or focus.
-- `useToast()`: call it in the component, then
-  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
-  One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
-  (`bad` is announced at once).
-  A toast reports a deed; it never replaces `Failed` or a `Notice` at the
-  place of a problem.
-
-## Overlays: Menu, Popover, Toast
+- `Dialog`: `title`, `open` and `onOpenChange` (the screen keeps the open
+  state), `foot` (the buttons, the main one last: the dialog's own one
+  primary), children (fields, a notice, text; they scroll). 480 px in the
+  middle; below 768 px a sheet from the bottom that a swipe down closes.
+  The first field takes the focus (on the sheet the first control that is
+  no text field), else the first action of the foot; focus stays inside,
+  Escape and the close button close it, focus returns to what opened it.
+  `dismissible={false}`: a press outside, a swipe and the back gesture do
+  not close it; Escape, the close button and the foot still do.
+- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
+  `true` when the person agrees. An alert dialog without a close button,
+  never a sheet; focus starts on the other button, Escape answers no, a
+  press outside does nothing. Call it from a menu entry with `void`, so the
+  menu closes while it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the
