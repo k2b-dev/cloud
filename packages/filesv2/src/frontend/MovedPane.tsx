@@ -2,17 +2,7 @@ import { useLocale } from "@k2b/ui";
 import { type Action, Button, List, Notice, type OnNavigate, Pane, Row } from "@k2b/ui/v2";
 import { createMemo, type JSX } from "solid-js";
 import { entryMark } from "./entry-mark";
-import {
-  actorOf,
-  byParts,
-  fill,
-  formatDate,
-  formatTime,
-  type HistoryEnvironment,
-  type HistoryTarget,
-  type Part,
-  placeOf,
-} from "./history-actions";
+import { actorOf, actorParts, fill, formatWhen, type HistoryEnvironment, type HistoryTarget, type Part, placeOf } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { SentenceText } from "./history-v2";
 import type { MovedSnapshot } from "./workspace-state";
@@ -43,11 +33,11 @@ export default function MovedPane(props: {
     const path: Part[] = [{ kind: "place", segments: placeOf(props.env, { kind: "endpoint", endpoint: point }) }];
     return fill(props.moved.chain.certainty === "verified" ? h().v2MovedNow : h().v2MovedProbably, { path });
   };
+  // who and when as the folder's entries below say it: "Jana Krüger, heute, 13:00"
   const why = () =>
     fill(h().v2MovedWhen, {
-      date: formatDate(props.moved.entry.time, locale(), props.env),
-      time: formatTime(props.moved.entry.time, locale(), props.env),
-      by: byParts(actor(), h(), props.env, props.moved.entry),
+      actor: actorParts(actor(), h()),
+      when: formatWhen(props.moved.entry.time, locale(), h(), props.env),
     });
   const history = (): Action => ({ label: h().viewHistory, icon: "history", href: props.historyHref, onNavigate: props.onNavigate });
   const jump = (): Action | undefined => {
