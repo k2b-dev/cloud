@@ -47,28 +47,6 @@ const rangeOf = (definition: ListQueryField): Extract<ListQueryField, { kind: "n
 const codes = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : typeof value === "string" ? [value] : [];
 
-/** The URL text of a value, in the address format of `defineListQuery`; `undefined` clears the field. */
-const encode = (definition: ListQueryField, value: unknown): string | undefined => {
-  switch (definition.kind) {
-    case "choice":
-    case "lookup": {
-      const list = codes(value);
-      return list.length ? list.join(",") : undefined;
-    }
-    case "numberRange":
-      return isRange(value) && (value.min !== undefined || value.max !== undefined) ? `${value.min ?? ""}..${value.max ?? ""}` : undefined;
-    case "dateRange":
-    case "timeRange":
-      if (!isPeriod(value)) return undefined;
-      if (value.kind === "preset") return value.preset;
-      return value.from || value.to ? `${value.from ?? ""}..${value.to ?? ""}` : undefined;
-    case "bool":
-      return typeof value === "boolean" ? (value ? "yes" : "no") : undefined;
-    case "text":
-      return typeof value === "string" && value.trim() ? value.trim() : undefined;
-  }
-};
-
 const labelOf = (options: readonly ListQueryOption[], code: string) => options.find((option) => option.value === code)?.label ?? code;
 
 /** "A", "A oder B", "A, B oder C", and above three values "A, B oder 2 weitere". */
@@ -219,26 +197,28 @@ const plain = (parts: readonly Part[]) => parts.map((part) => part.text).join(""
 /** The query parameters of a state, without the view it started from: two states are equal when these are. */
 const stateText = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>, state: ListQueryState<F, S, G>) => {
   const params = query.serialize(state);
-  params.delete("view");
+  params.delete(query.names.view);
   return params.toString();
 };
 
 /**
- * The state after one change of the address, or `undefined` when the address cannot hold it. `parse` reports every
- * part it had to drop, a value it does not accept or a query over the 2,000 characters a link carries (then it falls
- * back to the default state); any report refuses the change, so a list never silently loses its filters. The change
- * goes through the address text because the editors hold values of any field; `set` gives the same guarantee for
- * code that knows its field's type.
+ * The state after one change (a field, `"q"`, `"sort"` or `"group"`), or `undefined` when the value is not valid or
+ * the address cannot hold the result (more than the 2,000 characters a link carries): the query's own `set`, so the
+ * bar writes no address text of its own and a list never silently loses its filters. The editors hold values of any
+ * field by its key; `set` checks key and value itself and never throws.
  */
 const follow = <F extends Fields, S extends string, G extends string>(
   query: ListQuery<F, S, G>,
   state: ListQueryState<F, S, G>,
-  edit: (params: URLSearchParams) => void,
-): ListQueryState<F, S, G> | undefined => {
-  const params = query.serialize(state);
-  edit(params);
-  const { state: next, issues } = query.parse(params);
-  return issues.length > 0 ? undefined : next;
+  key: string,
+  value: unknown,
+): ListQueryState<F, S, G> | undefined =>
+  (query.set as (state: ListQueryState<F, S, G>, key: string, value: unknown) => ListQueryState<F, S, G> | undefined)(state, key, value);
+
+/** A sort as the menus name it (`price.desc`), as `set` takes it. */
+const sortValue = (text: string) => {
+  const dot = text.lastIndexOf(".");
+  return { field: text.slice(0, dot), direction: text.slice(dot + 1) };
 };
 
 /** The phone of v2: every width below 768 px. */
@@ -377,39 +357,37 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   // The view the state started from stays in the address: its tab stays current and counts as changed.
   // What the address cannot hold (a value parse would drop, a number it cannot write, more than 2000 characters) is
   // never written: the editor that asked says so at its field, and the list stays as it is.
-  const apply = (edit: (params: URLSearchParams) => void): boolean => {
-    const next = follow(props.query, props.state, edit);
-    if (!next) return false;
+  const apply = (key: string, value: unknown): ListQueryState<F, S, G> | undefined => {
+    const next = follow(props.query, props.state, key, value);
+    if (!next) return undefined;
     const inEditor = open() !== undefined || sheet() !== undefined;
     write(next, inEditor ? !pushed : true);
     if (inEditor) pushed = true;
-    return true;
+    return next;
   };
   const setField = (key: string, value: unknown): boolean => {
     const definition = props.query.fields[key];
     if (!definition) return false;
-    const text = encode(definition, value);
-    const applied = apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
-    if (applied && text !== undefined && draft() === key) setDraft(undefined);
+    const next = apply(key, value);
+    if (!next) return false;
+    const active = (next.filters as Readonly<Record<string, unknown>>)[key] !== undefined;
+    if (active && draft() === key) setDraft(undefined);
     // emptying every bound in the open editor keeps that editor: the filter waits as a dashed draft that does not apply
-    if (applied && text === undefined && open() === key && definition.required === undefined) setDraft(key);
-    return applied;
+    if (!active && open() === key && definition.required === undefined) setDraft(key);
+    return true;
   };
-  const removeField = (key: string) => apply((params) => params.delete(key));
-  /** Whether the address could hold this value of a field: what cannot is offered locked. */
-  const canSet = (key: string, value: unknown) => {
-    const definition = props.query.fields[key];
-    if (!definition) return false;
-    const text = encode(definition, value);
-    return follow(props.query, props.state, (params) => (text === undefined ? params.delete(key) : params.set(key, text))) !== undefined;
-  };
-  const canEdit = (edit: (params: URLSearchParams) => void) => follow(props.query, props.state, edit) !== undefined;
+  const removeField = (key: string) => apply(key, undefined) !== undefined;
+  /** Whether the address could hold this value of a field (or of `"sort"`, `"group"`): what cannot is offered locked. */
+  const canSet = (key: string, value: unknown) => follow(props.query, props.state, key, value) !== undefined;
   const reset = () => write(base(), true);
 
   const values = (key: string, definition: ListQueryField) => valueParts(definition, filters()[key], t(), format(), namesOf(key));
   const sentence = (key: string, definition: ListQueryField) => statementParts(definition, values(key, definition), t());
-  const isDefault = (key: string, definition: ListQueryField) =>
-    definition.required !== undefined && encode(definition, filters()[key]) === encode(definition, definition.required);
+  const isDefault = (key: string, definition: ListQueryField) => {
+    if (definition.required === undefined) return false;
+    const atDefault = follow(props.query, props.state, key, definition.required);
+    return atDefault !== undefined && stateText(props.query, atDefault) === stateText(props.query, props.state);
+  };
 
   // Names for lookup codes of the address the server did not name: each code is asked for once in the browser. A code
   // the app cannot name (deleted, or the load failed) stays a code with a warning; opening its editor asks again.
@@ -586,7 +564,6 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
         onNames={remember}
         timeZone={timeZone()}
         canSet={canSet}
-        canEdit={canEdit}
         changed={changed()}
         results={props.results}
         canSave={(props.views?.stores.some((store) => store.writable) ?? false) && changed()}
@@ -596,8 +573,8 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
         }}
         sentence={(key, definition) => plain(values(key, definition))}
         onField={setField}
-        onSort={(value) => apply((params) => params.set("sort", value))}
-        onGroup={(value) => apply((params) => (value ? params.set("group", value) : params.delete("group")))}
+        onSort={(value) => apply("sort", sortValue(value)) !== undefined}
+        onGroup={(value) => apply("group", value || undefined) !== undefined}
         onReset={reset}
       />
       <Show when={props.views}>
@@ -1361,7 +1338,7 @@ const PeriodEditor = (props: {
   const [rejected, setRejected] = createSignal(false);
   createEffect(
     on(
-      () => `${props.value?.kind}:${encode(props.definition, props.value) ?? ""}`,
+      () => JSON.stringify(props.value ?? null),
       () => setRejected(false),
       { defer: true },
     ),
@@ -1532,8 +1509,8 @@ export type ListOrderProps<F extends Fields, S extends string, G extends string>
 export const ListOrder = <F extends Fields, S extends string, G extends string>(props: ListOrderProps<F, S, G>) => {
   const t = useFilterMessages();
   // a choice whose state the address cannot hold is locked in the menu, so a choice never drops the filters
-  const change = (edit: (params: URLSearchParams) => void) => {
-    const next = follow(props.query, props.state, edit);
+  const change = (key: "sort" | "group", value: unknown) => {
+    const next = follow(props.query, props.state, key, value);
     if (!next) return;
     if (!isServer) {
       const text = props.query.serialize(next, location.search).toString();
@@ -1544,7 +1521,7 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
   const words = () => orderWords(props.query, props.state, t());
   const groups = () => groupEntries(props.query, t());
   const choices = () => sortChoices(props.query, props.state, t());
-  const fits = (sort: string) => follow(props.query, props.state, (params) => params.set("sort", sort)) !== undefined;
+  const fits = (sort: string) => follow(props.query, props.state, "sort", sortValue(sort)) !== undefined;
   return (
     <span class="k2-order" data-k2-part="ListOrder">
       <Show
@@ -1565,14 +1542,14 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
               choice: choices().field,
               onChoose: (value) => {
                 const sort = choices().fields.find((entry) => entry.value === value)?.sort;
-                if (sort) change((params) => params.set("sort", sort));
+                if (sort) change("sort", sortValue(sort));
               },
               items: choices().fields.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
             },
             {
               title: t().order,
               choice: choices().direction,
-              onChoose: (value) => change((params) => params.set("sort", `${choices().field}.${value}`)),
+              onChoose: (value) => change("sort", { field: choices().field, direction: value }),
               items: choices().orders.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
             },
           ]}
@@ -1588,13 +1565,11 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
             {
               title: t().group,
               choice: props.state.group ?? "",
-              onChoose: (value) => change((params) => (value ? params.set("group", value) : params.delete("group"))),
+              onChoose: (value) => change("group", value || undefined),
               items: groups().map((entry) => ({
                 label: entry.label,
                 value: entry.value,
-                disabled: !follow(props.query, props.state, (params) =>
-                  entry.value ? params.set("group", entry.value) : params.delete("group"),
-                ),
+                disabled: !follow(props.query, props.state, "group", entry.value || undefined),
               })),
             },
           ]}
@@ -1873,7 +1848,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   onNames: (field: string, items: readonly LookupItem[]) => void;
   timeZone: string;
   canSet: (key: string, value: unknown) => boolean;
-  canEdit: (edit: (params: URLSearchParams) => void) => boolean;
+
   changed: boolean;
   results?: string;
   canSave: boolean;
@@ -2068,7 +2043,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               label={t().sortBy}
               options={choices().fields}
               value={choices().field}
-              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().fields, value)))}
+              possible={(value) => props.canSet("sort", sortValue(sortOf(choices().fields, value)))}
               onChange={(value) => props.onSort(sortOf(choices().fields, value))}
             />
             <div class="k2-fsheet-sec">{t().order}</div>
@@ -2076,7 +2051,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               label={t().order}
               options={choices().orders}
               value={choices().direction}
-              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().orders, value)))}
+              possible={(value) => props.canSet("sort", sortValue(sortOf(choices().orders, value)))}
               onChange={(value) => props.onSort(sortOf(choices().orders, value))}
             />
           </Show>
@@ -2085,7 +2060,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               label={t().group}
               options={groupEntries(props.query, t())}
               value={props.state.group ?? ""}
-              possible={(value) => props.canEdit((params) => (value ? params.set("group", value) : params.delete("group")))}
+              possible={(value) => props.canSet("group", value || undefined)}
               onChange={props.onGroup}
             />
           </Show>
