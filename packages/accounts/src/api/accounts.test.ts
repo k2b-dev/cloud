@@ -38,6 +38,7 @@ const agent: AccountDirectoryEntry = {
   kind: "agent",
   id: "0b2f5c7e-0000-4000-8000-000000000001",
   name: "Wochenbericht",
+  resource: null,
   status: "active",
   avatarHash: null,
   lastUsed: null,
@@ -66,7 +67,7 @@ test("the account list reads the list's address: kinds, statuses, a shared addre
     );
     expect((await accounts.request("/?duplicate=yes&sort=mail.asc")).status).toBe(200);
     expect(directory).toHaveBeenLastCalledWith(expect.objectContaining({ duplicateMail: true, sort: { field: "mail", direction: "asc" } }));
-    // a kind that had no administration list is refused, not quietly dropped
+    // the address names the list's kinds, never a stored service account kind: anything else is refused, not dropped
     for (const kind of ["user_delegated", "resource_bound", "code"]) {
       const refused = await accounts.request(`/?kind=${kind}`);
       expect(refused.status).toBe(400);

@@ -26,7 +26,10 @@ export const USER_DIRECTORY_SEARCH_MAX = 200;
  * only a person has (provider, role, groups, last sign-in, passkey, shared address) narrow the list to people.
  */
 export type AccountDirectoryQuery = {
-  /** People, agents and API key accounts (`standalone`); absent means all three. No other service account is listed. */
+  /**
+   * People, agents (`agent` and the older `standalone`) and API key accounts (`resource_bound`); absent means all three.
+   * Personal keys (`user_delegated`) and code accounts are never listed.
+   */
   kinds?: readonly AccountDirectoryKind[];
   search?: string;
   provider?: UserProvider;
@@ -49,8 +52,11 @@ export type AccountDirectoryQuery = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PERSON_STATUSES = new Set<AccountDirectoryStatus>(["active", "invited", "expired"]);
 const SERVICE_STATUSES = new Set<AccountDirectoryStatus>(["active", "disabled"]);
-/** The service account kind behind each listed kind; the list never reads another kind. */
-const SERVICE_KINDS = { agent: "agent", "api-key": "standalone" } as const;
+/**
+ * The service account kinds behind each listed kind; the list never reads another kind. Accounts from before agents
+ * existed carry `standalone` and are agents (`isAgentServiceAccountKind`).
+ */
+const SERVICE_KINDS = { agent: ["agent", "standalone"], "api-key": ["resource_bound"] } as const;
 
 const and = (conditions: SQL.Query<unknown>[]) => conditions.reduce((acc, condition) => sql`${acc} AND ${condition}`);
 const or = (parts: SQL.Query<unknown>[]) => sql`(${parts.reduce((acc, part) => sql`${acc} OR ${part}`)})`;
@@ -82,7 +88,7 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
   const people = kinds.has("person") && (!statuses || [...statuses].some((status) => PERSON_STATUSES.has(status)));
   const serviceKinds = personOnly
     ? []
-    : (["agent", "api-key"] as const).filter((kind) => kinds.has(kind)).map((kind) => SERVICE_KINDS[kind]);
+    : (["agent", "api-key"] as const).filter((kind) => kinds.has(kind)).flatMap((kind) => SERVICE_KINDS[kind]);
   const services = serviceKinds.length > 0 && (!statuses || [...statuses].some((status) => SERVICE_STATUSES.has(status)));
   if (!people && !services) return { items: [], total: 0 };
   const search = query.search ? `%${freeipa.util.escapeLike(query.search.toLowerCase())}%` : null;
@@ -155,7 +161,8 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
   let serviceWhere: SQL.Query<unknown> | null = null;
   if (services) {
     const conditions: SQL.Query<unknown>[] = [sql`s.kind = ANY(${toPgTextArray(serviceKinds)}::text[])`];
-    if (search) conditions.push(sql`LOWER(s.name) LIKE ${search} ESCAPE '\\'`);
+    if (search)
+      conditions.push(sql`(LOWER(s.name) LIKE ${search} ESCAPE '\\' OR LOWER(COALESCE(s.app_id, '')) LIKE ${search} ESCAPE '\\')`);
     if (statuses) {
       const wanted = [...statuses].filter((status) => SERVICE_STATUSES.has(status));
       conditions.push(sql`s.status = ANY(${toPgTextArray(wanted)}::text[])`);
@@ -179,7 +186,7 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
         FROM ${personFrom} WHERE ${personWhere}`
       : null,
     serviceWhere
-      ? sql`SELECT CASE WHEN s.kind = 'agent' THEN 'agent' ELSE 'api-key' END AS entry_kind, s.id, NULL::boolean AS effective_admin,
+      ? sql`SELECT CASE WHEN s.kind = 'resource_bound' THEN 'api-key' ELSE 'agent' END AS entry_kind, s.id, NULL::boolean AS effective_admin,
           LOWER(s.name) AS sort_name,
           (SELECT max(c.last_used_at) FROM auth.service_account_credentials c WHERE c.service_account_id = s.id) AS sort_time,
           NULL::text AS sort_mail, s.id::text AS tie
@@ -218,7 +225,8 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
         FROM (${ownGroups} ORDER BY g.name LIMIT ${USER_DIRECTORY_GROUPS_MAX}) o
       ), '[]'::json) AS directory_groups,
       (SELECT COUNT(*)::int FROM (${ownGroups}) c) AS directory_group_count,
-      s.name AS service_name, s.status AS service_status, s.avatar_hash AS service_avatar_hash, s.created_at AS service_created_at
+      s.name AS service_name, s.status AS service_status, s.avatar_hash AS service_avatar_hash, s.created_at AS service_created_at,
+      s.app_id AS service_app_id, s.resource_type AS service_resource_type, s.resource_id AS service_resource_id
     FROM (SELECT * FROM (${union}) x ORDER BY ${order} LIMIT ${perPage} OFFSET ${(page - 1) * perPage}) p
     LEFT JOIN auth.users u ON p.entry_kind = 'person' AND u.id = p.id
     LEFT JOIN auth.service_accounts s ON p.entry_kind <> 'person' AND s.id = p.id
@@ -233,6 +241,14 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
           kind: row.entry_kind as "agent" | "api-key",
           id: row.id as string,
           name: row.service_name as string,
+          resource:
+            row.entry_kind === "api-key"
+              ? {
+                  appId: row.service_app_id as string,
+                  type: row.service_resource_type as string,
+                  id: row.service_resource_id as string,
+                }
+              : null,
           status: row.service_status as "active" | "disabled",
           avatarHash: (row.service_avatar_hash as string | null) ?? null,
           lastUsed: iso(row.sort_time),

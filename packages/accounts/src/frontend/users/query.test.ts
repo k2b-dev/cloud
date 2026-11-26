@@ -114,7 +114,7 @@ describe("the kinds of the account list", () => {
     expect(address.state.group).toBe("mail");
   });
 
-  test("only the listed kinds pass: the service accounts that had no admin list stay out of the address", () => {
+  test("the address names the list's kinds (person, agent, api-key), never a stored service account kind", () => {
     for (const kind of ["user_delegated", "resource_bound", "code", "standalone"]) {
       const address = parse("kind=" + kind);
       expect(address.state.filters.kind).toBeUndefined();
@@ -123,15 +123,15 @@ describe("the kinds of the account list", () => {
   });
 
   test("the agents and shared-address views hold their whole state", () => {
-    expect(usersViewHref("agents")).toBe("/app/accounts/users?view=agents&kind=agent,api-key");
+    expect(usersViewHref("agents")).toBe("/app/accounts/users?view=agents&kind=agent");
     expect(usersViewHref("duplicates")).toBe("/app/accounts/users?view=duplicates&duplicate=yes&sort=mail.asc&group=mail");
   });
 });
 
 describe("pages the account list replaced", () => {
   test("the agent list opens the agents view, on the same page", () => {
-    expect(legacyAgentsHref(new URLSearchParams())).toBe("/app/accounts/users?view=agents&kind=agent,api-key");
-    expect(legacyAgentsHref(new URLSearchParams("page=4"))).toBe("/app/accounts/users?view=agents&kind=agent,api-key&page=4");
+    expect(legacyAgentsHref(new URLSearchParams())).toBe("/app/accounts/users?view=agents&kind=agent");
+    expect(legacyAgentsHref(new URLSearchParams("page=4"))).toBe("/app/accounts/users?view=agents&kind=agent&page=4");
   });
 
   test("the duplicate address page opens the shared-address view, on the same page", () => {
@@ -141,9 +141,7 @@ describe("pages the account list replaced", () => {
   });
 
   test("any other parameter passes on, so the list can say it did not apply", () => {
-    expect(legacyAgentsHref(new URLSearchParams("page=2&foo=bar"))).toBe(
-      "/app/accounts/users?view=agents&kind=agent,api-key&page=2&foo=bar",
-    );
+    expect(legacyAgentsHref(new URLSearchParams("page=2&foo=bar"))).toBe("/app/accounts/users?view=agents&kind=agent&page=2&foo=bar");
   });
 });
 

@@ -67,8 +67,9 @@ export const UserDirectoryEntrySchema = BaseUserSchema.extend({
 export type UserDirectoryEntry = z.infer<typeof UserDirectoryEntrySchema>;
 
 /**
- * The kinds of the administration's account list: people, agents, and API key accounts (service accounts of the kind
- * `standalone`). Service accounts that belong to a person or an app resource, and code accounts, are not listed.
+ * The kinds of the administration's account list: people, agents (service accounts of the kind `agent`, and
+ * `standalone` ones from before agents existed), and API key accounts (service accounts bound to an app resource,
+ * `resource_bound`). Personal keys (`user_delegated`) belong to their person, and code accounts are not listed.
  */
 export const AccountDirectoryKindSchema = z.enum(["person", "agent", "api-key"]);
 export type AccountDirectoryKind = z.infer<typeof AccountDirectoryKindSchema>;
@@ -89,6 +90,8 @@ export const AccountDirectoryServiceAccountSchema = z.object({
   kind: z.enum(["agent", "api-key"]),
   id: z.string(),
   name: z.string(),
+  /** The app resource an API key account belongs to; null for an agent. */
+  resource: z.object({ appId: z.string(), type: z.string(), id: z.string() }).nullable(),
   status: z.enum(["active", "disabled"]),
   avatarHash: z.string().nullable(),
   /** When one of its API keys was used last, or null when none was used. */

@@ -178,9 +178,12 @@ name requirements and CLI examples.
 
 ## List accounts
 
-The account list of Accounts (`/app/accounts/users`) holds people, agents and
-API key accounts (service accounts of the kind `standalone`). Service accounts
-that belong to a person or an app resource, and code accounts, never appear.
+The account list of Accounts (`/app/accounts/users`) holds people, agents
+(service accounts of the kind `agent`, and `standalone` ones from before
+agents existed) and API key accounts (service accounts bound to an app
+resource, `resource_bound`). Personal keys (`user_delegated`) belong to their
+person and code accounts never appear. An agent row opens the agent's page; an
+API key account has no page of its own and opens its keys on the API key page.
 The list page, `GET /api/accounts/accounts` and
 `accountsAppService.account.directory(config)` read the same address and run
 the same query: one count and one page. Each entry carries its `kind`
@@ -188,7 +191,7 @@ the same query: one count and one page. Each entry carries its `kind`
 
 | Parameter | Values |
 | --- | --- |
-| `kind` | `person`, `agent`, `api-key`; absent means all three |
+| `kind` | `person`, `agent` (`agent` and `standalone`), `api-key` (`resource_bound`); absent means all three |
 | `status` | `active`, `invited`, `expired` (people), `disabled` (service accounts) |
 | `duplicate` | `yes` or `no`: people whose email address, trimmed and in any case, another account shares |
 | `role`, `member-of`, `login`, `passkey`, `provider` | as on `GET /api/accounts/users`; each narrows the list to people |

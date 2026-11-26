@@ -28,6 +28,7 @@ const agent: AccountDirectoryEntry = {
   kind: "agent",
   id: "bot",
   name: "Wochenbericht",
+  resource: null,
   status: "active",
   avatarHash: null,
   lastUsed: null,

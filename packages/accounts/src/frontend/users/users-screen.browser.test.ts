@@ -357,7 +357,17 @@ describe("the account list on v2", () => {
     } finally {
       await people.context.close();
     }
-    const empty = await open(wide, "/app/accounts/users?view=agents&kind=agent,api-key", { sample: "empty" });
+    // an API key account has no page of its own: its row opens its keys on the API key page
+    const keys = await open(wide, "/app/accounts/users?kind=api-key");
+    try {
+      expect(await names(keys.tab)).toEqual(["Import Buchhaltung"]);
+      const link = keys.tab.locator("[data-k2-part=Table] tbody tr td:first-child a").first();
+      expect(await link.getAttribute("href")).toBe("/app/accounts/api-keys?search=Import+Buchhaltung&kind=resource_bound&automatic=1");
+      expect(keys.errors).toEqual([]);
+    } finally {
+      await keys.context.close();
+    }
+    const empty = await open(wide, "/app/accounts/users?view=agents&kind=agent", { sample: "empty" });
     try {
       expect(await empty.tab.locator("#root").textContent()).toContain("cld admin agents create");
       await expectClean(empty.tab);

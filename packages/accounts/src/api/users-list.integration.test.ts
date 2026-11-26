@@ -123,6 +123,8 @@ suite("the account list's statement budget on its real paths (integration)", () 
     await person("Ole", false, mark);
     await sql`INSERT INTO auth.service_accounts (name, kind) VALUES (${`Bot ${mark}`}, 'agent'), (${`Keys ${mark}`}, 'standalone'),
       (${`Code ${mark}`}, 'code')`;
+    await sql`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+      VALUES (${`Space ${mark}`}, 'resource_bound', 'spaces', 'space', ${`space-${mark}`})`;
     const headers = { cookie: `session_token=${await createTestSession(adminId)}`, "x-forwarded-for": uniqueCallerAddress() };
     const address = `q=${mark}&status=active,invited,disabled&sort=login.desc`;
     const api = () => accountsRoutes.request(`/?${address}`, { headers });
@@ -135,8 +137,8 @@ suite("the account list's statement budget on its real paths (integration)", () 
         expect(response.status).toBe(200);
         body = (await response.json()) as typeof body;
       });
-      // the code account never appears
-      expect(body?.accounts.map((entry) => entry.kind).sort()).toEqual(["agent", "api-key", "person", "person"]);
+      // the standalone account is an agent, the resource-bound one an API key account; the code account never appears
+      expect(body?.accounts.map((entry) => entry.kind).sort()).toEqual(["agent", "agent", "api-key", "person", "person"]);
       expect(listStatements(statements)).toHaveLength(2);
       const others = statements.filter((statement) => !listStatements([statement]).length);
       expect(others.map(kind)).toEqual(["session person"]);

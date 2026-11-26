@@ -25,7 +25,7 @@ const app = new Hono<AuthContext>().use(auth.requireRole("admin")).get(
     summary: "List accounts",
     description:
       "List people, agents and API key accounts with pagination, filters and sort, as the account list of Accounts reads its address. " +
-      "kind=person,agent,api-key (api-key: a standalone service account; other service accounts are never listed); " +
+      "kind=person,agent,api-key (agent: service accounts of the kind agent or standalone; api-key: resource-bound service accounts; personal keys and code accounts are never listed); " +
       "status=active,invited,expired,disabled (people are active, invited or expired; service accounts active or disabled); " +
       "duplicate=yes|no (people whose email address another account shares); q searches names and email addresses. " +
       "role, member-of, login, passkey and provider work as on GET /api/accounts/users and narrow the list to people. " +

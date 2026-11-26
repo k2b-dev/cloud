@@ -131,7 +131,7 @@ export const USER_VIEWS = {
   expired: (query: UsersQuery): UsersState => view(query, "expired", { status: ["expired"] }),
   "inactive-admins": (query: UsersQuery): UsersState =>
     view(query, "inactive-admins", { role: ["admin"], login: { kind: "preset", preset: "older-90d" } }),
-  agents: (query: UsersQuery): UsersState => view(query, "agents", { kind: ["agent", "api-key"] }),
+  agents: (query: UsersQuery): UsersState => view(query, "agents", { kind: ["agent"] }),
   // accounts that share an address stand together, as the duplicate address page showed them
   duplicates: (query: UsersQuery): UsersState => ({
     ...view(query, "duplicates", { duplicate: true }),

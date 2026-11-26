@@ -109,10 +109,15 @@ const service = (
   name: string,
   status: "active" | "disabled",
   lastUsed: number | null,
+  // an API key account belongs to one resource of an app
+  resource: { appId: string; type: string; id: string } | null = kind === "api-key"
+    ? { appId: "finanzen", type: "ledger", id: "2026" }
+    : null,
 ): AccountDirectoryEntry => ({
   kind,
   id: `0b2f5c7e-0000-4000-8000-${String(index).padStart(12, "0")}`,
   name,
+  resource,
   status,
   avatarHash: null,
   lastUsed: lastUsed === null ? null : daysAgo(lastUsed),
@@ -216,7 +221,11 @@ const worstSeeds: Seed[] = [
 const worstAccounts: AccountDirectoryEntry[] = [
   ...worstSeeds.map((seed, index) => person(seed, index, "44444444-4444-4444-8444-")),
   service(11, "agent", "Benachrichtigungseinstellungen-Synchronisierung für Lager und Versand", "active", 0),
-  service(12, "api-key", "X", "disabled", null),
+  service(12, "api-key", "X", "disabled", null, {
+    appId: "spaces",
+    type: "space-calendar-subscription-export",
+    id: "9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f",
+  }),
 ];
 export const FIXTURE_WORST_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresses(worstAccounts);
 /** The worst case in a Cloud of 1,284 accounts (break-ui "huge"): the list still holds one page of them. */
@@ -274,7 +283,7 @@ export const fixtureDirectory = (
     if (entry.kind !== "person") {
       if (personOnly) return false;
       if (query.statuses && !query.statuses.some((status) => SERVICE_STATUSES.includes(status))) return false;
-      return !search || entry.name.toLowerCase().includes(search);
+      return !search || `${entry.name} ${entry.resource?.appId ?? ""}`.toLowerCase().includes(search);
     }
     if (query.statuses && !query.statuses.some((status) => PERSON_STATUSES.includes(status))) return false;
     if (search && !`${entry.displayName} ${entry.mail} ${entry.uid}`.toLowerCase().includes(search)) return false;

@@ -94,9 +94,16 @@ const SERVICE_LOOK = {
   "api-key": { icon: "key", color: "#0f766e" },
 } as const;
 
-/** The page of an account: a person's record, or for now the agent page, which also holds API key accounts. */
+/**
+ * Where an account opens until the one account record lands: a person's page, an agent's page, and for an API key
+ * account (which never had a page of its own) its keys on the API key page, where administrators saw it before.
+ */
 const recordHref = (entry: AccountDirectoryEntry, context: string) =>
-  entry.kind === "person" ? userDetailHref(entry.id, context) : `/app/accounts/agents/${entry.id}`;
+  entry.kind === "person"
+    ? userDetailHref(entry.id, context)
+    : entry.kind === "agent"
+      ? `/app/accounts/agents/${entry.id}`
+      : `/app/accounts/api-keys?${new URLSearchParams({ search: entry.name, kind: "resource_bound", automatic: "1" })}`;
 
 /**
  * The accounts of this Cloud on v2: people, agents and API key accounts in one list, with views, filter statements,
@@ -258,10 +265,10 @@ export default function UsersScreen(props: UsersScreenProps) {
       timeZone: props.timeZone,
       now: now(),
     });
-  /** The second line on the phone: a person's role and groups, a service account's kind. */
+  /** The second line on the phone: a person's role and groups, a service account's kind (and an API key's app). */
   const about = (entry: AccountDirectoryEntry) =>
     entry.kind !== "person"
-      ? kindWord(t(), entry)
+      ? [kindWord(t(), entry), entry.resource?.appId].filter(Boolean).join(" · ")
       : [roleWord(entry), groupCount(entry) > 3 ? t().groupsCount({ count: number(groupCount(entry)) }) : groupWords(entry)]
           .filter(Boolean)
           .join(" · ");
@@ -416,7 +423,9 @@ export default function UsersScreen(props: UsersScreenProps) {
                 cell: (row) =>
                   row.entry.kind === "person"
                     ? { lines: [row.entry.mail || "–", `${row.entry.uid} · ${row.entry.provider === "ipa" ? "FreeIPA" : t().local}`] }
-                    : "–",
+                    : row.entry.resource
+                      ? { lines: ["–", `${row.entry.resource.appId} · ${row.entry.resource.type}`] }
+                      : "–",
                 drop: true,
               },
               { title: t().role, width: { min: 100, default: 116 }, cell: (row) => roleCell(row.entry), drop: true },

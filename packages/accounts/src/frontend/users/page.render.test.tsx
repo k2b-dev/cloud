@@ -62,10 +62,18 @@ const agent: AccountDirectoryEntry = {
   kind: "agent",
   id: "0b2f5c7e-0000-4000-8000-000000000001",
   name: "Wochenbericht",
+  resource: null,
   status: "active",
   avatarHash: null,
   lastUsed: null,
   createdAt: "2026-09-22T09:14:00.000Z",
+};
+const apiKey: AccountDirectoryEntry = {
+  ...agent,
+  kind: "api-key",
+  id: "0b2f5c7e-0000-4000-8000-000000000002",
+  name: "Buchhaltung 2026",
+  resource: { appId: "finanzen", type: "ledger", id: "2026" },
 };
 const people: AccountDirectoryEntry[] = [entry(1, "Milan Horvat", [BOARD, SALES]), entry(2, "Ada Renz", [SALES])];
 
@@ -77,7 +85,7 @@ const withUsers = async (
 ) => {
   const directory = spyOn(accountsAppService.account, "directory").mockImplementation(async ({ pagination, kinds }) => {
     const page = pagination?.page ?? 1;
-    const sample = kinds?.includes("person") === false ? [agent] : kinds ? people : [...people, agent];
+    const sample = [...people, agent, apiKey].filter((account) => !kinds || kinds.includes(account.kind));
     const items = (page - 1) * 100 < total ? sample : [];
     return { ok: true as const, data: { items, page, perPage: 100, total, hasNext: page * 100 < total } };
   });
@@ -188,15 +196,18 @@ test("a list that cannot be read shows its failure in place, the page stays", as
   }
 });
 
-test("people and agents share the list: an agent row names its kind and opens the agent's page", async () => {
-  await withUsers(3, async (app) => {
+test("people, agents and API key accounts share the list, each row opening where that account lives", async () => {
+  await withUsers(4, async (app) => {
     const response = await app.request("/app/accounts/users", { headers: { "Accept-Language": "de" } });
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("3 Konten");
+    expect(html).toContain("4 Konten");
     expect(html).toContain("Wochenbericht");
     expect(html).toContain(`/app/accounts/agents/${agent.id}`);
     expect(html).toContain(`/app/accounts/users/${people[0]!.id}`);
+    // an API key account never had a page: it opens its keys on the API key page, its app beside its name
+    expect(html).toMatch(/\/app\/accounts\/api-keys\?search=Buchhaltung\+2026&(amp;)?kind=resource_bound&(amp;)?automatic=1/);
+    expect(html).toContain("finanzen · ledger");
     // the first picture comes with its data: no loading state
     expect(html).not.toContain('data-k2-part="Loading"');
     expect(html).not.toContain('aria-busy="true"');
@@ -204,10 +215,10 @@ test("people and agents share the list: an agent row names its kind and opens th
 });
 
 test("the former agent list and duplicate address page open their views of the account list, with every parameter", async () => {
-  await withUsers(3, async (app, spies) => {
+  await withUsers(4, async (app, spies) => {
     const cases = [
-      ["/app/accounts/agents", "/app/accounts/users?view=agents&kind=agent,api-key"],
-      ["/app/accounts/agents?page=2", "/app/accounts/users?view=agents&kind=agent,api-key&page=2"],
+      ["/app/accounts/agents", "/app/accounts/users?view=agents&kind=agent"],
+      ["/app/accounts/agents?page=2", "/app/accounts/users?view=agents&kind=agent&page=2"],
       ["/app/accounts/duplicate-emails", "/app/accounts/users?view=duplicates&duplicate=yes&sort=mail.asc&group=mail"],
       ["/app/accounts/duplicate-emails?page=3", "/app/accounts/users?view=duplicates&duplicate=yes&sort=mail.asc&group=mail&page=3"],
     ] as const;
@@ -217,12 +228,12 @@ test("the former agent list and duplicate address page open their views of the a
       expect(moved.headers.get("location")).toBe(to);
     }
     // each target renders its view of the list on the server
-    const agents = await app.request("/app/accounts/users?view=agents&kind=agent,api-key", { headers: { "Accept-Language": "de" } });
+    const agents = await app.request("/app/accounts/users?view=agents&kind=agent", { headers: { "Accept-Language": "de" } });
     expect(agents.status).toBe(200);
     const agentsHtml = await agents.text();
-    expect(agentsHtml).toContain("Art ist Agent oder API Key");
+    expect(agentsHtml).toContain("Art ist Agent");
     expect(agentsHtml).toContain("Wochenbericht");
-    expect(spies.directory).toHaveBeenLastCalledWith(expect.objectContaining({ kinds: ["agent", "api-key"] }));
+    expect(spies.directory).toHaveBeenLastCalledWith(expect.objectContaining({ kinds: ["agent"] }));
     const duplicates = await app.request("/app/accounts/users?view=duplicates&duplicate=yes&sort=mail.asc&group=mail", {
       headers: { "Accept-Language": "de" },
     });

@@ -130,7 +130,7 @@ suite("the administration's user list (integration)", () => {
     }
   }, 60_000);
 
-  test("lists people, agents and API key accounts in one list, never the service accounts that had no admin list", async () => {
+  test("lists people, agents (agent and standalone) and API key accounts (resource-bound), never personal keys or code accounts", async () => {
     const tag = crypto.randomUUID().slice(0, 8);
     const day = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
     const user = async (name: string, values: { mail?: string | null; login?: string; admin?: boolean } = {}) => {
@@ -159,7 +159,7 @@ suite("the administration's user list (integration)", () => {
     const bot = await service("Bot", "agent");
     const importer = await service("Importer", "standalone", { status: "disabled" });
     await service("Personal", "user_delegated", { delegated: ada });
-    await service("Space", "resource_bound", { app: true });
+    const space = await service("Space", "resource_bound", { app: true });
     await service("Code", "code");
     await sql`
       INSERT INTO auth.service_account_credentials (service_account_id, name, token_prefix, secret_hash, last_used_at)
@@ -178,23 +178,25 @@ suite("the administration's user list (integration)", () => {
 
     try {
       const all = await read();
-      expect(all.total).toBe(6);
+      expect(all.total).toBe(7);
       expect(all.items.map((entry) => `${entry.kind}:${(entry.kind === "person" ? entry.displayName : entry.name).split(" ")[0]}`)).toEqual(
-        ["person:Ada", "agent:Bot", "api-key:Importer", "person:Jonas", "person:Jonny", "person:Noor"],
+        // a standalone account from before agents existed is an agent; a resource-bound one is an API key account
+        ["person:Ada", "agent:Bot", "agent:Importer", "person:Jonas", "person:Jonny", "person:Noor", "api-key:Space"],
       );
-      // what a service account row shows: its state and when one of its keys was used last
+      // what a service account row shows: its state, its app resource, and when one of its keys was used last
       const bots = all.items.filter((entry) => entry.kind !== "person");
       expect(bots).toMatchObject([
-        { kind: "agent", id: bot, status: "active", lastUsed: expect.any(String) },
-        { kind: "api-key", id: importer, status: "disabled", lastUsed: null },
+        { kind: "agent", id: bot, status: "active", resource: null, lastUsed: expect.any(String) },
+        { kind: "agent", id: importer, status: "disabled", resource: null, lastUsed: null },
+        { kind: "api-key", id: space, status: "active", resource: { appId: "spaces", type: "space", id: `space-${tag}` } },
       ]);
-      // user-delegated, resource-bound and code accounts never appear, whatever the filter
+      // personal keys (user-delegated) and code accounts never appear, whatever the filter
       for (const kinds of [undefined, ["agent", "api-key"] as const])
-        expect((await list({ kinds: kinds ? [...kinds] : undefined })).some((name) => /Personal|Space|Code/.test(name))).toBe(false);
+        expect((await list({ kinds: kinds ? [...kinds] : undefined })).some((name) => /Personal|Code/.test(name))).toBe(false);
 
-      expect(await list({ kinds: ["agent"] })).toEqual(["agent:Bot"]);
-      expect(await list({ kinds: ["api-key"] })).toEqual(["api-key:Importer"]);
-      expect(await list({ statuses: ["disabled"] })).toEqual(["api-key:Importer"]);
+      expect(await list({ kinds: ["agent"] })).toEqual(["agent:Bot", "agent:Importer"]);
+      expect(await list({ kinds: ["api-key"] })).toEqual(["api-key:Space"]);
+      expect(await list({ statuses: ["disabled"] })).toEqual(["agent:Importer"]);
       expect(await list({ statuses: ["invited"] })).toEqual(["person:Noor"]);
       // a filter only a person has narrows the list to people
       expect(await list({ passkey: false, kinds: ["person", "agent"] })).toEqual([
@@ -212,14 +214,15 @@ suite("the administration's user list (integration)", () => {
         "person:Jonas",
         "person:Jonny",
         "agent:Bot",
-        "api-key:Importer",
+        "agent:Importer",
         "person:Noor",
+        "api-key:Space",
       ]);
       // last activity: a person's sign-in, an agent's last key use; never counts as the oldest
       const byActivity = await list({ sort: { field: "lastLogin", direction: "desc" } });
       expect(byActivity.slice(0, 4)).toEqual(["agent:Bot", "person:Ada", "person:Jonas", "person:Jonny"]);
-      expect(byActivity.slice(4).sort()).toEqual(["api-key:Importer", "person:Noor"]);
-      expect(await list({ pagination: { page: 2, perPage: 4 } })).toEqual(["person:Jonny", "person:Noor"]);
+      expect(byActivity.slice(4).sort()).toEqual(["agent:Importer", "api-key:Space", "person:Noor"]);
+      expect(await list({ pagination: { page: 2, perPage: 4 } })).toEqual(["person:Jonny", "person:Noor", "api-key:Space"]);
 
       // the service checks the administrator role itself: a full account without it learns nothing
       const member = { userId: ada, uid: `acc-ada-${tag}`, roles: ["user"], provider: "local" };
