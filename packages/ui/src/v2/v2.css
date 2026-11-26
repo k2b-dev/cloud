@@ -565,6 +565,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* the name of what stands open after the way back: the row's type, strong, cut with "…". It takes the room the way
+   back leaves: the way back is the control and keeps its whole label while the bar holds it */
+.k2-ui .k2-pane-back > .k2-pane-back-meta {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  font: var(--k2-t-row);
+  font-weight: 600;
+  color: var(--k2-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .k2-ui .k2-pane > .k2-scroll {
   flex: 1;
   min-height: 0;

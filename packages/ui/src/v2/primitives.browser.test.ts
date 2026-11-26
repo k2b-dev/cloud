@@ -400,6 +400,50 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  // Where no head of the pane names what stands open (an editor's file), the way back carries its name after it.
+  test(
+    "390 px: the way back names what stands open after it, both on one line in the bar, each cut with …",
+    async () => {
+      const page = await open("namedBack", { width: 390 });
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
+          const button = bar.querySelector<HTMLElement>(".k2-btn")!;
+          const name = bar.querySelector<HTMLElement>(".k2-pane-back-meta")!;
+          const box = bar.getBoundingClientRect();
+          const right = box.right - Number.parseFloat(getComputedStyle(bar).paddingRight);
+          const line = (element: HTMLElement) => Math.round(element.getBoundingClientRect().height / 20);
+          return {
+            after: name.getBoundingClientRect().left >= button.getBoundingClientRect().right,
+            inside: name.getBoundingClientRect().right <= right + 0.5,
+            lines: [line(button.querySelector(".k2-btn-label")!), line(name)],
+            // the way back is the control: it keeps its whole label, the name takes the rest
+            whole:
+              button.querySelector<HTMLElement>(".k2-btn-label")!.scrollWidth <=
+              button.querySelector<HTMLElement>(".k2-btn-label")!.clientWidth + 1,
+            cut: name.scrollWidth > name.clientWidth,
+            title: name.getAttribute("title"),
+          };
+        });
+        expect(found).toEqual({
+          after: true,
+          inside: true,
+          lines: [1, 1],
+          whole: true,
+          cut: true,
+          title: "Notizen zur Lieferung der Eichenplatten KW 49.md",
+        });
+        // the way back keeps its own name; the file's name is no part of the link
+        expect(await page.getByRole("link", { name: "Werkstatt mit einem langen Namen", exact: true }).count()).toBe(1);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   for (const scale of [1, 2])
     test(
       `DPR ${scale}: check, radio and switch sit on the same pixel empty, set and mixed, centred on the first text line`,

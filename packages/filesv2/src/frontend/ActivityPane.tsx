@@ -152,7 +152,8 @@ export default function ActivityPane(props: ActivityPaneProps) {
   // the side column: who changed most, where and what kind of change, over the changes shown (Valentin 26.11.)
   const summary = createMemo(() => activitySummary(entries(), h(), props.env));
   const KIND_ICONS = { added: "plus", changed: "pencil", moved: "arrows-move", removed: "trash", shared: "world-share", other: "dots" };
-  const showSummary = () => !!props.initial && !props.filters.q && !unavailable() && entries().length > 0;
+  // a single change would only say itself again
+  const showSummary = () => !!props.initial && !unavailable() && new Set(entries().map((entry) => entry.id)).size > 1;
   const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
   // the summary as one list: who (not under "Ich", where every change is the person's own), where, what kind
   const summaryLines = createMemo((): SummaryLine[] => {
@@ -183,6 +184,22 @@ export default function ActivityPane(props: ActivityPaneProps) {
       })),
     ];
   });
+  // Under the list and above its older pages (Valentin 26.11.: give the page structure; beside it, it squeezed the
+  // list at 1024): one quiet section, its lines under the heads who, where and what kind of change. A search has it
+  // too, over its hits' changes.
+  const summarySection = () => (
+    <Show when={showSummary()}>
+      <Section title={h().v2Summary}>
+        <List
+          label={h().v2Summary}
+          items={summaryLines()}
+          rowKey={(line) => line.key}
+          group={(line) => ({ key: line.group, label: line.group })}
+          row={(line) => <Row avatar={line.avatar} mark={line.mark} icon={line.icon} lines={[line.label]} time={count(line.count)} />}
+        />
+      </Section>
+    </Show>
+  );
   return (
     <Pane
       label={h().activity}
@@ -239,6 +256,7 @@ export default function ActivityPane(props: ActivityPaneProps) {
               clearHref={activityUrl({ ...props.filters, q: undefined })}
               onNavigate={props.env.onNavigate}
               onChanged={changed}
+              summary={summarySection()}
             />
           )}
         </Match>
@@ -274,19 +292,7 @@ export default function ActivityPane(props: ActivityPaneProps) {
           />
         </Match>
       </Switch>
-      {/* Under the list and above its older pages (Valentin 26.11.: give the page structure; beside it, it squeezed the
-          list at 1024): one quiet section, its lines under the heads who, where and what kind of change */}
-      <Show when={showSummary()}>
-        <Section title={h().v2Summary}>
-          <List
-            label={h().v2Summary}
-            items={summaryLines()}
-            rowKey={(line) => line.key}
-            group={(line) => ({ key: line.group, label: line.group })}
-            row={(line) => <Row avatar={line.avatar} mark={line.mark} icon={line.icon} lines={[line.label]} time={count(line.count)} />}
-          />
-        </Section>
-      </Show>
+      <Show when={!props.filters.q}>{summarySection()}</Show>
       <Show when={props.initial && !props.filters.q && !unavailable()}>
         <Show when={olderFailed()}>
           <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void more() }]}>

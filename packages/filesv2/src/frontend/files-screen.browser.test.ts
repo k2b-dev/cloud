@@ -874,6 +874,9 @@ describe("the views beside the folders on v2", () => {
               .getByRole("link", { name: /Werkstatt/ })
               .isVisible(),
           ).toBe(true);
+          // the head gives way on the phone: the bar of the way back names the file
+          expect(await tab.locator("[data-k2-part=Back] .k2-pane-back-meta").textContent()).toBe("Notizen.md");
+          expect(await tab.locator("[data-k2-part=Back] .k2-pane-back-meta").isVisible()).toBe(true);
           expect(await tab.locator("[data-k2-part=Pane] [data-slot=status]").count()).toBe(0);
         }
         await expectClean(tab);

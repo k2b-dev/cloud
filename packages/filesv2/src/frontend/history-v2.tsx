@@ -179,8 +179,8 @@ export type ActivityRowProps = {
   /** `me`: the person's own activity, so no row offers to contact its actor. */
   mode: "me" | "all";
   /**
-   * Note style, the thing first and no actor, where the place already names the person ("Zuletzt von dir"). Activity
-   * names who acted on every row, also under "Ich": an assistant may have acted on the person's behalf.
+   * Note style, the thing's mark first and no actor, where the place already names the person ("Zuletzt von dir",
+   * Activity under "Ich"). A change an assistant or an app made on the person's behalf still says so in its sentence.
    */
   notes?: boolean;
   /** A line inside an open run or batch: it leaves out what the run's line already says. */
@@ -233,10 +233,11 @@ export function ActivityRow(props: ActivityRowProps) {
         },
   );
   const actor = createMemo(() => actorOf(entry(), h(), props.env));
-  // Notes read the thing first; an action without a note form keeps its full sentence.
+  // Notes read the thing first; an action without a note form, and one made on the person's behalf, keep the sentence.
+  const noted = () => (props.notes && actor().kind === "person") || !!props.member;
   const linked = createMemo(
     () =>
-      (props.notes || props.member ? noteSentence(props.row, h(), props.env, { links: true, short: props.member === "short" }) : null) ??
+      (noted() ? noteSentence(props.row, h(), props.env, { links: true, short: props.member === "short" }) : null) ??
       sentence(props.row, h(), props.env, { context: props.context ?? "activity", links: true }),
   );
   const mark = createMemo(() => {
@@ -324,13 +325,17 @@ export function RunRow(props: {
     const oldest = formatTime(props.rows.at(-1)!.entries.at(-1)!.time, locale(), props.env);
     return oldest === newest ? newest : `${oldest}–${newest}`;
   };
+  const actor = () => actorOf(lead(), h(), props.env);
+  // under "Ich" the person's own run leads with what it is, as every own change; one on their behalf with who acted
+  const own = () => props.mode === "me" && actor().kind === "person";
   return (
     <Row
       lines={[
         <SentenceText parts={runSentence(props.rows, h(), props.env, locale())} />,
         h().changesCount.replace("{count}", String(props.rows.length)),
       ]}
-      avatar={personOf(actorOf(lead(), h(), props.env))}
+      avatar={own() ? undefined : personOf(actor())}
+      mark={own() ? { icon: "files" } : undefined}
       time={span()}
       onOpen={props.onToggle}
     />
@@ -379,7 +384,8 @@ export function ActivityLineRow(props: {
           env={props.env}
           actions={props.actions}
           mode={props.mode}
-          notes={props.notes}
+          // under "Ich" every change is the person's own: the row names the thing, not the person again
+          notes={props.notes ?? props.mode === "me"}
           onChanged={props.onChanged}
           toggle={item.batch ? { ...item.batch, onToggle: () => props.onToggle(item.row.key) } : undefined}
         />

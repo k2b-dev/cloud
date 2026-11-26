@@ -24,9 +24,9 @@ export default function MarkdownPane(props: {
   launch: MarkdownLaunch;
   /** The workspace asks this before it leaves the editor; `false` stays. */
   onGuard: (guard: (() => Promise<boolean>) | null) => void;
-  /** The draft's state for the workspace's head, beside the file's name (no title row of its own, Valentin 26.11.). */
   /** The way back to the file's folder: on the phone, where the head gives way, as "‹ Werkstatt" above the editor. */
   back?: Action;
+  /** The draft's state for the workspace's head, beside the file's name (no title row of its own, Valentin 26.11.). */
   onHead: (head: EditorHead | null) => void;
 }) {
   const t = useAssetMessages();

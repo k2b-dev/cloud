@@ -213,6 +213,13 @@ describe("Activity on UI v2", () => {
     expect(hrefs.every((href) => !href.includes("Kunden") && !href.includes("Privat"))).toBe(true);
   });
 
+  test('under "Ich" a run of the person\'s own changes leads with what it is, not with the person', async () => {
+    await pane(bulk(12), { filters: { actor: "me" } });
+    const run = rowWith("12 Dateien umbenannt und verschoben")!;
+    expect(run.querySelector('.k2-row-lead [data-k2-part="Avatar"]')).toBeNull();
+    expect(run.querySelector('[data-k2-part="Mark"]')).not.toBeNull();
+  });
+
   test("a bulk rename and move reads as one line that opens its changes below it and stays open after coming back", async () => {
     const view = await pane(bulk(12));
     const run = () => rowWith("12 Dateien umbenannt und verschoben")!;
@@ -256,16 +263,25 @@ describe("Activity on UI v2", () => {
           after: live("vertrieb/Kampagnen/Angebot.pdf", { directory: false }),
         }),
         entry({ action: "file.edit", time: at(10), actor: valentin, after: live("vertrieb/Planung/Budget.xlsx", { directory: false }) }),
+        entry({
+          action: "file.edit",
+          time: at(5),
+          actor: valentin,
+          via: "agent",
+          after: live("vertrieb/Planung/Plan.md", { directory: false }),
+        }),
       ],
       { filters: { actor: "me" }, marks: [openedFile("Grafik/Logo.svg", at(20))] },
     );
-    // changes lead with who acted, also under "Ich"; an opened file leads with its mark
-    expect(rows().map((row) => row.querySelector('.k2-row-lead [data-k2-part="Avatar"]') !== null)).toEqual([true, false, true]);
-    expect(rows().map((row) => row.querySelector('[data-k2-part="Mark"]') !== null)).toEqual([true, true, true]);
-    const order = ["Angebot.pdf", "Logo.svg", "Budget.xlsx"];
+    // under "Ich" every change is the person's own: each line leads with the thing, none with the person again
+    expect(rows().map((row) => row.querySelector('.k2-row-lead [data-k2-part="Avatar"]') !== null)).toEqual([false, false, false, false]);
+    expect(rows().map((row) => row.querySelector('[data-k2-part="Mark"]') !== null)).toEqual([true, true, true, true]);
+    const order = ["Angebot.pdf", "Logo.svg", "Budget.xlsx", "Plan.md"];
     expect(rows().map((row) => order.find((name) => row.textContent?.includes(name)))).toEqual(order);
-    // "Ich" names who acted too: an assistant may act on the person's behalf (design review 26.11.)
-    expect(rowWith("Angebot.pdf")!.textContent).toMatch(/Valentin Kolb hat\s+Angebot\.pdf hochgeladen/);
+    for (const name of ["Angebot.pdf", "Budget.xlsx"]) expect(rowWith(name)!.textContent).not.toContain("Valentin Kolb");
+    expect(rowWith("Angebot.pdf")!.textContent).toContain("Angebot.pdf hochgeladen in Team Vertrieb › Kampagnen");
+    // what an assistant did on the person's behalf still says so
+    expect(rowWith("Plan.md")!.textContent).toContain("Assistant im Auftrag von Valentin Kolb");
     expect(opener(rowWith("Logo.svg"))?.getAttribute("href")).toBe(
       "/app/filesv2?base=cloud%3Agroups%3Avertrieb&path=Grafik&file=Grafik%2FLogo.svg",
     );
@@ -563,6 +579,103 @@ describe("Activity on UI v2", () => {
         }),
     });
     expect(text()).toContain("Jana Berger hat es von Team Vertrieb › Archiv weiter nach Team Vertrieb › Archiv › 2025 verschoben");
+  });
+
+  test("a search reads as Activity: the trash chip says with it where the item comes back to, and a summary follows", async () => {
+    const trashed = entry({ action: "item.trash", before: gone("vertrieb/Kunden/Angebote 2025", { directory: true }) });
+    const other = entry({
+      action: "file.edit",
+      actor: { kind: "user", userId: "jana", name: "Jana Berger" },
+      after: live("vertrieb/Kunden/Angebote 2025 Übersicht.xlsx", { directory: false }),
+    });
+    await search([trashed, other]);
+    // the chip never stands alone: its line says where the folder comes back to, and no note says it a second time
+    const summary = dom.root.querySelector<HTMLElement>('[data-k2-part="Chip"]')!.parentElement!;
+    expect(summary.textContent).toContain("Der Ordner kommt zurück");
+    expect(text().split("Der Ordner kommt zurück")).toHaveLength(2);
+    // who, where, what kind: the same summary as Activity's, over the hits' changes
+    const glance = dom.root.querySelector<HTMLElement>('[data-k2-part="List"][aria-label="Im Überblick"]')!;
+    expect(glance.textContent).toContain("Jana Berger");
+    expect(glance.textContent).toContain("Lukas Pohl");
+  });
+
+  /** A hop of the chain past `moved`, by Jana, at `time`. */
+  const hop = (time: string) => ({
+    activityId: `hop-${time}`,
+    time,
+    actor: { kind: "user" as const, userId: "jana", name: "Jana Berger" },
+    via: "web",
+    before: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+    after: current("vertrieb/Archiv/2025/Angebote 2025", { itemId: "f1" }),
+  });
+  const historyList = () =>
+    [...dom.root.querySelectorAll<HTMLElement>('[data-k2-part="List"]')].find((list) =>
+      list.getAttribute("aria-label")?.startsWith("Verlauf"),
+    );
+
+  test("a hop that arrives late keeps the item's steps: a batched step reads its batch once", async () => {
+    const moved = entry({
+      action: "item.move",
+      batchId: "batch-1",
+      time: "2026-10-14T14:40:00.000Z",
+      before: gone("vertrieb/Kunden/Angebote 2025"),
+      after: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+    });
+    const replies: ReturnType<typeof deferred<ActivityChain>>[] = [];
+    let reads = 0;
+    await search([moved], {
+      loadChain: () => {
+        const reply = deferred<ActivityChain>();
+        replies.push(reply);
+        return reply.promise;
+      },
+      loadBatch: async () => {
+        reads += 1;
+        return { visibleCount: 3, complete: true };
+      },
+    });
+    expect(reads).toBe(1);
+    replies.at(-1)!.resolve(
+      chain({
+        hops: [hop("2026-10-16T08:00:00.000Z")],
+        endpoint: { baseId: "cloud:groups:vertrieb", path: "Archiv/2025/Angebote 2025", itemId: "f1" },
+        certainty: "verified",
+      }),
+    );
+    await flush();
+    expect(text()).toContain("Jana Berger hat es");
+    expect(reads).toBe(1);
+  });
+
+  test("the history stands newest first under one head per day, also where a hop is older than the item's steps", async () => {
+    const moved = entry({
+      action: "item.move",
+      time: "2026-10-14T14:40:00.000Z",
+      before: gone("vertrieb/Kunden/Angebote 2025"),
+      after: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+    });
+    // an older step of the same folder (the same item at its place now, so one hit)
+    const shared = entry({
+      action: "share.create",
+      time: "2026-10-02T07:15:00.000Z",
+      before: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+      after: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+    });
+    await search([moved, shared], {
+      // the hop's time lies on the older step's day, before the move
+      loadChain: async () =>
+        chain({
+          hops: [hop("2026-10-02T09:00:00.000Z")],
+          endpoint: { baseId: "cloud:groups:vertrieb", path: "Archiv/2025/Angebote 2025", itemId: "f1" },
+          certainty: "verified",
+        }),
+    });
+    const heads = [...historyList()!.querySelectorAll(".k2-list-head")].map((head) => head.textContent);
+    expect(heads).toHaveLength(2);
+    expect(new Set(heads).size).toBe(2);
+    const steps = [...historyList()!.querySelectorAll<HTMLElement>('[data-k2-part="Row"]')].map((row) => row.textContent ?? "");
+    expect(steps).toHaveLength(3);
+    expect(steps[1]).toContain("Jana Berger");
   });
 
   test("a vanished item offers recovery only as the server allows it now, and says so when that check fails", async () => {

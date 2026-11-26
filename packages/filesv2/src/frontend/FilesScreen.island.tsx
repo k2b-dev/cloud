@@ -685,7 +685,13 @@ export default function FilesScreen(props: {
     const launch = snapshot().editor;
     if (!launch) return undefined;
     const folderPath = parentPath(launch.entry.path);
-    return { label: folderName(folderPath), href: filesUrl(launch.base.id, folderPath, null, launch.entry.path), onNavigate };
+    // on the phone the head gives way: the bar of the way back names the file after it ("‹ Werkstatt  Notizen.md")
+    return {
+      label: folderName(folderPath),
+      meta: launch.entry.name,
+      href: filesUrl(launch.base.id, folderPath, null, launch.entry.path),
+      onNavigate,
+    };
   };
   const editorBack = () => {
     const launch = snapshot().editor;

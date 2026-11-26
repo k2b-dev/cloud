@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { toast, useLocale } from "@k2b/ui";
 import { type Action, Bar, Button, Chip, Empty, List, Notice, type OnNavigate, Row, Section, Text } from "@k2b/ui/v2";
-import { createMemo, mapArray, Show } from "solid-js";
+import { createMemo, type JSX, mapArray, Show } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry } from "../activity-contracts";
 import { entryMark } from "./entry-mark";
 import {
@@ -58,6 +58,8 @@ export type ActivitySearchProps = {
   clearHref: string;
   onNavigate?: OnNavigate;
   onChanged?: () => void;
+  /** Activity's summary over the hits' changes, under the hits and above their older pages. */
+  summary?: JSX.Element;
 };
 
 /**
@@ -153,6 +155,7 @@ export default function ActivitySearch(props: ActivitySearchProps) {
           </Show>
         </Show>
       </Show>
+      {props.summary}
       <Show when={props.moreFailed}>
         <Notice tone="bad" actions={[{ label: h().retry, onClick: props.onLoadMore }]}>
           {h().olderFailed}
@@ -384,6 +387,12 @@ function MissingHit(props: {
     }
   };
 
+  /**
+   * What the chip's line says beside it, each fact once: where the item is now; in the trash, where it comes back to
+   * (the chip says where it lies, its history who put it there), so the chip never stands alone.
+   */
+  const told = (): Part[] | string => (props.kind === "trash" ? (note() ?? now()) : now());
+
   /** The one or two deeds the server allows now; they appear once its answer arrived. */
   const deeds = (): Action[] => {
     const actions = props.actions ?? {};
@@ -457,11 +466,20 @@ function MissingHit(props: {
   const known = createMemo(() => new Set(props.hit.entries.map((entry) => entry.id)));
   const hops = createMemo(() => (chain.data()?.hops ?? []).filter((hop) => !known().has(hop.activityId) && visible(hop.after)).reverse());
   const rows = createMemo(() => historyRows(props.hit.entries, { batches: false }));
-  // later hops first, then the item's own steps: newest first, each under its day. One object per step for as long as
-  // the step stands, so a hop arriving later does not make the item's steps anew (each would read its batch again).
+  // the hops and the item's own steps, each under its day. One object per step for as long as the step stands, with
+  // its batch read: a hop arriving later makes no step anew, and a row the list makes anew keeps what its step read.
   const hopSteps = createMemo(mapArray(hops, (hop) => ({ kind: "hop" as const, key: `hop:${hop.activityId}`, time: hop.time, hop })));
-  const rowSteps = createMemo(mapArray(rows, (row) => ({ kind: "row" as const, key: `row:${row.key}`, time: row.lead.time, row })));
-  const steps = createMemo(() => [...hopSteps(), ...rowSteps()]);
+  const rowSteps = createMemo(
+    mapArray(rows, (row) => ({
+      kind: "row" as const,
+      key: `row:${row.key}`,
+      time: row.lead.time,
+      row,
+      batch: batchRead(row, props.loadBatch),
+    })),
+  );
+  // sorted by time, as a list's days must stand together: a hop is not always newer than every step of the item
+  const steps = createMemo(() => [...hopSteps(), ...rowSteps()].sort((a, b) => Date.parse(b.time) - Date.parse(a.time)));
   const mark = () => entryMark({ name: itemName(), directory: directory() !== false });
 
   return (
@@ -473,13 +491,9 @@ function MissingHit(props: {
         actions={deeds().length ? twoDeeds() : undefined}
         summary={
           <>
-            <Chip status={tag().status}>{tag().label}</Chip>
-            {/* each fact once: in the trash the chip says where it lies, and its history says who put it there */}
-            <Show when={props.kind !== "trash"}>
-              {" "}
-              <Show when={typeof now() === "string"} fallback={<SentenceText parts={now() as Part[]} />}>
-                {now() as string}
-              </Show>
+            <Chip status={tag().status}>{tag().label}</Chip>{" "}
+            <Show when={typeof told() === "string"} fallback={<SentenceText parts={told() as Part[]} />}>
+              {told() as string}
             </Show>
           </>
         }
@@ -503,7 +517,7 @@ function MissingHit(props: {
             {h().recoveryFailed}
           </Notice>
         </Show>
-        <Show when={note()}>
+        <Show when={props.kind !== "trash" && note()}>
           {(parts) => (
             <Notice tone="note">
               <SentenceText parts={parts()} />
@@ -533,7 +547,7 @@ function MissingHit(props: {
                 env={props.env}
                 actions={props.actions}
                 loadedOthers={props.batchOthers(step.row)}
-                loadBatch={props.loadBatch}
+                batch={step.batch}
               />
             )
           }
@@ -543,23 +557,33 @@ function MissingHit(props: {
   );
 }
 
+/**
+ * A step's batch context, read once for as long as the step stands. It is made beside the step, not in its row: a
+ * virtual list makes a row anew when it leaves its window and comes back, and the row would read the batch again.
+ */
+const batchRead = (row: HistoryRowModel, load?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>) => ({
+  context: query.create({
+    source: () => row.lead.id,
+    enabled: () => !!row.lead.batchId && !!load,
+    load: (_id, { abortSignal }) => load!(row.lead, abortSignal),
+  }),
+  reads: !!load,
+});
+type BatchRead = ReturnType<typeof batchRead>;
+
 /** A step of the hit's history; the hit above owns the deeds. A batched step counts its freshly authorized peers. */
 function ChainRow(props: {
   row: HistoryRowModel;
   env: HistoryEnvironment;
   actions?: HistoryActions;
   loadedOthers: number;
-  loadBatch?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>;
+  batch: BatchRead;
 }) {
   const h = useHistoryMessages();
-  const batch = query.create({
-    source: () => props.row.lead.id,
-    enabled: () => !!props.row.lead.batchId && !!props.loadBatch,
-    load: (_id, { abortSignal }) => props.loadBatch!(props.row.lead, abortSignal),
-  });
+  const batch = props.batch.context;
   const others = () => {
     const result = batch.data();
-    const count = result ? Math.max(0, result.visibleCount - 1) : props.loadBatch ? 0 : props.loadedOthers;
+    const count = result ? Math.max(0, result.visibleCount - 1) : props.batch.reads ? 0 : props.loadedOthers;
     return count ? (result?.complete ? h().withOthers : h().withAtLeastOthers).replace("{count}", String(count)) : undefined;
   };
   const note = () => (batch.loading() ? h().batchLoading : batch.error() ? h().batchFailed : others());
@@ -570,7 +594,7 @@ function ChainRow(props: {
       actions={props.actions}
       mode="all"
       context="chain"
-      dated
+      dated={false}
       note={note()}
       deedless
       deed={batch.error() ? { label: h().retry, icon: "refresh", onClick: () => void batch.refresh() } : undefined}
