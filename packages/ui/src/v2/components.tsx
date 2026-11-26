@@ -36,8 +36,11 @@ type NavEntryBase = {
   current?: boolean;
   /** One level in, such as the folders of a mailbox. */
   nested?: boolean;
-  /** Something new here. */
-  dot?: Status;
+  /**
+   * Something here: `"ok"` new, `"warn"` or `"bad"` a problem, `"running"` work that runs now (a chat that answers, a
+   * sync), a small turning mark in the place of the dot that says "Läuft".
+   */
+  dot?: Status | "running";
 };
 
 /**
@@ -100,14 +103,28 @@ export type NavProps = {
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
-const NavEnd = (props: { item: NavItem }) => (
-  <>
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
-  </>
+const NavEnd = (props: { item: NavItem }) => {
+  const t = useUiMessages();
+  const status = (): Status | undefined => (props.item.dot === "running" ? undefined : props.item.dot);
+  return (
+    <>
+      <span class="k2-ni-name">{props.item.label}</span>
+      <Show when={status()}>{(dot) => <Dot status={dot()} />}</Show>
+      <Show when={props.item.dot === "running"}>
+        <NavRunning label={t().running} />
+      </Show>
+      <Show when={props.item.count !== undefined}>
+        <span class="k2-ni-count">{props.item.count}</span>
+      </Show>
+    </>
+  );
+};
+
+/** Work that runs in an entry: a mark that turns in the place of the dot, as wide as the dot, so nothing moves. */
+const NavRunning = (props: { label: string }) => (
+  <span class="k2-ni-running" role="img" aria-label={props.label}>
+    <Icon name="loader-2" />
+  </span>
 );
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
