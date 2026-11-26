@@ -5,11 +5,9 @@ export const mailKeptAdminMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      tabsLabel: "Mail administration",
       tabMailboxes: "Mailboxes",
       tabSecurity: "Security",
       tabKept: "Kept",
-      areaMail: "Mail",
       title: "Kept conversations",
       description:
         "Conversations someone kept in any mailbox. Only a Cloud administrator can stop keeping them. Opening, downloading and stopping are logged.",
@@ -101,11 +99,9 @@ export const mailKeptAdminMessages = i18n.define({
       stopKeepingFailed: "Couldn't stop keeping the conversation",
     },
     de: {
-      tabsLabel: "Mail-Verwaltung",
       tabMailboxes: "Postfächer",
       tabSecurity: "Sicherheit",
       tabKept: "Aufbewahrt",
-      areaMail: "Mail",
       title: "Aufbewahrte Unterhaltungen",
       description:
         "Unterhaltungen, die jemand in einem Postfach aufbewahrt. Nur Cloud-Admins können die Aufbewahrung aufheben. Öffnen, Herunterladen und Aufheben werden protokolliert.",

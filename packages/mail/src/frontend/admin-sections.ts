@@ -4,8 +4,7 @@ import { mailKeptAdminMessages } from "./kept-admin-messages";
 export type MailAdminView = "mailboxes" | "security" | "kept";
 
 /**
- * The views of Cloud administration › Mail on a v2 page: sections one level in under Mail in the admin bar, each its
- * own page. The v1 pages show the same views as tabs (`MailAdminTabs`).
+ * The views of Cloud administration › Mail: sections one level in under Mail in the admin bar, each its own page.
  */
 export const mailAdminSections = (locale: string, current: MailAdminView): AdminNavigationSection[] => {
   const { t } = mailKeptAdminMessages.resolve([locale]);
