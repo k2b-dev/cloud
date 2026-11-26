@@ -1,3 +1,4 @@
+import { PWA_SCOPE } from "@k2b/cloud/contracts";
 import { type AuthContext, buildMetadata, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { pwaDevices } from "@k2b/cloud/services";
 import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
@@ -20,8 +21,8 @@ export default ssr<AuthContext>(async (c) => {
     : undefined;
 
   return () => (
-    // Settings on v2: its own workspace; Start stays in the tab bar and the sidebar, so no way back is added.
-    <PwaLayout c={c} ui="v2" bare title={t.settings}>
+    // Settings on v2 in the app's frame, with its way back to Start beside a phone's tab bar.
+    <PwaLayout c={c} ui="v2" title={t.settings} back={{ href: PWA_SCOPE, label: t.back, withSidebar: false }}>
       <SettingsScreen
         account={{ id: user.id, name, mail: user.mail || undefined, avatar }}
         theme={readThemePreferenceFromCookieHeader(c.req.header("Cookie"))}

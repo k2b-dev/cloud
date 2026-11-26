@@ -157,7 +157,7 @@ describe("shell routes", () => {
     ["new", "Pair this app with your account on the web."],
     ["ended", "This device was signed out. Connect it again."],
     ["expired", "This code expired. Get a new one on the web."],
-    ["blocked", "This account can't use the app right now."],
+    ["blocked", "This account cannot use the app right now; your administrator can change that."],
     ["unavailable", "Can't reach Example Cloud right now."],
   ] as const)
     test(`/pwa/?pwa=${state} shows that state without an app session`, async () => {

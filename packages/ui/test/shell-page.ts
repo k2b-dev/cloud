@@ -37,7 +37,10 @@ export const loadShellAssets = async (app: { id: string; css: string }): Promise
     if (!result.success) throw new AggregateError(result.logs, `Could not build ${entry}`);
     return result.outputs[0]!.text();
   };
-  const v2 = await Bun.file(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css"))).text();
+  // Core's v2.css: v2 and Cloud's v2 additions (the visitor frame and footer), as a v2-only page links it
+  const v2Page = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../cloud/src/styles/v2-page.css")] });
+  if (!v2Page.success) throw new AggregateError(v2Page.logs, "Could not build Core's v2.css");
+  const v2 = await v2Page.outputs[0]!.text();
   const stylesheets: Record<string, string> = {
     "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
     "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
@@ -102,7 +105,7 @@ export const openShellPage = async (
   const tab = await context.newPage();
   const errors = pageErrors(tab);
   await tab.goto(`${SHELL_ORIGIN}${page.path}`);
-  if (page.extra) await tab.waitForSelector("body[data-ready]");
+  if (page.extra) await tab.waitForSelector("body[data-ready]", { state: "attached" });
   await tab.evaluate(() => window.document.fonts.ready);
   await settled(tab);
   return { context, tab, errors };

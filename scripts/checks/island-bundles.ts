@@ -11,8 +11,10 @@ import type { Finding, Rule } from "./rule";
 // Dynamic imports are excluded, exactly as in the production SSR asset manifest.
 const budgets = [
   { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 96 },
-  { file: "packages/pwa/src/frontend/_components/PairingNotice.island.tsx", kib: 112 },
-  { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 230 },
+  // The phone Start and Settings on @k2b/ui/v2 (its menus, confirm dialog and toasts in the static closure). Measured
+  // 2026-11-26: 553,489 / 612,960 B; about 10 % headroom, rounded up to the next KiB.
+  { file: "packages/pwa/src/frontend/_components/StartScreen.island.tsx", kib: 595 },
+  { file: "packages/pwa/src/frontend/_components/SettingsScreen.island.tsx", kib: 659 },
   // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure; KaTeX
   // loads only for math. Measured 2026-11-05 with these roots: 2,155,527 B (with KaTeX 2,258,365 B and fewer roots).
   // Measured 2026-11-07 with first-use table controls: 2,210,862 B; original 2160 KiB cap restored.

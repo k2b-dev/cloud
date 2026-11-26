@@ -11,6 +11,7 @@ import { session } from "@k2b/cloud/services/session";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
+import { serveCoreV2Sheet } from "../../../../tests/fixtures/core-v2-sheet";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
 import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
@@ -22,7 +23,11 @@ import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 const root = mkdtempSync(join(tmpdir(), "pwa-shell-pictures-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
+// a current Core: the pages take the v2 frame with Core's v2.css, as every installation with this app draws them
+serveCoreV2Sheet();
 const { shellRoutes } = await import("./index");
+const { visiblePwaParts } = await import("@k2b/cloud/ssr");
+const ui = resolve(import.meta.dir, "../../../ui");
 const shots = process.env.CLOUD_PWA_SHELL_SHOTS;
 
 const user: User = {
@@ -52,22 +57,31 @@ const shell: RuntimeAppMeta = {
   description: "",
   routes: ["/pwa", "/public/pwa"],
 };
-const part = (id: string, name: string, icon: string, description: string): RuntimeAppMeta => ({
+/** What each part's summary route answers once the page reads it: the line of the hydrated picture. */
+const SUMMARIES: Record<string, string> = {
+  mail: "3 ungelesen",
+  chat: "2 neue Nachrichten",
+  calendar: "Heute 2 Termine",
+  tasks: "5 fällig heute",
+  inventory: "12 Positionen zu zählen",
+};
+const part = (id: string, name: string, icon: string, description: string, accent?: `#${string}`): RuntimeAppMeta => ({
   id,
   name,
   icon,
   description,
   routes: [`/pwa/${id}`],
-  pwa: { href: `/pwa/${id}` },
+  ...(accent ? { appearance: { accent } } : {}),
+  pwa: { href: `/pwa/${id}`, ...(SUMMARIES[id] ? { summary: `/api/${id}/pwa/summary` } : {}) },
 });
 const PARTS = [
-  part("mail", "Mail", "ti ti-mail", "Posteingang der Werkstatt"),
-  part("chat", "Chat", "ti ti-messages", "Team und Baustellen"),
-  part("calendar", "Kalender", "ti ti-calendar", "Termine und Schichten"),
-  part("files", "Dateien", "ti ti-folder", "Pläne, Fotos und Belege"),
-  part("inventory", "Lager", "ti ti-box", "Bestand zählen und buchen"),
-  part("tasks", "Aufgaben", "ti ti-checkbox", "Was heute ansteht"),
-  part("notes", "Notizen", "ti ti-notes", "Eigene Notizen"),
+  part("mail", "Mail", "ti ti-mail", "Posteingang der Werkstatt", "#2563eb"),
+  part("chat", "Chat", "ti ti-messages", "Team und Baustellen", "#7c3aed"),
+  part("calendar", "Kalender", "ti ti-calendar", "Termine und Schichten", "#dc2626"),
+  part("files", "Dateien", "ti ti-folder", "Pläne, Fotos und Belege", "#0891b2"),
+  part("inventory", "Lager", "ti ti-box", "Bestand zählen und buchen", "#ca8a04"),
+  part("tasks", "Aufgaben", "ti ti-checkbox", "Was heute ansteht", "#16a34a"),
+  part("notes", "Notizen", "ti ti-notes", "Eigene Notizen", "#db2777"),
 ];
 const WORST = [
   ...PARTS,
@@ -123,10 +137,79 @@ const firstHtml = async (path: string, signedIn: boolean) => {
   return response.text();
 };
 
+/** The islands drawn with their page's props: the state a person sees once the page runs. */
+const buildShellHarness = async (): Promise<string> => {
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "_components/pwa.shell-harness.tsx")],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "solid-pwa-shell",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!build.success) throw new AggregateError(build.logs, "PWA shell harness build failed");
+  return build.outputs[0]!.text();
+};
+
+/** The props the page gives its island in each case, as the page computes them. */
+const shellProps = (name: string, parts: RuntimeAppMeta[]) => {
+  if (name === "einstellungen")
+    return {
+      screen: "settings",
+      props: {
+        account: { id: user.id, name: "Mia Muster", mail: "mia.muster@werkstatt.example" },
+        theme: "system",
+        name: "iPhone von Mia",
+        cloud: "Werkstatt Cloud",
+        version: "Cloud 0.0.0-local",
+      },
+    };
+  if (name === "gesperrt") return { screen: "start", cloud: "Werkstatt Cloud", view: { kind: "blocked" } };
+  if (name === "nicht-erreichbar") return { screen: "start", cloud: "Werkstatt Cloud", view: { kind: "unavailable" } };
+  const visible = visiblePwaParts(parts, user, "de");
+  return {
+    screen: "start",
+    cloud: "Werkstatt Cloud",
+    view: {
+      kind: "parts",
+      name: "Mia Muster",
+      endpoints: visible.flatMap((app) => (app.pwa.summary ? [app.pwa.summary] : [])),
+      parts: visible.map((app) => ({
+        id: app.id,
+        label: app.name,
+        icon: app.icon,
+        href: app.pwa.href,
+        description: app.description,
+        summary: app.pwa.summary,
+        color: app.appearance?.accent,
+      })),
+    },
+  };
+};
+
 let browser: Browser;
 let assets: ShellAssets;
+let harness: string;
 beforeAll(async () => {
   assets = await loadShellAssets({ id: "pwa", css: resolve(import.meta.dir, "../styles/app.css") });
+  harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -149,10 +232,31 @@ describe("The app on v2 in its frame", () => {
       apps = [shell, ...parts];
       const html = await firstHtml(path, signedIn);
       for (const width of [390, 1440]) {
-        const { context, tab, errors } = await openShellPage(browser, assets, { path, html, width });
+        // the islands run with the page's props: live summaries arrive, menus open
+        const props = JSON.stringify(shellProps(name, parts)).replaceAll("<", "\\u003c");
+        const summaries = Object.fromEntries(
+          Object.entries(SUMMARIES).map(([id, text]) => [
+            `/api/${id}/pwa/summary`,
+            { type: "application/json", body: JSON.stringify({ count: 1, text }) },
+          ]),
+        );
+        const { context, tab, errors } = await openShellPage(browser, assets, {
+          path,
+          html,
+          width,
+          extra: {
+            html: `<script type="application/json" id="shell-props">${props}</script><script src="/__shell-harness.js"></script>`,
+            files: {
+              "/__shell-harness.js": { type: "text/javascript; charset=utf-8", body: harness },
+              "/pwa/_auth/session/renew": { type: "application/json", body: JSON.stringify({ renewed: false, builds: {} }) },
+              ...summaries,
+            },
+          },
+        });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
           expect({ name, width, problems: layout.problems }).toEqual({ name, width, problems: [] });
+          if (name === "start") await tab.getByText("3 ungelesen").waitFor();
           if (shots) await tab.screenshot({ path: join(shots, `${name}-${width}.png`) });
           expect(errors).toEqual([]);
         } finally {

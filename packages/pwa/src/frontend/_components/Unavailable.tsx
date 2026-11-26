@@ -55,6 +55,7 @@ export default function Unavailable(props: { cloud: string }) {
   return (
     <Empty
       icon="cloud-off"
+      tone="warn"
       text={t().unreachable({ cloud: props.cloud })}
       action={{ label: t().tryAgain, icon: "refresh", onClick: () => location.replace(LAUNCH) }}
     />

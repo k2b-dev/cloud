@@ -78,12 +78,17 @@ const mount = (view: () => JSX.Element, options: { url?: string; before?: (dom: 
   return mounted;
 };
 const button = (dom: DomTestHarness, label: string) =>
-  [...dom.document.querySelectorAll("button")].find((element) => element.textContent?.trim() === label) as HTMLButtonElement | undefined;
-/** A radio of a v2 choice by the words of its label. */
-const radio = (dom: DomTestHarness, label: string) =>
-  [...dom.document.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((input) =>
-    input.closest("label")?.textContent?.includes(label),
-  );
+  [...dom.document.querySelectorAll("button")].find(
+    (element) => element.textContent?.trim() === label || element.getAttribute("aria-label") === label,
+  ) as HTMLButtonElement | undefined;
+/** Chooses an option in the menu at the end of a setting row: its button by the value it shows now, then the option. */
+const choose = async (dom: DomTestHarness, current: string, option: string) => {
+  [...dom.document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"]')]
+    .find((button) => button.textContent?.trim() === current)!
+    .click();
+  await waitFor(() => [...dom.document.querySelectorAll('[role^="menuitem"]')].some((item) => item.textContent?.includes(option)), option);
+  [...dom.document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((item) => item.textContent?.includes(option))!.click();
+};
 const settings = () =>
   createComponent(modules!.SettingsScreen, {
     account: { id: "mia", name: "Mia Muster" },
@@ -286,17 +291,17 @@ else {
       repaints += 1;
     });
     try {
-      radio(page.dom, "Dark")!.click();
+      await choose(page.dom, "Light", "Dark");
       await waitFor(() => repaints === 1, "repaint");
       expect(page.dom.document.documentElement.classList.contains("dark")).toBe(true);
       expect(page.dom.document.cookie).toContain("theme=dark");
-      radio(page.dom, "Automatic")!.click();
+      await choose(page.dom, "Dark", "Automatic");
       await waitFor(() => repaints === 2, "Automatic repaint");
       expect(page.dom.document.cookie).toContain("theme=system");
       expect(page.dom.document.documentElement.classList.contains("dark")).toBe(
         page.dom.window.matchMedia("(prefers-color-scheme: dark)").matches,
       );
-      radio(page.dom, "Deutsch")!.click();
+      await choose(page.dom, "English", "Deutsch");
       await waitFor(() => page.reloads === 1, "reload in German");
       expect(page.dom.document.cookie).toContain("cloud.locale=de");
     } finally {
@@ -328,6 +333,46 @@ else {
       expect(page.dom.window.localStorage.length).toBe(1);
       expect(page.dom.window.localStorage.getItem("unrelated")).toBe("keep");
       expect(fetch.calls).toEqual([{ method: "DELETE", path: "/pwa/_auth/session", body: undefined }]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a double tap asks once and signs out once; Enter during a save sends nothing more", async () => {
+    let release!: (response: Response) => void;
+    const fetch = mockFetch((method) =>
+      method === "PATCH"
+        ? new Promise<Response>((resolve) => {
+            release = resolve;
+          })
+        : new Response(null, { status: 204 }),
+    );
+    const page = mount(settings);
+    try {
+      const input = page.dom.document.querySelector<HTMLInputElement>('input[maxlength="80"]')!;
+      await waitFor(() => !input.disabled, "ready");
+      input.value = "Neuer Name";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      const enter = () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      enter();
+      await waitFor(() => fetch.calls.length === 1, "save in flight");
+      enter();
+      button(page.dom, "Save")!.click();
+      await Bun.sleep(20);
+      expect(fetch.calls.map((call) => call.method)).toEqual(["PATCH"]);
+      release(new Response(null, { status: 204 }));
+      await waitFor(() => page.dom.document.body.textContent?.includes("Name saved") ?? false, "saved");
+
+      button(page.dom, "Sign out of the app")!.click();
+      button(page.dom, "Sign out of the app")!.click();
+      await waitFor(() => !!page.dom.document.querySelector('[role="alertdialog"]'), "confirmation");
+      expect(page.dom.document.querySelectorAll('[role="alertdialog"]').length).toBe(1);
+      [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')]
+        .find((element) => element.textContent?.trim() === "Sign out of the app")!
+        .click();
+      await waitFor(() => page.replaced.length === 1, "pairing view");
+      expect(fetch.calls.filter((call) => call.method === "DELETE")).toHaveLength(1);
     } finally {
       page.dispose();
       fetch.restore();

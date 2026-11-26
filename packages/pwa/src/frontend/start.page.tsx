@@ -7,6 +7,7 @@ import { getDisplayRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud
 import { installationPlatform } from "@k2b/ui";
 import { deleteCookie, getCookie } from "hono/cookie";
 import { ssr } from "../config";
+import { shellMessages } from "../messages";
 import StartScreen from "./_components/StartScreen.island";
 import Welcome from "./_components/Welcome.island";
 
@@ -22,6 +23,7 @@ export default ssr<AuthContext>(async (c) => {
   c.header("Cache-Control", "private, no-store");
   const user = getUserBackedActor(c);
   const locale = getLocale(c);
+  const { t } = shellMessages.resolve([locale]);
   const cloud = c.get("settings")?.app?.name || "Cloud";
 
   const remembered = rememberedPwaAddress(getCookie(c, PWA_COOKIES.lastAddress)) ?? PWA_SCOPE;
@@ -36,11 +38,12 @@ export default ssr<AuthContext>(async (c) => {
       href: part.pwa.href,
       description: part.description,
       summary: part.pwa.summary,
+      color: part.appearance?.accent,
     }));
     const endpoints = [...new Set(parts.flatMap((part) => [part.pwa.badge, part.pwa.summary].filter((path) => path !== undefined)))];
-    // Start on v2: its own workspace with the installation's name and Settings in the head, the parts below.
+    // Start on v2 in the app's frame, which brings the head and the way to Settings; the island renders the parts.
     return () => (
-      <PwaLayout c={c} ui="v2" bare title={cloud}>
+      <PwaLayout c={c} ui="v2" title={cloud} sidebarTitle={t.start}>
         <StartScreen cloud={cloud} view={{ kind: "parts", parts: starts, endpoints, name: user.displayName || user.uid }} />
       </PwaLayout>
     );
@@ -49,7 +52,7 @@ export default ssr<AuthContext>(async (c) => {
   const state = c.req.query("pwa");
   if (state === "blocked") {
     return () => (
-      <PwaLayout c={c} ui="v2" bare title={cloud}>
+      <PwaLayout c={c} ui="v2" title={cloud}>
         <StartScreen cloud={cloud} view={{ kind: "blocked" }} />
       </PwaLayout>
     );
@@ -57,7 +60,7 @@ export default ssr<AuthContext>(async (c) => {
   // The launch marker without a session means the bounce could not renew: stop instead of bouncing again.
   if (state === "unavailable" || (!isWelcomeState(state) && c.req.query("pwa_launch") !== undefined)) {
     return () => (
-      <PwaLayout c={c} ui="v2" bare title={cloud}>
+      <PwaLayout c={c} ui="v2" title={cloud}>
         <StartScreen cloud={cloud} view={{ kind: "unavailable" }} />
       </PwaLayout>
     );

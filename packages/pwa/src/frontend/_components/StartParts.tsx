@@ -11,6 +11,8 @@ export type StartPart = {
   description?: string;
   /** The part's `pwa.summary` route. */
   summary?: string;
+  /** The app's own colour: its mark in the row. */
+  color?: string;
 };
 
 export type StartPartsProps = {
@@ -32,6 +34,7 @@ export default function StartParts(props: StartPartsProps) {
         {(part) => (
           <Row
             icon={part.icon.replace(/^ti\s+ti-/, "")}
+            color={part.color}
             // the server and the first browser render keep the same line; a live summary replaces it in place
             lines={[part.label, part.summary ? (appPartSummaryText(part.summary) ?? RESERVED) : (part.description ?? RESERVED)]}
             href={part.href}
