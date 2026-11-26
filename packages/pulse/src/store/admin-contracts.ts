@@ -66,6 +66,9 @@ export type AdminBaseRow = {
   /** Public short ID. */
   id: string;
   name: string;
+  /** The base's symbol (`ti ti-…`) and colour name, so admin lists show the same mark as the app; older servers leave them out. */
+  icon?: string;
+  color?: string;
   /** Display names of up to three base admins, then `adminCount` for the rest. */
   admins: string[];
   adminCount: number;

@@ -37,6 +37,8 @@ import type {
   PulsePolicy,
   ReadProfileName,
 } from "../../store/admin-contracts";
+import { iconName } from "../screens/BaseFrame";
+import { baseColor } from "../screens/store-state";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import { AdminClientError, adminClient } from "./admin-client";
 import { adminErrorText, type PulseAdminMessages, pulseAdminMessages } from "./pulse-admin-messages";
@@ -635,6 +637,7 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
           open={(row) => ({ onOpen: () => row.store.state !== "deleting" && !deletedIds().has(row.id) && setEditing(row) })}
           empty={{ icon: "database", text: t().basesEmpty }}
           phone={(row) => ({
+            mark: { icon: iconName(row.icon ?? ""), color: baseColor(row.color ?? "") },
             lines: [
               row.name,
               `${profileLabel(t(), row.store.profile)} · ${row.store.usage ? bytes(row.store.usage.bytes, locale()) : t().notMeasured}`,
@@ -642,7 +645,12 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
             marks: stateCell(row),
           })}
           columns={[
-            { title: t().colBase, width: { min: 180, default: 240 }, cell: (row) => ({ lines: [row.name, admins(row)] }) },
+            {
+              title: t().colBase,
+              width: { min: 180, default: 240 },
+              mark: (row) => ({ icon: iconName(row.icon ?? ""), color: baseColor(row.color ?? "") }),
+              cell: (row) => ({ lines: [row.name, admins(row)] }),
+            },
             { title: t().colState, width: { min: 150, default: 170 }, cell: stateCell },
             { title: t().colProfile, width: { min: 90, default: 100 }, drop: true, cell: (row) => profileLabel(t(), row.store.profile) },
             {

@@ -24,6 +24,8 @@ export const fixtureAdminNav = (view: AdminView): NavProps => ({
 const base = fixtureBase({ id: "x", name: "x" });
 const row = (patch: Partial<AdminBaseRow> & Pick<AdminBaseRow, "id" | "name">): AdminBaseRow => ({
   rollupLag: false,
+  icon: "ti ti-activity",
+  color: "blue",
   admins: ["Jana Petersen"],
   adminCount: 1,
   rawRetentionDays: 30,
@@ -44,9 +46,21 @@ export const fixturePolicy: PulsePolicy = {
 
 export const fixtureAdminBases: AdminBasesPage = {
   items: [
-    row({ id: "b7Kq2mX9", name: "Betrieb Werkstatt Nord", admins: ["Jana Petersen", "Jonas Wolf", "Mira Aydın"], adminCount: 5 }),
-    row({ id: "c3Lw8pR1", name: "Webshop", rawRetentionDays: 90 }),
-    row({ id: "e8Pv1sJ3", name: "Archiv 2025", store: { ...base.store, writeBlockReason: "checkpoint_mismatch" } }),
+    row({
+      id: "b7Kq2mX9",
+      name: "Betrieb Werkstatt Nord",
+      admins: ["Jana Petersen", "Jonas Wolf", "Mira Aydın"],
+      adminCount: 5,
+      icon: "ti ti-server",
+    }),
+    row({ id: "c3Lw8pR1", name: "Webshop", rawRetentionDays: 90, icon: "ti ti-shopping-cart", color: "emerald" }),
+    row({
+      id: "e8Pv1sJ3",
+      name: "Archiv 2025",
+      icon: "ti ti-archive",
+      color: "zinc",
+      store: { ...base.store, writeBlockReason: "checkpoint_mismatch" },
+    }),
     row({
       id: "g6Ts3vL8",
       name: "Altes Lager",
