@@ -414,9 +414,12 @@ for (const width of [1440, 390])
         await dialog.waitFor();
         await settled(page);
         const [before, footBefore] = [await box(dialog), await box(dialog.locator('[data-slot="foot"] > .k2-bar'))];
-        await dialog.getByRole("button", { name: "Weiter" }).click();
+        // the keys go on: Enter on "Weiter", which leaves with the step; the focus stays in the dialog, never the page
+        await dialog.getByRole("button", { name: "Weiter" }).focus();
+        await page.keyboard.press("Enter");
         await dialog.getByText("Gekoppelt.").waitFor();
         await settled(page);
+        expect(await page.evaluate(() => document.querySelector(".k2-dialog")?.contains(document.activeElement))).toBe(true);
         const [after, footAfter] = [await box(dialog), await box(dialog.locator('[data-slot="foot"] > .k2-bar'))];
         expect(after.height).toBe(before.height);
         expect(footAfter.y).toBe(footBefore.y);

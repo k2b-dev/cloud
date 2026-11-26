@@ -101,7 +101,7 @@ export const Dialog = (props: DialogProps) => {
   };
   // The content's box keeps its height while its parts grow inside it (it scrolls), so the parts are watched too, and
   // parts that come later as well. Nothing is watched while the dialog is closed.
-  let watching: { sizes: ResizeObserver; parts: MutationObserver } | undefined;
+  let watching: { sizes: ResizeObserver; parts: MutationObserver; focus: MutationObserver } | undefined;
   // A stepwise dialog keeps the height of its tallest step while it is open, so a shorter step does not make it jump
   // (it would shrink and centre again); it never grows past the window. It starts anew when it opens again.
   const keep = (body: HTMLElement) => {
@@ -114,6 +114,7 @@ export const Dialog = (props: DialogProps) => {
   const stop = () => {
     watching?.sizes.disconnect();
     watching?.parts.disconnect();
+    watching?.focus.disconnect();
     watching = undefined;
     body?.parentElement?.style.removeProperty("--k2-dialog-kept");
   };
@@ -139,7 +140,18 @@ export const Dialog = (props: DialogProps) => {
     });
     observeAll();
     parts.observe(element, { childList: true });
-    watching = { sizes, parts };
+    // A part that leaves with the focus, such as "Weiter" when the next step comes, would drop the focus on the page
+    // behind the dialog: it goes to the first action of the foot instead, else the first control of the content.
+    const focus = new MutationObserver(() => {
+      if (!element.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
+      (first(foot) ?? first(element))?.focus();
+    });
+    watching = { sizes, parts, focus };
+    // the content's box is in its dialog only once the dialog is on the page
+    queueMicrotask(() => {
+      const popup = element.parentElement;
+      if (popup && watching?.focus === focus) focus.observe(popup, { childList: true, subtree: true });
+    });
     queueMicrotask(() => measure(element));
   };
   return (
