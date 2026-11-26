@@ -133,6 +133,38 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
   holds "Senden" as a default button (the page's primary stays "Neue
   Nachricht").
 
+## overview.tsx: an overview of things with a face
+
+![overview at 1440 px](../images/overview-1440.png)
+![overview at 390 px](../images/overview-390.png)
+
+The bases of Grids. `Nav` entries with `color`, so each base leads with its
+`Mark`; a `StatusRow` whose lead says what counts today, with chips for
+what lets a person act; `Tiles variant="card"` with `stats`, `people`,
+`foot`, `trend` and the `create` card with templates as `choices`; a
+`List` of two-line `Row`s with `mark` in the colour of their kind; a
+`Pane side` with `Digest activity`, each sentence with the thing's
+`Mark` and name.
+
+- A base has one colour and symbol, the same in the sidebar, on its card
+  and in a sentence. A kind of thing (table, board, form) has one colour
+  across the app.
+- A form or a workflow that did something is a person with its name.
+- States: `empty` (a new installation; the card that makes a base stays).
+
+## home.tsx: the home of one place
+
+![home at 1440 px](../images/home-1440.png)
+![home at 390 px](../images/home-390.png)
+
+One base: `Cells` with a `trend` on the first, the things as `Section`s of
+`Row`s with `mark`, their figures in the second line and their state as a
+chip in `marks`; then `Digest activity` under "Zuletzt geändert".
+
+- A state that needs a person (a failed workflow, new form entries) stands
+  in its row and as a `dot` on its sidebar entry.
+- States: `quiet` (a day without anything that needs a person).
+
 ## table.tsx: a table with a status row
 
 ![table at 1440 px](../images/table-1440.png)
