@@ -5,7 +5,6 @@ import {
   Chip,
   confirm,
   Dialog,
-  Empty,
   Facts,
   Failed,
   Field,
@@ -254,9 +253,10 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
               when={state.canEdit()}
               fallback={<Text type="meta">{state.generalOn(type) ? state.levelLabel({ type }, row()?.next ?? null) : t().off}</Text>}
             >
+              {/* k2b-ui gap: Setting (#4223): a switch at a row's end has no name of its own; the row already shows it. */}
               <Check
                 switch
-                label={label}
+                label={<span class="k2-hidden-text">{label}</span>}
                 checked={state.generalOn(type)}
                 disabled={!editable() || state.loading() || Boolean(row() && state.lastManagers().has(row()!.key))}
                 onChange={(value) => state.toggleGeneral(type, value)}
@@ -318,7 +318,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
     >
       <Show when={props.subtitle}>{(subtitle) => <Text muted>{subtitle()}</Text>}</Show>
       <Show when={!state.canEdit() && !state.loading()}>
-        <Notice tone="note">{state.readOnlyLine()}</Notice>
+        <Text muted>{state.readOnlyLine()}</Text>
       </Show>
 
       <Show when={state.canEdit() && !state.loading()}>
@@ -341,7 +341,11 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
           <Show when={!searchFailed()} fallback={<Failed text={access().retry} onRetry={() => search(query())} />}>
             <Show
               when={results().length > 0 || searching()}
-              fallback={<Empty icon="search-off" text={`${t().nobodyNamed({ query: query().trim() })} ${t().searchHint}`} />}
+              fallback={
+                <Text muted>
+                  {t().nobodyNamed({ query: query().trim() })} {t().searchHint}
+                </Text>
+              }
             >
               <Show when={!searching() || results().length > 0} fallback={<Loading rows={3} lines={2} />}>
                 <List label={t().search}>
@@ -405,16 +409,25 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
           icon="code"
           title={t().serviceAccounts}
           count={state.objectAccountRows().filter((row) => row.next).length}
-          summary={state.objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : t().serviceAccountsEmpty}
+          summary={state.objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : undefined}
           actions={
             state.canAddObjectAccounts() && !handleOpen()
               ? [{ label: t().addServiceAccount, icon: "plus", disabled: state.saving(), onClick: () => setHandleOpen(true) }]
               : undefined
           }
         >
-          <For each={state.objectAccountRows().map((row) => row.key)}>
-            {(key) => <Show when={state.rows().find((row) => row.key === key)}>{(row) => <AccessRowV2 row={row()} />}</Show>}
-          </For>
+          <Show
+            when={state.objectAccountRows().length > 0}
+            fallback={
+              <Show when={!handleOpen()}>
+                <Text muted>{t().serviceAccountsEmpty}</Text>
+              </Show>
+            }
+          >
+            <For each={state.objectAccountRows().map((row) => row.key)}>
+              {(key) => <Show when={state.rows().find((row) => row.key === key)}>{(row) => <AccessRowV2 row={row()} />}</Show>}
+            </For>
+          </Show>
           <Show when={handleOpen()}>
             <Field
               label={t().serviceAccountHandle}

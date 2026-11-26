@@ -110,8 +110,9 @@ export function ResourceApiKeysV2(props: ResourceApiKeysProps) {
     try {
       await props.revokeKey(key.id);
       setKeys((current) => current.filter((entry) => entry.id !== key.id));
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t().revokeFailed, { status: "bad", retry: () => void revoke(key) });
+    } catch {
+      // a v2 toast is one short line: the outcome, and the deed again
+      toast(t().revokeFailedTitle, { status: "bad", retry: () => void revoke(key) });
     }
   };
 

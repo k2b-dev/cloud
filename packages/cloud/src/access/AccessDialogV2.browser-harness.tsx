@@ -5,7 +5,8 @@ import { openAccessDialog, ResourceApiKeys } from "./v2";
  * The v2 access dialog for a browser test: invented people, groups and agents; the directory answers searches and
  * e-mails; grants, changes and removals are recorded on `window.calls`. `?worst` lists the worst case (long,
  * unbreakable and non-Latin names, many rows), `?readonly` opens it without the right to change access, `?public`
- * offers public access with a link, `?keys` adds the resource's API keys below.
+ * offers public access with a link, `?keys` adds the resource's API keys below. `?notebook` is a notebook's dialog
+ * with only its owner listed, whose host passes a lookup of service accounts by handle.
  */
 const params = new URLSearchParams(location.search);
 const person = (id: number, displayName: string, permission: AccessEntry["permission"]): AccessEntry => ({
@@ -15,41 +16,43 @@ const person = (id: number, displayName: string, permission: AccessEntry["permis
   permission,
   createdAt: "2026-11-03T00:00:00.000Z",
 });
-const entries: AccessEntry[] = params.has("worst")
-  ? [
-      person(1, "Mia Hoffmann", "admin"),
-      ...Array.from({ length: 40 }, (_, index) =>
-        person(
-          index + 10,
-          index % 3 === 0
-            ? `Maximiliane Donaudampfschifffahrtsgesellschaftskapitänin ${index}`
-            : index % 3 === 1
-              ? `${"x".repeat(60)}${index}`
-              : `山田 花子 ${index}`,
-          (["read", "write", "admin"] as const)[index % 3] ?? "read",
+const entries: AccessEntry[] = params.has("notebook")
+  ? [person(1, "Mia Hoffmann", "admin")]
+  : params.has("worst")
+    ? [
+        person(1, "Mia Hoffmann", "admin"),
+        ...Array.from({ length: 40 }, (_, index) =>
+          person(
+            index + 10,
+            index % 3 === 0
+              ? `Maximiliane Donaudampfschifffahrtsgesellschaftskapitänin ${index}`
+              : index % 3 === 1
+                ? `${"x".repeat(60)}${index}`
+                : `山田 花子 ${index}`,
+            (["read", "write", "admin"] as const)[index % 3] ?? "read",
+          ),
         ),
-      ),
-    ]
-  : [
-      person(1, "Mia Hoffmann", "admin"),
-      person(2, "Jonas Weber", "write"),
-      {
-        id: "00000000-0000-4000-8000-000000000003",
-        principal: { type: "group", groupId: "30000000-0000-4000-8000-000000000003" },
-        displayName: "Logistik",
-        permission: "read",
-        createdAt: "2026-11-03T00:00:00.000Z",
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000004",
-        principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000004" },
-        displayName: "Lagerbot",
-        permission: "write",
-        serviceAccountKind: "agent",
-        createdAt: "2026-11-03T00:00:00.000Z",
-      },
-      person(5, "Lea Schmitt", "read"),
-    ];
+      ]
+    : [
+        person(1, "Mia Hoffmann", "admin"),
+        person(2, "Jonas Weber", "write"),
+        {
+          id: "00000000-0000-4000-8000-000000000003",
+          principal: { type: "group", groupId: "30000000-0000-4000-8000-000000000003" },
+          displayName: "Logistik",
+          permission: "read",
+          createdAt: "2026-11-03T00:00:00.000Z",
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000004",
+          principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000004" },
+          displayName: "Lagerbot",
+          permission: "write",
+          serviceAccountKind: "agent",
+          createdAt: "2026-11-03T00:00:00.000Z",
+        },
+        person(5, "Lea Schmitt", "read"),
+      ];
 
 const directory = [
   {
@@ -91,8 +94,18 @@ let next = 100;
 page.openShare = () => {
   page.result = undefined;
   void openAccessDialog({
-    resourceName: "Lager Nord",
-    subtitle: "Space · Spaces",
+    resourceName: params.has("notebook") ? "Protokolle Vorstand" : "Lager Nord",
+    subtitle: params.has("notebook") ? "Notizbuch · Notizbücher" : "Space · Spaces",
+    findServiceAccount: params.has("notebook")
+      ? async (handle: string) =>
+          handle === "code-7k2q9m4xwt"
+            ? {
+                principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000009" },
+                display: { displayName: "Code von Protokolle Vorstand", serviceAccountKind: "code" },
+                description: "Dienstkonto eines Notizbuchs",
+              }
+            : null
+      : undefined,
     initialEntries: entries,
     canEdit: !params.has("readonly"),
     allowPublic: params.has("public"),
