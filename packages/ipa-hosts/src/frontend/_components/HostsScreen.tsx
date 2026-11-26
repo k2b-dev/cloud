@@ -487,6 +487,7 @@ export default function HostsScreen(props: HostsScreenProps) {
         </Section>
         <Show when={host.sshFingerprints.length > 0}>
           <Section icon="key" title={t().sshFingerprints}>
+            {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
             <Facts
               items={host.sshFingerprints.map((fingerprint, index) => ({
                 label: String(index + 1),
