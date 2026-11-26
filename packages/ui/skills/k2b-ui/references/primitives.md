@@ -396,7 +396,8 @@ lines instead of cutting a thing.
   button, never a sheet; focus starts on the other button, Escape answers
   no, a press outside does nothing. `danger` makes the agreeing button red:
   use it for every deed that destroys (delete, revoke, remove a member or a
-  device). Call it from a menu entry with `void`, so the menu closes while
+  device). Back answers no and keeps the page; no app code for the
+  history. Call it from a menu entry with `void`, so the menu closes while
   it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,

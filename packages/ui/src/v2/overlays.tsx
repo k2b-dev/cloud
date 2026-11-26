@@ -1,5 +1,6 @@
 import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
+import { holdDialogHistory } from "../feedback/dialog-core";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
 import { Icon } from "./marks";
@@ -177,9 +178,21 @@ export type ConfirmOptions = {
  * the shape of `Dialog`, without a close button: Escape and the other button answer no, focus starts on the other
  * button, a press outside does nothing, and it is never a sheet. The first `Workspace` on the page answers, also for
  * code in another island; without one, the question brings its own dialog to the end of the page until it is
- * answered. A question whose dialog leaves the page while it asks is answered no.
+ * answered. A question whose dialog leaves the page while it asks is answered no. While it asks it holds one entry in
+ * the history: Back (the phone's, the browser's) answers no and leaves the page where it is, and any answer takes the
+ * entry out again (the history of the dialogs of `@k2b/ui`, which page navigation knows).
  */
 export const confirm = (options: ConfirmOptions): Promise<boolean> => {
+  // Back answers no: Escape on the question, which every way of asking hears, also a Workspace of another island
+  const release = holdDialogHistory(() =>
+    document
+      .querySelector('[role="alertdialog"][data-k2-part="Dialog"]')
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })),
+  );
+  return ask(options).finally(release);
+};
+
+const ask = (options: ConfirmOptions): Promise<boolean> => {
   const page = pageAnswer();
   if (page) return page(options);
   // no Workspace answers: a dialog of its own, in a v2 scope of its own, for as long as the question is open

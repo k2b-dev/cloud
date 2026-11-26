@@ -32,16 +32,19 @@ afterAll(async () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false } = {},
+  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false, address = false } = {},
 ) => {
   // a phone: a touch screen with a coarse pointer
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
-    await page.setContent(
-      `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}${opened ? " data-opened" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
-    );
+    const html = `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}${opened ? " data-opened" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`;
+    // `address`: a page at an address of its own, whose history takes entries (WebKit keeps none for a page set from markup)
+    if (address) {
+      await page.route("http://overlays.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("http://overlays.test/frage");
+    } else await page.setContent(html);
     await page.addScriptTag({ content: slowSheet ? slowSheetBundle() : bundle });
     // another island with its own copy of the library and no Workspace of its own
     await page.addScriptTag({ content: island });
@@ -377,6 +380,36 @@ test("Dialog.confirm with danger: the agreeing button is red with white words, t
     expect(await answerOf(page, "page")).toBe("false");
   });
 });
+
+for (const touch of [false, true])
+  test(`Dialog.confirm${touch ? " on a phone" : ""}: Back answers no and stays on the page; an answer or Escape leaves no entry in the history`, async () => {
+    await withPage(
+      async (page) => {
+        // the entry the page stood on before the question
+        const where = () => page.evaluate(() => JSON.stringify(history.state ?? null) + " " + location.href);
+        const before = await where();
+        // Back while it asks: the answer is no, the page stays, the history is where it was
+        let dialog = await askFrom(page, "page", "Weiter?");
+        expect(await where()).not.toBe(before);
+        // Back, as the page's own history takes it (Playwright's goBack does not move WebKit's history on this test page)
+        await page.evaluate(() => history.back());
+        expect(await answerOf(page, "page")).toBe("false");
+        await dialog.waitFor({ state: "detached" });
+        await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
+        // an answer takes its entry out again
+        dialog = await askFrom(page, "page", "Weiter?");
+        await dialog.getByRole("button", { name: "Ja" }).click();
+        expect(await answerOf(page, "page")).toBe("true");
+        await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
+        // so does Escape
+        dialog = await askFrom(page, "page", "Weiter?");
+        await page.keyboard.press("Escape");
+        expect(await answerOf(page, "page")).toBe("false");
+        await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
+      },
+      touch ? { width: 390, touch, address: true } : { address: true },
+    );
+  });
 
 test("Dialog.confirm with two Workspaces: the first answers, the other takes over, without one it brings its own", async () => {
   await withPage(
