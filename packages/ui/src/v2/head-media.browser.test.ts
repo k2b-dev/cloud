@@ -638,20 +638,19 @@ test("a setting stands with its value beside its name, and an unsaved change say
       .locator("[data-k2-part='Setting'] > :is(.k2-input, .k2-check)")
       .evaluateAll((elements) => [...new Set(elements.map((element) => Math.round(element.getBoundingClientRect().left)))]);
     expect(lefts.length).toBe(1);
-    // the deed of a setting stands at the end of its name's line, between the name and the value, and moves no value
+    // the deed of a setting stands after its value on the value's line, and moves no value (CLEAR AND DENSE f)
     const deed = await page.evaluate(() => {
       const setting = document.querySelector("[data-k2-part='Setting'][data-action]")!;
       const button = setting.querySelector(".k2-field-action button")!;
       const box = button.getBoundingClientRect();
-      const name = setting.querySelector(".k2-field-label")!.getBoundingClientRect();
       const control = setting.querySelector(".k2-input")!.getBoundingClientRect();
       return {
         name: button.textContent?.trim(),
-        between: box.left >= name.right - 1 && box.right <= control.left,
-        top: Math.abs(box.top - name.top) < 4,
+        after: box.left >= control.right,
+        line: Math.abs(box.top + box.height / 2 - (control.top + control.height / 2)) < 2,
       };
     });
-    expect(deed).toEqual({ name: "Auf Standard zurücksetzen", between: true, top: true });
+    expect(deed).toEqual({ name: "Auf Standard zurücksetzen", after: true, line: true });
   });
   await withPage(
     "settings",
@@ -1186,7 +1185,7 @@ test("describe reports a hidden primary action on the desktop even while a detai
   );
 });
 
-test("a setting's name and hint stand together beside the middle of its value, what it was under the value", async () => {
+test("a setting's name stands alone in its column beside the middle of its value; its help and what it was stand under the value (CLEAR AND DENSE f)", async () => {
   await withPage("settings", async (page) => {
     const found = await page.evaluate(() =>
       [...document.querySelectorAll("[data-k2-part='Setting']")].map((setting) => {
@@ -1195,17 +1194,16 @@ test("a setting's name and hint stand together beside the middle of its value, w
         const hint = box(":scope > .k2-field-message");
         const control = box(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action)")!;
         const was = box(":scope > .k2-field-was");
-        const words = (label.top + (hint ?? label).bottom) / 2;
         return {
           name: setting.querySelector(".k2-field-label")!.textContent,
-          // the hint follows its name right under it, as one block
-          joined: hint ? Math.abs(hint.top - label.bottom) <= 2 : true,
-          middle: Math.abs(words - (control.top + control.bottom) / 2) <= 2,
-          was: was ? was.top >= control.bottom : true,
+          middle: Math.abs((label.top + label.bottom) / 2 - (control.top + control.bottom) / 2) <= 2 && label.right <= control.left,
+          // the one line of help starts under the value, on its edge
+          help: hint ? hint.top >= control.bottom - 0.5 && Math.abs(hint.left - control.left) <= 1 : true,
+          was: was ? was.top >= (hint ?? control).bottom - 0.5 : true,
         };
       }),
     );
-    expect(found.filter((setting) => !setting.joined || !setting.middle || !setting.was)).toEqual([]);
+    expect(found.filter((setting) => !setting.middle || !setting.help || !setting.was)).toEqual([]);
     expect(found.length).toBeGreaterThan(3);
   });
 });

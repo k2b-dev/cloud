@@ -3063,13 +3063,14 @@
 .k2-ui .k2-field-message[data-error] {
   color: var(--k2-bad);
 }
-/* Setting: the name (13, 500) and its hint on the left, the control in a column of 300 px beside them, so the values
-   of a settings page stand in one line and are read at a glance; "geändert · vorher …" under the control. No line
-   between settings: a section separates them from the next topic. */
+/* Setting: a narrow column with the name (13, 500) alone, the control in a column of 300 px beside it, so the names and
+   the values of a settings page each stand in one line and are read at a glance; the one line of help and "geändert ·
+   vorher …" under the control, where they may take the rest of the row (CLEAR AND DENSE f). No line between settings:
+   a section separates them from the next topic. */
 .k2-ui .k2-field[data-setting] {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 240px) minmax(0, 300px) minmax(0, 1fr);
   grid-template-rows: auto auto auto;
-  grid-template-areas: "label control" "message control" ". was";
+  grid-template-areas: "label control ." ". message message" ". was was";
   column-gap: 24px;
   row-gap: 0;
   align-items: center;
@@ -3078,8 +3079,8 @@
 }
 .k2-ui .k2-field[data-setting] > .k2-field-label {
   grid-area: label;
-  /* the name and its hint stand together, beside the middle of the value */
-  align-self: end;
+  /* the name stands beside the middle of the value */
+  align-self: center;
   font: var(--k2-t-row);
   font-weight: 500;
   color: var(--k2-text);
@@ -3088,6 +3089,7 @@
 .k2-ui .k2-field[data-setting] > .k2-field-message {
   grid-area: message;
   align-self: start;
+  padding-top: 4px;
 }
 .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
   grid-area: control;
@@ -3097,15 +3099,15 @@
   grid-area: was;
   padding-top: 4px;
 }
-/* a deed of the setting (such as "Auf Standard zurücksetzen") at the end of the name's line, as in a field: the value's
-   column keeps its 300 px, so the deed coming or going moves nothing */
+/* a deed of the setting (such as "Auf Standard zurücksetzen") after the value: the name's and the value's columns keep
+   their widths, so the deed coming or going moves nothing */
 .k2-ui .k2-field[data-setting][data-action] {
-  grid-template-columns: minmax(0, 1fr) auto 300px;
-  grid-template-areas: "label action control" "message message control" ". . was";
+  grid-template-areas: "label control action" ". message message" ". was was";
 }
 .k2-ui .k2-field[data-setting] > .k2-field-action {
   grid-area: action;
-  align-self: end;
+  align-self: center;
+  justify-self: start;
   display: flex;
   align-items: center;
   height: 20px;
@@ -3142,6 +3144,9 @@
   .k2-ui .k2-field[data-setting] > :is(.k2-field-label, .k2-field-action) {
     align-self: start;
   }
+  .k2-ui .k2-field[data-setting] > .k2-field-message {
+    padding-top: 0;
+  }
 }
 /* A setting with a deed needs the deed's room too ("Auf Standard zurücksetzen", about 170 px): below 800 px of pane its
    name would get less than its room, so the deed stays at the end of the name's line and the value goes under it. */
@@ -3154,6 +3159,9 @@
   }
   .k2-ui .k2-field[data-setting][data-action] > :is(.k2-field-label, .k2-field-action) {
     align-self: start;
+  }
+  .k2-ui .k2-field[data-setting][data-action] > .k2-field-message {
+    padding-top: 0;
   }
 }
 

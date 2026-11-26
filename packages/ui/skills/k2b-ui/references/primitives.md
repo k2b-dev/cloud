@@ -360,13 +360,13 @@ lines instead of cutting a thing.
   it needs `label`.
 - `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
   change says "geändert · vorher 12 Std." under its control), `action`
-  (one quiet deed at the end of the name's line, such as "Auf Standard
-  zurücksetzen" while the value differs from its default, as `Field
-  action`), one control as child. One setting of a settings page: the name
-  (13, 500) and its hint together on the left, beside the middle of the
-  control in a column of 300 px, the name keeping at least 240 px; one
-  column when its pane is narrower than 640 px (800 px with an `action`; by
-  the pane, not the window). `compact` (a number with its unit, a short
+  (one quiet deed after the value, such as "Auf Standard zurücksetzen"
+  while the value differs from its default), one control as child. One
+  setting of a settings page: the name (13, 500) alone in a column of 240
+  px, beside the middle of the control in a column of 300 px; the one line
+  of help and what it was under the control. One column, the hint under
+  the name, when its pane is narrower than 640 px (800 px with an
+  `action`; by the pane, not the window). `compact` (a number with its unit, a short
   selection) and a `Check` keep the value beside the name also there. A
   column of settings ends above the phone's floating main action. Never
   stack `Field`s
