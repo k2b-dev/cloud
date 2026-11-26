@@ -315,6 +315,20 @@ export default function NotebookGraph(props: Props) {
         </IconButtonLink>
         <div class="notebook-graph__title">
           <small>
+            {/* where the displays keep only their symbols (phone, narrow Main), the chosen one is named here, first, so a
+                long notebook name is what gets cut */}
+            <span class="notebook-graph__title-display">
+              {/* a plain expression, so the name follows every change of the display (a `Show` child would keep the first) */}
+              {display() ? (
+                graphDisplayLabel(display() ?? DEFAULT_GRAPH_DISPLAY, t())
+              ) : (
+                <>
+                  <span class="notebook-graph__desktop-default">{graphDisplayLabel(DEFAULT_GRAPH_DISPLAY, t())}</span>
+                  <span class="notebook-graph__phone-default">{graphDisplayLabel(PHONE_GRAPH_DISPLAY, t())}</span>
+                </>
+              )}
+              {" · "}
+            </span>
             {props.notebookName}
             <Show when={current()}>
               {(note) => <span class="max-md:hidden"> · {t().graphFrom({ title: note().title || t().untitled })}</span>}

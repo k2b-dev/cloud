@@ -51,23 +51,23 @@ test("the combined catalog SDK loads and its declarations compile with tsgo", as
     await writeFile(declarations, sdk.declarations);
     const loaded = await import(runtime);
     for (const app of sdk.manifest.apps) expect(loaded[app.exportName].id).toBe(app.appId);
-    expect(loaded.capabilities.app("core")).toMatchObject({ type: "capabilities.app", id: "core" });
-    expect(() => loaded.capabilities.app()).toThrow("code_sdk_invalid_id");
+    expect(loaded.contacts.contact("core")).toMatchObject({ type: "contacts.contact", id: "core" });
+    expect(() => loaded.contacts.contact()).toThrow("code_sdk_invalid_id");
     loaded.__codeSdk.bind({
       async call() {
         return { data: { items: [] } };
       },
     });
-    await expect(loaded.capabilities.search({ query: "core", tags: [], limit: 10 })).resolves.toEqual({ data: { items: [] } });
+    await expect(loaded.contacts.contact.search({ query: "core", tags: [], limit: 10 })).resolves.toEqual({ data: { items: [] } });
     await writeFile(
       consumer,
-      `import { capabilities } from "./sdk";
-const handle = capabilities.app("core");
-const type: "capabilities.app" = handle.type;
+      `import { contacts } from "./sdk";
+const handle = contacts.contact("core");
+const type: "contacts.contact" = handle.type;
 const id: "core" = handle.id;
-capabilities.search({ query: "core", tags: [], limit: 10 });
-// @ts-expect-error only the typed app(id) factory exists
-capabilities.app();
+contacts.contact.search({ query: "core", tags: [], limit: 10 });
+// @ts-expect-error only the typed contact(id) factory exists
+contacts.contact();
 `,
     );
     const compiler = join(workspaceRoot, "node_modules/.bin/tsc");
