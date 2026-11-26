@@ -8,7 +8,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { personColor } from "../surfaces/person-color";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { gripTolerance, hairline, heights, textEdge, typeRoles } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
@@ -480,6 +480,35 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       },
       TEST_TIMEOUT,
     );
+
+  // The floating main action never covers the last row or field of a pane (W3, Spaces #4197): scrolled to its end, an
+  // open entry's last field stands above the button, and describeV2 finds nothing it covers.
+  test(
+    "390 px: the last field of an open entry stands above the floating main action once its pane is scrolled to the end",
+    async () => {
+      const page = await open("detailForm", { width: 390 });
+      try {
+        await page.evaluate(() => {
+          for (const element of document.querySelectorAll<HTMLElement>("*"))
+            if (element.scrollHeight > element.clientHeight + 1) element.scrollTop = element.scrollHeight;
+          document.scrollingElement?.scrollTo(0, document.scrollingElement.scrollHeight);
+        });
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const fab = document.querySelector(".k2-fab")!.getBoundingClientRect();
+          const inputs = [...document.querySelectorAll(".k2-pane[data-detail] input")];
+          const last = inputs.at(-1)!.getBoundingClientRect();
+          return { fabShown: fab.width > 0, lastBottom: last.bottom, fabTop: fab.top };
+        });
+        expect(found.fabShown).toBe(true);
+        expect(found.lastBottom).toBeLessThanOrEqual(found.fabTop);
+        expect(await describeV2Page(page, "body")).not.toContain("floating main action");
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
 
   test(
     "a last column of digits keeps every figure in sight at exactly the width the table reckons as its least",

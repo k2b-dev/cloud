@@ -586,6 +586,26 @@ export const fixtures = {
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
   table: TableFixture,
+  // an open entry whose form ends at the bottom of a phone, under the floating main action (W3, Spaces #4197)
+  detailForm: () =>
+    shell(
+      <Pane.Split>
+        <Pane label="Aufgaben">
+          <List label="Aufgaben">
+            <Row icon="checkbox" lines={["Angebot prüfen"]} current />
+          </List>
+        </Pane>
+        <Pane detail back={{ label: "Aufgaben", href: "#aufgaben" }} label="Aufgabe">
+          <Section title="Angaben">
+            {Array.from({ length: 14 }, (_, index) => (
+              <Field label={`Feld ${index + 1}`}>
+                <Input value={`Wert ${index + 1}`} />
+              </Field>
+            ))}
+          </Section>
+        </Pane>
+      </Pane.Split>,
+    ),
   // a last column of digits only at exactly the width the table reckons as its least (delta review r4): digits are the
   // widest signs, and a fallback font draws them wider than Plex
   tableDigits: () =>
