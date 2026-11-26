@@ -252,7 +252,7 @@ export const Workspace = (props: WorkspaceProps) => {
     width().fixed
       ? undefined
       : {
-          label: props.sidebarLabel ?? "Sidebar",
+          label: props.sidebarLabel ?? t().sidebar,
           width: width(),
           value: sideWidth,
           onChange: setSide,
@@ -678,16 +678,23 @@ export type CellProps = {
   /** A short history beside the value, such as orders per day this week (`Spark`). */
   trend?: SparkProps;
   /**
+   * A value with a limit ("1,5 von 3 h", "38 von 100 GB"): a thin bar under it shows how much of the limit is used, in
+   * the cell's colour, amber from the limit on. `label` names it for assistive technology (the cell's label by default).
+   */
+  meter?: { value: number; of: number; label?: string };
+  /**
    * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
    * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
    * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
+   * A `trend` keeps its place unseen meanwhile.
    */
   loading?: boolean;
 };
 
-/** Two to four equal cells side by side with a line between them; two by two on the phone. */
+/** Two to six equal cells with a line between them, never one tall cell alone in a row (see the stylesheet). */
 export const Cells = (props: {
-  /** Two to four `Cells.Cell`; on the phone two by two, a third alone across the second row. */
+  /** Two to six `Cells.Cell`: four two by two and five or six in rows of three in a narrow pane; on the phone two to a
+   * row, an odd last one as one line across. */
   children: JSX.Element;
 }) => (
   <div class="k2-cells" data-k2-part="Cells">
@@ -719,6 +726,27 @@ Cells.Cell = (props: CellProps) => {
         </Show>
         <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
       </span>
+      {/* a limit of nothing is no limit: no bar */}
+      <Show when={props.meter && props.meter.of > 0 ? props.meter : undefined}>
+        {(meter) => {
+          // the bar and what assistive technology hears stay inside the limit; the cell's words say the value itself
+          const now = () => Math.max(0, Math.min(meter().of, meter().value));
+          return (
+            <span
+              class="k2-cell-meter"
+              role="meter"
+              aria-valuemin={0}
+              aria-valuemax={meter().of}
+              aria-valuenow={now()}
+              aria-valuetext={typeof props.value === "string" ? props.value : undefined}
+              aria-label={meter().label ?? props.label}
+              data-full={meter().value >= meter().of ? "" : undefined}
+            >
+              <i style={custom({ "--k2-p": `${Math.round((now() / meter().of) * 1000) / 10}%` })} />
+            </span>
+          );
+        }}
+      </Show>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">
           <Show when={!props.loading} fallback={<PlaceholderValue said={false}>{meta()}</PlaceholderValue>}>
@@ -804,7 +832,7 @@ export type TilesProps = {
    * such as the bases of Grids or the projects of a team. Without it: small tiles in one wrapping line (attachments).
    */
   variant?: "card" | "media";
-  /** Cards only: the last card makes a new thing. */
+  /** The last tile makes a new thing: a dashed card, or among media a dashed picture with a plus ("Neuer Ordner"). */
   create?: TileCreate;
   /**
    * Media only: the tiles stand in a selection (pair it with `StatusRow selection`). Each tile has a box on its
@@ -897,6 +925,27 @@ const TileMake = (props: { create: TileCreate }) => (
   </div>
 );
 
+/** The place to make a new thing among media: a dashed picture with a plus, then what it makes and a quiet hint. */
+const TileMakeMedia = (props: { create: TileCreate }) => (
+  <div class="k2-tile" role="listitem" data-create="" data-open={props.create.href !== undefined || props.create.onClick ? "" : undefined}>
+    <span class="k2-tile-media">
+      <span class="k2-tile-make">
+        <Icon name="plus" />
+      </span>
+    </span>
+    <span class="k2-tile-title" title={props.create.title}>
+      <RowOpen href={props.create.href} onOpen={props.create.onClick}>
+        {props.create.title}
+      </RowOpen>
+    </span>
+    <Show when={props.create.meta}>
+      <span class="k2-tile-line">
+        <span class="k2-tile-meta">{props.create.meta}</span>
+      </span>
+    </Show>
+  </div>
+);
+
 const keyOf = (tile: Tile) => tile.key ?? tile.href ?? tile.title;
 
 /**
@@ -951,6 +1000,7 @@ export const Tiles = (props: TilesProps) => (
   >
     <Show when={props.variant === "media"}>
       <For each={props.items}>{(tile) => <TileMedia tile={tile} select={props.select} />}</For>
+      <Show when={props.create}>{(create) => <TileMakeMedia create={create()} />}</Show>
     </Show>
     <Show
       when={props.variant === "card"}

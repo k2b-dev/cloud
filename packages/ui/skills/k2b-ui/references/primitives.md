@@ -123,14 +123,19 @@ fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
 
-2–4 equal cells with a line between; on the phone two by two (a third
-alone across the second row). A cell:
+2–6 equal cells with a line between, never one tall cell alone in a row:
+two side by side down to the phone, three while each gets 150 px (else two,
+then the third as one line across: label left, value right), four in a row
+or two by two (below a pane of 880 px), five or six in rows of three. A
+cell under 220 px sets its value in 14 px across its width. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
-as orders per day this week), `loading` (a bar lies on value and `meta`;
-what is there keeps its room unseen under it, a value not there yet is one
-line; symbol and label stay). Use for the key statements of a record or
-the home of a place.
+as orders per day this week), `meter: { value, of, label? }` (a value with
+a limit, "1,5 von 3 h": a thin bar under it, amber from the limit on),
+`loading` (a bar lies on value and `meta`; what is there keeps its room
+unseen under it, a value not there yet is one line; symbol and label stay,
+a `trend` keeps its place unseen). Use for the key statements of a record
+or the home of a place.
 
 ### Tiles
 
@@ -154,6 +159,9 @@ at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
 the card's colour). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
+Among media, `create` is the last tile too: a dashed picture with a plus,
+then its `title` and `meta` ("Neuer Ordner", "oder Dateien hierher
+ziehen").
 
 ### Canvas
 
@@ -219,7 +227,7 @@ inside it.
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
-  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  table; 32 px, and a row of one line with it is 44 px), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
@@ -276,7 +284,8 @@ without them the columns that can give way grow; when every column is fixed,
 the last one takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry. A column's `mark(row)` leads its
-cell with the thing's `Mark` (a file's thumbnail or type, 24 px), its
+cell with the thing's `Mark` (a file's thumbnail or type, 32 px; the
+table's rows are then 44 px, as the mockup's lists), its
 `avatar(row)` with a person (the name in the cell names it); `phone(row)`
 takes a `mark` as well.
 
@@ -346,7 +355,9 @@ inline. Emphasis is a weight, never a size.
 ### Prose
 
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
-safe links only) or children.
+safe links only) or children. Code stands in the mono face: a word on a
+quiet tint, a block on its own surface that scrolls sideways; a CodeBlock
+inside keeps its own lines.
 
 ### Inline
 
@@ -411,9 +422,12 @@ lines instead of cutting a thing.
   zurücksetzen" while the value differs from its default, as `Field
   action`), one control as child. One setting of a settings page: the name
   (13, 500) and its hint together on the left, beside the middle of the
-  control in a column of 300 px, no line between settings; one column when
-  its pane is narrower than 600 px (800 px with an `action`; by the pane,
-  not the window). Never stack `Field`s
+  control in a column of 300 px, the name keeping at least 240 px; one
+  column when its pane is narrower than 640 px (800 px with an `action`; by
+  the pane, not the window). `compact` (a number with its unit, a short
+  selection) and a `Check` keep the value beside the name also there. A
+  column of settings ends above the phone's floating main action. Never
+  stack `Field`s
   as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
@@ -533,17 +547,23 @@ lines instead of cutting a thing.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`; leave on the phone),
-  `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  `selection: { count, meta?, actions, clear }` (while rows are selected the
+  row becomes the bar of what can be done with them; `meta` says quietly
+  what is selected after the count, such as "12,9 MB · 3 Bilder"; the count
+  stands in 14 px 600; from five deeds on the first three stand and the rest
+  wait in "Mehr", so give the deeds in their order of use).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
-  From five places on, the places between the first and the last two fold
-  into a menu "…" in their order, the same on the server and in the browser.
-  Where room runs out, the place before the page shortens with "…" first,
-  then the page; their whole names show on hover. The deeds at the end keep
-  their words before the path does.
+  From five places on, the first place and the page stand and every place
+  between folds into a menu "…" in its order, the same on the server and in
+  the browser. The page keeps its whole name: where room runs out the places
+  between shorten with "…" first, then the first place, the page only when
+  nothing else is left; whole names show on hover. The deeds at the end keep
+  their words before the path does. In an `Inline` with a chip (a folder's
+  sharing) the path behaves the same, and on the phone it gives way there
+  too while the chip stays.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
@@ -617,7 +637,8 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `color` (the data colour of what it stands for, such as an
   area of a notebook: a dot in the symbol's place, or the symbol in that
-  colour, kept readable), `meta` (a quiet hint at the end, such as a key), `checked`
+  colour; a hex colour is kept at 3:1, `oklch()` and `var()` stand as
+  given, anything else leaves the entry neutral), `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side); or `"separator"` between groups; or a
   section `{ title, items }` under a quiet heading. A section with
@@ -652,7 +673,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the way out), `secondary` (a second, quieter way out after it, as a
+  text button, such as "Filter zurücksetzen" and "Ganzes Notizbuch
+  zeigen"; the first stays the one a focus that comes to the state reaches).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.

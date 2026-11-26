@@ -127,13 +127,13 @@ export default function SigninSettings(props: Props) {
             color="#7c3aed"
             label="FreeIPA"
             value={<Chip status="ok">Verbunden</Chip>}
-            meta="ipa.werkstatt.internal · 18 ms · geprüft 09:40"
+            meta="ipa.example.internal · 18 ms · geprüft 09:40"
             href="#freeipa"
           />
           <Cells.Cell
             icon="alert-triangle"
             label="Fehlgeschlagen, 24 Std."
-            value={<Chip status="warn">7</Chip>}
+            value={<Chip status="warn">7 Anmeldungen</Chip>}
             meta="1 Konto gesperrt · 5 × Passwort falsch"
           />
         </Cells>
@@ -179,11 +179,12 @@ export default function SigninSettings(props: Props) {
                 hint="Danach muss man sich neu anmelden."
                 was={props.saved ? undefined : "12 Std."}
                 action={{ label: "Auf Standard zurücksetzen", icon: "arrow-back-up" }}
+                compact
               >
                 <Input type="number" value="8" end={<Text type="meta">Std.</Text>} />
               </Setting>
-              <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt.">
-                <Input type="number" value="15" end={<Text type="meta">Min. ohne Eingabe</Text>} />
+              <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt." compact>
+                <Input type="number" value="15" end={<Text type="meta">Min.</Text>} />
               </Setting>
             </Section>
             <Section icon="device-mobile-check" title="App-Freigabe" count="6 Geräte gekoppelt">
@@ -191,7 +192,7 @@ export default function SigninSettings(props: Props) {
                 <Check switch label="An" checked />
               </Setting>
               <Setting label="Adresse" hint="Von hier aus wird die Freigabe angefragt.">
-                <Input type="url" value="https://cloud.werkstatt.example" />
+                <Input type="url" value="https://cloud.example.org" />
               </Setting>
               <Setting label="Admins koppeln direkt" hint="Ohne Bestätigung durch die Person.">
                 <Check switch label="Aus" />

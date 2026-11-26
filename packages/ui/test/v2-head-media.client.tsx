@@ -7,9 +7,14 @@ import {
   CanvasFillScreen,
   CellsScreen,
   DeepPathScreen,
+  EmptyWaysScreen,
+  GroupsScreen,
   LongAddressScreen,
+  ProseCodeScreen,
   RowStatesScreen,
+  SelectionScreen,
   StructureScreen,
+  ViewStatementScreen,
 } from "./v2-row-states.fixture";
 
 // The folder and the settings page of the k2b-ui skill in the browser, by the case the page names before this bundle
@@ -27,11 +32,19 @@ declare global {
       | "states"
       | "canvas"
       | "cells"
+      | "cells-narrow"
       | "path"
+      | "path-chip"
       | "split-canvas"
+      | "selection"
       | "long"
       | "areas"
-      | "structure";
+      | "structure"
+      | "prose"
+      | "groups"
+      | "split-list-canvas"
+      | "empty-ways"
+      | "view-statement";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -48,18 +61,28 @@ render(
         <SigninSettings />
       ) : which === "states" ? (
         <RowStatesScreen />
+      ) : which === "prose" ? (
+        <ProseCodeScreen />
+      ) : which === "groups" ? (
+        <GroupsScreen />
       ) : which === "structure" ? (
         <StructureScreen />
       ) : which === "areas" ? (
         <AreasMenuScreen />
+      ) : which === "empty-ways" ? (
+        <EmptyWaysScreen />
+      ) : which === "selection" ? (
+        <SelectionScreen />
+      ) : which === "view-statement" ? (
+        <ViewStatementScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
-      ) : which === "path" ? (
-        <DeepPathScreen />
-      ) : which === "canvas" || which === "split-canvas" ? (
-        <CanvasFillScreen split={which === "split-canvas"} />
-      ) : which === "cells" ? (
-        <CellsScreen />
+      ) : which === "path" || which === "path-chip" ? (
+        <DeepPathScreen chip={which === "path-chip"} />
+      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
+        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
+      ) : which === "cells" || which === "cells-narrow" ? (
+        <CellsScreen narrow={which === "cells-narrow"} />
       ) : (
         <Folder
           closed={which === "closed"}

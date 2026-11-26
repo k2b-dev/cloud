@@ -68,7 +68,7 @@ Places in levels: a `Nav` group's `tree` (each place a `NavTreeNode`) and a tabl
 
 ### StatusRow
 
-Above the rows: the one statement, key figures and filters; a selection bar while rows are selected.
+Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. From five deeds on, the bar shows the first three and folds the rest into "Mehr" in their order.
 
 <Props of="StatusRow" />
 

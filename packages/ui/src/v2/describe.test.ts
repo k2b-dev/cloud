@@ -30,6 +30,11 @@ const outline = (markup: string) => {
 const fixture = (name: keyof typeof fixtures) => outline(renderToString(() => createComponent(fixtures[name], {})));
 
 describe("describeV2", () => {
+  test("a state chip of a number alone is a problem: a state is never a colour without a word", () => {
+    expect(outline('<span class="k2-chip" data-k2-part="Chip" data-status="warn">7</span>')).toContain('state chip "7" has no word');
+    expect(outline('<span class="k2-chip" data-k2-part="Chip" data-status="warn">7 Anmeldungen</span>')).not.toContain("has no word");
+  });
+
   test("outlines the mail fixture part by part", () => {
     const text = fixture("layout");
     expect(text).toContain('Workspace (sidebar, head) primary "Neu"');
