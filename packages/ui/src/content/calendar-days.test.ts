@@ -10,6 +10,7 @@ import {
   dayHeight,
   dayHeightTerms,
   dayKeyOf,
+  capLanes,
   dayLanes,
   dayMinuteAt,
   dayTopY,
@@ -304,6 +305,28 @@ describe("lanes and geometry", () => {
       ["b", 1, 2],
       ["c", 0, 1],
     ]);
+  });
+
+  test("beyond the cap an overlap keeps its first lanes and collapses the rest into +n by the hour they start in", () => {
+    const band = (item: string, start: number, end: number) => ({ item, start, end });
+    const lanes = dayLanes(
+      [band("a", 600, 720), band("b", 600, 720), band("c", 610, 720), band("d", 620, 720), band("e", 670, 720), band("f", 800, 860)],
+      20,
+    );
+    const { shown, more } = capLanes(lanes, 3);
+    expect(shown.map((entry) => [entry.item, entry.lane, entry.lanes, entry.more ?? false])).toEqual([
+      ["a", 0, 3, true],
+      ["b", 1, 3, true],
+      ["c", 2, 3, true],
+      // a band alone keeps the whole width and no "+n"
+      ["f", 0, 1, false],
+    ]);
+    expect(more.map((entry) => [entry.hour, entry.minute, entry.bands.map((each) => each.item)])).toEqual([
+      [600, 620, ["d"]],
+      [660, 670, ["e"]],
+    ]);
+    // within the cap nothing collapses
+    expect(capLanes(lanes, 5).more).toEqual([]);
   });
 
   test("deadlines whose pills would cover each other share the width; one alone keeps it", () => {

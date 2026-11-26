@@ -261,13 +261,44 @@ export const gapProposal = (gap: Pick<DayGap, "start" | "end">, hours: CalendarD
   return [start, start + 60];
 };
 
-export type DayLane<T> = DayBand<T> & { lane: number; lanes: number };
+/** A band with its place side by side: `lane` of `lanes`; `more` when the overlap has a "+n" beside it. */
+export type DayLane<T> = DayBand<T> & { lane: number; lanes: number; group: number; more?: boolean };
 
 /** Overlapping bands side by side; a band counts at least `minimum` minutes long, as its drawn height does. */
 export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayLane<T>[] =>
   layoutCalendarIntervals(bands, (band) => ({ start: band.start, end: Math.max(band.end, band.start + minimum) })).map(
-    ({ item, lane, lanes }) => ({ ...item, lane, lanes }),
+    ({ item, lane, lanes, groupId }) => ({ ...item, lane, lanes, group: groupId }),
   );
+
+/** The entries of an overlap that do not fit side by side, by the hour they start in: one "+n" each. */
+export type DayMore<T> = { group: number; hour: number; minute: number; bands: DayLane<T>[] };
+
+/**
+ * At most `max` bands side by side: in an overlap with more lanes, the bands of the first `max` lanes stay (with room
+ * for "+n" beside them), and the others collapse by the hour they start in. Each "+n" stands at its first entry's
+ * start and stands for the entries of that hour.
+ */
+export const capLanes = <T>(lanes: readonly DayLane<T>[], max: number): { shown: DayLane<T>[]; more: DayMore<T>[] } => {
+  const shown: DayLane<T>[] = [];
+  const more = new Map<string, DayMore<T>>();
+  for (const band of lanes) {
+    if (band.lanes <= max) {
+      shown.push(band);
+      continue;
+    }
+    if (band.lane < max) {
+      shown.push({ ...band, lanes: max, more: true });
+      continue;
+    }
+    const hour = Math.floor(Math.max(0, band.start) / 60) * 60;
+    const key = `${band.group}:${hour}`;
+    const entry = more.get(key) ?? { group: band.group, hour, minute: Math.max(0, band.start), bands: [] };
+    entry.bands.push(band);
+    entry.minute = Math.min(entry.minute, Math.max(0, band.start));
+    more.set(key, entry);
+  }
+  return { shown, more: [...more.values()].sort((left, right) => left.minute - right.minute) };
+};
 
 /** About the minutes a deadline's pill covers in the waking hours; the open night is half as tall, so twice as many. */
 export const MARKER_MINUTES = 30;

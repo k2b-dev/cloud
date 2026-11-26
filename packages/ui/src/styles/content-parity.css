@@ -2416,11 +2416,15 @@
   position: absolute;
   z-index: 2;
   box-sizing: border-box;
+  /* An overlap with "+n" beside it leaves the column's end to it (--k2b-calendar-more). */
   left: calc(
-    var(--k2b-calendar-inset-start, 0px) + var(--k2b-calendar-inset) + (100% - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) + 3px) *
+    var(--k2b-calendar-inset-start, 0px) + var(--k2b-calendar-inset) +
+      (100% - var(--k2b-calendar-more, 0px) - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) + 3px) *
       var(--k2b-calendar-lane) / var(--k2b-calendar-lanes)
   );
-  width: calc((100% - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) + 3px) / var(--k2b-calendar-lanes) - 3px);
+  width: calc(
+    (100% - var(--k2b-calendar-more, 0px) - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) + 3px) / var(--k2b-calendar-lanes) - 3px
+  );
   border-radius: 0.5rem;
   color: var(--k2b-text);
   background: var(--k2b-calendar-event-surface);
@@ -2469,22 +2473,87 @@
   outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
+/* A band's title, then its time. The lines have a fixed height, so the band can say how many fit
+   (--k2b-calendar-lines, from its height): the title ends at a whole line, with "…" once at its end. A word longer
+   than the band breaks inside the word instead of ending in "…" of its own. */
 .k2b-ui .k2b-calendar-band .k2b-calendar-event__title {
   max-width: 100%;
   font-size: 0.75rem;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 0.9375rem;
 }
 
 .k2b-ui .k2b-calendar-days .k2b-calendar-band .k2b-calendar-event__title {
   font-size: 0.8125rem;
+  line-height: 1rem;
 }
 
 .k2b-ui .k2b-calendar-band[data-size="m"] .k2b-calendar-event__title {
   display: -webkit-box;
+  flex: none;
   white-space: normal;
+  overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--k2b-calendar-lines, 2);
+}
+
+.k2b-ui .k2b-calendar-band[data-size="m"] .k2b-calendar-event__meta {
+  flex: none;
+  line-height: 0.875rem;
+}
+
+/* too low for the time below the title: the title takes the band, the time stays in its label */
+.k2b-ui .k2b-calendar-band[data-meta="none"] .k2b-calendar-event__meta {
+  display: none;
+}
+
+/* "+n": the entries of an hour that do not fit side by side, at the column's end; it opens their list */
+.k2b-ui .k2b-calendar-more {
+  position: absolute;
+  z-index: 3;
+  right: var(--k2b-calendar-inset);
+  width: calc(1.75rem - 3px);
+  height: 1.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted, var(--k2b-calendar-event-surface));
+  box-shadow: inset 0 0 0 1px var(--k2b-border);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-calendar-more:hover,
+.k2b-ui .k2b-calendar-more[aria-expanded="true"] {
+  background: var(--k2b-calendar-event-hover);
+}
+
+.k2b-ui .k2b-calendar-more:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+
+.k2b-ui .k2b-calendar-popover[data-kind="more"] ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.5rem;
+  list-style: none;
+}
+
+.k2b-ui .k2b-calendar-popover[data-kind="more"] h2 {
+  margin: 0;
+  padding: 0.5rem 0.75rem 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--k2b-text-secondary);
 }
 
 .k2b-ui .k2b-calendar-band .k2b-calendar-event__meta {
