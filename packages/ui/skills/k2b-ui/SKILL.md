@@ -79,6 +79,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
 | who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
 | several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
+| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
@@ -169,12 +170,11 @@ says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
 ## How a screen looks: dense, clear, with faces
-
 Dense is not busy: show more, never the same thing twice (design pass 26.11.).
 - **Each thing carries its mark** (`Mark`, or a person's `Avatar`), never grey.
 - **The first line says what counts today** (`StatusRow` lead, `Cells`).
-- **A state is colour, symbol and word**; a limit a bar, a history `Spark`.
-- **Space structures, lines separate groups**; no box in a card, no empty half.
+- **A state is colour, symbol and word**; a limit a bar. **Space structures,
+  lines separate groups**; no box in a card, no empty half.
 - **People beside what they did**: avatars, stacks, `Digest activity`.
 - **Four type sizes** (12, 13, 14, 18); sample data dense and real.
 - **Two head rows at most**; **settings are `Setting` rows**.

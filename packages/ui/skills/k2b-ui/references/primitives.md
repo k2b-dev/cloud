@@ -116,6 +116,9 @@ a limit, "1,5 von 3 h": a thin bar under it, amber from the limit on),
 unseen under it, a value not there yet is one line; symbol and label stay,
 a `trend` keeps its place unseen). Use for the key statements of a record
 or the home of a place.
+The cells count themselves in their order to stand in these forms: each
+`Cells.Cell` stays in the same island as its `Cells` (never an island root
+of its own).
 
 ### Tiles
 
