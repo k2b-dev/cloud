@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Button, confirm, Empty, Failed, List, Loading, Menu, Notice, Popover, Row, Text, useToast } from "@k2b/ui/v2";
+import { Button, confirm, Empty, Failed, List, Loading, Menu, Notice, Popover, Row, Text } from "@k2b/ui/v2";
 import { For, type JSX, mergeProps, onCleanup, Show } from "solid-js";
 import type { AccessEntry } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
@@ -99,14 +99,13 @@ const createPermissionWords = (locale: string) => accessMessages.resolve([locale
  */
 export function PermissionEditorV2(props: PermissionEditorProps) {
   const locale = useLocale();
-  const toast = useToast();
   // k2b-ui gap: Row keeps no focus when its own action leaves; after a removal the focus goes to the next row's Remove.
   const anchors = new Set<HTMLElement>();
   // v2 has one look: saves and failures always speak in their own row (the v1 `expanded` behaviour).
   const state = createPermissionEditorState(mergeProps(props, { expanded: true }), locale, {
     confirm: (question) => confirm({ title: question.title, description: question.body, confirm: state.t().removeAccess }),
-    // every failure speaks in its own row (`expanded`); a toast, if one ever comes, names the outcome in two words
-    error: () => toast(state.t().notSaved, { status: "bad" }),
+    // v2 is `expanded`: every failure speaks in its own row, with its message and "Try again"; the state never calls this
+    error: () => {},
     focusAdd: () => {},
     focusAfterRemoval: (index) =>
       queueMicrotask(() => {

@@ -72,7 +72,13 @@ const open = async (width: number, query: string) => {
   });
   const shell = (await html("/app/mail/inbox", { language: "de" }))
     .replace("</head>", `<link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"></head>`)
-    .replace("</body>", `<script src="/harness.js"></script></body>`);
+    .replace("</body>", `<script src="/harness.js"></script></body>`)
+    .replaceAll("Quarterly numbers", "Quartalszahlen")
+    .replaceAll("Reader for inbox", "Lesebereich")
+    .replaceAll("Sender details", "Absender")
+    .replaceAll(">Inbox<", ">Posteingang<")
+    .replaceAll(">Archive<", ">Archiv<")
+    .replaceAll(">Sent<", ">Gesendet<");
   await page.route(`${origin}/**`, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/share") return route.fulfill({ contentType: "text/html; charset=utf-8", body: shell });
@@ -115,7 +121,7 @@ for (const width of [1440, 390]) {
         await dialog.getByRole("searchbox").fill("noah");
         await dialog.getByText("Noah Becker").first().waitFor();
         await shoot(page, `03-notebook-search-${width}`);
-        await dialog.getByRole("button", { name: /Hinzufügen: Noah Becker/ }).click();
+        await dialog.locator('[data-k2-part="Row"]').filter({ hasText: "Noah Becker" }).getByRole("button", { name: "Hinzufügen" }).click();
         const services = dialog.getByRole("region", { name: /Dienstkonten/ });
         await services.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
         const handle = services.getByRole("textbox", { name: "Kennung des Dienstkontos" });
@@ -124,7 +130,10 @@ for (const width of [1440, 390]) {
         await services.getByText("Code von Protokolle Vorstand").waitFor();
         await shoot(page, `04-notebook-handle-${width}`);
         await services.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
-        await dialog.getByRole("region", { name: /Was sich ändert/ }).waitFor();
+        // what changes, in view: the dialog's body scrolls to it, as a person reads before saving
+        const changes = dialog.getByRole("region", { name: /Was sich ändert/ });
+        await changes.waitFor();
+        await changes.evaluate((section) => section.scrollIntoView({ block: "end" }));
         await shoot(page, `05-notebook-staged-${width}`);
       } finally {
         await page.close();

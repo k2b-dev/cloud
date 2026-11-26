@@ -177,7 +177,10 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
         {...principalFace(row().principal, state.nameOf(row()), row().display)}
         lines={[state.nameOf(row()), line(row()) || " "]}
         meta={
-          [state.isViewer(row()) ? t().you : undefined, row().next && state.lastManagers().has(row().key) ? t().managesAlone : undefined]
+          [
+            state.isViewer(row()) ? t().you : undefined,
+            state.canEdit() && row().next && state.lastManagers().has(row().key) ? t().managesAlone : undefined,
+          ]
             .filter(Boolean)
             .join(" · ") || undefined
         }
@@ -230,7 +233,10 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
     return (
       <Row
         {...principalFace({ type }, label, {})}
-        lines={[label, state.loading() ? " " : state.generalDescription(type)]}
+        lines={[
+          label,
+          state.loading() ? " " : type === "public" && state.generalOn("public") ? t().publicOnShort : state.generalDescription(type),
+        ]}
         end={
           <>
             {chip(state.generalMark(type))}
@@ -355,7 +361,9 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                           }
                           end={
                             already() ? undefined : (
-                              <Button variant="ghost" icon="plus" label={`${t().add}: ${entry.label}`} onClick={() => add(entry)} />
+                              <Button variant="ghost" title={`${t().add}: ${entry.label}`} onClick={() => add(entry)}>
+                                {t().add}
+                              </Button>
                             )
                           }
                         />
@@ -393,9 +401,9 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
           <Show when={props.allowPublic === true || state.generalRow("public")}>
             {generalRow("public")}
             <Show when={state.generalOn("public")}>
-              <Notice tone="warn">{props.publicWarning ?? t().publicWarning}</Notice>
+              <Notice tone="warn">{props.publicWarning ?? t().publicWarningShort}</Notice>
               <Show when={props.publicLink}>
-                {(link) => <Facts items={[{ label: access().anyoneWithLink, value: link(), mono: true, copy: link() }]} />}
+                {(link) => <Facts items={[{ label: t().link, value: link(), mono: true, copy: link() }]} />}
               </Show>
             </Show>
           </Show>

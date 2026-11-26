@@ -60,7 +60,6 @@ export const accessMessages = i18n.define({
       groupMembersLoading: "Loading members…",
       groupMembersHidden: "Your account can't see who belongs to this group.",
       groupMembersFailed: "Members couldn't be loaded.",
-      notSaved: "Not saved",
       retry: "Try again",
       showMoreMembers: ({ count }: { count: number }) => `Show ${count.toLocaleString("en")} more`,
       directoryGroupHint:
@@ -192,7 +191,6 @@ export const accessMessages = i18n.define({
       groupMembersLoading: "Mitglieder werden geladen…",
       groupMembersHidden: "Dein Konto kann nicht sehen, wer zu dieser Gruppe gehört.",
       groupMembersFailed: "Die Mitglieder konnten nicht geladen werden.",
-      notSaved: "Nicht gespeichert",
       retry: "Erneut versuchen",
       showMoreMembers: ({ count }) => `${count.toLocaleString("de")} weitere anzeigen`,
       directoryGroupHint:
