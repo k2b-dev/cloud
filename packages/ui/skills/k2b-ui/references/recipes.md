@@ -272,6 +272,8 @@ column, "aktualisiert sich jede Minute" in the head), empty and failed.
 
 - A visitor page has no rail and no sidebar: the brand stands in the head.
 - A kiosk refreshes itself and says so in words, never with a button.
+- A long title wraps (`wrap`) before it is cut, and a range of numbers in it
+  (1920–1960) stays on one line.
 - Gaps: the brand mark (`Mark`) and a larger kiosk type come with the
   identity primitives; a phone row of a table may still wrap a long title; a
   longer brand name or task still gives the phone head a second row.
