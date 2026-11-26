@@ -23,13 +23,13 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (width: number, run: (page: Page) => Promise<void>, dir: "ltr" | "rtl" = "ltr") => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de" dir="${dir}"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -73,3 +73,22 @@ for (const width of [1440, 390])
       expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
     });
   });
+
+// Review of #4337: in a page written right to left the way stands at the right, its words on the rows' text edge there.
+test("in a page written right to left the way's words start on the rows' text edge at the right", async () => {
+  await withPage(
+    1440,
+    async (page) => {
+      const found = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".k2-pane:not([data-side]) .k2-sec")).map((section) => {
+          const words = section.querySelector(".k2-sec-link > b")!.getBoundingClientRect();
+          const text = section.querySelector(".k2-row .k2-row-l1")!.getBoundingClientRect();
+          return Math.round(text.right - words.right);
+        }),
+      );
+      expect(found).toEqual([0, 0]);
+      expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+    },
+    "rtl",
+  );
+});
