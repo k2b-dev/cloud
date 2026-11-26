@@ -5,6 +5,7 @@ export const accessDialogMessages = i18n.define({
   messages: {
     en: {
       title: ({ name }: { name: string }) => `Access to ${name}`,
+      add: "Add",
       search: "Add a person, group or agent",
       people: "People, groups and agents",
       general: "General",
@@ -114,6 +115,7 @@ export const accessDialogMessages = i18n.define({
     },
     de: {
       title: ({ name }) => `Zugriff auf ${name}`,
+      add: "Hinzufügen",
       search: "Person, Gruppe oder Agent hinzufügen",
       people: "Personen, Gruppen und Agenten",
       general: "Allgemein",

@@ -124,6 +124,7 @@
     "./account/ui": "./src/account/ui.ts",
     "./access/members": "./src/access/access-members.ts",
     "./access/ui": "./src/access/ui.ts",
+    "./access/v2": "./src/access/v2.tsx",
     "./approvals/ui": "./src/approvals/ui.ts",
     "./approvals/frame": "./src/approvals/ApprovalFrame.tsx",
     "./approvals/list": "./src/approvals/Approvals.tsx",
