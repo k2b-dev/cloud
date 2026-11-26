@@ -74,6 +74,12 @@ const apps: RuntimeAppMeta[] = [
   part("spaces", "Spaces", "layout-kanban"),
   part("files", "Files", "folder"),
 ];
+/** The worst case of an installation with many parts: 19 places of one kind beside Inventory. */
+const manyApps: RuntimeAppMeta[] = [
+  ...apps,
+  ...Array.from({ length: 18 }, (_, index) => part(`site${index + 1}`, `Standortübergreifende Lagerliste Nord ${index + 1}`, "building")),
+];
+let runtimeApps = apps;
 
 const spies: { mockRestore(): void }[] = [
   stubRailSnapshot(),
@@ -114,7 +120,8 @@ const pageOf = (variant: Variant) =>
         bare: variant !== "framed",
         screen: variant === "screen",
         get actions() {
-          return createComponent(Button, { variant: "ghost", icon: "settings", label: "Settings", href: "/pwa/settings" });
+          // a page's own deed; the way to Settings is the frame's
+          return createComponent(Button, { variant: "ghost", icon: "search", label: "Search", href: "/pwa/inventory/search" });
         },
         get children() {
           if (variant === "framed") return rows();
@@ -142,12 +149,15 @@ const pageOf = (variant: Variant) =>
 
 const server = new Hono<AuthContext>()
   .use("*", async (c, next) => {
-    c.set("runtime" as never, { apps } as never);
+    c.set("runtime" as never, { apps: runtimeApps } as never);
     await next();
   })
   .get("/pwa/inventory", auth.requireRole("user", ssr.pwaAccess), ...pageOf("framed"))
   .get("/pwa/inventory/bare", auth.requireRole("user", ssr.pwaAccess), ...pageOf("bare"))
-  .get("/pwa/inventory/screen", auth.requireRole("user", ssr.pwaAccess), ...pageOf("screen"));
+  .get("/pwa/inventory/screen", auth.requireRole("user", ssr.pwaAccess), ...pageOf("screen"))
+  // Start and Settings: the frame decides by the address
+  .get("/pwa/", auth.requireRole("user", ssr.pwaAccess), ...pageOf("framed"))
+  .get("/pwa/settings", auth.requireRole("user", ssr.pwaAccess), ...pageOf("framed"));
 
 const origin = "https://cloud.example.test";
 type Insets = { top: number; right: number; bottom: number; left: number };
@@ -354,6 +364,60 @@ describe("PwaLayout ui v2 in a browser", () => {
       } finally {
         await page.close();
       }
+    }
+  }, 60_000);
+
+  test("the frame owns the way to Settings: on Start's head on the phone only, and Settings marks no tab", async () => {
+    const settingsLink = (page: Page) =>
+      page.evaluate(() => {
+        const link = document.querySelector(".pwa-v2-actions a[href='/pwa/settings']");
+        return link ? link.getClientRects().length > 0 : false;
+      });
+    for (const [width, shown] of [
+      [390, true],
+      [1440, false],
+    ] as const) {
+      const start = await open("/pwa/", width, "v2.css");
+      try {
+        // beside the sidebar its foot leads to Settings: never twice
+        expect(await settingsLink(start), `${width}`).toBe(shown);
+      } finally {
+        await start.close();
+      }
+    }
+    const part = await open("/pwa/inventory", 390, "v2.css");
+    const settings = await open("/pwa/settings", 390, "v2.css");
+    try {
+      expect(await settingsLink(part)).toBe(false);
+      expect(await settings.evaluate(() => document.querySelectorAll(".k2-tabbar [aria-current]").length)).toBe(0);
+    } finally {
+      await part.close();
+      await settings.close();
+    }
+  }, 60_000);
+
+  test("with many parts the tab bar shows four and More, and the sidebar lists them all in their natural order", async () => {
+    runtimeApps = manyApps;
+    const page = await open("/pwa/inventory", 390, "v2.css");
+    const wide = await open("/pwa/inventory", 1440, "v2.css");
+    try {
+      const tabs = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-tabbar > .k2-tab")].map((tab) =>
+          tab.getClientRects().length > 0 ? (tab.getAttribute("data-k2-part") ?? "") : "hidden",
+        ),
+      );
+      expect(tabs).toEqual(["TabBar.Tab", "TabBar.Tab", "TabBar.Tab", "TabBar.Tab", "TabBar.More"]);
+      const names = await wide.evaluate(() =>
+        [...document.querySelectorAll(".pwa-v2-nav nav a")].map((link) => link.textContent?.trim() ?? ""),
+      );
+      const sites = names.filter((name) => name.includes("Nord"));
+      expect(sites).toHaveLength(18);
+      expect(sites.slice(0, 3).map((name) => name.replace(/\D+/g, ""))).toEqual(["1", "2", "3"]);
+      expect(sites.at(-1)?.replace(/\D+/g, "")).toBe("18");
+    } finally {
+      runtimeApps = apps;
+      await page.close();
+      await wide.close();
     }
   }, 60_000);
 

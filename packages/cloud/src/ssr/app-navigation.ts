@@ -46,6 +46,7 @@ export type VisiblePwaPart = RuntimeAppMeta & { pwa: NonNullable<RuntimeAppMeta[
  */
 export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): VisiblePwaPart[] => {
   if (!user) return [];
+  const names = new Intl.Collator(locale, { numeric: true });
   // Like the gateway, which routes /pwa/<id> only to a valid part id that claims it.
   return apps
     .filter(
@@ -56,7 +57,7 @@ export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | un
     .sort(
       (a, b) =>
         (a.pwa.order ?? Number.POSITIVE_INFINITY) - (b.pwa.order ?? Number.POSITIVE_INFINITY) ||
-        a.name.localeCompare(b.name, locale) ||
+        names.compare(a.name, b.name) ||
         a.id.localeCompare(b.id),
     );
 };

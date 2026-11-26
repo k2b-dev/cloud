@@ -73,7 +73,8 @@ without a summary route keep their `description`.
 `order` (optional) fixes the part's position on Start, in the sidebar, and in
 the tab bar, which shows the first three parts. Parts with an `order` come
 first, lowest first. Parts without one follow, sorted by name in the reader's
-language; equal orders also sort by name. Use a positive integer for a part
+language, numbers as people count them (Nord 2 before Nord 10); equal orders
+also sort by name. Use a positive integer for a part
 that people open every day, so its tab stays in the same place in every
 language. People cannot change the order.
 
@@ -251,6 +252,9 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
 - From 48 rem a v2 `Nav` with the installation's logo, Start, every part,
   and Settings at its foot stands beside the page. A part's badge is a count
   that calls for attention, its summary a quiet count beside it.
+- The frame owns the way to Settings: below 48 rem Start's head holds it,
+  since Settings is no tab; beside the sidebar its foot leads there. A page
+  never adds its own Settings button.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
   `back`, the title (`sidebarTitle` from 48 rem), and `actions` (kept on the
   phone, where the app has no shell bar to take them), with one

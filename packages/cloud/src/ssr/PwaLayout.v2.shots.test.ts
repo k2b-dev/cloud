@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
-import { Dynamic, renderToString } from "solid-js/web";
+import { renderToString } from "solid-js/web";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
@@ -350,16 +350,6 @@ const server = new Hono<AuthContext>()
           ui: "v2",
           title: "Lindenhof Cloud",
           sidebarTitle: "Start",
-          get actions() {
-            // beside the sidebar, its foot already leads to Settings: the gear is the phone's
-            return createComponent(Dynamic, {
-              component: "span",
-              class: "pwa-v2-phone-only",
-              get children() {
-                return createComponent(Button, { variant: "ghost", icon: "settings", label: "Einstellungen", href: "/pwa/settings" });
-              },
-            });
-          },
           get status() {
             return status();
           },

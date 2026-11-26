@@ -54,6 +54,8 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
   const start: PwaNavEntry = { id: "start", label: t.start, icon: "home", href: PWA_SCOPE, current: path === PWA_SCOPE };
   const tabItems: PwaNavEntry[] = navigation ? [start, ...parts.map(entry)] : [];
   const back = props.back;
+  // the frame owns the way to Settings: pages never add their own
+  const settingsOnStart = !!user && path === PWA_SCOPE;
   const head = (
     <Bar
       start={
@@ -82,11 +84,17 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
           </Show>
         </span>
       }
-      // The app has no phone bar of the shell, where a v2 head's end goes below 768 px: the page's actions stay.
+      // The app has no phone bar of the shell, where a v2 head's end goes below 768 px: the page's actions stay. Start
+      // carries the way to Settings on the phone, which is no tab; beside the sidebar its foot leads there.
       end={
-        props.actions === undefined ? undefined : (
+        props.actions === undefined && !settingsOnStart ? undefined : (
           <span class="pwa-v2-actions" data-keep="">
             {props.actions}
+            <Show when={settingsOnStart}>
+              <span class="pwa-v2-phone-only">
+                <Button variant="ghost" icon="settings" label={t.settings} href={settingsHref} />
+              </span>
+            </Show>
           </span>
         )
       }
