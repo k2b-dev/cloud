@@ -1,6 +1,0 @@
-### A v2 head search did nothing without JavaScript
-
-- **What happened:** The v1 lists of Accounts and Notebooks searched through a `<form method="get">` around their field, so Enter loaded the filtered page even before the island ran. On v2 the head search only listened for Enter in `onKeyDown`. Without JavaScript (a slow island, a script that failed) Enter did nothing. Wrapping the field in a form of the page's own broke the head's rules, which expect the field directly at the end of the `Bar`.
-- **Root cause:** The v2 `Input` had no way to send itself, and the head rules match the field's own element (`.k2-bar-end > .k2-input[data-search]`), so a form around it moved it out of their reach.
-- **Error class:** A rebuilt primitive keeps the look and the island's behaviour of its predecessor but drops the path that works from the server's markup alone.
-- **Guard:** `Input send={{ action, params, onSearch }}` makes the field its own GET form with the same class and marks. `packages/ui/src/v2/head-search.browser.test.ts` submits the server's markup with JavaScript off, checks that `onSearch` takes Enter where JavaScript runs, and checks that the form keeps the head's place and the phone's fold. `packages/accounts/src/frontend/groups/page.render.test.tsx` pins the form and its kept parameters in the page the server sends.

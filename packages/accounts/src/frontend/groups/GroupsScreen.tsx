@@ -113,15 +113,13 @@ export default function GroupsScreen(props: GroupsScreenProps) {
               <Input
                 type="search"
                 icon="search"
-                name="q"
                 label={t().searchGroups}
                 placeholder={t().searchGroups}
                 value={state().search ?? ""}
-                // Enter sends `q` with the rest of the address also without JavaScript; the island searches in place
-                send={{ action: GROUPS_PAGE_PATH, params: query().serialize({ ...state(), search: undefined }), onSearch: search }}
                 onKeyDown={(event) => {
                   if (event.isComposing) return;
                   const input = event.currentTarget as HTMLInputElement;
+                  if (event.key === "Enter") search(input.value);
                   if (event.key === "Escape" && input.value) {
                     input.value = "";
                     search("");

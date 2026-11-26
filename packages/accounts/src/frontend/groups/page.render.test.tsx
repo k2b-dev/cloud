@@ -123,26 +123,6 @@ test("an address from before v2 opens the same list in the v2 address, every par
   });
 });
 
-test("the head search is a GET form also without JavaScript: Enter sends q with the list's filters, never its page", async () => {
-  await withGroups(150, async (app) => {
-    const html = await (
-      await app.request("/app/accounts/groups?q=fin&page=2&scope=managed&provider=ipa", { headers: { "Accept-Language": "en" } })
-    ).text();
-    const form = html.match(/<form[^>]*role="search"[^>]*>[\s\S]*?<\/form>/)?.[0] ?? "";
-    expect(form).toContain('method="get"');
-    expect(form).toContain('action="/app/accounts/groups"');
-    const fields = [...form.matchAll(/<input([^>]*)>/g)].map((match) => {
-      const attribute = (name: string) => match[1]!.match(new RegExp(`${name}="([^"]*)"`))?.[1];
-      return { type: attribute("type"), name: attribute("name"), value: attribute("value") };
-    });
-    expect(fields).toEqual([
-      { type: "hidden", name: "scope", value: "managed" },
-      { type: "hidden", name: "provider", value: "ipa" },
-      { type: "search", name: "q", value: "fin" },
-    ]);
-  });
-});
-
 test("the requests badge shows the counted open requests", async () => {
   await withGroups(1, async (app) => {
     const html = await (await app.request("/app/accounts/groups", { headers: { "Accept-Language": "en" } })).text();

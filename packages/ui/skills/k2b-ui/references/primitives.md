@@ -298,14 +298,6 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
-  A search the server answers takes `name` and `send={{ action, params,
-  onSearch }}`: the field is its own GET form, so Enter loads `action`
-  with the text and `params` (the rest of the address) also without
-  JavaScript; `onSearch` searches in place where JavaScript runs. It keeps
-  its place in a head and folds on the phone, and its form is named by
-  `label`. Never wrap it in a `<form>` and never put it inside one: forms
-  do not nest, and the browser drops the inner one (`describeV2` reports
-  both).
   The standard text-field attributes pass through and stand in the
   server's markup, so a password manager reads them before the island
   hydrates: `autocomplete` (`username`, `current-password`,

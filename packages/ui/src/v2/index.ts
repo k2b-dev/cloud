@@ -78,7 +78,6 @@ export {
   type ImageInputProps,
   Input,
   type InputProps,
-  type InputSend,
   Select,
   type SelectOption,
   type SelectProps,
