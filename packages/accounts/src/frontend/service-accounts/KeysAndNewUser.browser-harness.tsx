@@ -33,6 +33,7 @@ type State =
       active?: boolean;
       open?: string;
       owner?: "agent" | "resource";
+      app?: boolean;
     }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
@@ -68,7 +69,14 @@ const record = (props: Extract<State, { screen: "record" }>) => {
           : null;
   const account =
     props.owner === "resource"
-      ? { kind: "resource" as const, id: RESOURCE_ID, name: "Postfach Einkauf", active: true }
+      ? {
+          kind: "resource" as const,
+          id: RESOURCE_ID,
+          name: "Postfach Einkauf",
+          active: true,
+          // an app's own account: its rotating keys are managed in the app's administration
+          ...(props.app ? { managedAt: "/admin/apps?app=mail&view=keys" } : {}),
+        }
       : { ...agentAccount, active: props.active !== false };
   return (
     <Workspace

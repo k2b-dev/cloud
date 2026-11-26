@@ -24,7 +24,7 @@ export const renderResourceRecord = async <E extends AuthContext>(c: Context<E>,
   const [pendingRequests, modelsAvailable, keys] = await Promise.all([
     accountsService.accountRequest.countPending(),
     coreSettings.get<boolean>("ai.openai_api_enabled"),
-    firstKeyPage({ kind: "resource", id: account.id }, { locale, timeZone, now: new Date() }),
+    firstKeyPage({ kind: "resource", id: account.id }, { locale, timeZone, now: new Date() }, c.req.query("key")),
   ]);
   return () => (
     <Layout

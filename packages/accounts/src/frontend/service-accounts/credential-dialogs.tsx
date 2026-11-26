@@ -45,6 +45,8 @@ export function KeyDialog(props: {
   close: () => void;
   revoke: (entry: AccountKey) => void;
   replace: (entry: AccountKey, serviceAccountId: string) => void;
+  /** Where the key is managed instead (an app's rotating keys): the dialog offers no deed, only the way there. */
+  managedAt?: string;
 }) {
   const t = useAccountsMessages();
   const words = useApiKeyMessages();
@@ -58,7 +60,18 @@ export function KeyDialog(props: {
             if (!open) props.close();
           }}
           foot={
-            <Show when={entry().active} fallback={<Button onClick={props.close}>{t().close}</Button>}>
+            <Show
+              when={entry().active && !props.managedAt}
+              fallback={
+                <Show when={props.managedAt} fallback={<Button onClick={props.close}>{t().close}</Button>}>
+                  {(href) => (
+                    <Button href={href()} forward>
+                      {words().openAppKeys}
+                    </Button>
+                  )}
+                </Show>
+              }
+            >
               <Show when={entry().replace}>
                 {(target) => (
                   <Button icon="replace" onClick={() => props.replace(entry(), target().serviceAccountId)}>
@@ -84,6 +97,11 @@ export function KeyDialog(props: {
           />
           <Show when={entry().access === "legacy"}>
             <Notice tone="note">{t().legacyLimitedKeyHint}</Notice>
+          </Show>
+          <Show when={props.managedAt}>
+            <Notice tone="note" icon="apps">
+              {words().appKeysManaged}
+            </Notice>
           </Show>
         </Dialog>
       )}

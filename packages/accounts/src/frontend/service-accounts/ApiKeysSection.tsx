@@ -22,6 +22,12 @@ export type KeyAccount = KeyOwner & {
    * the app or resource it belongs to: those keys are only revoked here.
    */
   active: boolean;
+  /**
+   * Where the account's keys are managed instead, such as an app's own account (`cloud.app`), whose rotating keys the
+   * app's administration owns (`/admin/apps?app=<id>&view=keys`): revoking one there switches the whole app off, so
+   * this section shows them read-only with the way there.
+   */
+  managedAt?: string;
 };
 
 export type ApiKeysSectionProps = {
@@ -191,8 +197,15 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
             {words().keyGone}
           </Notice>
         </Show>
-        <Show when={props.account.kind === "agent" && !props.account.active}>
-          <Notice tone="warn">{words().agentInactive}</Notice>
+        <Show when={props.account.kind !== "person" && !props.account.active}>
+          <Notice tone="warn">{props.account.kind === "agent" ? words().agentInactive : words().accountInactive}</Notice>
+        </Show>
+        <Show when={props.account.managedAt}>
+          {(href) => (
+            <Notice tone="note" icon="apps" actions={[{ label: words().openAppKeys, href: href(), forward: true }]}>
+              {words().appKeysManaged}
+            </Notice>
+          )}
         </Show>
         <Show when={current()?.keys.some((entry) => entry.access === "legacy" && entry.active)}>
           <Notice tone="note" icon="lock" title={t().legacyLimitedKey}>
@@ -230,7 +243,7 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
                           <Show when={!entry.active || entry.expired}>
                             <Chip status={entry.active ? "warn" : "bad"}>{entry.active ? words().expired : t().revoked}</Chip>
                           </Show>
-                          <Show when={entry.active}>
+                          <Show when={entry.active && !props.account.managedAt}>
                             <Menu label={words().keyActions({ name: shortName(entry.name) })} items={deeds(entry)} />
                           </Show>
                         </>
@@ -271,7 +284,13 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
           />
         )}
       </Show>
-      <KeyDialog entry={opened()} close={() => show(null)} revoke={(entry) => void revoke(entry)} replace={replace} />
+      <KeyDialog
+        entry={opened()}
+        close={() => show(null)}
+        revoke={(entry) => void revoke(entry)}
+        replace={replace}
+        managedAt={props.account.managedAt}
+      />
       <Show when={replacing()}>
         {(target) => (
           <ReplaceKeyDialog

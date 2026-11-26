@@ -4,6 +4,15 @@ import ApiKeysSection from "../../service-accounts/ApiKeysSection";
 import type { KeyPage } from "../../service-accounts/account-keys";
 import { useUserRecordMessages } from "./messages";
 
+/**
+ * Where an app's own account (`cloud.app`) has its rotating keys managed: the app's keys in Verwaltung › Apps. Revoking
+ * one switches the whole app off, so the record shows them read-only and leads there.
+ */
+const appKeysHref = (account: ResourceAccountView): string | undefined =>
+  account.resourceType === "cloud.app" && account.appId
+    ? `/admin/apps?${new URLSearchParams({ app: account.appId, view: "keys" })}`
+    : undefined;
+
 /** An API key account of an app's resource (a `resource_bound` service account), as the record shows it. */
 export type ResourceAccountView = {
   id: string;
@@ -53,7 +62,13 @@ export default function ResourceScreen(props: Props) {
       <Pane.Split>
         <Pane label={r().resourceKind} scrollKey="accounts-resource-record">
           <ApiKeysSection
-            account={{ kind: "resource", id: props.account.id, name: props.account.name, active: props.account.active }}
+            account={{
+              kind: "resource",
+              id: props.account.id,
+              name: props.account.name,
+              active: props.account.active,
+              managedAt: appKeysHref(props.account),
+            }}
             first={props.keys}
             modelsAvailable={props.modelsAvailable}
             timeZone={props.timeZone}

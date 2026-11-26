@@ -36,6 +36,7 @@ type State =
       active?: boolean;
       open?: string;
       owner?: "agent" | "resource";
+      app?: boolean;
     }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
@@ -400,6 +401,33 @@ describe("an account's API keys and directory access as record sections", () => 
       await tab.getByRole("button", { name: "Weiter" }).first().click();
       await tab.getByRole("button", { name: "Postfach Einkauf · Schlüssel 51", exact: true }).waitFor();
       expect(answers.keyPages).toEqual([2]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("an app's own key account shows its keys read-only with the way to Verwaltung › Apps; `?key=` opens one", async () => {
+    const second = resourceSources(1, 50)[1]!;
+    const answers = api();
+    const { context, tab, errors } = await open(wide, `/app/accounts/users/${RESOURCE_ID}?key=${second.id}`, answers, {
+      screen: "record",
+      owner: "resource",
+      app: true,
+      open: second.id,
+    });
+    try {
+      await dialog(tab).getByRole("heading", { name: "API Key Postfach Einkauf · Schlüssel 2" }).waitFor();
+      expect(await dialog(tab).getByRole("button", { name: "Widerrufen" }).count()).toBe(0);
+      expect(await dialog(tab).textContent()).toContain("Automatischer App-Schlüssel – wird unter Verwaltung › Apps verwaltet");
+      await tab.keyboard.press("Escape");
+      await tab.waitForFunction(() => !document.querySelector("[data-k2-part=Dialog]"));
+      const keys = tab.locator("[data-k2-part=Section]").first();
+      expect(await keys.getByRole("button", { name: /^Aktionen für/ }).count()).toBe(0);
+      expect(await keys.getByRole("link").first().getAttribute("href")).toBe("/admin/apps?app=mail&view=keys");
+      await expectClean(tab);
+      await shoot(tab, "record-app-keys-light-1440");
+      expect(answers.deletes).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
