@@ -2272,13 +2272,17 @@
 .k2-ui .k2-avs > .k2-av {
   box-shadow: 0 0 0 2px var(--k2-surface);
 }
+/* each face lies over the one before only as far as its initials stay whole: 4 px of 24, 2 px of 20 */
 .k2-ui .k2-avs > .k2-av + .k2-av {
-  margin-left: -6px;
+  margin-left: -4px;
 }
 .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av {
   width: 20px;
   height: 20px;
   font-size: 9px;
+}
+.k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av + .k2-av {
+  margin-left: -2px;
 }
 /* A stack shows as many faces as its width holds whole, beside a count of up to three signs; the count that stands
    belongs to the faces that stand, so it is always right and never cut. */
@@ -2297,7 +2301,7 @@
 .k2-ui .k2-avs[data-k="5"] > .k2-avs-rest[data-visible="5"] {
   display: inline;
 }
-@container k2-avs (max-width: 125.98px) {
+@container k2-avs (max-width: 133.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 5) {
     display: none;
   }
@@ -2308,7 +2312,7 @@
     display: inline;
   }
 }
-@container k2-avs (max-width: 107.98px) {
+@container k2-avs (max-width: 113.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 4) {
     display: none;
   }
@@ -2319,7 +2323,7 @@
     display: inline;
   }
 }
-@container k2-avs (max-width: 89.98px) {
+@container k2-avs (max-width: 93.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 3) {
     display: none;
   }
@@ -2330,7 +2334,7 @@
     display: inline;
   }
 }
-@container k2-avs (max-width: 71.98px) {
+@container k2-avs (max-width: 73.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 2) {
     display: none;
   }
