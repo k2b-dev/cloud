@@ -39,7 +39,12 @@ export type OverviewScreenProps = {
   initialQuery: string;
 };
 
-const PAGE = 100;
+/**
+ * Rows the base table shows at a time. A row draws faces and a storage bar; measured with 1,000 bases in WebKit on the
+ * test VM (26.11.2026, VM under load): 100 rows 1643 ms, 50 rows 1317–1538 ms, 30 rows 1175–1441 ms against the
+ * 1.5 s budget of the scale test.
+ */
+const PAGE = 30;
 const baseHref = (base: PulseBase) => `/app/pulse/${base.id}`;
 
 const matches = (base: PulseBase, query: string) => {
