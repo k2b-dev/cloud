@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "grid" | "selecting" | "settings" | "states" | "canvas";
+type Case = "list" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells";
 
 let browser: Browser;
 let client: string;
@@ -327,6 +327,42 @@ test("the states of an entry stand whole under its lines and wrap; rows without 
         expect(found.long).toBe(true);
         // on the phone the six states take more lines than on the desktop, none is cut
         if (width === 390) expect(found.lines).toBeGreaterThan(1);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("key numbers stand two by two on the phone, a third alone across; big numbers and long labels stay whole", async () => {
+  for (const width of [390, 1440])
+    await withPage(
+      "cells",
+      async (page) => {
+        const found = await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-cells")].map((cells) => {
+            const items = [...cells.querySelectorAll<HTMLElement>(":scope > .k2-cell")];
+            const boxes = items.map((cell) => cell.getBoundingClientRect());
+            return {
+              rows: new Set(boxes.map((box) => Math.round(box.top))).size,
+              widths: boxes.map((box) => Math.round(box.width)),
+              // the values that are cut: none
+              values: items
+                .map((cell) => cell.querySelector<HTMLElement>(".k2-cell-value")!)
+                .filter((value) => value.scrollWidth > value.clientWidth + 1)
+                .map((value) => `${value.textContent} (${value.scrollWidth} in ${value.clientWidth})`),
+            };
+          }),
+        );
+        if (width === 390) {
+          const [four, three] = found;
+          expect(four!.rows).toBe(2);
+          expect(new Set(four!.widths).size).toBe(1);
+          expect(three!.rows).toBe(2);
+          // the third takes the whole second row
+          expect(three!.widths[2]).toBe(three!.widths[0]! + three!.widths[1]!);
+        } else for (const cells of found) expect(cells.rows).toBe(1);
+        for (const cells of found) expect(cells.values).toEqual([]);
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },

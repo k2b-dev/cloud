@@ -97,7 +97,8 @@ fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
 
-2–4 equal cells with a line between; stacked on the phone. A cell:
+2–4 equal cells with a line between; on the phone two by two (a third
+alone across the second row). A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
 as orders per day this week). Use for the key statements of a record or

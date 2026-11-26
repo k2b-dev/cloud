@@ -1,4 +1,4 @@
-import { Bar, Canvas, Chip, List, Pane, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import { Bar, Canvas, Cells, Chip, List, Pane, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
 // states, a state longer than the row, rows with and without states side by side. Beside it a drawing that is the
@@ -40,6 +40,43 @@ export const RowStatesScreen = () => (
           <Row mark={domain} lines={["alt.kolb-antik.de", "stillgelegt seit 01.10.2026"]} />
         </List>
       </Section>
+    </Pane>
+  </Workspace>
+);
+
+// Key numbers in their worst case (lane C, gateway-ops #4205): long labels, big numbers, an amount chip, a trend, and
+// four cells beside three.
+export const CellsScreen = () => (
+  <Workspace>
+    <Pane label="Übersicht">
+      <Cells>
+        <Cells.Cell
+          icon="login-2"
+          label="Anmeldungen in den letzten 24 Stunden über alle Anmeldeverfahren"
+          value="12.345.678"
+          meta="6 % mehr als am vergangenen Mittwoch zur gleichen Zeit"
+          trend={{ values: [14, 10, 24, 58, 70, 52, 44], label: "Anmeldungen je Stunde" }}
+        />
+        <Cells.Cell icon="route" label="Anfragen je Sekunde" value="1.234.567" meta="Spitze 09:41" />
+        <Cells.Cell
+          icon="currency-euro"
+          label="Umsatz heute"
+          value={<Chip amount="in">123.456,78 €</Chip>}
+          meta="davon offen 12.345,00 €"
+        />
+        <Cells.Cell
+          icon="alert-triangle"
+          label="Fehler"
+          value={<Chip status="bad">17 kritisch</Chip>}
+          meta="davon 3 neu seit 09:00"
+          href="#fehler"
+        />
+      </Cells>
+      <Cells>
+        <Cells.Cell icon="database" label="Speicher" value="38,2 von 100 GB" meta="Werkstatt" />
+        <Cells.Cell icon="users" label="Konten" value="192" meta="23 Gäste" />
+        <Cells.Cell icon="clock" label="Letzte Sicherung" value={<Chip status="ok">heute 03:00</Chip>} meta="nächste 03:00" />
+      </Cells>
     </Pane>
   </Workspace>
 );

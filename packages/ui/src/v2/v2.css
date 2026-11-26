@@ -4126,12 +4126,38 @@
   .k2-ui .k2-cgrip {
     display: none;
   }
+  /* Key numbers stand two by two in a narrow column and on the phone, as dense as the mockup: four cells in two rows,
+     three as two and one across, two side by side. A line between the two of a row, one between the rows. */
   .k2-ui .k2-cells {
     grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .k2-ui .k2-cell + .k2-cell {
     border-left: 0;
+  }
+  .k2-ui .k2-cell:nth-child(even) {
+    border-left: var(--k2-hairline);
+  }
+  .k2-ui .k2-cell:nth-child(n + 3) {
     border-top: var(--k2-hairline);
+  }
+  .k2-ui .k2-cell:nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
+  /* in a cell half as wide the value and its line take the cell's whole width, under the label with its symbol, so a
+     big number or an amount stays whole */
+  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meta) {
+    grid-column: 1 / -1;
+  }
+  /* a value longer than its half cell breaks between its words, a chip too, instead of being cut */
+  .k2-ui .k2-cell > .k2-cell-value {
+    white-space: normal;
+  }
+  .k2-ui .k2-cell-value > .k2-chip {
+    height: auto;
+    min-height: 24px;
+    max-width: 100%;
+    white-space: normal;
   }
   .k2-ui .k2-frow {
     grid-auto-flow: row;

@@ -589,9 +589,9 @@ export type CellProps = {
   trend?: SparkProps;
 };
 
-/** Two to four equal cells side by side with a line between them; one under the other on the phone. */
+/** Two to four equal cells side by side with a line between them; two by two on the phone. */
 export const Cells = (props: {
-  /** Two to four `Cells.Cell`. */
+  /** Two to four `Cells.Cell`; on the phone two by two, a third alone across the second row. */
   children: JSX.Element;
 }) => (
   <div class="k2-cells" data-k2-part="Cells">
