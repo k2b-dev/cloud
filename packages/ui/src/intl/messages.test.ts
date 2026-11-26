@@ -87,6 +87,7 @@ const catalogs = {
   V2Date: (await import("../v2/date-messages")).checkDateMessages,
   Refresh: (await import("../layout/refresh-messages")).checkRefreshMessages,
   V2Tree: (await import("../v2/tree-messages")).checkTreeMessages,
+  V2Controls: (await import("../v2/control-messages")).checkControlMessages,
 };
 
 describe("@k2b/ui message catalogs", () => {
