@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { createSignal, type JSX, Show } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import GraphCanvas, { type GraphDisplayProps } from "./GraphCanvas";
 
@@ -16,6 +16,8 @@ export default function NeighborhoodDisplay(
     noteHref: (id: string) => string;
     /** Hands the focus to the frame's way out when the new centre has no visible links. */
     focusEmpty: () => void;
+    /** The frame's way out, which stands here instead of the canvas while the centre has no visible links. */
+    empty: JSX.Element;
   },
 ) {
   const locale = useLocale();
@@ -36,8 +38,8 @@ export default function NeighborhoodDisplay(
       <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-centred-announcement>
         {announcement()}
       </span>
-      {/* Without visible links the frame shows the way out instead of this display. */}
-      <Show when={linked()}>
+      {/* Without visible links the frame's way out stands here, and the announcement above stays. */}
+      <Show when={linked()} fallback={props.empty}>
         <GraphCanvas
           {...props}
           neighborhood={{

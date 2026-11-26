@@ -10,7 +10,6 @@ import type { GraphViewState } from "./view-state";
 
 type InitialFrame = {
   checked: string | null;
-  depth: boolean;
   timelineRows: (string | null)[];
   timelineGroups: (string | null)[];
   boxes: (number[] | null)[];
@@ -61,7 +60,6 @@ if (typeof document !== "undefined" && document.getElementById("graph-props")) {
       checked: [...root.querySelectorAll('[aria-label="Display"] [aria-current="page"]')].find(visible)?.textContent ?? null,
       timelineRows: [...root.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-row")),
       timelineGroups: [...root.querySelectorAll(".notebook-graph__timeline-group")].map((group) => group.textContent),
-      depth: [...root.querySelectorAll('input[name="graph-depth"]')].some(visible),
       // the workspace head, the pane head (displays, filters, zoom) and the drawing
       boxes: ['[data-k2-workspace] [data-k2-part="Bar"]', '[data-k2-part="Pane"] [data-k2-part="Bar"]', ".notebook-graph__body"].map(
         (selector) => {

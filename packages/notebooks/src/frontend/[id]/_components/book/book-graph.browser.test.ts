@@ -1,6 +1,6 @@
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
@@ -126,7 +126,7 @@ test(`${browserName}: Book Links keeps the note and origin through reload, histo
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await page.goto(new URL(noteHref, server.url).href);
-    await page.locator("#notebook-book-content").waitFor({ state: "visible" });
+    await linksItem(page).waitFor({ state: "visible" });
     const before = await layout(page);
     expect(await linksItem(page).getAttribute("aria-current")).toBeNull();
     await linksItem(page).click();
@@ -143,14 +143,14 @@ test(`${browserName}: Book Links keeps the note and origin through reload, histo
 
     await page.goBack();
     await page.waitForURL(new URL(noteHref, server.url).href);
-    await page.locator("#notebook-book-content").waitFor({ state: "visible" });
+    await linksItem(page).waitFor({ state: "visible" });
     await layout(page);
     await page.goForward();
     await page.waitForURL(new URL(graphHref, server.url).href);
     expect(await layout(page)).toEqual(before);
     await page.getByRole("link", { name: "Close graph", exact: true }).click();
     await page.waitForURL(new URL(noteHref, server.url).href);
-    await page.locator("#notebook-book-content").waitFor({ state: "visible" });
+    await linksItem(page).waitFor({ state: "visible" });
     expect(await layout(page)).toEqual(before);
   } finally {
     await page.close();

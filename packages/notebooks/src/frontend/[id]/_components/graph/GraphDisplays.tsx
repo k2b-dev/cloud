@@ -19,29 +19,59 @@ export default function GraphDisplays(props: {
   overlay?: JSX.Element;
   /** Hands the focus to the way out that replaces Umgebung when a new centre has no visible links. */
   focusEmpty: () => void;
+  /** What stands in Umgebung's place around a note without visible links: the frame's way out. */
+  neighborhoodEmpty: JSX.Element;
 }) {
   const g = () => props.view;
   const t = () => g().t();
-  const common = () => ({
-    model: g().model,
-    notes: g().notes(),
-    edges: g().edges(),
-    currentId: g().currentId(),
-    query: g().query(),
-    notebookName: props.graph.notebookName,
-    now: props.graph.now,
-    filterKey: g().filterKey(),
-    onOpen: g().open,
-    onClearQuery: () => g().update({ q: "" }),
-    controls: g().setControls,
-    focusRequest: g().setFocusNote,
-    claimFocus: g().claimFocus,
-  });
-  const network = () => <NetworkDisplay {...common()} displayName={graphDisplayLabel("network", t())} layout={g().networkLayout} />;
-  const circle = () => <CircleDisplay {...common()} displayName={graphDisplayLabel("circle", t())} />;
+  // Getters, so each display reads what it needs when it needs it: a spread of plain values would make the chosen
+  // display's branch follow the search and draw the display anew on every keystroke (losing zoom and focus).
+  const common = {
+    get model() {
+      return g().model;
+    },
+    get notes() {
+      return g().notes();
+    },
+    get edges() {
+      return g().edges();
+    },
+    get currentId() {
+      return g().currentId();
+    },
+    get query() {
+      return g().query();
+    },
+    get notebookName() {
+      return props.graph.notebookName;
+    },
+    get now() {
+      return props.graph.now;
+    },
+    get filterKey() {
+      return g().filterKey();
+    },
+    get onOpen() {
+      return g().open;
+    },
+    get onClearQuery() {
+      return () => g().update({ q: "" });
+    },
+    get controls() {
+      return g().setControls;
+    },
+    get focusRequest() {
+      return g().setFocusNote;
+    },
+    get claimFocus() {
+      return g().claimFocus;
+    },
+  };
+  const network = () => <NetworkDisplay {...common} displayName={graphDisplayLabel("network", t())} layout={g().networkLayout} />;
+  const circle = () => <CircleDisplay {...common} displayName={graphDisplayLabel("circle", t())} />;
   const neighborhood = () => (
     <NeighborhoodDisplay
-      {...common()}
+      {...common}
       displayName={graphDisplayLabel("neighborhood", t())}
       depth={g().state().depth}
       onCentre={g().recenter}
@@ -49,6 +79,7 @@ export default function GraphDisplays(props: {
       onResetFilters={g().resetFilters}
       noteHref={g().noteHref}
       focusEmpty={props.focusEmpty}
+      empty={props.neighborhoodEmpty}
     />
   );
   return (
@@ -72,7 +103,7 @@ export default function GraphDisplays(props: {
       <div class="notebook-graph__body">
         <Show
           when={g().display() !== "timeline"}
-          fallback={<TimelineDisplay {...common()} timeZone={props.graph.timeZone} noteHref={g().noteHref} />}
+          fallback={<TimelineDisplay {...common} timeZone={props.graph.timeZone} noteHref={g().noteHref} />}
         >
           <Show
             when={g().display() === null}

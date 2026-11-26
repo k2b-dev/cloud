@@ -1,7 +1,7 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { NavigationController } from "@k2b/ui";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Choice, Empty, Input, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Canvas, Empty, Input, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
 import { For, type JSX, Match, Show, Switch } from "solid-js";
 import type { NoteGraph } from "../../../../service/links";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -79,20 +79,26 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
     { value: "linked" as const, label: t().graphLinksLinked, icon: "affiliate" },
     { value: "unlinked" as const, label: t().graphLinksUnlinked, icon: "circle-dashed" },
   ];
-  const linkOption = () => linkOptions().find((option) => option.value === g.state().links) ?? linkOptions()[0]!;
   // Enter jumps to the first match: in the list to its row, without links to the note, else into the display.
   const jump = () => {
     const first = g.hits()[0];
     if (!first && (g.state().list || !g.hasLinks)) return;
     if (g.state().list) workspace()?.querySelector<HTMLElement>('[data-k2-part="Table"] a, [data-k2-part="Table"] button')?.focus();
     else if (!g.hasLinks)
-      workspace()
-        ?.querySelector<HTMLAnchorElement>(`a[href="${CSS.escape(g.noteHref(first!.id))}"]`)
+      [...(workspace()?.querySelectorAll<HTMLAnchorElement>('[data-k2-part="Section"] a[href]') ?? [])]
+        .find((link) => link.getAttribute("href") === g.noteHref(first!.id))
         ?.focus();
     else if (g.display() === "timeline") g.focusNote();
     else g.focusNote(first?.id);
   };
   const listCount = () => t().graphNoteCount({ notes: g.query().trim() ? g.hits().length : g.notes().length, links: g.edges().length });
+  // A large notebook's graph holds the pages around one page; the drawing, the list's count and the notes without links say so.
+  const scopeLine = () => {
+    const scope = props.graph.scope;
+    return scope
+      ? t().graphScope({ shown: g.model.notes.length, total: scope.total, title: g.model.byId.get(scope.around)?.title || t().untitled })
+      : null;
+  };
   // Umgebung around a note whose links the filters hide, or that has none: the display gives way to a way out.
   const localEmpty = () => {
     const current = g.current();
@@ -108,7 +114,7 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
         };
   };
   // A new centre whose links the filters hide replaces the display with its way out, which takes the focus.
-  const focusEmpty = () => queueMicrotask(() => workspace()?.querySelector<HTMLElement>(`${EMPTY} :is(button, a[href])`)?.focus());
+  const focusEmpty = () => requestAnimationFrame(() => workspace()?.querySelector<HTMLElement>(`${EMPTY} :is(button, a[href])`)?.focus());
 
   return (
     <Workspace
@@ -149,6 +155,7 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                   icon="list-details"
                   label={t().graphAsList}
                   pressed={g.state().list}
+                  keep
                   onClick={() => g.update({ list: !g.state().list })}
                 />
               </Show>
@@ -177,55 +184,77 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                 />
                 {/* the list's count stands in this row, so no row of its own goes above the table */}
                 <Show when={g.state().list && g.model.notes.length > 0}>
-                  <Text type="meta">{listCount()}</Text>
+                  <Text type="meta">{scopeLine() ? `${listCount()} · ${scopeLine()}` : listCount()}</Text>
                 </Show>
               </>
             }
             end={
               // Without links there is nothing to filter or zoom.
-              <Show when={g.hasLinks}>
-                <Menu
-                  icon={linkOption().icon}
-                  label={t().graphWhichNotes}
-                  items={[
-                    {
-                      title: t().graphWhichNotes,
-                      choice: g.state().links,
-                      onChoose: (links) => g.update({ links: linkOptions().find((option) => option.value === links)?.value ?? "all" }),
-                      items: linkOptions().map((option) => ({ label: option.label, icon: option.icon, value: option.value })),
-                    },
-                    // k2b-ui gap: a menu entry takes no data colour, so an area shows no dot here; the graph keeps the colours.
-                    {
-                      title: t().graphAreas,
-                      items: g.model.areas
-                        .filter((area) => area.count > 0)
-                        .map((area) => ({
-                          label: g.areaName(area),
-                          meta: String(area.count),
-                          checked: !g.state().hide.includes(area.key),
-                          onClick: () => g.toggleArea(area.key),
-                        })),
-                    },
-                  ]}
-                >
-                  {linkOption().label}
-                </Menu>
-                <Show when={!g.state().list && g.display() === "neighborhood"}>
-                  <Choice
-                    name="graph-depth"
-                    label={t().graphDepth}
-                    value={g.state().depth === 1 ? "1" : "2"}
-                    options={[
-                      { value: "1", label: t().graphDepthOne },
-                      { value: "2", label: t().graphDepthTwo },
+              <>
+                {/* the list's order, also where its columns give way to rows (the phone) */}
+                <Show when={g.state().list && g.model.notes.length > 0}>
+                  <Menu
+                    icon="arrows-sort"
+                    label={t().graphOrder}
+                    items={[
+                      {
+                        title: t().graphOrder,
+                        choice: g.state().sort ?? "tree",
+                        onChoose: (sort) => g.update({ sort: sort === "changed" || sort === "changed-asc" ? sort : null }),
+                        items: [
+                          { label: t().graphOrderTree, value: "tree" },
+                          { label: t().graphOrderNewest, value: "changed" },
+                          { label: t().graphOrderOldest, value: "changed-asc" },
+                        ],
+                      },
                     ]}
-                    onChange={(depth) => g.update({ depth: depth === "1" ? 1 : 2 })}
                   />
                 </Show>
-                <Button icon="minus" label={t().zoomOut} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1 / 1.25)} />
-                <Button icon="plus" label={t().zoomIn} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1.25)} />
-                <Button icon="focus-centered" label={t().fitGraph} disabled={!g.showsGraph()} onClick={() => g.controls()?.fit()} />
-              </Show>
+                <Show when={g.hasLinks}>
+                  {/* a symbol, so the phone keeps it in the head; the menu says which notes, depth and areas show */}
+                  <Menu
+                    icon="filter"
+                    label={t().graphWhichNotes}
+                    items={[
+                      {
+                        title: t().graphWhichNotes,
+                        choice: g.state().links,
+                        onChoose: (links) => g.update({ links: linkOptions().find((option) => option.value === links)?.value ?? "all" }),
+                        items: linkOptions().map((option) => ({ label: option.label, icon: option.icon, value: option.value })),
+                      },
+                      // Umgebung's depth: one step or two around the centre
+                      ...(!g.state().list && g.display() === "neighborhood"
+                        ? [
+                            {
+                              title: t().graphDepth,
+                              choice: g.state().depth === 1 ? "1" : "2",
+                              onChoose: (depth: string) => g.update({ depth: depth === "1" ? 1 : 2 }),
+                              items: [
+                                { label: t().graphDepthOne, value: "1" },
+                                { label: t().graphDepthTwo, value: "2" },
+                              ],
+                            },
+                          ]
+                        : []),
+                      // k2b-ui gap: a menu entry takes no data colour, so an area shows no dot here; the graph keeps the colours.
+                      {
+                        title: t().graphAreas,
+                        items: g.model.areas
+                          .filter((area) => area.count > 0)
+                          .map((area) => ({
+                            label: g.areaName(area),
+                            meta: String(area.count),
+                            checked: !g.state().hide.includes(area.key),
+                            onClick: () => g.toggleArea(area.key),
+                          })),
+                      },
+                    ]}
+                  />
+                  <Button icon="minus" label={t().zoomOut} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1 / 1.25)} />
+                  <Button icon="plus" label={t().zoomIn} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1.25)} />
+                  <Button icon="focus-centered" label={t().fitGraph} disabled={!g.showsGraph()} onClick={() => g.controls()?.fit()} />
+                </Show>
+              </>
             }
           />
         }
@@ -242,7 +271,7 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
             />
             <Section
               title={t().graphUnlinkedNotes({ count: g.model.notes.length })}
-              summary={`${t().graphNoLinksDescription({ name: props.notebookName })} ${t().graphNoLinksHintBefore} /note ${t().graphNoLinksHintAfter}`}
+              summary={`${scopeLine() ? `${scopeLine()} ` : ""}${t().graphNoLinksDescription({ name: props.notebookName })} ${t().graphNoLinksHintBefore} /note ${t().graphNoLinksHintAfter}`}
             >
               <For each={g.model.notes}>
                 {(note) => (
@@ -275,12 +304,20 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
           <Match when={g.state().list}>
             <GraphTable view={g} now={props.now} />
           </Match>
-          <Match when={localEmpty()}>{(empty) => <Empty icon={empty().icon} text={empty().text} action={empty().action} />}</Match>
           <Match when={true}>
             {/* k2b-ui gap: a Canvas cannot fill its pane; the app's stylesheet lets this one take the pane's height
                 (app.css, `.notebook-graph`), because each display draws to the size it is given. */}
             <Canvas label={t().graphTitle}>
-              <GraphDisplays graph={props} view={g} overlay={props.shell.overlay} focusEmpty={focusEmpty} />
+              <GraphDisplays
+                graph={props}
+                view={g}
+                overlay={props.shell.overlay}
+                focusEmpty={focusEmpty}
+                // Umgebung keeps its announcement while its way out stands in the drawing's place
+                neighborhoodEmpty={
+                  <Show when={localEmpty()}>{(empty) => <Empty icon={empty().icon} text={empty().text} action={empty().action} />}</Show>
+                }
+              />
             </Canvas>
           </Match>
         </Switch>

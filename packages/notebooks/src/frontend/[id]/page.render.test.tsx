@@ -821,7 +821,9 @@ test("writer graph marks Links current in the workspace footer and phone navigat
 test("writer graph from Book keeps Write pointed at the selected note", async () => {
   const html = await renderLinkedNotebook("write", "graph&from=book");
   expect(html).toContain('data-file="BookGraphWorkspace.island.tsx"');
-  expect((await select(html, '#notebook-navigation a[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe("Write");
+  expect((await select(html, '.k2b-app-workspace__sidebar-item[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe(
+    "Write",
+  );
   expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe("/app/notebooks/book01/notes/note01?mode=book");
 });
 
@@ -882,7 +884,7 @@ test.each(["note02", "other1"])(
       "graph",
       `&display=neighborhood&note=${queryNote}`,
     );
-    const [island] = await select(html, 'solid-island[data-file="GraphWorkspace.island.tsx"]');
+    const [island] = await select(html, 'solid-island[data-file="NotebookGraphWorkspace.island.tsx"]');
     expect(island).toBeDefined();
     const props = islandProps(island?.attributes["data-props"]);
     expect(props.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note01");
