@@ -11,6 +11,10 @@ Use it for schedules that need timezone-aware placement, all-day and timed
 events, or direct manipulation. Keep date and view state in the URL when the
 calendar is a primary application surface.
 
+On a v1 page the calendar is a card with its own edge and rounded corners. In
+a v2 screen, put it in a `Canvas`: there it lies flat, without an edge or
+corners of its own, so the lines of the structure around it stand once.
+
 ## Import
 
 ```tsx

@@ -145,6 +145,13 @@
   box-shadow: none;
 }
 
+/* In a v2 screen the calendar is the content of its Canvas: it lies flat, without an edge or rounded corners of its
+   own, so the lines of the structure around it stand once (no box in a box). Elsewhere, as on v1 pages, it is a card. */
+.k2b-ui :is([data-k2-canvas] .k2b-content-calendar) {
+  border: 0;
+  border-radius: 0;
+}
+
 /* Entries: a light neutral surface with a thin edge in the entry's color and
    neutral text, so the color names the category without tinting the page.
    The edge keeps 3:1 against the surface in both themes: engines with
