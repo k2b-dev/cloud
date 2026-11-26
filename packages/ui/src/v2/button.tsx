@@ -55,7 +55,11 @@ export type ButtonProps = ButtonBase &
     | {
         /** The words on the button. */
         children: JSX.Element;
-        /** Another name for assistive technology, only where the words alone do not say enough. */
+        /**
+         * Beside words ("Speichern") the words are the name and this is a hint under the pointer. Beside a count or a
+         * symbol, which say no deed on their own (`2`), this is the name ("2 offene Kommentare"): it holds what shows,
+         * so a person who says what they see still reaches it.
+         */
         label?: string;
       }
     | {
@@ -64,6 +68,20 @@ export type ButtonProps = ButtonBase &
         label: string;
       }
   );
+
+/**
+ * Whether the content of a button is words that name it ("Speichern"), not a count or a symbol ("2"): its text holds a
+ * letter. Content that is no plain text, such as an element, does not count as words.
+ */
+export const isWords = (content: unknown): boolean => {
+  const text = (value: unknown): string | null =>
+    typeof value === "string" || typeof value === "number"
+      ? String(value)
+      : Array.isArray(value)
+        ? value.map(text).reduce<string | null>((all, part) => (all === null || part === null ? null : all + part), "")
+        : null;
+  return /\p{L}/u.test(text(content) ?? "");
+};
 
 /** The one button: round, one height per place, a link through `href`. An icon button must have a label. */
 export const Button = (props: ButtonProps) => {
@@ -85,8 +103,9 @@ export const Button = (props: ButtonProps) => {
       aria-disabled={(props.href && props.disabled) || props.busy ? "true" : undefined}
       aria-busy={props.busy ? "true" : undefined}
       aria-pressed={props.href === undefined && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
-      aria-label={iconOnly() ? props.label : undefined}
-      title={iconOnly() ? props.label : props.title}
+      // words name the button and its label is a hint; a count or a symbol is named by the label, which holds it
+      aria-label={iconOnly() || !isWords(label()) ? props.label : undefined}
+      title={iconOnly() ? props.label : (props.title ?? (isWords(label()) ? props.label : undefined))}
       aria-haspopup={props.menu ? "menu" : undefined}
       onClick={(event: MouseEvent & { currentTarget: HTMLElement; target: Element }) => {
         if (off()) event.preventDefault();

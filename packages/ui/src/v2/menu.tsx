@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
+import { isWords } from "./button";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -70,7 +71,10 @@ export type TriggerProps = {
   | {
       /** The words on the button; a chevron follows them. */
       children: JSX.Element;
-      /** Another name for assistive technology, only where the words alone do not say enough. */
+      /**
+       * Beside words they name the button and this is a hint; beside a count (`3`) this is the name ("3 weitere
+       * Ansichten"), holding what shows (as `Button`).
+       */
       label?: string;
     }
   | {
@@ -353,8 +357,9 @@ const MenuRoot = (props: MenuProps) => {
         data-menu={iconOnly() ? undefined : ""}
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
-        aria-label={iconOnly() ? name() : undefined}
-        title={iconOnly() ? name() : undefined}
+        // as Button: words name the button and its label is a hint; a count or a symbol is named by the label
+        aria-label={iconOnly() ? name() : isWords(words()) ? undefined : props.label}
+        title={iconOnly() ? name() : isWords(words()) ? props.label : undefined}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
