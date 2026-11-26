@@ -59,7 +59,7 @@ const seen = (page: Page, selector: string) =>
   }, selector);
 
 test("server markup: Safari's three steps as a list, a browser in another app gets the link to copy, Samsung gets Chrome", () => {
-  const order = ["android", "apple", "in-app", "samsung", "only"];
+  const order = ["android", "apple", "in-app", "mac", "samsung", "only"];
   const part = (id: string) => {
     const next = order[order.indexOf(id) + 1];
     return markup.slice(markup.indexOf(`id="${id}"`), next ? markup.indexOf(`id="${next}"`) : undefined);
@@ -74,6 +74,21 @@ test("server markup: Safari's three steps as a list, a browser in another app ge
   expect(part("android")).toMatch(/data-shows="steps"/);
   expect(part("android")).toContain('data-variant="prompt"');
 });
+
+for (const touch of [false, true])
+  test(`a Mac's guide shows the ${touch ? "iPad's touch" : "Mac's"} steps from the server's page on, as a list`, async () => {
+    await withPage(
+      touch ? 820 : 1440,
+      touch,
+      async (page) => {
+        const words = await seen(page, "#mac .k2-install");
+        expect(words).toContain(touch ? "Teilen öffnen" : "Zum Dock hinzufügen");
+        expect(words).not.toContain(touch ? "Zum Dock hinzufügen" : "Teilen öffnen");
+        expect(await page.locator("#mac ol").first().getAttribute("role")).toBe("list");
+      },
+      false,
+    );
+  });
 
 test("when the browser offers its own dialog, its button takes the steps' place and nothing below moves", async () => {
   await withPage(390, true, async (page) => {

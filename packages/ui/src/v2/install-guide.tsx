@@ -103,18 +103,18 @@ export const InstallGuide = (props: InstallGuideProps) => {
     if (platform() === "android-browser") return { title: t().installAndroidBrowserTitle, detail: t().installAndroidBrowserDetail };
     return undefined;
   });
-  const steps = createMemo(() => {
-    if (platform() === "apple-mobile" || platform() === "apple-browser")
+  const stepsOf = (platform: InstallationPlatform) => {
+    if (platform === "apple-mobile" || platform === "apple-browser")
       return [
         {
           icon: "share-2",
           title: t().installOpenShare,
-          detail: platform() === "apple-browser" ? t().installOpenShareBrowserDetail : t().installOpenShareDetail,
+          detail: platform === "apple-browser" ? t().installOpenShareBrowserDetail : t().installOpenShareDetail,
         },
         { icon: "square-plus", title: t().installHomeScreen, detail: t().installHomeScreenDetail },
         { icon: "check", title: t().installConfirmAdd, detail: t().installConfirmAddDetail },
       ];
-    if (platform() === "apple-desktop")
+    if (platform === "apple-desktop")
       return [
         { icon: "share-2", title: t().installSafariMenu, detail: t().installSafariMenuDetail },
         { icon: "app-window", title: t().installAddDock, detail: t().installAddDockDetail },
@@ -124,14 +124,31 @@ export const InstallGuide = (props: InstallGuideProps) => {
       {
         icon: "square-plus",
         title: t().installApp,
-        detail: platform() === "android" || platform() === "android-browser" ? t().installAndroidDetail : t().installBrowserDetail,
+        detail: platform === "android" || platform === "android-browser" ? t().installAndroidDetail : t().installBrowserDetail,
       },
     ];
-  });
+  };
   const note = () => (
     <Show when={props.note}>
       <Text>{props.note}</Text>
     </Show>
+  );
+  // `role="list"`: without its marks, Safari would no longer read the steps as a list
+  const stepList = (platform: InstallationPlatform) => (
+    <>
+      <ol class="k2-install-steps" role="list">
+        <For each={stepsOf(platform)}>
+          {(step) => (
+            <li>
+              <Row icon={step.icon} lines={[step.title, step.detail]} />
+            </li>
+          )}
+        </For>
+      </ol>
+      <Show when={platform === "apple-mobile"}>
+        <Text muted>{t().installSafariFallback}</Text>
+      </Show>
+    </>
   );
   const stepsView = () => (
     <>
@@ -142,17 +159,11 @@ export const InstallGuide = (props: InstallGuideProps) => {
           </Notice>
         )}
       </Show>
-      <ol class="k2-install-steps">
-        <For each={steps()}>
-          {(step) => (
-            <li>
-              <Row icon={step.icon} lines={[step.title, step.detail]} />
-            </li>
-          )}
-        </For>
-      </ol>
-      <Show when={platform() === "apple-mobile"}>
-        <Text muted>{t().installSafariFallback}</Text>
+      {/* iPadOS Safari reports a Mac: the server cannot tell them apart, so a Mac's page holds both, and the pointer
+          picks (`Only`); the browser, which knows the iPad, then shows the same touch steps */}
+      <Show when={platform() === "apple-desktop"} fallback={stepList(platform())}>
+        <Only when="pointer">{stepList("apple-desktop")}</Only>
+        <Only when="touch">{stepList("apple-mobile")}</Only>
       </Show>
       {note()}
       <Show when={platform() === "generic"}>

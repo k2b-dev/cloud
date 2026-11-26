@@ -71,7 +71,7 @@ The places of an installed app on the phone, at the bottom edge with the safe ar
 
 ### InstallGuide
 
-How to install the page as an app on this platform: the browser's own dialog, Safari's steps on iPhone, iPad and Mac, the steps of other browsers, a warning and the link to copy inside another app's browser, and Chrome for Samsung Internet. On the server pass `serverInstall(installationPlatform(userAgent, "", 0))`, in the browser `createInstallPrompt()`. Where a browser may offer its dialog only after the page loads (Chrome, Edge), the steps and the dialog's button share one place from the server's page on, as tall as the taller, so nothing moves when it arrives. The host owns the surface, its heading and dismissal.
+How to install the page as an app on this platform: the browser's own dialog, Safari's steps on iPhone, iPad and Mac, the steps of other browsers, a warning and the link to copy inside another app's browser, and Chrome for Samsung Internet. On the server pass `serverInstall(installationPlatform(userAgent, "", 0))`, in the browser `createInstallPrompt()`. Where a browser may offer its dialog only after the page loads (Chrome, Edge), the steps and the dialog's button share one place from the server's page on, as tall as the taller, so nothing moves when it arrives. iPadOS Safari reports a Mac: for a Mac the server's page holds the Mac's steps and the iPad's, and the pointer picks them. The host owns the surface, its heading and dismissal.
 
 <Props of="InstallGuide" />
 

@@ -47,6 +47,9 @@ export function Demo() {
         <div id="in-app">
           <InstallGuide appName="Lindenhof Cloud" install={serverInstall("apple-in-app")} url={URL} />
         </div>
+        <div id="mac">
+          <InstallGuide appName="Lindenhof Cloud" install={serverInstall("apple-desktop")} url={URL} />
+        </div>
         <div id="samsung">
           <InstallGuide appName="Lindenhof Cloud" install={serverInstall("android-samsung")} url={URL} />
         </div>
