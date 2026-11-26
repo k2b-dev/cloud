@@ -100,7 +100,7 @@ const open = async (view: View, address: string, state = "normal", failures: Fai
           hostgroups: [
             { cn: "drucker", description: "Drucker und Scanner" },
             { cn: "kameras", description: null },
-          ],
+          ].filter((group) => !(url.searchParams.get("exclude") ?? "").split(",").includes(group.cn)),
         },
       });
     if (url.pathname.startsWith("/api/ipa-hosts")) {
@@ -180,6 +180,7 @@ describe("Hosts on v2", () => {
       await dialog.getByRole("button", { name: "Speichern" }).click();
       expect(await dialog.innerText()).toContain("AA:BB:CC:DD:EE:FF");
       expect(calls).toEqual([]);
+      await shoot(tab, "dialog-host-bearbeiten-1440");
       await dialog.getByRole("textbox", { name: "MAC-Adresse 3" }).fill("aa-bb-cc-00-00-99");
       await dialog.getByRole("button", { name: "Speichern" }).click();
       await closed(tab);
@@ -203,6 +204,13 @@ describe("Hosts on v2", () => {
       await dialog.getByRole("option", { name: /kameras/ }).click();
       await dialog.getByRole("button", { name: "Hinzufügen" }).click();
       await dialog.getByText("Nicht zu kameras hinzugefügt").waitFor();
+      await shoot(tab, "dialog-gruppen-teilweise-1440");
+      // the search no longer offers the group the host was added to
+      const search = tab.waitForRequest((request) => request.url().includes("/hostgroups/search"));
+      await dialog.getByRole("searchbox").fill("ka");
+      expect(new URL((await search).url()).searchParams.get("exclude")?.split(",")).toContain("drucker");
+      await settled(tab);
+      expect(await dialog.getByRole("option", { name: /drucker/ }).count()).toBe(0);
       expect(calls).toEqual([
         "POST /api/ipa-hosts/db1.werkstatt.example/hostgroups drucker",
         "POST /api/ipa-hosts/db1.werkstatt.example/hostgroups kameras",
@@ -259,6 +267,7 @@ describe("Hosts on v2", () => {
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("textbox", { name: "Name" }).fill("werkstatt-sued");
       await dialog.getByRole("textbox", { name: "Beschreibung" }).fill("Neue Halle");
+      await shoot(tab, "dialog-neue-gruppe-1440");
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       await tab.waitForURL(/group=werkstatt-sued/);
       expect(calls).toEqual(["POST /api/ipa-hosts/hostgroups"]);

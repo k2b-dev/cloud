@@ -188,10 +188,10 @@ export default function HostsScreen(props: HostsScreenProps) {
   };
   // adding a host to groups: the groups are searched as the person types
   const [adding, setAdding] = createSignal<string[] | null>(null);
-  const loadGroups = (exclude: readonly string[]) => async (text: string, context: { signal: AbortSignal; limit: number }) => {
+  const loadGroups = (exclude: () => readonly string[]) => async (text: string, context: { signal: AbortSignal; limit: number }) => {
     if (!text.trim()) return { items: [] };
     const response = await apiClient.hostgroups.search.$get(
-      { query: { q: text.trim(), exclude: exclude.join(",") } },
+      { query: { q: text.trim(), exclude: exclude().join(",") } },
       { init: { signal: context.signal } },
     );
     if (!response.ok) throw new Error(t().failedSearchGroups);
@@ -202,8 +202,8 @@ export default function HostsScreen(props: HostsScreenProps) {
         .map((group): LookupItem => ({ value: group.cn, label: group.cn, meta: group.description ?? undefined })),
     };
   };
-  // groups a host was added to while the dialog is open: closing it shows them
-  const [added, setAdded] = createSignal(false);
+  // groups a host was added to while the dialog is open: the search no longer offers them, and closing shows them
+  const [added, setAdded] = createSignal<string[]>([]);
   /**
    * Adds the host to every chosen group, one request each. Those that worked leave the choice; those that failed stay
    * chosen and are named, so "Hinzufügen" again sends only them. Closing the dialog after any success shows the result.
@@ -215,7 +215,7 @@ export default function HostsScreen(props: HostsScreenProps) {
     const failed: string[] = [];
     for (const hostgroup of chosen) {
       const response = await apiClient[":fqdn"].hostgroups.$post({ param: { fqdn }, json: { hostgroup } }).catch(() => null);
-      if (response?.ok) setAdded(true);
+      if (response?.ok) setAdded((groups) => [...groups, hostgroup]);
       else failed.push(hostgroup);
     }
     setBusy(false);
@@ -228,7 +228,7 @@ export default function HostsScreen(props: HostsScreenProps) {
   };
   const closeAdding = () => {
     setAdding(null);
-    if (added()) done();
+    if (added().length > 0) done();
   };
 
   // ── Parts ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -529,7 +529,7 @@ export default function HostsScreen(props: HostsScreenProps) {
             label={t().searchGroups}
             value={adding() ?? []}
             onChange={setAdding}
-            load={loadGroups(host.memberofHostgroup)}
+            load={loadGroups(() => [...host.memberofHostgroup, ...added()])}
             minChars={1}
           />
         </Dialog>
