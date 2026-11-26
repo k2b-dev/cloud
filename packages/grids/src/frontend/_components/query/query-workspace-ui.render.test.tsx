@@ -3,8 +3,6 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { PublicField as Field, PublicTable as Table } from "../../../api/public-dto";
 import { formatIdentifierRef } from "../../../ref-syntax";
-import { QUERY_PANEL_DIALOG_OPTIONS } from "../records-view/RecordsView";
-import SearchBar from "../toolbar/SearchBar";
 import QueryWorkspace from "./QueryWorkspace";
 
 const table: Table = {
@@ -118,39 +116,5 @@ describe("query workspace UI contracts", () => {
     expect(html).toContain('<p class="k2b-notice-card__title">Query</p>');
     expect(html).not.toContain("bg-red-50");
     expect(html).not.toContain("uppercase");
-  });
-
-  test("uses the semantic wide panel dialog contract", () => {
-    expect(QUERY_PANEL_DIALOG_OPTIONS.panelClassName).toContain("is-wide");
-    expect(QUERY_PANEL_DIALOG_OPTIONS.panelClassName).not.toContain("w-[");
-  });
-
-  test("separates search scope labels from field types", () => {
-    const html = renderToString(() =>
-      createComponent(SearchBar, {
-        tableName: "Devices",
-        fields: [field],
-        initialQ: "",
-        initialQFields: [],
-        onSearchChange: () => undefined,
-      }),
-    );
-
-    expect(html).toContain('<strong class="truncate">Name</strong>');
-    expect(html).toContain('<small class="shrink-0 text-dimmed">text</small>');
-  });
-
-  test("names the table in the search placeholder", () => {
-    const html = renderToString(() =>
-      createComponent(SearchBar, {
-        tableName: "Devices",
-        fields: [field],
-        initialQ: "",
-        initialQFields: [],
-        onSearchChange: () => undefined,
-      }),
-    );
-
-    expect(html).toContain('placeholder="Search Devices…"');
   });
 });

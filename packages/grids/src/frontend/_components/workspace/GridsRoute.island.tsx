@@ -6,15 +6,10 @@ import DocumentsWorkspace from "../documents/DocumentsWorkspace";
 import DocumentTemplateWorkspace from "../documents/DocumentTemplateWorkspace";
 import QueryResultView from "../query/QueryResultView";
 import QueryWorkspace from "../query/QueryWorkspace";
-import RecordsView from "../records-view/RecordsView";
 import { WorkflowRunDetailPanel } from "../workflows/WorkflowRunDetailPanel";
 import WorkflowsPage from "../workflows/WorkflowsPage";
 import { workspaceMainClass } from "./workspace-layout";
-import type {
-  PublicOkWorkspaceState,
-  PublicWorkspaceQueryResultViewRoute,
-  PublicWorkspaceRecordsRoute,
-} from "./workspace-public-state-model";
+import type { PublicOkWorkspaceState, PublicWorkspaceQueryResultViewRoute } from "./workspace-public-state-model";
 
 type PublicWorkspaceDocumentTemplateRoute = Extract<PublicOkWorkspaceState["route"], { kind: "documentTemplate" }>;
 type PublicWorkspaceQueryRoute = Extract<PublicOkWorkspaceState["route"], { kind: "query" }>;
@@ -63,59 +58,8 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
     }
   });
 
-  if (route.kind === "records") {
-    const records = route as PublicWorkspaceRecordsRoute;
-    return (
-      <RecordsView
-        currentUserId={props.userId}
-        baseId={state.base.id}
-        baseName={state.base.name}
-        tableId={records.activeTable.id}
-        tableKind={records.activeTable.kind}
-        tableName={records.activeTable.name}
-        tableDescription={records.activeTable.description ?? null}
-        tableIcon={records.activeTable.icon ?? null}
-        tableColumns={records.activeTable.columns}
-        tableUpdatedAt={records.activeTable.updatedAt}
-        tableAuditPolicy={records.activeTable.auditPolicy}
-        tableMutationPolicy={records.activeTable.mutationPolicy}
-        disableDirectInsert={records.activeTable.disableDirectInsert}
-        viewId={records.activeView?.id ?? null}
-        fields={records.fields}
-        tables={state.catalog.tables}
-        viewsByTable={state.catalog.viewsByTable}
-        forms={records.formsForTable}
-        canReadTable={records.canReadTable}
-        canWrite={records.canWriteRecords}
-        canManageTable={records.canManageActiveTable}
-        canManageBase={state.canManageBase}
-        trashMode={records.initialState.query.deletedOnly === true}
-        initialAdminMode={state.adminModeRequested}
-        activeView={records.activeView}
-        canEditActiveView={records.canEditActiveView}
-        otherTables={records.otherTables}
-        fieldsByTable={state.catalog.fieldsByTable}
-        viewMode={records.activeView !== null}
-        initialState={records.initialState}
-        initialData={records.initialData}
-        initialError={records.initialError}
-        initialEventCursor={state.liveCursor}
-        initialSelectedRecord={records.initialSelectedRecord}
-        initialSelectedRecordDetail={records.initialSelectedRecordDetail}
-        now={props.now}
-        documentTemplates={records.documentTemplates}
-        relationLabels={records.relationLabels}
-        viewColumns={records.activeViewColumns}
-        groupedExplode={records.groupedExplode}
-        activeRecordQuery={records.activeRecordQuery}
-        displayConfig={records.displayConfig}
-        bulkSelectionLaunchers={records.bulkSelectionLaunchers}
-        recordActionLaunchers={records.recordActionLaunchers}
-        dateConfig={state.dateConfig}
-        workspaceRouteKey={`records:${records.activeTable.id}:${records.activeView?.id ?? ""}:${state.adminModeRequested}`}
-      />
-    );
-  }
+  // Records render on v2 in records-view/RecordsScreen; this island serves the remaining kinds.
+  if (route.kind === "records") return null;
 
   return (
     <>

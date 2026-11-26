@@ -289,7 +289,9 @@ describe("a base home on v2", () => {
     try {
       const nav = tab.locator("[data-k2-part=Nav]");
       expect(await nav.getByRole("link", { name: "Übersicht" }).getAttribute("aria-current")).toBe("page");
-      expect(await nav.getByRole("link", { name: "Offene Aufträge" }).getAttribute("href")).toBe("/app/grids/Bas001/table/T1/view/V1");
+      expect(await nav.getByRole("link", { name: "Aufträge", exact: true }).getAttribute("href")).toBe("/app/grids/Bas001/table/T1");
+      // a table's views are the tabs of its page, not places of the sidebar
+      expect(await nav.getByRole("link", { name: "Offene Aufträge" }).count()).toBe(0);
       expect(await nav.getByRole("link", { name: "Bearbeiten" }).getAttribute("href")).toBe("/app/grids/Bas001?edit=true");
       expect(errors).toEqual([]);
     } finally {
@@ -309,4 +311,89 @@ describe("a base home on v2", () => {
       await context.close();
     }
   }, 60_000);
+});
+
+describe("the records page on v2", () => {
+  const table = "/app/grids/Bas001/table/table";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const view of [wide, narrow, phone]) {
+        const { context, tab, errors } = await open(view, `${table}?edit=true`, variant);
+        try {
+          await expectClean(tab);
+          await shoot(tab, `grids-records-${variant}-light-${view.name}`);
+          expect(await tab.locator("[data-k2-part=Loading]").count()).toBe(0);
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      }
+    }, 90_000);
+
+  test("amounts, dates and formula dates stand whole on one line", async () => {
+    const { context, tab, errors } = await open(wide, table);
+    try {
+      for (const expected of ["12400,00 EUR", "2026-11-14", "2026-12-01"]) {
+        const cell = tab.locator("[data-k2-part=Table] tbody tr:first-child td", { hasText: expected }).first();
+        const fits = await cell.evaluate((td) => {
+          const line = td.querySelector(".k2-cell-line") ?? td;
+          return { scroll: line.scrollWidth, client: line.clientWidth, text: line.textContent?.trim() };
+        });
+        expect(fits.text).toBe(expected);
+        expect(fits.scroll).toBeLessThanOrEqual(fits.client);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a row opens its record in the address, the head sorts, and Filter opens its dialog", async () => {
+    const { context, tab, errors } = await open(wide, table);
+    try {
+      await tab.locator("[data-k2-part=Table] tbody tr:first-child").click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("record") === "record-0");
+      await tab.locator("[data-k2-part=Pane][aria-label=Datensatz]").waitFor();
+      await shoot(tab, "grids-records-open-light-1440");
+      // Back closes the record again: the address holds what is open
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("record"));
+      expect(await tab.locator("[data-k2-part=Pane][aria-label=Datensatz]").count()).toBe(0);
+
+      await tab.locator("[data-k2-part=Table] thead").getByRole("button", { name: "Fällig", exact: true }).click();
+      await tab.waitForFunction(() => (new URL(location.href).searchParams.get("sort") ?? "").includes('"date"'));
+
+      await tab.getByRole("button", { name: "Filter" }).click();
+      await tab.getByRole("dialog", { name: "Filtern und sortieren" }).waitFor();
+      await shoot(tab, "grids-records-filter-light-1440");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the table's views are the tabs of its head", async () => {
+    const { context, tab, errors } = await open(wide, table);
+    try {
+      const tabs = tab.locator("[data-slot=head] [data-k2-part=Tabs]");
+      expect(await tabs.getByRole("link", { name: /Offene Aufträge/ }).getAttribute("href")).toBe(`${table}/view/V1`);
+      expect(await tabs.getByRole("link", { name: "Alle", exact: true }).getAttribute("aria-current")).toBe("page");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 records render; their size is pinned until the table is virtualized", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, table, "huge");
+    try {
+      const count = await elements(tab);
+      // k2b-ui gap: the v2 Table is not virtualized yet (lane MW); this pins today's size.
+      console.info(`grids records huge: ${count} elements, ready ${readyMs} ms`);
+      expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(1000);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
 });

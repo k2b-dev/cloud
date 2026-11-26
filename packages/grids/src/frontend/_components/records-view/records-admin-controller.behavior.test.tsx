@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createSignal } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicField, PublicForm } from "../../../api/public-dto";
@@ -247,31 +247,18 @@ const createDefaultTableView = async (initial: {
 
 type DefaultTableView = Awaited<ReturnType<typeof createDefaultTableView>>;
 
-const renderAdminToolbar = async (root: HTMLElement, view: DefaultTableView) => {
-  const { RecordsAdminToolbar } = await import("./RecordsAdminToolbar");
-  return render(
+/** The edit menu's "Add column" entry, offered exactly while the records page offers it (hidden columns exist). */
+const renderAdminToolbar = async (root: HTMLElement, view: DefaultTableView) =>
+  render(
     () => (
-      <RecordsAdminToolbar
-        savedView={false}
-        activeViewAvailable={false}
-        canEditActiveView={false}
-        hiddenViewColumnCount={view.columns.hiddenViewColumnCount()}
-        allowForms
-        formsButtonLabel="Forms"
-        tableFields={view.fields()}
-        onFieldSettings={view.admin.openFieldSettings}
-        onOpenTableSettings={() => {}}
-        onAddField={() => void view.admin.openAddField()}
-        onOpenForms={() => {}}
-        onOpenTemplates={() => {}}
-        onOpenViewSettings={() => {}}
-        onAddViewColumn={view.columns.openAddViewColumnDialog}
-        onDone={() => {}}
-      />
+      <Show when={view.columns.hiddenViewColumnCount() > 0}>
+        <button type="button" onClick={view.columns.openAddViewColumnDialog}>
+          Add column
+        </button>
+      </Show>
     ),
     root,
   );
-};
 
 /** Shows the named columns through "Add column" and returns every column it offered. */
 const addColumns = async (document: Document, names: string[]) => {

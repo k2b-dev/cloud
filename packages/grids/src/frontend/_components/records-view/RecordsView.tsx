@@ -1,17 +1,24 @@
+import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
 import type { DateContext } from "@k2b/stdlib";
+import { dialogCore, prompts, useLocale } from "@k2b/ui";
 import {
-  AppWorkspace,
+  Bar,
   Button,
-  ButtonLink,
-  dialogCore,
-  PanelDialog,
-  Placeholder,
-  panelDialogWideOptions,
-  prompts,
-  useLocale,
-} from "@k2b/ui";
-import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
+  Canvas,
+  Empty,
+  Input,
+  Menu,
+  type MenuEntry,
+  type MenuItem,
+  Notice,
+  Pane,
+  Path,
+  StatusRow,
+  Tabs,
+  Text,
+} from "@k2b/ui/v2";
+import { createEffect, createMemo, createRenderEffect, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { preloadBarcodes } from "#barcode-drawing";
 import type {
   PublicField as Field,
@@ -31,51 +38,53 @@ import type {
   TableAuditPolicy,
   TableMutationPolicy,
 } from "../../../contracts";
-import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import { filterSearchableFields } from "../../../searchable-fields";
+import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import { defaultTableAggregations } from "../../../table-defaults";
 import { gridsPageScope } from "../../page-context";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
-import QueryWorkspace from "../query/QueryWorkspace";
-import type { QueryWorkspaceCurrentSource } from "../query/query-workspace-model";
+import { fieldTypeIcon } from "../fields/field-type-meta";
+import GridsFrame, { LiveNotice } from "../frame/GridsFrame";
+import { v2Icon } from "../frame/grids-nav";
 import { openCombinedAuditDialog } from "../records/CombinedAuditDialog";
 import { openExportRecordsDialog } from "../records/ExportRecordsDialog";
 import { recordMessages } from "../records/messages";
 import { createRecordAccess } from "../records/record-access";
 import { fieldDisplayFormatForView } from "../records/record-display";
+import { formatFieldValueText } from "../table/field-value-format";
 import type { GroupBucket } from "../table/GroupedTable";
-import { GridCreateActions, offersGridCreateActions } from "../toolbar/GridCreateActions";
-import GridToolbar from "../toolbar/GridToolbar";
-// Plain children share RecordsView's hydrated state; nested islands cannot
-// serialize the callback props used by these controls.
-import { workspaceMainClass } from "../workspace/workspace-layout";
+import GroupedTable from "../table/GroupedTable";
+import type { NavigationState } from "../workspace/navigation-catalog";
 import type {
   PublicWorkspaceBulkLauncher as WorkspaceBulkLauncher,
   PublicWorkspaceRecordDetail as WorkspaceRecordDetail,
   PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
 } from "../workspace/workspace-public-state-model";
+import { bulkWorkflowActionLabel } from "./bulk-selection";
 import { activeDisplayConfig, calendarQueryFilter, cardImageFieldIds, removeCalendarQueryFilter } from "./display-mode";
 import { recordsViewMessages } from "./messages";
-import type { CardSize, RecordsState } from "./query-url";
+import { buildRecordsUrl, type CardSize, type RecordsState, recordsPath } from "./query-url";
+import { RecordCalendarView } from "./RecordCalendarView";
+import { RecordCardsView } from "./RecordCardsView";
 import { cleanRecordMetaQuery, openRecordMetadataDialog, recordMetaActiveCount } from "./RecordMetadataDialog";
-import { RecordsAdminToolbar } from "./RecordsAdminToolbar";
 import RecordsDetailSurface from "./RecordsDetailSurface";
-import RecordsPrimaryToolbar from "./RecordsPrimaryToolbar";
-import RecordsResultSurface from "./RecordsResultSurface";
+import RecordsQueryDialog from "./RecordsQueryDialog";
+import RecordsTable from "./RecordsTable";
 import { recordCountText as formatRecordCount } from "./record-count";
+import { createRecordCreate } from "./record-create";
 import { createRecordsAdminController } from "./records-admin-controller";
 import { createRecordsBulkController } from "./records-bulk-controller";
 import { createRecordsDataController } from "./records-data-controller";
 import { createRecordsSelectionController } from "./records-selection-controller";
 import { createRecordsUrlController } from "./records-url-controller";
 import { createRecordsViewColumnController, isFieldColumn } from "./records-view-columns";
-import { aggregationRowsFromQuery, applyToolbarQueryPatch, filterRowsFromQuery, type ToolbarQueryPatch } from "./toolbar-query";
-
-export const QUERY_PANEL_DIALOG_OPTIONS = panelDialogWideOptions;
+import SaveViewDialog from "./SaveViewDialog";
+import { recordsScreenMessages } from "./screen-messages";
+import { applyToolbarQueryPatch, filterRowsFromQuery, type ToolbarQueryPatch } from "./toolbar-query";
 
 /**
- * Records-area island. It owns presentation state and delegates URL,
- * query/live data, columns, and admin mutations to focused controllers.
+ * The records page of a table or view on v2. It owns presentation state and delegates URL, query/live data, columns,
+ * and admin mutations to focused controllers.
  */
 
 type RuntimeView = View & {
@@ -84,6 +93,9 @@ type RuntimeView = View & {
 };
 
 type Props = {
+  /** The base's places for the v2 frame: sidebar, phone menu and live state. */
+  frame: NavigationState;
+  revision?: WorkspaceRevision;
   /** The viewer, marked as "You" among the people with access. */
   currentUserId?: string;
   /** UUID of the base — for API calls. */
@@ -228,8 +240,6 @@ export default function RecordsView(props: Props) {
   const aggregations = () => (query().aggregations ?? []) as AggregationSpec[];
   const toolbarFilterRows = createMemo(() => filterRowsFromQuery(query().filter));
   const toolbarSortRows = createMemo(() => query().sort ?? []);
-  const toolbarGroupByRows = createMemo(() => groupBy());
-  const toolbarAggregationRows = createMemo(() => aggregationRowsFromQuery(aggregations()));
   const activeRecordMetaCount = createMemo(() => recordMetaActiveCount(query().recordMeta));
   const isGrouped = () => groupBy().length > 0;
   const customForms = () => forms().filter((form) => !form.isDefault);
@@ -261,60 +271,6 @@ export default function RecordsView(props: Props) {
       }),
     };
     return withCalendar;
-  };
-
-  const queryCurrentSource = (): QueryWorkspaceCurrentSource =>
-    props.activeView
-      ? {
-          kind: "view",
-          viewId: props.activeView.id,
-          label: props.activeView.name,
-          ref: props.activeView.id,
-        }
-      : {
-          kind: "table",
-          tableId: props.tableId,
-          label: tableName(),
-          ref: props.tableId,
-        };
-
-  const queryPanelInitialSource = () => {
-    const source = simpleQueryToGqlSource({ tableId: props.tableId, query: queryWithSearch() });
-    return source.ok ? source.source : "";
-  };
-
-  const openQueryPanel = () => {
-    void dialogCore.open<void>(
-      (close) => (
-        <PanelDialog>
-          <PanelDialog.Header title={t().query} subtitle={tableName()} icon="ti ti-code" close={() => close()} />
-          <PanelDialog.Body>
-            <div class="flex h-[min(72vh,46rem)] min-h-[30rem] min-w-0 overflow-hidden">
-              <QueryWorkspace
-                baseId={props.baseId}
-                baseName={props.baseName}
-                initialQuery={queryPanelInitialSource()}
-                queryPath={queryWorkspaceHref()}
-                currentSource={queryCurrentSource()}
-                tables={props.tables}
-                fieldsByTable={{ ...props.fieldsByTable, [props.tableId]: fields() }}
-                viewsByTable={props.viewsByTable}
-                syncQueryToUrl={false}
-              />
-            </div>
-          </PanelDialog.Body>
-          <PanelDialog.Footer>
-            <ButtonLink variant="secondary" size="sm" href={queryWorkspaceHref()}>
-              <i class="ti ti-arrows-maximize" /> {t().fullWorkspace}
-            </ButtonLink>
-            <Button variant="primary" size="sm" type="button" onClick={() => close()}>
-              {t().done}
-            </Button>
-          </PanelDialog.Footer>
-        </PanelDialog>
-      ),
-      QUERY_PANEL_DIALOG_OPTIONS,
-    );
   };
 
   let selectionController: ReturnType<typeof createRecordsSelectionController> | undefined;
@@ -759,14 +715,11 @@ export default function RecordsView(props: Props) {
 
   const hasOpenDetail = () => Boolean(selectedRecordId() || selectedGroup());
 
-  // Barcode drawing code loads on demand. A view that shows barcodes warms it when the page is idle, or earlier when
-  // the pointer or focus reaches the records, so a later page, a live row or an opened record draws without waiting.
+  // Barcode drawing code loads on demand. A view that shows barcodes warms it when the page is idle, so a later page, a
+  // live row or an opened record draws without waiting.
   const showsBarcodes = createMemo(() =>
     props.fields.some((field) => fieldDisplayFormatForView(field, effectiveViewColumns())?.kind === "barcode"),
   );
-  const warmBarcodes = () => {
-    if (showsBarcodes()) preloadBarcodes();
-  };
   createEffect(() => {
     if (!showsBarcodes()) return;
     if (typeof requestIdleCallback === "function") {
@@ -778,267 +731,571 @@ export default function RecordsView(props: Props) {
     }
   });
 
-  // ── Render ─────────────────────────────────────────────────────────
+  // ── v2 head, status and result ──────────────────────────────────────
+  const words = () => recordsScreenMessages.resolve([locale()]).t;
+  const cloudId = useCloudIdCopy();
+  const cloudIdText = () => cloudIdMessages.resolve([locale()]).t;
+  const create = createRecordCreate({
+    baseId: () => props.baseId,
+    tableId: () => props.tableId,
+    tableName,
+    fields,
+    forms,
+    canWrite: () => props.canWrite,
+    canDirectWrite,
+    canSubmitForms: () => props.canWrite && mutationSourceAllowed("form"),
+    disableDirectInsert,
+    onRecordCreated,
+    onRecordsChanged: () => void refreshVisibleRecords({ force: true }),
+    dateConfig: props.dateConfig,
+  });
+  const [queryOpen, setQueryOpen] = createSignal(false);
+  const [saveViewOpen, setSaveViewOpen] = createSignal(false);
+  const path = () => ({ baseId: props.baseId, tableId: props.tableId, viewId: props.viewId });
+  const editSuffix = (href: string) => (adminMode() ? `${href}${href.includes("?") ? "&" : "?"}edit=true` : href);
+  const recordHref = (record: GridRecord) =>
+    editSuffix(
+      buildRecordsUrl(
+        path(),
+        {
+          query: queryForUrl(),
+          cursor: null,
+          selectedRecordId: record.id,
+          search: search(),
+          calendar: calendarState(),
+          cardSize: cardSize(),
+        },
+        props.activeRecordQuery,
+      ),
+    );
+  const listHref = () =>
+    editSuffix(
+      buildRecordsUrl(
+        path(),
+        { query: queryForUrl(), cursor: null, selectedRecordId: null, search: search(), calendar: calendarState(), cardSize: cardSize() },
+        props.activeRecordQuery,
+      ),
+    );
+  const tableHref = (viewId: string | null) => editSuffix(recordsPath({ baseId: props.baseId, tableId: props.tableId, viewId }));
+
+  /** The table's views as tabs: the table itself, then its saved views. */
+  const viewTabs = () => [
+    { label: words().all, icon: v2Icon(tableIcon(), "table"), href: tableHref(null), current: !props.viewId && !props.trashMode },
+    ...(props.viewsByTable[props.tableId] ?? []).map((view) => ({
+      label: view.name,
+      icon: v2Icon(view.icon, "table-spark"),
+      href: tableHref(view.id),
+      current: props.viewId === view.id,
+    })),
+  ];
+
+  const filterCount = () => toolbarFilterRows().length;
+  const sortCount = () => toolbarSortRows().length;
+  const searchKey = (event: KeyboardEvent) => {
+    if (event.isComposing) return;
+    const input = event.currentTarget as HTMLInputElement;
+    if (event.key === "Enter") onSearchChange({ q: input.value, fieldIds: search().fieldIds });
+    if (event.key === "Escape" && input.value) {
+      input.value = "";
+      onSearchChange({ q: "", fieldIds: search().fieldIds });
+    }
+  };
+  /** Where the search looks: every searchable field, or the chosen ones. */
+  const searchScope = (): MenuEntry[] => [
+    {
+      title: words().searchIn,
+      items: [
+        {
+          label: words().allFields,
+          checked: search().fieldIds.length === 0,
+          onClick: () => onSearchChange({ q: search().q, fieldIds: [] }),
+        },
+        ...searchableFields().map((field) => {
+          const on = search().fieldIds.includes(field.id);
+          return {
+            label: field.name,
+            checked: on,
+            onClick: () =>
+              onSearchChange({
+                q: search().q,
+                fieldIds: on ? search().fieldIds.filter((id) => id !== field.id) : [...search().fieldIds, field.id],
+              }),
+          };
+        }),
+      ],
+    },
+  ];
+
+  const moreMenu = (): MenuEntry[] => [
+    {
+      title: words().recordsSection,
+      items: [
+        { label: words().recordMetadata, icon: "user-search", onClick: () => void openRecordMetaDialog() },
+        { label: words().exportRecords, icon: "download", onClick: openExportDialog },
+        ...(!props.viewMode && !props.trashMode
+          ? [{ label: words().saveAsView, icon: "bookmark-plus", onClick: () => setSaveViewOpen(true) }]
+          : []),
+      ],
+    },
+    ...(renderMode() === "cards"
+      ? [
+          {
+            title: words().cardSize,
+            choice: cardSize(),
+            onChoose: (value: string) => onCardSizeChange(value as CardSize),
+            items: [
+              { value: "small", label: words().cardSmall },
+              { value: "medium", label: words().cardMedium },
+              { value: "large", label: words().cardLarge },
+            ],
+          },
+        ]
+      : []),
+    {
+      title: words().explore,
+      items: [
+        { label: words().openQuery, icon: "code", href: queryWorkspaceHref() },
+        ...(props.tableKind === "federated" && props.canReadTable
+          ? [{ label: words().auditTrail, icon: "history", onClick: openCombinedAudit }]
+          : []),
+        ...(props.canReadTable
+          ? props.trashMode
+            ? [{ label: words().backToLive, icon: "arrow-back-up", href: tableHref(null) }]
+            : [{ label: words().showDeleted, icon: "archive", href: `${tableHref(null)}${adminMode() ? "&" : "?"}trash=1` }]
+          : []),
+        ...(cloudId.available()
+          ? [{ label: cloudIdText().copy, icon: "link", onClick: () => cloudId.copy({ type: "grids.table", id: props.tableId }) }]
+          : []),
+      ],
+    },
+  ];
+
+  /** The deeds of edit mode: the table's or the view's settings, fields and columns. */
+  const editMenu = (): MenuEntry[] => {
+    const fieldItems =
+      props.canManageTable && (!props.activeView || setTableFields)
+        ? tableFields().map((field) => ({
+            label: field.name,
+            icon: v2Icon(fieldTypeIcon(field.type, field.icon), "forms"),
+            onClick: () => openFieldSettings(field),
+          }))
+        : [];
+    return [
+      ...(isSavedView()
+        ? [
+            {
+              label: words().viewSettings,
+              icon: "table-spark",
+              onClick: openViewSettings,
+              disabled: !props.activeView || !props.canEditActiveView,
+            },
+          ]
+        : [
+            { label: words().tableSettings, icon: "settings", onClick: openTableSettings },
+            { label: words().addField, icon: "plus", onClick: () => void openAddField() },
+            ...(props.tableKind === "stored"
+              ? [{ label: words().forms, icon: "forms", meta: formsButtonLabel(), onClick: openForms }]
+              : []),
+            { label: words().templates, icon: "file-type-pdf", onClick: openTemplates },
+          ]),
+      ...(fieldItems.length ? [{ label: words().fields, icon: "columns", items: fieldItems }] : []),
+      ...(hiddenViewColumnCount() > 0 ? [{ label: words().addColumn, icon: "column-insert-right", onClick: openAddViewColumnDialog }] : []),
+      ...(!props.viewMode && !props.trashMode
+        ? [{ label: words().computedColumn, icon: "calculator", onClick: openAddComputedColumn }]
+        : []),
+      ...(columnItems().length ? [{ label: words().columns, icon: "layout-columns", items: columnItems() }] : []),
+      "separator" as const,
+      { label: words().doneEditing, icon: "check", onClick: () => setAdminModeAndUrl(false) },
+    ];
+  };
+  /** Each shown column's settings and place, as the column heads offered them in v1. */
+  const columnItems = (): MenuItem[] => {
+    const canMove = isSavedView() ? !!props.canEditActiveView : props.canManageTable;
+    if (!canMove || renderMode() !== "table" || isGrouped()) return [];
+    const byId = new Map(fields().map((field) => [field.id, field]));
+    const columns: ColumnSpec[] =
+      effectiveViewColumns() ??
+      tableFields()
+        .filter((field) => !field.deletedAt && !field.hideInTable)
+        .map((field) => ({ fieldId: field.id }));
+    return columns.map((column, index) => {
+      const field = "kind" in column ? null : (byId.get(column.fieldId) ?? null);
+      const label = ("label" in column && column.label?.trim()) || field?.name || ("kind" in column ? column.label : column.fieldId);
+      return {
+        label,
+        items: [
+          {
+            label: words().columnSettings,
+            icon: "settings",
+            onClick: () => {
+              if (isSavedView()) void openViewColumnSettings(column, field);
+              else if (field) openFieldSettings(field);
+            },
+          },
+          { label: words().moveLeft, icon: "arrow-left", disabled: index === 0, onClick: () => moveViewColumnInline(column, -1) },
+          {
+            label: words().moveRight,
+            icon: "arrow-right",
+            disabled: index === columns.length - 1,
+            onClick: () => moveViewColumnInline(column, 1),
+          },
+        ],
+      };
+    });
+  };
+
+  const formEntries = (): MenuEntry[] =>
+    create.activeForms().map((form) => ({ label: form.name, icon: "forms", onClick: () => void create.submitForm(form) }));
+  const primaryAction = () =>
+    props.trashMode || !create.direct() ? undefined : { label: words().newRecord, icon: "plus", onClick: () => void create.addRecord() };
+
+  const head = (
+    <Bar
+      start={
+        props.trashMode ? (
+          <Path label={words().views} items={[{ label: tableName(), href: tableHref(null) }, { label: words().deletedRecords }]} />
+        ) : (
+          <Tabs label={words().views} items={viewTabs()} />
+        )
+      }
+      end={
+        <>
+          <Show when={searchableFields().length > 0}>
+            <Input
+              type="search"
+              icon="search"
+              label={words().search}
+              placeholder={words().search}
+              value={search().q}
+              onKeyDown={searchKey}
+              end={<Menu icon="adjustments-horizontal" label={words().searchIn} items={searchScope()} />}
+            />
+          </Show>
+          <Menu label={words().more} items={moreMenu()} />
+          <Show when={canUseEditMode() && adminMode()}>
+            <Menu icon="tool" items={editMenu()}>
+              {words().edit}
+            </Menu>
+          </Show>
+          <Show when={!props.trashMode && formEntries().length > 0}>
+            <Menu icon="forms" variant={create.direct() ? undefined : "primary"} items={formEntries()}>
+              {words().submitForm}
+            </Menu>
+          </Show>
+          <Show when={!props.trashMode && create.direct()}>
+            <Button variant="primary" icon="plus" busy={create.creating()} onClick={() => void create.addRecord()}>
+              {words().newRecord}
+            </Button>
+          </Show>
+          <Show when={!props.trashMode && create.blocked()}>
+            {(reason) => (
+              <Button icon="lock" disabled title={reason()}>
+                {words().newRecord}
+              </Button>
+            )}
+          </Show>
+        </>
+      }
+    />
+  );
+
+  /** Key figures of the result: the table's aggregates under the count. */
+  const aggregateFacts = () =>
+    tableAggregationSpecs()
+      .filter((spec) => spec.fieldId !== "*")
+      .flatMap((spec) => {
+        const value = aggregates()[`${spec.fieldId}__${spec.agg}`];
+        const field = fields().find((each) => each.id === spec.fieldId);
+        if (value === undefined || value === null || !field) return [];
+        return [
+          {
+            before: spec.label?.trim() || field.name,
+            value: formatFieldValueText({
+              field,
+              value,
+              fieldsByTable: props.fieldsByTable,
+              dateConfig: props.dateConfig,
+              locale: locale(),
+            }),
+          },
+        ];
+      })
+      .slice(0, 3);
+  const status = () => (
+    <StatusRow
+      lead={recordCountText()}
+      loading={recordsBusy() || liveRefreshing()}
+      facts={[
+        ...(activeRecordMetaCount() > 0 ? [{ value: words().metadataActive({ count: activeRecordMetaCount() }) }] : []),
+        ...aggregateFacts(),
+      ]}
+      filters={
+        <Show when={!props.viewMode && !props.trashMode}>
+          <Button variant="ghost" icon="filter" onClick={() => setQueryOpen(true)}>
+            {filterCount() + sortCount() > 0 ? words().filterCount({ count: filterCount() + sortCount() }) : words().filter}
+          </Button>
+        </Show>
+      }
+      selection={
+        selectedBulkCount() > 0
+          ? {
+              count: words().selected({ count: new Intl.NumberFormat(locale()).format(selectedBulkCount()) }),
+              actions: props.bulkSelectionLaunchers.map((launcher) => ({
+                label: bulkWorkflowActionLabel(
+                  launcher.name,
+                  selectedBulkCount(),
+                  launcher.config.kind === "bulk" && "profile" in launcher.config && launcher.config.profile === "closeSelection",
+                  locale(),
+                ),
+                icon: "route",
+                disabled: bulkQueueing(),
+                onClick: () => void queueBulkWorkflow(launcher),
+              })),
+              clear: { label: words().clearSelection, icon: "x", onClick: clearBulkSelection },
+            }
+          : undefined
+      }
+    />
+  );
+
+  const hasMore = () => !props.trashMode && Boolean(nextCursor());
+  // Empty states follow the last finished read: a reload keeps them instead of flashing an empty grid until its result
+  // arrives, and a failed read says nothing about the table, so it shows neither.
+  const resultEmpty = () => (isGrouped() ? buckets().length === 0 : items().length === 0);
+  const [settled, setSettled] = createSignal(
+    { empty: !props.initialError && resultEmpty(), narrowed: resultNarrowed() },
+    { equals: (a, b) => a.empty === b.empty && a.narrowed === b.narrowed },
+  );
+  createRenderEffect(() => {
+    if (queryFailure()) setSettled({ empty: false, narrowed: false });
+    else if (!data.loading) setSettled({ empty: resultEmpty(), narrowed: resultNarrowed() });
+  });
+  const emptyResult = () => settled().empty;
+  const emptyState = () =>
+    settled().narrowed
+      ? {
+          icon: "filter-off",
+          text: words().noMatches,
+          action: { label: words().clearSearchFilters, icon: "filter-off", onClick: clearResultNarrowing },
+        }
+      : { icon: "table", text: words().noRecordsYet, ...(primaryAction() ? { action: primaryAction() } : {}) };
+  const allFieldsByTable = () => ({ ...props.fieldsByTable, [props.tableId]: fields() });
+
+  const detailLabel = () => (selectedGroup() ? words().groups : words().openRecord);
+
   return (
-    <>
-      <AppWorkspace.Main class={workspaceMainClass("records")} scroll={false}>
-        <div
-          class="flex flex-1 min-w-0 min-h-0 overflow-hidden"
-          data-route-key={props.workspaceRouteKey}
-          onPointerOver={warmBarcodes}
-          onFocusIn={warmBarcodes}
-        >
-          {/* Records workbench splits into two zones:
-          - header (search + toolbar) — fixed, never scrolls
-          - body (records grid + pagination) — scrolls independently
-            of the workspace detail panel.
-          The column itself is `overflow-hidden` so neither zone leaks
-          into the other; the inner body div is the single y-scroll
-          container, paired with the table-head `position: sticky` in
-          DataTable so the column headers stay pinned while rows scroll. */}
-          <div
-            class={
-              "flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col gap-2 transition-opacity duration-150 " +
-              (data.loading ? "opacity-60" : "")
+    <GridsFrame
+      state={props.frame}
+      activeKeys={[`table:${props.tableId}`, ...(props.viewId ? [`view:${props.viewId}`] : [])]}
+      revision={props.revision}
+      head={head}
+      primary={primaryAction()}
+    >
+      <Pane.Split>
+        <Pane label={tableName()} scrollKey={`grids-records-${props.tableId}-${props.viewId ?? "default"}`} status={status()}>
+          <LiveNotice />
+          <Show when={needsManualRefresh()}>
+            <Notice
+              tone="note"
+              title={words().updatesAvailable}
+              actions={[{ label: words().refresh, icon: "refresh", onClick: () => void applyLiveRefresh() }]}
+            >
+              {words().updatesAvailableDetail}
+            </Notice>
+          </Show>
+          <Show when={queryFailure()}>
+            {(failure) => (
+              <Notice tone="bad" title={words().refreshFailed} actions={[{ label: words().retry, icon: "refresh", onClick: retryQuery }]}>
+                {failure().error.message}
+              </Notice>
+            )}
+          </Show>
+          <Switch
+            fallback={
+              <RecordsTable
+                items={items() as GridRecord[]}
+                fields={fields()}
+                baseId={props.baseId}
+                fieldsByTable={allFieldsByTable()}
+                relationLabels={mergedRelationLabels()}
+                viewColumns={effectiveViewColumns()}
+                selectedRecordId={selectedRecordId()}
+                recordHref={recordHref}
+                onOpenRecord={onSelectRecord}
+                sort={query().sort}
+                onSort={
+                  props.viewMode || props.trashMode
+                    ? undefined
+                    : (fieldId, direction) =>
+                        onToolbarCommit({
+                          filter: query().filter,
+                          sort: [{ fieldId, direction }],
+                          groupBy: query().groupBy,
+                          aggregations: query().aggregations,
+                        })
+                }
+                bulkSelection={
+                  bulkSelectionEnabled()
+                    ? {
+                        selectedIds: bulkSelectedRecordIds(),
+                        onToggleRecord: toggleBulkRecordSelection,
+                        onToggleVisible: toggleVisibleBulkRecords,
+                      }
+                    : undefined
+                }
+                empty={emptyResult() ? emptyState() : undefined}
+                dateConfig={props.dateConfig}
+              />
             }
           >
-            <RecordsPrimaryToolbar
-              searchableFields={searchableFields()}
-              search={search()}
-              trashMode={props.trashMode}
-              canReadTable={props.canReadTable}
-              tableKind={props.tableKind}
-              baseId={props.baseId}
-              tableId={props.tableId}
-              tableName={tableName()}
-              recordCountText={recordCountText()}
-              busy={recordsBusy()}
-              needsManualRefresh={needsManualRefresh()}
-              liveRefreshing={liveRefreshing()}
-              cardsMode={renderMode() === "cards"}
-              viewMode={props.viewMode}
-              cardSize={cardSize()}
-              recordMetaCount={activeRecordMetaCount()}
-              bulkSelectionEnabled={bulkSelectionEnabled()}
-              selectedBulkCount={selectedBulkCount()}
-              bulkQueueing={bulkQueueing()}
-              bulkLaunchers={props.bulkSelectionLaunchers}
-              queryHref={queryWorkspaceHref()}
-              onSearchChange={onSearchChange}
-              onRefresh={() => void applyLiveRefresh()}
-              onCardSizeChange={onCardSizeChange}
-              onOpenRecordMetadata={openRecordMetaDialog}
-              onClearBulkSelection={clearBulkSelection}
-              onQueueBulkWorkflow={queueBulkWorkflow}
-              onExport={openExportDialog}
-              onOpenCombinedAudit={openCombinedAudit}
-            />
-
-            {/* Saved views use their settings dialog; trash mode only exposes recovery actions. */}
-            <Show when={!props.viewMode && !props.trashMode}>
-              <div class="shrink-0">
-                <GridToolbar
+            <Match when={emptyResult()}>
+              <Empty {...emptyState()} />
+            </Match>
+            {/* k2b-ui gap: grouped buckets, cards with cover images and the calendar have no v2 primitive yet; they keep their
+                own drawing (and behaviour) inside a Canvas until the grouped table, image tiles (lane Y2) and calendar land. */}
+            <Match when={isGrouped()}>
+              <Canvas label={words().groups}>
+                <GroupedTable
+                  baseId={props.baseId}
+                  fields={fields()}
+                  groupBy={groupBy()}
+                  aggregations={aggregations()}
+                  buckets={buckets()}
+                  explode={props.groupedExplode}
+                  relationLabels={mergedRelationLabels()}
+                  selectedBucketKey={selectedGroup() ? JSON.stringify(selectedGroup()?.keys) : null}
+                  onBucketClick={onSelectGroup}
+                  adminMode={adminMode() && isSavedView() && !!props.canEditActiveView}
+                  columnOrder={visibleGroupedColumnOrder()}
+                  hiddenColumnIds={query().hiddenGroupedColumns}
+                  scrollPreserveKey={`grids-groups-${props.tableId}-${props.viewId ?? "default"}`}
+                  onColumnSettings={openGroupedViewColumnSettings}
+                  onColumnMove={moveGroupedViewColumnInline}
+                  dateConfig={props.dateConfig}
+                  hasMore={false}
+                  loadingMore={false}
+                  onLoadMore={loadNextFlatPage}
+                />
+              </Canvas>
+            </Match>
+            <Match when={renderMode() === "cards"}>
+              <Canvas label={words().cards}>
+                <RecordCardsView
+                  items={items() as GridRecord[]}
+                  fields={fields()}
+                  displayConfig={displayConfig()}
+                  filePreviews={filePreviews()}
                   baseId={props.baseId}
                   tableId={props.tableId}
-                  tableName={tableName()}
-                  disableDirectInsert={disableDirectInsert()}
-                  fields={fields()}
-                  initialFilter={toolbarFilterRows()}
-                  initialSort={toolbarSortRows()}
-                  initialGroupBy={toolbarGroupByRows()}
-                  initialAggregations={toolbarAggregationRows()}
-                  recordMeta={query().recordMeta}
-                  columns={effectiveViewColumns()}
-                  queryHref={queryWorkspaceHref()}
-                  onOpenQuery={openQueryPanel}
-                  onAddComputedColumn={openAddComputedColumn}
-                  onClearColumns={clearComputedColumns}
-                  currentSearch={search()}
+                  fieldsByTable={allFieldsByTable()}
                   relationLabels={mergedRelationLabels()}
-                  forms={forms()}
-                  canWrite={props.canWrite}
-                  canDirectWrite={canDirectWrite()}
-                  canSubmitForms={props.canWrite && mutationSourceAllowed("form")}
-                  onCommit={onToolbarCommit}
-                  onRecordCreated={onRecordCreated}
-                  onRecordsChanged={() => void refreshVisibleRecords({ force: true })}
-                  dateConfig={props.dateConfig}
-                  showCardSize={renderMode() === "cards"}
+                  selectedId={selectedRecordId()}
+                  highlightedIds={highlightedRecordIds()}
+                  onRecordClick={onSelectRecord}
                   cardSize={cardSize()}
-                  onCardSizeChange={onCardSizeChange}
+                  hasMore={false}
+                  loadingMore={false}
+                  onLoadMore={loadNextFlatPage}
+                  dateConfig={props.dateConfig}
                 />
-              </div>
-            </Show>
-
-            <Show when={canUseEditMode() && adminMode()}>
-              <RecordsAdminToolbar
-                savedView={isSavedView()}
-                activeViewAvailable={!!props.activeView}
-                canEditActiveView={!!props.canEditActiveView}
-                hiddenViewColumnCount={hiddenViewColumnCount()}
-                allowForms={props.tableKind === "stored"}
-                formsButtonLabel={formsButtonLabel()}
-                tableFields={tableFields()}
-                onFieldSettings={props.canManageTable && (!props.activeView || setTableFields) ? openFieldSettings : undefined}
-                onOpenTableSettings={openTableSettings}
-                onAddField={() => void openAddField()}
-                onOpenForms={openForms}
-                onOpenTemplates={openTemplates}
-                onOpenViewSettings={openViewSettings}
-                onAddViewColumn={openAddViewColumnDialog}
-                onDone={() => setAdminModeAndUrl(false)}
-              />
-            </Show>
-
-            <Show when={queryFailure()}>
-              {(failure) => (
-                <Placeholder
-                  state="error"
-                  surface="paper"
-                  align="left"
-                  title={t().refreshFailed}
-                  description={failure().error.message}
-                  class="shrink-0 py-2"
-                  action={
-                    <Button variant="secondary" size="sm" type="button" onClick={retryQuery}>
-                      <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                    </Button>
-                  }
+              </Canvas>
+            </Match>
+            <Match when={renderMode() === "calendar"}>
+              <Canvas label={words().calendar}>
+                <RecordCalendarView
+                  items={items() as GridRecord[]}
+                  fields={fields()}
+                  displayConfig={displayConfig()}
+                  calendarState={calendarState()}
+                  onCalendarChange={onCalendarChange}
+                  selectedRecordId={selectedRecordId()}
+                  onRecordClick={onSelectRecord}
+                  dateConfig={props.dateConfig}
+                  fieldsByTable={allFieldsByTable()}
+                  hasMore={false}
+                  loadingMore={false}
+                  onLoadMore={loadNextFlatPage}
                 />
-              )}
-            </Show>
-
-            <RecordsResultSurface
-              grouped={isGrouped()}
-              mode={renderMode()}
-              trashMode={props.trashMode}
-              loading={data.loading}
-              cursor={cursor()}
-              nextCursor={nextCursor()}
-              tableId={props.tableId}
-              viewId={props.viewId}
-              baseId={props.baseId}
-              fieldsByTable={props.fieldsByTable}
-              fields={fields()}
-              items={items() as GridRecord[]}
-              buckets={buckets()}
-              groupBy={groupBy()}
-              aggregations={aggregations()}
-              groupedExplode={props.groupedExplode}
-              relationLabels={mergedRelationLabels()}
-              selectedGroup={selectedGroup()}
-              selectedRecordId={selectedRecordId()}
-              highlightedRecordIds={highlightedRecordIds()}
-              filePreviews={filePreviews()}
-              displayConfig={displayConfig()}
-              calendarState={calendarState()}
-              cardSize={cardSize()}
-              viewColumns={effectiveViewColumns()}
-              aggregates={aggregates()}
-              aggregationSpecs={tableAggregationSpecs()}
-              groupedColumnOrder={visibleGroupedColumnOrder()}
-              hiddenGroupedColumnIds={query().hiddenGroupedColumns}
-              adminMode={adminMode()}
-              canManageTable={props.canManageTable}
-              savedView={isSavedView()}
-              canEditView={!!props.canEditActiveView}
-              resultNarrowed={resultNarrowed()}
-              onClearResultNarrowing={clearResultNarrowing}
-              readFailed={Boolean(queryFailure())}
-              emptyAction={
-                offersGridCreateActions({
-                  canWrite: props.canWrite,
-                  canDirectWrite: canDirectWrite(),
-                  canSubmitForms: props.canWrite && mutationSourceAllowed("form"),
-                  disableDirectInsert: disableDirectInsert(),
-                  forms: forms(),
-                }) ? (
-                  <div class="flex flex-wrap items-center justify-center gap-2">
-                    <GridCreateActions
-                      baseId={props.baseId}
-                      tableId={props.tableId}
-                      tableName={tableName()}
-                      disableDirectInsert={disableDirectInsert()}
-                      fields={fields()}
-                      forms={forms()}
-                      canWrite={props.canWrite}
-                      canDirectWrite={canDirectWrite()}
-                      canSubmitForms={props.canWrite && mutationSourceAllowed("form")}
-                      onRecordCreated={onRecordCreated}
-                      onRecordsChanged={() => void refreshVisibleRecords({ force: true })}
-                      dateConfig={props.dateConfig}
-                    />
-                  </div>
-                ) : undefined
+              </Canvas>
+            </Match>
+          </Switch>
+          <Show when={hasMore()}>
+            <Bar
+              start={<Text type="meta">{recordCountText()}</Text>}
+              end={
+                <Button icon="chevrons-down" busy={data.loading && Boolean(cursor())} onClick={loadNextFlatPage}>
+                  {words().loadMore}
+                </Button>
               }
-              bulkSelection={
-                bulkSelectionEnabled()
-                  ? {
-                      selectedIds: bulkSelectedRecordIds(),
-                      onToggleRecord: toggleBulkRecordSelection,
-                      onToggleVisible: toggleVisibleBulkRecords,
-                    }
-                  : undefined
-              }
-              dateConfig={props.dateConfig}
-              onRecordClick={onSelectRecord}
-              onCalendarChange={onCalendarChange}
-              onGroupClick={onSelectGroup}
-              onLoadMore={loadNextFlatPage}
-              onFieldSettings={openFieldSettings}
-              onViewColumnSettings={openViewColumnSettings}
-              onViewColumnMove={moveViewColumnInline}
-              onGroupedColumnSettings={openGroupedViewColumnSettings}
-              onGroupedColumnMove={moveGroupedViewColumnInline}
             />
-          </div>
-        </div>
-      </AppWorkspace.Main>
-
-      <AppWorkspace.Detail
-        id="record"
-        open={hasOpenDetail()}
-        onClose={() => (selectedGroup() ? onCloseGroupDetail() : onCloseDetail())}
-        width="lg"
-        viewTransitionName="grids-record-detail"
-      >
-        <Show when={selectedRecordId() || selectedGroup()}>
-          <RecordsDetailSurface
-            baseId={props.baseId}
-            tableId={props.tableId}
-            tableName={tableName()}
-            fields={fields()}
-            tableFields={tableFields()}
-            auditPolicy={tableAuditPolicy()}
-            record={selectedRecord}
-            detail={selectedRecordDetail}
-            now={props.now}
-            recordFailure={selectedRecordFailure()}
-            selectedGroup={selectedGroup()}
-            query={queryWithSearch()}
-            groupBy={groupBy()}
-            aggregations={aggregations()}
-            documentTemplates={props.documentTemplates}
-            mode={detailMode}
-            canWrite={canDirectWrite()}
-            canRunWorkflows={canRunWorkflows()}
-            relationLabels={mergedRelationLabels()}
-            fieldsByTable={props.fieldsByTable}
-            viewColumns={effectiveViewColumns()}
-            dateConfig={props.dateConfig}
-            onCloseRecord={onCloseDetail}
-            onRetryRecord={retrySelectedRecord}
-            onRecordUpdated={onRecordUpdated}
-            onRecordRemoved={onRecordRemoved}
-            recordActionLaunchers={props.recordActionLaunchers}
-            onOpenRecord={(recordId) => openRecordById(recordId, false)}
-            onCloseGroup={onCloseGroupDetail}
-            onOpenGroupedRecord={onOpenGroupedRecord}
-            access={recordAccess}
-            currentUserId={props.currentUserId}
-          />
+          </Show>
+        </Pane>
+        <Show when={hasOpenDetail()}>
+          <Pane detail label={detailLabel()} width={{ min: 400, default: 480 }} back={{ label: tableName(), href: listHref() }}>
+            {/* The record's own detail is rebuilt on v2 in its own part; until then its v1 surface keeps every deed. */}
+            <Canvas label={detailLabel()}>
+              <RecordsDetailSurface
+                baseId={props.baseId}
+                tableId={props.tableId}
+                tableName={tableName()}
+                fields={fields()}
+                tableFields={tableFields()}
+                auditPolicy={tableAuditPolicy()}
+                record={selectedRecord}
+                detail={selectedRecordDetail}
+                now={props.now}
+                recordFailure={selectedRecordFailure()}
+                selectedGroup={selectedGroup()}
+                query={queryWithSearch()}
+                groupBy={groupBy()}
+                aggregations={aggregations()}
+                documentTemplates={props.documentTemplates}
+                mode={detailMode}
+                canWrite={canDirectWrite()}
+                canRunWorkflows={canRunWorkflows()}
+                relationLabels={mergedRelationLabels()}
+                fieldsByTable={props.fieldsByTable}
+                viewColumns={effectiveViewColumns()}
+                dateConfig={props.dateConfig}
+                onCloseRecord={onCloseDetail}
+                onRetryRecord={retrySelectedRecord}
+                onRecordUpdated={onRecordUpdated}
+                onRecordRemoved={onRecordRemoved}
+                recordActionLaunchers={props.recordActionLaunchers}
+                onOpenRecord={(recordId) => openRecordById(recordId, false)}
+                onCloseGroup={onCloseGroupDetail}
+                onOpenGroupedRecord={onOpenGroupedRecord}
+                access={recordAccess}
+                currentUserId={props.currentUserId}
+              />
+            </Canvas>
+          </Pane>
         </Show>
-      </AppWorkspace.Detail>
-    </>
+      </Pane.Split>
+      <RecordsQueryDialog
+        open={queryOpen()}
+        onOpenChange={setQueryOpen}
+        fields={fields()}
+        filter={toolbarFilterRows()}
+        sort={toolbarSortRows()}
+        groupBy={query().groupBy}
+        aggregations={query().aggregations}
+        relationLabels={mergedRelationLabels()}
+        dateConfig={props.dateConfig}
+        onCommit={onToolbarCommit}
+        onClear={() => {
+          onToolbarCommit({});
+          clearComputedColumns();
+        }}
+      />
+      <SaveViewDialog
+        open={saveViewOpen()}
+        onOpenChange={setSaveViewOpen}
+        tableId={props.tableId}
+        query={queryWithSearch}
+        columns={effectiveViewColumns}
+        canShare={props.canWrite}
+      />
+    </GridsFrame>
   );
 }

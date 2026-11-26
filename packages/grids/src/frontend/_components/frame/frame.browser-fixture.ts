@@ -5,6 +5,9 @@
  */
 import type { PublicBase, PublicTable } from "../../../api/public-dto";
 import type { BasesOverviewProps } from "../overview/BasesOverview";
+import { parseRecordsState } from "../records-view/query-url";
+import type RecordsView from "../records-view/RecordsView";
+import { fields as tableFields, records as tableRecords } from "../table/database-table.fixture-data";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
 
 export type FixtureVariant = "plain" | "worst" | "huge";
@@ -221,4 +224,86 @@ export const baseHomeFixture = (variant: FixtureVariant, options: { edit: boolea
       ] as unknown as PublicOkWorkspaceState["catalog"]["sidebarDocumentTemplates"],
     },
   } as unknown as PublicOkWorkspaceState;
+};
+
+/** The records page of a table for a variant and an address, as the server renders it (`record`, `sort`, `q` …). */
+export const recordsFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof RecordsView>[0] => {
+  const state = parseRecordsState(params);
+  const items =
+    variant === "huge"
+      ? Array.from({ length: 1000 }, (_, index) => ({
+          ...tableRecords[0]!,
+          id: `record-${index}`,
+          data: { ...tableRecords[0]!.data, text: `Auftrag ${index + 1}` },
+        }))
+      : variant === "worst"
+        ? tableRecords.map((record, index) => ({
+            ...record,
+            data: {
+              ...record.data,
+              text:
+                index === 0
+                  ? "Wartungsprotokolle-der-Hebebühnen-und-Druckluftanlagen-im-Werk-Süd-2026"
+                  : index === 1
+                    ? "X"
+                    : `物流センター東京 ${index}`,
+              customer: index === 2 ? "🚚 Spedition 💥" : record.data.customer,
+              number: index === 3 ? "987654321.99" : record.data.number,
+              notes: "Eine sehr lange Notiz, die erklärt, welche Absprachen getroffen wurden und warum die Lieferung später kommt.",
+            },
+          }))
+        : tableRecords;
+  const frame = baseHomeFixture(variant, { edit: params.get("edit") === "true", groups: false });
+  return {
+    frame: { ...frame, route: { kind: "records", activeKey: "table:table", activeTableId: "table" } },
+    revision: FIXTURE_REVISION,
+    baseId: "Bas001",
+    tableId: "table",
+    tableKind: "stored",
+    tableName: "Aufträge",
+    tableDescription: null,
+    tableIcon: "ti ti-clipboard-list",
+    tableColumns: [],
+    tableUpdatedAt: FIXTURE_NOW,
+    tableAuditPolicy: {},
+    tableMutationPolicy: { mode: "all" },
+    disableDirectInsert: false,
+    viewId: null,
+    fields: tableFields,
+    tables: [],
+    viewsByTable: {
+      table: [
+        { id: "V1", tableId: "table", name: "Offene Aufträge", icon: null },
+        { id: "V2", tableId: "table", name: "Diese Woche", icon: null },
+      ] as unknown as Parameters<typeof RecordsView>[0]["viewsByTable"][string],
+    },
+    forms: [],
+    canReadTable: true,
+    canWrite: true,
+    canManageTable: true,
+    canManageBase: true,
+    trashMode: false,
+    initialAdminMode: params.get("edit") === "true",
+    otherTables: [{ id: "table", name: "Aufträge" }],
+    fieldsByTable: { table: tableFields },
+    viewMode: false,
+    initialState: { ...state, selectedRecordId: null },
+    initialData: { items, nextCursor: variant === "plain" ? "next-page" : null },
+    initialError: null,
+    // a page renders with its live cursor, so it does not read its records again at once
+    initialEventCursor: "cursor-1",
+    initialSelectedRecord: null,
+    initialSelectedRecordDetail: null,
+    documentTemplates: [],
+    relationLabels: {},
+    viewColumns: undefined,
+    groupedExplode: false,
+    activeRecordQuery: null,
+    displayConfig: { mode: "table" },
+    bulkSelectionLaunchers: [],
+    recordActionLaunchers: [],
+    dateConfig: DATE_CONFIG,
+    now: FIXTURE_NOW,
+    workspaceRouteKey: "records:table::false",
+  };
 };

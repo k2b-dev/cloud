@@ -6,6 +6,7 @@ import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";
 import BaseHome from "../_components/frame/BaseHome.island";
 import { homeTab, resourcesQuery } from "../_components/frame/resources-query";
+import RecordsScreen from "../_components/records-view/RecordsScreen.island";
 import { parseDocumentViewMode, parseNavigationExpansion } from "../_components/sidebar/GridsSettingsStore";
 import RememberGridsPath from "../_components/sidebar/RememberGridsPath.island";
 import GridsWorkspace from "../_components/workspace/GridsWorkspace";
@@ -90,6 +91,16 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
         <RememberGridsPath />
         <BaseHome state={state} query={query} tab={homeTab(params, (state.navigation?.groups.length ?? 0) > 0)} />
+      </Layout>
+    );
+  }
+
+  if (state.route.kind === "records") {
+    const now = new Date().toISOString();
+    return () => (
+      <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
+        <RememberGridsPath />
+        <RecordsScreen state={state} userId={user.id} now={now} />
       </Layout>
     );
   }

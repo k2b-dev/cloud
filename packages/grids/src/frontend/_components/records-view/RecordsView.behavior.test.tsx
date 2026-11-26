@@ -4,6 +4,7 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicField, PublicGridRecord, PublicTableQueryResult, PublicView } from "../../../api/public-dto";
 import type { GroupBySpec, RecordQuery } from "../../../contracts";
+import { testFrame } from "./records-frame.test-fixture";
 
 const domTest = isServer ? test.skip : test;
 const timestamp = "2026-01-01T00:00:00.000Z";
@@ -14,6 +15,61 @@ mock.module("./grids-record-events-provider", () => ({
 type FetchRecords = typeof import("./fetcher").fetchTableQuery;
 let fetchRecords: FetchRecords = async () => memberPage;
 mock.module("./fetcher", () => ({ fetchTableQuery: (...args: Parameters<FetchRecords>) => fetchRecords(...args) }));
+
+// v2 reads the window's media queries and observes sizes; happy-dom offers neither.
+if (!isServer) {
+  globalThis.matchMedia ??= ((media: string) => ({
+    matches: false,
+    media,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof matchMedia;
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
+/** Types a search into the head's field and sends it with Enter, as a person does. */
+const search = (input: HTMLInputElement, text: string) => {
+  input.value = text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+};
+/** Whether the status row shows that the records refresh. */
+const refreshing = (root: Element) => root.querySelector(".k2-status-busy .k2-icon") !== null;
+/** Opens a v2 menu by its button's name and returns its entries by name. */
+const openMenu = async (document: Document, name: string) => {
+  const trigger = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+    (node) => node.getAttribute("aria-label") === name || node.textContent?.trim() === name,
+  );
+  if (!trigger) return null;
+  trigger.click();
+  await waitFor(() => document.querySelector('[role="menu"]') !== null);
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]'));
+};
+/** Opens a submenu entry of the open menu and returns the entries of the submenu. */
+const openSubmenu = async (document: Document, name: string) => {
+  const before = document.querySelectorAll('[role="menu"]').length;
+  Array.from(document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]'))
+    .find((item) => item.textContent?.trim() === name)!
+    .click();
+  await waitFor(() => document.querySelectorAll('[role="menu"]').length > before);
+  const menus = document.querySelectorAll('[role="menu"]');
+  return Array.from(menus[menus.length - 1]!.querySelectorAll<HTMLElement>('[role^="menuitem"]'));
+};
+const closeMenus = (document: Document) => {
+  // the menu's typeahead walks text with NodeFilter, which the DOM harness does not bind
+  const globals = globalThis as { NodeFilter?: unknown };
+  globals.NodeFilter ??= (document.defaultView as unknown as { NodeFilter: unknown }).NodeFilter;
+  const menus = document.querySelectorAll<HTMLElement>('[role="menu"]');
+  (menus[menus.length - 1] ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+};
 
 // Load once, after the module mocks and outside any test, so the cold Solid transform of the view's source graph does
 // not count against the 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
@@ -84,6 +140,7 @@ type RecordsViewProps = Parameters<typeof import("./RecordsView").default>[0];
 
 /** A table page as the server renders it; `overrides` narrow it to the case under test. */
 const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProps => ({
+  frame: testFrame(),
   baseId: "BASE01",
   tableId: "TABLE1",
   tableKind: "stored",
@@ -234,7 +291,7 @@ domTest(
   "the first client render shows the server's records as loaded, and a search shows the loading state until its records arrive",
   async () => {
     const dom = createDomTestHarness();
-    delegateEvents(["input"], dom.document);
+    delegateEvents(["input", "keydown"], dom.document);
     const previousObserver = globalThis.IntersectionObserver;
     Object.assign(globalThis, {
       IntersectionObserver: class {
@@ -252,29 +309,20 @@ domTest(
     };
     const { RecordsView } = modules!;
     const dispose = render(() => createComponent(RecordsView, recordsViewProps({})), dom.root);
-    const searchInput = () => dom.root.querySelector<HTMLInputElement>('input[name="grids-record-search"]')!;
-    const searchIcons = () => Array.from(dom.root.querySelectorAll(".k2b-text-input__icon > i")).map((icon) => icon.className);
-    const recordsDimmed = () => dom.root.querySelector(".transition-opacity")!.classList.contains("opacity-60");
+    const searchInput = () => dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
     try {
       await Bun.sleep(0);
       expect(queries).toEqual([]);
       expect(dom.root.textContent).toContain("Draft the brochure");
-      expect(searchIcons()).toEqual(["ti ti-search", "ti ti-search"]);
-      expect(searchInput().hasAttribute("aria-busy")).toBe(false);
-      expect(recordsDimmed()).toBe(false);
+      expect(refreshing(dom.root)).toBe(false);
 
-      searchInput().value = "venue";
-      searchInput().dispatchEvent(new Event("input", { bubbles: true }));
+      search(searchInput(), "venue");
       await waitFor(() => queries.length === 1);
       expect(queries).toEqual(["venue"]);
-      expect(searchIcons()).toEqual(["ti ti-loader-2 k2b-spin", "ti ti-loader-2 k2b-spin"]);
-      expect(searchInput().getAttribute("aria-busy")).toBe("true");
-      expect(recordsDimmed()).toBe(true);
+      expect(refreshing(dom.root)).toBe(true);
 
       resolveSearch({ items: [memberPage.items![1]!], nextCursor: null, relationLabels: { PERSON1: "Mara Lind" } });
-      await waitFor(() => !searchInput().hasAttribute("aria-busy"));
-      expect(searchIcons()).toEqual(["ti ti-search", "ti ti-search"]);
-      expect(recordsDimmed()).toBe(false);
+      await waitFor(() => !refreshing(dom.root));
       expect(dom.root.textContent).toContain("Book the venue");
       expect(dom.root.textContent).not.toContain("Draft the brochure");
     } finally {
@@ -321,7 +369,7 @@ domTest("a failed server read shows its error without repeating the read, and th
   try {
     await Bun.sleep(0);
     expect(reads).toBe(0);
-    expect(dom.root.textContent).toContain("Could not refresh records");
+    expect(dom.root.textContent).toContain("Records could not be refreshed");
     expect(dom.root.textContent).toContain("This value could not be calculated.");
 
     retryButton()!.click();
@@ -334,7 +382,7 @@ domTest("a failed server read shows its error without repeating the read, and th
     await waitFor(() => reads === 2);
     settleRead.resolve(memberPage);
     await waitFor(() => dom.root.textContent?.includes("Draft the brochure") === true);
-    expect(dom.root.textContent).not.toContain("Could not refresh records");
+    expect(dom.root.textContent).not.toContain("Records could not be refreshed");
     expect(retryButton()).toBeNull();
   } finally {
     dispose();
@@ -346,7 +394,7 @@ domTest("a failed server read shows its error without repeating the read, and th
 
 domTest("an empty table keeps its empty state while a search loads, and only a finished read with records brings the grid", async () => {
   const dom = createDomTestHarness();
-  delegateEvents(["click", "input"], dom.document);
+  delegateEvents(["click", "input", "keydown"], dom.document);
   const previousObserver = globalThis.IntersectionObserver;
   Object.assign(globalThis, {
     IntersectionObserver: class {
@@ -374,7 +422,7 @@ domTest("an empty table keeps its empty state while a search loads, and only a f
     () => createComponent(RecordsView, recordsViewProps({ initialData: { items: [], nextCursor: null }, relationLabels: {} })),
     dom.root,
   );
-  const searchInput = () => dom.root.querySelector<HTMLInputElement>('input[name="grids-record-search"]')!;
+  const searchInput = () => dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
   const text = () => dom.root.textContent ?? "";
   try {
     await Bun.sleep(0);
@@ -382,14 +430,13 @@ domTest("an empty table keeps its empty state while a search loads, and only a f
     expect(dom.root.querySelector("table")).toBeNull();
     observer.observe(dom.root, { childList: true, subtree: true });
 
-    searchInput().value = "venue";
-    searchInput().dispatchEvent(new Event("input", { bubbles: true }));
+    search(searchInput(), "venue");
     await waitFor(() => reads > 0);
     expect(text()).toContain("No records yet");
     expect(dom.root.querySelector("table")).toBeNull();
 
     resolveRead({ items: [], nextCursor: null });
-    await waitFor(() => text().includes("No matching records"));
+    await waitFor(() => text().includes("No record matches the search and filters"));
     expect(dom.root.querySelector("table")).toBeNull();
     await Bun.sleep(0);
     expect(gridsMounted).toBe(0);
@@ -399,13 +446,13 @@ domTest("an empty table keeps its empty state while a search loads, and only a f
       .find((button) => button.textContent?.includes("Clear search and filters"))!
       .click();
     await waitFor(() => reads > readsBeforeClear);
-    expect(text()).toContain("No matching records");
+    expect(text()).toContain("No record matches the search and filters");
     expect(dom.root.querySelector("table")).toBeNull();
 
     resolveRead(memberPage);
     await waitFor(() => text().includes("Draft the brochure"));
     expect(text()).not.toContain("No records yet");
-    expect(text()).not.toContain("No matching records");
+    expect(text()).not.toContain("No record matches the search and filters");
     await Bun.sleep(0);
     expect(gridsMounted).toBe(1);
   } finally {
@@ -476,7 +523,7 @@ const installFieldApi = (initialFields: PublicField[]) => {
 /** Opens a table page in edit mode for someone who manages the table, with the field calls served by `installFieldApi`. */
 const mountTableEditor = async (overrides: Partial<RecordsViewProps>) => {
   const dom = createDomTestHarness();
-  delegateEvents(["click", "input"], dom.document);
+  delegateEvents(["click", "input", "keydown"], dom.document);
   const previousObserver = globalThis.IntersectionObserver;
   Object.assign(globalThis, {
     IntersectionObserver: class {
@@ -510,21 +557,21 @@ const mountTableEditor = async (overrides: Partial<RecordsViewProps>) => {
   const document = dom.document;
   const buttonNamed = (label: string) =>
     Array.from(document.querySelectorAll("button")).findLast((node) => node.textContent?.trim() === label);
-  const scope = () => document.querySelector<HTMLElement>('[role="combobox"][aria-label="Search record columns"]');
-  /** Lists the fields the search scope offers and the ones it has selected. */
-  const readScope = () => {
-    const listbox = document.getElementById(scope()?.getAttribute("aria-controls") ?? "");
-    if (!listbox) return null;
-    const options = Array.from(listbox.querySelectorAll('[role="option"]'));
-    return {
-      offered: options.map((option) => option.getAttribute("aria-label")),
-      selected: options
-        .filter((option) => option.getAttribute("aria-selected") === "true")
-        .map((option) => option.getAttribute("aria-label")),
+  /** Lists the fields the search scope offers and the ones it has selected, from the search's "Search in" menu. */
+  const readScope = async () => {
+    const items = await openMenu(document, "Search in");
+    if (!items) return null;
+    const fields = items.filter((item) => item.textContent?.trim() !== "All fields");
+    const result = {
+      offered: fields.map((item) => item.textContent?.trim()),
+      selected: fields.filter((item) => item.getAttribute("aria-checked") === "true").map((item) => item.textContent?.trim()),
     };
+    closeMenus(document);
+    await waitFor(() => document.querySelector('[role="menu"]') === null);
+    return result;
   };
   const addTextField = async (name: string) => {
-    buttonNamed("Add field")!.click();
+    (await openMenu(document, "Edit"))!.find((item) => item.textContent?.trim() === "Add field")!.click();
     const textType = () =>
       Array.from(document.querySelectorAll("button")).find((node) => node.querySelector(".min-w-0 > div")?.textContent === "Text");
     await waitFor(() => Boolean(textType()));
@@ -542,7 +589,8 @@ const mountTableEditor = async (overrides: Partial<RecordsViewProps>) => {
     await waitFor(() => !dialogCore.isOpen());
   };
   const deleteField = async (name: string) => {
-    document.querySelector<HTMLButtonElement>(`button[aria-label="Field settings for ${name}"]`)!.click();
+    await openMenu(document, "Edit");
+    (await openSubmenu(document, "Fields")).find((item) => item.textContent?.trim() === name)!.click();
     await waitFor(() => Boolean(buttonNamed("Delete field")));
     buttonNamed("Delete field")!.click();
     await waitFor(() => Boolean(buttonNamed("Delete")));
@@ -552,7 +600,7 @@ const mountTableEditor = async (overrides: Partial<RecordsViewProps>) => {
   return {
     api,
     reads,
-    searchInput: () => document.querySelector<HTMLInputElement>('input[name="grids-record-search"]'),
+    searchInput: () => document.querySelector<HTMLInputElement>('input[type="search"]'),
     readScope,
     addTextField,
     deleteField,
@@ -573,7 +621,7 @@ domTest("a new table shows the search as soon as it has a searchable field", asy
     expect(page.searchInput()).toBeNull();
     await page.addTextField("Keyword");
     await waitFor(() => page.searchInput() !== null);
-    expect(page.readScope()).toEqual({ offered: ["Keyword"], selected: [] });
+    expect(await page.readScope()).toEqual({ offered: ["Keyword"], selected: [] });
   } finally {
     page.cleanup();
   }
@@ -588,10 +636,10 @@ const searchingNotes = (): Partial<RecordsViewProps> => ({
 domTest("deleting a field removes it from the search scope and from a search that was limited to it", async () => {
   const page = await mountTableEditor(searchingNotes());
   try {
-    expect(page.readScope()).toEqual({ offered: ["Title", "Notes"], selected: ["Notes"] });
+    expect(await page.readScope()).toEqual({ offered: ["Title", "Notes"], selected: ["Notes"] });
 
     await page.deleteField("Notes");
-    expect(page.readScope()).toEqual({ offered: ["Title"], selected: [] });
+    expect(await page.readScope()).toEqual({ offered: ["Title"], selected: [] });
     // Reads started while the field was being deleted are cancelled, since naming it fails; the search keeps its text.
     await waitFor(() => page.reads.length > 0);
     const namesDeletedField = (read: { query: RecordQuery }) => read.query.search?.fieldIds?.includes(notesField.id) === true;
@@ -617,7 +665,7 @@ domTest("going back to a search limited to a deleted field searches the remainin
     await waitFor(() => page.reads.length > readsBeforeBack);
 
     expect(page.reads.slice(readsBeforeBack).map((read) => read.query.search)).toEqual([{ q: "stage", fieldIds: [] }]);
-    expect(page.readScope()).toEqual({ offered: ["Title"], selected: [] });
+    expect(await page.readScope()).toEqual({ offered: ["Title"], selected: [] });
     expect(page.searchInput()?.value).toBe("stage");
   } finally {
     page.cleanup();
@@ -691,14 +739,17 @@ domTest("a field restored elsewhere returns to the search scope with the table's
   const page = await mountTableEditor(searchingNotes());
   try {
     await page.deleteField("Notes");
-    expect(page.readScope()).toEqual({ offered: ["Title"], selected: [] });
+    expect(await page.readScope()).toEqual({ offered: ["Title"], selected: [] });
 
     // Base settings restores the field from the trash; adding a field makes the page read the table's fields again.
     page.api.restoreElsewhere(notesField.id);
     await page.addTextField("Due");
-    await waitFor(() => page.readScope()?.offered.length === 3);
+    for (let tries = 0; (await page.readScope())?.offered.length !== 3; tries++) {
+      if (tries > 50) throw new Error("The scope did not offer the restored field in time");
+      await Bun.sleep(20);
+    }
     // The restored field is offered again, but the search that dropped it stays as the person left it.
-    expect(page.readScope()).toEqual({ offered: ["Title", "Notes", "Due"], selected: [] });
+    expect(await page.readScope()).toEqual({ offered: ["Title", "Notes", "Due"], selected: [] });
     expect(page.searchInput()?.value).toBe("venue");
   } finally {
     page.cleanup();
@@ -746,7 +797,7 @@ const groupedByStatus = (): Partial<RecordsViewProps> => {
 /** Opens a page in edit mode and returns the fields its toolbar's "Fields" menu offers, or null without that menu. */
 const mountFieldsMenu = async (overrides: Partial<RecordsViewProps>) => {
   const dom = createDomTestHarness();
-  delegateEvents(["click", "input"], dom.document);
+  delegateEvents(["click", "input", "keydown"], dom.document);
   const previousObserver = globalThis.IntersectionObserver;
   Object.assign(globalThis, {
     IntersectionObserver: class {
@@ -761,23 +812,26 @@ const mountFieldsMenu = async (overrides: Partial<RecordsViewProps>) => {
     dom.root,
   );
   const document = dom.document;
+  /** The edit menu's button: it stands in the head while edit mode is on. */
   const trigger = () =>
-    Array.from(document.querySelectorAll<HTMLButtonElement>("button[aria-haspopup]")).find((node) => node.textContent?.trim() === "Fields");
-  const menuItems = () => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Fields"] [role="menuitem"]'));
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((node) => node.textContent?.trim() === "Edit");
+  let fields: HTMLElement[] = [];
   return {
     document,
     trigger,
-    /** Opens the menu and lists its entries by accessible name. */
+    /** Opens "Edit › Fields" and lists its entries by name; null when the edit menu has no fields entry. */
     openMenu: async () => {
-      trigger()!.click();
-      await waitFor(() => menuItems().length > 0);
-      return menuItems().map((item) => item.getAttribute("aria-label"));
+      const items = await openMenu(document, "Edit");
+      if (!items?.some((item) => item.textContent?.trim() === "Fields")) {
+        closeMenus(document);
+        return null;
+      }
+      fields = await openSubmenu(document, "Fields");
+      return fields.map((item) => item.textContent?.trim());
     },
-    /** Chooses a field in the open menu and returns the title of the dialog it opens. */
+    /** Chooses a field in the open menu and returns whether its settings dialog opened. */
     choose: async (name: string) => {
-      menuItems()
-        .find((item) => item.getAttribute("aria-label") === `Field settings for ${name}`)!
-        .click();
+      fields.find((item) => item.textContent?.trim() === name)!.click();
       await waitFor(() => dialogCore.isOpen());
       return document.body.textContent?.includes(`Edit field — ${name}`) ?? false;
     },
@@ -802,7 +856,7 @@ for (const [label, overrides] of [
     try {
       await waitFor(() => page.trigger() !== undefined);
       // A saved view narrows its columns, but field settings belong to the table and list all of its fields.
-      expect(await page.openMenu()).toEqual(["Field settings for Title", "Field settings for People", "Field settings for Status"]);
+      expect(await page.openMenu()).toEqual(["Title", "People", "Status"]);
       expect(await page.choose("Status")).toBe(true);
     } finally {
       page.cleanup();
@@ -814,8 +868,8 @@ domTest("only people who manage the table get the fields menu", async () => {
   // Someone who may edit a saved view but not the table works in edit mode without the table's field settings.
   const page = await mountFieldsMenu({ ...titleOnlyView(), canManageTable: false });
   try {
-    await waitFor(() => Boolean(page.document.body.textContent?.includes("Done")));
-    expect(page.trigger()).toBeUndefined();
+    await waitFor(() => page.trigger() !== undefined);
+    expect(await page.openMenu()).toBeNull();
   } finally {
     page.cleanup();
   }
@@ -837,9 +891,12 @@ domTest("deleting a field from a saved view's fields menu updates the menu and k
     buttonNamed("Delete")!.click();
     await waitFor(() => !dialogCore.isOpen());
 
-    expect(await page.openMenu()).toEqual(["Field settings for Title", "Field settings for People"]);
+    expect(await page.openMenu()).toEqual(["Title", "People"]);
     // The table's reloaded fields do not become the view's: its cards still show only the Title column.
     expect(cardsText()).not.toContain("Mara Lind");
+    // the menu closes while the page is still there, so its focus return finds the page
+    closeMenus(page.document);
+    await waitFor(() => page.document.querySelector('[role="menu"]') === null);
   } finally {
     page.cleanup();
     api.uninstall();
