@@ -49,6 +49,8 @@ export {
   Inline,
   type InlineProps,
   List,
+  type ListController,
+  type ListGroup,
   type ListProps,
   type OpenTarget,
   Prose,

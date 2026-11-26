@@ -1,11 +1,13 @@
 import {
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   Index,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -23,6 +25,7 @@ import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
+import { createVirtualWindow, SERVER_ROWS } from "./virtual";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
@@ -202,27 +205,75 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
-/** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
+/**
+ * The entries of a long group (a base with 1,000 tables): only those in view and a margin around them are in the
+ * page, in the same window as a list of items (`createVirtualWindow`); the server renders the first of them.
+ */
+const NavWindow = (props: { items: readonly NavItem[] }) => {
+  let box: HTMLDivElement | undefined;
+  // one place per position, kept while the list changes, so an entry's place is made once
+  const places: { index: number }[] = [];
+  const at = createMemo(() => {
+    for (let index = places.length; index < props.items.length; index++) places.push({ index });
+    return places.slice(0, props.items.length);
+  });
+  // the current page (or the fold that holds it) always stays in the page, and the sidebar shows it on load
+  const current = () => {
+    const index = props.items.findIndex((item) => item.current || item.items?.some((inner) => inner.current));
+    return index < 0 ? undefined : String(index);
+  };
+  const view = createVirtualWindow({ items: at, key: (place) => String(place.index), pinned: current });
+  onMount(() => {
+    if (!box) return;
+    view.mount(box);
+    const shown = current();
+    if (shown !== undefined) view.reveal(shown);
+  });
+  return (
+    <div ref={box} class="k2-nav-window" style={custom({ "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}>
+      <For each={view.shown()}>
+        {(place) => {
+          const node = resolveChildren(() => <NavEntry item={props.items[place.index]!} />);
+          const element = node.toArray().find((part): part is Element => typeof Element !== "undefined" && part instanceof Element);
+          if (element) view.observe(element, place);
+          return node();
+        }}
+      </For>
+    </div>
+  );
+};
+
+/**
+ * The sidebar of an app: its name, groups of round entries with counts, entries at the foot. The groups scroll
+ * between the name and the foot; a group longer than a screen keeps only the entries in view in the page.
+ */
 export const Nav = (props: NavProps) => (
   <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
     <div class="k2-nav-title">
       <Icon name={props.icon} />
       {props.title}
     </div>
-    <Index each={props.groups}>
-      {(group) => (
-        <>
-          <Show when={group().label}>
-            <div class="k2-nav-label">
-              {group().label}
-              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-            </div>
-          </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
-        </>
-      )}
-    </Index>
+    <div class="k2-nav-scroll">
+      <Index each={props.groups}>
+        {(group) => (
+          <>
+            <Show when={group().label}>
+              <div class="k2-nav-label">
+                {group().label}
+                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              </div>
+            </Show>
+            <Show
+              when={group().items.length > SERVER_ROWS}
+              fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}
+            >
+              <NavWindow items={group().items} />
+            </Show>
+          </>
+        )}
+      </Index>
+    </div>
     <Show when={props.quota}>
       {(quota) => {
         const share = () => (quota().of > 0 ? Math.max(0, Math.min(1, quota().value / quota().of)) : 0);
@@ -402,6 +453,8 @@ export const Tabs = (props: TabsProps) => {
     });
     watchAll();
     parts.observe(row, { childList: true });
+    // Another tab becoming the open one changes no size: the place of the open tab is measured again for it.
+    createEffect(on(() => plain().findIndex((tab) => tab.current), later, { defer: true }));
     onCleanup(() => {
       cancelAnimationFrame(frame);
       sizes.disconnect();
@@ -637,10 +690,16 @@ export const Notice = (props: NoticeProps) => {
     const measure = () => {
       if (text && !open()) setLong(text.scrollHeight > text.clientHeight + 1);
     };
+    // its box keeps the height of its lines while new words come in (a summary that grows): what it holds is watched too
     const sizes = new ResizeObserver(measure);
     sizes.observe(text);
+    const words = new MutationObserver(measure);
+    words.observe(text, { childList: true, subtree: true, characterData: true });
     measure();
-    onCleanup(() => sizes.disconnect());
+    onCleanup(() => {
+      sizes.disconnect();
+      words.disconnect();
+    });
   });
   return (
     <div

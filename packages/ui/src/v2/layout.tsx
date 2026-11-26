@@ -19,10 +19,15 @@ import { Cut, RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
+import { Menu, type MenuEntry } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty } from "./states";
 import { Toasts } from "./toast";
 import type { Action, OnNavigate, Person, Status, Width } from "./types";
+
+/** A bar made as the head of a workspace or pane: on the phone it folds the deeds a crowded head cannot hold (`Bar`). */
+const HeadContext = createContext(false);
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -181,7 +186,8 @@ export const Workspace = (props: WorkspaceProps) => {
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
-  const head = resolveChildren(() => props.head);
+  // a bar made as the head knows it (see `Bar`)
+  const head = resolveChildren(() => <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -388,7 +394,7 @@ export const Pane = (props: PaneProps) => {
       return props.detail === true;
     },
   });
-  const head = resolveChildren(() => props.head);
+  const head = resolveChildren(() => <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>);
   const status = resolveChildren(() => props.status);
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
@@ -540,13 +546,48 @@ export type BarProps = {
 export const Bar = (props: BarProps) => {
   const start = resolveChildren(() => props.start);
   const end = resolveChildren(() => props.end);
+  const inHead = useContext(HeadContext);
+  const t = useOverlayMessages();
+  // On the phone the open view never gives way to deeds that keep their words: in a head with views, those deeds fold
+  // into this menu (the stylesheet shows it only there), which runs each of them as the button itself would.
+  const [folded, setFolded] = createSignal<MenuEntry[]>([]);
+  let bar: HTMLDivElement | undefined;
+  onMount(() => {
+    const deeds = inHead ? bar?.querySelector(":scope > .k2-bar-end") : null;
+    if (!deeds) return;
+    const read = () =>
+      setFolded(
+        Array.from(deeds.querySelectorAll<HTMLElement>(":scope > [data-keep]:not([data-icon-only])")).map((button) => ({
+          label: (button.textContent ?? "").replace(/\s+/g, " ").trim() || (button.getAttribute("aria-label") ?? ""),
+          disabled: button.matches(":disabled") || button.getAttribute("aria-disabled") === "true",
+          onClick: () => button.click(),
+        })),
+      );
+    read();
+    const changes = new MutationObserver(read);
+    changes.observe(deeds, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["disabled", "aria-disabled"],
+    });
+    onCleanup(() => changes.disconnect());
+  });
   return (
-    <div class="k2-bar" data-k2-part="Bar">
+    <div class="k2-bar" data-k2-part="Bar" ref={bar}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
       <Show when={end() !== undefined}>
-        <div class="k2-bar-end">{end()}</div>
+        <div class="k2-bar-end">
+          {end()}
+          <Show when={inHead && start() !== undefined}>
+            <span class="k2-bar-fold">
+              <Menu label={t().moreActions} items={folded()} />
+            </span>
+          </Show>
+        </div>
       </Show>
     </div>
   );

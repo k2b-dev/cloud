@@ -695,6 +695,54 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // review of #4210: lines broken on purpose are no finding; text shown through an ancestor of 0 px is one.
+  test(
+    "green: short lines broken on purpose; red: text inside a box that an ancestor of 0 px cuts away",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row"><span data-probe="list" style="white-space:pre-line">1.\n2.\n3.\n4.</span></div>' +
+            '<div class="row" style="display:flex"><span style="flex:0 0 0;min-width:0;overflow:hidden"><span data-probe="inner" style="display:inline-block;width:120px">Aleksandra</span></span>' +
+            '<span style="flex:none;white-space:nowrap">Wartet · Reklamation · bis Mo · Vorschlag · Anhang · Schloss · Person · noch mehr</span></div>',
+        ),
+        { width: 900 },
+      );
+      try {
+        const found = (await measureV2Layout(page)).squeezed;
+        expect(found.filter((line) => line.includes('"list"'))).toEqual([]);
+        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="inner"\] "Aleksandra" is 0 px wide/));
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Files 26.11.: a column of min 440 px on a 390 px phone carried its rows (and their dates) past the screen.
+  test(
+    "red: a row past its column and a row's date past the row; green: a row that fits",
+    async () => {
+      const wide = await open(
+        columns(
+          '<div style="min-width:900px"><div class="k2-row" data-k2-part="Row" style="display:flex;justify-content:space-between"><span>Angebote</span><span>25.11.2026</span></div></div>' +
+            '<div class="k2-row" data-k2-part="Row" style="display:flex;position:relative"><span>Fotos</span><span style="position:absolute;right:-60px">27.11.2026</span></div>',
+        ),
+        { width: 900 },
+      );
+      const fine = await open(columns('<div class="k2-row" data-k2-part="Row"><span>Angebote</span></div>'), { width: 900 });
+      try {
+        const found = (await measureV2Layout(wide)).past;
+        expect(found).toContainEqual(expect.stringMatching(/^row "Angebote.*" runs [\d.]+ px past the edge of its column/));
+        expect(found).toContainEqual(expect.stringMatching(/"27\.11\.2026" stands [\d.]+ px past its row/));
+        expect((await measureV2Layout(fine)).past).toEqual([]);
+      } finally {
+        await wide.close();
+        await fine.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "free drawing in Canvas is never measured",
     async () => {

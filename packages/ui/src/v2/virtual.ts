@@ -31,9 +31,21 @@ export type VirtualWindow<T> = {
   after: Accessor<number>;
   /** Hands the element of the list (the scroller is found from it) once it is in the page. */
   mount: (list: HTMLElement) => void;
-  /** Measures a shown item's element while it is in the page. */
+  /** Measures a shown item's element while it is in the page; call it while the row is made, it lets go with the row. */
   observe: (node: Element, item: T) => void;
+  /**
+   * Brings the item with this key into view and gives back its element; null for a key the list does not hold. It
+   * renders the window at once, so call it from an event or `onMount`: inside a reactive batch or effect the rows of
+   * the new window are not in the page yet and it gives back null.
+   */
+  reveal: (key: string) => HTMLElement | null;
 };
+
+/** What a person reaches with Tab inside a row. */
+/** How far Tab looks past entries without a stop (group heads) for the next one. */
+const NEIGHBOURS = 20;
+
+const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /** What scrolls the list: a large table's own scroller, else the column's `.k2-scroll`, else the nearest scroller, else the page. */
 const scrollerOf = (element: HTMLElement): HTMLElement | null => {
@@ -46,7 +58,12 @@ const scrollerOf = (element: HTMLElement): HTMLElement | null => {
   return null;
 };
 
-export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>; key: (item: T) => string }): VirtualWindow<T> => {
+export const createVirtualWindow = <T>(options: {
+  items: Accessor<readonly T[]>;
+  key: (item: T) => string;
+  /** An item that always stays in the page, such as the current entry of a sidebar. */
+  pinned?: Accessor<string | undefined>;
+}): VirtualWindow<T> => {
   let keys: string[] = [];
   let sizes = new Float64Array(0);
   let offsets = new Float64Array(1);
@@ -104,10 +121,13 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
     const { start: from, end: to } = range();
     const start = Math.min(from, items.length);
     const end = Math.min(Math.max(to, start), items.length);
-    const focus = focused();
-    const focusIndex = focus === undefined ? -1 : (position.get(focus) ?? -1);
-    const above = focusIndex >= 0 && focusIndex < start ? [focusIndex] : [];
-    const below = focusIndex >= end ? [focusIndex] : [];
+    // the focused row and the pinned one (the current page of a sidebar) stay in the page, parked beside the window
+    const parked = [...new Set([focused(), options.pinned?.()])]
+      .map((key) => (key === undefined ? -1 : (position.get(key) ?? -1)))
+      .filter((index) => index >= 0 && (index < start || index >= end))
+      .sort((a, b) => a - b);
+    const above = parked.filter((index) => index < start);
+    const below = parked.filter((index) => index >= end);
     const shown = [...above.map((index) => items[index]!), ...items.slice(start, end), ...below.map((index) => items[index]!)];
     const parkedSize = (indexes: number[]) => indexes.reduce((sum, index) => sum + (sizes[index] ?? 0), 0);
     return {
@@ -119,10 +139,14 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
 
   let update: () => void = () => {};
   // Rows made before the list is mounted are measured once it is.
-  const pending: [Element, T][] = [];
+  const pending = new Map<Element, T>();
   let measureNode: (node: Element, item: T) => void = (node, item) => {
-    pending.push([node, item]);
+    pending.set(node, item);
   };
+  let forgetNode: (node: Element) => void = (node) => {
+    pending.delete(node);
+  };
+  let reveal: (key: string) => HTMLElement | null = () => null;
 
   const mount = (list: HTMLElement) => {
     if (isServer) return;
@@ -148,14 +172,22 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
     const view = scroller ?? document.documentElement;
     let frame = 0;
     const nodes = new WeakMap<Element, string>();
+    const gap = Number.parseFloat(getComputedStyle(list).rowGap) || 0;
+    const byKey = new Map<string, Element>();
+    /** How far the column is scrolled into the list, in px. */
+    const scrolledIn = () => -(list.getBoundingClientRect().top - (scroller ? scroller.getBoundingClientRect().top : 0));
+    // The place someone reads: the item at the top of the column and how far into it. Heights that change (a new
+    // width wraps the rows anew) keep it where it is, also where the browser has no scroll anchoring (Safari).
+    let anchor: { key: string; offset: number } | null = null;
     update = () => {
       frame = 0;
-      const viewBox = scroller ? scroller.getBoundingClientRect() : { top: 0, height: window.innerHeight };
-      const listTop = list.getBoundingClientRect().top - viewBox.top;
-      const top = -listTop;
+      const top = scrolledIn();
       const height = scroller ? scroller.clientHeight : window.innerHeight;
       const count = keys.length;
       if (count === 0) return setRange({ start: 0, end: 0 });
+      const first = indexAtOffset(offsets, count, Math.max(0, top));
+      anchor =
+        (scroller ? scroller.scrollTop : window.scrollY) > 0 && top > 0 ? { key: keys[first]!, offset: top - offsetOf(first) } : null;
       const start = indexAtOffset(offsets, count, Math.max(0, top - OVERSCAN));
       const end = Math.min(count, indexAtOffset(offsets, count, Math.max(0, top + height + OVERSCAN)) + 1);
       setRange({ start, end });
@@ -163,13 +195,23 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
     const later = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
+    /** Puts the read place back where it was after heights changed. */
+    const keepAnchor = () => {
+      const index = anchor ? position.get(anchor.key) : undefined;
+      if (!anchor || index === undefined) return;
+      const moved = offsetOf(index) + anchor.offset - scrolledIn();
+      if (Math.abs(moved) < 1) return;
+      if (scroller) scroller.scrollTop += moved;
+      else window.scrollBy(0, moved);
+    };
     // Heights of shown rows; a new height also moves the estimate of the rows not yet shown.
     const sizesSeen = new ResizeObserver((entries) => {
       let changed = false;
       for (const entry of entries) {
         const key = nodes.get(entry.target);
         if (key === undefined || !position.has(key) || !entry.target.isConnected) continue;
-        const size = entry.borderBoxSize[0]?.blockSize ?? entry.target.getBoundingClientRect().height;
+        // an item takes its height and the gap after it (the entries of a sidebar stand 4 px apart)
+        const size = (entry.borderBoxSize[0]?.blockSize ?? entry.target.getBoundingClientRect().height) + gap;
         const before = known.get(key);
         if (size <= 0 || (before !== undefined && Math.abs(before - size) <= 0.5)) continue;
         known.set(key, size);
@@ -179,14 +221,66 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
       if (!changed) return;
       fill();
       setLayout((value) => value + 1);
+      keepAnchor();
       later();
     });
     measureNode = (node, item) => {
       const key = options.key(item);
       nodes.set(node, key);
+      byKey.set(key, node);
       sizesSeen.observe(node);
     };
-    for (const [node, item] of pending.splice(0)) measureNode(node, item);
+    forgetNode = (node) => {
+      sizesSeen.unobserve(node);
+      const key = nodes.get(node);
+      if (key !== undefined && byKey.get(key) === node) byKey.delete(key);
+      nodes.delete(node);
+    };
+    for (const [node, item] of pending) measureNode(node, item);
+    pending.clear();
+    // Brings an item into view (the least scroll that shows it whole) and renders the window there at once.
+    reveal = (key) => {
+      const index = position.get(key);
+      if (index === undefined) return null;
+      const top = scrolledIn();
+      const height = scroller ? scroller.clientHeight : window.innerHeight;
+      const from = offsetOf(index);
+      const to = offsetOf(index + 1);
+      const moved = from < top ? from - top : to > top + height ? to - (top + height) : 0;
+      if (moved !== 0) {
+        if (scroller) scroller.scrollTop += moved;
+        else window.scrollBy(0, moved);
+      }
+      update();
+      const node = byKey.get(key);
+      return node instanceof HTMLElement ? node : null;
+    };
+    // Tab out of a row that scrolled away (it stays in the page, parked beside the window) goes to the row after it in
+    // the list, or the one before it with Shift, as if every row were in the page.
+    const tabOut = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey || !(event.target instanceof Element)) return;
+      let row: Element | null = event.target;
+      while (row && row.parentElement !== list) row = row.parentElement;
+      const key = row ? nodes.get(row) : undefined;
+      const index = key === undefined ? undefined : position.get(key);
+      const { start, end } = range();
+      if (!row || index === undefined || (index >= start && index < end)) return;
+      const stops = Array.from(row.querySelectorAll(TABBABLE));
+      if (stops.length > 0 && stops.at(event.shiftKey ? 0 : -1) !== event.target) return;
+      // the next entry that holds a stop: a group head, or a group row without a control, is passed over
+      const step = event.shiftKey ? -1 : 1;
+      for (let at = index + step, tried = 0; at >= 0 && at < keys.length && tried < NEIGHBOURS; at += step, tried++) {
+        const target = reveal(keys[at]!);
+        if (!target) continue;
+        const held = target.matches(TABBABLE) ? [target] : Array.from(target.querySelectorAll<HTMLElement>(TABBABLE));
+        const stop = event.shiftKey ? held.at(-1) : held[0];
+        if (!stop) continue;
+        event.preventDefault();
+        stop.focus();
+        return;
+      }
+    };
+    list.addEventListener("keydown", tabOut);
     const resized = new ResizeObserver(later);
     resized.observe(view);
     const target: HTMLElement | Window = scroller ?? window;
@@ -212,6 +306,7 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
       target.removeEventListener("scroll", later);
       list.removeEventListener("focusin", focusIn);
       list.removeEventListener("focusout", focusOut);
+      list.removeEventListener("keydown", tabOut);
     });
   };
 
@@ -237,7 +332,11 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
     after: () => placed().after,
     mount,
     observe: (node, item) => {
-      if (!isServer) measureNode(node, item);
+      if (isServer) return;
+      measureNode(node, item);
+      // made with its row, so it lets go when the row leaves the page
+      onCleanup(() => forgetNode(node));
     },
+    reveal: (key) => reveal(key),
   };
 };

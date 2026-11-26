@@ -45,14 +45,23 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
     const box = parent.getBoundingClientRect();
     if (box.height <= 0) continue;
     // A box of a few px holds no word of 2 letters or more: its text is gone (a sender of width 0 beside many marks).
+    // The box that shows it counts: its own, or an ancestor that clips sideways and was pressed to a few px itself.
     const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
-    if ([...words].length >= 2 && box.width < Math.min(4, fontSize / 3)) {
+    const least = Math.min(4, fontSize / 3);
+    let shownWidth = box.width;
+    for (let ancestor = parent.parentElement; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (style.display === "contents" || (style.overflowX !== "hidden" && style.overflowX !== "clip")) continue;
+      shownWidth = Math.min(shownWidth, ancestor.getBoundingClientRect().width);
+    }
+    if ([...words].length >= 2 && shownWidth < least) {
       squeezed.push(
-        `${name(parent)} "${labelOf(parent)}" is ${round(box.width)} px wide; its text is gone, give it room or cut it with "…"`,
+        `${name(parent)} "${labelOf(parent)}" is ${round(shownWidth)} px wide; its text is gone, give it room or cut it with "…"`,
       );
       continue;
     }
-    // One letter per line: three or more line boxes, none wider than about a letter and a half.
+    // One letter per line: three or more line boxes, none wider than about a letter and a half, and more lines than
+    // words (a list of short lines broken on purpose, "1.", "2.", "3.", is no finding).
     const range = document.createRange();
     range.selectNodeContents(node);
     const rows = new Map<number, number>();
@@ -62,10 +71,44 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
       rows.set(top, (rows.get(top) ?? 0) + rect.width);
     }
     const widths = [...rows.values()];
-    if (widths.length >= 3 && [...words].length >= 3 && Math.max(...widths) <= fontSize * 1.6)
+    const wordCount = words.split(/\s+/).length;
+    if (widths.length >= 3 && widths.length > wordCount && [...words].length >= 3 && Math.max(...widths) <= fontSize * 1.6)
       squeezed.push(
         `${name(parent)} "${labelOf(parent)}" stands one letter per line (${widths.length} lines of at most ${round(Math.max(...widths))} px); keep it on one line`,
       );
   }
   return { squeezed };
+}
+
+/**
+ * Rows past their edge (Files 26.11.): a row that runs past its column or the screen, and a part of a row (its date,
+ * its marks) that stands past the row. A wide table that scrolls sideways is no finding. Runs in the page: closes
+ * over nothing.
+ */
+export function measurePastInPage(options: SqueezedOptions): { past: string[] } {
+  const past: string[] = [];
+  const root = document.querySelector(options.root);
+  if (!root) return { past };
+  const round = (value: number) => Math.round(value * 100) / 100;
+  const labelOf = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+  const screen = document.documentElement.clientWidth;
+  for (const row of Array.from(root.querySelectorAll('[data-k2-part="Row"]'))) {
+    if (row.closest(options.skip) || row.closest(".k2-table-scroll")) continue;
+    if (!row.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+    const box = row.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) continue;
+    const column = row.parentElement?.closest("[data-k2-column]")?.getBoundingClientRect();
+    const edge = Math.min(screen, column ? column.right : Number.POSITIVE_INFINITY);
+    if (box.right > edge + 0.5) {
+      past.push(`row "${labelOf(row)}" runs ${round(box.right - edge)} px past the edge of its column; it fits its column`);
+      continue;
+    }
+    for (const part of Array.from(row.children)) {
+      if (part.matches(".k2-row-open")) continue;
+      const own = part.getBoundingClientRect();
+      if (own.width > 0 && own.right > box.right + 0.5)
+        past.push(`${part.className} "${labelOf(part)}" stands ${round(own.right - box.right)} px past its row; it stays inside`);
+    }
+  }
+  return { past };
 }

@@ -34,7 +34,11 @@ The working surface of an app: one per screen.
   none is open, so nothing moves when it opens. Keep the list's `width`.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
-- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`. In
+  a head with `Tabs` the open view never gives way: buttons with words that
+  `keep` fold into the head's own "…" (each runs as its button would), and
+  the open tab keeps its whole name. A column with a `width` fills the
+  screen; its minimum is the desktop's.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape.
@@ -179,7 +183,23 @@ are in the page, the server renders the first rows (no shift on hydration),
 the focused row stays while it scrolls away, and each row says where it
 stands (`aria-posinset`, `aria-setsize`). "Weitere laden" stays a `Band`
 with a text `Button` after the list. Write rows out only for a few fixed
-ones.
+ones. A row that is not in the page now (the row to give the focus back
+to after a detail closes) is reached through `controller`: its `reveal(key)`
+brings the row into view and gives it back. Tab out of a focused row that
+scrolled away goes to its neighbour in the list. `group(item) => { key,
+label, count? }` puts a head before the first item of each group (a day):
+its words in 600 and a quiet count, no band and no line; heads are no rows
+and do not count as one.
+
+What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
+finds only rows in the page, so a list people search in needs its own
+search; Shift+Tab from below the list (a foot) lands on the last row in the
+page, not the last item; a group head is no entry of the list for a screen
+reader (as the group rows of a table on the phone), its rows say their place
+in the whole list; a `Nav` group that grows past 40 entries is made anew
+once (the focus in it is lost then), and its entries are known by their
+position, so an entry put in above a parked one moves the parking to its
+neighbour.
 
 A `Row`:
 
@@ -388,6 +408,8 @@ lines instead of cutting a thing.
 ## Components
 
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+  The groups scroll between the title and the foot; a group of more than 40
+  entries keeps only the entries in view in the page.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
