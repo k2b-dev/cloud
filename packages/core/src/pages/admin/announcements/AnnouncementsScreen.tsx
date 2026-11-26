@@ -137,7 +137,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
       nav={props.nav}
       detail={460}
       detailEmpty={{ icon: "speakerphone", text: t().noneOpen }}
-      primary={newAction}
+      // on the phone the main action floats over the list only; an open entry is a page of its own without it
+      primary={props.open && (creating() || entry()) ? undefined : newAction}
       head={<Bar end={<Button variant="primary" icon="plus" label={t().newAnnouncement} href={newAction.href} />} />}
     >
       <Pane.Split>

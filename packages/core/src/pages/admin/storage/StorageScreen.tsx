@@ -616,7 +616,8 @@ export default function StorageScreen(props: StorageScreenProps) {
       nav={props.nav}
       detail={480}
       detailEmpty={{ icon: "database", text: t().noneOpen }}
-      primary={add}
+      // on the phone the main action floats over the list only; an open entry is a page of its own without it
+      primary={props.items !== null && props.selection.kind !== "none" ? undefined : add}
       head={
         <Bar
           end={

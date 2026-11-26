@@ -87,6 +87,54 @@ export const outgoingMailStart = () => ({
   retention: { contentDays: 30, recordDays: 365 },
 });
 
+/**
+ * The worst realistic data (break-ui): a long company profile with an unbreakable sender and relay host, a one-letter
+ * profile, a failing bounce mailbox, long and emoji subjects, a mail to many recipients and a long refusal, in a log
+ * of 60 entries.
+ */
+export const outgoingMailWorst = () => {
+  const start = outgoingMailStart();
+  const subjects = [
+    "Ihre Rechnung RE-2026-000114 über 12.345.678,90 € für Wartungsarbeiten Werkstatt Nord-Ost, Halle 7",
+    "🎉 Einladung: Jahresabschluss 2026",
+    "Ö",
+    "Λογαριασμός Νοεμβρίου",
+  ];
+  return {
+    ...start,
+    profiles: [
+      ...start.profiles,
+      profile("buchhaltung-werkstatt-nord-ost", "Rechnungsversand Buchhaltung Werkstatt Nord-Ost GmbH & Co. KG", {
+        fromAddress: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+        fromName: "Buchhaltung Werkstatt Nord-Ost GmbH & Co. KG",
+        smtpHost: "smtp-relay.eu-central-1.mailservice.northwind-industries-holdings.example.com",
+        smtpPort: 587,
+        dailyRecipientLimit: 1_000_000,
+        bounces: { checkedAt: "2026-11-24T07:55:00.000Z", error: "open_failed" },
+      }),
+      profile("o", "Ö"),
+    ],
+    apps: [...start.apps, app("zeiterfassung-und-abwesenheitsplanung", "Zeiterfassung und Abwesenheitsplanung Werkstatt Nord-Ost")],
+    messages: Array.from({ length: 60 }, (_, index) =>
+      record(`cccccccc-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, subjects[index % subjects.length]!, {
+        appId: index % 3 === 0 ? "zeiterfassung-und-abwesenheitsplanung" : "invoices",
+        profile: index % 2 ? "buchhaltung-werkstatt-nord-ost" : "system",
+        to:
+          index === 1
+            ? Array.from({ length: 48 }, (_, n) => `empfaenger.${n + 1}@northwind-industries-holdings.example.com`)
+            : ["bartholomew.fitzgerald@northwind-industries-holdings.example.com"],
+        status: index % 7 === 3 ? "failed" : index % 11 === 5 ? "bounced" : index % 5 === 4 ? "queued" : "sent",
+        ...(index % 7 === 3
+          ? {
+              error:
+                "554 5.7.1 Message rejected: sender address bartholomew.fitzgerald@northwind-industries-holdings.example.com is not authorized for this relay",
+            }
+          : {}),
+      }),
+    ),
+  };
+};
+
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "demo-admin",
@@ -190,6 +238,7 @@ export async function outgoingMailBrowserFixture() {
   };
   const localeOf = (c: Context<{ Variables: Variables }>) => (new URL(c.req.url).searchParams.get("locale") === "en" ? "en" : "de");
   pages.use("*", async (c, next) => {
+    if (c.req.query("state") === "worst") data = outgoingMailWorst();
     const locale = localeOf(c);
     c.req.raw.headers.set("x-cloud-locale", locale);
     c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
@@ -209,7 +258,11 @@ export async function outgoingMailBrowserFixture() {
   pages.get("/admin/outgoing-mail", (c) => {
     const props = {
       nav: nav("profiles"),
-      profiles: data.profiles.map((item) => ({ ...item, bounceText: "Bounce check off", bounceFailed: false })),
+      profiles: data.profiles.map((item) => ({
+        ...item,
+        bounceText: item.bounces?.error ? "Bounce mailbox could not be opened" : "Bounce check off",
+        bounceFailed: Boolean(item.bounces?.error),
+      })),
       open: c.req.query("profile") ?? null,
     };
     return respond(c, "profiles", props, () => createComponent(ProfilesScreen, props));

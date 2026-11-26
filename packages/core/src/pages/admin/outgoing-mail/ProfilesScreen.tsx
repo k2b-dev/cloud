@@ -2,23 +2,7 @@ import type { AdminMailProfile } from "@k2b/cloud/contracts";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import {
-  Bar,
-  Button,
-  Chip,
-  Dialog,
-  Field,
-  Inline,
-  Input,
-  Menu,
-  type NavProps,
-  Notice,
-  Pane,
-  StatusRow,
-  Table,
-  Text,
-  useToast,
-} from "@k2b/ui/v2";
+import { Bar, Button, Chip, Dialog, Field, Input, Menu, type NavProps, Notice, Pane, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { outgoingMailMessages } from "./messages";
 import ProfileForm from "./ProfileForm";
@@ -137,7 +121,8 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
       nav={props.nav}
       detail={480}
       detailEmpty={{ icon: "mail-cog", text: t().noneOpen }}
-      primary={newAction}
+      // on the phone the main action floats over the list only; an open entry is a page of its own without it
+      primary={creating() || opened() ? undefined : newAction}
       head={<Bar end={<Button variant="primary" icon="plus" label={t().addProfile} href={newAction.href} />} />}
     >
       <Pane.Split>
@@ -168,18 +153,13 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
                 title: t().profile,
                 width: { min: 180, default: 220 },
                 mark: () => ({ icon: "mail-cog" }),
-                cell: (row) => (
-                  <Inline>
-                    <Text>{row.name}</Text>
-                    <Show when={row.isDefault}>
-                      <Chip>{t().defaultBadge}</Chip>
-                    </Show>
-                  </Inline>
-                ),
+                // a plain value, so a long name is cut with "…" and says itself on hover
+                cell: (row) => (row.isDefault ? `${row.name} · ${t().defaultBadge}` : row.name),
               },
               { title: t().sender, width: { min: 180, default: 240 }, cell: (row) => row.fromAddress },
               {
                 title: t().limits,
+                width: { min: 150, default: 170 },
                 drop: true,
                 cell: (row) =>
                   [
@@ -189,6 +169,7 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
               },
               {
                 title: t().state,
+                width: { min: 180, default: 200 },
                 drop: true,
                 cell: (row) => (row.bounceFailed ? <Chip status="bad">{t().bounceProblem}</Chip> : ""),
               },

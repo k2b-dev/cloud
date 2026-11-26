@@ -73,6 +73,9 @@ export type LogScreenProps = {
 export default function LogScreen(props: LogScreenProps) {
   const locale = useLocale();
   const t = () => outgoingMailMessages.resolve([locale()]).t;
+  /** The first recipients and "+n" for the rest, so 48 recipients never make a wall of addresses. */
+  const recipientsShort = (to: readonly string[], shown = 1) =>
+    `${to.slice(0, shown).join(", ")}${to.length > shown ? ` ${t().moreRecipients({ count: to.length - shown })}` : ""}`;
   const toast = useToast();
   const query = createMemo(() => logQuery(locale(), props.apps));
   const [state, setState] = createSignal(props.state);
@@ -199,7 +202,7 @@ export default function LogScreen(props: LogScreenProps) {
   const facts = (r: AdminMailRecord) => [
     { label: t().app, value: appName(r.appId) },
     { label: t().profile, value: r.profile, mono: true },
-    { label: t().recipients, value: r.to.join(", ") },
+    { label: t().recipients, value: recipientsShort(r.to, 3) },
     { label: t().created, value: time(r.createdAt) },
     ...(r.sentAt ? [{ label: t().sentAt, value: time(r.sentAt) }] : []),
     { label: t().attempts, value: String(r.attempts) },
@@ -241,7 +244,9 @@ export default function LogScreen(props: LogScreenProps) {
           status={
             <>
               <FilterBar query={query()} state={state()} onChange={change} />
-              <StatusRow lead={t().logDescription(retention())} loading={loading()} />
+              {/* k2b-ui gap: the hero band comes with DP; until then the log's size is the statement, the retention is
+                  the Retention dialog's to tell */}
+              <StatusRow lead={t().mailCount({ count: page().total ?? page().items.length })} loading={loading()} />
             </>
           }
         >
@@ -265,22 +270,14 @@ export default function LogScreen(props: LogScreenProps) {
             columns={[
               {
                 title: t().message,
-                width: { min: 180, default: 220 },
-                cell: (row) => ({
-                  lines: [
-                    row.subject,
-                    `${row.to[0] ?? ""}${row.to.length > 1 ? ` ${t().moreRecipients({ count: row.to.length - 1 })}` : ""}`,
-                  ],
-                }),
+                width: { min: 160, default: 200 },
+                // one line per row (identity rule 4): the subject; recipients, app and profile have their own place
+                cell: (row) => row.subject,
               },
-              {
-                title: t().app,
-                width: { min: 100, default: 110 },
-                drop: true,
-                cell: (row) => ({ lines: [appName(row.appId), row.profile] }),
-              },
-              { title: t().created, width: { min: 120, default: 130 }, drop: true, cell: (row) => time(row.createdAt) },
-              { title: t().statusLabel, cell: (row) => <MailChip status={row.status} /> },
+              // three columns fit beside an open message at 1024; recipients, app and profile stand in its facts
+              // a date is never cut: its column is as wide as "24.11.2026, 09:00"
+              { title: t().created, width: { min: 140, default: 140 }, drop: true, cell: (row) => time(row.createdAt) },
+              { title: t().statusLabel, width: { min: 120, default: 130 }, cell: (row) => <MailChip status={row.status} /> },
             ]}
           />
           <Show when={page().nextCursor}>

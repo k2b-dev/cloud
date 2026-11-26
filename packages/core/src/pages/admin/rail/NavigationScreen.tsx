@@ -167,7 +167,8 @@ export default function NavigationScreen(props: NavigationScreenProps) {
       nav={props.nav}
       detail={460}
       detailEmpty={{ icon: "layout-sidebar", text: t().noneOpen }}
-      primary={newAction}
+      // on the phone the main action floats over the list only; an open entry is a page of its own without it
+      primary={entry() ? undefined : newAction}
       head={<Bar end={<Button variant="primary" icon="plus" label={t().newShortcut} href={newAction.href} />} />}
     >
       <Pane.Split>
