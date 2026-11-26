@@ -4692,3 +4692,61 @@
     background: var(--k2-surface);
   }
 }
+
+/* ── Only, InstallGuide: what a device or a window gets of its own ─────────────────────────────────────────────── */
+
+/* Content for one kind of device or window: picked by the stylesheet from the server's page on (iPadOS Safari reports
+   a Mac, so its touch steps come from the pointer, not from the user agent). Elsewhere it is not in the layout. */
+.k2-ui .k2-only {
+  display: contents;
+}
+.k2-ui .k2-only[data-when="installed"],
+.k2-ui .k2-only[data-when="touch"] {
+  display: none;
+}
+@media (display-mode: standalone) {
+  .k2-ui .k2-only[data-when="installed"] {
+    display: contents;
+  }
+  .k2-ui .k2-only[data-when="browser"] {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .k2-ui .k2-only[data-when="touch"] {
+    display: contents;
+  }
+  .k2-ui .k2-only[data-when="pointer"] {
+    display: none;
+  }
+}
+
+/* The guide: its parts one below the other, a button as wide as its words. The steps are rows without a line of their
+   own between them; the list is a list for assistive technology. */
+.k2-ui .k2-install,
+.k2-ui .k2-install-variant {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.k2-ui .k2-install .k2-btn {
+  justify-self: start;
+}
+.k2-ui .k2-install-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* The steps and the browser's own dialog in one place, as tall as the taller: the one that applies shows, the other
+   keeps its room without being seen, reached or read out, so nothing moves when the browser offers its dialog. */
+.k2-ui .k2-install-place {
+  display: grid;
+}
+.k2-ui .k2-install-place > .k2-install-variant {
+  grid-area: 1 / 1;
+  align-content: start;
+}
+.k2-ui .k2-install-place[data-shows="steps"] > [data-variant="prompt"],
+.k2-ui .k2-install-place[data-shows="prompt"] > [data-variant="steps"] {
+  visibility: hidden;
+}

@@ -10,6 +10,12 @@
  *   enforce this.
  */
 
+export {
+  createInstallPrompt,
+  type InstallationPlatform,
+  type InstallPrompt,
+  installationPlatform,
+} from "../feedback/install";
 export { NoticeStack, type NoticeStackProps, TabBar, type TabBarItem, type TabBarProps } from "./app-frame";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
@@ -82,6 +88,7 @@ export {
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+export { InstallGuide, type InstallGuideProps, Only, type OnlyProps, serverInstall } from "./install-guide";
 // Layer 1: the primitives.
 export {
   Band,
