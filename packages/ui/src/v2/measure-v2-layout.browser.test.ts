@@ -718,6 +718,31 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // Files 26.11.: a column of min 440 px on a 390 px phone carried its rows (and their dates) past the screen.
+  test(
+    "red: a row past its column and a row's date past the row; green: a row that fits",
+    async () => {
+      const wide = await open(
+        columns(
+          '<div style="min-width:900px"><div class="k2-row" data-k2-part="Row" style="display:flex;justify-content:space-between"><span>Angebote</span><span>25.11.2026</span></div></div>' +
+            '<div class="k2-row" data-k2-part="Row" style="display:flex;position:relative"><span>Fotos</span><span style="position:absolute;right:-60px">27.11.2026</span></div>',
+        ),
+        { width: 900 },
+      );
+      const fine = await open(columns('<div class="k2-row" data-k2-part="Row"><span>Angebote</span></div>'), { width: 900 });
+      try {
+        const found = (await measureV2Layout(wide)).past;
+        expect(found).toContainEqual(expect.stringMatching(/^row "Angebote.*" runs [\d.]+ px past the edge of its column/));
+        expect(found).toContainEqual(expect.stringMatching(/"27\.11\.2026" stands [\d.]+ px past its row/));
+        expect((await measureV2Layout(fine)).past).toEqual([]);
+      } finally {
+        await wide.close();
+        await fine.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "free drawing in Canvas is never measured",
     async () => {
