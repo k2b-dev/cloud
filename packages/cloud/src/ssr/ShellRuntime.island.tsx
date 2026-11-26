@@ -6,12 +6,11 @@ import {
   installInputModeController,
   installPageTitleController,
   keyboardPlatform,
-  serializeAppWorkspaceLayoutState,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
-import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
+import { readAppWorkspaceLayoutCookie, writeAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
 import { installAppAccessRecovery } from "../browser/app-access-recovery";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
@@ -251,9 +250,7 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         installAppWorkspaceController({
           readState: () => readAppWorkspaceLayoutCookie(document.cookie, appId),
           writeState: (state) => {
-            if (!appId) return;
-            const secure = window.location.protocol === "https:" ? "; Secure" : "";
-            document.cookie = `${appWorkspaceCookieName(appId)}=${serializeAppWorkspaceLayoutState(state)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+            if (appId) writeAppWorkspaceLayoutCookie(appId, state);
           },
         });
       let dispose = install();

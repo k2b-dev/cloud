@@ -11,6 +11,7 @@ import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { popover as popoverPrimitive } from "@ui-sdk/core/popover";
 import { type JSX, onCleanup } from "solid-js";
 import { type PartProps, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { bindSlot } from "./bind";
 import { useBehaviorMessages } from "./messages";
 
 export type OverlayOptions = {
@@ -134,7 +135,10 @@ export function useDialog(options: () => DialogOptions = () => ({})): DialogPart
   };
 }
 
-export type DrawerParts = Omit<DialogParts, "Description">;
+export type DrawerParts = Omit<DialogParts, "Description"> & {
+  /** Makes a button someone else rendered (the server's) the trigger, without a wrapper; returns the unbinding. */
+  bindTrigger: (element: HTMLElement) => () => void;
+};
 
 /**
  * A modal panel from an edge of the window: focus moves in and stays in, Escape, a press beside it and a swipe back
@@ -160,6 +164,7 @@ export function useDrawer(options: () => DrawerOptions = () => ({})): DrawerPart
     ),
     Title: slotComponent(handle, "title", "h2"),
     Close: slotComponent(handle, "close", "button"),
+    bindTrigger: (element) => bindSlot(handle, "trigger", {}, element),
   };
 }
 

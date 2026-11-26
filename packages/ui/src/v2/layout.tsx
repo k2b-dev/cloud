@@ -1,6 +1,5 @@
 import {
   createContext,
-  createEffect,
   createSignal,
   createUniqueId,
   For,
@@ -13,81 +12,19 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { useDrawer } from "./behavior/overlays";
+import { attachWorkspace, trackGrip } from "./attach";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
-import { ConfirmDialog } from "./overlays";
 import { Empty } from "./states";
-import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * Keeps every grip in the vertical middle of the part of its line that is in sight (mockup resize.js): a line taller
- * than its scroller, such as the one beside a record's info column, would otherwise hold its grip below the window.
- * Until the page is live the grip stands in the middle of the line, at most half a window down (CSS). One frame
- * measures every grip first and then moves them, so several grips cost one layout.
- */
-const grips = new Map<HTMLElement, HTMLElement[]>();
-let frame = 0;
-let sizes: ResizeObserver | undefined;
-
-/** The middle of the part of the grip's line in sight, from the line's top; nothing when the line is out of sight. */
-const middleOf = (grip: HTMLElement, clips: readonly HTMLElement[]) => {
-  const seam = grip.parentElement;
-  if (!seam) return undefined;
-  const line = seam.getBoundingClientRect();
-  let top = Math.max(line.top, 0);
-  let bottom = Math.min(line.bottom, window.innerHeight);
-  for (const clip of clips) {
-    const box = clip.getBoundingClientRect();
-    top = Math.max(top, box.top);
-    bottom = Math.min(bottom, box.bottom);
-  }
-  const half = grip.offsetHeight / 2;
-  // a line out of sight keeps its grip where it was
-  return bottom - top < grip.offsetHeight ? undefined : Math.round((top + bottom) / 2 - line.top - half);
-};
-const placeAll = () => {
-  frame = 0;
-  const places = [...grips].map(([grip, clips]) => [grip, middleOf(grip, clips)] as const);
-  for (const [grip, top] of places) if (top !== undefined) grip.style.setProperty("--k2-grip-top", `${top}px`);
-};
-const schedule = () => {
-  frame ||= requestAnimationFrame(placeAll);
-};
-
+/** A grip an island renders stays in the middle of its line in sight; the server's come from `attachWorkspace`. */
 const centerGrip = (grip: HTMLElement) => {
-  onMount(() => {
-    const seam = grip.parentElement;
-    // the boxes that clip the line: every scroller above it (they stay while the grip lives)
-    const clips: HTMLElement[] = [];
-    for (let up = seam?.parentElement; up; up = up.parentElement)
-      if (/^(auto|scroll|hidden|clip)$/.test(getComputedStyle(up).overflowY)) clips.push(up);
-    if (!grips.size) {
-      sizes = new ResizeObserver(schedule);
-      // a scroll anywhere above moves the part in sight; capture hears the scrollers, which do not bubble it
-      document.addEventListener("scroll", schedule, { capture: true, passive: true });
-      window.addEventListener("resize", schedule, { passive: true });
-    }
-    grips.set(grip, clips);
-    if (seam) sizes?.observe(seam);
-    schedule();
-    onCleanup(() => {
-      grips.delete(grip);
-      if (seam) sizes?.unobserve(seam);
-      if (grips.size) return;
-      cancelAnimationFrame(frame);
-      frame = 0;
-      sizes?.disconnect();
-      sizes = undefined;
-      document.removeEventListener("scroll", schedule, { capture: true });
-      window.removeEventListener("resize", schedule);
-    });
-  });
+  onMount(() => onCleanup(trackGrip(grip)));
 };
 
 /**
@@ -123,9 +60,19 @@ export type WorkspaceProps = {
   sidebarWidth?: Width;
   /** The name of the sidebar's grip, such as "Width of the sidebar". */
   sidebarLabel?: string;
+  /**
+   * The sidebar can be hidden on a wide screen: a button at the start of the head and Mod+Alt+S hide and show it.
+   * `attachWorkspace` reports each change (`onSidebarCollapsedChange`) for the page to keep.
+   */
+  collapsible?: boolean;
+  /**
+   * The sidebar starts hidden, as the person left it; read it on the server (a cookie), so the page comes with the
+   * right width. Inside `WorkspaceLayout` it comes from there when not set.
+   */
+  sidebarCollapsed?: boolean;
   /** The head across the main column: a `Bar` (56 px here) with tabs or a path and the actions. */
   head?: JSX.Element;
-  /** The main action; on the phone it floats at the bottom right. */
+  /** The main action; on the phone it floats at the bottom right. `onClick` needs the Workspace in an island. */
   primary?: Action;
   /**
    * A detail opens beside the columns at times (a reader beside a list), and keeps at least this width (`true`:
@@ -145,6 +92,23 @@ export type WorkspaceProps = {
    */
   children: JSX.Element;
 };
+
+/** What the page knows about its workspaces before they render, such as the sidebar a person hid (a cookie). */
+export type WorkspaceLayoutProps = { sidebarCollapsed?: boolean; children: JSX.Element };
+const LayoutContext = createContext<{ sidebarCollapsed?: boolean }>({});
+
+/** Hands every `Workspace` inside it the page's layout, such as whether its sidebar starts hidden. */
+export const WorkspaceLayout = (props: WorkspaceLayoutProps) => (
+  <LayoutContext.Provider
+    value={{
+      get sidebarCollapsed() {
+        return props.sidebarCollapsed;
+      },
+    }}
+  >
+    {props.children}
+  </LayoutContext.Provider>
+);
 
 const sidebarDefault: Width = { min: 200, default: 248 };
 /** What a column without a width keeps at least: the concept's main column, 400 px (as in v2.css). */
@@ -166,16 +130,21 @@ const ColumnsContext = createContext<Columns | undefined>();
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
  * a grip on every line that moves. On the phone the sidebar leaves and columns become pages.
  *
+ * It renders on the server: the frame, its columns, heads and bars are markup, and only what needs the browser loads
+ * script, through `attachWorkspace` (the page's frame entry calls `attachWorkspaces`; a Workspace inside an island
+ * attaches itself). Keep the islands small: a control, a row's actions, a list that updates.
+ *
  * The sidebar stands beside the columns while the workspace holds it at its default width and every column at its
  * minimum, with the lines between them; a detail it declares (`detail`) counts also while it is closed. Where it does
  * not (a tablet, a narrow window), the sidebar is a drawer from the start of the window, opened by a button at the
  * start of the head; picking an entry in it closes it. The stylesheet decides this from the workspace's own width, on
- * the server's page too, so nothing moves when the page comes alive. The drawer holds a second instance of the
- * sidebar, made while it is open: its scroll position and open folds start fresh. The rule is a `<style>` of the
- * workspace; a page whose content security policy allows no inline style keeps the sidebar as a column.
+ * the server's page too, so nothing moves when the page comes alive. The drawer holds the sidebar's own nodes while it
+ * is open, so its scroll position and open folds stay. The rule is a `<style>` of the workspace; a page whose content
+ * security policy allows no inline style keeps the sidebar as a column.
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
+  const layout = useContext(LayoutContext);
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
@@ -203,52 +172,19 @@ export const Workspace = (props: WorkspaceProps) => {
     return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1);
   };
   const id = createUniqueId();
+  const collapsible = () => props.collapsible === true && !!sidebar();
+  const collapsed = () => collapsible() && (props.sidebarCollapsed ?? layout.sidebarCollapsed ?? false);
   // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
   // this workspace's width. It is the one rule here that is made per workspace, since the room is the workspace's own.
   const drawerRule = () =>
     `@media (min-width: 768px) { @container k2-ws-${id} (width < ${room()}px) { ` +
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
-  const [drawerOpen, setDrawerOpen] = createSignal(false);
-  const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-collapse: none; --k2-ws-drawer: 1; } } }`;
   let element: HTMLDivElement | undefined;
-  let toggle: HTMLElement | undefined;
-  let aside: HTMLElement | undefined;
-  let panel: HTMLElement | undefined;
-  // When the window grows while the drawer is open, the sidebar is a column again and the drawer closes. Its button is
-  // gone then, so a focus inside the drawer goes to the column's current entry instead.
-  createEffect(() => {
-    if (!drawerOpen() || !element) return;
-    const sizes = new ResizeObserver(() => {
-      if (!toggle || toggle.getClientRects().length > 0) return;
-      const inside = panel?.contains(document.activeElement) ?? false;
-      setDrawerOpen(false);
-      if (inside)
-        requestAnimationFrame(() => aside?.querySelector<HTMLElement>('[aria-current="page"], a[href], button:not([disabled])')?.focus());
-    });
-    sizes.observe(element);
-    onCleanup(() => sizes.disconnect());
+  // in an island the Workspace is alive itself; on the server's page the frame entry attaches it
+  onMount(() => {
+    if (element) onCleanup(attachWorkspace(element));
   });
-  // Picking an entry (a link, a button that opens no disclosure, menu or dialog) closes the drawer; the page it opens is
-  // what matters.
-  const pick = (event: MouseEvent) => {
-    if (event.target instanceof Element && event.target.closest("a[href], button:not([aria-expanded]):not([aria-haspopup])"))
-      setDrawerOpen(false);
-  };
-  const toggleButton = () => (
-    <drawer.Trigger
-      ref={(button: HTMLElement) => {
-        toggle = button;
-      }}
-      class="k2-btn k2-ws-toggle"
-      data-variant="ghost"
-      data-icon-only=""
-      aria-label={t().showSidebar}
-      title={t().showSidebar}
-    >
-      <Icon name="layout-sidebar" />
-    </drawer.Trigger>
-  );
   return (
     <div
       ref={element}
@@ -256,6 +192,8 @@ export const Workspace = (props: WorkspaceProps) => {
       data-k2-workspace=""
       data-k2-part="Workspace"
       data-k2-ws={id}
+      data-collapsible={collapsible() ? "" : undefined}
+      data-collapsed={collapsed() ? "" : undefined}
       style={custom({
         "--k2-ws-side": `${width().default}px`,
         "--k2-ws-side-min": `${width().min}px`,
@@ -263,7 +201,7 @@ export const Workspace = (props: WorkspaceProps) => {
       })}
     >
       <Show when={sidebar()}>
-        <aside ref={aside} class="k2-ws-side" data-k2-column="">
+        <aside id={`${id}-side`} class="k2-ws-side" data-k2-column="">
           {sidebar()}
         </aside>
         <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
@@ -271,7 +209,34 @@ export const Workspace = (props: WorkspaceProps) => {
       <div class="k2-ws-main" data-k2-column="">
         <Show when={head() || sidebar()}>
           <div class="k2-slot" data-slot="head" data-toggle-only={head() ? undefined : ""}>
-            <Show when={sidebar()}>{toggleButton()}</Show>
+            <Show when={sidebar()}>
+              {/* the drawer's button: it shows while the sidebar is a drawer, and `attachWorkspace` binds it */}
+              <button
+                type="button"
+                class="k2-btn k2-ws-toggle"
+                data-variant="ghost"
+                data-icon-only=""
+                aria-label={t().showSidebar}
+                title={t().showSidebar}
+              >
+                <Icon name="layout-sidebar" />
+              </button>
+              <Show when={collapsible()}>
+                <button
+                  type="button"
+                  class="k2-btn k2-ws-collapse"
+                  data-variant="ghost"
+                  data-icon-only=""
+                  aria-controls={`${id}-side`}
+                  aria-expanded={collapsed() ? "false" : "true"}
+                  aria-keyshortcuts="Control+Alt+S Meta+Alt+S"
+                  aria-label={collapsed() ? t().showSidebar : t().hideSidebar}
+                  title={collapsed() ? t().showSidebar : t().hideSidebar}
+                >
+                  <Icon name="layout-sidebar" />
+                </button>
+              </Show>
+            </Show>
             {head()}
           </div>
         </Show>
@@ -279,20 +244,6 @@ export const Workspace = (props: WorkspaceProps) => {
       </div>
       <Show when={sidebar()}>
         <style>{drawerRule()}</style>
-        {/* the sidebar once more, made only while the drawer is open (in the browser, after a press) */}
-        <drawer.Popup
-          ref={(element: HTMLElement) => {
-            panel = element;
-          }}
-          class="k2-drawer"
-          data-k2-part="Drawer"
-          aria-label={t().sidebar}
-          style={custom({ "--k2-drawer-w": `${width().default}px` })}
-          backdrop={{ class: "k2-backdrop" }}
-          onClick={pick}
-        >
-          {props.sidebar}
-        </drawer.Popup>
       </Show>
       <Show when={props.primary}>
         {(action) => (
@@ -315,10 +266,6 @@ export const Workspace = (props: WorkspaceProps) => {
           </Dynamic>
         )}
       </Show>
-      {/* the alert dialog that answers `Dialog.confirm`, so every v2 page can ask; it renders only while it asks */}
-      <ConfirmDialog host={() => element} />
-      {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
-      <Toasts />
     </div>
   );
 };

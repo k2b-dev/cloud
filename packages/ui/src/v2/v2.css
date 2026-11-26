@@ -256,6 +256,7 @@
   --k2-ws-side: initial;
   --k2-ws-side-min: initial;
   --k2-ws-toggle: initial;
+  --k2-ws-collapse: initial;
   --k2-ws-drawer: initial;
   --k2-drawer-w: initial;
   --k2-p: initial;
@@ -420,6 +421,37 @@
   position: static;
   margin: calc((var(--k2-h-head) - var(--k2-h-control)) / 2) 0 calc((var(--k2-h-head) - var(--k2-h-control)) / 2)
     calc(var(--k2-edge) - 10px);
+}
+/* The collapse of the sidebar (`collapsible`): on a wide screen a button at the start of the head hides and shows the
+   column; while it is hidden, the column and its line are gone and the head's content stays past the button. The
+   server renders the state, so nothing moves when the page comes alive. */
+.k2-ui .k2-btn.k2-ws-collapse {
+  display: var(--k2-ws-collapse, none);
+  position: absolute;
+  top: calc((var(--k2-h-head) - var(--k2-h-control)) / 2);
+  left: calc(var(--k2-edge) - 10px);
+  z-index: 1;
+}
+.k2-ui .k2-ws-main > [data-slot="head"][data-toggle-only] > .k2-ws-collapse {
+  position: static;
+  margin: calc((var(--k2-h-head) - var(--k2-h-control)) / 2) 0 calc((var(--k2-h-head) - var(--k2-h-control)) / 2)
+    calc(var(--k2-edge) - 10px);
+}
+/* weaker than the workspace's drawer rule, which hides the button again while the sidebar is a drawer */
+.k2-ui :where(.k2-ws[data-collapsible]) > .k2-ws-main > [data-slot="head"] {
+  position: relative;
+  --k2-ws-collapse: inline-flex;
+  --k2-ws-drawer: 1;
+}
+.k2-ui .k2-ws[data-collapsed] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) {
+  display: none;
+}
+/* the phone has no sidebar column to hide */
+@media not all and (min-width: 768px) {
+  .k2-ui :where(.k2-ws[data-collapsible]) > .k2-ws-main > [data-slot="head"] {
+    --k2-ws-collapse: none;
+    --k2-ws-drawer: 0;
+  }
 }
 /* the drawer: the sidebar from the start of the window, as wide as its column, its free corners round */
 .k2-ui .k2-drawer {
@@ -2431,6 +2463,9 @@
 /* the entries of a folding entry stand in the nav's column as if they had no box of their own */
 .k2-ui .k2-nav-fold {
   display: contents;
+}
+.k2-ui .k2-nav-fold[hidden] {
+  display: none;
 }
 .k2-ui .k2-ni:focus-visible {
   outline: none;

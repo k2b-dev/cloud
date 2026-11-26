@@ -10,6 +10,7 @@
  *   enforce this.
  */
 
+export { type AttachOptions, attachWorkspace, attachWorkspaces } from "./attach";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -95,6 +96,8 @@ export {
   Tiles,
   type TilesProps,
   Workspace,
+  WorkspaceLayout,
+  type WorkspaceLayoutProps,
   type WorkspaceProps,
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
