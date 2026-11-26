@@ -3,7 +3,7 @@ import { Empty, Notice, NoticeStack } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { shellMessages } from "../../messages";
 import { watchPairingLink } from "../phone";
-import { signOutOfApp } from "./sign-out";
+import { askToSignOut, signOutOfApp } from "./sign-out";
 
 /** This account may not use the app now: why, in one sentence, and signing out of the app. */
 export default function BlockedScreen(props: { cloud: string }) {
@@ -19,13 +19,9 @@ export default function BlockedScreen(props: { cloud: string }) {
   const signOut = async () => {
     if (signingOut()) return;
     setSigningOut(true);
-    const { confirmWithBack } = await import("./confirm-with-back");
-    const agreed = await confirmWithBack({
-      title: t().signOut,
-      description: t().signOutConfirm({ cloud: props.cloud }),
-      confirm: t().signOut,
-    });
-    const failed = agreed ? await signOutOfApp(t()) : undefined;
+    // a question that cannot load says so; the button works again
+    const agreed = await askToSignOut(t(), props.cloud).catch(() => null);
+    const failed = agreed === null ? t().failed : agreed ? await signOutOfApp(t()) : undefined;
     setProblem(failed);
     if (!agreed || failed) setSigningOut(false);
   };

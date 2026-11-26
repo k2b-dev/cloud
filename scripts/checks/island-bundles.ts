@@ -15,7 +15,8 @@ const budgets = [
   // so Start loads no renewal schema and no sign-out question (the question loads when asked). Measured 2026-11-26 in
   // this build: 307,311 / 304,427 / 108,697 / 368,927 B; about 10 % headroom, rounded up to the next KiB. Built alone,
   // Start is 70 KB; in the app's build about 130 KB of ui-sdk menus, popups and dialogs it never uses ride along,
-  // because `@k2b/ui/v2` is one barrel whose re-exports split builds keep (platform issue, reported).
+  // because `@k2b/ui/v2` is one barrel whose re-exports split builds keep. Lower these to the measured size + 10 % once
+  // #4292 lands.
   { file: "packages/pwa/src/frontend/_components/StartScreen.island.tsx", kib: 331 },
   { file: "packages/pwa/src/frontend/_components/BlockedScreen.island.tsx", kib: 328 },
   { file: "packages/pwa/src/frontend/_components/Unavailable.island.tsx", kib: 117 },

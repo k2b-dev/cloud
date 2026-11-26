@@ -7,7 +7,7 @@ import { Bar, Button, Input, List, Menu, Notice, NoticeStack, Row, Text, useToas
 import { createSignal, onMount, Show } from "solid-js";
 import { shellMessages } from "../../messages";
 import { phoneAuth } from "../phone";
-import { signOutOfApp } from "./sign-out";
+import { askToSignOut, signOutOfApp } from "./sign-out";
 
 export type PhoneSettingsProps = {
   /** The signed-in person, as the page read them. */
@@ -84,14 +84,9 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
   const signOut = async () => {
     if (signingOut()) return;
     setSigningOut(true);
-    // the question loads when it is asked: the page draws without the dialog's code
-    const { confirmWithBack } = await import("./confirm-with-back");
-    const agreed = await confirmWithBack({
-      title: t().signOut,
-      description: t().signOutConfirm({ cloud: props.cloud }),
-      confirm: t().signOut,
-    });
-    const failed = agreed ? await signOutOfApp(t()) : undefined;
+    // a question that cannot load says so; the button works again
+    const agreed = await askToSignOut(t(), props.cloud).catch(() => null);
+    const failed = agreed === null ? t().failed : agreed ? await signOutOfApp(t()) : undefined;
     setProblem(failed);
     if (!agreed || failed) setSigningOut(false);
   };

@@ -41,6 +41,7 @@ const load = async () => {
       BlockedScreen: (await import("./BlockedScreen.island")).default,
       StartScreen: (await import("./StartScreen.island")).default,
       StartParts: (await import("./StartParts")).default,
+      signOut: await import("./sign-out"),
     };
   } finally {
     dom.cleanup();
@@ -495,6 +496,43 @@ else {
       expect(page.dom.document.body.textContent).not.toContain("already connected");
     } finally {
       page.dispose();
+    }
+    const fetch = mockFetch(() => new Response(null, { status: 503 }));
+    page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: `/pwa/?pwa=unavailable#pair=${SECRET}` },
+    );
+    try {
+      expect(page.dom.window.location.href).toBe("http://localhost/pwa/?pwa=unavailable");
+      await Bun.sleep(20);
+      expect(page.dom.document.body.textContent).not.toContain("already connected");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a sign-out question that cannot load says so, and the button works again", async () => {
+    const load = spyOn(modules!.signOut.signOutQuestion, "load").mockRejectedValue(
+      new TypeError("Failed to fetch dynamically imported module"),
+    );
+    const fetch = mockFetch(() => new Response(null, { status: 204 }));
+    const page = mount(() => createComponent(modules!.BlockedScreen, { cloud: "Example Cloud" }), { url: "/pwa/?pwa=blocked" });
+    try {
+      const signOut = () => button(page.dom, "Sign out of the app")!;
+      signOut().click();
+      await waitFor(() => page.dom.document.body.textContent?.includes("That didn't work. Try again.") ?? false, "problem");
+      expect(signOut().disabled).toBe(false);
+      expect(signOut().hasAttribute("aria-busy")).toBe(false);
+      expect(fetch.calls).toEqual([]);
+      // once the question loads again, the same button asks it
+      load.mockRestore();
+      signOut().click();
+      await waitFor(() => page.dom.document.querySelector('[role="alertdialog"]') !== null, "question");
+    } finally {
+      load.mockRestore();
+      page.dispose();
+      fetch.restore();
     }
   });
 }

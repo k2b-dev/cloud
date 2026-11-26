@@ -234,7 +234,13 @@
   },
   "peerDependencies": {
     "hono": "^4.12.25",
+    "playwright": "^1.50.0",
     "solid-js": "^1.9.10",
     "zod": "^4.3.4"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
   }
 }
