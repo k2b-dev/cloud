@@ -232,11 +232,11 @@
   padding-inline: var(--k2-edge);
 }
 /* Text a machine wrote (a stack trace, a log message): monospace, its line breaks and spaces as written, a long line
-   wrapped at any sign; 12/18 so a trace of many lines stays compact. */
+   wrapped at any sign; in the meta role (12/16), so a trace of many lines stays compact. */
 .k2-ui .k2-text[data-mono] {
   font-family: var(--k2-font-mono);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   tab-size: 4;
@@ -1523,7 +1523,8 @@
   vertical-align: middle;
 }
 /* things in one line in a cut cell (a picture and a name): the words give way with "…", not cut through a sign */
-.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)) {
+.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)),
+.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-row-open > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)) {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -2906,6 +2907,21 @@
 }
 .k2-ui .k2-path > b {
   font-weight: 600;
+  /* the last step gives way with "…" in a narrow head (320 px); the steps before it keep their words */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A line of things in a bar flows with the bar: its words and its path give way with "…" there, so nothing runs past
+   the edge of a narrow column (a meta line of a head at 320 px). */
+.k2-ui .k2-bar-start > .k2-inline > :is(.k2-text, .k2-path) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.k2-ui .k2-bar-start > .k2-inline > .k2-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-path > .k2-icon {
   font-size: 14px;
@@ -2961,6 +2977,11 @@
 .k2-ui .k2-status-lead {
   font: var(--k2-t-lead);
   white-space: nowrap;
+  /* in a column of 320 px the statement gives way with "…" before it runs past the edge */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .k2-ui .k2-fact {
   color: var(--k2-muted);
@@ -3177,12 +3198,21 @@
   font: var(--k2-t-lead);
   white-space: nowrap;
 }
+/* one line of words (a symbol, a label, the value): where the head has no room it gives way with "…" like text, never
+   cut through a sign; the whole identifier stands in its tip */
 .k2-ui .k2-record-id {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: block;
   color: var(--k2-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-record-id > .k2-icon {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+.k2-ui .k2-record-id > b + .k2-icon {
+  margin: 0 0 0 4px;
 }
 .k2-ui .k2-record-id > b {
   color: var(--k2-text);

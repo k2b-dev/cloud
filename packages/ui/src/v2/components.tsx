@@ -797,7 +797,8 @@ export const RecordHead = (props: RecordHeadProps) => (
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
     <For each={props.ids}>
       {(id) => (
-        <span class="k2-record-id">
+        // where the head has no room the words give way with "…"; the whole identifier stands in the tip
+        <span class="k2-record-id" title={id.label ? `${id.label} ${id.value}` : id.value}>
           <Show when={id.icon && !id.label}>
             <Icon name={id.icon!} />
           </Show>
