@@ -1,10 +1,12 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { installV2Globals } from "../../test/v2-dom";
 
 if (!isServer)
   test("cancelling the Space chooser returns to the explicit source; a read-only target is not silently replaced", async () => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { prompts } = await import("@k2b/ui");
     const { openCommand } = await import("@k2b/cloud/browser/commands");
     const { createSpaceCommands } = await import("./space-commands");
@@ -40,10 +42,12 @@ if (!isServer)
 if (!isServer)
   test("event invitation Command authorizes the current event and opens a form without a write", async () => {
     const dom = createDomTestHarness();
-    const { dialogCore } = await import("@k2b/ui");
+    installV2Globals(dom);
+    // The form opens as a v2 dialog; here the opening is counted, not drawn.
+    const open = mock(async () => undefined);
+    mock.module("./lib/open-dialog", () => ({ openDialog: open }));
     const { openCommand } = await import("@k2b/cloud/browser/commands");
     const { createSpaceCommands } = await import("./space-commands");
-    const open = spyOn(dialogCore, "open").mockResolvedValue(undefined);
     const originalFetch = globalThis.fetch;
     let denied = false;
     const requests: { url: string; method: string }[] = [];
@@ -78,7 +82,7 @@ if (!isServer)
       expect(requests.filter((request) => !request.url.includes("/queries/")).every((request) => request.method === "GET")).toBe(true);
     } finally {
       dispose();
-      open.mockRestore();
+      mock.restore();
       globalThis.fetch = originalFetch;
       dom.cleanup();
     }

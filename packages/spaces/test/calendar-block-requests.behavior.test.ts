@@ -45,7 +45,9 @@ describe("Spaces calendar block requests", () => {
       }));
       let calendar!: CalendarProps;
       // The route owns block loading; the child only asks for an edge and receives the merged range.
+      // The route counts its first picture with the calendar's own rule; this stand-in counts what it was given.
       mock.module("../src/frontend/[id]/_components/calendar", () => ({
+        countOfRoute: (props: { items: unknown[] }) => props.items.length,
         default: (props: CalendarProps) => {
           calendar = props;
           return dom.document.createTextNode("");
