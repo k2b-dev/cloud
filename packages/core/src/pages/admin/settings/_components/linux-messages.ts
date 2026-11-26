@@ -44,7 +44,7 @@ export const linuxMessages = i18n.define({
       save: "Check and save setup",
       saveDisabled: "Disable identity assignment",
       discard: "Discard changes",
-      saved: "Configuration saved. No accounts were changed.",
+      saved: "Configuration saved; no accounts were changed.",
       invalid:
         "Check the home template, shell and ID range. Use absolute paths without spaces or relative segments; the range must start at 1000 or above.",
       inventory: "Backfill existing accounts",
@@ -67,7 +67,7 @@ export const linuxMessages = i18n.define({
       ready: "Linux attributes missing",
       prepared: "Identity assigned",
       preparedSuccess: ({ count }: { count: number }) =>
-        `Linux attributes assigned to ${count} ${count === 1 ? "account" : "accounts"}. Computer login is not enabled yet.`,
+        `Linux attributes assigned to ${count} ${count === 1 ? "account" : "accounts"}; computer login is not enabled yet.`,
       guest: "Guest — not eligible",
       invalid_name: "Username is not Linux-compatible",
       group_conflict: "A group already uses this name",
@@ -138,7 +138,7 @@ export const linuxMessages = i18n.define({
       save: "Einrichtung prüfen und speichern",
       saveDisabled: "Identitätsvergabe deaktivieren",
       discard: "Änderungen verwerfen",
-      saved: "Konfiguration gespeichert. Es wurden keine Accounts geändert.",
+      saved: "Konfiguration gespeichert; es wurden keine Accounts geändert.",
       invalid:
         "Prüfe Home-Vorlage, Shell und ID-Bereich. Verwende absolute Pfade ohne Leerzeichen oder relative Segmente; der Bereich muss bei mindestens 1000 beginnen.",
       inventory: "Backfill bestehender Accounts",
@@ -161,7 +161,7 @@ export const linuxMessages = i18n.define({
       ready: "Linux-Attribute fehlen",
       prepared: "Identität zugewiesen",
       preparedSuccess: ({ count }) =>
-        `Linux-Attribute für ${count} ${count === 1 ? "Account" : "Accounts"} ergänzt. Die Rechneranmeldung ist noch nicht aktiviert.`,
+        `Linux-Attribute für ${count} ${count === 1 ? "Account" : "Accounts"} ergänzt; die Rechneranmeldung ist noch nicht aktiviert.`,
       guest: "Gast — nicht vorgesehen",
       invalid_name: "Benutzername ist nicht Linux-kompatibel",
       group_conflict: "Eine Gruppe verwendet diesen Namen bereits",

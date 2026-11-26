@@ -27,7 +27,6 @@ import {
 } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import RegistryForm from "../_area/RegistryForm";
-import { adminToasts } from "../_area/toasts";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { readBucket, readStorageAdmin, StorageAdminError, storageAdminApi } from "./client";
 import { type StorageAreaMessages, storageAreaMessages } from "./messages";
@@ -160,8 +159,6 @@ const Usage = (props: { t: StorageAreaMessages; id: string; onLoaded?: (usage: S
 const BucketForm = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket | null; time: (iso: string) => string }) => {
   const t = () => props.t;
   const toast = useToast();
-  const locale = useLocale();
-  const n = () => adminToasts.resolve([locale()]).t;
   const [base, setBase] = createSignal<AdminStorageBucket | null>(props.bucket);
   const [draft, setDraft] = createSignal<Draft>(draftOf(props.bucket));
   const [saving, setSaving] = createSignal(false);
@@ -257,8 +254,8 @@ const BucketForm = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket 
               }),
               t().saveFailed,
             );
-      if (bucket.check.state === "ok") toast(stored === null ? n().addedReachable : n().saved, { status: "ok" });
-      else toast(stored === null ? n().addedTestFailed : n().saved, { status: stored === null ? "bad" : "ok" });
+      if (bucket.check.state === "ok") toast(stored === null ? t().createdOk({ name: bucket.name }) : t().saved, { status: "ok" });
+      else toast(stored === null ? t().createdFailed({ name: bucket.name }) : t().saved, { status: stored === null ? "bad" : "ok" });
       navigateTo(storageBucketHref(bucket.id));
     } catch (failure) {
       fail(failure, t().saveFailed);

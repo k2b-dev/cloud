@@ -34,9 +34,6 @@ export type SignInLocationPhase =
   | { kind: "reconciling" }
   | { kind: "unknown-outcome" };
 
-type Phase<K extends SignInLocationPhase["kind"]> = Extract<SignInLocationPhase, { kind: K }>;
-const isPhase = <K extends SignInLocationPhase["kind"]>(value: SignInLocationPhase, kind: K): value is Phase<K> => value.kind === kind;
-
 const API_CODES = [
   "geoip_request_too_large",
   "geoip_too_large",
@@ -122,10 +119,6 @@ export default function SignInLocations(props: {
 
   const date = (value: string) => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeZone: "UTC" }).format(new Date(value));
   const typeName = (type: GeoIpKind) => (type === "city" ? t().city : t().asn);
-  const current = <K extends SignInLocationPhase["kind"]>(kind: K): Phase<K> | false => {
-    const value = phase();
-    return isPhase(value, kind) ? value : false;
-  };
   const busy = () => ["loading", "uploading", "checking", "resetting", "reconciling"].includes(phase().kind);
   const actionsDisabled = () => busy() || !online() || !status();
   const anyStale = () => status()?.databases.some((database) => database.stale) ?? false;

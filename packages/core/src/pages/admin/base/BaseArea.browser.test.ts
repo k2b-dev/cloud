@@ -181,7 +181,7 @@ test("the PDF test reports in a toast and a failure in place; the legacy setting
   expect(fixture.legacyDeletes()).toBe(0);
   await button("Clean up").click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Clean up", exact: true }).click();
-  await page.getByText("Cleaned up", { exact: true }).waitFor();
+  await page.getByText("2 legacy settings deleted.").waitFor();
   expect(fixture.legacyDeletes()).toBe(1);
   expect(await page.getByText("No legacy settings found.").isVisible()).toBe(true);
 

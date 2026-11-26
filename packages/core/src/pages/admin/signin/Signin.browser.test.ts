@@ -58,7 +58,7 @@ test("a changed Linux setup saves only with the range confirmed as reserved", as
   expect(await page.getByRole("checkbox", { name: "Select eligible accounts on this page" }).count()).toBe(0);
   await page.getByRole("checkbox", { name: "I have reserved this range for Cloud" }).check();
   await save.click();
-  await page.getByRole("status").getByText("Saved", { exact: true }).waitFor();
+  await page.getByText("Configuration saved; no accounts were changed.").waitFor();
   expect(fixture.linuxRequests).toContain("PUT reserved=true");
   expect(errors).toEqual([]);
 }, 30_000);
