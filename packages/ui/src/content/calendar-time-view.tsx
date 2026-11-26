@@ -940,7 +940,8 @@ export const TimeBand = (props: {
         faces={3}
         linkCount
         compact={props.compact}
-        timeLabel={`${view.clock(props.band.start)}–${view.clock(props.band.end)}`}
+        timeLabel={view.clock(props.band.start)}
+        timeEnd={`–${view.clock(props.band.end)}`}
         showLocation={props.showLocation && (size() === "m" || large()) && pixels() >= 64}
         remaining={remaining()}
         checkbox={checked() !== undefined}
@@ -997,20 +998,19 @@ export const TimeMore = (props: {
   const [open, setOpen] = createSignal(false);
   const label = () => messages().calendarMoreEventsAt({ count: props.more.bands.length, time: view.clock(props.more.minute) });
   const top = () => dayTopTerms(view.wake(), props.expanded, props.more.minute);
-  // Pressing the "+n" of an open list closes it as a press outside before the click arrives: that one click leaves it
-  // closed. A click with no press before it, such as a screen reader's, opens it.
-  let pressedAt = 0;
-  let closedAt = Number.NEGATIVE_INFINITY;
-  const toggle = (event: MouseEvent) => {
+  // Pressing the "+n" of an open list closes it as a press outside before the click arrives: that click leaves it
+  // closed. A click with no press before it (a screen reader's, or after Escape closed the list) opens it.
+  let pressedOpen = false;
+  const toggle = () => {
+    const pressed = pressedOpen;
+    pressedOpen = false;
     if (!list || !button) return;
     if (list.matches(":popover-open")) {
       list.hidePopover();
       return;
     }
-    if (event.detail > 0 && closedAt >= pressedAt) {
-      closedAt = Number.NEGATIVE_INFINITY;
-      return;
-    }
+    // the press closed it on its way down: this click leaves it closed
+    if (pressed) return;
     list.showPopover();
     // the "+n" stands at the column's end: the list opens from there towards the days, never past the calendar's edge
     const rect = button.getBoundingClientRect();
@@ -1036,7 +1036,7 @@ export const TimeMore = (props: {
         data-minute={props.stop?.minute}
         onPointerDown={(event) => {
           event.stopPropagation();
-          pressedAt = performance.now();
+          pressedOpen = list?.matches(":popover-open") ?? false;
         }}
         onClick={toggle}
       >
@@ -1045,10 +1045,6 @@ export const TimeMore = (props: {
       <div
         ref={(element) => {
           list = element;
-          // before the click that follows the press: "toggle" only comes after it
-          element.addEventListener("beforetoggle", (event) => {
-            if (event.newState === "closed") closedAt = performance.now();
-          });
         }}
         class="k2b-calendar-popover"
         popover="auto"

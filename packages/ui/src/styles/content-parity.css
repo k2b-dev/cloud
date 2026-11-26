@@ -2529,6 +2529,8 @@
   overflow: hidden;
   white-space: normal;
   hyphens: auto;
+  /* a word shorter than ten letters is never hyphenated: "Sprint-Review" breaks at its own hyphen, not in "Re-view" */
+  hyphenate-limit-chars: 10 4 4;
   overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -2667,6 +2669,28 @@
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   opacity: 1;
+}
+
+/* A band's time in pieces (start, "–end", "· 40 min left"): one line that wraps the pieces that do not fit out of
+   sight, so a narrow band shows the start time alone, or no time at all, and never cuts a time inside its digits, as
+   Apple's does. A zero-width space before the pieces (EventChip) lets even the start time wrap away. */
+.k2b-ui .k2b-calendar-band .k2b-calendar-event__meta[data-pieces] {
+  width: 100%;
+  min-width: 0;
+  height: 1lh;
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.k2b-ui .k2b-calendar-event__meta[data-pieces] > .k2b-calendar-event__piece {
+  display: inline-block;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-calendar-event__meta[data-pieces] > .k2b-calendar-event__remaining {
+  margin-inline-start: 0.25em;
 }
 
 .k2b-ui .k2b-calendar-event__remaining {

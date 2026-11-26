@@ -131,6 +131,19 @@ const bands = (page: Page) =>
               range.selectNodeContents(title);
               return new Set([...range.getClientRects()].filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top))).size <= 1;
             })(),
+          // a time is never cut inside its digits: what does not fit beside the start time drops whole
+          timesWhole: [...band.querySelectorAll<HTMLElement>(".k2b-calendar-event__meta")]
+            .filter((meta) => getComputedStyle(meta).display !== "none" && /\d\d:\d\d/.test(meta.textContent ?? ""))
+            .every((meta) => {
+              const outer = meta.getBoundingClientRect();
+              const pieces = [...meta.children].map((piece) => piece.getBoundingClientRect());
+              return (
+                pieces.length > 0 &&
+                pieces.every(
+                  (piece) => piece.top >= outer.bottom - 0.5 || (piece.left >= outer.left - 0.5 && piece.right <= outer.right + 0.5),
+                )
+              );
+            }),
           // filled in its colour, with a colour edge of 3 px at its start
           filled: getComputedStyle(band).backgroundColor !== "rgb(255, 255, 255)",
           edge: getComputedStyle(band).boxShadow.includes("3px 0px 0px"),
@@ -157,7 +170,8 @@ const cover = (one: Box, other: Box) =>
 for (const view of ["week", "day"] as const)
   for (const width of [1440, 390])
     test(`${view}, ${width} px: 30 overlapping entries keep whole lines, no "…" per word, and the rest collapse into "+n"`, async () => {
-      const page = await open(view, width);
+      // 07:50: the first entries run, so their time says how much is left ("noch 40 Min")
+      const page = await open(view, width, "ltr", "2026-11-05T07:50:00+01:00");
       try {
         const shown = await bands(page);
         expect(shown.length).toBeGreaterThan(0);
@@ -173,6 +187,7 @@ for (const view of ["week", "day"] as const)
             edge: band.edge,
             clear: band.clear,
             cutOnce: band.cutOnce,
+            timesWhole: band.timesWhole,
           }).toEqual({
             id: band.id,
             inside: true,
@@ -184,6 +199,7 @@ for (const view of ["week", "day"] as const)
             edge: true,
             clear: true,
             cutOnce: true,
+            timesWhole: true,
           });
         }
         // at most two bands at any time; the rest are counted in "+n" buttons, and together they are all 31
@@ -229,6 +245,11 @@ for (const view of ["week", "day"] as const)
         await page.keyboard.press("Escape");
         await list.waitFor({ state: "hidden" });
         expect(await first.evaluate((button) => document.activeElement === button)).toBe(true);
+        // a click with no press before it right after Escape (a screen reader's) opens it again
+        await first.dispatchEvent("click", { detail: 1 });
+        await list.waitFor();
+        await page.keyboard.press("Escape");
+        await list.waitFor({ state: "hidden" });
         // pressing the "+n" of an open list closes it, and it stays closed
         await first.click();
         await list.waitFor();

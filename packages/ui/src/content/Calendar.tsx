@@ -779,7 +779,6 @@ type CalendarHeaderNav = {
   openShortcuts: () => void;
 };
 
-const dayTitleOptions: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short", year: "numeric" };
 const weekTitleOptions: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
 
 /** Where today lies from the shown day or week before its view measured: the arrow of the Today button, or nothing. */
@@ -815,13 +814,6 @@ const CalendarHeader = <V extends string>(props: {
   };
   const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig(), props.owner.customViews);
   const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig(), props.owner.customViews);
-  /** The day view's title, such as "Fri, Oct 9, 2026" or "Fr, 9. Okt 2026". */
-  const formatDayTitle = (date: Date) =>
-    compactGermanDate(
-      new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...dayTitleOptions, timeZone: dateConfig().timeZone }).format(date),
-      dateConfig().locale,
-      true,
-    );
   const formatRange = (from: Date, to: Date) =>
     compactGermanDate(
       new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...weekTitleOptions, timeZone: dateConfig().timeZone }).formatRange(from, to),
@@ -831,7 +823,8 @@ const CalendarHeader = <V extends string>(props: {
   const timeMode = () => Boolean(props.owner.dayHours) && (props.view === "day" || props.view === "week");
   const title = () => {
     const shown = timeView()?.visibleKeys();
-    if (timeMode() && props.view === "day") return formatDayTitle(shown ? parseKey(shown.first) : props.date);
+    // the day view names its month: the day itself stands once, in the head of the day on screen
+    if (timeMode() && props.view === "day") return formatMonth(shown ? parseKey(shown.first) : props.date, dateConfig());
     if (timeMode()) {
       const start = shown ? parseKey(shown.first) : calendar.startOfWeek(props.date, dateConfig());
       return formatRange(start, shown ? parseKey(shown.last) : calendar.addDays(start, 6, dateConfig()));
@@ -858,7 +851,7 @@ const CalendarHeader = <V extends string>(props: {
     const context = dateConfig();
     if (props.view === "year") return [];
     const { year } = zonedYearMonth(props.date, context);
-    if (props.view === "month" || props.view === "mobile-month")
+    if (props.view === "month" || props.view === "mobile-month" || (timeMode() && props.view === "day"))
       return Array.from({ length: 12 }, (_, month) => formatMonth(zonedMonthDate(year, month, context), context));
     if (props.view === "week") {
       const first = calendar.startOfWeek(calendar.startOfMonth(props.date, context), context);
@@ -881,15 +874,13 @@ const CalendarHeader = <V extends string>(props: {
     return Array.from({ length: 12 }, (_, month) => month).flatMap((month) => {
       const first = zonedMonthDate(year, month, context);
       return Array.from({ length: 7 }, (_, offset) =>
-        timeMode()
-          ? formatDayTitle(calendar.addDays(first, 21 + offset, context))
-          : calendar.addDays(first, 21 + offset, context).toLocaleDateString(context.locale ?? "en", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-              timeZone: context.timeZone,
-            }),
+        calendar.addDays(first, 21 + offset, context).toLocaleDateString(context.locale ?? "en", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+          timeZone: context.timeZone,
+        }),
       );
     });
   });
