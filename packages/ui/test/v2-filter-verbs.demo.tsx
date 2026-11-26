@@ -15,7 +15,7 @@ import {
   Tabs,
   Workspace,
 } from "../src/v2";
-import { defineListQuery, field, type ListQueryStateOf, type LookupItem } from "../src/v2/list-query";
+import { defineListQuery, field, type ListQueryStateOf, type LookupItem, type SavedListView, type ViewStore } from "../src/v2/list-query";
 
 // The inventory of an antiques trade on invented data, as a table with many columns would declare it: thirteen fields
 // in categories, most with verbs (contains, is not, before, after, is empty), one without. The query names its own
@@ -313,6 +313,19 @@ export function Demo() {
   // `_host`: the bar lives in a toolbar (a v2 Bar), as the calendar of a Space puts it in its head; a popover in the same
   // toolbar holds a second bar, which stays a bar of its own
   const host = !isServer && new URLSearchParams(location.search).has("_host");
+  // one store of views in memory, as an app's own table would hold them
+  const saved: SavedListView[] = [{ key: "mine-1", label: "Teure Stücke", query: "price.after=2000" }];
+  const views: ViewStore = {
+    scope: "person",
+    writable: true,
+    list: async () => saved,
+    save: async (view) => {
+      const next = { key: view.key ?? `mine-${saved.length + 1}`, label: view.label, query: view.query };
+      saved.push(next);
+      return next;
+    },
+    remove: async () => undefined,
+  };
   const filterBar = () => (
     <FilterBar
       query={inventoryQuery}
@@ -335,6 +348,8 @@ export function Demo() {
       }}
       names={{ consignor: CONSIGNORS }}
       results={`${rows().length} Artikel`}
+      // in the toolbar the bar also offers its views ("Ansicht ▾" at its end)
+      views={host ? { stores: [views] } : undefined}
     />
   );
   return (

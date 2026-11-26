@@ -438,39 +438,44 @@ test("a filter bar elsewhere in a Bar's tree (in its popover) keeps its own line
   });
 });
 
-test("phone: in a Bar the focus ring of the first control is whole, and the line keeps the text edge", async () => {
-  await withPage(
-    "_host=1&title=Vitrine",
-    async (page) => {
-      // the keys bring the focus to the bar's first control (the filter button), so its ring shows
-      for (let step = 0; step < 30; step += 1) {
-        await page.keyboard.press("Tab");
-        if (await page.evaluate(() => document.activeElement?.closest('.k2-bar-start > [data-k2-part="FilterBar"]') !== null)) break;
-      }
-      await settled(page);
-      const ring = await page.evaluate(() => {
-        const focused = document.activeElement as HTMLElement;
-        const scroller = focused.closest<HTMLElement>('[data-k2-part="FilterBar"]')!;
-        const box = focused.getBoundingClientRect();
-        const clip = scroller.getBoundingClientRect();
-        const spread = Number.parseFloat(getComputedStyle(focused).boxShadow.match(/(\d+(?:\.\d+)?)px\s*$/)?.[1] ?? "0");
-        return {
-          spread,
-          left: box.left - spread,
-          clip: clip.left,
-          top: box.top - spread,
-          clipTop: clip.top,
-          bottom: box.bottom + spread,
-          clipBottom: clip.bottom,
-        };
-      });
-      expect(ring.spread).toBe(3);
-      expect(ring.left).toBeGreaterThanOrEqual(ring.clip);
-      expect(ring.top).toBeGreaterThanOrEqual(ring.clipTop);
-      expect(ring.bottom).toBeLessThanOrEqual(ring.clipBottom);
-    },
-    { width: 390, touch: true },
-  );
+test("in a Bar the focus ring of the first control is whole in its scroller, on the phone and from 768 px", async () => {
+  for (const width of [390, 1024])
+    await withPage(
+      "_host=1&title=Vitrine",
+      async (page) => {
+        // the keys bring the focus to the bar's first control (the filter button), so its ring shows
+        for (let step = 0; step < 30; step += 1) {
+          await page.keyboard.press("Tab");
+          if (await page.evaluate(() => document.activeElement?.closest('.k2-bar-start > [data-k2-part="FilterBar"]') !== null)) break;
+        }
+        await settled(page);
+        const ring = await page.evaluate(() => {
+          // a statement draws the ring of its button around itself
+          const focused = document.activeElement as HTMLElement;
+          const ringed = focused.closest<HTMLElement>(".k2-stmt") ?? focused;
+          // the scroller that clips it: the bar on the phone, its line of statements from 768 px
+          let scroller = ringed.parentElement;
+          while (scroller && getComputedStyle(scroller).overflowX === "visible") scroller = scroller.parentElement;
+          const box = ringed.getBoundingClientRect();
+          const clip = scroller!.getBoundingClientRect();
+          const spread = Number.parseFloat(getComputedStyle(ringed).boxShadow.match(/(\d+(?:\.\d+)?)px\s*$/)?.[1] ?? "0");
+          return {
+            spread,
+            left: box.left - spread,
+            clip: clip.left,
+            top: box.top - spread,
+            clipTop: clip.top,
+            bottom: box.bottom + spread,
+            clipBottom: clip.bottom,
+          };
+        });
+        expect(ring.spread).toBe(3);
+        expect(ring.left).toBeGreaterThanOrEqual(ring.clip);
+        expect(ring.top).toBeGreaterThanOrEqual(ring.clipTop);
+        expect(ring.bottom).toBeLessThanOrEqual(ring.clipBottom);
+      },
+      { width, touch: width < 768 },
+    );
 });
 
 test("from 768 px a Bar keeps the filter bar on one line: it never grows the head, scrolls, and the keys reach the last filter", async () => {
@@ -490,7 +495,11 @@ test("from 768 px a Bar keeps the filter bar on one line: it never grows the hea
           hostHeight: host.getBoundingClientRect().height,
           fits: filterBar.getBoundingClientRect().bottom <= host.getBoundingClientRect().bottom,
           clear: host.getBoundingClientRect().bottom <= row.getBoundingClientRect().top,
-          scrolls: filterBar.scrollWidth > filterBar.clientWidth,
+          // from 768 px the statements scroll; the end ("Ansicht ▾") stands beside them
+          scrolls: (() => {
+            const flow = filterBar.querySelector<HTMLElement>(".k2-fbar-flow")!;
+            return flow.scrollWidth > flow.clientWidth;
+          })(),
           // the host's end keeps its whole size: the filters take only the room it leaves
           endWhole: (() => {
             const end = host.querySelector<HTMLElement>(".k2-bar-end")!;
@@ -505,6 +514,7 @@ test("from 768 px a Bar keeps the filter bar on one line: it never grows the hea
       expect(look.clear).toBe(true);
       expect(look.scrolls).toBe(true);
       expect(look.endWhole).toBe(true);
+      expect(await viewsEnd(page)).toEqual({ shown: true, outside: true, masked: false });
       // the keys reach the last filter, and the line scrolls it into view
       const last = page.locator('.k2-bar-start > [data-k2-part="FilterBar"] .k2-stmt-b').last();
       for (let step = 0; step < 60; step += 1) {
@@ -515,11 +525,62 @@ test("from 768 px a Bar keeps the filter bar on one line: it never grows the hea
       await settled(page);
       const seen = await last.evaluate((element) => {
         const box = element.getBoundingClientRect();
-        const clip = element.closest<HTMLElement>('[data-k2-part="FilterBar"]')!.getBoundingClientRect();
+        const clip = element.closest<HTMLElement>(".k2-fbar-flow")!.getBoundingClientRect();
         return box.left >= clip.left && box.right <= clip.right;
       });
       expect(seen).toBe(true);
     },
     { width: 1024 },
+  );
+  // with room to spare the end is just as whole
+  await withPage(
+    "_host=1&title=Vitrine",
+    async (page) => {
+      await settled(page);
+      expect(await viewsEnd(page)).toEqual({ shown: true, outside: true, masked: false });
+    },
+    { width: 1440 },
+  );
+});
+
+/**
+ * Whether the bar's end in the toolbar ("Ansicht ▾") shows whole inside the bar, stands outside the line of statements
+ * that scrolls, and lies under no fade (a mask on it or on anything between it and the toolbar).
+ */
+const viewsEnd = (page: Page) =>
+  page.evaluate(() => {
+    const filterBar = document.querySelector<HTMLElement>('.k2-bar-start > [data-k2-part="FilterBar"]')!;
+    const end = filterBar.querySelector<HTMLElement>(".k2-fbar-end")!;
+    const flow = filterBar.querySelector<HTMLElement>(".k2-fbar-flow")!;
+    const box = end.getBoundingClientRect();
+    const bar = filterBar.getBoundingClientRect();
+    const masks: string[] = [];
+    for (let element: HTMLElement | null = end; element && element !== filterBar.parentElement; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      masks.push(style.maskImage || style.getPropertyValue("-webkit-mask-image") || "none");
+    }
+    return {
+      shown: box.width > 0 && box.left >= bar.left - 0.5 && box.right <= bar.right + 8.5,
+      outside: !flow.contains(end) && box.left >= flow.getBoundingClientRect().right - 0.5,
+      masked: masks.some((mask) => mask !== "none" && mask !== ""),
+    };
+  });
+
+test("phone: in a Bar the line keeps one gap before sort and group, as without a Bar", async () => {
+  await withPage(
+    "_host=1&title=Vitrine",
+    async (page) => {
+      await settled(page);
+      const gap = await page.evaluate(() => {
+        const filterBar = document.querySelector<HTMLElement>('.k2-bar-start > [data-k2-part="FilterBar"]')!;
+        const order = filterBar.querySelector<HTMLElement>(".k2-fbar-order")!;
+        const shown = [...filterBar.querySelectorAll<HTMLElement>(".k2-fbar-flow > *")].filter(
+          (element) => element.getClientRects().length > 0,
+        );
+        return Math.round(order.getBoundingClientRect().left - shown.at(-1)!.getBoundingClientRect().right);
+      });
+      expect(gap).toBe(8);
+    },
+    { width: 390, touch: true },
   );
 });
