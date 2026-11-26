@@ -375,7 +375,7 @@ export default function Folder(props: Props) {
                 columns={[
                   {
                     title: "Name",
-                    width: { min: 200, default: 280 },
+                    width: { min: 200, default: 240 },
                     mark: (row) => ({ ...type[row.kind], image: row.image, kind: row.badge }),
                     cell: (row) => row.name,
                   },
