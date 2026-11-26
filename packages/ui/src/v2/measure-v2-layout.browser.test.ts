@@ -731,4 +731,29 @@ describe("text a person cannot read", () => {
     },
     TEST_TIMEOUT,
   );
+
+  // Spaces home on the phone (W3, 26.11.): "Weiter" under the floating main action is reached once the column scrolls
+  // it above the button; only a control that no scroller can lift is covered.
+  test(
+    "red: the pages under the floating main action at the end of a column; green: the column keeps room to lift them",
+    async () => {
+      const screen = (room: number) =>
+        `<div data-k2-workspace data-k2-part="Workspace" style="position:relative;width:390px;height:300px">` +
+        `<div style="overflow-y:auto;height:300px"><div style="height:260px"></div>` +
+        `<div data-k2-part="Bar" style="height:40px;display:flex;justify-content:flex-end"><button type="button" class="k2-btn">Weiter</button></div>` +
+        `<div style="height:${room}px"></div></div>` +
+        `<button type="button" class="k2-btn k2-fab" style="position:absolute;right:16px;bottom:16px;height:48px">Neu</button></div>`;
+      const outline = async (room: number) => {
+        const page = await open(screen(room), { width: 390 });
+        try {
+          return await describeV2Page(page, "#app");
+        } finally {
+          await page.close();
+        }
+      };
+      expect(await outline(0)).toContain('the floating main action "Neu" covers "Weiter"');
+      expect(await outline(72)).not.toContain("floating main action");
+    },
+    TEST_TIMEOUT,
+  );
 });

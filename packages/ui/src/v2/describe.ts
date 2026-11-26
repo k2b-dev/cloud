@@ -524,12 +524,27 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const box = fab.getBoundingClientRect();
     // Fields and the buttons of a bar in the content (a form's footer): rows and their buttons slide under it while the
     // list scrolls, which is fine.
+    // How far the page can still move a control up: what its scrollers (and the page) have left to scroll down. A control
+    // that scrolling lifts above the button (the end of a column keeps that room free) is reached; only one that stays
+    // under it is covered.
+    const lift = (control: Element) => {
+      let left = 0;
+      for (let node = control.parentElement; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 1)
+          left += node.scrollHeight - node.clientHeight - node.scrollTop;
+      }
+      const page = document.scrollingElement;
+      if (page) left += page.scrollHeight - page.clientHeight - page.scrollTop;
+      return left;
+    };
     const covered = [...root.querySelectorAll(".k2-btn, input:not(.k2-mark-input), select, textarea")].filter((control) => {
       if (control === fab || fab.contains(control) || hidden(control)) return false;
       const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
       if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || bar?.parentElement?.hasAttribute("data-slot"))) return false;
       const other = control.getBoundingClientRect();
-      return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
+      if (!(other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom)) return false;
+      return other.bottom - lift(control) > box.top;
     });
     if (covered.length)
       problems.push(
