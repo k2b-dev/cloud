@@ -436,6 +436,37 @@ for (const width of [1440, 390])
     );
   });
 
+test("stepwise dialog: when the foot's last action leaves with the focus and only text stays, the focus stays in the dialog", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2Pair?.());
+    const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
+    await dialog.waitFor();
+    await settled(page);
+    await dialog.getByRole("button", { name: "Weiter" }).focus();
+    await page.evaluate(() => window.__k2Waiting?.());
+    await dialog.getByText("Wartet auf das Gerät …").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => document.querySelector(".k2-dialog")?.contains(document.activeElement))).toBe(true);
+  });
+});
+
+test("stepwise dialog: a focus the person put away stays away when the content changes", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2Pair?.());
+    const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
+    await dialog.waitFor();
+    await settled(page);
+    await dialog.getByRole("button", { name: "Weiter" }).focus();
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    await page.evaluate(() => window.__k2Note?.());
+    await dialog.getByText("Der Code gilt noch vier Minuten.").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  });
+});
+
 test("Dialog.confirm from another island (its own copy of the library): the page's Workspace answers", async () => {
   await withPage(async (page) => {
     const dialog = await askFrom(page, "island", "Aus der Insel?");

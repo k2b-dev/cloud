@@ -14,6 +14,10 @@ declare global {
     __k2Shorten?: () => void;
     /** Opens the stepwise dialog "Gerät koppeln" (a code, then a short confirmation). */
     __k2Pair?: () => void;
+    /** Shows step 3 of "Gerät koppeln": a sentence only, no action in the foot ("Wartet auf das Gerät …"). */
+    __k2Waiting?: () => void;
+    /** Adds a line to the content of "Gerät koppeln", a change that has nothing to do with the focus. */
+    __k2Note?: () => void;
     /** Asks a dangerous question ("Gerät entfernen?") from the page. */
     __k2AskDanger?: () => void;
   }
@@ -63,10 +67,14 @@ function Order() {
   window.__k2Shorten = () => setLong(false);
   const [pair, setPair] = createSignal(false);
   const [step, setStep] = createSignal(1);
+  const [note, setNote] = createSignal(false);
   window.__k2Pair = () => {
     setStep(1);
+    setNote(false);
     setPair(true);
   };
+  window.__k2Waiting = () => setStep(3);
+  window.__k2Note = () => setNote(true);
   window.__k2AskDanger = () =>
     void Dialog.confirm({ title: "Gerät entfernen?", confirm: "Entfernen", danger: true }).then((answer) => {
       document.body.dataset.answer = String(answer);
@@ -173,18 +181,25 @@ function Order() {
         onOpenChange={setPair}
         stepwise
         foot={
-          <Show when={step() === 1} fallback={<Button onClick={() => setPair(false)}>Fertig</Button>}>
-            <Button variant="primary" onClick={() => setStep(2)}>
-              Weiter
-            </Button>
+          <Show when={step() !== 3}>
+            <Show when={step() === 1} fallback={<Button onClick={() => setPair(false)}>Fertig</Button>}>
+              <Button variant="primary" onClick={() => setStep(2)}>
+                Weiter
+              </Button>
+            </Show>
           </Show>
         }
       >
-        <Show when={step() === 1} fallback={<Text>Gekoppelt.</Text>}>
-          <Text>Öffne die App auf dem anderen Gerät.</Text>
-          <Text>Tippe dort auf „Mit Cloud koppeln“.</Text>
-          <Text>Scanne den Code oder gib ihn ein.</Text>
-          <Text>Vergleiche dann die Zahlen auf beiden Geräten.</Text>
+        <Show when={note()}>
+          <Text>Der Code gilt noch vier Minuten.</Text>
+        </Show>
+        <Show when={step() !== 3} fallback={<Text>Wartet auf das Gerät …</Text>}>
+          <Show when={step() === 1} fallback={<Text>Gekoppelt.</Text>}>
+            <Text>Öffne die App auf dem anderen Gerät.</Text>
+            <Text>Tippe dort auf „Mit Cloud koppeln“.</Text>
+            <Text>Scanne den Code oder gib ihn ein.</Text>
+            <Text>Vergleiche dann die Zahlen auf beiden Geräten.</Text>
+          </Show>
         </Show>
       </Dialog>
     </Workspace>

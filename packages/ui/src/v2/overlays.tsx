@@ -111,11 +111,14 @@ export const Dialog = (props: DialogProps) => {
     const height = popup.getBoundingClientRect().height;
     if (height > kept) popup.style.setProperty("--k2-dialog-kept", `${height}px`);
   };
+  // listeners a watch adds once the dialog is on the page, removed with it
+  const onDone: (() => void)[] = [];
   const stop = () => {
     watching?.sizes.disconnect();
     watching?.parts.disconnect();
     watching?.focus.disconnect();
     watching = undefined;
+    for (const done of onDone.splice(0)) done();
     body?.parentElement?.style.removeProperty("--k2-dialog-kept");
   };
   onCleanup(stop);
@@ -141,16 +144,34 @@ export const Dialog = (props: DialogProps) => {
     observeAll();
     parts.observe(element, { childList: true });
     // A part that leaves with the focus, such as "Weiter" when the next step comes, would drop the focus on the page
-    // behind the dialog: it goes to the first action of the foot instead, else the first control of the content.
+    // behind the dialog: it goes to the first action of the foot instead, else the first control of the content, else
+    // the close button, else the dialog itself. Only a part that really left is repaired: a focus the person put away
+    // (a blur) stays away when the content changes.
+    let held: Element | undefined;
+    const hold = (event: FocusEvent) => {
+      if (event.target instanceof Element) held = event.target;
+    };
     const focus = new MutationObserver(() => {
-      if (!element.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
-      (first(foot) ?? first(element))?.focus();
+      const popup = element.parentElement;
+      if (!popup?.isConnected || !held || held.isConnected) return;
+      if (document.activeElement && document.activeElement !== document.body) return;
+      held = undefined;
+      const next = first(foot) ?? first(element) ?? popup.querySelector<HTMLElement>('[data-slot="head"] .k2-btn');
+      if (next) next.focus();
+      else {
+        popup.tabIndex = -1;
+        popup.focus();
+      }
     });
     watching = { sizes, parts, focus };
     // the content's box is in its dialog only once the dialog is on the page
     queueMicrotask(() => {
       const popup = element.parentElement;
-      if (popup && watching?.focus === focus) focus.observe(popup, { childList: true, subtree: true });
+      if (!popup || watching?.focus !== focus) return;
+      if (popup.contains(document.activeElement)) held = document.activeElement ?? undefined;
+      popup.addEventListener("focusin", hold);
+      focus.observe(popup, { childList: true, subtree: true });
+      onDone.push(() => popup.removeEventListener("focusin", hold));
     });
     queueMicrotask(() => measure(element));
   };
