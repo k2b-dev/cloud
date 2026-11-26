@@ -69,6 +69,8 @@ const LEGEND_HEIGHT = 24;
 const MIN_VIEW_FRACTION = 1 / 64;
 /** The narrowest a region is drawn: a run of seconds on a day stays visible and can be pointed at, centred on its start. */
 const MIN_REGION = 3;
+/** How near (in drawing units) an axis label may stand to the word of now before it gives way. */
+const NOW_ROOM = 48;
 
 const finiteDomain = (domain: StateTimelineDomain): StateTimelineDomain | null => {
   if (!Number.isFinite(domain[0]) || !Number.isFinite(domain[1]) || domain[0] === domain[1]) return null;
@@ -251,27 +253,31 @@ export const renderStateTimelineSvg = (
   const tickTarget = Math.max(2, Math.min(8, Math.floor((plotRight - plotLeft) / 110)));
   const ticks = extendDomainToNice(viewport[0], viewport[1], niceStep(viewport[1] - viewport[0], tickTarget)).ticks;
   const format = opts.xAxis?.format ?? ((value: number) => fmt(value));
+  // now, where the page says: its word stands on the time axis at its time, so the axis labels near it give way
+  const nowX =
+    opts.now !== undefined && Number.isFinite(opts.now) && opts.now >= viewport[0] && opts.now <= viewport[1]
+      ? mapRange(opts.now, viewport, [plotLeft, plotRight])
+      : undefined;
   for (const tick of ticks) {
     if (tick < viewport[0] || tick > viewport[1]) continue;
     const x = mapRange(tick, viewport, [plotLeft, plotRight]);
-    body.push(
-      `<line x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP}" y2="${fmt(rowsBottom)}" stroke="currentColor" opacity="0.08"/>`,
-      `<text class="stdlib-chart-heatmap-label" x="${fmt(x)}" y="${fmt(rowsBottom + 17)}" text-anchor="middle">${escapeXml(
-        format(tick),
-      )}</text>`,
-    );
+    const label =
+      nowX !== undefined && opts.nowLabel && Math.abs(x - nowX) < NOW_ROOM
+        ? ""
+        : `<text class="stdlib-chart-heatmap-label" x="${fmt(x)}" y="${fmt(rowsBottom + 17)}" text-anchor="middle">${escapeXml(format(tick))}</text>`;
+    body.push(`<line x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP}" y2="${fmt(rowsBottom)}" stroke="currentColor" opacity="0.08"/>`, label);
   }
 
-  // now: a thin line over the lanes and its word above them, kept inside the plot at its ends
-  if (opts.now !== undefined && Number.isFinite(opts.now) && opts.now >= viewport[0] && opts.now <= viewport[1]) {
-    const x = mapRange(opts.now, viewport, [plotLeft, plotRight]);
-    const anchor = x < plotLeft + 24 ? "start" : x > plotRight - 24 ? "end" : "middle";
+  // now: a thin line over the lanes down to the time axis, and its word on the axis, kept inside the plot at its ends
+  // (the band above the lanes belongs to the controls of an interactive chart)
+  if (nowX !== undefined) {
+    const anchor = nowX < plotLeft + 24 ? "start" : nowX > plotRight - 24 ? "end" : "middle";
     body.push(
-      `<line class="stdlib-chart-state-now" x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP - 4}" y2="${fmt(rowsBottom)}" stroke="currentColor" stroke-width="1"/>`,
+      `<line class="stdlib-chart-state-now" x1="${fmt(nowX)}" x2="${fmt(nowX)}" y1="${TOP}" y2="${fmt(rowsBottom + 4)}" stroke="currentColor" stroke-width="1"/>`,
     );
     if (opts.nowLabel)
       body.push(
-        `<text class="stdlib-chart-heatmap-label stdlib-chart-state-now-label" x="${fmt(x)}" y="${TOP - 8}" text-anchor="${anchor}">${escapeXml(
+        `<text class="stdlib-chart-heatmap-label stdlib-chart-state-now-label" x="${fmt(nowX)}" y="${fmt(rowsBottom + 17)}" text-anchor="${anchor}">${escapeXml(
           opts.nowLabel,
         )}</text>`,
       );

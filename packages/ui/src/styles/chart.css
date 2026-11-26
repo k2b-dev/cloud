@@ -69,7 +69,8 @@
 :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-state-now {
   stroke: var(--k2-blue, var(--k2b-color-primary, #2563eb));
 }
-:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-state-now-label {
+/* above the v2 rule for axis labels (0,4,0), which would paint the word grey */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-heatmap-label.stdlib-chart-state-now-label {
   fill: var(--k2-blue, var(--k2b-color-primary, #2563eb));
   opacity: 1;
   font-weight: 600;

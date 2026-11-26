@@ -45,7 +45,7 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
 const svg = ".k2-canvas > .k2b-chart > .k2b-chart__svg > svg";
 
 for (const width of [1440, 390]) {
-  test(`at ${width}: now is a thin line at the time the page gives, its word whole above the lanes`, async () => {
+  test(`at ${width}: now is a thin line at the time the page gives, its word whole on the time axis, clear of the controls`, async () => {
     await withPage(width, async (page) => {
       const look = await page.evaluate((selector) => {
         const chart = document.querySelector<SVGSVGElement>(selector)!;
@@ -59,17 +59,35 @@ for (const width of [1440, 390]) {
         const word = label.getBoundingClientRect();
         return {
           text: label.textContent,
+          // the word in the colour of its line
+          inkOfLine: getComputedStyle(label).fill === getComputedStyle(line).stroke,
           atNow: Math.abs(line.getBoundingClientRect().left - running.getBoundingClientRect().right),
           thin: line.getBoundingClientRect().width <= 1.5,
           whole: word.left >= box.left && word.right <= box.right && word.top >= box.top,
           over: line.getBoundingClientRect().top < running.getBoundingClientRect().top,
+          // on the time axis, below the lanes, clear of the controls above them and of the other axis labels
+          onAxis: word.top >= running.getBoundingClientRect().bottom,
+          clear: [...chart.querySelectorAll<SVGTextElement>(".stdlib-chart-heatmap-label:not(.stdlib-chart-state-now-label)")].every(
+            (tick) => {
+              const other = tick.getBoundingClientRect();
+              return other.right <= word.left || other.left >= word.right || other.bottom <= word.top || other.top >= word.bottom;
+            },
+          ),
+          free: [...(chart.closest(".k2b-chart")?.querySelectorAll("button") ?? [])].every((button) => {
+            const other = button.getBoundingClientRect();
+            return other.right <= word.left || other.left >= word.right || other.bottom <= word.top || other.top >= word.bottom;
+          }),
         };
       }, svg);
       expect(look.text).toBe("Jetzt");
+      expect(look.inkOfLine).toBe(true);
       expect(look.atNow).toBeLessThanOrEqual(1);
       expect(look.thin).toBe(true);
       expect(look.whole).toBe(true);
       expect(look.over).toBe(true);
+      expect(look.onAxis).toBe(true);
+      expect(look.clear).toBe(true);
+      expect(look.free).toBe(true);
     });
   });
 
