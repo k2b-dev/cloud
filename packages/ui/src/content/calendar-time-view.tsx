@@ -115,7 +115,10 @@ const COLOR_TOKENS: Record<string, string> = {
   zinc: "#a1a1aa",
 };
 export const eventAccent = (event: Pick<CalendarEvent, "color" | "colorHex">): string =>
-  event.colorHex ?? COLOR_TOKENS[event.color ?? "blue"]!;
+  event.colorHex && HEX_COLOR.test(event.colorHex) ? event.colorHex : COLOR_TOKENS[event.color ?? "blue"]!;
+
+/** A colour as `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`; anything else would leave a band without fill and edge. */
+const HEX_COLOR = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i;
 
 /** Minimum minutes an overlap counts for a band, about the height of its title. */
 const LANE_MINUTES = 20;
@@ -863,15 +866,19 @@ export const TimeBand = (props: {
   const past = () => now() >= props.band.end;
   const length = () => props.band.end - props.band.start;
   const pixels = () => (length() / 60) * props.hourPx - 2;
-  const size = () => (pixels() < 27 ? "xs" : pixels() < 40 ? "s" : "m");
+  // a long band of the day view is "l": its type grows with it on a wide screen
+  const size = () => (pixels() < 27 ? "xs" : pixels() < 40 ? "s" : props.hourPx >= 56 && pixels() >= 80 ? "l" : "m");
   const checked = () => view.checkedOf(event());
   const remaining = () => (running() ? view.messages().calendarRemaining({ duration: view.duration(props.band.end - now()) }) : undefined);
-  // The title takes whole lines, at most two, and the time stands below it when a line of it fits too: a line of the
-  // title is 15 px in the week, 16 px in the day view (see the band's CSS), the time takes 19 px with its margin, and
-  // the band's padding 10 px. Nothing is cut through its letters.
-  const titleLine = () => (props.hourPx >= 56 ? 16 : 15);
-  const meta = () => pixels() >= 10 + titleLine() + 19;
-  const lines = () => Math.min(2, Math.max(1, Math.floor((pixels() - 10 - (meta() ? 19 : 0)) / titleLine())));
+  // The title takes whole lines, at most two, and the time stands below it when a line of it fits
+  // too: a line of the title is 15 px in the week, 16 px in the day view and 20 px when "l" (see the band's CSS), the
+  // time takes 19 px with its margin (21 px when "l"), and the band's padding 10 px. Nothing is cut through its
+  // letters. On a phone an hour is lower, but "l" keeps its type of "m" there, so its lines still fit.
+  const large = () => size() === "l";
+  const titleLine = () => (large() ? 20 : props.hourPx >= 56 ? 16 : 15);
+  const metaLine = () => (large() ? 21 : 19);
+  const meta = () => pixels() >= 10 + titleLine() + metaLine();
+  const lines = () => Math.min(2, Math.max(1, Math.floor((pixels() - 10 - (meta() ? metaLine() : 0)) / titleLine())));
   return (
     <div
       class="k2b-calendar-band"
@@ -887,6 +894,7 @@ export const TimeBand = (props: {
       data-moving={view.movingId() === event().id ? "true" : undefined}
       data-display={event().display}
       data-meta={meta() ? undefined : "none"}
+      data-beside={props.band.beside ? "" : undefined}
       style={{
         "--k2b-calendar-more": props.band.more ? "1.75rem" : undefined,
         "--k2b-calendar-accent": eventAccent(event()),
@@ -914,7 +922,7 @@ export const TimeBand = (props: {
         linkCount
         compact={props.compact}
         timeLabel={`${view.clock(props.band.start)}–${view.clock(props.band.end)}`}
-        showLocation={props.showLocation && size() === "m" && pixels() >= 64}
+        showLocation={props.showLocation && (size() === "m" || large()) && pixels() >= 64}
         remaining={remaining()}
         checkbox={checked() !== undefined}
         onCheck={view.checkOf(event())}
@@ -1282,14 +1290,21 @@ export const dayGaps = (view: TimeView, key: string) => freeGaps(view.dayOf(key)
 /** How many entries stand side by side in a day's timeline; from the third overlapping one on, they collapse into "+n". */
 export const MAX_LANES = 2;
 
+/** The height of an hour in the week and in the day view: on a wide screen, and the smallest, on a phone (see their CSS). */
+export const WEEK_HOUR_PX = 48;
+export const DAY_HOUR_PX = 56;
+export const WEEK_PHONE_HOUR_PX = 44;
+export const DAY_PHONE_HOUR_PX = 48;
+
 /**
- * The bands of a day with their lanes, cut to what its timeline draws; what finds no place among `max` (two, one in
- * the narrow days of a phone's week) gives a "+n".
+ * The bands of a day with their lanes, cut to what its timeline draws; what finds no place among the first two gives a
+ * "+n". The same on every screen, so the server's first picture stays; a narrow column only draws the lanes otherwise.
+ * A "+n" is 22 px tall, with 2 px to the next one: the minutes it covers where an hour is smallest (`phoneHourPx`).
  */
-export const dayBands = (view: TimeView, key: string, expanded: boolean, max = MAX_LANES) => {
+export const dayBands = (view: TimeView, key: string, expanded: boolean, phoneHourPx: number) => {
   const limit = expanded ? DAY_MINUTES : view.wake();
   const visible = view.dayOf(key).bands.filter((band) => Math.min(limit, band.end) > Math.max(0, band.start));
-  return capBands(visible, LANE_MINUTES, max);
+  return capBands(visible, LANE_MINUTES, MAX_LANES, Math.ceil((24 / phoneHourPx) * 60));
 };
 
 /** Entries the folded night hides, as chips with their time. */

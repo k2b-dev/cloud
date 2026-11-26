@@ -322,20 +322,50 @@ describe("lanes and geometry", () => {
       ],
       20,
       2,
+      28,
     );
-    expect(shown.map((entry) => [entry.item, entry.lane, entry.lanes, entry.more ?? false])).toEqual([
-      ["a", 0, 2, true],
-      ["b", 1, 2, true],
-      ["e", 1, 2, true],
+    expect(shown.map((entry) => [entry.item, entry.lane, entry.lanes, entry.more ?? false, entry.beside ?? false])).toEqual([
+      ["a", 0, 2, true, true],
+      // starts with a: a and b stay side by side also in a narrow column
+      ["b", 1, 2, true, true],
+      // an hour after a: in a narrow column it lies over a, indented
+      ["e", 1, 2, true, false],
       // alone, with the whole width and no +n beside it
-      ["g", 0, 1, false],
+      ["g", 0, 1, false, false],
     ]);
     expect(more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([
       [610, ["c", "d"]],
       [670, ["f"]],
     ]);
     // within the cap nothing collapses
-    expect(capBands([band("a", 600, 660), band("b", 610, 670)], 20, 2).more).toEqual([]);
+    expect(capBands([band("a", 600, 660), band("b", 610, 670)], 20, 2, 28).more).toEqual([]);
+  });
+
+  test('a "+n" is as tall as `chip` minutes: closer ones join it, and a band that its height reaches leaves it room', () => {
+    const band = (item: string, start: number, end: number) => ({ item, start, end });
+    const close = capBands([band("a", 470, 480), band("b", 470, 480), band("c", 470, 480), band("d", 485, 490)], 20, 2, 28);
+    // d starts 15 minutes after c, inside c's "+n": one "+2" instead of two chips over each other
+    expect(close.more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([[470, ["c", "d"]]]);
+    const { shown, more } = capBands(
+      [
+        band("a", 600, 610),
+        band("b", 600, 610),
+        band("c", 600, 610),
+        // starts after every entry before it has ended, but where the "+1" from 10:00 is still drawn
+        band("f", 622, 700),
+        band("g", 800, 860),
+      ],
+      20,
+      2,
+      28,
+    );
+    expect(more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([[600, ["c"]]]);
+    expect(shown.map((entry) => [entry.item, entry.more ?? false])).toEqual([
+      ["a", true],
+      ["b", true],
+      ["f", true],
+      ["g", false],
+    ]);
   });
 
   test("deadlines whose pills would cover each other share the width; one alone keeps it", () => {

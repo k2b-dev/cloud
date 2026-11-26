@@ -2416,12 +2416,14 @@
   position: absolute;
   z-index: 2;
   box-sizing: border-box;
-  /* An overlap with "+n" beside it leaves the column's end to it (--k2b-calendar-more). */
-  left: calc(
+  /* An overlap with "+n" beside it leaves the column's end to it (--k2b-calendar-more). The distance from the
+     column's start is one value, so a right-to-left page and a phone's narrow day each set it once. */
+  --k2b-calendar-band-start: calc(
     var(--k2b-calendar-inset-start, 0px) + var(--k2b-calendar-inset) +
       (100% - var(--k2b-calendar-more, 0px) - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) + 3px) *
       var(--k2b-calendar-lane) / var(--k2b-calendar-lanes)
   );
+  left: var(--k2b-calendar-band-start);
   width: calc(
     (100% - var(--k2b-calendar-more, 0px) - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) + 3px) / var(--k2b-calendar-lanes) - 3px
   );
@@ -2430,12 +2432,23 @@
   /* Filled in the entry's colour, with a colour edge of 3 px at its start (Apple Calendar's band); the edge lies
      inside, so the entry inside keeps its box. */
   background: color-mix(in srgb, var(--k2b-calendar-accent) 12%, var(--k2b-surface));
-  box-shadow: inset 3px 0 0 var(--k2b-calendar-edge);
+  /* the edge at the inline start, on the right in a right-to-left page; every state below keeps it */
+  --k2b-calendar-band-edge: inset 3px 0 0 var(--k2b-calendar-edge);
+  box-shadow: var(--k2b-calendar-band-edge);
   transition: background-color 150ms ease, opacity 180ms ease, box-shadow 180ms ease;
 }
 
-.k2b-ui [dir="rtl"] .k2b-calendar-band {
-  box-shadow: inset -3px 0 0 var(--k2b-calendar-edge);
+/* Right to left: bands from the right, their edge on the right, "+n" on the left. The build turns :dir() into
+   languages, so a page that sets dir="rtl" itself is matched by its attribute too. */
+.k2b-ui .k2b-calendar-band:is(:dir(rtl), [dir="rtl"] *):not([dir="rtl"] [dir="ltr"] *) {
+  --k2b-calendar-band-edge: inset -3px 0 0 var(--k2b-calendar-edge);
+  right: var(--k2b-calendar-band-start);
+  left: auto;
+}
+
+.k2b-ui .k2b-calendar-more:is(:dir(rtl), [dir="rtl"] *):not([dir="rtl"] [dir="ltr"] *) {
+  right: auto;
+  left: var(--k2b-calendar-inset);
 }
 
 .k2b-ui .k2b-calendar-band:hover {
@@ -2444,7 +2457,7 @@
 
 .k2b-ui .k2b-calendar-band:has(> .k2b-calendar-event[data-selected="true"]) {
   background: color-mix(in srgb, var(--k2b-calendar-accent) 22%, var(--k2b-surface));
-  box-shadow: inset 3px 0 0 var(--k2b-calendar-edge), inset 0 0 0 1px var(--k2b-calendar-edge);
+  box-shadow: var(--k2b-calendar-band-edge), inset 0 0 0 1px var(--k2b-calendar-edge);
 }
 
 .k2b-ui .k2b-calendar-band:focus-within {
@@ -2480,7 +2493,8 @@
 
 /* A band's title, then its time. The lines have a fixed height, so the band can say how many fit
    (--k2b-calendar-lines, from its height): the title ends at a whole line, with "…" once at its end. A word longer
-   than the band breaks inside the word instead of ending in "…" of its own. */
+   than the band is hyphenated in the page's language; only a word the browser cannot hyphenate breaks inside the word,
+   instead of ending in "…" of its own. */
 .k2b-ui .k2b-calendar-band .k2b-calendar-event__title {
   max-width: 100%;
   font-size: 0.75rem;
@@ -2493,18 +2507,32 @@
   line-height: 1rem;
 }
 
-.k2b-ui .k2b-calendar-band[data-size="m"] .k2b-calendar-event__title {
+.k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__title {
   display: -webkit-box;
   flex: none;
   white-space: normal;
-  overflow-wrap: anywhere;
+  hyphens: auto;
+  overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--k2b-calendar-lines, 2);
 }
 
-.k2b-ui .k2b-calendar-band[data-size="m"] .k2b-calendar-event__meta {
+.k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__meta {
   flex: none;
   line-height: 0.875rem;
+}
+
+/* A long band of the day view on a wide screen: its type grows with it (the lines that TimeBand counts with). */
+@container k2b-calendar-days (min-width: 40.001rem) {
+  .k2b-ui .k2b-calendar-days .k2b-calendar-band[data-size="l"] .k2b-calendar-event__title {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  .k2b-ui .k2b-calendar-days .k2b-calendar-band[data-size="l"] .k2b-calendar-event__meta {
+    font-size: 0.8125rem;
+    line-height: 1rem;
+  }
 }
 
 /* too low for the time below the title: the title takes the band, the time stays in its label */
@@ -2537,6 +2565,33 @@
 .k2b-ui .k2b-calendar-more:hover,
 .k2b-ui .k2b-calendar-more[aria-expanded="true"] {
   background: var(--k2b-calendar-event-hover);
+}
+
+/* The list a "+n" opens: rows of a colour dot, the start time and the title, without a frame of their own. */
+.k2b-ui .k2b-calendar-popover[data-kind="more"] .k2b-calendar-day-list__events li > .k2b-calendar-event {
+  gap: 0.5rem;
+  border-color: transparent;
+  color: var(--k2b-text);
+  background: transparent;
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-calendar-popover[data-kind="more"] .k2b-calendar-day-list__events li > .k2b-calendar-event:hover {
+  background: var(--k2b-calendar-event-hover);
+}
+
+.k2b-ui .k2b-calendar-popover[data-kind="more"] .k2b-calendar-day-list__events li > .k2b-calendar-event::before {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--k2b-calendar-edge);
+  content: "";
+}
+
+.k2b-ui .k2b-calendar-popover[data-kind="more"] .k2b-calendar-event__time {
+  color: var(--k2b-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .k2b-ui .k2b-calendar-more:focus-visible {
@@ -2639,7 +2694,7 @@
 /* The running event fills up with the time that passed. */
 .k2b-ui .k2b-calendar-band[data-running="true"] {
   box-shadow:
-    inset 3px 0 0 var(--k2b-calendar-edge),
+    var(--k2b-calendar-band-edge),
     0 0 0 1px var(--k2b-calendar-edge);
 }
 
@@ -4230,6 +4285,18 @@
 
   .k2b-ui .k2b-calendar-week .k2b-calendar-band:is([data-size="xs"], [data-size="s"]) .k2b-calendar-event__meta {
     display: none;
+  }
+
+  /* A phone's day is too narrow for two bands side by side: a later band lies over the earlier one, indented by
+     1 rem, with a line of the page between them (Apple's week on a phone). Bands that start together stay side by
+     side, else the later one would cover the earlier one's title. */
+  .k2b-ui .k2b-calendar-week .k2b-calendar-band:not([data-beside]) {
+    --k2b-calendar-band-start: calc(var(--k2b-calendar-inset-start, 0px) + var(--k2b-calendar-inset) + var(--k2b-calendar-lane) * 1rem);
+    width: calc(
+      100% - var(--k2b-calendar-more, 0px) - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) - var(--k2b-calendar-lane) *
+        1rem
+    );
+    outline: 1px solid var(--k2b-surface);
   }
 }
 

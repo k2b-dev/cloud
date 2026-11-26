@@ -31,6 +31,8 @@ import { EventChip, eventHref } from "./calendar-shared";
 import {
   AllDayChips,
   createTimeView,
+  DAY_HOUR_PX,
+  DAY_PHONE_HOUR_PX,
   dayBands,
   dayGaps,
   daySummary,
@@ -583,7 +585,7 @@ const DaySection = (props: {
   const soon = () => soonNote(view, props.dayKey);
   const wake = () => view.wake();
   const nowMinute = () => (props.dayKey === view.nowKey() ? view.nowMinute() : null);
-  const bands = createMemo(() => dayBands(view, props.dayKey, expanded()));
+  const bands = createMemo(() => dayBands(view, props.dayKey, expanded(), DAY_PHONE_HOUR_PX));
   const gaps = createMemo(() => dayGaps(view, props.dayKey));
   const markers = () => model().markers.filter((marker) => marker.minute < (expanded() ? DAY_MINUTES : wake()));
   /** Deadlines whose pills would cover each other share the width; keyed by marker, so rows keep their elements. */
@@ -623,7 +625,9 @@ const DaySection = (props: {
               band,
             },
         ),
-        ...bands().more.map((more) => ({ at: more.minute, kind: "more" as const, more })),
+        ...bands().more.map(
+          (more) => previous.find((row) => row.kind === "more" && row.more === more) ?? { at: more.minute, kind: "more" as const, more },
+        ),
         ...markers().map(
           (marker) =>
             previous.find((row) => row.kind === "marker" && row.marker === marker) ?? {
@@ -872,7 +876,7 @@ const DaySection = (props: {
                 dayKey={props.dayKey}
                 expanded={expanded()}
                 showLocation
-                hourPx={56}
+                hourPx={DAY_HOUR_PX}
                 scroller={props.scroller}
               />
             ) : entry.kind === "more" ? (

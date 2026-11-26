@@ -261,8 +261,12 @@ export const gapProposal = (gap: Pick<DayGap, "start" | "end">, hours: CalendarD
   return [start, start + 60];
 };
 
-/** A band with its place side by side: `lane` of `lanes`; `more` when the overlap has a "+n" beside it. */
-export type DayLane<T> = DayBand<T> & { lane: number; lanes: number; group: number; more?: boolean };
+/**
+ * A band with its place side by side: `lane` of `lanes`; `more` when a "+n" is drawn beside it; `beside` when it starts
+ * together with a band it overlaps, so the two stay side by side even where a narrow column lays later bands
+ * over earlier ones.
+ */
+export type DayLane<T> = DayBand<T> & { lane: number; lanes: number; group: number; more?: boolean; beside?: boolean };
 
 /** Overlapping bands side by side; a band counts at least `minimum` minutes long, as its drawn height does. */
 export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayLane<T>[] =>
@@ -270,15 +274,21 @@ export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayL
     ({ item, lane, lanes, groupId }) => ({ ...item, lane, lanes, group: groupId }),
   );
 
-/** Entries that found no free place side by side, by the hour they start in: one "+n" for them, at the first start. */
+/** Entries that found no free place side by side: one "+n" for them, at the first one's start. */
 export type DayMore<T> = { minute: number; bands: DayBand<T>[] };
 
 /**
  * At most `max` bands side by side. In time order each entry takes a free place among the first `max`, as soon as one
- * is free again, so a long crowded day stays filled over its hours; an entry that finds none collapses into the "+n" of
- * the hour it starts in. The bands that stay take their lanes among themselves; a band beside a "+n" leaves it room.
+ * is free again, so a long crowded day stays filled over its hours; an entry that finds none collapses into a "+n". A
+ * "+n" is drawn `chip` minutes tall: an entry that starts within that joins it, so no two of them cover each other,
+ * and a band its height reaches leaves it room. The bands that stay take their lanes among themselves.
  */
-export const capBands = <T>(bands: readonly DayBand<T>[], minimum: number, max: number): { shown: DayLane<T>[]; more: DayMore<T>[] } => {
+export const capBands = <T>(
+  bands: readonly DayBand<T>[],
+  minimum: number,
+  max: number,
+  chip: number,
+): { shown: DayLane<T>[]; more: DayMore<T>[] } => {
   const end = (band: DayBand<T>) => Math.max(band.end, band.start + minimum);
   const sorted = [...bands].sort((left, right) => left.start - right.start || end(right) - end(left));
   const taken: { end: number; lane: number }[] = [];
@@ -294,17 +304,24 @@ export const capBands = <T>(bands: readonly DayBand<T>[], minimum: number, max: 
     taken.push({ end: end(band), lane });
     kept.push(band);
   }
-  const more = new Map<number, DayMore<T>>();
+  const more: DayMore<T>[] = [];
   for (const band of hidden) {
-    const hour = Math.floor(Math.max(0, band.start) / 60) * 60;
-    const entry = more.get(hour) ?? { minute: Math.max(0, band.start), bands: [] };
-    entry.bands.push(band);
-    entry.minute = Math.min(entry.minute, Math.max(0, band.start));
-    more.set(hour, entry);
+    const last = more.at(-1);
+    if (last && Math.max(0, band.start) < last.minute + chip) last.bands.push(band);
+    else more.push({ minute: Math.max(0, band.start), bands: [band] });
   }
-  const beside = (band: DayBand<T>) => hidden.some((other) => other.start < end(band) && end(other) > band.start);
-  const shown = dayLanes(kept, minimum).map((band) => (beside(band) ? { ...band, more: true } : band));
-  return { shown, more: [...more.values()].sort((left, right) => left.minute - right.minute) };
+  const reached = (band: DayBand<T>) => more.some((entry) => band.start < entry.minute + chip && end(band) > entry.minute);
+  const lanes = dayLanes(kept, minimum);
+  const together = (band: DayLane<T>) =>
+    lanes.some(
+      (other) => other !== band && other.start < end(band) && end(other) > band.start && Math.abs(band.start - other.start) < minimum,
+    );
+  const shown = lanes.map((band) => ({
+    ...band,
+    ...(reached(band) ? { more: true } : {}),
+    ...(together(band) ? { beside: true } : {}),
+  }));
+  return { shown, more };
 };
 
 /** About the minutes a deadline's pill covers in the waking hours; the open night is half as tall, so twice as many. */
