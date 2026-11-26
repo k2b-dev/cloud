@@ -1,0 +1,52 @@
+import { i18n } from "@k2b/stdlib";
+import { useLocale } from "../intl/locale";
+
+/** The words of the v2 form controls (tags, image, colour), resolved from the inherited render locale. */
+const controlMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      removeValue: ({ label }: { label: string }) => `Remove ${label}`,
+      chooseImage: "Choose image",
+      changeImage: "Change image",
+      removeImage: "Remove image",
+      noImage: "No image",
+      imageFailed: "The image could not be read. Choose another one.",
+      pickColor: "Pick a colour",
+      colorArea: "Saturation and brightness",
+      hue: "Hue",
+      colorCode: "Colour code",
+      color: ({ value }: { value: string }) => `Colour ${value}`,
+      hueValue: ({ degrees }: { degrees: number }) => `${degrees} degrees`,
+      areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
+        `Saturation ${saturation} %, brightness ${brightness} %`,
+      imageChosen: "Image chosen",
+    },
+    de: {
+      removeValue: ({ label }: { label: string }) => `${label} entfernen`,
+      chooseImage: "Bild wählen",
+      changeImage: "Bild ändern",
+      removeImage: "Bild entfernen",
+      noImage: "Kein Bild",
+      imageFailed: "Das Bild ließ sich nicht lesen. Wähle ein anderes.",
+      pickColor: "Farbe wählen",
+      colorArea: "Sättigung und Helligkeit",
+      hue: "Farbton",
+      colorCode: "Farbcode",
+      color: ({ value }: { value: string }) => `Farbe ${value}`,
+      hueValue: ({ degrees }: { degrees: number }) => `${degrees} Grad`,
+      areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
+        `Sättigung ${saturation} %, Helligkeit ${brightness} %`,
+      imageChosen: "Bild gewählt",
+    },
+  },
+});
+
+export type ControlMessages = ReturnType<(typeof controlMessages)["resolve"]>["t"];
+
+export const useControlMessages = (): (() => ControlMessages) => {
+  const locale = useLocale();
+  return () => controlMessages.resolve([locale()]).t;
+};
+
+export const checkControlMessages = () => controlMessages.check();

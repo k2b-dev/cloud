@@ -13,6 +13,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -30,7 +31,7 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 type NavEntryBase = {
   /** The words of the entry. */
   label: string;
-  /** A count at the end, such as unread mails. */
+  /** A count at the end, such as unread mails: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -97,18 +98,27 @@ export type NavProps = {
   foot?: readonly NavItem[];
 };
 
+/**
+ * A count as the page says it: a number in the page's language and whole (12.345 in German, 12,345 in English, never
+ * "9.999+"), words such as "99+" as the app gives them.
+ */
+const countIn = (count: number | string, locale: string) => (typeof count === "number" ? count.toLocaleString(locale) : count);
+
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
-const NavEnd = (props: { item: NavItem }) => (
-  <>
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
-  </>
-);
+const NavEnd = (props: { item: NavItem }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <span class="k2-ni-name">{props.item.label}</span>
+      <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+      <Show when={props.item.count !== undefined}>
+        <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
   <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
@@ -224,7 +234,7 @@ export type Tab = {
   label: string;
   /** A Tabler icon before the name. */
   icon?: string;
-  /** A quiet count after the name. */
+  /** A quiet count after the name: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -250,21 +260,24 @@ export type TabsProps = {
 };
 
 /** The words of a tab: its symbol, its name and its count. */
-const TabFace = (props: { tab: Tab }) => (
-  <>
-    <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
-    {props.tab.label}
-    <Show when={props.tab.count !== undefined}>
-      <span class="k2-tab-count">{props.tab.count}</span>
-    </Show>
-  </>
-);
+const TabFace = (props: { tab: Tab }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
+      {props.tab.label}
+      <Show when={props.tab.count !== undefined}>
+        <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, locale: string): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : String(tab.count),
+  meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -293,6 +306,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  */
 export const Tabs = (props: TabsProps) => {
   const t = useUiMessages();
+  const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
@@ -337,7 +351,7 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -426,7 +440,10 @@ export type StatusFact = {
 };
 
 export type StatusRowProps = {
-  /** The one main statement, such as "7 unread". */
+  /**
+   * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
+   * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   */
   lead: string;
   /**
    * The results refresh in place, such as after a filter changed: `true` shows a quiet turning mark after the lead
@@ -443,7 +460,11 @@ export type StatusRowProps = {
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
-  /** Filters or a segment at the end; they leave on the phone. */
+  /**
+   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
+   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
+   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   */
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
@@ -519,7 +540,7 @@ export const StatusRow = (props: StatusRowProps) => {
 
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type NoticeProps = {
+type NoticeBase = {
   /** What it is: a note of a person, a summary by AI, something wrong, something waiting. */
   tone: "note" | "ai" | "bad" | "warn";
   /** A symbol other than the one of the tone, such as a pin for a pinned note. */
@@ -528,11 +549,28 @@ export type NoticeProps = {
   title?: string;
   /** Quiet words after the title: who and when. */
   meta?: string;
-  /** Text buttons at the end; at most two. */
-  actions?: TwoActions;
   /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
+
+/** At most two deeds in all: two quiet text buttons, or the one thing to do and one quiet deed beside it. */
+export type NoticeProps = NoticeBase &
+  (
+    | {
+        /** Text buttons at the end; at most two. */
+        actions?: TwoActions;
+        primary?: undefined;
+      }
+    | {
+        /** One quiet text button before the primary deed. */
+        actions?: readonly [Action];
+        /**
+         * The one thing to do, such as "Neu laden" when the page is offline: a framed button at the end, after the
+         * quiet deed. It is no primary of the page; the page keeps its own one.
+         */
+        primary: Action;
+      }
+  );
 
 const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
 
@@ -556,9 +594,10 @@ export const Notice = (props: NoticeProps) => (
       </span>
     </Show>
     <span class="k2-notice-text">{props.children}</span>
-    <Show when={props.actions?.length}>
+    <Show when={props.actions?.length || props.primary}>
       <span class="k2-notice-end">
         <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
+        <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
       </span>
     </Show>
   </div>
