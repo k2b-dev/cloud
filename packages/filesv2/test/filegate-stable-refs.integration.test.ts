@@ -226,7 +226,7 @@ roots:
       processSync = await startProcessSync({ application: "filesv2" });
       await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
       await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
-      await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
+      await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz,display_name text,avatar_hash text)`.simple();
       await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
       await migratePosix();
       await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
@@ -294,8 +294,12 @@ roots:
       const descendant = await service.entryById(testCall(alice), file);
       expect(descendant).toMatchObject({ resourceId: file, entry: { path: "Archive/Q4/budget.txt", resourceId: file } });
       // Lists, searches and downloads hand out and accept the same ref.
-      expect((await service.list(testCall(alice), { baseId, path: "Archive/Q4" })).items.map((item) => item.resourceId)).toEqual([file]);
-      expect((await service.search(testCall(alice), { baseId, q: "budget" })).items.map((item) => item.resourceId)).toEqual([file]);
+      const listed = await service.list(testCall(alice), { baseId, path: "Archive/Q4" });
+      const searched = await service.search(testCall(alice), { baseId, q: "budget" });
+      for (const page of [listed, searched]) {
+        expect(page.items.map((item) => item.resourceId)).toEqual([file]);
+        expect(page.items[0]?.facts).toEqual({ author: { userId: id(alice), name: "stable-refs-alice" }, links: 0 });
+      }
       // The fixture's public URL is not reachable from the host; send the lease to the mapped port instead.
       const lease = new URL((await service.downloadById(testCall(alice), file)).url);
       expect(await (await fetch(new URL(`${lease.pathname}${lease.search}`, baseUrl))).text()).toBe("plan");
