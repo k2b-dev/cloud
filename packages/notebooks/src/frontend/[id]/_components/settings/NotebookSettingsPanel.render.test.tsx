@@ -57,8 +57,8 @@ describe("Notebook settings", () => {
       <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} host={() => document.documentElement} />
     ));
     expect(html).toContain("Only for you");
-    // The browser decides "Full width" from the app host (FeaturesSection.behavior.test.tsx).
-    expect(html).not.toContain("Full width");
+    // "Full width" stands from the first render; the browser says from the app host when it applies (FeaturesSection.behavior.test.tsx).
+    expect(html).toContain("Full width");
     expect(html).toContain('role="switch"');
     expect(html).toContain("Tab moves focus instead of indenting");
     expect(html).toContain("Press Esc, then Tab to leave the editor.");

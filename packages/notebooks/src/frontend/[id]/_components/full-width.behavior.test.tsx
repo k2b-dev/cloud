@@ -139,29 +139,29 @@ describe("personal full-width bridge", () => {
   test("switches from the root to a host that gains its container name after mount", async () => {
     const view = await mountReadingSurface(false, 952, false);
     try {
-      expect(view.command()).toBeDefined();
+      expect(view.command()?.description).toBe("Nur für dich in diesem Browser");
       view.host.style.containerName = "k2b-app-area";
       view.resize(952);
-      expect(view.command()).toBeUndefined();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
     } finally {
       view.cleanup();
     }
   });
 
-  // Pins host width: a wide window cannot offer a command or option for a narrow app.
-  test("nearest host crossing 64 rem toggles the command in a wide window", async () => {
+  // Pins host width: in a wide window the command of a narrow app says that it takes effect in a wider one.
+  test("nearest host crossing 64 rem changes what the command says in a wide window", async () => {
     const view = await mountReadingSurface(false, 952);
     try {
       expect(window.innerWidth).toBe(1680);
-      expect(view.command()).toBeUndefined();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       view.resize(1023.75);
-      expect(view.command()).toBeUndefined();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       view.resize(1024);
-      expect(view.command()).toBeDefined();
+      expect(view.command()?.description).toBe("Nur für dich in diesem Browser");
       view.resize(1023);
-      expect(view.command()).toBeUndefined();
+      expect(view.command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       view.resize(1192);
-      expect(view.command()).toBeDefined();
+      expect(view.command()?.description).toBe("Nur für dich in diesem Browser");
       view.dispose();
       expect(view.disconnected).toHaveBeenCalled();
       view.resize(952);
@@ -303,7 +303,7 @@ describe("personal full-width bridge", () => {
       expect(command()?.title).toBe("Volle Breite einschalten");
 
       layout.resize(952);
-      expect(command()).toBeUndefined();
+      expect(command()?.description).toBe("Wirkt erst in einem breiteren Fenster");
       layout.resize(1192);
       expect(command()?.title).toBe("Volle Breite einschalten");
 

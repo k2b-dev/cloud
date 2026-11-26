@@ -1,6 +1,6 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Select, SettingsField, SettingsGroup, Switch, useLocale, watchAppHostWidth } from "@k2b/ui";
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import { isServer } from "solid-js/web";
 import { apiClient } from "@/api/client";
 import { isPresentationMode, type PresentationMode } from "@/lib/presentation-mode";
@@ -15,7 +15,7 @@ import { readErrorMessage } from "./utils";
 /**
  * Personal preferences stored in this browser; an open note applies them without a reload. `host` returns an element
  * inside the app: the dialog mounts outside the app's host, so CSS here cannot query it. Below a 64 rem host "Full width"
- * changes nothing (app.css), so the switch stays away, as the View menu choice and the command do.
+ * changes nothing yet (app.css): the switch stays, as the View menu's entry and the command do, and says when it applies.
  */
 function PersonalViewSection(props: { host: () => Element }) {
   const locale = useLocale();
@@ -34,15 +34,13 @@ function PersonalViewSection(props: { host: () => Element }) {
 
   return (
     <SettingsGroup title={t().onlyForYou} description={t().yourViewDescription}>
-      <Show when={wide()}>
-        <Switch
-          class="notebooks-full-width-option"
-          label={t().fullWidth}
-          description={t().fullWidthDescription}
-          value={fullWidth}
-          onValueChange={changeFullWidth}
-        />
-      </Show>
+      <Switch
+        class="notebooks-full-width-option"
+        label={t().fullWidth}
+        description={wide() ? t().fullWidthDescription : t().fullWidthNarrowDescription}
+        value={fullWidth}
+        onValueChange={changeFullWidth}
+      />
       <Switch label={t().tabMovesFocus} description={t().tabMovesFocusDescription} value={tabMovesFocus} onValueChange={change} />
       <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
     </SettingsGroup>
