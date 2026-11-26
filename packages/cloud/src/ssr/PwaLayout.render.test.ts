@@ -112,7 +112,6 @@ const page = ssr<AuthContext>(
       sidebarTitle: c.req.query("sidebarTitle"),
       status: c.req.query("status") ? "[[status]]" : undefined,
       actions: "[[actions]]",
-      phoneActions: c.req.query("phoneActions") !== undefined ? "[[phone]]" : undefined,
       ui: c.req.query("ui") === "v2" ? "v2" : undefined,
       bare: c.req.query("bare") !== undefined,
       screen: c.req.query("screen") !== undefined,
@@ -639,14 +638,8 @@ describe("PwaLayout ui v2", () => {
   test("names what a bare page's frame does not show, for the warning in development", () => {
     expect(bareDrops({})).toEqual([]);
     expect(
-      bareDrops({
-        back: { href: "/pwa/inventory", label: "Items" },
-        actions: "[[actions]]",
-        phoneActions: "[[phone]]",
-        sidebarTitle: "Items",
-        status: "[[status]]",
-      }),
-    ).toEqual(["back", "actions", "phoneActions", "sidebarTitle", "status"]);
+      bareDrops({ back: { href: "/pwa/inventory", label: "Items" }, actions: "[[actions]]", sidebarTitle: "Items", status: "[[status]]" }),
+    ).toEqual(["back", "actions", "sidebarTitle", "status"]);
   });
 
   test("renders in the request locale", async () => {
