@@ -405,7 +405,7 @@ const RequestStatus = (props: {
   when: (value: string) => string;
   loading: boolean;
   onRefresh: () => void;
-  facts?: { value: string; after: string }[];
+  facts?: { value: string }[];
 }) => {
   const errors = () => props.logs.filter((log) => log.error || (log.responseStatus ?? 0) >= 400).length;
   const newest = () => props.logs[0];
