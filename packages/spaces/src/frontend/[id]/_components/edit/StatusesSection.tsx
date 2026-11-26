@@ -5,6 +5,7 @@ import { apiClient } from "@/api/client";
 import { type BoardColumn, boardColumnOrderId, orderBoardColumns } from "@/board-columns";
 import type { SpaceColumn, SpaceVirtualColumn, SpaceVirtualColumnKind } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
+import { statusColor } from "../list/ItemRow";
 import { NameColorDialog } from "./NameColorForm";
 import { readErrorMessage } from "./utils";
 
@@ -232,8 +233,7 @@ export function StatusesSection(props: {
                 />
               ) : (
                 <Row
-                  icon="circle-filled"
-                  color={entry.column.color ?? "#6b7280"}
+                  mark={{ icon: entry.column.isDone ? "circle-check" : "circle-dot", color: statusColor(entry.column) }}
                   lines={[entry.column.name, position()]}
                   end={
                     <Menu

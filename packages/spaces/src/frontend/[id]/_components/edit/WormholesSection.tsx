@@ -245,8 +245,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
         <For each={wormholes()}>
           {(wormhole, index) => (
             <Row
-              icon="arrow-bounce"
-              color={wormhole.color}
+              mark={{ icon: "arrow-bounce", color: wormhole.color }}
               lines={[
                 label(wormhole),
                 wormhole.target

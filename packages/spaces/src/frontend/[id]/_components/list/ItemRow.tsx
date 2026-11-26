@@ -185,18 +185,20 @@ export default function ItemRow(props: ItemRowProps) {
     <Row
       // The person who works on the task, else the first one assigned, leads the row; without one, its kind in the status colour.
       avatar={person()}
-      icon={
+      mark={
         person()
           ? undefined
-          : isEvent()
-            ? "calendar-event"
-            : props.item.priority
-              ? priorityIcon[props.item.priority]
-              : isCompleted()
-                ? "circle-check"
-                : "circle"
+          : {
+              icon: isEvent()
+                ? "calendar-event"
+                : props.item.priority
+                  ? priorityIcon[props.item.priority]
+                  : isCompleted()
+                    ? "circle-check"
+                    : "circle",
+              color: status() ? statusColor(status()!) : undefined,
+            }
       }
-      color={status() ? statusColor(status()!) : undefined}
       lines={details() ? [props.item.title, details()] : [props.item.title]}
       time={when()}
       current={props.isSelected}

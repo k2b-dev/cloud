@@ -96,8 +96,7 @@ export function TagsSection(props: {
         <For each={props.tags}>
           {(tag) => (
             <Row
-              icon="tag"
-              color={tag.color}
+              mark={{ icon: "tag", color: tag.color }}
               lines={[tag.name]}
               end={
                 <Menu

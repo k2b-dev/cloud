@@ -268,9 +268,8 @@ export default function SpacesOverview(props: Props) {
                   <For each={current().items}>
                     {(item) => (
                       <Row
-                        icon={item.startsAt ? "calendar-event" : "checkbox"}
-                        // k2b-ui gap: a Row takes a data colour only with an icon; the Space's colour tints the symbol.
-                        color={item.spaceColor ?? undefined}
+                        // The item's kind on the colour of its Space.
+                        mark={{ icon: item.startsAt ? "calendar-event" : "checkbox", color: item.spaceColor ?? undefined }}
                         lines={[item.title, item.spaceName]}
                         time={when(item)}
                         end={
