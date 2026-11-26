@@ -83,6 +83,16 @@ export type TriggerProps = {
 export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
+  /**
+   * Opened by a touch, the menu gives the focus back to where it was, such as a note whose keyboard should stay open on
+   * a phone; its entries are then pressed. Only a touch: opened with keys, a mouse or VoiceOver on a Mac the menu
+   * takes the focus as usual (VoiceOver on a phone may tap as a touch). The focus visits the menu for a moment before
+   * it comes back, so an iPhone may still close its keyboard (k2b-ui gap #4285: core's menu has no initial focus
+   * "none").
+   */
+  keepFocus?: boolean;
+  /** Where the focus goes when the menu closes from inside, such as the note of a toolbar; its button by default. */
+  returnFocus?: () => HTMLElement | null | undefined;
 };
 
 /**
@@ -333,10 +343,21 @@ const MenuRoot = (props: MenuProps) => {
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
+  // with `keepFocus`: what had the focus when a finger pressed the button gets it back once the menu is open; a key, a
+  // mouse or the menu's opening and closing forget it, so a later open by keys puts the focus in the menu
+  let owner: Element | null = null;
   const [align, setAlign] = createSignal<"start" | "end">("end");
   const level = useMenuLevels(() => ({
     onOpenChange: (open: boolean) => {
       if (open) setAlign(alignTo(trigger));
+      const before = owner;
+      owner = null;
+      // k2b-ui gap #4285: core's menu has no initial focus "none" (only a final focus), so a touch opener's focus
+      // visits the menu and is pulled back one frame later; a page without a focused element has nothing to get back
+      if (open && props.keepFocus && before instanceof HTMLElement && before !== document.body)
+        requestAnimationFrame(() => {
+          if (before.isConnected) before.focus({ preventScroll: true });
+        });
     },
   }));
   return (
@@ -344,6 +365,20 @@ const MenuRoot = (props: MenuProps) => {
       <level.Trigger
         ref={(element: HTMLElement) => {
           trigger = element;
+          element.addEventListener(
+            "pointerdown",
+            (event) => {
+              owner = event.pointerType === "touch" ? document.activeElement : null;
+            },
+            true,
+          );
+          element.addEventListener(
+            "keydown",
+            () => {
+              owner = null;
+            },
+            true,
+          );
         }}
         disabled={props.disabled}
         class="k2-btn"
@@ -358,7 +393,15 @@ const MenuRoot = (props: MenuProps) => {
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+      <level.Popup
+        class="k2-menu"
+        data-k2-part="Menu"
+        side="bottom"
+        align={align()}
+        sideOffset={4}
+        collisionPadding={8}
+        finalFocus={props.returnFocus}
+      >
         <Entries level={level} entries={props.items} />
       </level.Popup>
     </>

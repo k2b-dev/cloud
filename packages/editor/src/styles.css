@@ -44,11 +44,55 @@
   color: var(--k2-blue-ink);
   background: var(--k2-blue-tint);
 }
-/* the same ring as MarkdownEditor's toolbar in v2: the shared focus tokens, in the blue of v2 */
-.k2-ui [data-k2b-editor-toolbar] .k2b-icon-button:focus-visible {
+/* the same ring as MarkdownEditor's toolbar in v2: the shared focus tokens, in the blue of v2; a menu's button too */
+.k2-ui [data-k2b-editor-toolbar] :is(.k2b-icon-button, .k2-btn):focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2-blue);
   outline-offset: var(--k2b-focus-offset);
   box-shadow: none;
+}
+
+/* A menu of the toolbar is the v2 menu (see `Toolbar`); its button has the size of the bar's other buttons. */
+.k2-ui [data-k2b-editor-toolbar] .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  min-width: var(--k2-h-control-small);
+  padding: 0;
+  border-radius: var(--k2-r-control);
+}
+
+/* The slash menu inside a v2 screen has the look of the v2 menu: its floating surface, entries of 32 px in the row
+   role with a 16 px symbol, the description in the meta role, the pointer and the keys marking an entry with one fill. */
+.k2-ui .cm-tooltip.cm-tooltip-autocomplete {
+  min-width: 232px;
+  padding: 4px !important;
+  border: var(--k2-hairline) !important;
+  border-radius: var(--k2-r-overlay) !important;
+  background-color: var(--k2-surface) !important;
+  box-shadow: var(--k2-float) !important;
+  font: var(--k2-t-row) !important;
+}
+.k2-ui .cm-tooltip-autocomplete > ul > li {
+  height: var(--k2-h-dense);
+  gap: 8px;
+  padding: 0 8px !important;
+  border-radius: var(--k2-r-mark);
+  color: var(--k2-text-2) !important;
+  line-height: inherit;
+}
+.k2-ui .cm-tooltip-autocomplete > ul > li:is(:hover, [aria-selected]) {
+  color: var(--k2-text-2) !important;
+  background: var(--k2-n100) !important;
+}
+.k2-ui .cm-tooltip-autocomplete .cm-slash-icon {
+  width: 16px;
+  font-size: 16px;
+  color: var(--k2-subtle);
+}
+.k2-ui .cm-tooltip-autocomplete .cm-completion-detail,
+.k2-ui .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completion-detail {
+  margin-left: 0;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
 }
 
 /* The dictation bar's controls match the toolbar's own, so the row keeps its height when the bar stands in. */

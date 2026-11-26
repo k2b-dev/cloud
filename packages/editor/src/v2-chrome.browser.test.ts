@@ -156,12 +156,13 @@ const tabOrder = async (page: Page) => {
   }
   return names;
 };
-/** Every toolbar button by its accessible name, in the order of the page. */
+/** Every toolbar button on the page by its accessible name, in the order of the page (the entries of a closed menu
+ * are not on it). */
 const toolbarNames = (page: Page) =>
   page.evaluate(() =>
-    [...document.querySelectorAll(".k2b-markdown-editor__toolbar button, [data-k2b-editor-toolbar] button")].map(
-      (button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "",
-    ),
+    [...document.querySelectorAll(".k2b-markdown-editor__toolbar button, [data-k2b-editor-toolbar] button")]
+      .filter((button) => button.getClientRects().length > 0)
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? ""),
   );
 
 test("inside v2 the toolbars keep every name and the focus order they have in a v1 page", async () => {
@@ -330,7 +331,10 @@ test("both toolbars show a format that is on, and a button under the pointer, th
       document.dispatchEvent(new Event("selectionchange"));
     });
     await page.locator('[data-editor="shared"] .cm-content').getByText("Lieferung").click();
-    await page.waitForFunction(() => document.querySelectorAll('[aria-pressed="true"][aria-label^="Fett"]').length === 2);
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll(':is([role="toolbar"], [data-k2b-editor-toolbar]) [aria-pressed="true"][aria-label^="Fett"]').length >= 2,
+    );
     // the toolbars ease their colours (150 ms): read them once no transition runs (the caret blinks on, an animation)
     const eased = () =>
       page.waitForFunction(() =>
@@ -354,18 +358,323 @@ test("both toolbars show a format that is on, and a button under the pointer, th
       probe.remove();
       return found;
     });
-    expect(await look('[data-editor="ui"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
-    expect(await look('[data-editor="shared"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
+    expect(await look('[data-editor="ui"] [role="toolbar"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
+    expect(await look('[data-editor="shared"] [data-k2b-editor-toolbar] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
     // a button under the pointer, in each toolbar
     const hovered: string[] = [];
-    for (const editor of ["ui", "shared"]) {
-      const button = page.locator(`[data-editor="${editor}"] button[aria-label^="Kursiv"]`);
+    for (const bar of ['[data-editor="ui"] [role="toolbar"]', '[data-editor="shared"] [data-k2b-editor-toolbar]']) {
+      const button = page.locator(`${bar} button[aria-label^="Kursiv"]`);
       await hoverInPlace(button);
       await eased();
-      hovered.push(await look(`[data-editor="${editor}"] button[aria-label^="Kursiv"]`));
+      hovered.push(await look(`${bar} button[aria-label^="Kursiv"]`));
     }
     expect(hovered[0]).toBe(hovered[1]);
   } finally {
     await page.close();
+  }
+}, 30_000);
+
+/** The computed look of a v2 token on a probe in the v2 scope, as the engine resolves it. */
+const token = (page: Page, property: string, value: string) =>
+  page.evaluate(
+    ([name, of]) => {
+      const probe = document.createElement("span");
+      probe.style.setProperty(name, of);
+      document.querySelector(".k2-ui")?.append(probe);
+      const found = getComputedStyle(probe).getPropertyValue(name);
+      probe.remove();
+      return found;
+    },
+    [property, value] as const,
+  );
+
+test("inside v2 a menu of the toolbar is the v2 menu: its button in the bar's size, its entries and heading, a chosen entry runs in the note", async () => {
+  const page = await open(1440);
+  try {
+    const trigger = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    const box = await trigger.boundingBox();
+    expect({ width: box?.width, height: box?.height, v2: await trigger.evaluate((button) => button.classList.contains("k2-btn")) }).toEqual(
+      {
+        width: 28,
+        height: 28,
+        v2: true,
+      },
+    );
+    await page.locator('[data-editor="shared"] .cm-content').getByText("Familie Oswald").click();
+    await trigger.click();
+    const menu = page.locator(".k2-menu");
+    await menu.waitFor();
+    expect(await menu.locator(".k2-mi .k2-mi-label").allTextContents()).toEqual(["Zitat", "Code im Text", "Link", "Tabelle"]);
+    expect(await menu.locator(".k2-mh").allTextContents()).toEqual(["Einfügen"]);
+    expect(
+      await menu.locator(".k2-mi").evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().height))),
+    ).toEqual([32, 32, 32, 32]);
+    // the arrow reaches the first entry ("Zitat"), Enter runs it on the note's line, and the note has the focus again
+    const before = await page.evaluate(() => window.__k2Doc?.() ?? "");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await menu.waitFor({ state: "hidden" });
+    await page.waitForFunction((was) => window.__k2Doc?.() !== was, before);
+    expect(await page.evaluate(() => window.__k2Doc?.() ?? "")).toContain("> Familie Oswald");
+    expect(await noteHasFocus(page)).toBe(true);
+    // Escape closes it without a change, and the focus goes back into the note, not to the button
+    const now = await page.evaluate(() => window.__k2Doc?.() ?? "");
+    await trigger.click();
+    await menu.waitFor();
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    expect(await noteHasFocus(page)).toBe(true);
+    expect(await page.evaluate(() => window.__k2Doc?.() ?? "")).toBe(now);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+/** Whether the note's editable text has the focus. */
+const noteHasFocus = (page: Page) =>
+  page.evaluate(() => {
+    const content = document.querySelector('[data-editor="shared"] .cm-content');
+    return !!content && !!document.activeElement && content.contains(document.activeElement);
+  });
+
+test("the menu's button stands where the v1 button stood before it: the swap after mount moves nothing", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 720 } });
+  try {
+    // every "Mehr" button that enters the page, with its box at that moment: the v1 one first, then the v2 one
+    await page.addInitScript(() => {
+      const boxes: string[] = [];
+      Reflect.set(window, "__k2MoreBoxes", boxes);
+      new MutationObserver(() => {
+        for (const button of document.querySelectorAll<HTMLElement>('[data-k2b-editor-toolbar] button[aria-label="Mehr"]')) {
+          if (button.dataset.seen) continue;
+          button.dataset.seen = "";
+          const { left, top, width, height } = button.getBoundingClientRect();
+          boxes.push(`${button.classList.contains("k2-btn") ? "v2" : "v1"} ${[left, top, width, height].map(Math.round).join(",")}`);
+        }
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.goto(server.url.href);
+    await page.waitForFunction(() => document.querySelector('[data-k2b-editor-toolbar] .k2-btn[aria-label="Mehr"]'));
+    await settled(page);
+    const boxes: unknown = await page.evaluate(() => Reflect.get(window, "__k2MoreBoxes"));
+    const found = Array.isArray(boxes) ? boxes.map(String) : [];
+    expect(found.length).toBeGreaterThanOrEqual(1);
+    expect(found.at(-1)?.startsWith("v2")).toBe(true);
+    expect(new Set(found.map((box) => box.slice(3))).size).toBe(1);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a v1 page keeps the v1 dropdown of the toolbar", async () => {
+  const page = await open(1440, "?v1");
+  try {
+    const trigger = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    expect(await trigger.evaluate((button) => button.classList.contains("k2-btn"))).toBe(false);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("inside v2 the slash menu has the look of the v2 menu: its surface, 32 px entries in the row role, one fill for the keys", async () => {
+  const page = await open(1440);
+  try {
+    await page.locator('[data-editor="shared"] .cm-content').getByText("Familie Oswald, Lindenweg 4").click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("/");
+    const popup = page.locator(".cm-tooltip-autocomplete");
+    await popup.waitFor();
+    await settled(page);
+    const look = await popup.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const entries = [...element.querySelectorAll("li")];
+      const chosen = element.querySelector("li[aria-selected]");
+      return {
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+        heights: entries.map((entry) => Math.round(entry.getBoundingClientRect().height)),
+        size: getComputedStyle(entries[0]!).fontSize,
+        icon: getComputedStyle(element.querySelector(".cm-slash-icon")!).fontSize,
+        chosen: chosen ? getComputedStyle(chosen).backgroundColor : "",
+      };
+    });
+    expect(look).toEqual({
+      radius: await token(page, "border-top-left-radius", "var(--k2-r-overlay)"),
+      background: await token(page, "background-color", "var(--k2-surface)"),
+      heights: [32, 32, 32],
+      size: "13px",
+      icon: "16px",
+      chosen: await token(page, "background-color", "var(--k2-n100)"),
+    });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("inside v2 the toolbar at a selection floats on the v2 menu surface with the bar's buttons", async () => {
+  const page = await open(1440);
+  try {
+    await page.evaluate(() => window.__k2Select?.("Familie"));
+    const bubble = page.locator(".k2b-selection-toolbar:popover-open");
+    await bubble.waitFor();
+    await settled(page);
+    const look = await bubble.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+        buttons: [...element.querySelectorAll("button")].map((button) => {
+          const box = button.getBoundingClientRect();
+          const icon = button.querySelector(".ti");
+          return `${button.getAttribute("aria-label")}: ${Math.round(box.width)}x${Math.round(box.height)} ${icon ? getComputedStyle(icon).fontSize : ""}`;
+        }),
+      };
+    });
+    expect(look).toEqual({
+      radius: await token(page, "border-top-left-radius", "var(--k2-r-overlay)"),
+      background: await token(page, "background-color", "var(--k2-surface)"),
+      buttons: ["Fett: 28x28 16px", "Kursiv: 28x28 16px", "Code im Text: 28x28 16px", "Link: 28x28 16px"],
+    });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+/** A phone: a narrow touch screen whose taps are touches, as an iPhone in Safari or Chrome on Android. */
+const openPhone = async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await page.goto(`${server.url.href}?shared`);
+  await page.waitForFunction(() => document.querySelectorAll(".cm-content").length > 0);
+  await settled(page);
+  return { context, page };
+};
+/** Whether the note has the focus, with its caret (on a phone its keyboard stays open). */
+const noteFocused = (page: Page) =>
+  page.evaluate(
+    () =>
+      document.activeElement?.closest('[data-editor="shared"] .cm-content') !== null &&
+      document.activeElement?.closest('[data-editor="shared"] .cm-content') !== undefined,
+  );
+
+/** The note's line that holds the caret, by its words. */
+const caretLine = (page: Page) =>
+  page.evaluate(() => {
+    const node = getSelection()?.anchorNode;
+    const element = node instanceof Element ? node : node?.parentElement;
+    return element?.closest(".cm-line")?.textContent ?? "";
+  });
+/** The note's Markdown line with these words. */
+const sourceLine = (page: Page, words: string) =>
+  page.evaluate((text) => (window.__k2Doc?.() ?? "").split("\n").find((line) => line.includes(text)) ?? "", words);
+
+test("on a phone a menu of the toolbar leaves the note its focus, keyboard and caret: while it is open and after an entry", async () => {
+  const { context, page } = await openPhone();
+  try {
+    const note = page.locator('[data-editor="shared"] .cm-content');
+    const more = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    await note.getByText("Familie Oswald").tap();
+    expect(await noteFocused(page)).toBe(true);
+    expect(await caretLine(page)).toContain("Familie Oswald");
+    await more.tap();
+    await page.locator(".k2-menu").waitFor();
+    // while the menu is open the note keeps its focus and caret, so the phone's keyboard stays open
+    await settled(page);
+    expect(await noteFocused(page)).toBe(true);
+    expect(await caretLine(page)).toContain("Familie Oswald");
+    // "Zitat" turns the caret's line into a quote, and the note keeps its focus
+    expect(await sourceLine(page, "Familie Oswald")).not.toMatch(/^> /);
+    await page.locator(".k2-mi", { hasText: "Zitat" }).tap();
+    await page.locator(".k2-menu").waitFor({ state: "hidden" });
+    await settled(page);
+    expect(await sourceLine(page, "Familie Oswald")).toMatch(/^> Familie Oswald/);
+    expect(await noteFocused(page)).toBe(true);
+    expect(await caretLine(page)).toContain("Familie Oswald");
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+// A press beside the open menu, as a phone sends it after a tap: pointer, mouse and click events. Playwright's
+// `touchscreen.tap` sends no click in either engine here (logged: Chromium pointerdown, touchstart, pointerup, touchend;
+// WebKit pointerdown and touchstart only), and core dismisses on the click after a tap, so the press comes from the
+// mouse, in the phone's touch context. Safari and Chrome on a phone send that click.
+test("in a phone's touch context a mouse press beside an open menu, on the page's head, closes it, and the note keeps its focus and caret", async () => {
+  const { context, page } = await openPhone();
+  try {
+    const note = page.locator('[data-editor="shared"] .cm-content');
+    const more = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    await note.getByText("Familie Oswald").tap();
+    await more.tap();
+    await page.locator(".k2-menu").waitFor();
+    // the head of the page: no field there, and nothing of the note or the menu
+    const head = await page.locator('.k2-ws-main > [data-slot="head"]').boundingBox();
+    const point = { x: (head?.x ?? 0) + (head?.width ?? 0) - 40, y: (head?.y ?? 0) + (head?.height ?? 0) / 2 };
+    const under = await page.evaluate(({ x, y }) => {
+      const element = document.elementFromPoint(x, y);
+      return {
+        note: !!element?.closest(".cm-content"),
+        menu: !!element?.closest(".k2-menu"),
+        focusable: !!element?.closest("button, a, input, [tabindex]"),
+      };
+    }, point);
+    expect(under).toEqual({ note: false, menu: false, focusable: false });
+    await page.mouse.click(point.x, point.y);
+    await page.locator(".k2-menu").waitFor({ state: "hidden" });
+    await settled(page);
+    expect(await noteFocused(page)).toBe(true);
+    expect(await caretLine(page)).toContain("Familie Oswald");
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("on a phone, after a menu opened by a touch, keys open it again with the focus in the menu", async () => {
+  const { context, page } = await openPhone();
+  try {
+    const note = page.locator('[data-editor="shared"] .cm-content');
+    const more = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    await note.getByText("Familie Oswald").tap();
+    await more.tap();
+    await page.locator(".k2-menu").waitFor();
+    await settled(page);
+    expect(await noteFocused(page)).toBe(true);
+    // closed by a press beside it (see above), then opened from the keyboard: the menu takes the focus
+    const head = await page.locator('.k2-ws-main > [data-slot="head"]').boundingBox();
+    await page.mouse.click((head?.x ?? 0) + (head?.width ?? 0) - 40, (head?.y ?? 0) + (head?.height ?? 0) / 2);
+    await page.locator(".k2-menu").waitFor({ state: "hidden" });
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(".k2-menu").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => !!document.activeElement?.closest(".k2-menu"))).toBe(true);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+// k2b-ui gap (#4285): core's menu has no initial focus "none", so a touch opener's focus visits the menu for a frame
+// before `keepFocus` takes it back. This pins today's behaviour: the note blurs once, then has its focus and caret
+// again. When core offers the initial focus "none", the note never blurs, and this test expects 0.
+test("on a phone the note loses its focus once while a toolbar menu opens by a touch, and gets it back with its caret", async () => {
+  const { context, page } = await openPhone();
+  try {
+    const note = page.locator('[data-editor="shared"] .cm-content');
+    await note.getByText("Familie Oswald").tap();
+    await page.evaluate(() => {
+      Reflect.set(window, "__k2Blurs", 0);
+      document
+        .querySelector('[data-editor="shared"] .cm-content')
+        ?.addEventListener("focusout", () => Reflect.set(window, "__k2Blurs", Number(Reflect.get(window, "__k2Blurs")) + 1));
+    });
+    await page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]').tap();
+    await page.locator(".k2-menu").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => Reflect.get(window, "__k2Blurs"))).toBe(1);
+    expect(await noteFocused(page)).toBe(true);
+    expect(await caretLine(page)).toContain("Familie Oswald");
+  } finally {
+    await context.close();
   }
 }, 30_000);
