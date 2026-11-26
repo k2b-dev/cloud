@@ -7,7 +7,6 @@ import {
   confirm,
   DateInput,
   Dialog,
-  Empty,
   Facts,
   Field,
   Input,
@@ -16,6 +15,7 @@ import {
   Row,
   Section,
   Select,
+  Text,
   useToast,
 } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, Show } from "solid-js";
@@ -110,8 +110,9 @@ export function ResourceApiKeysV2(props: ResourceApiKeysProps) {
     try {
       await props.revokeKey(key.id);
       setKeys((current) => current.filter((entry) => entry.id !== key.id));
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t().revokeFailed, { status: "bad", retry: () => void revoke(key) });
+    } catch {
+      // a v2 toast is one short line: the outcome, and the deed again
+      toast(t().revokeFailedTitle, { status: "bad", retry: () => void revoke(key) });
     }
   };
 
@@ -126,14 +127,11 @@ export function ResourceApiKeysV2(props: ResourceApiKeysProps) {
     <Section
       icon="key"
       title={props.title ?? t().apiKeys}
-      count={keys().length}
+      count={keys().length > 0 ? keys().length : undefined}
       summary={props.description ?? t().apiKeysDescription}
       actions={[{ label: t().add, icon: "plus", onClick: openCreate }]}
     >
-      <Show
-        when={keys().length > 0}
-        fallback={<Empty icon="key" text={t().noApiKeys} action={{ label: t().createKey, icon: "plus", onClick: openCreate }} />}
-      >
+      <Show when={keys().length > 0} fallback={<Text muted>{t().noApiKeys}</Text>}>
         <For each={keys()}>
           {(key) => (
             <Row
@@ -219,7 +217,6 @@ export function ResourceApiKeysV2(props: ResourceApiKeysProps) {
           <Field label={t().expiryDate} name="key-expiry-date" error={dateError()}>
             <DateInput
               value={date()}
-              placeholder="31.12.2027"
               onInput={(value) => {
                 setDate(value);
                 setDateError(undefined);

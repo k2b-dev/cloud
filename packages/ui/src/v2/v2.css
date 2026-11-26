@@ -3265,6 +3265,10 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
+/* the body scrolls: its parts keep their own height and never shrink, also a field with a box of its own */
+.k2-ui .k2-dialog-body > * {
+  flex: none;
+}
 .k2-ui .k2-dialog:is([data-more="above"], [data-more="both"]) > [data-slot="head"] > .k2-bar {
   box-shadow: 0 1px 0 var(--k2-line);
 }

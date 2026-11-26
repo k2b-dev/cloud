@@ -21,7 +21,7 @@ export const accessDialogMessages = i18n.define({
       serviceAccountJoins: ({ kind }: { kind: string }) => `${kind} · goes to Service accounts`,
       serviceAccountNote: ({ name }: { name: string }) =>
         `Code runs as the service account of its object. Whoever manages “${name}” gives it access here, like a person. Whoever edits the code acts with this right.`,
-      serviceAccountsEmpty: "No service account yet. Code of a mailbox or a base gets access here like a person.",
+      serviceAccountsEmpty: "No service account yet.",
       serviceAccountSearching: "Looking up the handle …",
       accountMay: ({ level }: { level: string }) => `may ${level.toLowerCase()}`,
       accountMayAlone: ({ level }: { level: string }) => `May ${level.toLowerCase()}`,
@@ -102,6 +102,7 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Service account",
       you: "You",
+      managesAlone: "Manages alone",
       summaryTitle: "Who has access",
       summaryStackLabel: ({ name, more }: { name: string; more: number }) =>
         more === 0
@@ -131,7 +132,7 @@ export const accessDialogMessages = i18n.define({
       serviceAccountJoins: ({ kind }) => `${kind} · kommt in den Abschnitt Dienstkonten`,
       serviceAccountNote: ({ name }) =>
         `Code läuft als Dienstkonto seines Objekts. Wer „${name}“ verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.`,
-      serviceAccountsEmpty: "Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.",
+      serviceAccountsEmpty: "Noch kein Dienstkonto.",
       serviceAccountSearching: "Kennung wird gesucht …",
       accountMay: ({ level }) => `darf ${level.toLowerCase()}`,
       accountMayAlone: ({ level }) => `Darf ${level.toLowerCase()}`,
@@ -219,6 +220,7 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Dienstkonto",
       you: "Du",
+      managesAlone: "Verwaltet allein",
       summaryTitle: "Wer Zugriff hat",
       summaryStackLabel: ({ name, more }) =>
         more === 0

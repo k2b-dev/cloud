@@ -366,7 +366,6 @@ export function AccessDialog(
   };
 
   // ── Service accounts by handle ────────────────────────────────────
-  // ── Service accounts by handle ────────────────────────────────────
   let body: HTMLDivElement | undefined;
   const revealRow = (principal: Principal) => {
     const key = rows().find((row) => row.next && principalKey(row.principal) === principalKey(principal))?.key;

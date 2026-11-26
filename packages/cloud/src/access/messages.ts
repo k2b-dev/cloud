@@ -60,6 +60,7 @@ export const accessMessages = i18n.define({
       groupMembersLoading: "Loading members…",
       groupMembersHidden: "Your account can't see who belongs to this group.",
       groupMembersFailed: "Members couldn't be loaded.",
+      notSaved: "Not saved",
       retry: "Try again",
       showMoreMembers: ({ count }: { count: number }) => `Show ${count.toLocaleString("en")} more`,
       directoryGroupHint:
@@ -78,7 +79,7 @@ export const accessMessages = i18n.define({
       expiryDate: "Expires on",
       dateInvalid: "Pick a day in the future.",
       createFailed: "The API key could not be created.",
-      revokeFailed: "The API key could not be revoked.",
+      revokeFailedTitle: "Not revoked",
       keyActions: ({ name }: { name: string }) => `Actions for ${name}`,
       nameRequired: "Enter a name.",
       name: "Name",
@@ -191,6 +192,7 @@ export const accessMessages = i18n.define({
       groupMembersLoading: "Mitglieder werden geladen…",
       groupMembersHidden: "Dein Konto kann nicht sehen, wer zu dieser Gruppe gehört.",
       groupMembersFailed: "Die Mitglieder konnten nicht geladen werden.",
+      notSaved: "Nicht gespeichert",
       retry: "Erneut versuchen",
       showMoreMembers: ({ count }) => `${count.toLocaleString("de")} weitere anzeigen`,
       directoryGroupHint:
@@ -209,7 +211,7 @@ export const accessMessages = i18n.define({
       expiryDate: "Läuft ab am",
       dateInvalid: "Wähle einen Tag in der Zukunft.",
       createFailed: "Der API Key konnte nicht erstellt werden.",
-      revokeFailed: "Der API Key konnte nicht widerrufen werden.",
+      revokeFailedTitle: "Nicht widerrufen",
       keyActions: ({ name }) => `Aktionen für ${name}`,
       nameRequired: "Gib einen Namen ein.",
       name: "Name",

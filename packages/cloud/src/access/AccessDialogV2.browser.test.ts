@@ -90,7 +90,7 @@ const open = async (view: View, query = "") => {
       return route.fulfill({
         contentType: "text/html; charset=utf-8",
         body:
-          '<!doctype html><html lang="en" class="light"><head><meta charset="utf-8">' +
+          `<!doctype html><html lang="${url.searchParams.has("de") ? "de" : "en"}" class="light"><head><meta charset="utf-8">` +
           `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
           `<style>${css}</style></head><body class="k2b-ui"><script src="/harness.js"></script></body></html>`,
       });
@@ -200,7 +200,7 @@ describe("the access dialog on v2", () => {
     const { context, dialog } = await open(views[0]!, "?public");
     try {
       await dialog.getByRole("switch", { name: /Public/ }).check({ force: true });
-      await dialog.getByText("https://cloud.beispiel.de/s/lager-nord").waitFor();
+      await dialog.getByText("https://cloud.example.org/s/lager-nord").waitFor();
       await dialog.locator('[data-k2-part="Notice"]').first().waitFor();
     } finally {
       await context.close();
@@ -210,10 +210,9 @@ describe("the access dialog on v2", () => {
   test("read-only shows who has access and who manages it, without controls", async () => {
     const { context, dialog } = await open(views[0]!, "?readonly");
     try {
-      await dialog
-        .locator('[data-k2-part="Notice"]')
-        .getByText(/Mia Hoffmann/)
-        .waitFor();
+      // one quiet line names who manages it; no notice
+      await dialog.getByText(/manage it can change access: Mia Hoffmann/).waitFor();
+      expect(await dialog.locator('[data-k2-part="Notice"]').count()).toBe(0);
       expect(await dialog.getByRole("searchbox").count()).toBe(0);
       expect(await dialog.getByRole("switch").count()).toBe(0);
     } finally {
@@ -278,6 +277,21 @@ describe("the access dialog on v2", () => {
     }
   });
 
+  test("a key that cannot be revoked stays, and the toast says so with Try again", async () => {
+    const { context, tab, dialog } = await open(views[0]!, "?keys&revokeFails");
+    try {
+      const keys = dialog.getByRole("region", { name: /API keys/ });
+      await keys.getByRole("button", { name: "Actions for Lagerimport" }).click();
+      await tab.getByRole("menuitem", { name: "Revoke" }).click();
+      await tab.getByRole("alertdialog").getByRole("button", { name: "Revoke" }).click();
+      await tab.getByText("Not revoked").waitFor();
+      await tab.getByRole("button", { name: "Try again" }).waitFor();
+      expect(await keys.getByText("Lagerimport").count()).toBe(1);
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const view of [views[0]!, views[2]!])
     test(`${view.name} px: the worst case stays readable and nothing overflows`, async () => {
       const { context, tab, errors, dialog } = await open(view, "?worst");
@@ -285,6 +299,80 @@ describe("the access dialog on v2", () => {
         await row(dialog, "山田 花子").first().waitFor();
         await clean(tab);
         if (shots) await tab.screenshot({ path: join(shots, `02-sharing-v2-worst-${view.name}.png`) });
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+  // In a notebook (German, as the review sees it): only its owner, no service account yet, nobody found, the handle of
+  // a code account, and staged changes. Every empty state is one quiet line; the field's words fit on the phone.
+  for (const view of [views[0]!, views[2]!])
+    test(`${view.name} px: a notebook's dialog in each state, every empty one a quiet line`, async () => {
+      const { context, tab, errors, dialog } = await open(view, "?notebook&de");
+      try {
+        await row(dialog, "Mia Hoffmann").first().waitFor();
+        const services = dialog.getByRole("region", { name: /Dienstkonten/ });
+        await services.getByText("Noch kein Dienstkonto.").waitFor();
+        expect(await dialog.getByText(/Postfach|Base/).count()).toBe(0);
+        // the search field's words fit, in the size of its text
+        const field = await dialog.getByRole("searchbox").evaluate((input: HTMLInputElement) => ({
+          fits: input.scrollWidth <= input.clientWidth,
+          placeholder: getComputedStyle(input, "::placeholder").fontSize,
+          text: getComputedStyle(input).fontSize,
+          words: input.placeholder,
+        }));
+        expect(field.fits, field.words).toBe(true);
+        expect(field.placeholder).toBe(field.text);
+        await clean(tab);
+        if (shots) await tab.screenshot({ path: join(shots, `03-notebook-${view.name}.png`) });
+
+        // nobody is found: one quiet line, no box
+        await dialog.getByRole("searchbox").fill("zz");
+        await dialog.getByText("Niemand heißt „zz“.", { exact: false }).waitFor();
+        expect(await dialog.locator('[data-k2-part="Empty"]').count()).toBe(0);
+        await clean(tab);
+        if (shots) await tab.screenshot({ path: join(shots, `04-notebook-nobody-${view.name}.png`) });
+
+        // found: rows that add
+        await dialog.getByRole("searchbox").fill("noah");
+        await row(dialog, "Noah Becker").waitFor();
+        if (shots) await tab.screenshot({ path: join(shots, `05-notebook-search-${view.name}.png`) });
+        await row(dialog, "Noah Becker").getByRole("button", { name: "Hinzufügen" }).click();
+
+        // a code account by its handle
+        await services.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
+        const handle = services.getByRole("textbox", { name: "Kennung des Dienstkontos" });
+        // the empty line gives way to the field that adds one
+        await handle.waitFor();
+        expect(await services.getByText("Noch kein Dienstkonto.").count()).toBe(0);
+        await handle.fill("code-7k2q9m4xwt");
+        await handle.press("Enter");
+        await row(services, "Code von Protokolle Vorstand").waitFor();
+        await clean(tab);
+        if (shots) await tab.screenshot({ path: join(shots, `06-notebook-handle-${view.name}.png`) });
+        await row(services, "Code von Protokolle Vorstand").getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
+
+        // staged: marks and what changes; the body scrolls, and the search field keeps its height
+        await dialog.getByRole("region", { name: /Was sich ändert/ }).waitFor();
+        expect(
+          (await dialog.getByRole("searchbox").evaluate((input) => input.closest(".k2-input")!.getBoundingClientRect().height)) >= 32,
+        ).toBe(true);
+        await clean(tab);
+        if (shots) await tab.screenshot({ path: join(shots, `07-notebook-staged-${view.name}.png`), fullPage: true });
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+  for (const view of [views[0]!, views[2]!])
+    test(`${view.name} px: a notebook read without the right to change it says who manages it`, async () => {
+      const { context, tab, errors, dialog } = await open(view, "?notebook&de&readonly");
+      try {
+        await row(dialog, "Mia Hoffmann").first().waitFor();
+        await clean(tab);
+        if (shots) await tab.screenshot({ path: join(shots, `08-notebook-readonly-${view.name}.png`) });
         expect(errors).toEqual([]);
       } finally {
         await context.close();

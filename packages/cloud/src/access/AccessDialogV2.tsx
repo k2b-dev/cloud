@@ -5,7 +5,6 @@ import {
   Chip,
   confirm,
   Dialog,
-  Empty,
   Facts,
   Failed,
   Field,
@@ -166,13 +165,22 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
       },
     ];
   };
+  // A code account's level stands in its menu; its line says only what it is.
+  const line = (row: DraftRow) =>
+    isCodeAccount(row.display.serviceAccountKind) && state.canEdit() && row.next
+      ? (row.display.serviceAccountDescription ?? t().serviceAccount)
+      : state.kindLine(row);
   const AccessRowV2 = (rowProps: { row: DraftRow }): JSX.Element => {
     const row = () => rowProps.row;
     return (
       <Row
         {...principalFace(row().principal, state.nameOf(row()), row().display)}
-        lines={[state.nameOf(row()), state.kindLine(row()) || " "]}
-        meta={state.isViewer(row()) ? t().you : undefined}
+        lines={[state.nameOf(row()), line(row()) || " "]}
+        meta={
+          [state.isViewer(row()) ? t().you : undefined, row().next && state.lastManagers().has(row().key) ? t().managesAlone : undefined]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
         href={row().display.serviceAccountHref}
         end={
           <>
@@ -238,13 +246,11 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                 </Menu>
               )}
             </Show>
-            <Show
-              when={state.canEdit()}
-              fallback={<Text type="meta">{state.generalOn(type) ? state.levelLabel({ type }, row()?.next ?? null) : t().off}</Text>}
-            >
+            <Show when={state.canEdit()}>
+              {/* k2b-ui gap: Setting (#4223): a switch at a row's end has no name of its own; the row already shows it. */}
               <Check
                 switch
-                label={label}
+                label={<span class="k2-hidden-text">{label}</span>}
                 checked={state.generalOn(type)}
                 disabled={!editable() || state.loading() || Boolean(row() && state.lastManagers().has(row()!.key))}
                 onChange={(value) => state.toggleGeneral(type, value)}
@@ -306,7 +312,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
     >
       <Show when={props.subtitle}>{(subtitle) => <Text muted>{subtitle()}</Text>}</Show>
       <Show when={!state.canEdit() && !state.loading()}>
-        <Notice tone="note">{state.readOnlyLine()}</Notice>
+        <Text muted>{state.readOnlyLine()}</Text>
       </Show>
 
       <Show when={state.canEdit() && !state.loading()}>
@@ -329,7 +335,11 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
           <Show when={!searchFailed()} fallback={<Failed text={access().retry} onRetry={() => search(query())} />}>
             <Show
               when={results().length > 0 || searching()}
-              fallback={<Empty icon="search-off" text={`${t().nobodyNamed({ query: query().trim() })} ${t().searchHint}`} />}
+              fallback={
+                <Text muted>
+                  {t().nobodyNamed({ query: query().trim() })} {t().searchHint}
+                </Text>
+              }
             >
               <Show when={!searching() || results().length > 0} fallback={<Loading rows={3} lines={2} />}>
                 <List label={t().search}>
@@ -343,7 +353,11 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                           meta={
                             already() ? t().alreadyHas({ level: state.levelLabel(already()!.principal, already()!.next) }) : entry.badge
                           }
-                          action={already() ? undefined : { label: t().add, icon: "plus", onClick: () => add(entry) }}
+                          end={
+                            already() ? undefined : (
+                              <Button variant="ghost" icon="plus" label={`${t().add}: ${entry.label}`} onClick={() => add(entry)} />
+                            )
+                          }
                         />
                       );
                     }}
@@ -392,17 +406,26 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
         <Section
           icon="code"
           title={t().serviceAccounts}
-          count={state.objectAccountRows().filter((row) => row.next).length}
-          summary={state.objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : t().serviceAccountsEmpty}
+          count={state.objectAccountRows().filter((row) => row.next).length || undefined}
+          summary={state.objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : undefined}
           actions={
             state.canAddObjectAccounts() && !handleOpen()
               ? [{ label: t().addServiceAccount, icon: "plus", disabled: state.saving(), onClick: () => setHandleOpen(true) }]
               : undefined
           }
         >
-          <For each={state.objectAccountRows().map((row) => row.key)}>
-            {(key) => <Show when={state.rows().find((row) => row.key === key)}>{(row) => <AccessRowV2 row={row()} />}</Show>}
-          </For>
+          <Show
+            when={state.objectAccountRows().length > 0}
+            fallback={
+              <Show when={!handleOpen()}>
+                <Text muted>{t().serviceAccountsEmpty}</Text>
+              </Show>
+            }
+          >
+            <For each={state.objectAccountRows().map((row) => row.key)}>
+              {(key) => <Show when={state.rows().find((row) => row.key === key)}>{(row) => <AccessRowV2 row={row()} />}</Show>}
+            </For>
+          </Show>
           <Show when={handleOpen()}>
             <Field
               label={t().serviceAccountHandle}
@@ -424,7 +447,6 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
             >
               <Input
                 value={handle()}
-                placeholder="code-7k2q9m4xwt"
                 disabled={state.saving()}
                 onInput={(value) => {
                   setHandle(value);
@@ -451,16 +473,19 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                 <Row
                   {...principalFace(account().principal, account().display.displayName, account().display)}
                   lines={[account().display.displayName, account().description ?? t().serviceAccount]}
-                  action={{
-                    label: t().addServiceAccount,
-                    icon: "plus",
-                    onClick: () => {
-                      state.addFound(account());
-                      setHandleOpen(false);
-                      setHandle("");
-                      setFound(null);
-                    },
-                  }}
+                  end={
+                    <Button
+                      variant="ghost"
+                      icon="plus"
+                      label={t().addServiceAccount}
+                      onClick={() => {
+                        state.addFound(account());
+                        setHandleOpen(false);
+                        setHandle("");
+                        setFound(null);
+                      }}
+                    />
+                  }
                 />
               )}
             </Show>

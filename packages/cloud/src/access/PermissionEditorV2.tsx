@@ -105,7 +105,8 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
   // v2 has one look: saves and failures always speak in their own row (the v1 `expanded` behaviour).
   const state = createPermissionEditorState(mergeProps(props, { expanded: true }), locale, {
     confirm: (question) => confirm({ title: question.title, description: question.body, confirm: state.t().removeAccess }),
-    error: (message) => toast(message, { status: "bad" }),
+    // every failure speaks in its own row (`expanded`); a toast, if one ever comes, names the outcome in two words
+    error: () => toast(state.t().notSaved, { status: "bad" }),
     focusAdd: () => {},
     focusAfterRemoval: (index) =>
       queueMicrotask(() => {
