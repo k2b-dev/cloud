@@ -15,7 +15,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CloudCalendarFixture } = await import("./cloud-calendar.browser-fixture");
 
 const sidebar = {
-  spaces: [{ id: "TeamLg", name: "Team Logistik", color: "#8b5cf6", description: null, openItemCount: 9 }],
+  spaces: [{ id: "TeamLg", name: "Planning", color: "#6366f1", description: null, openItemCount: 9 }],
   pinnedSpaceIds: [],
   myWorkCount: 5,
 };
@@ -53,9 +53,9 @@ describe("calendar of all Spaces on the server", () => {
   test("the first picture names the view, the calendars, and Calendar in the sidebar", () => {
     const html = render("/app/spaces/calendar?view=week&date=2026-10-27");
     expect(html).toContain("Kalender 9");
-    expect(html).toContain("Gabelstapler-Wartung");
+    expect(html).toContain("Forklift inspection");
     expect(html).toMatch(/aria-current="page"[^>]*>[\s\S]*?Kalender/);
-    expect(html).not.toContain("Frühschicht");
+    expect(html).not.toContain("Early shift");
   });
 
   test("the first row names what comes next today, not a count of the days in view", () => {
