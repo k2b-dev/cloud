@@ -10,7 +10,16 @@ import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
-import { actorOf, formatWhen, type HistoryEnvironment, historyRows, runDestination } from "./history-actions";
+import {
+  actorOf,
+  daysAgo,
+  formatDate,
+  formatTime,
+  formatWhen,
+  type HistoryEnvironment,
+  historyRows,
+  runDestination,
+} from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { ActivityLineRow, personOf } from "./history-v2";
 import { useFilesMessages } from "./messages";
@@ -87,7 +96,14 @@ export default function OverviewPane(props: {
   };
   const lastWhen = (base: BaseSummary) => {
     const change = changes().get(base.id);
-    return change ? formatWhen(change.time, locale(), h(), props.env) : "—";
+    if (!change) return "—";
+    // the short form fits the column at 1024: today its time, yesterday the word, before that the day
+    const ago = daysAgo(change.time, props.env);
+    return ago === 0
+      ? formatTime(change.time, locale(), props.env)
+      : ago === 1
+        ? h().yesterday
+        : formatDate(change.time, locale(), props.env);
   };
   // runs this page opened; opening is presentation only, so a reload starts closed
   const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());

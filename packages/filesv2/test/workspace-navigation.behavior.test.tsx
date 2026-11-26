@@ -281,7 +281,8 @@ describe("Filesv2 progressive navigation", () => {
     const home = cells(cards()[0]!);
     // a count that stopped at its limit is a lower bound; the last change leads with the person's avatar
     expect(home.slice(1, 3)).toEqual(["Only you", "≥ 1.2 MB"]);
-    expect(home[3]).toEndWith("Bob Berger · today, 10:30 AM");
+    // the short form: today the time alone
+    expect(home[3]).toEndWith("Bob Berger · 10:30 AM");
     expect(cards()[0]!.querySelector('[data-k2-part="Avatar"]')).not.toBeNull();
     expect(cells(cards()[1]!).slice(1)).toEqual(["6 people", "—", "—"]);
     const failed = () => [...dom.root.querySelectorAll('[data-k2-part="Failed"]')];
