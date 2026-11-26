@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { KEPT_NOW, keptAdminNav, keptDateConfig, keptRecord, keptRows, keptWorstRows } from "../../../../test/fixtures/mail-admin-kept";
-import type { KeptHarnessOptions } from "./mail-admin-kept.browser-harness";
+import { mailboxesProps } from "../../../../test/fixtures/mail-admin-mailboxes";
+import type { KeptHarnessOptions } from "./mail-admin.browser-harness";
 
 // Cloud administration › Mail › Kept on v2: the list selects and downloads, searches and pages through addresses, and
 // keeps its shape with the worst data and a full page; the record shows kept mail without loading anything from the
@@ -14,7 +15,7 @@ const buildHarness = async (): Promise<string> => {
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "mail-admin-kept.browser-harness.tsx")],
+    entrypoints: [resolve(import.meta.dir, "mail-admin.browser-harness.tsx")],
     target: "browser",
     format: "iife",
     conditions: ["browser"],
@@ -77,6 +78,15 @@ beforeAll(async () => {
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname.startsWith("/ui/") && !url.pathname.includes(".."))
         return new Response(Bun.file(resolve(uiDist, url.pathname.slice(4))));
+      // Mailboxes: the storage refresh is queued, a mailbox's access loads for its dialog
+      if (url.pathname === "/api/mail/admin/storage/reconcile") {
+        requests.push({ method: request.method, path: url.pathname, body: null });
+        return Response.json({ queued: true });
+      }
+      if (/^\/api\/mail\/admin\/mailboxes\/[^/]+\/access$/.test(url.pathname)) {
+        requests.push({ method: request.method, path: url.pathname, body: null });
+        return Response.json([]);
+      }
       if (url.pathname.startsWith("/api/mail/admin/kept")) {
         const text = await request.text();
         requests.push({ method: request.method, path: url.pathname, body: text ? JSON.parse(text) : null });
@@ -347,4 +357,76 @@ describe("Admin › Mail › Kept on v2", () => {
       }
     }
   }, 60_000);
+});
+
+describe("Admin › Mail › Mailboxes on v2", () => {
+  const mailboxes = (overrides: Parameters<typeof mailboxesProps>[0] = {}): KeptHarnessOptions => ({
+    locale: "de",
+    mailboxes: mailboxesProps(overrides),
+  });
+
+  test("shows the figures and every mailbox without sideways scroll, on the desktop and the phone", async () => {
+    for (const context of [desktop, phone]) {
+      const page = await open(context, mailboxes());
+      try {
+        await page.getByText("12 von 12 Postfächern").waitFor();
+        await page.getByText("Ohne Verwaltung").filter({ visible: true }).first().waitFor();
+        await page.getByText("Rechnungseingang").filter({ visible: true }).first().waitFor();
+        await page.getByText("Kontakte", { exact: true }).waitFor();
+        expect(await overflow(page)).toBeLessThanOrEqual(0);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
+  test("opens a mailbox's access, also from its row on the phone, and queues the storage refresh", async () => {
+    for (const context of [desktop, phone]) {
+      const page = await open(context, mailboxes());
+      try {
+        await page.getByRole("button", { name: "Personal" }).filter({ visible: true }).first().click();
+        await page.getByRole("dialog").waitFor();
+        expect(requests.at(-1)).toEqual({ method: "GET", path: "/api/mail/admin/mailboxes/Mbx005/access", body: null });
+        await page.keyboard.press("Escape");
+        await page.getByRole("dialog").waitFor({ state: "hidden" });
+
+        await page.getByRole("button", { name: "Weitere Aktionen" }).click();
+        await page.getByRole("menuitem", { name: "Speicherbestand aktualisieren" }).click();
+        await page.getByText("Speicherabgleich eingeplant").waitFor();
+        expect(requests.at(-1)).toEqual({ method: "POST", path: "/api/mail/admin/storage/reconcile", body: null });
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
+  test("says when nothing matches, and keeps the page when a part could not load", async () => {
+    const none = await open(desktop, mailboxes({ rows: [], query: "Nordpol" }));
+    try {
+      await none
+        .getByText("Keine Postfächer passend zu „Nordpol“.", { exact: false })
+        .or(none.getByText("Nordpol", { exact: false }))
+        .first()
+        .waitFor();
+      expect(await none.getByRole("link", { name: "Suche leeren" }).getAttribute("href")).toBe("/admin/mail");
+    } finally {
+      await none.context().close();
+    }
+    const partial = await open(
+      desktop,
+      mailboxes({
+        failure: "Der Speicher ist nicht erreichbar.",
+        figures: { mailboxes: 12, withoutAdministrator: 2, attention: 16, storage: null },
+      }),
+    );
+    try {
+      await partial.getByText("Der Speicher ist nicht erreichbar.").waitFor();
+      await partial.getByText("Verwaltung").filter({ visible: true }).first().waitFor();
+      expect(partial.errors).toEqual([]);
+    } finally {
+      await partial.context().close();
+    }
+  }, 30_000);
 });
