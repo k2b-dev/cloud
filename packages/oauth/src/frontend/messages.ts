@@ -18,7 +18,6 @@ export const oauthMessages = i18n.define({
       public: "Public",
       publicSubtitle: "PKCE, no secret",
       dynamic: "Dynamic",
-      dynamicSubtitle: "browser consent",
       searchClients: "Search OAuth clients...",
       searchClientsLabel: "Search OAuth clients",
       noDescription: "No description",
@@ -167,7 +166,7 @@ export const oauthMessages = i18n.define({
       dynamicLead: ({ count }: { count: number }) =>
         `${count.toLocaleString("en")} ${count === 1 ? "client registered itself" : "clients registered themselves"}`,
       managedLead: "Every client is registered here",
-      unverified: "Unverified",
+      emptyLead: "No clients yet",
       dynamicNote: "This client registered itself. Its name and addresses are its own and unverified; revoke it if nobody here uses it.",
       firstPartyNote: "Cloud brings this client along; it cannot be changed or deleted here.",
       redirectUriOne: "Redirect URI",
@@ -203,7 +202,6 @@ export const oauthMessages = i18n.define({
       public: "Öffentlich",
       publicSubtitle: "PKCE, kein Secret",
       dynamic: "Dynamisch",
-      dynamicSubtitle: "Zustimmung im Browser",
       searchClients: "OAuth-Clients durchsuchen...",
       searchClientsLabel: "OAuth-Clients durchsuchen",
       noDescription: "Keine Beschreibung",
@@ -354,7 +352,7 @@ export const oauthMessages = i18n.define({
       dynamicLead: ({ count }) =>
         `${count.toLocaleString("de")} ${count === 1 ? "Client hat sich selbst registriert" : "Clients haben sich selbst registriert"}`,
       managedLead: "Alle Clients sind hier registriert",
-      unverified: "Nicht geprüft",
+      emptyLead: "Noch keine Clients",
       dynamicNote:
         "Dieser Client hat sich selbst registriert. Name und Adressen stammen von ihm und sind nicht geprüft; widerrufe ihn, wenn ihn hier niemand nutzt.",
       firstPartyNote: "Cloud bringt diesen Client mit; er lässt sich hier nicht ändern oder löschen.",

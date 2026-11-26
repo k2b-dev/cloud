@@ -13,14 +13,15 @@ const nav: NavProps = {
   groups: [{ items: [{ label: "OAuth", icon: "key", href: "/admin/oauth", current: true }] }],
 };
 
-export const OAuthFixture = (props: { search: string; data?: OAuthFixtureData }) => {
+/** `nav` is the shell's own admin navigation when the screen stands in the real page (dialog pictures). */
+export const OAuthFixture = (props: { search: string; data?: OAuthFixtureData; nav?: NavProps }) => {
   const params = new URLSearchParams(props.search);
   const clients = props.data === "worst" ? WORST : props.data === "empty" ? [] : NORMAL;
   const open = params.get("client");
   return (
     <LocaleProvider locale="de">
       <OAuthScreen
-        nav={nav}
+        nav={props.nav ?? nav}
         baseUrl="https://cloud.example.test"
         tab={params.get("tab") === "endpoints" ? "endpoints" : "clients"}
         search={params.get("search") ?? ""}

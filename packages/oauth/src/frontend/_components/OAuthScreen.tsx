@@ -139,23 +139,28 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       admin: t().admin,
     })[scope];
 
-  /** How the client is registered and whether it keeps a secret, in colour, sign and word. */
+  /**
+   * What sets a client apart from the usual one (managed here, with a secret), in colour, sign and word: registered by
+   * itself, brought by Cloud, or public. The usual client carries no mark.
+   */
   const kindChips = (client: OAuthClient) => (
     <>
-      <Show
-        when={client.registrationKind === "dynamic"}
-        fallback={<Chip icon={client.registrationKind === "first_party" ? "cloud" : "settings"}>{kind(client)}</Chip>}
-      >
+      <Show when={client.registrationKind === "dynamic"}>
         <Chip status="warn" icon="world">
           {kind(client)}
         </Chip>
       </Show>
-      <Chip icon={client.isPublic ? "lock-open" : "lock"}>{client.isPublic ? t().public : t().confidential}</Chip>
+      <Show when={client.registrationKind === "first_party"}>
+        <Chip icon="cloud">{kind(client)}</Chip>
+      </Show>
+      <Show when={client.isPublic}>
+        <Chip icon="lock-open">{t().public}</Chip>
+      </Show>
     </>
   );
-  /** Who may sign in: by profile, or only the chosen people and groups. */
+  /** Who may sign in, where it is not the usual full users: only chosen people and groups, or other profiles. */
   const accessChip = (client: OAuthClient) =>
-    client.accessMode === "specific" ? (
+    client.accessMode !== "specific" && profileChoice(client.allowedProfiles) === "user" ? undefined : client.accessMode === "specific" ? (
       <Chip status="warn" icon="user-check">
         {t().selected({ count: client.accessUsers.length + client.accessGroups.length })}
       </Chip>
@@ -328,7 +333,29 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       label={client.name}
       back={{ label: t().backToClients, href: list() }}
       head={
-        <Bar start={<Text type="lead">{client.name}</Text>} end={<Button variant="ghost" icon="x" label={t().close} href={list()} />} />
+        <Bar
+          start={<Text type="lead">{client.name}</Text>}
+          end={
+            <>
+              <Show when={client.registrationKind !== "first_party"}>
+                <Button icon="trash" keep={client.registrationKind === "dynamic"} onClick={() => void remove(client)}>
+                  {client.registrationKind === "dynamic" ? t().revokeAction : t().deleteAction}
+                </Button>
+              </Show>
+              <Show when={client.registrationKind === "managed" && !client.isPublic}>
+                <Button icon="key" onClick={() => void regenerate(client)}>
+                  {t().regenerate}
+                </Button>
+              </Show>
+              <Show when={client.registrationKind === "managed"}>
+                <Button icon="pencil" keep onClick={() => start(client)}>
+                  {t().edit}
+                </Button>
+              </Show>
+              <Button variant="ghost" icon="x" label={t().close} href={list()} />
+            </>
+          }
+        />
       }
     >
       <Show when={client.registrationKind === "first_party"}>
@@ -344,7 +371,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       <Facts
         items={[
           { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
-          { label: t().type, value: <>{kindChips(client)}</> },
+          { label: t().type, value: `${kind(client)} · ${client.isPublic ? t().public : t().confidential}` },
           { label: t().description, value: client.description || t().noDescription },
           ...(client.redirectUris.length === 0
             ? [{ label: t().redirectUri, value: t().noRedirect }]
@@ -371,27 +398,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           { label: t().created, value: client.created },
         ]}
       />
-      <Show when={client.registrationKind !== "first_party"}>
-        <Bar
-          end={
-            <>
-              <Button icon="trash" onClick={() => void remove(client)}>
-                {client.registrationKind === "dynamic" ? t().revokeAction : t().deleteAction}
-              </Button>
-              <Show when={client.registrationKind === "managed" && !client.isPublic}>
-                <Button icon="key" onClick={() => void regenerate(client)}>
-                  {t().regenerate}
-                </Button>
-              </Show>
-              <Show when={client.registrationKind === "managed"}>
-                <Button icon="pencil" onClick={() => start(client)}>
-                  {t().edit}
-                </Button>
-              </Show>
-            </>
-          }
-        />
-      </Show>
     </Pane>
   );
 
@@ -401,22 +407,23 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       scrollKey="oauth-clients"
       status={
         <StatusRow
-          lead={props.figures.dynamic > 0 ? t().dynamicLead({ count: props.figures.dynamic }) : t().managedLead}
-          filters={
-            props.figures.dynamic > 0 ? (
-              <Chip status="warn" icon="world">
-                {t().unverified}
-              </Chip>
-            ) : undefined
+          lead={
+            props.figures.total === 0
+              ? t().emptyLead
+              : props.figures.dynamic > 0
+                ? t().dynamicLead({ count: props.figures.dynamic })
+                : t().managedLead
           }
         />
       }
     >
-      <Cells>
-        <Cells.Cell icon="key" label={t().clients} value={number(props.figures.total)} meta={t().registered} />
-        <Cells.Cell icon="lock-open" label={t().public} value={number(props.figures.public)} meta={t().publicSubtitle} />
-        <Cells.Cell icon="world" label={t().dynamic} value={number(props.figures.dynamic)} meta={t().dynamicSubtitle} />
-      </Cells>
+      {/* the figures say what the lead does not; before the first client there is nothing to count */}
+      <Show when={props.figures.total > 0}>
+        <Cells>
+          <Cells.Cell icon="key" label={t().clients} value={number(props.figures.total)} meta={t().registered} />
+          <Cells.Cell icon="lock-open" label={t().public} value={number(props.figures.public)} meta={t().publicSubtitle} />
+        </Cells>
+      </Show>
       <Table
         label={t().clients}
         rows={props.clients}
@@ -434,9 +441,16 @@ export default function OAuthScreen(props: OAuthScreenProps) {
             : { icon: "key", text: t().noClients, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
         }
         phone={(client) => ({
-          lines: [client.name, `${kind(client)} · ${client.isPublic ? t().public : t().confidential}`],
+          lines: [client.name, client.description || client.clientId],
           time: client.created,
-          marks: accessChip(client),
+          marks:
+            client.registrationKind === "dynamic" ? (
+              <Chip status="warn" icon="world">
+                {kind(client)}
+              </Chip>
+            ) : (
+              accessChip(client)
+            ),
         })}
         columns={[
           {
@@ -539,7 +553,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                 {
                   label: t().clients,
                   icon: "key",
-                  count: props.figures.total > 0 ? number(props.figures.total) : undefined,
                   href: href({ tab: "clients", client: null }),
                   current: props.tab === "clients",
                 },
