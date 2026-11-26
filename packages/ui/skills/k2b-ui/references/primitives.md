@@ -484,6 +484,12 @@ lines instead of cutting a thing.
   (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
+- `announce(text, { assertive? })`: news for assistive technology that no
+  element shows as it happens, such as a run that changed its state or new
+  mail. It goes to the page's one live region, which `Workspace` brings in
+  its server markup (also from another island); the same news twice is said
+  twice, a burst within 250 ms as its last news; `assertive` only for news
+  that cannot wait, such as a run that failed.
 
 ## States
 

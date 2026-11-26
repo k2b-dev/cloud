@@ -11,7 +11,7 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-server-markup-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Pane } = await import("./layout");
+const { Pane, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
 
@@ -72,4 +72,12 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+// The page's live region is in the server markup: a region that exists before its first news is heard.
+test("a Workspace brings the page's live region in its server markup: a status and an alert, empty", () => {
+  const markup = renderToString(() => createComponent(Workspace, { children: createComponent(Pane, { label: "Liste", children: "" }) }));
+  expect(markup).toContain('data-k2-part="Announcer"');
+  expect(markup).toMatch(/role="status"[^>]*aria-live="polite"/);
+  expect(markup).toMatch(/role="alert"[^>]*aria-live="assertive"/);
 });

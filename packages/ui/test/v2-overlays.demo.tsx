@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
-import { Bar, Button, Dialog, Field, Input, Pane, Section, Select, Text, Workspace } from "../src/v2";
+import { announce, Bar, Button, Dialog, Field, Input, Pane, Section, Select, Text, Workspace } from "../src/v2";
 
 // The v2 dialog in the place the mockup puts it: it asks before something is discarded, opened from a button in the
 // head that stays on the phone. `<html data-long>` gives the dialog more content than fits, so it scrolls.
@@ -12,6 +12,8 @@ declare global {
     __k2Drop?: (which: 1 | 2) => void;
     __k2Ask?: () => void;
     __k2Shorten?: () => void;
+    /** Announces news to assistive technology, politely or at once. */
+    __k2Announce?: (text: string, assertive?: boolean) => void;
   }
 }
 
@@ -19,6 +21,7 @@ export function Demo() {
   const [first, setFirst] = createSignal(true);
   const [second, setSecond] = createSignal(document.documentElement.dataset.two !== undefined);
   window.__k2Drop = (which) => (which === 1 ? setFirst : setSecond)(false);
+  window.__k2Announce = (text, assertive) => announce(text, { assertive });
   window.__k2Ask = () =>
     void Dialog.confirm({ title: "Weiter?", confirm: "Ja" }).then((answer) => {
       document.body.dataset.answer = String(answer);

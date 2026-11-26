@@ -360,6 +360,59 @@ const answerOf = async (page: Page, from: "page" | "island") => {
   return page.evaluate((which) => document.body.dataset[which === "page" ? "answer" : "other"], from);
 };
 
+test("announce: news lands in the page's one live region, the same news twice is said twice, a burst as its last; the region takes no room", async () => {
+  await withPage(async (page) => {
+    // the region is in the page before any news: a status for news said when the reader is idle, an alert for news now
+    const region = page.locator('[data-k2-part="Announcer"]');
+    expect(await region.count()).toBe(1);
+    expect(await region.locator('[role="status"][aria-live="polite"]').count()).toBe(1);
+    expect(await region.locator('[role="alert"][aria-live="assertive"]').count()).toBe(1);
+    // every node the polite region takes is news a screen reader says
+    await page.evaluate(() => {
+      const said: string[] = [];
+      Reflect.set(window, "__k2Said", said);
+      const polite = document.querySelector('[data-k2-news="polite"]');
+      if (polite)
+        new MutationObserver((changes) => {
+          for (const change of changes) for (const node of change.addedNodes) said.push(node.textContent ?? "");
+        }).observe(polite, { childList: true });
+    });
+    const said = () => page.evaluate(() => Reflect.get(window, "__k2Said") as string[]);
+    await page.evaluate(() => window.__k2Announce?.("Lauf 3 läuft."));
+    await page.waitForFunction(() => (Reflect.get(window, "__k2Said") as string[]).length === 1);
+    // the same words again are news again
+    await page.evaluate(() => window.__k2Announce?.("Lauf 3 läuft."));
+    await page.waitForFunction(() => (Reflect.get(window, "__k2Said") as string[]).length === 2);
+    // a burst is said as the state it reached; the next news follows it
+    await page.evaluate(() => {
+      for (const text of ["Lauf 4 wartet.", "Lauf 4 läuft.", "Lauf 4 ist fertig."]) window.__k2Announce?.(text);
+    });
+    await page.waitForFunction(() => (Reflect.get(window, "__k2Said") as string[]).length === 3);
+    await page.evaluate(() => window.__k2Announce?.("Alle Läufe fertig."));
+    await page.waitForFunction(() => (Reflect.get(window, "__k2Said") as string[]).length === 4);
+    expect(await said()).toEqual(["Lauf 3 läuft.", "Lauf 3 läuft.", "Lauf 4 ist fertig.", "Alle Läufe fertig."]);
+    // news that cannot wait goes to the alert
+    await page.evaluate(() => window.__k2Announce?.("Lauf 5 ist fehlgeschlagen.", true));
+    await page.waitForFunction(() => document.querySelector('[data-k2-news="assertive"]')?.textContent === "Lauf 5 ist fehlgeschlagen.");
+    // it takes no room and shows nothing; the page's measure and outline see no problem in it
+    await settled(page);
+    expect(await region.evaluate((element) => [element.getBoundingClientRect().width, element.getBoundingClientRect().height])).toEqual([
+      1, 1,
+    ]);
+    expect(await problems(page, "[data-k2-workspace]")).toEqual([]);
+    // without a Workspace the news brings a region of its own, once
+    await page.evaluate(() => window.__k2Drop?.(1));
+    await page.evaluate(() => {
+      window.__k2Announce?.("Ohne Arbeitsbereich.");
+      window.__k2Announce?.("Ohne Arbeitsbereich, zweimal.");
+    });
+    await page.waitForFunction(
+      () => document.querySelector('body > .k2-ui [data-k2-news="polite"]')?.textContent === "Ohne Arbeitsbereich, zweimal.",
+    );
+    expect(await page.locator('[data-k2-part="Announcer"]').count()).toBe(1);
+  });
+});
+
 test("Dialog.confirm with two Workspaces: the first answers, the other takes over, without one it brings its own", async () => {
   await withPage(
     async (page) => {
