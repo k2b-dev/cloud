@@ -442,6 +442,33 @@ Pass `requests: [{ id, key, size?, settings? }]` to `streamWidgets()` to use
 POST. This ignores `keys` and `sizes`. Both transports forward the locale and
 share the concurrency, cancellation, and timeout rules above.
 
+### Read widgets during a server render
+
+A page that renders widgets on the server, such as a dashboard, calls
+`loadWidgetsWithin()` from `@k2b/cloud/server/widgets-within`. It sends the
+same `POST /api/widgets/v1` request with the person's own credentials (the
+caller you pass: `cookie`, `authorization`, `locale`, `requestId`, `signal`)
+and keeps what answers within `budgetMs`:
+
+```ts
+const { answered, pending } = await loadWidgetsWithin(
+  { cookie: c.req.header("cookie"), authorization: c.req.header("authorization"), locale, signal: c.req.raw.signal },
+  board.map((entry) => ({ id: entry.id, key: entry.key, size: entry.size })),
+  { budgetMs },
+);
+```
+
+- `answered` holds, by entry id, exactly the line the stream sends for that
+  entry, including `empty` and `forbidden`.
+- `pending` lists the entries that did not answer in time, with their size and
+  settings. Render them in their final shape as loading and ask for them in the
+  browser with `streamWidgets({ requests: pending })`.
+- When the budget ends, the call stops reading, and Core stops every widget it
+  still waits for. A request Core refuses or a broken stream leaves every entry
+  pending; the call never throws.
+- `budgetMs` has no default. Derive it from measured widget times; the
+  `widget-timing` integration tests print each built-in widget's p50 and p95.
+
 `GET /api/widgets/v1/<appId>/<widgetId>` returns one widget as JSON with the
 same per-widget budget; append `?size=small` to ask for a size. It answers
 `200` with the response, `204`, `403`, `504` for a timeout, or `502` for
