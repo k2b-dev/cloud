@@ -13,7 +13,7 @@ export const pwaMessages = i18n.define({
       newVersion: ({ cloud }: { cloud: string }) => `New version of ${cloud}`,
       reload: "Reload",
       hide: "Hide",
-      offlineConsequence: "Offline – new content arrives once you're back online",
+      offlineConsequence: "Offline – what was loaded stays visible; loading and saving work again once you're back online",
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
         `Chrome on this device is signed in to ${cloud} as ${name}. Changes in the app may be saved to that account. Sign out of ${cloud} in Chrome.`,
       errorAction: "Back to Start",
@@ -29,7 +29,7 @@ export const pwaMessages = i18n.define({
       newVersion: ({ cloud }: { cloud: string }) => `Neue Version von ${cloud}`,
       reload: "Neu laden",
       hide: "Ausblenden",
-      offlineConsequence: "Offline – neue Inhalte kommen, sobald du wieder online bist",
+      offlineConsequence: "Offline – Geladenes bleibt sichtbar; Laden und Speichern gehen wieder, sobald du online bist",
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
         `Chrome auf diesem Gerät ist bei ${cloud} als ${name} angemeldet. Änderungen in der App werden womöglich in diesem Konto gespeichert. Melde dich in Chrome von ${cloud} ab.`,
       errorAction: "Zum Start",

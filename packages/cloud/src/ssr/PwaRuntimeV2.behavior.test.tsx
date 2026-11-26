@@ -88,8 +88,10 @@ else {
     const page = mount({ keepalive: false, online: false });
     try {
       await waitFor(() => page.notices().length === 1, "offline notice");
-      // it names what follows from being offline
-      expect(page.notices()[0]!.textContent).toContain("Offline – new content arrives once you're back online");
+      // it names what follows from being offline, as the app does it: the open page stays, loading and saving wait
+      expect(page.notices()[0]!.textContent).toContain(
+        "Offline – what was loaded stays visible; loading and saving work again once you're back online",
+      );
       expect(page.notices()[0]!.getAttribute("data-tone")).toBe("warn");
       expect(page.dom.document.querySelector("[data-k2b-toast]")).toBeNull();
       page.dom.window.dispatchEvent(new page.dom.window.Event("online"));

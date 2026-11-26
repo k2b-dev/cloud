@@ -261,8 +261,8 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
   sidebar, with its panes and heads. Only the panes scroll; the document
   never does. The frame then shows no `back`, `actions`, `sidebarTitle`, or
   `status`; in development the server warns when a bare page passes them.
-- Offline (with what follows: new content arrives once the device is online
-  again), Chrome signed in to another account, and a new version show in a
+- Offline (with what follows: what was loaded stays visible, and loading and
+  saving work again once the device is online), Chrome signed in to another account, and a new version show in a
   `NoticeStack` of `@k2b/ui/v2`: notices that float above the tab bar until
   their state ends. A new version offers **Reload**. Nothing on the page
   moves, and the panes keep the room the notices cover free at their end.
@@ -461,7 +461,8 @@ When the installation cannot be reached or the gateway cannot reach the
 application, the app shows its offline page with **Try again**. While a part's
 application is not registered, its pages show the app's not-found page. An
 open page shows a "You're offline" notice above the tab bar until the
-connection returns.
+connection returns; on a v2 page the notice also says that what was loaded
+stays visible and that loading and saving work again once the device is online.
 
 A cached part does not become an offline application: starting or reloading it
 without the network shows the offline page, because its document and data are
