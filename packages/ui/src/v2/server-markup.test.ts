@@ -101,3 +101,42 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
 });
+
+// A page to read, not to arrange (a visitor page, a wall screen): a fixed width keeps the column, without a grip.
+test("a fixed width keeps a column and a table column without a grip", async () => {
+  const { Table } = await import("./content");
+  const fixed = { fixed: 360 };
+  const panes = renderToString(() =>
+    createComponent(Pane.Split, {
+      get children() {
+        return [
+          createComponent(Pane, { label: "Liste", children: "Liste" }),
+          createComponent(Pane, { side: true, label: "Seite", width: fixed, children: "Seite" }),
+        ];
+      },
+    }),
+  );
+  expect(panes).toContain('class="k2-seam"');
+  expect(panes).not.toContain("data-k2-grip");
+  const table = (width: { fixed: number } | { min: number; default: number }) =>
+    renderToString(() =>
+      createComponent(Table<{ name: string }>, {
+        label: "Programm",
+        rows: [{ name: "Lesung" }],
+        columns: [
+          { title: "Name", width, cell: (row: { name: string }) => row.name },
+          { title: "Ort", cell: () => "Saal 2" },
+        ],
+      }),
+    );
+  expect(table(fixed)).not.toContain("k2-cgrip");
+  expect(table({ min: 280, default: 360 })).toContain("k2-cgrip");
+  expect(table(fixed)).toContain("width:360px");
+});
+
+// A meter near or at its limit says so in colour too, as the chip beside it says it in words.
+test("a meter carries its state only when it has one", async () => {
+  const { Progress } = await import("./marks");
+  expect(renderToString(() => createComponent(Progress, { value: 120, of: 120, status: "bad" }))).toContain('data-status="bad"');
+  expect(renderToString(() => createComponent(Progress, { value: 9, of: 12 }))).not.toContain("data-status");
+});

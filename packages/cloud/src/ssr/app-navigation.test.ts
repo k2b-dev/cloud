@@ -90,6 +90,11 @@ describe("visiblePwaParts", () => {
     expect(visiblePwaParts(parts, user, "de").map((app) => app.name)).toEqual(["Arbeitszeit", "Spaces"]);
   });
 
+  test("sorts names with numbers as people count: Nord 2 before Nord 10", () => {
+    const numbered = [part("n10", "Nord 10"), part("n2", "Nord 2"), part("n1", "Nord 1")] satisfies RuntimeAppMeta[];
+    expect(visiblePwaParts(numbered, user, "de").map((app) => app.name)).toEqual(["Nord 1", "Nord 2", "Nord 10"]);
+  });
+
   test("places parts with an order first, in every language, and the rest by name", () => {
     const ordered = [
       ...parts,

@@ -2001,6 +2001,10 @@
 .k2-ui .k2-progress {
   display: inline;
 }
+/* the page's toaster and confirm dialog (`PageHosts`): no box of their own, they draw only while they show */
+.k2-ui .k2-page-hosts {
+  display: contents;
+}
 .k2-ui .k2-progress-track {
   display: inline-block;
   vertical-align: middle;
@@ -2016,6 +2020,12 @@
   height: 100%;
   width: var(--k2-p);
   background: var(--k2-ok);
+}
+.k2-ui .k2-progress[data-status="warn"] .k2-progress-track > i {
+  background: var(--k2-warn-dot);
+}
+.k2-ui .k2-progress[data-status="bad"] .k2-progress-track > i {
+  background: var(--k2-bad-dot);
 }
 
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
@@ -2462,8 +2472,6 @@
   padding-inline: 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* a thin bar says how long the group is (a sidebar has no fade cue like a column) */
-  scrollbar-width: thin;
 }
 .k2-ui .k2-nav-scroll > *,
 .k2-ui .k2-nav-window > * {
@@ -4849,6 +4857,114 @@
 }
 .k2-ui .k2-pane > .k2-scroll {
   padding-bottom: var(--k2-notice-stack, 0px);
+}
+
+/* The rail is the app's navigation from 768 px, on the canvas beside its page, in the measures of Cloud's app bar (the
+   shell's rail at 1440 px, see rail.browser.test.ts in packages/cloud): 56 px, the logo's row of 46 px, 8 px to the
+   places, targets of 44 px 4 px apart with a radius of 12 px, symbols of 20 px. Below 768 px the tab bar takes its
+   place. The platform may set the colours (see `Rail`). */
+.k2-ui .k2-rail {
+  display: none;
+}
+@media (min-width: 768px) {
+  .k2-ui .k2-rail {
+    box-sizing: border-box;
+    display: flex;
+    width: 56px;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+  }
+}
+.k2-ui .k2-rail-logo {
+  display: flex;
+  width: 100%;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.k2-ui .k2-rail-logo > img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+.k2-ui .k2-rail-scroll,
+.k2-ui .k2-rail-foot {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* the places scroll in their own area; room above and below the first and last keeps a focus ring whole without
+   moving a place */
+.k2-ui .k2-rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-block: -6px;
+  padding-block: 6px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.k2-ui .k2-rail-foot {
+  flex: none;
+}
+.k2-ui .k2-rail-item {
+  all: unset;
+  --k2-rail-tone: var(--k2-rail-tone-light);
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: var(--k2-rail-ink, var(--k2-muted));
+  flex: none;
+  cursor: default;
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-rail-item,
+.k2-ui.dark .k2-rail-item,
+.k2-ui[data-theme="dark"] .k2-rail-item {
+  --k2-rail-tone: var(--k2-rail-tone-dark);
+}
+.k2-ui .k2-rail-item > .k2-icon {
+  color: var(--k2-rail-tone, inherit);
+  font-size: 20px;
+  line-height: 28px;
+}
+.k2-ui .k2-rail-item:hover {
+  background: var(--k2-rail-hover, color-mix(in srgb, var(--k2-text) 6%, transparent));
+  color: var(--k2-text-2);
+}
+.k2-ui .k2-rail-item[aria-current],
+.k2-ui .k2-rail-item[aria-current]:hover {
+  background: var(--k2-rail-current, var(--k2-app-tint));
+  color: var(--k2-rail-current-ink, var(--k2-app-text));
+}
+.k2-ui .k2-rail-item[aria-current] > .k2-icon {
+  color: inherit;
+}
+.k2-ui .k2-rail-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+/* on the symbol's corner, not on the target's: 14 px, as on Cloud's app bar */
+.k2-ui .k2-rail-item > .k2-unread {
+  position: absolute;
+  top: 4px;
+  right: 3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--k2-rail-unread, var(--k2-app, var(--k2-blue)));
+  font-size: 10px;
+  line-height: 14px;
 }
 
 @media not all and (min-width: 768px) {

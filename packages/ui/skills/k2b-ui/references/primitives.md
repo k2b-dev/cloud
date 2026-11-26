@@ -51,7 +51,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
   with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
-  line.
+  line. `width={{ fixed }}` keeps one width without a grip, for a page to
+  read rather than to arrange (a visitor page, a wall screen).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -230,7 +231,7 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, grip in the head), `wrap` (one text column may take 3
+never widens it, grip in the head; `{ fixed }`: one width, no grip), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -309,7 +310,9 @@ lines instead of cutting a thing.
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
-- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22"), `status`
+  (`warn` almost full, `bad` full: the bar says it in colour too, beside the
+  chip or words that say why).
 
 ## Controls
 
@@ -428,6 +431,11 @@ lines instead of cutting a thing.
   one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
   Use it for errors with a way out instead of "try again"
   buttons of your own.
+- `PageHosts`: the toaster and the confirm dialog of a page whose
+  `Workspace` the server renders without a script (a platform frame around
+  islands). Mount it once in an island of the frame; every `useToast` and
+  `Dialog.confirm` of the page answers there. A living `Workspace` has them
+  already.
 - `NoticeStack`: children are `Notice`s of a state of the whole app that
   lasts ("Offline", a new version). They float at the bottom, above the
   safe area and, on a page with a `TabBar`, above the bar from the server's
@@ -441,10 +449,19 @@ lines instead of cutting a thing.
   and "Mehr", which opens a sheet with the others and their counts and is
   the current tab while one of them is open (Escape and a place that opens in
   place close the sheet; the focus returns to "Mehr"). From
-  768 px it leaves and the app's `Nav` holds the places. `hidden` (or the
+  768 px it leaves and the app's `Nav` or `Rail` holds the places. `hidden` (or the
   `hidden` attribute on `.k2-tabbar`) steps it aside for a screen of its own,
   such as one chat with its composer at the bottom edge; floating notices
   then stand above the safe area alone.
+- `Rail`: `label`, `logo?`, `items` and `foot?` (`{ label, icon, href,
+  onNavigate?, current?, unread?, tone?: { light, dark } }[]`); the places of
+  an app from 768 px on the canvas beside its page, in the measures of
+  Cloud's app bar: 56 px, a 20 px symbol per place as a 44 px target, the
+  open one filled, the count on the symbol's corner, the `foot` (Settings)
+  always in view while the places scroll. Each place is a link in the tab
+  order, named by its words, which show as a hint to its right. Below
+  768 px it leaves; give the `TabBar` the same places. The platform sets its
+  colours (`--k2-rail-*`); Cloud sets the shell's.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above

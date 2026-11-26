@@ -1,5 +1,5 @@
 import { syncThemeColor, useLocale } from "@k2b/ui";
-import { Notice, NoticeStack } from "@k2b/ui/v2";
+import { Notice, NoticeStack, PageHosts } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { pwaMessages } from "./pwa-messages";
 import { type PwaRuntimeProps, startPwaRuntime, THEME_PREFERENCE_EVENT } from "./pwa-runtime";
@@ -10,6 +10,9 @@ import { type PwaRuntimeProps, startPwaRuntime, THEME_PREFERENCE_EVENT } from ".
  * Chrome signed in to another account, a new version with "Reload", in a v2 `NoticeStack`. They float, so nothing on
  * the page moves when one comes or goes, and the panes keep their room free; "Hide" takes one away. A hidden offline
  * notice comes again the next time the phone goes offline.
+ *
+ * The frame renders its `Workspace` on the server without a script, so this island also holds the page's hosts
+ * (`PageHosts`): every `useToast` and `Dialog.confirm` of the page's islands answers there, one host per page.
  */
 export default function PwaRuntimeV2(props: PwaRuntimeProps) {
   const locale = useLocale();
@@ -38,31 +41,34 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
   });
 
   return (
-    <NoticeStack>
-      <Show when={offline()}>
-        <Notice tone="warn" icon="wifi-off" actions={[{ label: t().hide, onClick: () => setOffline(false) }]}>
-          {t().offlineConsequence}
-        </Notice>
-      </Show>
-      <Show when={otherAccount()}>
-        {(name) => (
-          <Notice tone="warn" actions={[{ label: t().hide, onClick: () => setOtherAccount(undefined) }]}>
-            {t().otherAccount({ cloud: props.cloud, name: name() })}
+    <>
+      <PageHosts />
+      <NoticeStack>
+        <Show when={offline()}>
+          <Notice tone="warn" icon="wifi-off" actions={[{ label: t().hide, onClick: () => setOffline(false) }]}>
+            {t().offlineConsequence}
           </Notice>
-        )}
-      </Show>
-      <Show when={newVersion()}>
-        <Notice
-          tone="info"
-          icon="refresh"
-          actions={[
-            { label: t().reload, icon: "refresh", onClick: () => location.reload() },
-            { label: t().hide, onClick: () => setNewVersion(false) },
-          ]}
-        >
-          {t().newVersion({ cloud: props.cloud })}
-        </Notice>
-      </Show>
-    </NoticeStack>
+        </Show>
+        <Show when={otherAccount()}>
+          {(name) => (
+            <Notice tone="warn" title={t().otherAccountTitle} actions={[{ label: t().hide, onClick: () => setOtherAccount(undefined) }]}>
+              {t().otherAccount({ cloud: props.cloud, name: name() })}
+            </Notice>
+          )}
+        </Show>
+        <Show when={newVersion()}>
+          <Notice
+            tone="info"
+            icon="refresh"
+            actions={[
+              { label: t().reload, icon: "refresh", onClick: () => location.reload() },
+              { label: t().hide, onClick: () => setNewVersion(false) },
+            ]}
+          >
+            {t().newVersion({ cloud: props.cloud })}
+          </Notice>
+        </Show>
+      </NoticeStack>
+    </>
   );
 }

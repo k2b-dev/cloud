@@ -33,7 +33,8 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
             offlineToast = undefined;
           }
         },
-        otherAccount: (name) => toast(t().otherAccount({ cloud: props.cloud, name }), { duration: 0, variant: "warning" }),
+        otherAccount: (name) =>
+          toast(t().otherAccount({ cloud: props.cloud, name }), { title: t().otherAccountTitle, duration: 0, variant: "warning" }),
         newVersion: () => {
           updateToast ??= toast(t().newVersion({ cloud: props.cloud }), {
             duration: 0,

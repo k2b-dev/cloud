@@ -70,9 +70,10 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       section: [".k2-sec", "250,283 765x181"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
       facts: [".k2-facts", "1016,499 359x200"],
-      // the rail of the shell beside the app: its logo and the open app (Kunden)
-      railLogo: [".ui-v2-rail__logo", "-44,4 32x32"],
-      railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
+      // the rail of the shell beside the app (the v2 Rail, in the shell's measures, not the mockup's drawing): its logo
+      // and the open app (Kunden)
+      railLogo: [".k2-rail-logo > img", "-38,13 20x20"],
+      railApp: ['.k2-rail-item[aria-current="page"]', "-50,102 44x44"],
     },
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
@@ -94,7 +95,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       // the inline facts with their end: the part is the line around the list
       facts: ['[data-k2-part="Facts"]', "271,836 1083x32"],
       folded: [".k2-group[data-folded]", "270,897 1085x58"],
-      railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
+      railApp: ['.k2-rail-item[aria-current="page"]', "-50,102 44x44"],
     },
     390: {
       // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down

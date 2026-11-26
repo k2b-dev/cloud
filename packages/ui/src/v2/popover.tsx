@@ -15,6 +15,8 @@ export type PopoverPanelProps = TriggerProps & {
 export type PopoverTipProps = {
   /** A short hint that shows after a moment on hover or keyboard focus, above the thing. */
   tip: string;
+  /** Where the hint stands: above the thing, or to its right, as beside the symbols of a `Rail`. */
+  side?: "top" | "right";
   /** The one element the hint belongs to, such as a `Button`; it gets no wrapper. */
   children: JSX.Element;
 };
@@ -84,7 +86,7 @@ const Tip = (props: PopoverTipProps) => {
     <>
       {resolved()}
       <PageLayer from={element}>
-        <tip.Popup class="k2-tip" data-k2-part="Popover" side="top" sideOffset={6} collisionPadding={8}>
+        <tip.Popup class="k2-tip" data-k2-part="Popover" side={props.side ?? "top"} sideOffset={6} collisionPadding={8}>
           {props.tip}
         </tip.Popup>
       </PageLayer>

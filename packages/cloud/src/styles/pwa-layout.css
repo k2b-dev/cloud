@@ -2,7 +2,8 @@
 
    Below 48rem the page fills the window: its content (a `Workspace`) above, the `TabBar` at the bottom, clear of the
    phone's safe areas; a page that is a screen of its own (`screen`, or `setPwaScreen` in place) has no tab bar. From
-   48rem the sidebar (a v2 `Nav`) stands on the canvas beside the page's workspace, and the tab bar leaves. The sidebar
+   48rem the rail (a v2 `Rail`, as Cloud's app bar) stands on the canvas beside the page's workspace, and the tab bar
+   leaves. The sidebar
    and the tab bar are one island, whose element shows its contents only, so both are places of the frame's grid. */
 
 /* The page is the frame: the document never scrolls, so iOS has nothing to rubber-band; only the page's panes do. */
@@ -91,16 +92,22 @@ html[data-pwa-v2] body {
   }
 
   .pwa-v2[data-sidebar] {
-    grid-template-columns: 248px minmax(0, 1fr);
+    grid-template-columns: 56px minmax(0, 1fr);
     background: var(--k2-canvas);
   }
 
+  /* the rail stands from the card's top to its bottom, as Cloud's app bar does */
   .pwa-v2[data-sidebar] .pwa-v2-nav {
     grid-row: 1 / -1;
     grid-column: 1;
     display: flex;
     min-height: 0;
-    overflow-y: auto;
+    padding-block: 8px;
+  }
+
+  /* A head that would only name the open place, beside the rail that already shows it (see PwaLayoutV2). */
+  .pwa-v2[data-wide-head="none"] > .pwa-v2-main > [data-k2-ws] > .k2-ws-main > [data-slot="head"] {
+    display: none;
   }
 
   .pwa-v2-main {
@@ -121,7 +128,7 @@ html[data-pwa-v2] body {
     display: contents;
   }
 
-  /* The sidebar already leads where this back link would. */
+  /* The rail already leads where this back link would. */
   .pwa-v2[data-sidebar] .pwa-v2-back[data-with-sidebar="hide"] {
     display: none;
   }

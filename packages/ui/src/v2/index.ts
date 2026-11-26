@@ -10,7 +10,16 @@
  *   enforce this.
  */
 
-export { NoticeStack, type NoticeStackProps, TabBar, type TabBarItem, type TabBarProps } from "./app-frame";
+export {
+  NoticeStack,
+  type NoticeStackProps,
+  Rail,
+  type RailItem,
+  type RailProps,
+  TabBar,
+  type TabBarItem,
+  type TabBarProps,
+} from "./app-frame";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -108,6 +117,7 @@ export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, P
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
+export { PageHosts } from "./page-hosts";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
 export { Group, type GroupProps, Section, type SectionProps } from "./structure";

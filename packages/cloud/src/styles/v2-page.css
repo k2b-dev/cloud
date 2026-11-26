@@ -6,6 +6,7 @@
 @import "./v2-app-ink.css";
 @import "./minimal-layout.css";
 @import "./pwa-layout.css";
+@import "./v2-rail.css";
 
 /* v2.css brings no reset of its own. The body of such a page is a v2 scope (`pageScopeClass`): no margin, the theme's
    surface and colour scheme from the v2 tokens; the browser paints the body's background over the whole canvas, so a
