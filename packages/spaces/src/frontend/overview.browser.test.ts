@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { launchHookMs, settled } from "../../../ui/test/browser";
 import { createScreenBrowser, layoutProblems, narrow, phone, type View, wide } from "../../test/v2-screen-browser";
-import { OVERVIEW_NOW, overviewWork } from "./overview.fixture";
+import { OVERVIEW_NOW, overviewWorkFor } from "./overview.fixture";
 
 // The Spaces home on v2: the work of a view, what changed lately, the Spaces in the sidebar and a new Space. The test
 // stands in for the server: the page renders invented data, and the overview API answers from the same sample.
@@ -10,11 +10,10 @@ const screen = createScreenBrowser(resolve(import.meta.dir, "overview.browser-ha
 beforeAll(screen.start, launchHookMs);
 afterAll(screen.stop);
 
-const work = (view: string) => ({
-  ...overviewWork,
-  view,
-  items: overviewWork.items.map((item) => ({ ...item, title: `${item.title} (${view})` })),
-});
+const work = (view: "mine" | "today" | "upcoming") => {
+  const answer = overviewWorkFor(view);
+  return { ...answer, items: answer.items.map((item) => ({ ...item, title: `${item.title} (${view})` })) };
+};
 const created: unknown[] = [];
 const open = (view: View, address = "/app/spaces", state = "") =>
   screen.open(view, address, {
@@ -22,7 +21,7 @@ const open = (view: View, address = "/app/spaces", state = "") =>
     now: OVERVIEW_NOW,
     state,
     api: (url, route) => {
-      if (url.pathname === "/api/spaces/overview/work") return work(url.searchParams.get("view") ?? "mine");
+      if (url.pathname === "/api/spaces/overview/work") return work((url.searchParams.get("view") ?? "mine") as "mine" | "today" | "upcoming");
       if (url.pathname === "/api/spaces/overview/activity") return { data: [], nextCursor: null };
       if (url.pathname === "/api/spaces" && route.request().method() === "POST") {
         created.push(route.request().postDataJSON());
@@ -62,12 +61,12 @@ describe("the Spaces home on v2", () => {
     try {
       await tab.getByRole("link", { name: /^Today/ }).click();
       await tab.waitForURL(/view=today/);
-      await tab.getByText("Clear out shelf B (today)").waitFor();
+      await tab.getByText("Stand-up at ramp 1 (today)").waitFor();
       await tab.goBack();
       await tab.waitForFunction(() => !location.search.includes("view="));
       // Back shows "For me" again, freshly loaded (the API marks the rows with their view).
       await tab.getByText("Clear out shelf B (mine)", { exact: true }).waitFor();
-      expect(await tab.getByText("Clear out shelf B (today)").count()).toBe(0);
+      expect(await tab.getByText("Stand-up at ramp 1 (today)").count()).toBe(0);
       // the page itself never loaded again
       expect(visited).toEqual(["/app/spaces"]);
       expect(errors).toEqual([]);
@@ -75,6 +74,24 @@ describe("the Spaces home on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  // Each view lists its own rows, and its count says how many: Today is not For me without the agenda.
+  for (const view of ["mine", "today", "upcoming"] as const)
+    test(`the address ?view=${view} shows the rows of that view and a count that matches them`, async () => {
+      const { context, tab, errors } = await open(wide, view === "mine" ? "/app/spaces" : `/app/spaces?view=${view}`);
+      try {
+        const rows = tab.locator('[data-k2-part="Pane"]:not([data-side]) [data-k2-part="List"] [data-k2-part="Row"]');
+        const titles = await rows.evaluateAll((elements) => elements.map((element) => element.textContent ?? ""));
+        const expected = overviewWorkFor(view).items.map((item) => item.title);
+        expect(titles.length).toBe(expected.length);
+        expected.forEach((title, index) => expect(titles[index]).toContain(title));
+        const current = tab.locator('[data-k2-part="Tabs"] [aria-current="page"] .k2-tab-count');
+        expect(await current.first().textContent()).toBe(String(expected.length));
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
 
   test("a Space's menu pins it to the top, and Undo takes it back", async () => {
     const { context, tab, errors } = await open(wide);

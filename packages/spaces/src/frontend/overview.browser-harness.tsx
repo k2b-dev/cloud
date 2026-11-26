@@ -5,10 +5,9 @@ import {
   OVERVIEW_NOW,
   overviewActivity,
   overviewSpaces,
-  overviewWork,
+  overviewWorkFor,
   overviewWorstActivity,
   overviewWorstSpaces,
-  overviewWorstWork,
 } from "./overview.fixture";
 import SpacesOverview from "./SpacesOverview.island";
 
@@ -26,7 +25,7 @@ render(
         spaces={worst ? overviewWorstSpaces : overviewSpaces}
         initialView={initialView}
         initialPinnedSpaceIds={["Space1"]}
-        initialWork={{ ...(worst ? overviewWorstWork : overviewWork), view: initialView }}
+        initialWork={overviewWorkFor(initialView, worst)}
         initialActivity={{ items: worst ? overviewWorstActivity : overviewActivity, nextCursor: "next" }}
         initialActivityError={null}
         dateConfig={{ ...OVERVIEW_DATES, locale }}
