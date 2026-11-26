@@ -438,52 +438,55 @@ export default function CloudCalendar(props: CloudCalendarProps) {
             )}
           </Show>
           {/* The calendar draws, scrolls and pages its days itself; its list view is the agenda of the next days. */}
-          <Canvas label={t.calendar}>
-            <Calendar
-              class="flex-1"
-              view={view() === "list" ? "list" : view()}
-              views={["day", "week", "month"]}
-              customViews={[{ value: "list", label: t.list, days: CALENDAR_LIST_DAYS }]}
-              viewSwitcher={false}
-              date={date()}
-              events={view() === "list" ? [] : events()}
-              startHour={8}
-              endHour={20}
-              dayHours={CALENDAR_DAY_HOURS}
-              range={view() === "list" ? undefined : range()}
-              onLoadEarlier={() => loadBlock("earlier")}
-              onLoadLater={() => loadBlock("later")}
-              onVisibleDateChange={(first, last, focus) => {
-                setVisible({ first: dates.formatDateKey(first, props.dateConfig), last: dates.formatDateKey(last, props.dateConfig) });
-                const key = dates.formatDateKey(focus, props.dateConfig);
-                if (key === date()) return;
-                setDate(key);
-                replaceUrl();
-              }}
-              withWeekNumbers
-              onCommandsChange={setCommands}
-              dateConfig={props.dateConfig}
-              getViewHref={(next) => viewHref(asView(next))}
-              getDateHref={dateHref}
-              renderEvent={renderEvent}
-              selectedEventId={detail() ?? undefined}
-              onEventActivate={(event) => {
-                const item = itemsByKey().get(event.id);
-                if (item) openDetail(item);
-              }}
-            >
-              <Show when={view() === "list"}>
-                <AgendaList
-                  date={date()}
-                  items={shownItems()}
-                  lookup={lookup()}
-                  today={todayKey()}
-                  selectedKey={detail() ?? undefined}
-                  dateConfig={props.dateConfig}
-                  onOpen={(item) => openDetail(item)}
-                />
-              </Show>
-            </Calendar>
+          <Canvas label={t.calendar} height="fill">
+            {/* the calendar takes the drawing's whole height: its days scroll inside it */}
+            <div class="flex h-full min-h-0 flex-col">
+              <Calendar
+                class="flex-1"
+                view={view() === "list" ? "list" : view()}
+                views={["day", "week", "month"]}
+                customViews={[{ value: "list", label: t.list, days: CALENDAR_LIST_DAYS }]}
+                viewSwitcher={false}
+                date={date()}
+                events={view() === "list" ? [] : events()}
+                startHour={8}
+                endHour={20}
+                dayHours={CALENDAR_DAY_HOURS}
+                range={view() === "list" ? undefined : range()}
+                onLoadEarlier={() => loadBlock("earlier")}
+                onLoadLater={() => loadBlock("later")}
+                onVisibleDateChange={(first, last, focus) => {
+                  setVisible({ first: dates.formatDateKey(first, props.dateConfig), last: dates.formatDateKey(last, props.dateConfig) });
+                  const key = dates.formatDateKey(focus, props.dateConfig);
+                  if (key === date()) return;
+                  setDate(key);
+                  replaceUrl();
+                }}
+                withWeekNumbers
+                onCommandsChange={setCommands}
+                dateConfig={props.dateConfig}
+                getViewHref={(next) => viewHref(asView(next))}
+                getDateHref={dateHref}
+                renderEvent={renderEvent}
+                selectedEventId={detail() ?? undefined}
+                onEventActivate={(event) => {
+                  const item = itemsByKey().get(event.id);
+                  if (item) openDetail(item);
+                }}
+              >
+                <Show when={view() === "list"}>
+                  <AgendaList
+                    date={date()}
+                    items={shownItems()}
+                    lookup={lookup()}
+                    today={todayKey()}
+                    selectedKey={detail() ?? undefined}
+                    dateConfig={props.dateConfig}
+                    onOpen={(item) => openDetail(item)}
+                  />
+                </Show>
+              </Calendar>
+            </div>
           </Canvas>
         </Show>
       </Pane>

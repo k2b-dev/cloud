@@ -88,9 +88,9 @@ export default function BoardPane(props: Props) {
       }
     >
       <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>
-      {/* k2b-ui gap: a Canvas cannot fill the rest of its pane; the board scrolls inside its own columns. Columns page
-          with "Load more" and are not virtualized yet. */}
-      <Canvas label={t.kanban}>
+      {/* The board is the rest of the pane and scrolls inside its own columns. k2b-ui gap: columns page with "Load
+          more" and are not virtualized yet. */}
+      <Canvas label={t.kanban} height="fill">
         <Show when={view.current()} keyed>
           {(current) => (
             <KanbanBoard

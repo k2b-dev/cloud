@@ -273,33 +273,36 @@ export default function SpacesCalendarRoute(props: Props) {
     >
       <Show when={navigation.error()}>{(error) => <Failed text={error().message} onRetry={() => void navigation.refresh()} />}</Show>
       {/* The calendar draws its days, drags and resizes entries, creates in place and keeps its tray below the day. */}
-      <Canvas label={t.calendar}>
-        <Calendar
-          spaceId={props.spaceId}
-          items={shown().items}
-          range={shown().range}
-          columns={props.columns}
-          tags={props.tags}
-          templates={props.templates}
-          filter={state().filter}
-          selectedItemId={selectedItemId()}
-          view={state().view}
-          date={new Date(state().date)}
-          baseUrl={props.baseUrl}
-          weather={state().weather}
-          dateConfig={props.dateConfig}
-          canWrite={props.canWrite}
-          currentUserId={props.currentUserId}
-          onNavigateHref={navigation.navigateHref}
-          onRouteChange={navigation.open}
-          onFollowHref={navigation.follow}
-          navigationPending={navigation.pending() || loadingBlocks() > 0}
-          onLoadEarlier={stream() ? () => loadBlock("earlier") : undefined}
-          onLoadLater={stream() ? () => loadBlock("later") : undefined}
-          tray={state().tray}
-          onControls={setControls}
-          onShownCount={setShownCount}
-        />
+      <Canvas label={t.calendar} height="fill">
+        {/* the calendar takes the drawing's whole height: its days scroll inside it */}
+        <div class="flex h-full min-h-0 flex-col">
+          <Calendar
+            spaceId={props.spaceId}
+            items={shown().items}
+            range={shown().range}
+            columns={props.columns}
+            tags={props.tags}
+            templates={props.templates}
+            filter={state().filter}
+            selectedItemId={selectedItemId()}
+            view={state().view}
+            date={new Date(state().date)}
+            baseUrl={props.baseUrl}
+            weather={state().weather}
+            dateConfig={props.dateConfig}
+            canWrite={props.canWrite}
+            currentUserId={props.currentUserId}
+            onNavigateHref={navigation.navigateHref}
+            onRouteChange={navigation.open}
+            onFollowHref={navigation.follow}
+            navigationPending={navigation.pending() || loadingBlocks() > 0}
+            onLoadEarlier={stream() ? () => loadBlock("earlier") : undefined}
+            onLoadLater={stream() ? () => loadBlock("later") : undefined}
+            tray={state().tray}
+            onControls={setControls}
+            onShownCount={setShownCount}
+          />
+        </div>
       </Canvas>
     </Pane>
   );

@@ -16,7 +16,7 @@ import { boardFilter, defaultFilter, parseFilterFromUrl } from "../filter/types"
 import { createSpaceSearch } from "../search/SearchButton";
 import { createMenuEntries } from "../shared/create-menu";
 import { createIcalCopy } from "../sidebar/CopyICalButton";
-import { createItemController } from "../sidebar/CreateItemButton";
+import { createItemController } from "../sidebar/create-item";
 import { spacePrimaryHref } from "../sidebar/space-primary";
 import type { SpacesSidebarData } from "../sidebar/spaces-navigation";
 import BoardPane from "./BoardPane";

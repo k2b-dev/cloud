@@ -201,7 +201,7 @@ describe("Spaces feedback channels", () => {
   });
 
   test("a failed create keeps its dialog open with the reason and the Space it was opened for", async () => {
-    const { createItemController } = await import("../src/frontend/[id]/_components/sidebar/CreateItemButton");
+    const { createItemController } = await import("../src/frontend/[id]/_components/sidebar/create-item");
     installV2Globals(dom);
     const assign = spyOn(dom.window.location, "assign").mockImplementation(() => {});
     let spaceId = "SpaceA";
