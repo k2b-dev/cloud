@@ -90,9 +90,15 @@ const sameLook = (a: Adjustments, preset: Preset) => ADJUSTMENT_KEYS.every((key)
 const shortName = (name: string, max = 36) => (name.length <= max ? name : `${name.slice(0, max - 13)}…${name.slice(-12)}`);
 
 /** A limit in pixels from a field: empty is no limit, anything else must be a whole positive number. */
-const pixels = (value: string): number | null => {
+const pixels = (value: string): number | null | undefined => {
+  if (!value.trim()) return null;
   const number = Number(value);
-  return value.trim() && Number.isInteger(number) && number > 0 ? number : null;
+  return Number.isInteger(number) && number > 0 ? number : undefined;
+};
+/** A quality in percent from a field, 10 to 100, or not valid. */
+const percent = (value: string): number | undefined => {
+  const number = Number(value);
+  return value.trim() && Number.isFinite(number) && number >= 10 && number <= 100 ? number / 100 : undefined;
 };
 
 // ====================================
@@ -738,9 +744,17 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const [exportOpen, setExportOpen] = createSignal(false);
   const [exportScope, setExportScope] = createSignal<"single" | "all">("single");
   const [exportFormat, setExportFormat] = createSignal<ExportFormat>("webp");
-  const [exportQuality, setExportQuality] = createSignal(0.8);
-  const [exportWidth, setExportWidth] = createSignal<number | null>(null);
-  const [exportHeight, setExportHeight] = createSignal<number | null>(null);
+  // The fields keep what was typed; a value that is not valid says so at its field and holds the export.
+  const [qualityText, setQualityText] = createSignal("80");
+  const [widthText, setWidthText] = createSignal("");
+  const [heightText, setHeightText] = createSignal("");
+  const exportQuality = () => percent(qualityText()) ?? 0.8;
+  const exportWidth = () => pixels(widthText()) ?? null;
+  const exportHeight = () => pixels(heightText()) ?? null;
+  const qualityError = () => (exportFormat() !== "png" && percent(qualityText()) === undefined ? t().qualityInvalid : undefined);
+  const widthError = () => (pixels(widthText()) === undefined ? t().pixelsInvalid : undefined);
+  const heightError = () => (pixels(heightText()) === undefined ? t().pixelsInvalid : undefined);
+  const exportInvalid = () => Boolean(qualityError() || widthError() || heightError());
   const [exportProgress, setExportProgress] = createSignal<number | null>(null);
   const [exporting, setExporting] = createSignal(false);
   const [exportError, setExportError] = createSignal("");
@@ -754,7 +768,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   };
 
   const doExport = async () => {
-    if (exporting()) return;
+    if (exporting() || exportInvalid()) return;
     setExporting(true);
     setExportError("");
     const count = exportCount();
@@ -1310,7 +1324,9 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                   </div>
                 </div>
 
-                {/* Every open image as its own picture; the open one carries the blue ring. */}
+                {/* Every open image as its own picture; the open one carries the blue ring.
+                    k2b-ui gap: no v2 picture tile (Tiles media, #4208) or swatch; the strip, its add tile, the presets
+                    and the colour swatches are drawn here, with the focus ring of app.css ([data-tools-tile]). */}
                 <Show when={images().length > 0}>
                   <nav
                     aria-label={t().filmstripLabel}
@@ -1331,6 +1347,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                         <Menu.Context items={imageDeeds(index())}>
                           <button
                             type="button"
+                            data-tools-tile=""
                             onClick={() => switchImage(index())}
                             disabled={cropActive()}
                             aria-label={t().openImage({ name: image.name })}
@@ -1369,6 +1386,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     {/* the way to more photos stays on the stage, also on the phone where the head gives way */}
                     <button
                       type="button"
+                      data-tools-tile=""
                       onClick={() => void selectFiles()}
                       disabled={cropActive() || cropBusy()}
                       aria-label={t().addImages}
@@ -1494,6 +1512,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           {(color) => (
                             <button
                               type="button"
+                              data-tools-tile=""
                               onClick={() => setMarkupColor(color.value)}
                               aria-label={t().useColor({ color: t()[color.labelKey] })}
                               aria-pressed={markupColor() === color.value}
@@ -1710,6 +1729,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                       {(key) => (
                         <button
                           type="button"
+                          data-tools-tile=""
                           onClick={() => applyPreset(key)}
                           aria-pressed={sameLook(adj(), PRESETS[key]!)}
                           style={{
@@ -1783,7 +1803,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             <Button onClick={() => setExportOpen(false)} disabled={exporting()}>
               {t().cancel}
             </Button>
-            <Button variant="primary" icon="download" busy={exporting()} onClick={() => void doExport()}>
+            <Button variant="primary" icon="download" busy={exporting()} disabled={exportInvalid()} onClick={() => void doExport()}>
               {exportCount() > 1 ? t().exportCountAction({ count: exportCount() }) : t().exportAction}
             </Button>
           </>
@@ -1818,41 +1838,31 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
         </Field>
         <Show when={exportFormat() !== "png"}>
           {/* k2b-ui gap: no v2 slider (lane Y); the quality is a number in percent, as in the converter. */}
-          <Field label={t().qualityLabel} optional="%">
-            <Input
-              type="number"
-              min={10}
-              max={100}
-              value={String(Math.round(exportQuality() * 100))}
-              disabled={exporting()}
-              onInput={(value) => {
-                const percent = Number(value);
-                if (Number.isFinite(percent) && percent >= 10 && percent <= 100) setExportQuality(percent / 100);
-              }}
-            />
+          <Field label={t().qualityLabel} optional="%" error={qualityError()}>
+            <Input type="number" min={10} max={100} value={qualityText()} disabled={exporting()} onInput={setQualityText} />
           </Field>
         </Show>
         <Field.Row>
-          <Field label={t().maxWidth} optional="px" hint={t().keepOriginalSize}>
+          <Field label={t().maxWidth} optional="px" hint={t().keepOriginalSize} error={widthError()}>
             <Input
               type="number"
               min={1}
               name="image-export-max-width"
               placeholder={t().autoPlaceholder}
-              value={exportWidth() === null ? "" : String(exportWidth())}
+              value={widthText()}
               disabled={exporting()}
-              onInput={(value) => setExportWidth(pixels(value))}
+              onInput={setWidthText}
             />
           </Field>
-          <Field label={t().maxHeight} optional="px">
+          <Field label={t().maxHeight} optional="px" error={heightError()}>
             <Input
               type="number"
               min={1}
               name="image-export-max-height"
               placeholder={t().autoPlaceholder}
-              value={exportHeight() === null ? "" : String(exportHeight())}
+              value={heightText()}
               disabled={exporting()}
-              onInput={(value) => setExportHeight(pixels(value))}
+              onInput={setHeightText}
             />
           </Field>
         </Field.Row>
