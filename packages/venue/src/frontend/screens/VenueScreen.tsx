@@ -343,11 +343,12 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
               {/* k2b-ui gap: no calendar in v2; the v1 Calendar keeps its behaviour and draws inside a canvas. */}
               <Canvas label={t().schedule} height={calendarView() === "mobile-month" ? undefined : 680}>
                 <Calendar
-                  // Inside the canvas the calendar's own frame gives way to the pane's lines (no second line at the grip).
+                  // Inside the canvas the calendar's own frame gives way to the pane's lines, and its scrollbar (WebKit shows one)
+                  // keeps a gap to the grip, so no second line stands at the grip.
                   class={
                     calendarView() === "mobile-month"
                       ? "!rounded-none !border-0 !shadow-none"
-                      : "h-full !rounded-none !border-0 !shadow-none"
+                      : "h-full !rounded-none !border-0 !pr-2 !shadow-none"
                   }
                   date={calendarDate()}
                   view={calendarView()}
