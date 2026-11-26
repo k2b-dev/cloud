@@ -3,9 +3,10 @@ import { formatDate } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
 import { copyToClipboard } from "@k2b/stdlib/browser";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, NoticeCard, Skeleton, StatusBadge, toast, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Chip, Dialog, Failed, List, Loading, Menu, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { groupFingerprint, type KeyEntry, openRevokeKeyDialog, openTokenDialog } from "./keys-dialogs";
+import { groupFingerprint, type KeyEntry, TokenDialog } from "./keys-dialogs";
 import { keysMessages } from "./keys-messages";
 import { keysState } from "./keys-state";
 
@@ -31,7 +32,7 @@ type KeyList = { items: KeyEntry[]; lastRejectedStart: StartRejection | null };
 export type KeysProps = {
   app: { id: string; name: string };
   neverStarted: boolean;
-  /** Null when the server could not read the keys; the column then offers to try again. */
+  /** Null when the server could not read the keys; the view then offers to try again. */
   initialKeys: KeyEntry[] | null;
   initialRejection: StartRejection | null;
   /** Display names of the people who created keys, by user ID. */
@@ -49,12 +50,13 @@ const keysApi = coreClient.admin.apps;
 const workloads = coreClient.admin.identity.workloads;
 
 /**
- * The keys of one app: active and expired keys, the revoked ones behind a disclosure, the menu of each key, and the
+ * The keys of one app: active and expired keys, the revoked ones behind a toggle, the menu of each key, and the
  * tokens of today's host operation collapsed below. SSR provides the first state; every change reads the list again.
  */
 export default function Keys(props: KeysProps) {
   const locale = useLocale();
   const t = () => keysMessages.resolve([locale()]).t;
+  const toast = useToast();
   const context = () => ({ locale: locale(), timeZone: props.timeZone });
   // Without a valid key, or when Core refused a start with a revoked one, the revoked ones explain why and open.
   const explainsRevoked = (data: KeyList | undefined) => {
@@ -159,10 +161,43 @@ export default function Keys(props: KeysProps) {
   const copy = async (text: string) => {
     try {
       await copyToClipboard(text);
-      toast.success(t().copied);
+      toast(t().copied, { status: "ok" });
     } catch {
-      toast.error(t().copyFailed);
+      toast(t().copyFailed, { status: "bad" });
     }
+  };
+  /** A refused or unclear revocation, shown above the keys. */
+  const [revokeProblem, setRevokeProblem] = createSignal<{ unclear: boolean } | null>(null);
+  const revoke = async (key: KeyEntry) => {
+    const last = active().length === 1 && key.status === "active";
+    const asked = await Dialog.confirm({
+      title: t().revokeTitle({ name: key.name }),
+      description: `${t().revokeText({ app: props.app.name })}${last ? ` ${t().lastKeyLead} ${t().lastKeyText({ app: props.app.name })}` : ""}`,
+      confirm: t().revokeAction,
+    });
+    if (!asked) return;
+    setRevokeProblem(null);
+    const response = await keysApi[":appId"].keys[":keyId"].$delete({ param: { appId: props.app.id, keyId: key.keyId } }).catch(() => null);
+    // A lost answer may hide a revocation that happened: read the list again and let a second try repeat it safely.
+    if (!response) setRevokeProblem({ unclear: true });
+    else if (!response.ok) setRevokeProblem({ unclear: false });
+    keysState.setRevision((value) => value + 1);
+  };
+  const [creatingToken, setCreatingToken] = createSignal(false);
+  const [tokenProblem, setTokenProblem] = createSignal<string | null>(null);
+  const revokeToken = async (token: TokenEntry) => {
+    const asked = await Dialog.confirm({
+      title: t().revokeTitle({ name: token.name }),
+      description: `${token.tokenPrefix} · ${t().tokenRevokeConfirm}`,
+      confirm: t().revokeAction,
+    });
+    if (!asked) return;
+    setTokenProblem(null);
+    const response = await workloads[":appId"].credentials[":credentialId"]
+      .$delete({ param: { appId: props.app.id, credentialId: token.id } })
+      .catch(() => null);
+    if (!response?.ok) setTokenProblem(t().tokenFailed);
+    refreshAfterToken();
   };
   /** The refused start on the key Core refused, so the list shows which key to replace. */
   const refused = (key: KeyEntry) => {
@@ -186,261 +221,172 @@ export default function Keys(props: KeysProps) {
       refused(key),
     ];
   };
-  const Row = (row: { key: KeyEntry }) => (
-    <div
-      class="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 rounded-lg px-2.5 py-2.5 hover:bg-(--k2b-hover)"
-      data-key={row.key.name}
-    >
-      <div class="min-w-0">
-        <div class="flex min-w-0 items-center gap-2 text-sm font-medium" classList={{ "text-dimmed": row.key.status === "revoked" }}>
-          <span class="truncate">
-            {row.key.name}
-            {row.key.keyId === oldKeyId() ? ` ${t().oldKey}` : ""}
-          </span>
-          <StatusBadge
-            icon={null}
-            tone={row.key.status === "active" ? "ok" : "neutral"}
-            label={row.key.status === "active" ? t().active : row.key.status === "expired" ? t().expired : t().revoked}
+  const stateChip = (status: "active" | "expired" | "revoked") =>
+    status === "active" ? <Chip status="ok">{t().active}</Chip> : <Chip>{status === "expired" ? t().expired : t().revoked}</Chip>;
+  const KeyRow = (row: { key: KeyEntry }) => (
+    <Row
+      icon={row.key.status === "revoked" ? "key-off" : "key"}
+      lines={[
+        `${row.key.name}${row.key.keyId === oldKeyId() ? ` ${t().oldKey}` : ""}`,
+        groupFingerprint(row.key.fingerprint),
+        meta(row.key).filter(Boolean).join(" · "),
+      ]}
+      marks={stateChip(row.key.status)}
+      end={
+        <Show when={row.key.status !== "revoked"}>
+          <Menu
+            label={t().actionsFor({ name: row.key.name })}
+            items={[
+              { icon: "copy", label: t().copyFingerprint, onClick: () => void copy(groupFingerprint(row.key.fingerprint)) },
+              { icon: "file-code", label: t().copyPublicKey, onClick: () => void copy(row.key.publicKey) },
+              { icon: "key-off", label: t().revoke, danger: true, onClick: () => void revoke(row.key) },
+            ]}
           />
-        </div>
-        <div class="mt-0.5 font-mono text-[12.5px] tracking-wide text-secondary">{groupFingerprint(row.key.fingerprint)}</div>
-        <div class="mt-0.5 text-[12.5px] text-dimmed">{meta(row.key).filter(Boolean).join(" · ")}</div>
-      </div>
-      <Show when={row.key.status !== "revoked"}>
-        <Dropdown.Root
-          position="bottom-right"
-          phone="sheet"
-          label={t().actionsFor({ name: row.key.name })}
-          items={[
-            {
-              icon: "ti ti-copy",
-              label: t().copyFingerprint,
-              action: () => void copy(groupFingerprint(row.key.fingerprint)),
-              immediate: true,
-            },
-            { icon: "ti ti-file-code", label: t().copyPublicKey, action: () => void copy(row.key.publicKey), immediate: true },
-            {
-              icon: "ti ti-key-off",
-              label: t().revoke,
-              variant: "danger",
-              action: () =>
-                void openRevokeKeyDialog(props.app, row.key, active().length === 1 && row.key.status === "active", locale(), () =>
-                  keysState.setRevision((value) => value + 1),
-                ),
-            },
-          ]}
-        >
-          <Dropdown.Trigger iconOnly label={t().actionsFor({ name: row.key.name })} size="xs" variant="ghost">
-            <i class="ti ti-dots" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
-      </Show>
-    </div>
+        </Show>
+      }
+    />
   );
-  const Disclose = (disclose: { open: boolean; label: string; toggle: () => void }) => (
-    <button
-      type="button"
-      class="mt-1 flex w-full items-center gap-1.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-dimmed hover:bg-(--k2b-hover)"
-      aria-expanded={disclose.open}
-      onClick={disclose.toggle}
-    >
-      <i class={`ti ${disclose.open ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
-      {disclose.label}
-    </button>
-  );
-  const fallback = (reason: string) => (
-    <NoticeCard tone="neutral" icon="ti ti-terminal-2" class="mb-2">
-      <span>
-        <b>{reason}</b> {t().withCli}
-      </span>
-      <code class="mt-1.5 block font-mono">{`cld admin apps keys create ${props.app.id} --out-dir ./secrets`}</code>
-      <Show when={props.docsHref}>
-        {(href) => (
-          <a class="mt-1.5 inline-block underline underline-offset-3" href={href()}>
-            {t().withoutCli}
-          </a>
-        )}
-      </Show>
-    </NoticeCard>
+  /** Shows or hides a group. k2b-ui gap: v2 has no disclosure yet (#4191); a text button that names its count stands in. */
+  const Toggle = (toggle: { open: boolean; label: string; onToggle: () => void }) => (
+    <Bar
+      start={
+        <Button variant="text" icon={toggle.open ? "chevron-up" : "chevron-down"} onClick={toggle.onToggle}>
+          {toggle.label}
+        </Button>
+      }
+    />
   );
   return (
-    <div class="flex flex-col" data-keys={props.app.id}>
+    <>
       <Show when={accountStatus() === "disabled"}>
-        <NoticeCard tone="danger" icon="ti ti-player-pause" class="mb-2" data-background-off>
-          <span>
-            <b>{t().backgroundOffLead}</b> {t().backgroundOffText({ name: props.app.name })}
-          </span>
-          <span class="mt-1.5 flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="secondary" loading={enable.loading()} onClick={() => void enable.mutate()}>
-              {t().backgroundOn}
-            </Button>
-            <Show when={enable.error()}>{(error) => <span>{error().message}</span>}</Show>
-          </span>
-        </NoticeCard>
-      </Show>
-      <Show when={keysState.support() === "insecure"}>{fallback(t().noHttps)}</Show>
-      <Show when={keysState.support() === "no-ed25519"}>{fallback(t().noEd25519)}</Show>
-      <Show
-        when={!keys.error()}
-        fallback={
-          <div class="flex flex-col items-start gap-2 px-2.5 py-2 text-[13.5px] text-secondary">
-            <span>
-              <i class="ti ti-alert-triangle text-(--k2b-danger-text)" aria-hidden="true" /> {t().loadFailed}
-            </span>
-            <Button size="sm" variant="secondary" loading={keys.refreshing()} onClick={() => void keys.refresh()}>
-              <i class="ti ti-refresh" aria-hidden="true" />
-              {t().retry}
-            </Button>
-          </div>
-        }
-      >
-        <Show
-          when={keys.data()}
-          fallback={
-            <div role="status" aria-label={t().loading} class="flex flex-col gap-0.5">
-              <Skeleton class="h-[76px] rounded-lg" />
-              <Skeleton class="h-[76px] w-3/4 rounded-lg" />
-            </div>
-          }
+        <Notice
+          tone="bad"
+          icon="player-pause"
+          title={t().backgroundOffLead}
+          actions={[{ label: t().backgroundOn, disabled: enable.loading(), onClick: () => void enable.mutate() }]}
         >
+          {enable.error() ? t().backgroundFailed : t().backgroundOffText({ name: props.app.name })}
+        </Notice>
+      </Show>
+      <Show when={keysState.support() === "insecure" || keysState.support() === "no-ed25519"}>
+        <Notice
+          tone="note"
+          icon="terminal-2"
+          title={keysState.support() === "insecure" ? t().noHttps : t().noEd25519}
+          actions={props.docsHref ? [{ label: t().withoutCli, href: props.docsHref }] : undefined}
+        >
+          {`${t().withCli} cld admin apps keys create ${props.app.id} --out-dir ./secrets`}
+        </Notice>
+      </Show>
+      <Show when={revokeProblem()}>
+        {(problem) => (
+          <Notice tone={problem().unclear ? "warn" : "bad"} title={problem().unclear ? t().unclearLead : t().revokeFailedLead}>
+            {problem().unclear ? t().revokeUnclearText : t().revokeFailedText}
+          </Notice>
+        )}
+      </Show>
+      <Show when={!keys.error()} fallback={<Failed text={t().loadFailed} onRetry={() => void keys.refresh()} />}>
+        <Show when={keys.data()} fallback={<Loading rows={2} lines={3} />}>
           <Show when={active().length >= 2}>
-            <p class="mx-2.5 mb-2 flex items-baseline gap-1.5 text-[13px] text-dimmed">
-              <i class="ti ti-refresh" aria-hidden="true" />
+            <Notice tone="note" icon="refresh">
               {t().rotation}
-            </p>
+            </Notice>
           </Show>
           <Show when={active().length === 0 && list().length > 0}>
-            <p class="mx-2.5 my-1 text-[13.5px] text-dimmed">{t().noneActive}</p>
+            <Text muted>{t().noneActive}</Text>
           </Show>
           <Show
             when={current().length > 0}
             fallback={
               <Show when={list().length === 0}>
-                <p class="mx-2.5 my-1 text-[13.5px] text-dimmed">
-                  {props.neverStarted ? t().emptyNew : t().emptyEnv({ name: props.app.name })}
-                </p>
+                <Text muted>{props.neverStarted ? t().emptyNew : t().emptyEnv({ name: props.app.name })}</Text>
               </Show>
             }
           >
-            <div class="flex flex-col gap-0.5">
-              <For each={current()}>{(key) => <Row key={key} />}</For>
-            </div>
+            <List label={t().active}>
+              <For each={current()}>{(key) => <KeyRow key={key} />}</For>
+            </List>
           </Show>
           <Show when={revoked().length > 0}>
-            <Disclose
+            <Toggle
               open={showRevoked()}
               label={t().revokedList({ count: revoked().length })}
-              toggle={() => setShowRevoked((open) => !open)}
+              onToggle={() => setShowRevoked((open) => !open)}
             />
             <Show when={showRevoked()}>
-              <div class="flex flex-col gap-0.5">
-                <For each={revoked()}>{(key) => <Row key={key} />}</For>
-              </div>
+              <List label={t().revoked}>
+                <For each={revoked()}>{(key) => <KeyRow key={key} />}</For>
+              </List>
             </Show>
           </Show>
         </Show>
       </Show>
-      <div class="mt-3">
-        <Disclose
-          open={showTokens()}
-          label={t().tokens({ count: tokens.data()?.total ?? 0 })}
-          toggle={() => setShowTokens((open) => !open)}
-        />
-        <Show when={showTokens()}>
-          <p class="mx-2.5 mt-1 mb-2 max-w-[40rem] text-[13.5px] text-dimmed">{t().tokensText}</p>
-          <Show
-            when={!tokens.error()}
-            fallback={
-              <div class="flex flex-col items-start gap-2 px-2.5 text-[13.5px] text-secondary">
-                {t().tokensFailed}
-                <Button size="sm" variant="secondary" onClick={() => void tokens.refresh()}>
-                  {t().retry}
-                </Button>
-              </div>
-            }
-          >
-            <div class="flex flex-col gap-0.5">
-              <For each={tokens.data()?.items ?? []} fallback={<p class="mx-2.5 text-[13.5px] text-dimmed">{t().noTokens}</p>}>
-                {(token) => (
-                  <div
-                    class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 rounded-lg px-2.5 py-2.5 hover:bg-(--k2b-hover)"
-                    data-token={token.name}
-                  >
-                    <div class="min-w-0">
-                      <div class="flex min-w-0 items-center gap-2 text-sm font-medium">
-                        <span class="truncate">{token.name}</span>
-                        <StatusBadge
-                          icon={null}
-                          tone={tokenStatus(token) === "active" ? "ok" : "neutral"}
-                          label={{ active: t().active, expired: t().expired, revoked: t().revoked }[tokenStatus(token)]}
-                        />
-                      </div>
-                      <div class="mt-0.5 text-[12.5px] text-dimmed">
-                        {[
+      <Toggle
+        open={showTokens()}
+        label={t().tokens({ count: tokens.data()?.total ?? 0 })}
+        onToggle={() => setShowTokens((open) => !open)}
+      />
+      <Show when={showTokens()}>
+        <Section
+          icon="certificate"
+          title={t().tokensTitle}
+          summary={t().tokensText}
+          actions={[{ label: t().tokenCreate, icon: "plus", onClick: () => setCreatingToken(true) }]}
+        >
+          <Show when={tokenProblem()}>{(problem) => <Notice tone="bad">{problem()}</Notice>}</Show>
+          <Show when={!tokens.error()} fallback={<Failed text={t().tokensFailed} onRetry={() => void tokens.refresh()} />}>
+            <Show when={(tokens.data()?.items.length ?? 0) > 0} fallback={<Text muted>{t().noTokens}</Text>}>
+              <List label={t().tokensTitle}>
+                <For each={tokens.data()?.items ?? []}>
+                  {(token) => (
+                    <Row
+                      icon="certificate"
+                      lines={[
+                        token.name,
+                        [
+                          token.tokenPrefix,
                           token.expiresAt ? t().tokenExpires({ date: formatDate(token.expiresAt, context()) }) : t().tokenNoExpiry,
                           token.lastUsedAt ? t().usedAt({ when: dates.formatTimeSpan(token.lastUsedAt, context()) }) : t().neverUsed,
-                        ].join(" · ")}
-                      </div>
-                    </div>
-                    <Show when={token.status !== "revoked"}>
-                      <Dropdown.Root
-                        position="bottom-right"
-                        phone="sheet"
-                        label={t().actionsFor({ name: token.name })}
-                        items={[
-                          {
-                            icon: "ti ti-key-off",
-                            label: t().revoke,
-                            variant: "danger",
-                            action: () =>
-                              void openTokenDialog(props.app, locale(), refreshAfterToken, {
-                                id: token.id,
-                                name: token.name,
-                                prefix: token.tokenPrefix,
-                              }),
-                          },
-                        ]}
-                      >
-                        <Dropdown.Trigger iconOnly label={t().actionsFor({ name: token.name })} size="xs" variant="ghost">
-                          <i class="ti ti-dots" aria-hidden="true" />
-                        </Dropdown.Trigger>
-                      </Dropdown.Root>
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </div>
-            <div class="mx-2.5 mt-1 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => void openTokenDialog(props.app, locale(), () => setTokenRevision((value) => value + 1))}
-              >
-                <i class="ti ti-plus" aria-hidden="true" />
-                {t().tokenCreate}
-              </Button>
-              <Show when={(tokens.data()?.total ?? 0) > PER_PAGE}>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={tokenPage() <= 1 || tokens.loading()}
-                  onClick={() => setTokenPage((page) => page - 1)}
-                >
-                  {t().previous}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!tokens.data()?.hasNext || tokens.loading()}
-                  onClick={() => setTokenPage((page) => page + 1)}
-                >
-                  {t().next}
-                </Button>
-              </Show>
-            </div>
+                        ].join(" · "),
+                      ]}
+                      marks={stateChip(tokenStatus(token))}
+                      end={
+                        <Show when={token.status !== "revoked"}>
+                          <Menu
+                            label={t().actionsFor({ name: token.name })}
+                            items={[{ icon: "key-off", label: t().revoke, danger: true, onClick: () => void revokeToken(token) }]}
+                          />
+                        </Show>
+                      }
+                    />
+                  )}
+                </For>
+              </List>
+            </Show>
+            <Show when={(tokens.data()?.total ?? 0) > PER_PAGE}>
+              <Bar
+                start={
+                  <>
+                    <Button disabled={tokenPage() <= 1 || tokens.loading()} onClick={() => setTokenPage((page) => page - 1)}>
+                      {t().previous}
+                    </Button>
+                    <Button disabled={!tokens.data()?.hasNext || tokens.loading()} onClick={() => setTokenPage((page) => page + 1)}>
+                      {t().next}
+                    </Button>
+                  </>
+                }
+              />
+            </Show>
           </Show>
-        </Show>
-      </div>
-    </div>
+        </Section>
+      </Show>
+      <TokenDialog
+        app={props.app}
+        t={t()}
+        open={creatingToken()}
+        onClose={() => setCreatingToken(false)}
+        onChanged={() => setTokenRevision((value) => value + 1)}
+      />
+    </>
   );
 }

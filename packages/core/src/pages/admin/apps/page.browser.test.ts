@@ -40,6 +40,9 @@ const row = (name: string) => page.locator("main tbody tr").filter({ has: page.g
 const fact = (label: string) => page.locator('main [data-k2-part="Pane"][data-detail] [data-k2-part="Row"]').filter({ hasText: label });
 const notice = (text: string | RegExp) => page.locator('main [data-k2-part="Notice"]').filter({ hasText: text });
 
+/** The rows of the open app's view beside the list. */
+const detailRows = () => page.locator('main [data-k2-part="Pane"][data-detail] [data-k2-part="Row"]');
+
 afterAll(async () => {
   await browser?.close();
   fixture?.close();
@@ -218,23 +221,22 @@ test("on a phone the list keeps name and state with the problem under the name, 
     "Start abgelehnt",
   );
   await open("?app=mail&view=keys", 390);
-  expect(await page.locator('[data-keys="mail"]').isVisible()).toBe(true);
+  expect(await detailRows().filter({ hasText: "produktion-2026-10" }).isVisible()).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }, 20_000);
 
 test("keys: the private key shows once, and closing it unsaved asks first", async () => {
   await open("?app=mail&view=keys");
-  const keys = page.locator('[data-keys="mail"]');
-  expect(await keys.locator("[data-key]").count()).toBe(1);
-  await keys.getByRole("button", { name: /Widerrufen \(1\)/ }).click();
-  expect(await keys.locator("[data-key]").count()).toBe(2);
-  await keys.getByRole("button", { name: /Tokens für Host-Betrieb \(1\)/ }).click();
-  expect(await keys.locator('[data-token="host-override"]').isVisible()).toBe(true);
+  expect(await detailRows().count()).toBe(1);
+  await page.getByRole("button", { name: /Widerrufen \(1\)/ }).click();
+  expect(await detailRows().count()).toBe(2);
+  await page.getByRole("button", { name: /Tokens für Host-Betrieb \(1\)/ }).click();
+  expect(await detailRows().filter({ hasText: "host-override" }).isVisible()).toBe(true);
 
   // The button turns on once the browser check finds Ed25519, which both test engines have; click waits for that.
   await page.getByRole("button", { name: "Schlüssel erzeugen" }).click();
-  await page.locator("[data-key-create]").getByRole("button", { name: "Erzeugen" }).click();
-  const once = page.locator("[data-key-once]");
+  await page.getByRole("dialog", { name: "Schlüssel erzeugen" }).getByRole("button", { name: "Erzeugen" }).click();
+  const once = page.getByRole("dialog", { name: "Privaten Schlüssel sichern" });
   await once.waitFor();
   expect(await once.innerText()).toContain("Nur jetzt sichtbar.");
   expect(await once.innerText()).toContain(
@@ -260,8 +262,8 @@ test("keys: a key generation the engine refuses once still creates the key", asy
   });
   await open("?app=mail&view=keys");
   await page.getByRole("button", { name: "Schlüssel erzeugen" }).click();
-  await page.locator("[data-key-create]").getByRole("button", { name: "Erzeugen" }).click();
-  const once = page.locator("[data-key-once]");
+  await page.getByRole("dialog", { name: "Schlüssel erzeugen" }).getByRole("button", { name: "Erzeugen" }).click();
+  const once = page.getByRole("dialog", { name: "Privaten Schlüssel sichern" });
   await once.waitFor();
   expect(await once.innerText()).toContain("Nur jetzt sichtbar.");
 }, 20_000);
@@ -270,14 +272,14 @@ test("keys: revoking the only active key warns about the next start", async () =
   await open("?app=mail&view=keys");
   await page.getByRole("button", { name: "Aktionen für produktion-2026-10" }).click();
   await page.getByRole("menuitem", { name: "Widerrufen …" }).click();
-  const dialog = page.locator("[data-key-revoke]");
+  const dialog = page.getByRole("alertdialog");
   await dialog.waitFor();
   expect(await dialog.innerText()).toContain("Einziger aktiver Schlüssel.");
 }, 20_000);
 
 test("keys: background access off says so and offers to turn it on; two active keys block creating a third", async () => {
   await open("?app=mail&view=keys&state=keys-off");
-  expect(await page.locator("[data-background-off]").innerText()).toContain("Hintergrundzugriff ist aus.");
+  expect(await notice("Hintergrundzugriff ist aus.").count()).toBe(1);
   expect(await page.getByRole("button", { name: "Wieder aktivieren" }).isVisible()).toBe(true);
   await open("?app=grids&view=keys");
   expect(await page.getByText("Rotation läuft. Sobald keine Instanz mehr den alten Schlüssel nutzt, widerrufe ihn.").isVisible()).toBe(
@@ -288,10 +290,44 @@ test("keys: background access off says so and offers to turn it on; two active k
 
 test("key states: when the first keys read fails, the browser read still opens the refused revoked key", async () => {
   await open("?app=pulse&view=keys&state=keys-late");
-  const key = page.locator('[data-keys="pulse"] [data-key="pulse-prod"]');
+  const key = detailRows().filter({ hasText: "pulse-prod" });
   await key.waitFor();
   expect(await key.innerText()).toContain("Start abgelehnt vor 3 Minuten");
 }, 20_000);
+
+test("keys: a refused revocation says so above the keys, and a new token shows once until it is saved", async () => {
+  await open("?app=mail&view=keys&state=revoke-fail");
+  await page.getByRole("button", { name: "Aktionen für produktion-2026-10" }).click();
+  await page.getByRole("menuitem", { name: "Widerrufen …" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Widerrufen" }).click();
+  await notice("Nicht widerrufen.").waitFor();
+
+  await page.getByRole("button", { name: /Tokens für Host-Betrieb/ }).click();
+  await page.getByRole("button", { name: "Token erstellen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Token erstellen" });
+  await dialog.getByRole("textbox", { name: /^Name/ }).fill("host-mail");
+  await dialog.getByRole("button", { name: "Token erstellen" }).click();
+  const once = page.getByRole("dialog", { name: /nur einmal angezeigt/ });
+  await once.waitFor();
+  expect(await once.innerText()).toContain("cloud-credential-v1.fixture.");
+  // it stays until the person says the token is saved
+  await page.keyboard.press("Escape");
+  expect(await once.isVisible()).toBe(true);
+  await once.getByRole("button", { name: "Token gespeichert" }).click();
+  await once.waitFor({ state: "hidden" });
+}, 20_000);
+
+test("keys: the view keeps the v2 rules at desktop and phone width", async () => {
+  for (const width of [1440, 390]) {
+    await open("?app=grids&view=keys", width);
+    await page.getByRole("button", { name: /Tokens für Host-Betrieb/ }).click();
+    expect({ width, problems: (await measureV2Layout(page, { root: "main.k2-ui", skip: ".k2b-field" })).problems }).toEqual({
+      width,
+      problems: [],
+    });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+}, 30_000);
 
 /** A domain of the open app: the row whose first line is exactly its host. */
 const domain = (host: string) =>

@@ -40,7 +40,8 @@ export type AdminAppsFixtureState =
   | "slow"
   | "domains-empty"
   | "domains-error"
-  | "domains-partial";
+  | "domains-partial"
+  | "revoke-fail";
 
 const rejectionFor = (state: AdminAppsFixtureState, id: string) =>
   fixtureRejection(id, state === "start-disabled" ? "disabled" : "revoked");
@@ -438,7 +439,10 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
         status: "active",
         accountStatus: "active",
       });
-    if (/^\/api\/admin\/apps\/[^/]+\/keys\/[^/]+$/.test(url.pathname) && request.method === "DELETE") return Response.json(null);
+    if (/^\/api\/admin\/apps\/[^/]+\/keys\/[^/]+$/.test(url.pathname) && request.method === "DELETE")
+      return state === "revoke-fail" ? Response.json({ message: "Synthetic fixture: refused" }, { status: 500 }) : Response.json(null);
+    if (/^\/api\/admin\/identity\/workloads\/[^/]+\/credentials$/.test(url.pathname) && request.method === "POST")
+      return Response.json({ token: "cloud-credential-v1.fixture.0000000000000000000000000000000000000000" }, { status: 201 });
     if (/^\/api\/admin\/identity\/workloads\/[^/]+\/credentials$/.test(url.pathname) && request.method === "GET")
       return Response.json({ items: [], page: 1, perPage: 20, total: 0, hasNext: false });
     return Response.json({ message: "Synthetic fixture: not available" }, { status: 503 });
