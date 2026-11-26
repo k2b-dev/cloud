@@ -44,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
         <SqlScreen
           bases={props.initialBases}
           baseId={props.initialBaseId}
-          sourceCount={props.initialSources.length}
+          sourceCount={data.sourceCount}
           route={props.initialRouteState}
           snapshot={props.initialSql}
           canWrite={props.initialPermissions?.write ?? false}

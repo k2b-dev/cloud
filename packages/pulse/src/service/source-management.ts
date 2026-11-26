@@ -229,6 +229,16 @@ export const listSources = async (
   );
 };
 
+/** How many sources a base has, for the count on its tab: one count, without the store figures a list reads. */
+export const countSources = async (baseId: string, user: AccessScope): Promise<Result<number>> => {
+  const access = await requireBaseAccess(baseId, user, "read");
+  if (!access.ok) return fail(access.error);
+  const [row] = await sql<
+    { count: number }[]
+  >`SELECT count(*)::int AS count FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`;
+  return ok(row?.count ?? 0);
+};
+
 export const getSource = async (sourceId: string, user: AccessScope, now = new Date()): Promise<Result<PulseSource>> => {
   const [row] = await sql<SourceRow[]>`SELECT * FROM pulse.sources WHERE NOT deleted AND id = ${sourceId}::uuid`;
   if (!row) return fail(err.notFound("Source"));

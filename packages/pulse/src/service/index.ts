@@ -16,6 +16,7 @@ import {
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
 import {
+  countSources,
   createSource,
   createSourceApiKey,
   getSource,
@@ -62,6 +63,7 @@ export const pulseService = {
   },
   source: {
     list: listSources,
+    count: countSources,
     get: getSource,
     scrapes: listSourceScrapes,
     apiKeys: {

@@ -3,6 +3,7 @@ import { type AuthContext, expectUserBackedActor, getDateConfig } from "@k2b/clo
 import { get as getSetting } from "@k2b/cloud/services";
 import type { ServiceError } from "@k2b/stdlib";
 import type { Context } from "hono";
+import type { PulseSource } from "../../contracts";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
 import { accessScopeFor, requireBaseAccess } from "../../service/access-control";
@@ -30,7 +31,11 @@ const publicOrigin = (rawAppUrl: string | null | undefined, requestOrigin: strin
   }
 };
 
-type PageData = { kind: "error"; status: ServiceError["status"] } | { kind: "ok"; baseName: string; workspaceProps: PulseWorkspaceProps };
+const noSources: PulseSource[] = [];
+
+type PageData =
+  | { kind: "error"; status: ServiceError["status"] }
+  | { kind: "ok"; baseName: string; sourceCount: number; workspaceProps: PulseWorkspaceProps };
 export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Context<T>): Promise<PageData> {
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
@@ -45,9 +50,15 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     getSetting<string>("app.url").catch(() => ""),
   ]);
   if (!base.ok) return { kind: "error", status: base.error.status };
-  // The sidebar counts the sources on every view of the base.
-  const sources = await pulseService.source.list(baseId, user, { signal: c.req.raw.signal });
+  // The sources view lists the sources with their store figures; every other view needs only their number for its tab.
+  const sources =
+    route.view === "sources"
+      ? await pulseService.source.list(baseId, user, { signal: c.req.raw.signal })
+      : { ok: true as const, data: noSources };
   if (!sources.ok) return { kind: "error", status: sources.error.status };
+  const sourceCount =
+    route.view === "sources" ? { ok: true as const, data: sources.data.length } : await pulseService.source.count(baseId, user);
+  if (!sourceCount.ok) return { kind: "error", status: sourceCount.error.status };
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
   const [write, admin] = scope.ok
     ? await Promise.all([requireBaseAccess(baseId, scope.data, "write"), requireBaseAccess(baseId, scope.data, "admin")])
@@ -92,7 +103,7 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
       error: limits.ok ? null : { code: limits.error.code, details: { ...limits.error } },
     };
   }
-  if (route.sourceId) {
+  if (route.view === "sources" && route.sourceId) {
     const sourceId = await resolveBasePublicId("sources", baseId, route.sourceId);
     const source = sources.data.find((source) => source.id === sourceId);
     if (!source) return { kind: "error", status: 404 };
@@ -106,7 +117,7 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     props.initialSourceApiKeys[route.sourceId] = keys.ok ? keys.data : [];
     props.initialQueryCoverage.sourceDetail = scrapes.ok && keys.ok;
   }
-  return { kind: "ok", baseName: base.data.name, workspaceProps: props };
+  return { kind: "ok", baseName: base.data.name, sourceCount: sourceCount.data, workspaceProps: props };
 }
 
 /** The base, the bases beside it and its source count: what every page of a base shows around its own content. */
@@ -119,7 +130,7 @@ const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
   const [base, bases, sources] = await Promise.all([
     pulseService.base.get(baseId, user),
     pulseService.base.list(user),
-    pulseService.source.list(baseId, user, { signal: c.req.raw.signal }),
+    pulseService.source.count(baseId, user),
   ]);
   if (!base.ok) return { kind: "error" as const, status: base.error.status };
   const projected = await projectBases(bases.ok ? bases.data : [base.data]);
@@ -130,7 +141,7 @@ const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
     publicBaseId,
     base: current!,
     bases: projected,
-    sourceCount: sources.ok ? sources.data.length : 0,
+    sourceCount: sources.ok ? sources.data : 0,
     identity: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId },
   };
 };
