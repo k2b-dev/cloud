@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
-import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
@@ -17,6 +16,7 @@ import type { User } from "../contracts/shared";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
 import { session } from "../services/session";
+import { buildOlderGlobal } from "../styles/older-core-global.fixture";
 
 // A Cloud app page on v2 (`PwaLayout ui="v2"`) as the phone and a wide screen show it: the frame, the page's panes, the
 // tab bar or the sidebar, clear of the safe areas, in the canvas the status bar takes. The page loads Core's v2.css
@@ -161,28 +161,11 @@ const withInsets = (css: string, sides: Insets) =>
 let browser: Browser;
 // `older global.css` is the sheet of a Core from before the v2 frame: global.css without the frame's rules.
 const sheets: Record<"v2.css" | "older global.css", string> = { "v2.css": "", "older global.css": "" };
-/**
- * Core's global.css as a Core from before the v2 frame built it: the same sheet without the frame's file. Built from a
- * copy beside global.css (its imports are relative), which is removed at once.
- */
-const buildOlderGlobal = async () => {
-  const styles = resolve(import.meta.dir, "../styles");
-  const copy = join(styles, `.older-core-${process.pid}.css`);
-  const source = readFileSync(join(styles, "global.css"), "utf8");
-  if (!source.includes('@import "./pwa-layout.css";')) throw new Error("global.css no longer imports the v2 frame.");
-  writeFileSync(copy, source.replace('@import "./pwa-layout.css";', ""));
-  try {
-    return await Bun.build({ entrypoints: [copy], plugins: [tailwind] });
-  } finally {
-    rmSync(copy, { force: true });
-  }
-};
 beforeAll(async () => {
   const v2 = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../styles/v2-page.css")] });
-  const older = await buildOlderGlobal();
-  for (const build of [v2, older]) if (!build.success) throw new AggregateError(build.logs, "Could not build the stylesheets.");
+  if (!v2.success) throw new AggregateError(v2.logs, "Could not build v2.css.");
   sheets["v2.css"] = await v2.outputs[0]!.text();
-  sheets["older global.css"] = await older.outputs[0]!.text();
+  sheets["older global.css"] = await buildOlderGlobal(["./pwa-layout.css"]);
   if (sheets["older global.css"].includes("pwa-v2")) throw new Error("The older sheet still holds the v2 frame.");
   browser = await launchBrowser();
 }, launchHookMs);

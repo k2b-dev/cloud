@@ -242,7 +242,8 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
   and the tab's name says it in words, such as "Chat, 3 unread". With
   `screen`, the tab bar steps aside and the page keeps clear of the home
   indicator itself; a part that opens or leaves such a screen in place calls
-  `setPwaScreen(element, screen)` from `@k2b/cloud/browser/pwa-screen`.
+  `setPwaScreen(element, screen)` from `@k2b/cloud/browser/pwa-screen`, which
+  also works when the page shows in the v1 frame beside an older Core.
 - From 48 rem a v2 `Nav` with Start, every part with its count, and Settings
   at its foot stands beside the page.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
