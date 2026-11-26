@@ -1,7 +1,7 @@
 import { EditorSelection } from "@codemirror/state";
 import { Button, LocaleProvider, MarkdownEditor } from "@k2b/ui";
 import { Bar, Canvas, Pane, Text, Workspace } from "@k2b/ui/v2";
-import { onMount } from "solid-js";
+import { onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { BubbleMenu, createEditor, Editor, markdownActions, SlashMenu, Toolbar } from "./index";
 
@@ -49,31 +49,34 @@ if (root)
         >
           <Workspace head={<Bar start={<Text type="body">Angebot Einbauschrank Flur.md</Text>} />}>
             <Pane.Split>
-              <Pane label="Datei" width={{ min: 320, default: 640 }}>
-                <Canvas label="Angebot Einbauschrank Flur.md" height={360}>
-                  <div data-editor="ui" style={{ height: "100%" }}>
-                    <MarkdownEditor
-                      aria-label="Angebot Einbauschrank Flur.md"
-                      value={offer}
-                      fill
-                      variant="embedded"
-                      onSave={() => undefined}
-                      onClose={() => undefined}
-                      toolbarTrailing={
-                        // controls of the host before save and close, as Files puts its history and download there
-                        <>
-                          <button type="button" class="k2b-markdown-editor__tool" aria-label="Verlauf" tabIndex={-1}>
-                            <i class="ti ti-history" aria-hidden="true" />
-                          </button>
-                          <button type="button" class="k2b-markdown-editor__tool" aria-label="Herunterladen" tabIndex={-1}>
-                            <i class="ti ti-download" aria-hidden="true" />
-                          </button>
-                        </>
-                      }
-                    />
-                  </div>
-                </Canvas>
-              </Pane>
+              {/* `?shared`: the note alone, as a phone shows it when the note is the page */}
+              <Show when={!location.search.includes("shared")}>
+                <Pane label="Datei" width={{ min: 320, default: 640 }}>
+                  <Canvas label="Angebot Einbauschrank Flur.md" height={360}>
+                    <div data-editor="ui" style={{ height: "100%" }}>
+                      <MarkdownEditor
+                        aria-label="Angebot Einbauschrank Flur.md"
+                        value={offer}
+                        fill
+                        variant="embedded"
+                        onSave={() => undefined}
+                        onClose={() => undefined}
+                        toolbarTrailing={
+                          // controls of the host before save and close, as Files puts its history and download there
+                          <>
+                            <button type="button" class="k2b-markdown-editor__tool" aria-label="Verlauf" tabIndex={-1}>
+                              <i class="ti ti-history" aria-hidden="true" />
+                            </button>
+                            <button type="button" class="k2b-markdown-editor__tool" aria-label="Herunterladen" tabIndex={-1}>
+                              <i class="ti ti-download" aria-hidden="true" />
+                            </button>
+                          </>
+                        }
+                      />
+                    </div>
+                  </Canvas>
+                </Pane>
+              </Show>
               <Pane label="Notiz">
                 <Canvas label="Notiz" height={360}>
                   <div data-editor="shared" style={{ display: "flex", "flex-direction": "column", height: "100%" }}>

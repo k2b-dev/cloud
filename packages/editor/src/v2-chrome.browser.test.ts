@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser, settled } from "../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../ui/test/browser";
 import { solidTestPlugin } from "../../ui/test/solid-test-plugin";
 
 // The chrome of both Markdown editors inside a v2 screen of Cloud (Cloud's stylesheet, v1 and v2): toolbars of the
@@ -483,5 +483,54 @@ test("inside v2 the toolbar at a selection floats on the v2 menu surface with th
     });
   } finally {
     await page.close();
+  }
+}, 30_000);
+
+/** A phone: a narrow touch screen whose taps are touches, as an iPhone in Safari or Chrome on Android. */
+const openPhone = async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await page.goto(`${server.url.href}?shared`);
+  await page.waitForFunction(() => document.querySelectorAll(".cm-content").length > 0);
+  await settled(page);
+  return { context, page };
+};
+/** Whether the note has the focus, with its caret (on a phone its keyboard stays open). */
+const noteFocused = (page: Page) =>
+  page.evaluate(
+    () =>
+      document.activeElement?.closest('[data-editor="shared"] .cm-content') !== null &&
+      document.activeElement?.closest('[data-editor="shared"] .cm-content') !== undefined,
+  );
+
+test("on a phone a menu of the toolbar leaves the note its focus and keyboard: after an entry and after a tap beside the menu", async () => {
+  const { context, page } = await openPhone();
+  try {
+    const note = page.locator('[data-editor="shared"] .cm-content');
+    const more = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    await note.getByText("Familie Oswald").tap();
+    expect(await noteFocused(page)).toBe(true);
+    // an entry: it runs on the note, and the note keeps its focus
+    await more.tap();
+    await page.locator(".k2-menu").waitFor();
+    await page.locator(".k2-mi", { hasText: "Zitat" }).tap();
+    await page.locator(".k2-menu").waitFor({ state: "hidden" });
+    await settled(page);
+    expect(await note.textContent()).toContain("Familie Oswald");
+    expect(await noteFocused(page)).toBe(true);
+    // a tap beside the menu closes it, and the note has its focus again. WebKit's touch emulation sends only
+    // pointerdown and touchstart for a tap (no pointerup, mousedown or click, as Safari on a phone does), so this part
+    // runs in Chromium's phone emulation
+    if (browserName === "webkit") return;
+    await more.tap();
+    await page.locator(".k2-menu").waitFor();
+    // a finger on the note below the menu: what lies there is the page, the menu's layer takes the tap
+    const canvas = await page.locator('[data-editor="shared"]').boundingBox();
+    await page.touchscreen.tap((canvas?.x ?? 0) + 60, (canvas?.y ?? 0) + (canvas?.height ?? 0) - 30);
+    await page.locator(".k2-menu").waitFor({ state: "hidden" });
+    await settled(page);
+    expect(await noteFocused(page)).toBe(true);
+  } finally {
+    await context.close();
   }
 }, 30_000);
