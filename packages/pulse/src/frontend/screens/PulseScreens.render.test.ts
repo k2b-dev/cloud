@@ -125,6 +125,8 @@ describe("Pulse pages on the server", () => {
       expect(page.loading).toBe(0);
       if (tab === "usage") expect(page.text).toContain("Jana Petersen");
       if (tab === "general") expect(page.text).toContain("b7Kq2mX9");
+      // the form's deeds stand in the head from the server's first picture on, so nothing moves when the island starts
+      if (tab === "general" || tab === "retention") expect(page.text).toContain("Speichern");
       if (tab === "danger") expect(page.text).toContain("Basis löschen");
     }
   });

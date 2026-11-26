@@ -28,7 +28,7 @@ import {
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
-import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { BASE_COLORS } from "../../base-settings";
 import type { PulseBase } from "../../contracts";
 import type { SqlLimits } from "../../service/sql-service";
@@ -38,9 +38,9 @@ import { type BaseSettingsInput, createBaseController } from "../workspace/base-
 import { baseStoreMessages } from "../workspace/base-store-messages";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import type { PulseSettingsTab } from "../workspace/routes";
-import { baseHref, baseNavGroups, iconName } from "./BaseFrame";
+import { baseHref, baseNavGroups } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
-import { baseColor, storeState } from "./store-state";
+import { baseColor, iconName, storeState } from "./store-state";
 
 export type SettingsScreenProps = {
   bases: PulseBase[];
@@ -63,7 +63,6 @@ const settingsHref = (baseId: string, tab: PulseSettingsTab) => `${baseHref(base
  * change anything; everyone else reads and sees who administers the base.
  */
 export default function SettingsScreen(props: SettingsScreenProps) {
-  const [formHead, setFormHead] = createSignal<JSX.Element>();
   const t = usePulseMessages();
   const words = useScreenMessages();
   const locale = useLocale();
@@ -96,6 +95,12 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     refresh: refreshBase,
   });
 
+  // the form's draft lives here, so the head draws its deeds on the server already and nothing moves later
+  const form = createBaseForm({
+    base,
+    canAdmin: () => props.canAdmin,
+    save: (input) => controller.updateSettings(base(), input),
+  });
   const groups = () => baseNavGroups(props.bases, props.base.id, words());
   const tabs = () =>
     (
@@ -115,7 +120,24 @@ export default function SettingsScreen(props: SettingsScreenProps) {
         sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={groups()} />}
         sidebarLabel={words().bases}
         // The sidebar shows the base as the open entry; the head holds the areas of its settings.
-        head={<Bar start={<Tabs label={words().settingsTabs} items={tabs()} />} end={formHead()} />}
+        head={
+          <Bar
+            start={<Tabs label={words().settingsTabs} items={tabs()} />}
+            end={
+              <Show when={props.canAdmin && (props.tab === "general" || props.tab === "retention")}>
+                <Show when={form.changes() > 0}>
+                  <Chip yours>{words().changeCount({ count: form.changes() })}</Chip>
+                </Show>
+                <Button disabled={form.changes() === 0 || loading()} onClick={form.discard}>
+                  {words().discard}
+                </Button>
+                <Button variant="primary" icon="check" busy={loading()} disabled={form.changes() === 0} onClick={() => void form.save()}>
+                  {words().save}
+                </Button>
+              </Show>
+            }
+          />
+        }
       >
         <Pane label={words().settingsTitle({ base: base().name })} scrollKey="pulse-settings">
           <Show when={!props.canAdmin}>
@@ -140,8 +162,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
               canAdmin={props.canAdmin}
               maxRawRetentionDays={props.maxRawRetentionDays}
               loading={loading()}
-              save={(input) => controller.updateSettings(base(), input)}
-              head={setFormHead}
+              form={form}
             />
           </Show>
           <Show when={props.tab === "members"}>
@@ -193,55 +214,61 @@ const ROLLUP_PRESETS = [365, 800, 1095, 3650];
 const SENSITIVE_PRESETS = [24, 168, 720];
 
 /** The base's own fields (general) or its retention, with one "Save" at the end that keeps both tabs' values. */
+/** The general and retention settings as one draft: what is saved, what changed, and the deeds on it. */
+type BaseFormState = ReturnType<typeof createBaseForm>;
+const createBaseForm = (options: {
+  base: () => PulseBase;
+  canAdmin: () => boolean;
+  save: (input: BaseSettingsInput) => Promise<"failed" | "persisted">;
+}) => {
+  const initial = (): BaseSettingsInput => {
+    const base = options.base();
+    return {
+      name: base.name,
+      icon: base.icon,
+      color: base.color,
+      timezone: base.timezone,
+      description: base.description ?? "",
+      rawRetentionDays: base.rawRetentionDays,
+      rollupRetentionDays: base.rollupRetentionDays,
+      sensitiveRetentionHours: base.sensitiveRetentionHours,
+    };
+  };
+  const [saved, setSaved] = createSignal(initial());
+  const [draft, setDraft] = createSignal(initial());
+  // k2b-ui gap: a v2 Select cannot be disabled yet; for someone who only reads, a choice changes nothing.
+  const set = <K extends keyof BaseSettingsInput>(key: K, value: BaseSettingsInput[K]) => {
+    if (options.canAdmin()) setDraft({ ...draft(), [key]: value });
+  };
+  const changes = createMemo(
+    () => (Object.keys(draft()) as (keyof BaseSettingsInput)[]).filter((key) => draft()[key] !== saved()[key]).length,
+  );
+  return {
+    draft,
+    saved,
+    set,
+    changes,
+    discard: () => setDraft(saved()),
+    save: async () => {
+      const next = draft();
+      if ((await options.save(next)) === "persisted") setSaved(next);
+    },
+  };
+};
+
 function BaseForm(props: {
   base: PulseBase;
   tab: "general" | "retention";
   canAdmin: boolean;
   maxRawRetentionDays: number;
   loading: boolean;
-  save: (input: BaseSettingsInput) => Promise<"failed" | "persisted">;
-  /** Hands the form's deeds (changes, discard, save) to the page's head. */
-  head: (deeds: JSX.Element | undefined) => void;
+  form: BaseFormState;
 }) {
   const t = usePulseMessages();
   const words = useScreenMessages();
   const locale = useLocale();
-  const initial = (): BaseSettingsInput => ({
-    name: props.base.name,
-    icon: props.base.icon,
-    color: props.base.color,
-    timezone: props.base.timezone,
-    description: props.base.description ?? "",
-    rawRetentionDays: props.base.rawRetentionDays,
-    rollupRetentionDays: props.base.rollupRetentionDays,
-    sensitiveRetentionHours: props.base.sensitiveRetentionHours,
-  });
-  const [saved, setSaved] = createSignal(initial());
-  const [draft, setDraft] = createSignal(initial());
-  // k2b-ui gap: a v2 Select cannot be disabled yet; for someone who only reads, a choice changes nothing.
-  const set = <K extends keyof BaseSettingsInput>(key: K, value: BaseSettingsInput[K]) => {
-    if (props.canAdmin) setDraft({ ...draft(), [key]: value });
-  };
-  const changes = createMemo(
-    () => (Object.keys(draft()) as (keyof BaseSettingsInput)[]).filter((key) => draft()[key] !== saved()[key]).length,
-  );
-  const changed = () => changes() > 0;
+  const { draft, saved, set } = props.form;
   const toast = useToast();
-  // the page's head carries the form's deeds while the form stands
-  props.head(
-    <Show when={props.canAdmin}>
-      <Show when={changed()}>
-        <Chip yours>{words().changeCount({ count: changes() })}</Chip>
-      </Show>
-      <Button disabled={!changed() || props.loading} onClick={() => setDraft(saved())}>
-        {words().discard}
-      </Button>
-      <Button variant="primary" icon="check" busy={props.loading} disabled={!changed()} onClick={() => void save()}>
-        {words().save}
-      </Button>
-    </Show>,
-  );
-  onCleanup(() => props.head(undefined));
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const colorLabel = (value: string) => {
     const labels: Record<string, string> = {
@@ -252,10 +279,6 @@ function BaseForm(props: {
       red: t().settingsColorRed,
     };
     return labels[value] ?? value;
-  };
-  const save = async () => {
-    const next = draft();
-    if ((await props.save(next)) === "persisted") setSaved(next);
   };
   // What a setting was before an unsaved change, so the page shows what saving changes.
   const was = <K extends keyof BaseSettingsInput>(key: K, show: (value: BaseSettingsInput[K]) => string) =>

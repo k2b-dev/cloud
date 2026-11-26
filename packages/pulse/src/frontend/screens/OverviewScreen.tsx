@@ -29,9 +29,8 @@ import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
 import { baseStoreMessages } from "../workspace/base-store-messages";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
-import { iconName } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
-import { baseColor, StoreChip, storeState } from "./store-state";
+import { baseColor, iconName, StoreChip, storeState } from "./store-state";
 
 export type OverviewScreenProps = {
   bases: PulseBase[];
@@ -67,7 +66,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
   const troubledBases = () => props.bases.filter(troubled);
   const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
   const shown = createMemo(() => props.bases.filter((base) => matches(base, query())));
-  // k2b-ui gap: tables do not virtualize yet (lane MW); the list shows 100 rows at a time, so the page stays bounded.
+  // k2b-ui gap: tables do not virtualize yet (lane MW); the table shows PAGE (30) rows at a time, so the page stays bounded.
   const [visible, setVisible] = createSignal(PAGE);
 
   // The search filters the list as it is typed; the address keeps it for reload and back.
@@ -145,7 +144,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
             />
           }
         >
-          {/* k2b-ui gap: v2 lists do not virtualize yet (lane MW); 100 rows show at a time. */}
+          {/* k2b-ui gap: v2 lists do not virtualize yet (lane MW); PAGE (30) rows show at a time. */}
           <Show
             when={shown().length > 0}
             fallback={<Empty icon="search" text={t().noMatchingBases} action={{ label: words().clearSearch, onClick: () => search("") }} />}
