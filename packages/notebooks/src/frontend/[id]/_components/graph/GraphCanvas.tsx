@@ -634,6 +634,9 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   const idleText = () => {
     const query = props.query.trim();
     if (!positions()) return t().graphArranging({ count: shownNotes().length });
+    // The figure above the drawing counts the whole notebook; the status line counts only a part it draws (filters,
+    // Umgebung), so the same numbers never stand twice.
+    if (!query && shownNotes().length === props.model.notes.length && drawnEdges().length === props.model.edges.length) return "";
     if (!query)
       return props.scopeTotal
         ? t().graphNoteCountScoped({ notes: shownNotes().length, total: props.scopeTotal, links: drawnEdges().length })

@@ -36,15 +36,16 @@
 }
 /* k2b-ui gap: a Canvas cannot fill its pane. The note's editing surface keeps its own scroller (reading position, the
    comment margin and the floating pills measure it), so its one Canvas takes the pane's height. */
-/* The graph's displays draw to the size they are given, so the graph's Canvas fills its pane the same way. */
-[data-k2-canvas]:has(> .notebook-document-surface),
-[data-k2-canvas]:has(> .notebook-graph) {
+[data-k2-canvas]:has(> .notebook-document-surface) {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
+/* The graph's Canvas fills what its pane has left (`height="fill"`); the graph lies over the whole Canvas, since each
+   display draws to the size it is given. */
 [data-k2-canvas] > .notebook-graph {
-  height: 100%;
+  position: absolute;
+  inset: 0;
 }
 .notebook-book-document {
   display: flex;
@@ -972,14 +973,6 @@
   --notebook-graph-ink-5: #d55181;
   --notebook-graph-ink-6: #249424;
   --notebook-graph-ink-7: #e66767;
-}
-.notebook-graph-area-mark {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  flex: none;
-  border-radius: 999px;
-  vertical-align: middle;
 }
 /* Links graph. Area hues are the validated categorical order (blue, orange, aqua, violet, magenta, green, red) after a
    neutral top level; the app's yellow stays out, so the current note is the only note in the accent. Ink variants keep

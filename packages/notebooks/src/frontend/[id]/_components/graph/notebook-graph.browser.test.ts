@@ -46,6 +46,8 @@ const search = (page: Page) => new URL(page.url()).searchParams;
 const head = (page: Page) => page.locator('[data-k2-workspace] [data-k2-part="Bar"]').first();
 /** The pane head: the displays, depth, which notes and areas, and zoom. */
 const filters = (page: Page) => page.locator('[data-k2-part="Pane"] [data-k2-part="Bar"]').first();
+/** The figure above the content: the notebook's links, notes and the notes without a link. */
+const figure = (page: Page) => page.locator('[data-k2-part="Pane"] [data-k2-part="Band"]').first();
 /** A display's tab. */
 const display = (page: Page, name: string) => page.locator('[data-k2-part="Tabs"]').getByRole("button", { name, exact: true });
 /** The filter menu's button, a symbol the phone keeps: which notes, Umgebung's depth and the areas. */
@@ -112,8 +114,8 @@ for (const [notebook, notes] of [
             expect(overlap).toBe(false);
           }
         }
-        // The status line counts every note, also those without a label.
-        expect(await page.locator(".notebook-graph__status").textContent()).toContain(`${notes} notes`);
+        // The figure above the drawing counts every note, also those without a label.
+        expect(await figure(page).textContent()).toContain(`${notes} notes`);
         if (notebook === "hand01") expect(await page.locator(`[data-label="${WAREHOUSE}"]`).getAttribute("data-kind")).toBe("current");
         if (notebook === "big001")
           console.info(`${browserName} ${viewport.width}px: ${await page.locator(".notebook-graph__label").count()} of 300 notes labelled`);
@@ -1076,7 +1078,7 @@ test(`${browserName}: Circle places all 49 notes on one ring with a band for eve
   try {
     expect(await nodes(page).count()).toBe(49);
     expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
-    expect(await page.locator(".notebook-graph__status").textContent()).toContain("49 notes");
+    expect(await figure(page).textContent()).toContain("49 notes");
     const { ring, cx, cy, radius } = await circleGeometry(page);
     for (const p of ring) expect(Math.abs(Math.hypot(p.x - cx, p.y - cy) - radius)).toBeLessThan(1.5);
     const areas = await (await areaEntry(page, "")).count();
@@ -1283,8 +1285,8 @@ for (const notebook of ["hand01", "big001"]) {
             if (other.owner !== quad.owner) expect(labelQuadsOverlap(quad.points, other.points)).toBe(false);
         }
         if (notebook === "hand01") expect(await page.locator(`[data-label="${WAREHOUSE}"]`).getAttribute("data-kind")).toBe("current");
-        // The status line keeps the true totals, also for the notes whose titles found no room.
-        expect(await page.locator(".notebook-graph__status").textContent()).toContain(notebook === "big001" ? "300 notes" : "49 notes");
+        // The figure keeps the true totals, also for the notes whose titles found no room.
+        expect(await figure(page).textContent()).toContain(notebook === "big001" ? "300 notes" : "49 notes");
         if (notebook === "big001") console.info(`${browserName} Circle ${viewport.width}px: ${count} of 300 notes labelled`);
       } finally {
         await close(page);
@@ -1688,7 +1690,7 @@ test(`${browserName}: Reset filters into a scrolled Timeline keeps the focused r
 }, 30_000);
 
 test(`${browserName}: a list sorted by Changed shows when each note changed on a phone, without horizontal overflow`, async () => {
-  const page = await open(graphPath("hand01", "&list=1&sort=changed"), { width: 390, height: 844 });
+  const page = await open(graphPath("hand01", "&list=1&sort=changed&links=linked"), { width: 390, height: 844 });
   try {
     // the table's phone form: a row per note, with when it changed
     const rows = page.locator('[data-k2-part="Row"]').filter({ visible: true });
@@ -1696,11 +1698,12 @@ test(`${browserName}: a list sorted by Changed shows when each note changed on a
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
     // without the columns' heads, each row starts with the note's sign and says what its counts mean
     const first = rows.first();
-    expect(await first.locator(".notebook-graph-note-sign").count()).toBe(1);
+    expect(await first.locator('[data-k2-part="Mark"]').count()).toBe(1);
     expect(await first.textContent()).toMatch(/links to \d+ · linked from \d+/);
-    // the list's count stands whole in the pane head, where the list replaces the display tabs; each row names its links
+    // a filtered list counts its rows whole in the pane head, where the list replaces the display tabs (the figure
+    // above the content counts the whole notebook); each row names its links
     const count = filters(page).locator('[data-k2-part="Text"]', { hasText: "notes" });
-    expect((await count.textContent())?.trim()).toBe("49 notes");
+    expect((await count.textContent())?.trim()).toBe("45 notes");
     expect(await count.evaluate((text) => text.scrollWidth <= text.clientWidth)).toBe(true);
     // the order is the pane head's menu, which the phone keeps
     await filters(page).getByRole("button", { name: "Order" }).click();

@@ -1,7 +1,7 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { NavigationController } from "@k2b/ui";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Empty, Input, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Chip, Empty, Inline, Input, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
 import { For, type JSX, Match, Show, Switch } from "solid-js";
 import type { NoteGraph } from "../../../../service/links";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -94,6 +94,18 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
         ?.focus();
     else if (g.display() === "timeline") g.focusNote();
     else g.focusNote(first?.id);
+  };
+  // The figure above the content says how many links join how many notes, once for the notebook; the list's own count
+  // stands only where it says something else: a search or a filter left fewer rows, or there is no figure (no links).
+  const narrowed = () => !g.hasLinks || !!g.query().trim() || g.notes().length < g.model.notes.length;
+  const unlinked = () => g.model.notes.filter((note) => note.orphan).length;
+  const figureNotes = () => {
+    const scope = props.graph.scope;
+    if (scope) return t().graphFigureNotesScoped({ notes: g.model.notes.length, total: scope.total });
+    return t().graphFigureNotes({
+      notes: g.model.notes.length,
+      areas: g.model.areas.filter((area) => area.index > 0 && area.count > 0).length,
+    });
   };
   // A large notebook's graph holds the pages around one page: its count says of how many. The list counts its rows
   // only; each row names its links.
@@ -188,7 +200,7 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                       }))}
                     />
                   </Show>
-                  <Show when={g.state().list && g.model.notes.length > 0}>
+                  <Show when={g.state().list && g.model.notes.length > 0 && narrowed()}>
                     <Text type="meta">{listCount()}</Text>
                   </Show>
                 </>
@@ -268,6 +280,29 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
           ) : undefined
         }
       >
+        {/* The notebook's figure: how many links join how many notes, and the notes without one as the exception, which
+            shows them. It stays while the display, the list or the filters change, so nothing below the heads moves.
+            k2b-ui gap: hero band (DP) – the figure in the figure type (30) in Notebooks' colour; it stands as lead text
+            in a Band meanwhile. The drawing below is the screen's hero. */}
+        <Show when={g.hasLinks}>
+          <Band label={t().graphFigureLabel}>
+            <Inline>
+              <Text type="lead" weight="strong">
+                {t().graphFigureLinks({ count: g.model.edges.length })}
+              </Text>
+              <Text type="meta">{figureNotes()}</Text>
+              <Show when={unlinked() > 0}>
+                <Chip
+                  status="warn"
+                  pressed={g.state().links === "unlinked"}
+                  onClick={() => g.update({ links: g.state().links === "unlinked" ? "all" : "unlinked" })}
+                >
+                  {t().graphFigureUnlinked({ count: unlinked() })}
+                </Chip>
+              </Show>
+            </Inline>
+          </Band>
+        </Show>
         <Switch>
           <Match when={g.model.notes.length === 0}>
             <Empty icon="affiliate" text={t().graphNoNotes} />
@@ -308,9 +343,8 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
             <GraphTable view={g} now={props.now} />
           </Match>
           <Match when={true}>
-            {/* k2b-ui gap: a Canvas cannot fill its pane; the app's stylesheet lets this one take the pane's height
-                (app.css, `.notebook-graph`), because each display draws to the size it is given. */}
-            <Canvas label={t().graphTitle}>
+            {/* the drawing takes what the pane has left under the figure; each display draws to the size it is given */}
+            <Canvas label={t().graphTitle} height="fill">
               <GraphDisplays
                 graph={props}
                 view={g}
