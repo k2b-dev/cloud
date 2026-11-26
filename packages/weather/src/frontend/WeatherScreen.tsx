@@ -116,12 +116,9 @@ export default function WeatherScreen(props: WeatherScreenProps) {
             // without an open place the sidebar already names the app: the head holds only its action
             start={
               props.open ? (
-                // the place carries its sign in the app colour and its state; the station stands with the measurements
-                <RecordHead
-                  name={props.open.name}
-                  avatar={{ name: props.open.name, color: "var(--k2-app-text)" }}
-                  kinds={props.open.state ? [props.open.state] : undefined}
-                />
+                // the place carries its sign in the app colour; its state and station stand with the measurements, so a
+                // long name keeps the head to one row on the phone (a kind chip beside it wrapped the head)
+                <RecordHead name={props.open.name} avatar={{ name: props.open.name, color: "var(--k2-app-text)" }} />
               ) : undefined
             }
             end={
@@ -281,6 +278,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
           <Section icon="gauge" title={t().measuredNow}>
             <Facts
               items={[
+                ...(props.open.state ? [{ label: t().stateLabel, value: props.open.state }] : []),
                 { label: t().station, value: w().station },
                 { label: t().humidity, value: w().humidity },
                 { label: t().wind, value: w().wind },

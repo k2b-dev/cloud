@@ -80,6 +80,12 @@ export const weatherScreenFixtures: Record<string, WeatherScreenProps> = {
     open,
     weather,
   },
+  // one saved place on a quiet day: no exception in the hero, a single entry in the sidebar
+  one: {
+    places: [{ id: "ulm001", name: "Ulm", state: null, icon: "sun", temperature: "0°" }],
+    open: { ...open, state: null, geoapify: false },
+    weather: { ...weather, icon: "sun", condition: "klar", temperature: "0°", alerts: [] },
+  },
   empty: { places: [], open: null, weather: null },
   missing: {
     places: [{ id: "ulm001", name: "Ulm", state: "Baden-Württemberg", icon: "sun-moon", temperature: "12,4°" }],
