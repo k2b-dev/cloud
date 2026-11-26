@@ -2320,6 +2320,53 @@
 .k2-ui .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) > .k2-bar-end {
   flex: none;
 }
+/* A workspace head without room for its title, views and actions gives way in this order (W3, a Space's head at
+   1024 px): first its actions fold as on the phone, the search to its symbol and every action without `keep` into the
+   head's "…" menu, while the one main action stays (no round button floats on a desktop); then the tabs give way,
+   whole tab by whole tab; the title is cut with "…" last. The head measures its own width, not the window's: below
+   800 px (a tablet beside its sidebar, a narrow window) the actions fold. On the phone its own rules win: there the
+   main action floats as the round button. */
+.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar {
+  container: k2-head / inline-size;
+}
+@container k2-head (max-width: 799px) {
+  .k2-ui .k2-bar-end > :not([data-keep], [popover], [data-variant="primary"], .k2-input[data-search]) {
+    display: none;
+  }
+  .k2-ui .k2-bar-end > .k2-input[data-search] {
+    width: var(--k2-h-control);
+    padding: 0;
+    justify-content: center;
+    border-color: transparent;
+    background: transparent;
+  }
+  .k2-ui .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-icon {
+    color: var(--k2-muted);
+  }
+  .k2-ui .k2-bar-end > .k2-input[data-search]:not(:focus-within) > input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+  }
+  .k2-ui .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-input-end {
+    display: none;
+  }
+  /* while it has the focus the field opens over the title and the views from the head's start to its end (their
+     words stand behind it; the mark of the open view stays on the line), and folds back on blur, its words kept */
+  .k2-ui .k2-bar-end > .k2-input[data-search]:focus-within {
+    position: absolute;
+    z-index: 2;
+    top: calc((var(--k2-h-head) - var(--k2-h-control)) / 2);
+    left: calc(var(--k2-edge) + var(--k2-ws-drawer, 0) * (var(--k2-h-control) + 8px - 10px));
+    right: var(--k2-edge);
+    width: auto;
+    padding: 0 12px;
+    justify-content: flex-start;
+    border-color: var(--k2-blue);
+    background: var(--k2-surface);
+  }
+}
+
 .k2-ui .k2-tabs-nav {
   display: flex;
   gap: 24px;

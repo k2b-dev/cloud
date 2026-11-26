@@ -41,7 +41,10 @@ type ButtonBase = {
   pressed?: boolean;
   /** `submit` sends the form the button stands in; `button` by default. */
   type?: "button" | "submit";
-  /** Stays in a head on the phone, where the other actions move into the menu. */
+  /**
+   * Stays in a head on the phone and in a head without room (below 800 px of its own width), where the other actions
+   * move into the head's "…" menu.
+   */
   keep?: boolean;
   /**
    * A hint under the pointer, for a button whose words give way to its symbol in a narrow place (the bar of a

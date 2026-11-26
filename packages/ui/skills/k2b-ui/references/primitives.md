@@ -38,6 +38,14 @@ The working surface of an app: one per screen.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape.
+- A head without room (below 800 px of its own width, such as a tablet
+  beside its sidebar) gives way in this order. First its actions fold as
+  on the phone: the search keeps its symbol, and the actions without `keep`
+  leave for the head's "…" menu (an icon-only `Menu` stays by itself),
+  while the one main action stays. Then the tabs give way, whole tab by
+  whole tab. The title (`Text` in `Bar start`) is cut with "…" last. Put
+  every deed of a head action into the "…" menu too, so it stays reachable
+  where the action leaves.
 
 ### Pane
 

@@ -18,7 +18,6 @@ import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
 import { Icon } from "./marks";
-import { textEdge } from "./tokens";
 
 type FieldIds = {
   /** The id of the one control the label names. */
@@ -220,15 +219,17 @@ const forwardRef = (ref: InputProps["ref"], element: HTMLInputElement | HTMLText
 };
 
 /**
- * Escape in the search of a head on the phone, where the field opens over the head only while it has the focus: it
- * folds the field back and keeps its words (the browser would clear them and leave the field open). A caller that
- * takes Escape itself (`onKeyDown` calls `preventDefault`) decides alone.
+ * Escape in the search of a head that keeps only its symbol (on the phone, and in a head without room for it), where
+ * the field opens over the head only while it has the focus: it folds the field back and keeps its words (the browser
+ * would clear them and leave the field open). A caller that takes Escape itself (`onKeyDown` calls `preventDefault`)
+ * decides alone.
  */
 const foldHeadSearch = (event: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
   if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-  const place = event.currentTarget.parentElement?.parentElement;
-  if (!place?.matches('[data-slot="head"] > .k2-bar > .k2-bar-end')) return;
-  if (!matchMedia(`not all and (min-width: ${textEdge.phoneBelow}px)`).matches) return;
+  const field = event.currentTarget.parentElement;
+  if (!field?.parentElement?.matches('[data-slot="head"] > .k2-bar > .k2-bar-end')) return;
+  // the stylesheet decides where the search keeps only its symbol: open, the field stands over the head, out of its row
+  if (getComputedStyle(field).position !== "absolute") return;
   event.preventDefault();
   event.currentTarget.blur();
 };
