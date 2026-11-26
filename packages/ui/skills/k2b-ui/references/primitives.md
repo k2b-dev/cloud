@@ -270,7 +270,8 @@ lines instead of cutting a thing.
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first),
   `label` (one sentence: "postgres-haupt: 30 Abrufe, 3 fehlgeschlagen"),
   `color` (the data colour of what it belongs to; default the app),
-  `stretch` (the width of its place, in a detail). Ok is soft, a failure red
+  `stretch` (in a detail: slots 2 px apart grow up to 12 px, a wider place
+  keeps the strip at its start). Ok is soft, a failure red
   and taller, an empty slot nothing; 140 × 20 px in a table cell. The one
   column of a list that shows its data over time; never decoration.
 

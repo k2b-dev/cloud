@@ -209,8 +209,8 @@ export type TicksProps = {
   /** The data colour of what the ticks belong to; without it the colour of the app. Failures stay red. */
   color?: string;
   /**
-   * The ticks spread between the text edges of their place, such as across a detail; without it 140 px, the width of
-   * a table cell.
+   * The ticks take the room between the text edges of their place, such as a detail: 2 px apart, each slot up to 12 px
+   * wide, the strip at the start where the place is wider; without it 140 px, the width of a table cell.
    */
   stretch?: boolean;
 };

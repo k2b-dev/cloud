@@ -134,28 +134,42 @@ test("an empty slot draws nothing and keeps its place; a new source starts with 
   });
 });
 
-test("with stretch the ticks spread between the text edges of their place, thin, in the colour they are given", async () => {
+/** The stretched ticks of the detail: where their slots start and end against the text edges, their widths and gaps. */
+const strip = (page: Page) =>
+  page.evaluate(() => {
+    const ticks = document.querySelectorAll(".k2-ticks")[4]!;
+    // the text edges: where the words of the band's text start and end, inside its padding
+    const words = ticks.parentElement!.querySelector(".k2-text")!;
+    const box = words.getBoundingClientRect();
+    const style = getComputedStyle(words);
+    const [start, end] = [box.left + Number.parseFloat(style.paddingLeft), box.right - Number.parseFloat(style.paddingRight)];
+    const slots = [...ticks.children].map((tick) => tick.getBoundingClientRect());
+    return {
+      start: Math.round(slots[0]!.left - start),
+      room: Math.round(end - slots[slots.length - 1]!.right),
+      widths: [...new Set(slots.map((slot) => Math.round(slot.width * 10) / 10))],
+      gaps: [...new Set(slots.slice(1).map((slot, index) => Math.round((slot.left - slots[index]!.right) * 10) / 10))],
+    };
+  });
+
+test("with stretch at 1440 the slots reach their cap of 12 px, 2 px apart, and the strip stays at the start", async () => {
   await withPage({ width: 1440 }, async (page) => {
     const { detail, failing } = await read(page);
-    const edges = await page.evaluate(() => {
-      const ticks = document.querySelectorAll(".k2-ticks")[4]!;
-      // the text edge: where the words of the band's text start, inside its padding
-      const words = ticks.parentElement!.querySelector(".k2-text")!;
-      const edge = words.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(words).paddingLeft);
-      const box = ticks.getBoundingClientRect();
-      const band = ticks.parentElement!.getBoundingClientRect();
-      return {
-        start: Math.round(box.left - edge),
-        end: Math.round(band.right - box.right - (edge - band.left)),
-        widest: Math.max(...[...ticks.children].map((tick) => tick.getBoundingClientRect().width)),
-      };
-    });
-    // the ticks start at the text edge of the band and end at its other text edge, each at most 4 px wide
-    expect({ start: edges.start, end: edges.end }).toEqual({ start: 0, end: 0 });
-    expect(edges.widest).toBeLessThanOrEqual(4);
-    expect(detail.width).toBeGreaterThan(1000);
+    const found = await strip(page);
+    expect({ start: found.start, widths: found.widths, gaps: found.gaps }).toEqual({ start: 0, widths: [12], gaps: [2] });
+    // 30 slots of 12 px and 29 gaps of 2 px: 418 px, the rest of the room stays free after the strip
+    expect(found.room).toBeGreaterThan(400);
     expect(detail.height).toBe(20);
+    expect(detail.bad!.height).toBeGreaterThan(detail.ok!.height);
     expect(detail.ok!.color).not.toBe(failing.ok!.color);
+  });
+});
+
+test("with stretch at 390 the slots give way below their cap and fill the room between the text edges", async () => {
+  await withPage({ width: 390 }, async (page) => {
+    const found = await strip(page);
+    expect({ start: found.start, room: found.room, gaps: found.gaps }).toEqual({ start: 0, room: 0, gaps: [2] });
+    expect(found.widths.every((width) => width > 4 && width < 12)).toBe(true);
   });
 });
 
