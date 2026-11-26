@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import {
   Band,
   CodeInput,
@@ -26,6 +26,8 @@ declare global {
     __deeds?: string[];
     /** While set, reading a picked image waits for this promise (a slow conversion). */
     __k2Gate?: Promise<void>;
+    /** Empties the page-held template field, as a page does after it sent the file. */
+    __k2ClearTemplate?: () => void;
   }
 }
 
@@ -41,6 +43,10 @@ export function Demo() {
   const [accent, setAccent] = createSignal("#b45309");
   const [banner, setBanner] = createSignal<string | null>(null);
   const [zoom, setZoom] = createSignal(30);
+  const [template, setTemplate] = createSignal<readonly File[]>([]);
+  onMount(() => {
+    window.__k2ClearTemplate = () => setTemplate([]);
+  });
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -103,6 +109,9 @@ export function Demo() {
               onCommit={(value) => did(`accent:${value}`)}
               swatches={["#0f766e", "#1d4ed8"]}
             />
+          </Field>
+          <Field name="template" label="Vorlage">
+            <FileInput accept=".pdf" value={template()} onChange={setTemplate} />
           </Field>
           <Field name="code" label="Code vom anderen Gerät">
             <CodeInput onComplete={(code) => did(`code:${code}`)} />

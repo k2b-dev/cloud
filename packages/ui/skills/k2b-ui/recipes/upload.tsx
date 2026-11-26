@@ -1,11 +1,20 @@
 // Recipe: files to send. A tool turns a document into Markdown: the field is where the document is dropped or chosen
 // (`FileInput`, its files held in a signal by `value` and `onChange`), the head's one primary "Umwandeln" waits for a
-// document, the last conversions are a list with the type of each file, what came of it and when, and a side column
-// says what the tool takes. The form state lives in the app; the primitives only show it.
-import { Bar, Button, Facts, Field, FileInput, List, Nav, Pane, Row, Section, StatusRow, Text, Workspace } from "@k2b/ui/v2";
+// document, the last conversions are a list with the type of each file, what came of it, its state and when, and a
+// side column says what the tool takes, how the week went and what it cannot read. The form state lives in the app;
+// the primitives only show it.
+import { Bar, Button, Chip, Facts, Field, FileInput, List, Nav, Pane, Row, Section, StatusRow, Text, Workspace } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 
-type Done = { id: string; name: string; icon: string; size: string; result: string; when: string };
+type State = "ok" | "warn" | "bad";
+type Done = { id: string; name: string; icon: string; size: string; result: string; state: State; when: string };
+
+// each state in colour, symbol and word, never a colour alone
+const stateMark: Record<State, { icon: string; word: string }> = {
+  ok: { icon: "check", word: "Fertig" },
+  warn: { icon: "alert-triangle", word: "Mit Hinweis" },
+  bad: { icon: "x", word: "Fehlgeschlagen" },
+};
 
 const recent: Done[] = [
   {
@@ -14,6 +23,7 @@ const recent: Done[] = [
     icon: "file-type-pdf",
     size: "1,2 MB",
     result: "4 Seiten, 2 Tabellen",
+    state: "ok",
     when: "vor 12 Min.",
   },
   {
@@ -22,6 +32,7 @@ const recent: Done[] = [
     icon: "file-type-doc",
     size: "86 kB",
     result: "9 Seiten, 14 Abschnitte",
+    state: "ok",
     when: "09:14",
   },
   {
@@ -29,7 +40,8 @@ const recent: Done[] = [
     name: "Protokoll Baubesprechung KW 47.pdf",
     icon: "file-type-pdf",
     size: "640 kB",
-    result: "3 Seiten, 1 Bild verlinkt",
+    result: "3 Seiten, 1 Bild nicht lesbar",
+    state: "warn",
     when: "gestern",
   },
   {
@@ -38,29 +50,55 @@ const recent: Done[] = [
     icon: "file-type-xls",
     size: "212 kB",
     result: "2 Tabellen, 418 Zeilen",
+    state: "ok",
     when: "Mo.",
   },
-  { id: "d5", name: "Aufmaß Küche Oswald.pdf", icon: "file-type-pdf", size: "2,4 MB", result: "6 Seiten, 3 Skizzen verlinkt", when: "Mo." },
-  { id: "d6", name: "Leitfaden Annahme.md", icon: "file-text", size: "12 kB", result: "unverändert, Links geprüft", when: "Fr." },
-  { id: "d7", name: "Rechnung 2026-1187.pdf", icon: "file-type-pdf", size: "180 kB", result: "1 Seite, Beträge als Tabelle", when: "Fr." },
+  {
+    id: "d5",
+    name: "Aufmaß Küche Oswald.pdf",
+    icon: "file-type-pdf",
+    size: "2,4 MB",
+    result: "6 Seiten, 3 Skizzen verlinkt",
+    state: "ok",
+    when: "Mo.",
+  },
+  {
+    id: "d6",
+    name: "Leitfaden Annahme.md",
+    icon: "file-text",
+    size: "12 kB",
+    result: "unverändert, Links geprüft",
+    state: "ok",
+    when: "Fr.",
+  },
+  {
+    id: "d7",
+    name: "Lieferschein Scan.pdf",
+    icon: "file-type-pdf",
+    size: "3,1 MB",
+    result: "ein Scan ohne Text",
+    state: "bad",
+    when: "Fr.",
+  },
   {
     id: "d8",
     name: "Schulung Stapler.docx",
     icon: "file-type-doc",
     size: "1,1 MB",
     result: "11 Seiten, 7 Bilder verlinkt",
+    state: "ok",
     when: "18. Nov.",
   },
 ];
 
-// a stand-in for a picked document, so the recipe draws with a chosen file without a pick
-const waiting = [new File(["%PDF-1.7"], "Aufmass Küche Oswald.pdf", { type: "application/pdf" })];
+// a stand-in for a picked document of a usual size (1,8 MB), so the recipe draws with a chosen file without a pick
+const waiting = () => [new File([new Uint8Array(1_800_000)], "Aufmaß Bad Oswald.pdf", { type: "application/pdf" })];
 
 type Props = { chosen?: readonly File[] };
 
 export default function DocumentToMarkdown(props: Props) {
   // the chosen document is the page's state: the field shows it, "Umwandeln" waits for it
-  const [files, setFiles] = createSignal<readonly File[]>(props.chosen ?? waiting);
+  const [files, setFiles] = createSignal<readonly File[]>(props.chosen ?? waiting());
   const ready = () => files().length > 0;
   return (
     <Workspace
@@ -102,7 +140,15 @@ export default function DocumentToMarkdown(props: Props) {
       <Pane.Split>
         <Pane
           label="Dokument zu Markdown"
-          status={<StatusRow lead="8 Dokumente diese Woche" facts={[{ before: "zuletzt", value: "vor 12 Min." }]} />}
+          status={
+            <StatusRow
+              lead="8 Dokumente diese Woche"
+              facts={[
+                { value: "1", after: "fehlgeschlagen" },
+                { before: "zuletzt", value: "vor 12 Min." },
+              ]}
+            />
+          }
         >
           <Section icon="file-upload" title="Dokument">
             <Field name="document" label="PDF, Word oder Markdown" hint="Bis 20 MB. Das Dokument bleibt nur für die Umwandlung hier.">
@@ -112,7 +158,18 @@ export default function DocumentToMarkdown(props: Props) {
           <Section icon="history" title="Zuletzt umgewandelt" count={recent.length}>
             <List label="Zuletzt umgewandelt">
               {recent.map((done) => (
-                <Row icon={done.icon} lines={[done.name, done.result]} meta={done.size} time={done.when} href={`#${done.id}`} />
+                <Row
+                  icon={done.icon}
+                  lines={[done.name, done.result]}
+                  meta={done.size}
+                  time={done.when}
+                  marks={
+                    <Chip status={done.state} icon={stateMark[done.state].icon}>
+                      {stateMark[done.state].word}
+                    </Chip>
+                  }
+                  href={`#${done.id}`}
+                />
               ))}
             </List>
           </Section>
@@ -126,6 +183,24 @@ export default function DocumentToMarkdown(props: Props) {
                 { label: "Tabellen", value: "bleiben Tabellen" },
                 { label: "Bilder", value: "werden als Link gesetzt" },
                 { label: "Aufbewahrung", value: "nur während der Umwandlung" },
+              ]}
+            />
+          </Section>
+          <Section icon="chart-bar" title="Diese Woche">
+            <Facts
+              items={[
+                { label: "Umgewandelt", value: "8 Dokumente, 41 Seiten" },
+                { label: "Mit Hinweis", value: "1, ein Bild nicht lesbar" },
+                { label: "Fehlgeschlagen", value: "1, ein Scan ohne Text" },
+              ]}
+            />
+          </Section>
+          <Section icon="alert-circle" title="Was nicht geht">
+            <Facts
+              items={[
+                { label: "Scans", value: "Text in Bildern wird nicht gelesen" },
+                { label: "Passwort", value: "geschützte Dateien erst entsperren" },
+                { label: "Makros", value: "werden nicht übernommen" },
               ]}
             />
           </Section>

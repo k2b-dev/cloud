@@ -854,6 +854,10 @@
   padding: 0 var(--k2-edge) 12px;
   overflow-wrap: anywhere;
 }
+/* the last section ends its column: the column's own end closes it, no line under it */
+.k2-ui .k2-scroll > .k2-sec:last-child {
+  border-bottom: 0;
+}
 /* in a side column (the info column of a record) a section is quieter: plain symbol, row title, 28 px head */
 .k2-ui .k2-pane[data-side] .k2-sec {
   border-bottom: 0;
@@ -2553,6 +2557,11 @@
   font: var(--k2-t-row);
   color: var(--k2-muted);
 }
+/* the button's place after the hint: it keeps its own width when the hint wraps */
+.k2-ui .k2-files-end {
+  display: inline-flex;
+  flex: none;
+}
 .k2-ui .k2-files-drop > .k2-icon {
   color: var(--k2-subtle);
   font-size: 16px;
@@ -3852,6 +3861,23 @@
   }
   .k2-ui .k2-split > .k2-pane > .k2-scroll {
     overflow: visible;
+  }
+  /* the stacked panes are one page, and the split scrolls it (a detail that is open scrolls itself, below) */
+  .k2-ui .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])) {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* the end of the page stays clear of the floating main action: 16 + 48 + 8 px after the last line */
+  .k2-ui
+    .k2-ws:has(> .k2-fab)
+    :is(
+      .k2-ws-main > .k2-pane > .k2-scroll,
+      .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])),
+      .k2-ws-main > .k2-split > .k2-pane[data-detail] > .k2-scroll
+    )::after {
+    content: "";
+    flex: none;
+    height: 72px;
   }
   /* the place of a detail that is not open: the list is the page (with no line after it) */
   .k2-ui .k2-split > [data-detail-empty],

@@ -1,10 +1,14 @@
 import {
   createContext,
+  createEffect,
   createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
+  onCleanup,
+  onMount,
   children as resolveChildren,
   Show,
   useContext,
@@ -636,7 +640,8 @@ export const ImageInput = (props: ImageInputProps) => {
   field?.group();
   const t = useControlMessages();
   const [busy, setBusy] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
+  // counts the failures since the last good pick: each one puts a new alert in the page, so each one is heard
+  const [failed, setFailed] = createSignal(0);
   const value = () => props.value || null;
   // The last pick wins: a file picked while an earlier one is still read replaces it, and the earlier one's value is
   // dropped when it arrives, so the image shown, the value sent and "Bild gewählt" all name the same file.
@@ -645,12 +650,12 @@ export const ImageInput = (props: ImageInputProps) => {
     if (!file) return;
     const mine = ++picks;
     setBusy(true);
-    setFailed(false);
+    setFailed(0);
     try {
       const made = await (props.transform ?? squareImage)(file);
       if (mine === picks) props.onChange(made);
     } catch {
-      if (mine === picks) setFailed(true);
+      if (mine === picks) setFailed((count) => count + 1);
     } finally {
       if (mine === picks) setBusy(false);
     }
@@ -664,7 +669,7 @@ export const ImageInput = (props: ImageInputProps) => {
     disabled: props.disabled,
     required: (field?.required && !value()) || undefined,
     onValueChange: (files: File[]) => void take(files[0]),
-    onReject: () => setFailed(true),
+    onReject: () => setFailed((count) => count + 1),
     // heard once: the refusal speaks through its alert at the field, a chosen image through the core
     announcement: (change) => (change.added.length ? t().imageChosen : null),
   }));
@@ -705,10 +710,13 @@ export const ImageInput = (props: ImageInputProps) => {
       </span>
       <pick.Input />
       <Show when={name()}>{(sent) => <input type="hidden" name={sent()} value={value() ?? ""} disabled={props.disabled} />}</Show>
-      <Show when={failed()}>
-        <span class="k2-image-failed" role="alert">
-          {t().imageFailed}
-        </span>
+      {/* keyed on the count: each failure is a new alert */}
+      <Show when={failed()} keyed>
+        {(_failure: number) => (
+          <span class="k2-image-failed" role="alert">
+            {t().imageFailed}
+          </span>
+        )}
       </Show>
     </pick.Root>
   );
@@ -779,20 +787,43 @@ export const FileInput = (props: FileInputProps) => {
   const files = () => (controlled() ? [...(props.value ?? [])] : own());
   const [refused, setRefused] = createSignal<string>();
   const refusedId = createUniqueId();
+  // One sentence for a refusal, about what the person has to change first: a folder, then too many files, then a
+  // file too large, then a file of a type the field does not take.
   const sentence = (rejected: readonly { file: File; reasons: string[] }[]) => {
-    const first = rejected[0];
-    if (!first) return undefined;
-    if (first.reasons.includes("folder")) return t().folder;
-    if (first.reasons.includes("too-many-files")) return t().tooManyFiles;
-    if (first.reasons.includes("file-too-large"))
-      return t().fileTooLarge({ name: first.file.name, max: fileSize(props.maxSize ?? 0, locale()) });
-    return t().fileType({ name: first.file.name });
+    const by = (reason: string) => rejected.find((entry) => entry.reasons.includes(reason));
+    if (!rejected.length) return undefined;
+    if (by("folder")) return t().folder;
+    if (by("too-many-files")) return t().tooManyFiles;
+    const large = by("file-too-large");
+    if (large) return t().fileTooLarge({ name: large.file.name, max: fileSize(props.maxSize ?? 0, locale()) });
+    return t().fileType({ name: rejected[0]?.file.name ?? "" });
   };
+  // The sentence holds until the files change: a pick, a removal, the form's reset, or a value the page sets itself
+  // (such as an empty field after the page sent the file). The page handing back the files it was given is no change.
+  let given: readonly File[] | undefined;
+  createEffect(
+    on(
+      () => props.value,
+      (value) => {
+        if (value !== given) setRefused(undefined);
+      },
+      { defer: true },
+    ),
+  );
+  let hint: HTMLSpanElement | undefined;
+  const onReset = (event: Event) => {
+    if (event.target instanceof HTMLFormElement && hint && event.target.contains(hint)) setRefused(undefined);
+  };
+  onMount(() => {
+    document.addEventListener("reset", onReset);
+    onCleanup(() => document.removeEventListener("reset", onReset));
+  });
   const pick = useFiles(() => ({
     ...(controlled() ? { value: [...(props.value ?? [])] } : { defaultValue: [...(props.value ?? [])] }),
     onValueChange: (next: File[]) => {
       setOwn(next);
       setRefused(undefined);
+      given = next;
       props.onChange?.(next);
     },
     onReject: (rejected) => setRefused(sentence(rejected)),
@@ -832,7 +863,7 @@ export const FileInput = (props: FileInputProps) => {
       <pick.Dropzone class="k2-files-drop" data-invalid={field?.invalid || refused() ? "" : undefined}>
         <Icon name={refused() ? "alert-circle" : "upload"} />
         {/* the hint, or in its place the sentence that says why a file was refused (heard once, through the core) */}
-        <span class="k2-files-hint" id={refusedId} data-refused={refused() ? "" : undefined}>
+        <span class="k2-files-hint" id={refusedId} ref={hint} data-refused={refused() ? "" : undefined}>
           {refused() ?? (props.multiple ? t().dropFiles : t().dropFile)}
         </span>
         <span class="k2-files-end">

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
-import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
+import { demoBundle, heard, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-form-controls.demo";
 import { measureV2Layout } from "./testing";
 
@@ -424,6 +424,96 @@ test("files: two files of the same name stay two rows; a dropped folder is refus
     await page.waitForFunction(() => document.querySelector("#sent .k2-files-hint[data-refused]"));
     expect(await docs.locator(".k2-files-hint").textContent()).toBe("Dieses Feld nimmt Dateien, keine Ordner. Wähle die Dateien darin.");
     expect(await docs.locator(".k2-files-name").allTextContents()).toEqual(["scan.pdf", "scan.pdf"]);
+  });
+});
+
+/** Drops entries on a field's drop zone as a browser hands them over: plain files and folders with files inside. */
+const dropEntries = (zone: ReturnType<Page["locator"]>, entries: { folder?: string; name: string; type: string }[]) =>
+  zone.evaluate((element, list) => {
+    const items = list.map((entry) => {
+      const file = new File(["x"], entry.name, { type: entry.type });
+      const fileEntry = {
+        isFile: true,
+        isDirectory: false,
+        fullPath: entry.folder ? `/${entry.folder}/${entry.name}` : `/${entry.name}`,
+        file: (done: (f: File) => void) => done(file),
+      };
+      let read = false;
+      const folder = entry.folder && {
+        isFile: false,
+        isDirectory: true,
+        fullPath: `/${entry.folder}`,
+        createReader: () => ({
+          readEntries: (done: (entries: unknown[]) => void) => {
+            done(read ? [] : [fileEntry]);
+            read = true;
+          },
+        }),
+      };
+      return { kind: "file", type: entry.type, getAsFile: () => (folder ? null : file), webkitGetAsEntry: () => folder || fileEntry };
+    });
+    const transfer = { items, files: [], types: ["Files"], dropEffect: "copy", effectAllowed: "all" };
+    for (const type of ["dragenter", "dragover", "drop"]) {
+      const event = new DragEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "dataTransfer", { value: transfer });
+      element.dispatchEvent(event);
+    }
+  }, entries);
+
+test("files: a refusal sentence goes when the form is reset or the page empties the field, without a change of files", async () => {
+  await withPage(async (page) => {
+    // the form's own field: refused, then the form's reset (the field was empty and stays empty)
+    const source = field(page, "Dokument");
+    await source
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
+    await source.locator(".k2-files-hint[data-refused]").waitFor();
+    await reset(page);
+    await source.locator(".k2-files-hint[data-refused]").waitFor({ state: "detached" });
+    expect(await source.getByRole("button", { name: "Datei wählen" }).getAttribute("aria-invalid")).toBeNull();
+    // a field the page holds: a file taken, a refusal, then the page empties it (as after "Umwandeln")
+    const template = field(page, "Vorlage");
+    const input = template.locator('input[type="file"]');
+    await input.setInputFiles({ name: "vorlage.pdf", mimeType: "application/pdf", buffer: Buffer.from("v") });
+    await template.locator(".k2-files-name").waitFor();
+    await input.setInputFiles({ name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
+    await template.locator(".k2-files-hint[data-refused]").waitFor();
+    await page.evaluate(() => window.__k2ClearTemplate?.());
+    await template.locator(".k2-files-name").waitFor({ state: "detached" });
+    expect(await template.locator(".k2-files-hint[data-refused]").count()).toBe(0);
+  });
+});
+
+test("files: what is heard reads as sentences, and a dropped folder is named before a refused file beside it", async () => {
+  await withPage(async (page) => {
+    const docs = field(page, "Unterlagen");
+    await docs.locator('input[type="file"]').setInputFiles([
+      { name: "angebot.pdf", mimeType: "application/pdf", buffer: Buffer.from("a") },
+      { name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") },
+    ]);
+    expect(await heard(page, "1 Datei gewählt. setup.exe hat keinen Dateityp, den dieses Feld nimmt.")).toBe(true);
+    // a text file first, then a folder: the folder is what the person has to change
+    await dropEntries(docs.locator(".k2-files-drop"), [
+      { name: "notiz.txt", type: "text/plain" },
+      { folder: "Belege", name: "beleg.pdf", type: "application/pdf" },
+    ]);
+    await page.waitForFunction(() =>
+      document.querySelector("#sent .k2-files-hint[data-refused]")?.textContent?.startsWith("Dieses Feld nimmt Dateien"),
+    );
+  });
+});
+
+test("image: a second file it cannot take is said again", async () => {
+  await withPage(async (page) => {
+    const logo = field(page, "Logo");
+    const picker = logo.locator('input[type="file"]');
+    await picker.setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("x") });
+    await logo.getByRole("alert").waitFor();
+    await logo.getByRole("alert").evaluate((alert) => alert.setAttribute("data-first", ""));
+    await picker.setInputFiles({ name: "liste.txt", mimeType: "text/plain", buffer: Buffer.from("y") });
+    // a new alert: assistive technology hears an alert when it enters the page, not when it stays
+    await logo.locator('[role="alert"]:not([data-first])').waitFor();
+    expect(await logo.getByRole("alert").count()).toBe(1);
   });
 });
 

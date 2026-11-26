@@ -97,7 +97,7 @@ export const Avatar = (props: AvatarProps) => {
 
 export type ChipProps = {
   children: JSX.Element;
-  /** A symbol before the word. */
+  /** A symbol before the word; on a chip with a `status` it stands in the place of the dot, in the state's colour. */
   icon?: string;
   /**
    * A plain chip you can press, such as "1 linked" or "+ Tag": then it is a control with a frame (rule 8).
@@ -179,7 +179,7 @@ export const Chip = (props: ChipProps) => {
       data-pressed={props.pressed ? "" : undefined}
       style={custom({ "--k2-c": "color" in props ? props.color : undefined })}
     >
-      <Show when={props.status}>{(status) => <span class="k2-dot" data-status={status()} />}</Show>
+      <Show when={!props.icon && props.status}>{(status) => <span class="k2-dot" data-status={status()} />}</Show>
       <Show when={"dot" in props && props.dot}>
         <span class="k2-dot" data-status="app" />
       </Show>
