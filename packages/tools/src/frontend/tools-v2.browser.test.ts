@@ -276,6 +276,8 @@ test("1,000 received requests are ready quickly and never scroll the page sidewa
     const rows = await page.locator('[data-k2-part="Table"] tbody tr').count();
     if (shots) await Bun.write(resolve(shots, "webhooks-huge.txt"), `ready ${Math.round(ready)} ms\nnodes ${nodes}\nrows ${rows}\n`);
     expect(ready).toBeLessThan(1_500);
+    // only the rows in view (and a margin) are in the page, however long the log is
+    expect(rows).toBeLessThanOrEqual(60);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   } finally {
     await page.close();
