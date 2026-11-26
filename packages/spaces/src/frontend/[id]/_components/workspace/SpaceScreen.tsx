@@ -270,10 +270,9 @@ export default function SpaceScreen(props: SpaceScreenProps) {
                 />
               </Show>
               <Show when={props.people.length > 0}>
-                {/* k2b-ui gap: no avatar stack; the first four people stand side by side, all of them in the menu. */}
-                {props.people.slice(0, 4).map((person) => (
-                  <Avatar name={person.displayName} />
-                ))}
+                {/* The first people and "+n" for the rest; the Space menu names all of them. */}
+                {/* k2b-ui gap: initials take the first two words ("CA" for "Christopher Alexander Montgomery III") and split an emoji. */}
+                <Avatar.Stack people={props.people.map((person) => ({ name: person.displayName }))} max={4} label={t.headPeople} />
               </Show>
               <Menu label={t.headSpaceMenu} items={spaceMenu()} />
               <Show when={state.canWrite}>

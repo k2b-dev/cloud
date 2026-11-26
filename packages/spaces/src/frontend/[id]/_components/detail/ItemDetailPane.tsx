@@ -679,7 +679,10 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
               ]
             : []),
         ];
-    const people = itemPeople(item()).join(", ");
+    const names = itemPeople(item());
+    const people = names.join(", ");
+    // A button keeps its whole label on one line: the first person and "+n" for the rest, all of them in the picker.
+    const peopleLabel = names.length > 1 ? `${names[0]} +${names.length - 1}` : people;
     return [
       ...(canEditItem() || people
         ? [
@@ -699,7 +702,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
                     />
                   }
                 >
-                  {people || t.nobodyAssigned}
+                  {peopleLabel || t.nobodyAssigned}
                 </Popover>
               )),
             },
@@ -880,6 +883,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
       back={{ label: props.spaceName, href: baseHref(), onNavigate: () => props.route.close() }}
       head={
         <Bar
+          // k2b-ui gap: the head truncates a long title and Text takes no title, so the full title shows only in the form.
           start={<Text type="lead">{item().title}</Text>}
           end={
             <>

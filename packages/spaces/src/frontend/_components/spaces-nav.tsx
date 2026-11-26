@@ -22,6 +22,8 @@ export type SpacesNavProps = SpacesSidebarData & { current: SpacesSidebarCurrent
 export function useSpacesNav(props: SpacesNavProps) {
   const locale = useLocale();
   const t = () => overviewMessages.resolve([locale()]).t;
+  // Counts in the reader's digits: a Space with 12,840 open items reads as such, not as 12840.
+  const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const toast = useToast();
   const [pinned, setPinned] = createPinnedSpaces(props.pinnedSpaceIds);
   const [creating, setCreating] = createSignal(false);
@@ -42,7 +44,13 @@ export function useSpacesNav(props: SpacesNavProps) {
   const groups = createMemo((): NavGroup[] => [
     {
       items: [
-        { label: t().myWork, icon: "checkbox", href: "/app/spaces", count: props.myWorkCount, current: props.current.kind === "overview" },
+        {
+          label: t().myWork,
+          icon: "checkbox",
+          href: "/app/spaces",
+          count: count(props.myWorkCount),
+          current: props.current.kind === "overview",
+        },
         { label: t().calendar, icon: "calendar", href: "/app/spaces/calendar", current: props.current.kind === "calendar" },
       ],
     },
@@ -58,7 +66,7 @@ export function useSpacesNav(props: SpacesNavProps) {
           color: space.color ?? undefined,
           href: `/app/spaces/${space.id}`,
           onClick: visit,
-          count: space.openItemCount,
+          count: count(space.openItemCount),
           current: props.current.kind === "space" && props.current.id === space.id,
           menu: [
             {

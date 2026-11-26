@@ -233,7 +233,7 @@ export default function SpacesOverview(props: Props) {
               label={t().workView}
               items={VIEWS.map((id) => ({
                 label: viewLabel(id),
-                count: counts()[id],
+                count: new Intl.NumberFormat(locale()).format(counts()[id]),
                 href: viewHref(id),
                 current: view() === id,
                 onNavigate: () => selectView(id),
