@@ -2,8 +2,9 @@ import { createComputed, createEffect, createMemo, createSignal, For, type JSX, 
 import { useUiMessages } from "../intl/messages";
 import { type TreeParts, useTree } from "./behavior/lists";
 import { announceText } from "./behavior/treegrid";
+import { safeColor } from "./colors";
 import { type DragMove, useDragMove } from "./drag";
-import { Dot, Icon } from "./marks";
+import { Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, PointerMenu } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { OnNavigate, Status } from "./types";
@@ -17,6 +18,11 @@ export type NavTreeNode = {
   label: string;
   /** A Tabler icon name, such as `folder`; places of one tree all have one or all have none. */
   icon?: string;
+  /**
+   * The data colour of the place, such as a storage or a project folder: its symbol then stands on a tint of it, as the
+   * place's mark (`Mark`). A value that is no colour is dropped, and the place keeps its plain symbol.
+   */
+  color?: string;
   /** Where the place leads; a node without one only folds its children open. */
   href?: string;
   /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
@@ -318,7 +324,13 @@ export const NavTreeView = (props: NavTree) => {
                   <Icon name="alert-circle" />
                 </parts.Indicator>
               </Show>
-              <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
+              <Show when={entry.node.icon}>
+                {(icon) => (
+                  <Show when={safeColor(entry.node.color)} fallback={<Icon name={icon()} />}>
+                    {(color) => <Mark icon={icon()} color={color()} />}
+                  </Show>
+                )}
+              </Show>
               <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
                 {(href) => (
                   // the tree item is what assistive technology meets (named by this text); Enter on it follows the link

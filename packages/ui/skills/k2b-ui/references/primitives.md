@@ -427,7 +427,8 @@ lines instead of cutting a thing.
   A group with `tree` in place of `items` holds places in levels (the
   folders of Files, the pages of a notebook): `tree: { label, items,
   current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
-  place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
+  place a `NavTreeNode`: `key`, `label`, `icon?`, `color?` (a data colour: the
+  symbol becomes its `Mark`; no colour, no mark), `href` (+ `onNavigate`),
   `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
   load on the first open through `load(key, { signal })`), `more` (`true`
   or a count: a last entry "Weitere laden" calls `loadMore(key | null)`),

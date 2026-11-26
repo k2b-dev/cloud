@@ -134,6 +134,8 @@ export function Demo() {
     key: folder.key,
     label: folder.name,
     icon: folder.children !== undefined || folder.branch ? "folder" : "file",
+    // a data colour: "Projekte" in a valid one, "Archiv" in one that must never reach the page
+    color: folder.key === "projekte" ? "#ca8a04" : folder.key === "archiv" ? "red;background:url(https://example.test/x)" : undefined,
     href: `#${folder.key}`,
     branch: folder.branch,
     // the sidebar shows folders; "Fotos" shows its pictures too, so its level of 10 000 pages
