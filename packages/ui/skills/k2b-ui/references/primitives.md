@@ -338,7 +338,12 @@ lines instead of cutting a thing.
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab. The open tab never hides: without room it stands
   after the tabs that fit, cut with "…" (whole on hover), and is not named
-  in the menu again (leave it out of your `menu` entries too).
+  in the menu again (leave it out of your `menu` entries too). A default
+  that depends on the device (the list on the phone, the graph on the
+  desktop, while the address names no view) is `current: "phone"` on one tab
+  and `current: "desktop"` on another: the stylesheet marks the right one
+  from the server's first paint, nothing switches on load. Never read the
+  width yourself to choose a tab; a person's choice is `current: true`.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where

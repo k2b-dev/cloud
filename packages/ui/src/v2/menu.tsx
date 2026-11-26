@@ -408,7 +408,13 @@ const MenuRoot = (props: MenuProps) => {
  * A tab that opens a menu of further views (internal to `Tabs`): it looks like a tab, with the chevron after its
  * words, and is the menu's button, so Enter, Space and the arrow down open it and Escape brings the focus back.
  */
-export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean; children: JSX.Element }) => {
+export const MenuTab = (props: {
+  items: readonly MenuEntry[];
+  current?: boolean;
+  /** The kind of device on which it is the open tab, painted so before the page knows its width (see `Tab`). */
+  currentOn?: "phone" | "desktop";
+  children: JSX.Element;
+}) => {
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("start");
   const level = useMenuLevels(() => ({
@@ -425,6 +431,7 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
         class="k2-tab"
         data-menu=""
         aria-current={props.current ? "page" : undefined}
+        data-current-on={props.currentOn}
       >
         {props.children}
         <Icon name="chevron-down" />

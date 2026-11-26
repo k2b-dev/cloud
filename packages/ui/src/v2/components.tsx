@@ -235,8 +235,12 @@ export type Tab = {
   onNavigate?: OnNavigate;
   /** … or switches the view in place. */
   onClick?: () => void;
-  /** The view shown now. */
-  current?: boolean;
+  /**
+   * The view shown now. `"phone"` or `"desktop"` makes it the view shown on that kind of device only, for a default
+   * that depends on the device (the list on the phone, the graph on the desktop) while the address names none: the
+   * stylesheet marks it from the server's first paint, before the page knows its width, so nothing switches on load.
+   */
+  current?: boolean | "phone" | "desktop";
   /**
    * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href` and
    * `onNavigate`, or `onClick`). It is the menu's button and has no address of its own. Its `count` counts these
@@ -263,15 +267,25 @@ const TabFace = (props: { tab: Tab }) => (
   </>
 );
 
+/**
+ * Whether a tab is the view shown on this device. `wide` is unknown (undefined) on the server and until the page
+ * mounts, so a tab of one device is none there; the stylesheet paints it (`data-current-on`).
+ */
+const shownOn = (tab: Tab, wide: boolean | undefined) =>
+  tab.current === true || (wide !== undefined && tab.current === (wide ? "desktop" : "phone"));
+
+/** The width from which a page is laid out for the desktop, as the stylesheet's `@media (min-width: 768px)`. */
+const DESKTOP = "(min-width: 768px)";
+
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, shown: boolean): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
   meta: tab.count === undefined ? undefined : String(tab.count),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
-  checked: tab.current ? true : undefined,
+  checked: shown ? true : undefined,
 });
 
 /**
@@ -305,8 +319,17 @@ export const Tabs = (props: TabsProps) => {
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
   // The open tab, when it would hide: it stands after the tabs that fit, at most this wide.
   const [kept, setKept] = createSignal<{ index: number; room: number }>();
+  // Whether the page is laid out for the desktop: unknown on the server and until the mount (see `shownOn`).
+  const [wide, setWide] = createSignal<boolean>();
+  const shown = (tab: Tab) => shownOn(tab, wide());
+  const deviceOf = (tab: Tab) => (typeof tab.current === "string" ? tab.current : undefined);
   let row: HTMLDivElement | undefined;
   onMount(() => {
+    const desktop = matchMedia(DESKTOP);
+    const follow = () => setWide(desktop.matches);
+    follow();
+    desktop.addEventListener("change", follow);
+    onCleanup(() => desktop.removeEventListener("change", follow));
     if (!row) return;
     const measure = () => {
       const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
@@ -322,7 +345,7 @@ export const Tabs = (props: TabsProps) => {
       // the first tab always stands in the line (a wrapping line holds at least one), as the server sent it
       let fits = 1;
       while (fits < tabs.length && until(fits + 1) <= room + 0.5) fits += 1;
-      const open = plain().findIndex((tab) => tab.current);
+      const open = plain().findIndex((tab) => shownOn(tab, desktop.matches));
       if (open < 0 || open < fits) {
         setKept(undefined);
         setFit(fits >= tabs.length ? Number.POSITIVE_INFINITY : fits);
@@ -366,7 +389,7 @@ export const Tabs = (props: TabsProps) => {
     watchAll();
     parts.observe(row, { childList: true });
     // Another tab becoming the open one changes no size: the place of the open tab is measured again for it.
-    createEffect(on(() => plain().findIndex((tab) => tab.current), later, { defer: true }));
+    createEffect(on(() => plain().findIndex(shown), later, { defer: true }));
     onCleanup(() => {
       cancelAnimationFrame(frame);
       sizes.disconnect();
@@ -375,7 +398,7 @@ export const Tabs = (props: TabsProps) => {
   });
   const isKept = (index: number) => kept()?.index === index;
   const hidden = () => plain().filter((_, index) => index >= fit() && !isKept(index));
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, shown(tab)));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -388,7 +411,8 @@ export const Tabs = (props: TabsProps) => {
               href={tab().href}
               onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
               onClick={() => tab().onClick?.()}
-              aria-current={tab().current ? "page" : undefined}
+              aria-current={shown(tab()) ? "page" : undefined}
+              data-current-on={deviceOf(tab())}
               data-overflow={index >= fit() && !isKept(index) ? "" : undefined}
               data-kept={isKept(index) ? "" : undefined}
               title={isKept(index) ? tab().label : undefined}
@@ -405,14 +429,15 @@ export const Tabs = (props: TabsProps) => {
             items={
               index === withMenu().length - 1 && more().length > 0 ? [...more(), "separator", ...(tab().menu ?? [])] : (tab().menu ?? [])
             }
-            current={tab().current}
+            current={shown(tab())}
+            currentOn={deviceOf(tab())}
           >
             <TabFace tab={index === withMenu().length - 1 ? { ...tab(), count: countWith(tab().count, more().length) } : tab()} />
           </MenuTab>
         )}
       </Index>
       <Show when={withMenu().length === 0 && more().length > 0}>
-        <MenuTab items={more()} current={hidden().some((tab) => tab.current)}>
+        <MenuTab items={more()} current={hidden().some(shown)}>
           <TabFace tab={{ label: t().more, count: `+${more().length}` }} />
         </MenuTab>
       </Show>
