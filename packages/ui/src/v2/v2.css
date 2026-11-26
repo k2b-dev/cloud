@@ -1943,13 +1943,11 @@
 }
 /* An app whose main colour is the assistant's (appearance.primary "ai", which the platform puts on the page as
    data-k2b-primary): its primary action is plum, never blue. One token; no app brings CSS of its own. */
-[data-k2b-primary="ai"] .k2-ui,
-.k2-ui[data-k2b-primary="ai"] {
+.k2-ui:is([data-k2b-primary="ai"] *, [data-k2b-primary="ai"]) {
   --k2-primary: var(--k2-ai-fill);
 }
 /* a part of such an app that keeps blue on purpose (a dialog opened with primary "blue") */
-[data-k2b-primary="ai"] [data-k2b-primary="blue"] .k2-ui,
-[data-k2b-primary="ai"] .k2-ui[data-k2b-primary="blue"] {
+.k2-ui:is([data-k2b-primary="ai"] [data-k2b-primary="blue"] *, [data-k2b-primary="ai"] [data-k2b-primary="blue"]) {
   --k2-primary: var(--k2-blue);
 }
 .k2-ui .k2-btn[data-variant="ghost"] {
