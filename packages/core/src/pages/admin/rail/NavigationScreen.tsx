@@ -16,7 +16,6 @@ import {
   type NavProps,
   Notice,
   Pane,
-  Path,
   Section,
   Select,
   StatusRow,
@@ -168,16 +167,7 @@ export default function NavigationScreen(props: NavigationScreenProps) {
       detail={460}
       detailEmpty={{ icon: "layout-sidebar", text: t().noneOpen }}
       primary={newAction}
-      head={
-        <Bar
-          start={<Path label={t().apps} items={[{ label: t().apps, href: "/admin/apps" }, { label: t().title }]} />}
-          end={
-            <Button variant="primary" icon="plus" href={newAction.href}>
-              {t().newShortcut}
-            </Button>
-          }
-        />
-      }
+      head={<Bar end={<Button variant="primary" icon="plus" label={t().newShortcut} href={newAction.href} />} />}
     >
       <Pane.Split>
         <Pane

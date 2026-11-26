@@ -2,7 +2,7 @@ import type { AdminMailProfile } from "@k2b/cloud/contracts";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Dialog, Field, Input, Menu, type NavProps, Notice, Pane, Path, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Dialog, Field, Input, Menu, type NavProps, Notice, Pane, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { outgoingMailMessages } from "./messages";
 import ProfileForm from "./ProfileForm";
@@ -121,16 +121,7 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
       detail={480}
       detailEmpty={{ icon: "mail-cog", text: t().noneOpen }}
       primary={newAction}
-      head={
-        <Bar
-          start={<Path label={t().title} items={[{ label: t().title, href: PATH }, { label: t().profiles }]} />}
-          end={
-            <Button variant="primary" icon="plus" href={newAction.href}>
-              {t().addProfile}
-            </Button>
-          }
-        />
-      }
+      head={<Bar end={<Button variant="primary" icon="plus" label={t().addProfile} href={newAction.href} />} />}
     >
       <Pane.Split>
         <Pane

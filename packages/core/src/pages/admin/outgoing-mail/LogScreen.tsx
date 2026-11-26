@@ -12,7 +12,6 @@ import {
   type NavProps,
   Notice,
   Pane,
-  Path,
   Prose,
   Row,
   Section,
@@ -24,7 +23,6 @@ import {
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { type LogState, logFilter, logHref, logQuery, statusLabel } from "./log-query";
 import { outgoingMailMessages } from "./messages";
-import { OUTGOING_MAIL_HREF } from "./paths";
 import RetentionDialog from "./RetentionDialog";
 import { api } from "./shared";
 
@@ -225,7 +223,6 @@ export default function LogScreen(props: LogScreenProps) {
       detailEmpty={{ icon: "mail", text: t().noMessageOpen }}
       head={
         <Bar
-          start={<Path label={t().title} items={[{ label: t().title, href: OUTGOING_MAIL_HREF.profiles }, { label: t().sendLog }]} />}
           end={
             <Button icon="history" onClick={() => setRetentionOpen(true)}>
               {t().retention}

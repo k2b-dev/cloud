@@ -129,7 +129,8 @@ test("English wording and a start on another day with its date", () => {
       "en",
     ),
   );
-  expect(page).toContain("Maintenance mode");
+  // the open admin entry names the page; the head carries only the state
+  expect(page).toContain("Active");
   expect(page).toContain("Everyone except you sees the maintenance page right now.");
   expect(page).toContain("22:00, started by Lea Muster");
   expect(page).toMatch(/Nov.*15|15.*Nov/);

@@ -2,7 +2,7 @@ import type { AdminMailApp, AdminMailProfile } from "@k2b/cloud/contracts";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Choice, Field, type NavProps, Notice, Pane, Path, Section, Select, StatusRow, Table, Text } from "@k2b/ui/v2";
+import { Bar, Button, Check, Choice, Field, type NavProps, Notice, Pane, Section, Select, StatusRow, Table, Text } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import { outgoingMailMessages } from "./messages";
 import { OUTGOING_MAIL_HREF } from "./paths";
@@ -207,14 +207,7 @@ export default function AppsScreen(props: {
   const state = (app: AdminMailApp) =>
     app.appId === CORE_APP_ID ? t().systemMail : !app.registered ? t().notRegistered : app.declared ? t().requested : t().notRequested;
   return (
-    <AdminWorkspace
-      nav={props.nav}
-      detail={460}
-      detailEmpty={{ icon: "apps", text: t().noAppOpen }}
-      head={
-        <Bar start={<Path label={t().title} items={[{ label: t().title, href: OUTGOING_MAIL_HREF.profiles }, { label: t().apps }]} />} />
-      }
-    >
+    <AdminWorkspace nav={props.nav} detail={460} detailEmpty={{ icon: "apps", text: t().noAppOpen }}>
       <Pane.Split>
         <Pane
           label={t().apps}

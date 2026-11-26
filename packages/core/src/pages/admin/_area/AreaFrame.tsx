@@ -1,6 +1,6 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, type NavProps, Pane, type PaneProps, Path, Text } from "@k2b/ui/v2";
+import { Bar, Button, type NavProps, Pane, type PaneProps, Text } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
 import { settingsMessages } from "../settings/_components/messages";
 
@@ -22,8 +22,9 @@ export type AreaFrameProps = {
 };
 
 /**
- * The frame of one section of an administration area on v2: the admin bar with the area's sections, the path
- * "Area › Section" with the guide link and the section's deeds in the head, and one column with the section's sentence.
+ * The frame of one section of an administration area on v2: the admin bar with the area's sections (the open one
+ * names the page, so the head does not repeat it), the guide link and the section's deeds in the head, and one column
+ * with the section's sentence.
  */
 export default function AreaFrame(props: AreaFrameProps) {
   const locale = useLocale();
@@ -32,21 +33,18 @@ export default function AreaFrame(props: AreaFrameProps) {
     <AdminWorkspace
       nav={props.nav}
       head={
-        <Bar
-          start={<Path label={props.area.label} items={[{ label: props.area.label, href: props.area.href }, { label: props.title }]} />}
-          end={
-            <>
-              <Show when={props.documentationHref}>
-                {(href) => (
-                  <Button variant="text" icon="book" href={href()}>
-                    {s().documentation}
-                  </Button>
-                )}
-              </Show>
-              {props.actions}
-            </>
-          }
-        />
+        props.documentationHref || props.actions ? (
+          <Bar
+            end={
+              <>
+                <Show when={props.documentationHref}>
+                  {(href) => <Button variant="ghost" icon="book" label={s().documentation} href={href()} />}
+                </Show>
+                {props.actions}
+              </>
+            }
+          />
+        ) : undefined
       }
     >
       <Pane label={props.title} scrollKey={`admin-${props.area.href}-${props.title}`} status={props.status}>

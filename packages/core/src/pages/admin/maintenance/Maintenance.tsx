@@ -2,7 +2,7 @@ import { MAINTENANCE_MESSAGE_MAX_LENGTH, type MaintenanceStatus } from "@k2b/clo
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import type { DateContext } from "@k2b/stdlib";
 import { DateTimePicker, useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Chip, Dialog, Facts, Field, Inline, Input, type NavProps, Notice, Pane, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Chip, Dialog, Facts, Field, Input, type NavProps, Notice, Pane, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { enterThroughBypass, maintenanceApi, refusedField } from "./client";
 import { maintenanceAdminMessages } from "./messages";
@@ -135,12 +135,9 @@ export default function Maintenance(props: {
       head={
         <Bar
           start={
-            <Inline>
-              <Text type="body">{t().title}</Text>
-              <Show when={status().active} fallback={<Chip>{t().off}</Chip>}>
-                <Chip status="warn">{t().active}</Chip>
-              </Show>
-            </Inline>
+            <Show when={status().active} fallback={<Chip>{t().off}</Chip>}>
+              <Chip status="warn">{t().active}</Chip>
+            </Show>
           }
         />
       }

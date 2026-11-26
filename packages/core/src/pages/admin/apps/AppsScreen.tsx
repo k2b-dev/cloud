@@ -146,7 +146,6 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                   if (event.key === "Escape" && input.value) search("");
                 }}
               />
-              {/* The add flow is still the v1 dialog; it moves to v2 with the keys. */}
               <AddApp known={known()} list={list()} />
             </>
           }

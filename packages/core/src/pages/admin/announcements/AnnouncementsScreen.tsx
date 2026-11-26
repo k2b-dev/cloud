@@ -138,16 +138,7 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
       detail={460}
       detailEmpty={{ icon: "speakerphone", text: t().noneOpen }}
       primary={newAction}
-      head={
-        <Bar
-          start={<Text type="body">{t().announcements}</Text>}
-          end={
-            <Button variant="primary" icon="plus" href={newAction.href}>
-              {t().newAnnouncement}
-            </Button>
-          }
-        />
-      }
+      head={<Bar end={<Button variant="primary" icon="plus" label={t().newAnnouncement} href={newAction.href} />} />}
     >
       <Pane.Split>
         <Pane

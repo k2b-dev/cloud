@@ -618,19 +618,12 @@ export default function StorageScreen(props: StorageScreenProps) {
       primary={add}
       head={
         <Bar
-          start={<Text type="body">{t().area}</Text>}
           end={
             <>
               <Show when={props.documentationHref}>
-                {(href) => (
-                  <Button variant="text" icon="book" href={href()}>
-                    {t().documentation}
-                  </Button>
-                )}
+                {(href) => <Button variant="ghost" icon="book" label={t().documentation} href={href()} />}
               </Show>
-              <Button variant="primary" icon="plus" href={add.href}>
-                {t().add}
-              </Button>
+              <Button variant="primary" icon="plus" label={t().add} href={add.href} />
             </>
           }
         />

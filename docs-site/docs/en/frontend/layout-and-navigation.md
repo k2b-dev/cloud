@@ -877,7 +877,7 @@ data:
 </AdminLayout>
 
 // StorageScreen.tsx (island)
-<AdminWorkspace nav={props.nav} head={<Bar start={<Text type="body">{t().storage}</Text>} />}>
+<AdminWorkspace nav={props.nav} head={<Bar end={<Button variant="primary" icon="plus" label={t().add} href="?bucket=new" />} />}>
   <Pane label={t().storage}>…</Pane>
 </AdminWorkspace>
 ```
@@ -888,7 +888,9 @@ the second argument (`{ label, icon, href, current?, dot? }`); they stand one
 level in under the area's entry, so the way to the other admin pages stays in
 the sidebar. On a tablet the bar becomes the workspace's drawer where it does
 not fit; on the phone it leaves the page and the phone bar's title opens it as
-the shell's menu, from the first render. `scroll`, `contentClass` and `ownMain`
+the shell's menu, from the first render. That title is the open entry, such as
+"Storage", so the open entry names the page at every width: the screen's head
+does not repeat it and holds only the screen's actions, tabs or open item. `scroll`, `contentClass` and `ownMain`
 do not apply to a v2 admin page.
 
 The admin sidebar shows the overview, then **Set up** (base settings, storage,

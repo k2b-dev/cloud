@@ -29,14 +29,14 @@ export default function AddApp(props: { known: ReadonlyArray<{ id: string; name:
   return (
     <>
       <Button
+        variant="primary"
         icon="plus"
+        label={t().addApp}
         onClick={() => {
           setId("");
           setOpen(true);
         }}
-      >
-        {t().addApp}
-      </Button>
+      />
       <Dialog
         title={t().addTitle}
         open={open()}
