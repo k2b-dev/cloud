@@ -428,6 +428,22 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     );
 
   test(
+    "an amount in the last column of a narrow table is never cut: the table scrolls in its place instead",
+    async () => {
+      const page = await open("tableAmount", { width: 400 });
+      try {
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.number).toEqual([]);
+        const cell = await page.$eval(".k2-table td[data-numeric] > .k2-cell-line", (line) => line.scrollWidth <= line.clientWidth);
+        expect(cell).toBe(true);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "a table column is exactly its default wide; cut text never widens it, rows without wrap are 40 px",
     async () => {
       const page = await open("table");

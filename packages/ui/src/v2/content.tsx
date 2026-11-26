@@ -657,18 +657,25 @@ export const Table = <T,>(props: TableProps<T>) => {
   // Rule 7 by the room of the table: the `drop` columns go one by one, from the last, as the table's place gets
   // narrower than the columns it shows need. The room is known from the widths (and the measured numbers), so the
   // stylesheet decides on the server's page too; it is one container query per table.
+  // What each column needs: its default (a column without one, 160 px), and a numeric one its longest value.
+  const need = createMemo(() =>
+    props.columns.map((column, index) => Math.max(column.width?.default ?? flexibleColumn, (signs()[index] ?? 0) * figureWidth + 32)),
+  );
+  // A table of fixed columns is never narrower than the columns that stay need: in a place narrower than that it
+  // scrolls sideways, so the last column (the rest of the row) never squeezes a number to "…".
+  const least = () =>
+    sized() && !grid()
+      ? need().reduce((sum, width, index) => (props.columns[index]!.drop ? sum : sum + width), props.select ? 44 : 0)
+      : undefined;
   const steps = createMemo(() => {
     if (!sized()) return [] as { column: number; below: number }[];
-    const need = props.columns.map((column, index) => {
-      const base = column.width?.default ?? flexibleColumn;
-      return Math.max(base, (signs()[index] ?? 0) * figureWidth + 32);
-    });
-    let room = need.reduce((sum, width) => sum + width, props.select ? 44 : 0);
+    const widths = need();
+    let room = widths.reduce((sum, width) => sum + width, props.select ? 44 : 0);
     const out: { column: number; below: number }[] = [];
     for (let index = props.columns.length - 1; index >= 0; index--) {
       if (!props.columns[index]!.drop) continue;
       out.push({ column: index, below: room });
-      room -= need[index]!;
+      room -= widths[index]!;
     }
     return out;
   });
@@ -782,6 +789,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-grid={grid() ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
+          style={least() ? { "min-width": `${least()}px` } : undefined}
         >
           <Show when={sized() || measured()}>
             <colgroup>

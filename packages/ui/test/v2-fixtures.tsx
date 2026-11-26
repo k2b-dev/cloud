@@ -586,6 +586,27 @@ export const fixtures = {
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
   table: TableFixture,
+  // an amount in the last column of a narrow table (Codex review of #4209): it is never cut, the table scrolls instead
+  tableAmount: () =>
+    shell(
+      <Pane label="Rechnungen">
+        <Table
+          label="Rechnungen"
+          rows={[
+            { title: "Nachlassverwaltung Oberhauser-Wettstein", sum: "12.345.678,90 €" },
+            { title: "Familie Oswald", sum: "1.280,00 €" },
+            { title: "Architekturbüro Winter", sum: "640,00 €" },
+            { title: "Stadtwerke Auental", sum: "4.611.686,00 €" },
+            { title: "Praxis Dr. Lindqvist", sum: "−42,50 €" },
+            { title: "J", sum: "0,30 €" },
+          ]}
+          columns={[
+            { title: "Kunde", width: { min: 200, default: 300 }, cell: (row) => row.title },
+            { title: "Betrag", align: "end", cell: (row) => row.sum },
+          ]}
+        />
+      </Pane>,
+    ),
   grid: GridFixture,
   controls: ControlsFixture,
   messages: MessagesFixture,

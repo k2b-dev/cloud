@@ -1,4 +1,4 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createSignal, For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { personColor } from "../surfaces/person-color";
@@ -265,6 +265,9 @@ export type ChipProps = {
 
 /** A round mark that shows a state, a tag, an amount or a count. Never a colour without a word. */
 export const Chip = (props: ChipProps) => {
+  // the words are made once and read from here, for the tip and the text: reading `children` twice would make its
+  // JSX twice, and the browser would look for nodes the server never sent
+  const words = resolveChildren(() => props.children);
   const pressable = () => props.href !== undefined || props.onClick !== undefined;
   const kind = () =>
     props.yours
@@ -293,7 +296,10 @@ export const Chip = (props: ChipProps) => {
       data-kind={kind()}
       aria-pressed={props.onClick && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       data-pressed={props.pressed ? "" : undefined}
-      title={typeof props.children === "string" ? props.children : undefined}
+      title={(() => {
+        const shown = words();
+        return typeof shown === "string" ? shown : undefined;
+      })()}
       style={custom({ "--k2-c": "color" in props ? props.color : undefined })}
     >
       <Show when={props.status}>{(status) => <span class="k2-dot" data-status={status()} />}</Show>
@@ -304,7 +310,7 @@ export const Chip = (props: ChipProps) => {
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       {/* the words wrap to two lines where the chip stands free, and are cut with "…" where its place keeps one line
           (a table row, the marks of a row, a head); the whole words then stand in the tip */}
-      <span class="k2-chip-text">{props.children}</span>
+      <span class="k2-chip-text">{words()}</span>
     </Dynamic>
   );
 };
