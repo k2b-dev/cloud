@@ -96,23 +96,26 @@ test("a reset goes back to the default only on save, Discard drops it, and a rem
   // The third field's place below the first, independent of where the pane is scrolled.
   const thirdTop = () =>
     page.evaluate(() => {
-      const fields = document.querySelectorAll('main [data-k2-part="Field"]');
+      const fields = document.querySelectorAll('main [data-k2-part="Setting"]');
       return Math.round(fields[2]!.getBoundingClientRect().top - fields[0]!.getBoundingClientRect().top);
     });
   await settled(page);
   const before = await thirdTop();
-  await footer().getByRole("button", { name: "Reset to default" }).click();
-  await page.getByRole("menuitemcheckbox", { name: "Name" }).click();
+  // the reset is the setting's own deed, at the end of its name's line
+  const name = page.locator('main [data-k2-part="Setting"]').first();
+  await name.getByRole("button", { name: "Reset", exact: true }).click();
   expect(await nameField().isDisabled()).toBe(true);
   expect(await page.getByText("Goes back to the default when you save.").isVisible()).toBe(true);
   // A staged reset keeps every field where it was.
   await settled(page);
   expect(await thirdTop()).toBe(before);
-  // A ticked entry keeps the menu open for more; Escape closes it.
-  await page.keyboard.press("Escape");
+  expect(await name.getByRole("button", { name: "Undo", exact: true }).isVisible()).toBe(true);
   await button("Discard").click();
   expect(await nameField().isDisabled()).toBe(false);
   expect(await button("Save").isDisabled()).toBe(true);
+  // an unsaved change says what the value was
+  await nameField().fill("Neue Cloud");
+  expect(await name.innerText()).toContain("changed · was Beispiel Cloud");
 
   await goto("/admin/base?state=conflictgone");
   await nameField().fill("Meine Cloud");

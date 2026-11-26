@@ -1,7 +1,7 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import { createSettingsDraft, SaveRejected, saveFailure, settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
 import { readSettingsError, useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Field, Menu, Notice, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Check, Notice, Section, Setting, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { localizeSettingField } from "../settings/_components/setting-copy";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
@@ -216,24 +216,30 @@ export default function RegistryForm(props: {
     const condition = section.shownWhen?.[key];
     return !condition || form.draft()[condition.key] === condition.value;
   };
-  // Every value of its own can go back to the default; the tick marks the ones that will on save.
-  const resettable = createMemo(() =>
-    formKeys()
-      .map(entry)
-      .filter((item) => item.isCustom || resets().includes(item.key)),
-  );
-
   const SettingField = (fieldProps: { key: string }) => {
     const item = createMemo(() => entry(fieldProps.key));
     const isReset = () => resets().includes(fieldProps.key);
     const locked = () => form.saving() || isReset() || (unreadable(fieldProps.key) && !confirmed(fieldProps.key));
+    // an unsaved change of a readable value names what it was, so a page that saves as a whole shows what will change
+    const changed = () =>
+      !isReset() &&
+      item().kind !== "secret" &&
+      !unreadable(fieldProps.key) &&
+      JSON.stringify(form.draft()[fieldProps.key] ?? null) !== JSON.stringify(item().value ?? null);
     return (
-      <Field
+      <Setting
         name={fieldProps.key}
         label={item().label}
-        hint={hint(item())}
-        optional={source(item())}
+        hint={`${source(item())} · ${hint(item())}`}
         error={form.errors()[fieldProps.key] ?? fieldErrors()[fieldProps.key]}
+        was={changed() ? preview(item(), item().value, t()) : undefined}
+        action={
+          isReset()
+            ? { label: t().undoReset, disabled: form.saving(), onClick: () => setResets(toggle(resets(), fieldProps.key)) }
+            : item().isCustom
+              ? { label: t().reset, disabled: form.saving(), onClick: () => setResets(toggle(resets(), fieldProps.key)) }
+              : undefined
+        }
       >
         <SettingControl
           entry={item()}
@@ -251,7 +257,7 @@ export default function RegistryForm(props: {
             form.update({ [fieldProps.key]: value });
           }}
         />
-      </Field>
+      </Setting>
     );
   };
 
@@ -324,18 +330,6 @@ export default function RegistryForm(props: {
         }
         end={
           <>
-            <Show when={resettable().length > 0}>
-              <Menu
-                disabled={form.saving()}
-                items={resettable().map((item) => ({
-                  label: item.label,
-                  checked: resets().includes(item.key),
-                  onClick: () => setResets(toggle(resets(), item.key)),
-                }))}
-              >
-                {t().resetMenu}
-              </Menu>
-            </Show>
             <Button disabled={form.saving() || status() === "saved"} onClick={form.discard}>
               {t().discard}
             </Button>
