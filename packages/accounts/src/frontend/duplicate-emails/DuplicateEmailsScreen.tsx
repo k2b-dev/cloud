@@ -43,7 +43,11 @@ export default function DuplicateEmailsScreen(props: DuplicateEmailsScreenProps)
       sidebar={<AccountsNav active="duplicate-emails" pendingRequests={props.pendingRequests} />}
       head={<Bar start={<Text type="body">{t().duplicateEmails}</Text>} />}
     >
-      <Pane label={t().duplicateEmails} scrollKey="accounts-duplicate-emails" status={<StatusRow lead={t().duplicateEmailsCount({ count: props.total })} />}>
+      <Pane
+        label={t().duplicateEmails}
+        scrollKey="accounts-duplicate-emails"
+        status={<StatusRow lead={t().duplicateEmailsCount({ count: props.total })} />}
+      >
         <Band>
           <Text muted>
             {t().duplicateEmailsDescription} {t().duplicateLoginExplanation}

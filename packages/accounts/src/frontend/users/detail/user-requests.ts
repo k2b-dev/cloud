@@ -1,7 +1,13 @@
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
-import { showAccountActionNotice } from "../../action-notice";
 import type { AccountsMessages } from "../../messages";
+
+/**
+ * The operator's notice after a deed, loaded when a deed finished: it renders a dialog, so this module of plain requests
+ * stays free of UI code (its unit tests run without the browser build).
+ */
+const showAccountActionNotice: typeof import("../../action-notice").showAccountActionNotice = async (input, messages) =>
+  (await import("../../action-notice")).showAccountActionNotice(input, messages);
 
 // The deeds of a user's page against the Accounts API. Each resolves when the server took it and otherwise throws an
 // Error with the server's message, or the deed's own fallback when the answer has none (a proxy page, a lost answer).
