@@ -484,7 +484,7 @@ describe("measureV2Layout", () => {
     async () => {
       const page = await open(
         columns(
-          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip">Wartet auf Antwort</span><span class="k2-chip">Angebot</span></span></div>',
+          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip"><span class="k2-chip-text">Wartet auf Antwort</span></span><span class="k2-chip"><span class="k2-chip-text">Angebot</span></span></span></div>',
         ),
         { width: 390 },
       );
@@ -674,6 +674,60 @@ describe("measureV2Layout", () => {
       } finally {
         await page.close();
       }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+// The text checks (break-ui, 25.11.): each proved red on the case that slipped through and green on its fix.
+describe("text a person cannot read", () => {
+  const measure = async (body: string, width = 1440) => {
+    const page = await open(columns(body), { width });
+    try {
+      return await measureV2Layout(page);
+    } finally {
+      await page.close();
+    }
+  };
+
+  test(
+    "red: a key figure that runs under a switch; green: the same figure beside it",
+    async () => {
+      const under = await measure(
+        '<div class="row" style="position:relative;height:40px"><span class="k2-t-row" style="position:absolute;left:20px;top:10px">321 Warnungen</span><button type="button" role="switch" aria-checked="true" aria-label="Live" style="position:absolute;left:60px;top:8px;width:60px;height:24px"></button></div>',
+      );
+      expect(under.overlap.length).toBe(1);
+      expect(under.overlap[0]).toContain('"321 Warnungen"');
+      const beside = await measure(
+        '<div class="row" style="display:flex;gap:8px"><span class="k2-t-row">321 Warnungen</span><button type="button" role="switch" aria-checked="true" aria-label="Live" style="width:60px;height:24px"></button></div>',
+      );
+      expect(beside.overlap).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: an amount in a cut table cell; green: the cell holds the whole amount",
+    async () => {
+      const cell = (width: number) =>
+        `<table class="k2-table" data-sized style="width:${width}px"><colgroup><col style="width:${width}px"></colgroup><tbody><tr><td data-numeric><span class="k2-cell-line">12.345.678,90 €</span></td></tr></tbody></table>`;
+      const cut = await measure(cell(80));
+      expect(cut.number.length).toBe(1);
+      expect(cut.number[0]).toContain('"12.345.678,90 €"');
+      expect((await measure(cell(200))).number).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a name in a line of things cut through a sign; green: the name cut with an ellipsis",
+    async () => {
+      const line = (text: string) =>
+        `<div class="row" style="width:160px"><div class="k2-inline"><span class="k2-av" data-k2-avatar style="--k2-c:#7c2d12">NO</span><span class="k2-text" style="${text}">Nachlassverwaltung Oberhauser-Wettstein</span></div></div>`;
+      const cut = await measure(line(""));
+      expect(cut.clip.length).toBe(1);
+      expect(cut.clip[0]).toContain("without");
+      expect((await measure(line("flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"))).clip).toEqual([]);
     },
     TEST_TIMEOUT,
   );
