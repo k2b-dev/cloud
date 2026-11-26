@@ -8,6 +8,7 @@ import { apiClient } from "../../../api/client";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT, type PublicDocumentCatalogFacets } from "../../../api/document-public-contracts";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import GridsFrame, { LiveNotice } from "../frame/GridsFrame";
+import { kindMark } from "../frame/kind-marks";
 import { errorMessage } from "../utils/api-helpers";
 import type { NavigationState } from "../workspace/navigation-catalog";
 import { openDocumentDetailsDialog } from "./DocumentDetailsDialog";
@@ -15,7 +16,7 @@ import { documentBrowserEmptyText, documentCountLabel } from "./document-browser
 import { type DocumentCatalogState, documentCatalogIsFlat, parseDocumentCatalogUrlState } from "./document-catalog-url-state";
 import { downloadPdfResponse } from "./document-download";
 import { requestDocumentDownload } from "./document-transfer-client";
-import { documentFormatLabel } from "./document-workspace-utils";
+import { documentFileIcon, documentFormatLabel } from "./document-workspace-utils";
 import { catalogOf, type DocumentsListState, documentsHref, documentsQuery, listStateOf } from "./documents-query";
 import { documentMessages } from "./messages";
 import type { PublicDocument, PublicDocumentBrowseResponse, PublicDocumentFolder } from "./public-document-types";
@@ -116,6 +117,14 @@ export default function DocumentsScreen(props: DocumentsScreenProps) {
   };
   const originText = (document: PublicDocument) =>
     workflowOrigin(document)?.name ?? (document.templateId ? templateNames().get(document.templateId) : undefined) ?? "–";
+  /** Where a document came from leads there when this person may open it: the workflow run, or the template's documents. */
+  const originHref = (document: PublicDocument) => {
+    const workflow = workflowOrigin(document);
+    if (workflow) return workflow.href;
+    const { tableId, templateId } = document;
+    if (!tableId || !templateId || (props.documentTemplateLevels[templateId] ?? "none") === "none") return null;
+    return `/app/grids/${encodeURIComponent(props.baseId)}/document/${encodeURIComponent(tableId)}/${encodeURIComponent(templateId)}`;
+  };
   const canWrite = (document: PublicDocument) => {
     if (document.templateId === null) return props.canWriteDocuments;
     const level = props.documentTemplateLevels[document.templateId] ?? "none";
@@ -129,6 +138,7 @@ export default function DocumentsScreen(props: DocumentsScreenProps) {
     }).format(new Date(value));
   const formatOf = (document: PublicDocument) =>
     documentFormatLabel(document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey)?.mimeType);
+  const markOf = (document: PublicDocument) => ({ ...kindMark("documentTemplate", documentFileIcon(document)), kind: formatOf(document) });
 
   // k2b-ui gap: the document's details (artifacts, links, sharing) are their own dialog until the record-like detail
   // of a document is rebuilt on v2; it keeps every deed.
@@ -227,11 +237,15 @@ export default function DocumentsScreen(props: DocumentsScreenProps) {
               rowKey={(folder) => folder.path.join("/")}
               row={(folder) => (
                 <Row
-                  icon={FOLDER_ICON[folder.kind]}
-                  lines={[
-                    folder.label || folderLabel(folder.key),
-                    t().folderCount({ formatted: new Intl.NumberFormat(locale()).format(folder.count) }),
-                  ]}
+                  // a folder of a template or a workflow carries that thing's mark, a year or month the documents' colour;
+                  // one line on the desktop with its count at the end
+                  mark={
+                    folder.kind === "workflow"
+                      ? kindMark("workflow")
+                      : { icon: FOLDER_ICON[folder.kind], color: kindMark("documentTemplate").color }
+                  }
+                  lines={[folder.label || folderLabel(folder.key)]}
+                  time={t().folderCount({ formatted: new Intl.NumberFormat(locale()).format(folder.count) })}
                   href={href({ ...catalog(), path: folder.path })}
                   onNavigate={(event) => go({ ...catalog(), path: folder.path }, event)}
                 />
@@ -248,27 +262,25 @@ export default function DocumentsScreen(props: DocumentsScreenProps) {
               open={(document) => ({ onOpen: () => openDetails(document) })}
               empty={{ icon: "files", text: documentBrowserEmptyText(catalog().q, mode(), catalog().path, locale(), filtered()) }}
               phone={(document) => ({
-                lines: [document.filename, `${originText(document)} · ${formatOf(document)}`],
+                mark: markOf(document),
+                lines: [document.filename, `${document.number} · ${originText(document)}`],
                 time: formatDate(document.createdAt),
               })}
+              // one line per document: its mark with the format, the file, its number to compare down, where it came
+              // from (a link wherever this person may open it) and when
               columns={[
-                {
-                  title: t().columnFile,
-                  width: { min: 200, default: 320 },
-                  cell: (document) => ({ lines: [document.filename, document.number] }),
-                },
+                { title: t().columnFile, width: { min: 200, default: 320 }, mark: markOf, cell: (document) => document.filename },
+                { title: t().number, width: { min: 120, default: 140 }, drop: true, cell: (document) => document.number },
                 {
                   title: t().columnOrigin,
-                  width: { min: 140, default: 220 },
+                  width: { min: 140, default: 200 },
                   drop: true,
-                  // a workflow run this person can open is a link to it
                   cell: (document) => {
-                    const origin = workflowOrigin(document);
-                    return origin?.href ? <Text href={origin.href}>{origin.name}</Text> : originText(document);
+                    const href = originHref(document);
+                    return href ? <Text href={href}>{originText(document)}</Text> : originText(document);
                   },
                 },
-                { title: t().columnFormat, width: { min: 80, default: 100 }, drop: true, cell: formatOf },
-                { title: t().columnCreated, align: "end", cell: (document) => formatDate(document.createdAt) },
+                { title: t().columnCreated, width: { min: 140, default: 160 }, cell: (document) => formatDate(document.createdAt) },
               ]}
             />
           </Show>

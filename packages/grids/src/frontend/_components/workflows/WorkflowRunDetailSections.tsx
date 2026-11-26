@@ -1,7 +1,7 @@
 import { useLocale } from "@k2b/ui";
 import { Button, Chip, Facts, Loading, Row, Section } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
-import { documentFormatLabel } from "../documents/document-workspace-utils";
+import { documentFileIcon, documentFormatLabel } from "../documents/document-workspace-utils";
 import type { PublicDocument } from "../documents/public-document-types";
 import { kindMark } from "../frame/kind-marks";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
@@ -205,7 +205,7 @@ export function WorkflowRunDocumentsSection(props: {
           <For each={props.documents.items}>
             {(document) => (
               <Row
-                mark={{ ...kindMark("documentTemplate"), kind: formatOf(document) }}
+                mark={{ ...kindMark("documentTemplate", documentFileIcon(document)), kind: formatOf(document) }}
                 lines={[document.filename, `${formatOf(document)} · ${document.number}`]}
                 onOpen={() => {
                   if (props.downloadingDocumentId !== document.id) props.onDownload(document);

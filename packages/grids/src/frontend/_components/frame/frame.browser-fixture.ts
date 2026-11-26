@@ -353,11 +353,15 @@ const document = (index: number, variant: FixtureVariant) => {
   const name =
     worst && index === 0
       ? "Rechnung-2026-11-0042-Werkstatt-Nordhausen-Ersatzteile-Druckluftanlage-final-v3.pdf"
-      : `Rechnung-2026-${String(index + 1).padStart(4, "0")}.pdf`;
+      : index % 5 === 4
+        ? // every fifth is a workflow's bundle of several files
+          `Rechnungen-2026-${String(index + 1).padStart(4, "0")}.zip`
+        : `Rechnung-2026-${String(index + 1).padStart(4, "0")}.pdf`;
   return {
     id: `D${String(index).padStart(5, "0")}`,
     baseId: "Bas001",
-    tableId: null,
+    // a template's documents belong to its table, so their origin leads to the template
+    tableId: index % 3 === 0 ? null : "table",
     recordId: null,
     templateId: index % 3 === 0 ? null : "TPL001",
     workflowId: index % 3 === 0 ? "WFL001" : null,
@@ -371,7 +375,7 @@ const document = (index: number, variant: FixtureVariant) => {
     validationStatus: "valid" as const,
     artifacts: [
       {
-        key: "pdf",
+        key: index % 5 === 4 ? "zip" : "pdf",
         filename: name,
         mimeType: index % 5 === 4 ? "application/zip" : "application/pdf",
         sizeBytes: 48_213 + index,
@@ -379,7 +383,7 @@ const document = (index: number, variant: FixtureVariant) => {
         downloadUrl: `/api/grids/documents/D${index}/artifacts/pdf`,
       },
     ],
-    primaryArtifactKey: "pdf",
+    primaryArtifactKey: index % 5 === 4 ? "zip" : "pdf",
     downloadUrl: `/api/grids/documents/D${index}/download`,
     sourceRecordCount: null,
     dataSnapshot: null,

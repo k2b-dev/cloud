@@ -671,6 +671,11 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
       state={props.frame}
       activeKeys={props.activeWorkflow ? [`workflow:${props.activeWorkflow.id}`] : []}
       revision={props.revision}
+      // the runs keep their ~600 px and a run opens beside them with room for its facts (480 px); that room stays while
+      // none is open, so a tablet's sidebar is a drawer from the start and opening a run moves nothing. (The runs'
+      // minimum stays at 320: k2b-ui gap, on the phone a column keeps its minimum width.)
+      detail={activeWorkflow() ? 480 : undefined}
+      detailEmpty={{ icon: "player-play", text: t().noRunOpen }}
       head={
         <Show when={activeWorkflow()} fallback={<Bar />}>
           {(workflow) => head(workflow())}
@@ -695,7 +700,7 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
       >
         {(workflow) => (
           <Pane.Split>
-            <Pane label={t().workflowRuns} scrollKey={`grids-workflow-runs-${workflow().id}`}>
+            <Pane label={t().workflowRuns} width={{ min: 320, default: 600 }} scrollKey={`grids-workflow-runs-${workflow().id}`}>
               <LiveNotice />
               <Show when={loadError()}>
                 {(message) => (
@@ -771,21 +776,21 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                   ) : undefined,
                 })}
                 columns={[
-                  { title: t().status, width: { min: 180, default: 190 }, cell: runChip },
-                  { title: t().started, width: { min: 130, default: 140 }, cell: (run) => shortDate(run.createdAt, locale()) },
+                  { title: t().status, width: { min: 170, default: 170 }, cell: runChip },
+                  { title: t().started, width: { min: 120, default: 124 }, cell: (run) => shortDate(run.createdAt, locale()) },
                   {
                     title: t().channel,
-                    width: { min: 100, default: 120 },
+                    width: { min: 90, default: 100 },
                     drop: true,
                     cell: (run) => `${workflowChannelLabel(run.channel, locale())}${run.mode === "dryRun" ? ` · ${t().dryRun}` : ""}`,
                   },
                   {
                     title: t().result,
-                    width: { min: 160, default: 280 },
+                    width: { min: 120, default: 130 },
                     drop: true,
                     cell: (run) => run.error?.message ?? run.resultMessage ?? "–",
                   },
-                  { title: t().duration, width: { min: 70, default: 90 }, align: "end", cell: (run) => formatDuration(run, locale()) },
+                  { title: t().duration, width: { min: 64, default: 72 }, align: "end", cell: (run) => formatDuration(run, locale()) },
                 ]}
               />
               <Show when={nextCursor()}>

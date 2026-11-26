@@ -2,7 +2,7 @@ import { type LinkNavigateEvent, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Failed, Inline, Input, List, Mark, Menu, type MenuEntry, Pane, Path, Row, Table, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Button, Failed, Input, List, Menu, type MenuEntry, Pane, Path, Row, Table, Tabs } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../../../api/document-public-contracts";
@@ -19,7 +19,7 @@ import { openDocumentGenerateDialog } from "./DocumentGenerateDialog";
 import { documentBrowserEmptyText, documentCountLabel } from "./document-browser-model";
 import { downloadPdfResponse } from "./document-download";
 import { requestDocumentDownload } from "./document-transfer-client";
-import { documentFormatLabel, formatDocumentMonth } from "./document-workspace-utils";
+import { documentFileIcon, documentFormatLabel, formatDocumentMonth } from "./document-workspace-utils";
 import { documentMessages } from "./messages";
 import type {
   PublicDocument,
@@ -247,10 +247,9 @@ export default function DocumentTemplateScreen(props: DocumentTemplateScreenProp
                 return (
                   <Row
                     mark={{ icon: folder.kind === "month" ? "calendar-month" : "calendar", color: mark().color }}
-                    lines={[
-                      year && month ? `${monthName(year, month)} ${year}` : folder.label,
-                      t().folderCount({ formatted: new Intl.NumberFormat(locale()).format(folder.count) }),
-                    ]}
+                    // one line on the desktop: the month, its count at the end
+                    lines={[year && month ? `${monthName(year, month)} ${year}` : folder.label]}
+                    time={t().folderCount({ formatted: new Intl.NumberFormat(locale()).format(folder.count) })}
                     href={href({ ...state(), path: folder.path })}
                     onNavigate={(event) => go({ ...state(), path: folder.path }, event)}
                   />
@@ -268,24 +267,20 @@ export default function DocumentTemplateScreen(props: DocumentTemplateScreenProp
               open={(document) => ({ onOpen: () => openDetails(document) })}
               empty={{ icon: "file-off", text: documentBrowserEmptyText(state().q, state().mode, state().path, locale()) }}
               phone={(document) => ({
-                mark: { ...mark(), kind: formatOf(document) },
+                mark: { ...kindMark("documentTemplate", documentFileIcon(document)), kind: formatOf(document) },
                 lines: [document.filename, document.number],
                 time: formatDate(document.createdAt),
               })}
               columns={[
+                // the format stands once, in the mark; the number has its own column to compare down
                 {
                   title: t().columnFile,
-                  width: { min: 220, default: 360 },
-                  cell: (document) => (
-                    <Inline>
-                      <Mark {...mark()} kind={formatOf(document)} />
-                      <Text>{document.filename}</Text>
-                    </Inline>
-                  ),
+                  width: { min: 220, default: 320 },
+                  mark: (document) => ({ ...kindMark("documentTemplate", documentFileIcon(document)), kind: formatOf(document) }),
+                  cell: (document) => document.filename,
                 },
-                { title: t().number, width: { min: 120, default: 160 }, drop: true, cell: (document) => document.number },
-                { title: t().columnFormat, width: { min: 80, default: 100 }, drop: true, cell: formatOf },
-                { title: t().columnCreated, align: "end", cell: (document) => formatDate(document.createdAt) },
+                { title: t().number, width: { min: 120, default: 140 }, drop: true, cell: (document) => document.number },
+                { title: t().columnCreated, width: { min: 140, default: 160 }, cell: (document) => formatDate(document.createdAt) },
               ]}
             />
           </Show>

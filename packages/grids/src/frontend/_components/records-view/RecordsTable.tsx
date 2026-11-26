@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { type Column, type OnNavigate, Table } from "@k2b/ui/v2";
+import { type Column, type MarkProps, type OnNavigate, Table } from "@k2b/ui/v2";
 import { createMemo } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { ColumnSpec, SortSpec } from "../../../contracts";
@@ -52,6 +52,8 @@ export type RecordsTableProps = {
   };
   empty?: { icon: string; text: string; action?: { label: string; icon?: string; onClick?: () => void } };
   dateConfig?: DateContext;
+  /** The table's mark: it leads every record, on the phone too. */
+  mark?: MarkProps;
 };
 
 /**
@@ -127,6 +129,7 @@ export default function RecordsTable(props: RecordsTableProps) {
 
   const columns = createMemo((): Column<GridRecord>[] =>
     shown().map(({ column, field }, index) => {
+      const mark = props.mark;
       const display = effectiveDisplayField(field, props.fieldsByTable);
       const numeric = NUMERIC.has(display.type) || ["decimal", "percent"].includes(formatOf(column, field)?.kind ?? "");
       const first = fieldSort();
@@ -137,6 +140,7 @@ export default function RecordsTable(props: RecordsTableProps) {
         align: numeric ? "end" : "start",
         // the first column names the record; the others leave on the phone, which shows two lines instead
         drop: index > 0,
+        ...(index === 0 && mark ? { mark: () => mark } : {}),
         cell: (record) => (
           <FieldValue
             field={field}
@@ -174,15 +178,21 @@ export default function RecordsTable(props: RecordsTableProps) {
       dateConfig: props.dateConfig,
       viewColumns: props.viewColumns,
     });
-  /** The phone's second line: the next two shown fields with a value. */
+  /**
+   * The phone's second line: the next two shown fields with a value, then the first number, which matters most
+   * ("In Arbeit · Bäckerei Sonnenkorn · 12400,00 EUR").
+   */
   const second = (record: GridRecord) => {
     const titleId = recordTitleField(props.fields)?.id;
-    return shown()
+    const valued = shown()
       .filter((entry) => entry.field.id !== titleId)
-      .map((entry) => text(record, entry.field, entry.column).trim())
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(" · ");
+      .map((entry) => ({
+        numeric: NUMERIC.has(effectiveDisplayField(entry.field, props.fieldsByTable).type),
+        text: text(record, entry.field, entry.column).trim(),
+      }))
+      .filter((entry) => entry.text);
+    const figure = valued.find((entry) => entry.numeric);
+    return [...valued.filter((entry) => !entry.numeric).slice(0, 2), ...(figure ? [figure] : [])].map((entry) => entry.text).join(" · ");
   };
 
   const open = (record: GridRecord) => {
@@ -202,7 +212,7 @@ export default function RecordsTable(props: RecordsTableProps) {
       columns={columns()}
       open={open}
       empty={props.empty}
-      phone={(record) => ({ lines: [title(record), second(record)] })}
+      phone={(record) => ({ mark: props.mark, lines: [title(record), second(record)] })}
       select={
         bulk()
           ? {

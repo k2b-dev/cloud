@@ -343,7 +343,12 @@ export default function QueryScreen(props: QueryScreenProps) {
           }
         />
       }
-      primary={{ label: t().saveAsView, icon: "bookmark-plus", disabled: !query().trim(), onClick: () => setSaving(true) }}
+      // the phone's floating deed never floats disabled: a query to save, else the way into one (the first example)
+      primary={(() => {
+        if (query().trim()) return { label: t().saveAsView, icon: "bookmark-plus", onClick: () => setSaving(true) };
+        const example = examples()[0];
+        return example ? { label: t().examples, icon: "wand", onClick: () => onInput(example.code) } : undefined;
+      })()}
     >
       <Pane.Split>
         <Pane label={t().query} scrollKey="grids-query">
@@ -361,7 +366,6 @@ export default function QueryScreen(props: QueryScreenProps) {
                 lineNumbers
                 markedLine={diagnostics()[0]?.line}
                 fill
-                placeholder={"from table Orders\nwhere Status = 'Open'\nsort CreatedAt desc\nlimit 50"}
                 aria-label={t().gqlQueryLabel}
               />
             </div>
@@ -388,7 +392,15 @@ export default function QueryScreen(props: QueryScreenProps) {
             when={success()}
             fallback={
               <Show when={!preview()}>
-                <Empty icon="code" text={loading() ? t().runningQuery : t().writeQuery} />
+                {/* one sentence and one way forward: the base's first example, written into the editor */}
+                <Empty
+                  icon="code"
+                  text={loading() ? t().runningQuery : t().writeQuery}
+                  action={(() => {
+                    const example = examples()[0];
+                    return !loading() && example ? { label: t().examples, icon: "wand", onClick: () => onInput(example.code) } : undefined;
+                  })()}
+                />
               </Show>
             }
           >

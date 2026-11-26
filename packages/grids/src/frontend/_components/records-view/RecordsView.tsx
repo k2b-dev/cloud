@@ -18,7 +18,6 @@ import {
   Path,
   StatusRow,
   Tabs,
-  Text,
 } from "@k2b/ui/v2";
 import type { ListQueryState } from "@k2b/ui/v2/list-query";
 import { createEffect, createMemo, createRenderEffect, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
@@ -50,6 +49,7 @@ import type { PublicDocumentTemplateSummary } from "../documents/public-document
 import { fieldTypeIcon } from "../fields/field-type-meta";
 import GridsFrame, { LiveNotice } from "../frame/GridsFrame";
 import { v2Icon } from "../frame/grids-nav";
+import { kindMark } from "../frame/kind-marks";
 import { openCombinedAuditDialog } from "../records/CombinedAuditDialog";
 import { openExportRecordsDialog } from "../records/ExportRecordsDialog";
 import { recordMessages } from "../records/messages";
@@ -890,7 +890,10 @@ export default function RecordsView(props: Props) {
         { label: words().recordMetadata, icon: "user-search", onClick: () => void openRecordMetaDialog() },
         { label: words().exportRecords, icon: "download", onClick: openExportDialog },
         ...(!props.viewMode && !props.trashMode
-          ? [{ label: words().saveAsView, icon: "bookmark-plus", onClick: () => setSaveViewOpen(true) }]
+          ? [
+              { label: words().moreFilters, icon: "filter", onClick: () => setQueryOpen(true) },
+              { label: words().saveAsView, icon: "bookmark-plus", onClick: () => setSaveViewOpen(true) },
+            ]
           : []),
       ],
     },
@@ -1085,8 +1088,10 @@ export default function RecordsView(props: Props) {
       ...(activeRecordMetaCount() > 0 ? [words().metadataActive({ count: activeRecordMetaCount() })] : []),
       ...aggregateFacts().map((fact) => `${fact.before} ${fact.value}`),
     ].join(" · ");
+  // One filter path: the bar's own filters. The query's further filters and sorts stand there only while they are
+  // set ("Weitere Filter (2)"); otherwise they wait in "…" beside the other deeds of the records.
   const moreFilters = () => (
-    <Show when={!props.viewMode && !props.trashMode}>
+    <Show when={!props.viewMode && !props.trashMode && filterCount() + sortCount() > 0}>
       <Button variant="ghost" icon="filter" onClick={() => setQueryOpen(true)}>
         {filterCount() + sortCount() > 0 ? words().filterCount({ count: filterCount() + sortCount() }) : words().moreFilters}
       </Button>
@@ -1229,6 +1234,7 @@ export default function RecordsView(props: Props) {
                 }
                 empty={emptyResult() ? emptyState() : undefined}
                 dateConfig={props.dateConfig}
+                mark={kindMark("table", tableIcon())}
               />
             }
           >
@@ -1304,8 +1310,8 @@ export default function RecordsView(props: Props) {
             </Match>
           </Switch>
           <Show when={hasMore()}>
+            {/* the count stands once, in the bar above the records */}
             <Bar
-              start={<Text type="meta">{recordCountText()}</Text>}
               end={
                 <Button icon="chevrons-down" busy={data.loading && Boolean(cursor())} onClick={loadNextFlatPage}>
                   {words().loadMore}
