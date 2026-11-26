@@ -84,8 +84,11 @@ const catalogs = {
   Feed: (await import("../content/feed-messages")).checkFeedMessages,
   Video: (await import("../content/video-messages")).checkVideoMessages,
   RangePicker: (await import("../content/range-picker-messages")).checkRangePickerMessages,
+  V2Date: (await import("../v2/date-messages")).checkDateMessages,
   Refresh: (await import("../layout/refresh-messages")).checkRefreshMessages,
   Setting: (await import("../v2/setting-messages")).checkSettingMessages,
+  V2Tree: (await import("../v2/tree-messages")).checkTreeMessages,
+  V2Drag: (await import("../v2/drag-messages")).checkDragMessages,
 };
 
 describe("@k2b/ui message catalogs", () => {

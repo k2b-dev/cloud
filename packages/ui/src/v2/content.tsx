@@ -19,7 +19,6 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
-import { useUiMessages } from "../intl/messages";
 import { useBehaviorMessages } from "./behavior/messages";
 import { announceBranch, announceText, type TreegridRow, treegridStep } from "./behavior/treegrid";
 import { ActionButton, CopyButton } from "./button";
@@ -29,6 +28,7 @@ import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
+import { useTreeMessages } from "./tree-messages";
 import type { Action, OnNavigate, Person, Status } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -667,7 +667,7 @@ const MORE_ROW = "\u2060more:";
  * rows and cells under the pointer, groups as tinted rows.
  */
 export const Table = <T,>(props: TableProps<T>) => {
-  const t = useUiMessages();
+  const t = useTreeMessages();
   const said = useBehaviorMessages();
   const grid = () => props.select !== undefined || props.sticky === true;
   const sized = () => grid() || props.columns.some((column) => column.width);

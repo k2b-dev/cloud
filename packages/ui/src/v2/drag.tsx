@@ -1,8 +1,8 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
-import { useUiMessages } from "../intl/messages";
 import { createDragOnto, type DropTarget, HOVER_OPEN_MS } from "./behavior/dnd";
 import { announceText } from "./behavior/treegrid";
+import { useDragMessages } from "./drag-messages";
 import { Icon } from "./marks";
 import { PageLayer } from "./page-layer";
 
@@ -73,7 +73,7 @@ export const useDragMove = (
     within?: (target: string, key: string) => boolean;
   },
 ) => {
-  const t = useUiMessages();
+  const t = useDragMessages();
   const region: Region = {
     targets: () => {
       const given = drag();

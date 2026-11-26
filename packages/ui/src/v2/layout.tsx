@@ -26,6 +26,7 @@ import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty } from "./states";
 import { Toasts } from "./toast";
+import { useTreeMessages } from "./tree-messages";
 import type { Action, OnNavigate, Person, Status, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -848,7 +849,7 @@ const TileMedia = (props: {
   drag: ReturnType<ReturnType<typeof useDragMove>["entry"]>;
 }) => {
   const overlay = useOverlayMessages();
-  const t = useUiMessages();
+  const t = useTreeMessages();
   const title = createUniqueId();
   const selected = () => props.select?.selected.includes(keyOf(props.tile)) ?? false;
   const owner = () => props.tile.people?.[0];

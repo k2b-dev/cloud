@@ -188,8 +188,8 @@ and appealing. Dense is not busy: show more, never the same thing twice.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
-  `Select`, `DateInput`, `Check`, `Choice`. **Media:** `Preview`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`, `Select`,
+  `DateInput`, `DatePicker`, `Check`, `Choice`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
