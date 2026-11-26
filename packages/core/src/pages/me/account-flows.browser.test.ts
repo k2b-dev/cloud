@@ -279,14 +279,17 @@ describe("account deeds on v2", () => {
       // the pinned clock is 24 November 2026, 11:00 in Berlin: earlier days cannot be picked
       expect(await picker.locator('[data-value="2026-11-23"]').getAttribute("aria-disabled")).toBe("true");
       await picker.locator('[data-value="2026-11-24"]').click();
-      const time = picker.getByRole("textbox", { name: "Time" });
-      await time.fill("09:00");
-      await time.press("Enter");
+      // the time is core's time input: hour, minute and (in English) AM/PM as segments, typed in order
+      const hour = picker.getByRole("group", { name: "Time" }).locator('[data-type="hour"]');
+      await hour.focus();
+      await tab.keyboard.type("0900a");
+      await picker.getByRole("button", { name: "Apply" }).click();
       await picker.getByText("Choose a time in the future.").waitFor();
       expect(seen.filter((entry) => entry.method === "PATCH")).toEqual([]);
       await picker.locator('[data-value="2026-11-27"]').click();
-      await time.fill("14:30");
-      await time.press("Enter");
+      await hour.focus();
+      await tab.keyboard.type("0230p");
+      await picker.getByRole("button", { name: "Apply" }).click();
       await picker.waitFor({ state: "detached" });
       const body = seen.find((entry) => entry.method === "PATCH")?.body as { doNotDisturbUntil: string };
       expect(body.doNotDisturbUntil).toBe("2026-11-27T13:30:00.000Z");
