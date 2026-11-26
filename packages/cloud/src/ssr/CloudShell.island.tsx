@@ -1,4 +1,4 @@
-import { useLocale } from "@k2b/ui";
+import { IconButtonLink, useLocale } from "@k2b/ui";
 import { createEffect } from "solid-js";
 import { anyAppBadge } from "./app-badges";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
@@ -17,7 +17,15 @@ import { useShellData } from "./shell-data";
 
 type CloudShellProps =
   | { slot: "rail"; currentPath: string; panelOpen?: boolean }
-  | { slot: "header"; authenticated: boolean; title?: string; launchpad: boolean; breadcrumbs?: LayoutBreadcrumb[]; panelOpen?: boolean };
+  | {
+      slot: "header";
+      authenticated: boolean;
+      title?: string;
+      launchpad: boolean;
+      breadcrumbs?: LayoutBreadcrumb[];
+      up?: LayoutBreadcrumb;
+      panelOpen?: boolean;
+    };
 
 /**
  * The interactive part of the shell chrome. `LayoutRail` and `LayoutHeader`
@@ -78,6 +86,7 @@ function HeaderControls(props: {
   title?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
+  up?: LayoutBreadcrumb;
   panelOpen?: boolean;
 }) {
   const data = useShellData();
@@ -98,8 +107,14 @@ function HeaderControls(props: {
             props.authenticated ? "min-w-0 items-center max-lg:flex lg:hidden" : "min-w-0 items-center max-md:hidden md:flex lg:hidden"
           }
         >
+          {/* the page above this one (an admin page's overview): its way back leads the title, which names the page */}
+          {props.up?.href && (
+            <IconButtonLink class="layout-header-up shrink-0" href={props.up.href} label={t().backTo({ title: props.up.title })}>
+              <i class="ti ti-chevron-left text-base" aria-hidden="true" />
+            </IconButtonLink>
+          )}
           <span class="layout-header-title truncate font-semibold">{props.title}</span>
-          {props.launchpad && (
+          {props.launchpad && !props.up && (
             <AppLaunchpadButton
               profile={
                 data.profile
