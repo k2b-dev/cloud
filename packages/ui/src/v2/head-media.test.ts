@@ -166,3 +166,15 @@ test("a thing without a symbol shows the first letter of its name on its colour,
   // the letter stands in the symbol's place: no symbol beside it
   expect(html(Mark, { initial: "Werkstatt" })).not.toContain("ti-");
 });
+
+test("key numbers count themselves on the server: the cells say how many they are and each its place", () => {
+  const markup = html(Cells, {
+    get children() {
+      return ["Aufträge", "Offen", "Erledigt"].map((label, index) =>
+        createComponent(Cells.Cell, { icon: "circle", label, value: String(index + 1) }),
+      );
+    },
+  });
+  expect(markup).toMatch(/class="k2-cells"[^>]*data-n="3"/);
+  expect([...markup.matchAll(/data-k2-part="Cells.Cell" data-i="(\d)"/g)].map((match) => match[1])).toEqual(["1", "2", "3"]);
+});

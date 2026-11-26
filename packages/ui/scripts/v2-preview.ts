@@ -132,6 +132,7 @@ const { createComponent } = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { describeV2 } = await import("../src/v2/describe");
 const { LocaleProvider } = await import("../src/intl/locale");
+const { transparentIslands } = await import("./v2-island-css");
 
 let markup = "";
 // The screen renders in the language of its sample text, as Fibel shows a recipe: its own `locale` export, else German
@@ -156,8 +157,8 @@ try {
   process.exit(1);
 }
 
-// v2.css as it ships: the v2 sheet, then the chart's own stylesheet (see scripts/build.ts)
-const css = `${readFileSync(join(uiRoot, "src/v2/v2.css"), "utf8")}\n${readFileSync(join(uiRoot, "src/styles/chart.css"), "utf8")}`;
+// v2.css as it ships: the v2 sheet that looks through island wrappers, then the chart's own stylesheet (see scripts/build.ts)
+const css = `${transparentIslands(readFileSync(join(uiRoot, "src/v2/v2.css"), "utf8"))}\n${readFileSync(join(uiRoot, "src/styles/chart.css"), "utf8")}`;
 const fontFace = (weight: number) => {
   const path = join(uiRoot, `node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff2`);
   return existsSync(path)

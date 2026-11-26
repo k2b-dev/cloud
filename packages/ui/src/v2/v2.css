@@ -3,7 +3,12 @@
 
    Everything stays below the v2 root `.k2-ui`, in its own namespace: classes start with `k2-`, custom properties
    with `--k2-`. A page can load this sheet beside the v1 sheet (`.k2b-ui`, `--k2b-*`) without either touching the
-   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own. */
+   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own.
+
+   Write relations as usual (`>`, `+`, `~`, `:first-child`, `:last-child`, `:has(> …)`): the build ships every one
+   also through an island wrapper of @k2b/ssr (scripts/v2-island-css.ts), so a primitive keeps its layout inside a
+   small island. A form that cannot do that (`:nth-*`, `:*-of-type`, `:empty`) fails the build; only placeholders
+   (`.k2-skel`) may use `:nth-*`. */
 
 .k2-ui {
   /* neutral scale */
@@ -535,6 +540,7 @@
   min-width: 400px;
 }
 /* a fixed column at the end includes its line, so its grip sits at 100% minus its width, like one at the start */
+/* one primitive: Pane.Split puts a seam after every pane */
 .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
   width: calc(var(--k2-pane-w) - 1px);
 }
@@ -742,7 +748,7 @@
   align-content: start;
   align-items: center;
 }
-.k2-ui .k2-cell + .k2-cell {
+.k2-ui .k2-cell ~ .k2-cell {
   border-left: var(--k2-hairline);
 }
 /* A cell under 220 px (half a phone, four cells in a pane of 600 px) leaves no room for a big number in 18 px
@@ -775,25 +781,25 @@
    phone), so a big number keeps its 18 px; five and six stand in rows of three. */
 @container k2-pane (max-width: 879.98px) {
   /* four: two by two */
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)):not(:has(> .k2-cell:nth-child(5))) {
+  .k2-ui .k2-cells[data-n="4"] {
     grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)):not(:has(> .k2-cell:nth-child(5))) > .k2-cell:nth-child(odd) {
+  .k2-ui .k2-cells[data-n="4"] > .k2-cell:is([data-i="1"], [data-i="3"], [data-i="5"]) {
     border-left: 0;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)):not(:has(> .k2-cell:nth-child(5))) > .k2-cell:nth-child(n + 3) {
+  .k2-ui .k2-cells[data-n="4"] > .k2-cell:is([data-i="3"], [data-i="4"], [data-i="5"], [data-i="6"]) {
     border-top: var(--k2-hairline);
   }
   /* five and six: rows of three */
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) {
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) {
     grid-auto-flow: row;
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) > .k2-cell:nth-child(3n + 1) {
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="1"], [data-i="4"]) {
     border-left: 0;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) > .k2-cell:nth-child(n + 4) {
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="4"], [data-i="5"], [data-i="6"]) {
     border-top: var(--k2-hairline);
   }
 }
@@ -1213,6 +1219,7 @@
   font-size: 14px;
 }
 /* the 20 px tile stands on the symbol axis; the title after it keeps the one text edge of 44 px */
+/* one primitive: the symbol and the title of a Section head */
 .k2-ui .k2-sh > .k2-stile + h3 {
   margin-left: -4px;
 }
@@ -1320,10 +1327,10 @@
 /* only borderless buttons pull out to the text edge; a framed button keeps its box on the edge (K5).
    "The last button" skips popups: a menu or popover renders right after its button while it is open (in the top
    layer), and the button must not jump when it opens. */
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -6px;
 }
 /* a ghost button with words first in a bar, or last at the end of a bar, a group head or a row, stands with its
@@ -1580,12 +1587,12 @@
   color: var(--k2-subtle);
 }
 /* a text button at the end of a row stands with its text, not its box, on the text edge (K5) */
-.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
@@ -1758,7 +1765,7 @@
   vertical-align: top;
   margin-block: -2px;
 }
-.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
 .k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
@@ -2087,7 +2094,7 @@
   align-items: center;
 }
 /* an icon button at the end stands with its icon on the text edge */
-.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 
@@ -2438,7 +2445,7 @@
   column-gap: 12px;
 }
 /* in a selection the box stands before the thing's mark: a file keeps its thumbnail beside its box */
-.k2-ui .k2-row-lead:has(> .k2-mark + .k2-mk) {
+.k2-ui .k2-row-lead[data-pair] {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2498,7 +2505,7 @@
    20 + (j - 1) × 18 + 30 px. A stack whose people all show
    (data-all) needs no count while its faces fit; narrower, a count takes the place of the faces that go. */
 @container k2-avs (max-width: 121.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-av:nth-of-type(n + 5) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-av:is([data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2509,7 +2516,7 @@
   }
 }
 @container k2-avs (max-width: 103.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2520,7 +2527,7 @@
   }
 }
 @container k2-avs (max-width: 91.98px) {
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 5) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="4"] {
@@ -2529,7 +2536,7 @@
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="4"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="3"] {
@@ -2540,7 +2547,7 @@
   }
 }
 @container k2-avs (max-width: 85.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2549,7 +2556,7 @@
   .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
     display: inline;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="2"] {
@@ -2560,7 +2567,7 @@
   }
 }
 @container k2-avs (max-width: 73.98px) {
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="3"] {
@@ -2569,7 +2576,7 @@
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="3"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="2"] {
@@ -2580,7 +2587,7 @@
   }
 }
 @container k2-avs (max-width: 67.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2589,7 +2596,7 @@
   .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
     display: inline;
   }
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="1"] {
@@ -2598,7 +2605,7 @@
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="1"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="1"] {
@@ -2609,7 +2616,7 @@
   }
 }
 @container k2-avs (max-width: 55.98px) {
-  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="2"] {
@@ -2618,7 +2625,7 @@
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest:not([data-visible="2"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="1"] {
@@ -2629,7 +2636,7 @@
   }
 }
 @container k2-avs (max-width: 37.98px) {
-  .k2-ui .k2-avs[data-all][data-k="2"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="2"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="2"] > .k2-avs-rest[data-visible="1"] {
@@ -2883,6 +2890,7 @@
   opacity: 0;
   cursor: default;
 }
+/* one primitive: the input and the mark of a Check, Choice or Switch */
 .k2-ui .k2-mark-input:focus-visible + .k2-check,
 .k2-ui .k2-mark-input:focus-visible + .k2-radio,
 .k2-ui .k2-mark-input:focus-visible + .k2-switch {
@@ -3648,6 +3656,7 @@
   color: var(--k2-text);
   font-weight: 600;
 }
+/* one primitive: the facts of a StatusRow */
 .k2-ui .k2-fact + .k2-fact {
   margin-left: 8px;
 }
@@ -4571,6 +4580,7 @@
     width: auto;
     height: 1px;
   }
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane,
   .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
     flex: none;
@@ -4581,6 +4591,7 @@
     overflow: visible;
   }
   /* the place of a detail that is not open: the list is the page (with no line after it) */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > [data-detail-empty],
   .k2-ui .k2-split > .k2-seam:has(+ [data-detail-empty]) {
     display: none;
@@ -4647,6 +4658,7 @@
     overflow-wrap: anywhere;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
@@ -4654,6 +4666,7 @@
   }
   /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells */
   /* (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
+  /* one primitive: Pane.Split puts a seam after every pane, a Table its phone form after the large one */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
     --k2-table-end: 0;
   }
@@ -4937,6 +4950,7 @@
     grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
   }
   /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
+  /* one primitive: the large and the phone form of a Table */
   .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
     display: none;
   }
@@ -4952,35 +4966,39 @@
   /* On the phone key numbers stand two to a row from three on (three need 150 px each to stand side by side with
      their values whole). An odd last one becomes one line across, its label on the left and its value at the end, so
      no tall cell stands alone in a row. Each layout draws its own lines. */
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) {
     grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="1"], [data-i="3"], [data-i="5"]) {
     border-left: 0;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(even) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="2"], [data-i="4"], [data-i="6"]) {
     border-left: var(--k2-hairline);
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(n + 3) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="3"], [data-i="4"], [data-i="5"], [data-i="6"]) {
     border-top: var(--k2-hairline);
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"],
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] {
     grid-column: 1 / -1;
     grid-template-columns: 16px minmax(0, 1fr) auto auto;
     padding-block: 10px;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child > .k2-cell-value {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > .k2-cell-value,
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > .k2-cell-value {
     grid-row: 1;
     grid-column: 3;
     margin-top: 0;
     text-align: right;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child > .k2-cell-go {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > .k2-cell-go,
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > .k2-cell-go {
     grid-row: 1;
     grid-column: 4;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child > :is(.k2-cell-meter, .k2-cell-meta) {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > :is(.k2-cell-meter, .k2-cell-meta),
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > :is(.k2-cell-meter, .k2-cell-meta) {
     grid-column: 2 / -1;
   }
   /* in a narrow column and on the phone key numbers keep their rows (see above): the value and its line take the
