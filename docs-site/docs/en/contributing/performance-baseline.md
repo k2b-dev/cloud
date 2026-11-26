@@ -485,7 +485,7 @@ Each navigation uses the public-API fixtures described above, in this order:
 | --- | --- | --- |
 | `spaces` | Spaces overview → seeded Space | For this view |
 | `mail` | Mail overview → seeded mailbox | For this view |
-| `notebooks` | Notebooks overview → seeded note, `?mode=write` | First start heading: What do you want to do? or the first group |
+| `notebooks` | Notebooks (opens the notebook used last) → seeded note, `?mode=write` | First start heading: What do you want to do? or the first group |
 | `spaces-to-mail` | Seeded Space → seeded mailbox | For this view |
 
 The last navigation crosses application boundaries. The Notebooks editor

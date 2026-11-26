@@ -8,16 +8,17 @@ order: 100
 
 Notebooks are Markdown workspaces for knowledge. Your text stays readable first. Add structure or automation only where it makes a note easier to use.
 
-**From the overview**
+**From any notebook**
 
 ## Find or create a notebook {icon="layout-grid"}
 
 :::reference
-- **All notebooks:** The overview lists every notebook that you can access. Open a notebook to continue. Create a new notebook when the knowledge needs its own access and settings.
-- **Favorites:** Make a notebook a favorite to keep it easy to reach from the overview and the sidebar.
-- **Search and recent notes:** Search for a name that you know. Under **Recently edited**, open one of your latest notes from any notebook to continue.
-- **Back where you left off:** When you open Notebooks from the navigation, you see the notebook that you viewed last in this browser. This also works if you viewed it in another tab. If that notebook was deleted or is no longer shared with you, the overview opens.
+- **Back where you left off:** When you open Notebooks from the navigation, you see the notebook that you viewed last in this browser. This also works if you viewed it in another tab. If that notebook was deleted or is no longer shared with you, your first notebook opens.
+- **Other notebooks:** Select the notebook name at the top of the sidebar. The list shows every notebook that you can access.
+- **New notebook:** In the same list, choose **New notebook** or **Notebook from a template**. Create a new notebook when the knowledge needs its own access and settings. A notebook from a template without a name gets the name of the template.
 - **Templates:** Choose a template only when its structure fits the work. For a new use case, a blank notebook is the safest start.
+- **Search and recent notes:** Search for a name that you know. The **Recent notes** widget on your start page shows your latest notes from all notebooks.
+- **No notebook yet:** Notebooks shows one sentence and **+**. Choose a blank notebook or a template.
 :::
 
 **Overview**

@@ -25,14 +25,14 @@ export function createNotebookSwitcher(
   const [creating, setCreating] = createSignal(false);
   const owner = getOwner();
   let creation: ReturnType<typeof import("../../../create-notebook-dialog").createNotebookCreation> | undefined;
-  const create = async () => {
+  const create = async (from: "blank" | "template") => {
     if (!canCreate || creating()) return;
     setCreating(true);
     try {
       const dialog = await importOnDemand(() => import("../../../create-notebook-dialog"));
       if (!dialog) return;
       creation ??= runWithOwner(owner, () => dialog.createNotebookCreation(() => notebooksPageMessages.resolve([locale()]).t));
-      await creation?.createBlank();
+      await (from === "blank" ? creation?.createBlank() : creation?.createFromTemplate());
     } finally {
       setCreating(false);
     }
@@ -60,9 +60,13 @@ export function createNotebookSwitcher(
     options: options(),
     error: failed() ? t().failedLoadNotebooks : undefined,
     onLoad: load,
-    actions: [
-      ...(canCreate ? [{ id: "new", label: t().newNotebook, icon: "ti ti-plus", action: () => void create(), disabled: creating() }] : []),
-      { id: "all", label: t().allNotebooks, icon: "ti ti-layout-grid", href: "/app/notebooks" },
-    ],
+    // No way to an overview: Notebooks has none, `/app/notebooks` opens the notebook used last. The list above is
+    // every notebook.
+    actions: canCreate
+      ? [
+          { id: "new", label: t().newNotebook, icon: "ti ti-plus", action: () => void create("blank"), disabled: creating() },
+          { id: "template", label: t().fromTemplate, icon: "ti ti-template", action: () => void create("template"), disabled: creating() },
+        ]
+      : [],
   });
 }

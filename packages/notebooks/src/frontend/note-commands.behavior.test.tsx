@@ -56,6 +56,38 @@ if (!isServer) {
     }
   });
 
+  test("a notebook's page makes a new note in another notebook it is asked for, and in its own without asking", async () => {
+    const dom = createDomTestHarness();
+    const { prompts } = await import("@k2b/ui");
+    const { openCommand } = await import("@k2b/cloud/browser/commands");
+    const { createNoteCommands } = await import("./note-commands");
+
+    created.length = 0;
+    navigated.length = 0;
+    const choose = spyOn(prompts, "search").mockResolvedValue(undefined);
+    // Notebooks opens the notebook used last, so a command link from another app for any notebook arrives here
+    const Owner = () => {
+      createNoteCommands(() => "Book01");
+      return null;
+    };
+    const dispose = render(() => createComponent(Owner, {}), dom.root);
+    const assign = spyOn(window.location, "assign").mockImplementation(() => {});
+    try {
+      await openCommand("notebooks.note.compose", { notebookId: "Book02" });
+      expect(created).toEqual(["Book02"]);
+      expect(navigated[0]).toContain("/Book02/notes/Note01");
+      await openCommand("notebooks.note.compose");
+      expect(created).toEqual(["Book02", "Book01"]);
+      expect(choose).not.toHaveBeenCalled();
+      expect(assign).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+      assign.mockRestore();
+      choose.mockRestore();
+      dom.cleanup();
+    }
+  });
+
   test("leaving the page while choosing a notebook prevents creation", async () => {
     const dom = createDomTestHarness();
     const { prompts } = await import("@k2b/ui");

@@ -23,7 +23,15 @@ describe("notebooks container switcher loader", () => {
   mock.module("@k2b/ssr/nav", () => ({ ...navigation, navigateTo }));
   const post = mock(async (_input: unknown) => ({ ok: true, json: async () => ({ id: "Created01" }) }));
   const get = mock((_input: { query: Record<string, string> }) => reply());
-  mock.module("@/api/client", () => ({ apiClient: { index: { $get: get, $post: post } } }));
+  const templates = [
+    { id: "meeting", name: "Meetings", description: "Minutes with tasks", icon: "ti ti-users" },
+    { id: "handbook", name: "Handbook", description: "Chapters and contacts", icon: "ti ti-book" },
+  ];
+  const listTemplates = mock(async () => ({ ok: true, json: async () => templates }));
+  const postTemplate = mock(async (_input: unknown) => ({ ok: true, json: async () => ({ id: "Created02" }) }));
+  mock.module("@/api/client", () => ({
+    apiClient: { index: { $get: get, $post: post }, templates: { $get: listTemplates, ":templateId": { $post: postTemplate } } },
+  }));
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   const mount = async (canCreate = false) => {
     const { createNotebookSwitcher } = await import("./notebook-switcher");
@@ -39,14 +47,16 @@ describe("notebooks container switcher loader", () => {
     dom = createDomTestHarness();
     get.mockClear();
     post.mockClear();
+    listTemplates.mockClear();
+    postTemplate.mockClear();
     navigateTo.mockClear();
     reply = async () => success();
   });
 
   test("switcher labels match the overview in English and German", async () => {
     for (const { locale, expected } of [
-      { locale: "en", expected: { switchLabel: "Switch notebook", actions: ["New notebook", "All notebooks"] } },
-      { locale: "de", expected: { switchLabel: "Notizbuch wechseln", actions: ["Neues Notizbuch", "Alle Notizbücher"] } },
+      { locale: "en", expected: { switchLabel: "Switch notebook", actions: ["New notebook", "Notebook from a template"] } },
+      { locale: "de", expected: { switchLabel: "Notizbuch wechseln", actions: ["Neues Notizbuch", "Notizbuch aus Vorlage"] } },
     ]) {
       dom.document.documentElement.lang = locale;
       const view = await mount(true);
@@ -124,13 +134,13 @@ describe("notebooks container switcher loader", () => {
     }
   });
 
-  test("offers creation only for a user-backed actor, before All", async () => {
+  test("offers creation, blank or from a template, only for a user-backed actor, and no overview", async () => {
     const allowed = await mount(true);
     const denied = await mount(false);
     try {
-      expect(allowed.switcher().actions?.map((action) => action.id)).toEqual(["new", "all"]);
+      expect(allowed.switcher().actions?.map((action) => action.id)).toEqual(["new", "template"]);
       expect(allowed.switcher().actions?.[0]?.label).toBe("New notebook");
-      expect(denied.switcher().actions?.map((action) => action.id)).toEqual(["all"]);
+      expect(denied.switcher().actions ?? []).toEqual([]);
     } finally {
       allowed.dispose();
       denied.dispose();
@@ -181,6 +191,28 @@ describe("notebooks container switcher loader", () => {
     } finally {
       disposeRender?.();
       open.mockRestore();
+      form.mockRestore();
+      view.dispose();
+    }
+  });
+
+  test("from a template: picks one of the listed templates, takes its name when none is given, and opens it", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form").mockResolvedValue({ template: "handbook", name: "  " });
+    const view = await mount(true);
+    try {
+      view.switcher().actions?.[1]?.action?.();
+      for (let attempt = 0; attempt < 30 && navigateTo.mock.calls.length === 0; attempt++) await settle();
+      expect(listTemplates).toHaveBeenCalledTimes(1);
+      const fields = form.mock.calls[0]?.[0]?.fields as Record<string, { options?: { id: string; label?: string }[] }>;
+      expect(fields.template?.options?.map((option) => [option.id, option.label])).toEqual([
+        ["meeting", "Meetings"],
+        ["handbook", "Handbook"],
+      ]);
+      expect(postTemplate.mock.calls[0]?.[0]).toEqual({ param: { templateId: "handbook" }, json: {} });
+      expect(post).not.toHaveBeenCalled();
+      expect(navigateTo).toHaveBeenCalledWith("/app/notebooks/Created02");
+    } finally {
       form.mockRestore();
       view.dispose();
     }

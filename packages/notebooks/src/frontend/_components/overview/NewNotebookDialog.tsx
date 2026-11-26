@@ -4,7 +4,7 @@ import { Button, Dialog, Field, Input, Notice } from "@k2b/ui/v2";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { notebooksPageMessages } from "../../messages";
-import type { TemplateSummary } from "./NotebooksHome";
+import type { TemplateSummary } from "./NotebooksStart";
 
 /** Where a new notebook starts: blank (with the welcome note), or from a template. */
 export type NewNotebookSource = { kind: "blank" } | { kind: "template"; template: TemplateSummary };

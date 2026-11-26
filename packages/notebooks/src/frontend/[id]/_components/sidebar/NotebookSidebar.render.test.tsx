@@ -110,11 +110,9 @@ describe("Notebook workspace container head", () => {
     expect((await selectHtml(html, ".k2b-sidebar-switcher .k2b-sr-only"))[0]?.text).toContain(purpose);
     const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]?.text;
     expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
+    // Notebooks has no overview: /app/notebooks opens the notebook used last, so nothing here leads there
     expect(snapshot).not.toContain('"id":"all"');
-    expect(await selectHtml(html, '.k2b-app-workspace__sidebar-item[href="/app/notebooks"]')).toHaveLength(0);
-    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/notebooks"]'))[0]?.text).toContain(
-      locale === "en" ? "All notebooks" : "Alle Notizbücher",
-    );
+    expect(await selectHtml(html, '[href="/app/notebooks"]')).toHaveLength(0);
   });
 
   test.each([

@@ -15,6 +15,7 @@ import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotePreview from "./_components/editor/NotePreview";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
+import NoteComposeCommand from "./_components/NoteComposeCommand.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
@@ -80,6 +81,7 @@ export default ssr<AuthContext>(async (c) => {
         title={data.notebook.name}
       >
         <RememberNotebook notebookId={data.notebook.id} />
+        <NoteComposeCommand notebookId={data.notebook.id} canWrite={data.canWrite} />
         <BookSurface
           userId={data.ctx.userId}
           notebookId={data.notebook.id}

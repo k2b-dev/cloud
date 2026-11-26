@@ -676,13 +676,14 @@ describe("One notebook sidebar with quick filters", () => {
       await page.getByRole("link", { name: "Recipes", exact: true }).waitFor();
       expect(await page.getByRole("link", { name: "Recipes", exact: true }).getAttribute("href")).toBe("/app/notebooks/Book02");
       expect(await page.locator('[data-switcher-option][aria-current="true"]').getAttribute("href")).toBe("/app/notebooks/Book01");
-      expect(await page.getByRole("link", { name: "All notebooks", exact: true }).getAttribute("href")).toBe("/app/notebooks");
+      // no way back to an overview: /app/notebooks opens the notebook used last
+      expect(await page.locator('[href="/app/notebooks"]').count()).toBe(0);
     } finally {
       await page.context().close();
     }
   }, 30_000);
 
-  test("the phone menu uses the same notebook head and overview action", async () => {
+  test("the phone menu uses the same notebook head and its actions", async () => {
     const page = await open(phone, filtered(), "de");
     try {
       await page.evaluate(() => window.mountPhoneMenu("de", true));
@@ -692,7 +693,8 @@ describe("One notebook sidebar with quick filters", () => {
       expect(await menu.locator('a.k2b-navigation__control[href="/app/notebooks"]').count()).toBe(0);
       await menu.getByRole("button", { name: "Social media", exact: true }).click();
       await menu.getByRole("link", { name: "Recipes", exact: true }).waitFor();
-      expect(await menu.getByRole("link", { name: "Alle Notizbücher", exact: true }).getAttribute("href")).toBe("/app/notebooks");
+      expect(await menu.locator('[href="/app/notebooks"]').count()).toBe(0);
+      expect(await menu.getByRole("button", { name: "Notizbuch aus Vorlage", exact: true }).count()).toBe(1);
     } finally {
       await page.context().close();
     }
