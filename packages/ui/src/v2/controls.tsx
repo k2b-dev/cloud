@@ -13,6 +13,7 @@ import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useCode } from "./behavior/code";
 import { useFilePick } from "./behavior/files";
+import { usePopover } from "./behavior/overlays";
 import { useColor, useRange } from "./behavior/pickers";
 import { type ChoiceItem, useCombobox, useSelect } from "./behavior/select";
 import { ActionButton, Button } from "./button";
@@ -801,6 +802,7 @@ export const ColorInput = (props: ColorInputProps) => {
   const field = useField();
   field?.group();
   const t = useControlMessages();
+  const picker = usePopover(() => ({}));
   const color = useColor(() => ({
     ...(props.onChange ? { value: props.value ?? "#000000" } : { defaultValue: props.value ?? "#000000" }),
     onValueChange: (next: string) => props.onChange?.(next),
@@ -816,17 +818,22 @@ export const ColorInput = (props: ColorInputProps) => {
       aria-label={field ? undefined : props.label}
     >
       <span class="k2-color-head">
-        <color.Swatch class="k2-color-swatch" aria-hidden="true" />
+        {/* the colour as a swatch that opens the picker (area and hue) on a panel: a settings row stays one line */}
+        <picker.Trigger class="k2-color-swatch" disabled={props.disabled} aria-label={t().pickColor}>
+          <color.Swatch class="k2-color-fill" aria-hidden="true" />
+        </picker.Trigger>
         <span class="k2-input" data-disabled={props.disabled ? "" : undefined}>
           <color.Input id={field?.control} aria-label={t().colorCode} aria-describedby={field?.described} />
         </span>
       </span>
-      <color.Area class="k2-color-area">
-        <color.AreaThumb class="k2-color-thumb" aria-label={t().colorArea} />
-      </color.Area>
-      <color.Slider class="k2-color-hue" channel="hue">
-        <color.SliderThumb class="k2-color-thumb" channel="hue" aria-label={t().hue} />
-      </color.Slider>
+      <picker.Popup class="k2-pop k2-color-pop" data-k2-part="Popover" side="bottom" align="start" sideOffset={4} collisionPadding={8}>
+        <color.Area class="k2-color-area">
+          <color.AreaThumb class="k2-color-thumb" aria-label={t().colorArea} />
+        </color.Area>
+        <color.Slider class="k2-color-hue" channel="hue">
+          <color.SliderThumb class="k2-color-thumb" channel="hue" aria-label={t().hue} />
+        </color.Slider>
+      </picker.Popup>
       <Show when={props.swatches?.length}>
         <color.Swatches class="k2-color-swatches" aria-label={props.label ?? t().colorCode}>
           <For each={props.swatches}>
