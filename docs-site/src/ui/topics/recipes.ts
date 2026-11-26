@@ -1,5 +1,6 @@
 import { createComponent, type JSX } from "solid-js";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
+import * as code from "../../../../packages/ui/skills/k2b-ui/recipes/code";
 import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
 import * as filteredTable from "../../../../packages/ui/skills/k2b-ui/recipes/filtered-table";
@@ -42,6 +43,7 @@ const RECIPE_LOCALE = "de";
 /** Every recipe by its file name without `.tsx`. A new recipe file is one line here; a test fails on a missing one. */
 export const recipes = {
   actions,
+  code,
   content,
   dialogs,
   "filtered-table": filteredTable,

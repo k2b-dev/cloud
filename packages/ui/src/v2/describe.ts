@@ -40,6 +40,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Facts",
     "Notice",
     "Prose",
+    "CodeBlock",
     "Canvas",
     "Field.Row",
     "Field",
@@ -349,6 +350,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const text = paragraphs.length ? paragraphs.map((paragraph) => paragraph.textContent ?? "").join(" ") : element.textContent;
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
+      case "CodeBlock": {
+        const title = element.querySelector(".k2-code-label")?.textContent;
+        const language = element.querySelector(".k2-code-language")?.textContent;
+        const shown = element.querySelectorAll(".k2-code-line").length;
+        const deeds = [...element.querySelectorAll(".k2-code-deeds > .k2-btn")].map(
+          (button) => button.getAttribute("aria-label")?.split(":")[0] ?? button.textContent ?? "",
+        );
+        const more = element.querySelector(".k2-code-more")?.textContent;
+        return `CodeBlock ${quote(title)}${language ? ` ${language}` : ""}: ${shown} lines${element.querySelector(".k2-code-number") ? " numbered" : ""}${element.hasAttribute("data-masked") ? ", hidden" : ""}${more ? ` (${more})` : ""} | ${deeds.join(" · ")}`;
+      }
       case "Canvas": {
         const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
@@ -453,6 +464,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         name === "Canvas" ||
         name === "Table" ||
         name === "Prose" ||
+        name === "CodeBlock" ||
         name === "Nav" ||
         name === "Facts" ||
         name === "Tiles" ||

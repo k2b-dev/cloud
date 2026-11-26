@@ -11,6 +11,8 @@
  */
 
 export { Button, type ButtonProps } from "./button";
+// Code to read and copy: a config, a key, a command.
+export { CodeBlock, type CodeBlockProps, type CodeLanguage, codeLinesShown } from "./code";
 // Layer 2: components made of the primitives.
 export {
   Digest,
