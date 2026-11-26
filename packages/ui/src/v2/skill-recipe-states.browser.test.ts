@@ -163,4 +163,33 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
         }
     }, 300_000);
   }
+
+  // A job name of 120 signs made a phone row of seven lines (gateway-ops runs, lane C, 26.11.): on the phone a row of a
+  // table keeps its title to two lines and the line under it to one, each cut with "…" and whole on hover.
+  for (const view of views.filter((each) => each.width < 768 && each.zoom === 1))
+    test(`table.tsx worst at ${view.name}: a phone row keeps two lines of title and one under it`, async () => {
+      const { page } = await open(view, { name: "table.tsx", state: "worst" });
+      try {
+        const rows = await page.$$eval(".k2-table-phone .k2-row", (elements) =>
+          elements.map((row) => {
+            const lines = (selector: string) => {
+              const element = row.querySelector<HTMLElement>(selector)!;
+              return Math.round(element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight));
+            };
+            return {
+              title: lines(".k2-row-title"),
+              second: lines(".k2-row-l2"),
+              tips: [...row.querySelectorAll(".k2-row-title [title], .k2-row-l2 [title]")].length,
+            };
+          }),
+        );
+        expect(rows.length).toBeGreaterThan(4);
+        // the long name and its number are cut, not wrapped: two lines and one
+        expect(Math.max(...rows.map((row) => row.title))).toBe(2);
+        expect(Math.max(...rows.map((row) => row.second))).toBe(1);
+        expect(rows.every((row) => row.tips === 2)).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
 });

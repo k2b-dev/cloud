@@ -1558,6 +1558,20 @@
   height: var(--k2-h-columns);
 }
 /* a person leads a row of the phone form as a small mark, like in the cell */
+/* A row of a table on the phone keeps its shape whatever the data: the title takes at most two lines, the line under
+   it one, each ending with "…" (their words in the tip); a name of 120 signs never makes a row of seven lines. */
+.k2-ui .k2-table-phone .k2-row-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.k2-ui .k2-table-phone .k2-row > .k2-row-l2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .k2-ui .k2-table-phone .k2-row[data-avatar] {
   column-gap: 8px;
 }

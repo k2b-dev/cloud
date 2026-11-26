@@ -961,9 +961,12 @@ export const Table = <T,>(props: TableProps<T>) => {
                       (() => {
                         const form = phone()(item.row);
                         const target = props.open?.(item.row);
+                        // the lines are clamped (the title to two lines, the line under it to one): words cut so say
+                        // all of them on hover
+                        const tip = (line: JSX.Element) => (typeof line === "string" ? <span title={line}>{line}</span> : line);
                         return (
                           <Row
-                            lines={form.lines}
+                            lines={[tip(form.lines[0]), tip(form.lines[1])]}
                             avatar={form.avatar}
                             time={form.time}
                             marks={form.marks}

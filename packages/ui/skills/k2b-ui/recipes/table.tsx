@@ -100,6 +100,14 @@ const worstInvoices: Invoice[] = [
     overdue: true,
     amount: "12.345.678,90 €",
   },
+  {
+    number: "RE-2611-0043-ERBENGEMEINSCHAFT-OBERHAUSER-WETTSTEIN-NACHLASS",
+    customer:
+      "Erbengemeinschaft Oberhauser-Wettstein, vertreten durch Rechtsanwältin Dr. Aleksandra Wiśniewska-Kowalczyk, Kanzlei am Markt",
+    due: "31. Dez. 2026",
+    overdue: false,
+    amount: "4.611.686,00 €",
+  },
   { number: "RE-1", customer: "J", due: "1. Jan.", overdue: false, amount: "0,30 €" },
   {
     number: "RE-2611-0051",
