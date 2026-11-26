@@ -25,7 +25,7 @@ import {
 import { For, type JSX } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "users" };
+export const app = { name: "Kunden", color: "#2563eb", icon: "users" };
 
 const area = { money: "#8e1b6f", deliveries: "#c2410c", todo: "#2563eb" };
 // One mark per category of article, the same in every list of the app.

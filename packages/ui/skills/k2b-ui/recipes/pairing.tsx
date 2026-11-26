@@ -22,7 +22,7 @@ import {
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "adjustments-horizontal" };
+export const app = { name: "Verwaltung", color: "#2563eb", icon: "adjustments-horizontal" };
 
 // An invented stand-in for a QR code, so the recipe draws without a library; an app passes `qr.toSvg(link)` from
 // `@k2b/stdlib/qr`.

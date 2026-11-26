@@ -2,6 +2,8 @@ import { For, type JSX } from "solid-js";
 
 /** The app a pictured screen belongs to: its one colour and its symbol, as an app declares them in its host. */
 export type ScreenApp = {
+  /** The app's name, in the host's bar on a phone. */
+  name?: string;
   /** The app colour (`--k2-app`), such as `#047857`. */
   color: string;
   /** The app's Tabler icon without `ti-`; it stands marked in the rail. */
@@ -31,12 +33,20 @@ background:linear-gradient(135deg,color-mix(in srgb,var(--k2-app,var(--k2-blue))
 .k2-sf-app[data-current]{background:var(--k2-surface);color:var(--k2-app,var(--k2-blue));outline:1px solid var(--k2-card-edge)}
 .k2-sf-fill{flex:1}
 .k2-sf-me{width:28px;height:28px;margin-top:4px;display:grid;place-items:center;border-radius:50%;background:#0f766e;color:#fff;font:600 10px/1 var(--k2-font)}
-@media not all and (min-width:768px){.k2-sf{padding:0;background:var(--k2-surface)}.k2-sf-rail{display:none}}
+.k2-sf-bar{display:none}
+@media not all and (min-width:768px){.k2-sf{flex-direction:column;padding:0;background:var(--k2-surface)}.k2-sf-rail{display:none}
+.k2-sf-bar{display:flex;align-items:center;gap:8px;height:52px;flex:none;box-sizing:border-box;padding:0 16px;border-bottom:1px solid var(--k2-card-edge);background:color-mix(in srgb,var(--k2-app,var(--k2-blue)) 6%,var(--k2-surface))}
+.k2-sf-bar-app{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:var(--k2-app,var(--k2-blue));color:#fff;font-size:16px}
+.k2-sf-bar-name{font:600 14px/20px var(--k2-font);color:var(--k2-text)}
+.k2-sf-bar-fill{flex:1}
+.k2-sf-bar .k2-sf-app{width:32px;height:32px}
+.k2-sf-card{min-height:0}}
 `;
 
 /**
  * A v2 screen as it stands in a host such as Cloud: a tinted page, a rail of app symbols at the start with the screen's
- * app marked, and the screen beside it as the card; on a phone (below 768 px) the screen alone, as the host shows it.
+ * app marked, and the screen beside it as the card; on a phone (below 768 px) the host's bar (the app, search, the
+ * person) above the screen, as the host shows it.
  *
  * Only for pictures of screens: the recipes of the k2b-ui skill, `v2-preview`, the recipe tests and Fibel draw every
  * screen in it, so no picture is a bare white page. An app never draws it; its host gives it the real shell. The rail
@@ -59,6 +69,23 @@ export const ScreenFrame = (props: ScreenFrameProps) => (
       <span class="k2-sf-fill" />
       <span class="k2-sf-app">
         <i class="ti ti-help" />
+      </span>
+      <span class="k2-sf-me" data-k2-glyph="">
+        MS
+      </span>
+    </div>
+    {/* the host's bar on a phone: the app with its switcher, search and the person; a picture of the host too */}
+    <div class="k2-sf-bar" aria-hidden="true">
+      <span class="k2-sf-bar-app">
+        <i class={`ti ti-${props.app?.icon ?? "apps"}`} />
+      </span>
+      <span class="k2-sf-bar-name" data-k2-glyph="">
+        {props.app?.name ?? "Cloud"}
+      </span>
+      <i class="ti ti-chevron-down" />
+      <span class="k2-sf-bar-fill" />
+      <span class="k2-sf-app">
+        <i class="ti ti-search" />
       </span>
       <span class="k2-sf-me" data-k2-glyph="">
         MS

@@ -958,15 +958,10 @@ export const Table = <T,>(props: TableProps<T>) => {
               <Show when={props.select}>
                 <col style={{ width: "44px" }} />
               </Show>
-              {/* every column is its default wide; in a small table the last one takes the rest of the row */}
+              {/* every column is its default wide; in a table wider than all of them together the columns share the rest
+                  in proportion (fixed layout), so a row stays one connected line and no text is cut while room is free */}
               <For each={props.columns}>
-                {(column, index) => (
-                  <col
-                    style={
-                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
-                    }
-                  />
-                )}
+                {(column) => <col style={column.width ? { width: `${column.width.default}px` } : undefined} />}
               </For>
             </colgroup>
           </Show>

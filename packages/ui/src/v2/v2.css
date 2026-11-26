@@ -1144,7 +1144,6 @@
   align-items: center;
   min-height: var(--k2-h-row);
   padding: 8px var(--k2-edge);
-  background: var(--k2-n50);
 }
 .k2-ui .k2-gh[data-meta] {
   min-height: var(--k2-h-head);
@@ -4420,6 +4419,12 @@
     overflow-y: auto;
   }
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
+    display: none;
+  }
+  /* the filters and counts of the list above the split belong to the list: they leave with it while a detail is the
+     page, and so does the floating main action of the list (the detail has its own deeds) */
+  .k2-ui .k2-pane:has(> .k2-scroll > .k2-split > .k2-pane[data-detail]) > [data-slot="status"],
+  .k2-ui .k2-ws:has(.k2-split > .k2-pane[data-detail] > [data-k2-part="Back"]) .k2-fab {
     display: none;
   }
   .k2-ui .k2-pane-back {

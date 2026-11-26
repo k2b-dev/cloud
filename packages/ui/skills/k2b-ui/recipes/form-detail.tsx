@@ -22,7 +22,7 @@ import {
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#c2410c", icon: "tool" };
+export const app = { name: "Werkstatt", color: "#c2410c", icon: "tool" };
 
 // One mark per kind of appointment, the same in the calendar, the list and every sentence.
 const kind = {

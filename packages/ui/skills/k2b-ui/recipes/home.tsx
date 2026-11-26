@@ -3,7 +3,7 @@
 import { Bar, Button, Cells, Chip, Digest, Input, Mark, Nav, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#047857", icon: "table" };
+export const app = { name: "Grids", color: "#047857", icon: "table" };
 
 // Each kind of thing has one colour, so a table looks like a table in the sidebar, in a row and in a sentence.
 const kind = {

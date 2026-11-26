@@ -23,7 +23,7 @@ import {
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#7c3aed", icon: "notebook" };
+export const app = { name: "Handbuch", color: "#7c3aed", icon: "notebook" };
 
 const page = { icon: "file-text", color: "#7c3aed" };
 const people = [{ name: "Ada Renz" }, { name: "Lena Hartwig" }, { name: "Felix Thal" }];

@@ -28,7 +28,7 @@ import {
 import { Show } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#0e7490", icon: "activity" };
+export const app = { name: "Pulse", color: "#0e7490", icon: "activity" };
 
 // One mark per kind of source, the same in the sidebar, the list and every sentence.
 const kind = {

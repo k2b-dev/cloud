@@ -5,7 +5,7 @@
 import { Bar, Button, Chip, Empty, Failed, List, Loading, Nav, Notice, Pane, Row, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#0e7490", icon: "building-warehouse" };
+export const app = { name: "Lager", color: "#0e7490", icon: "building-warehouse" };
 
 // One mark per kind of goods, the same in every list of the app.
 const goods = {

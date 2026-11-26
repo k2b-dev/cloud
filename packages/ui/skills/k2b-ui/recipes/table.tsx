@@ -5,7 +5,7 @@
 import { Avatar, Bar, Button, Chip, Failed, Input, Nav, Pane, StatusRow, Table, Tabs, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#15803d", icon: "coin-euro" };
+export const app = { name: "Finanzen", color: "#15803d", icon: "coin-euro" };
 
 // One colour per kind of document, the same in every list, card and sentence of the app.
 const kind = {
@@ -159,10 +159,11 @@ export default function OpenInvoices(props: Props) {
               },
               { title: "Fällig", width: { min: 70, default: 80 }, cell: (row) => row.due, drop: true },
               // the person in charge as a face; the avatar carries the name
-              { title: "Person", width: { min: 64, default: 64 }, drop: true, cell: (row) => <Avatar {...row.owner} /> },
+              { title: "Person", width: { min: 64, default: 64 }, drop: true, avatar: (row) => row.owner, cell: (row) => row.owner.name.split(" ")[0] },
               { title: "Betrag", width: { min: 90, default: 100 }, align: "end", cell: (row) => row.amount },
               {
                 title: "Aktion",
+                width: { min: 56, default: 56 },
                 cell: (row) =>
                   row.state === "overdue" ? (
                     // the one deed of a row as a quiet icon button; its name says what it does

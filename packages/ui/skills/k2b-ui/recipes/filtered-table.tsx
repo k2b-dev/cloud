@@ -45,7 +45,7 @@ export const orderQuery = defineListQuery({
 });
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#c2410c", icon: "tool" };
+export const app = { name: "Werkstatt", color: "#c2410c", icon: "tool" };
 
 // One mark per kind of order, the same in every list, card and sentence of the app.
 const kind = {
@@ -274,12 +274,12 @@ export default function FilteredOrders(props: Props) {
           columns={[
             {
               title: "Auftrag",
-              width: { min: 170, default: 190 },
+              width: { min: 160, default: 170 },
               // the order's mark leads its name
               mark: (row) => kind[row.kind],
               cell: (row) => row.title,
             },
-            { title: "Kunde", width: { min: 140, default: 160 }, cell: (row) => row.customer, drop: true },
+            { title: "Kunde", width: { min: 130, default: 145 }, cell: (row) => row.customer, drop: true },
             {
               title: "Status",
               width: { min: 100, default: 110 },

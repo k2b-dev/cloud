@@ -26,7 +26,7 @@ import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-q
 import { createSignal } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "files" };
+export const app = { name: "Dateien", color: "#2563eb", icon: "files" };
 
 // Small drawings stand in for the thumbnails the server would send.
 const picture = (body: string) =>

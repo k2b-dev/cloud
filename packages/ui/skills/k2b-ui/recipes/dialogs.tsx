@@ -29,7 +29,7 @@ type Member = { id: string; name: string; initials: string; color: string; role:
 type Invitation = { email: string; sent: string; reachable: boolean };
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#4f46e5", icon: "layout-kanban" };
+export const app = { name: "Spaces", color: "#4f46e5", icon: "layout-kanban" };
 
 // Each space has its colour and symbol, the same in the sidebar, the head and every sentence.
 const space = {

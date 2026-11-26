@@ -59,7 +59,7 @@ const kinds = [
 ];
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "adjustments-horizontal" };
+export const app = { name: "Verwaltung", color: "#2563eb", icon: "adjustments-horizontal" };
 
 // `saved`: nothing changed yet, so there is nothing to save.
 type Props = { saved?: boolean };

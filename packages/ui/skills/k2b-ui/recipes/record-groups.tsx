@@ -27,7 +27,7 @@ import {
 import { For } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "users" };
+export const app = { name: "Kunden", color: "#2563eb", icon: "users" };
 
 const delivery = { icon: "package", color: "#c2410c" };
 const settlement = { icon: "calendar-dollar", color: "#8e1b6f" };
