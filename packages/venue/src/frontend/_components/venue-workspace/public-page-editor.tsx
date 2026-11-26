@@ -1,22 +1,23 @@
 import { clipboard } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
+import { dialogCore, Paper, panelDialogOptions, useLocale } from "@k2b/ui";
 import {
   Button,
-  ButtonLink,
-  Dropdown,
-  dialogCore,
-  IconButton,
-  InlineGuidance,
-  NoticeCard,
-  Paper,
-  panelDialogOptions,
-  prompts,
-  SettingsCollection,
-  Switch,
-  Tooltip,
-  toast,
-  useLocale,
-} from "@k2b/ui";
+  Canvas,
+  Check,
+  Dialog,
+  Empty,
+  Failed,
+  List,
+  Menu,
+  type MenuEntry,
+  Pane,
+  Row,
+  Section,
+  StatusRow,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import {
@@ -30,6 +31,8 @@ import {
 } from "../../../contracts";
 import { venueMessages } from "../../../messages";
 import { buildPublicVenueUrl } from "../../public-runtime";
+import { screenMessages } from "../../screens/messages";
+import { iconName } from "../../screens/VenueOverviewScreen";
 import { PublicPageBody } from "../public-page-view";
 import { PublicSectionDialog, sectionKindIcon, sectionKindLabel } from "./public-sections";
 import { createActionKeys } from "./shift-actions";
@@ -78,10 +81,11 @@ export function PublicPageEditor(props: {
 }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
+  const words = () => screenMessages.resolve([locale()]).t;
+  const toast = useToast();
   const venue = () => props.dashboard.venue;
-  const actions = createActionKeys((message) => void prompts.error(message));
+  const actions = createActionKeys((message) => toast(message, { status: "bad" }));
   let disposed = false;
-  let list: HTMLDivElement | undefined;
 
   const previewQuery = query.create({
     source: () => venue().id,
@@ -104,10 +108,6 @@ export function PublicPageEditor(props: {
   const previewFailed = () => Boolean(previewQuery.error()) || previewQuery.data() === null;
 
   const [selectedSectionId] = createSignal(props.initialSectionId);
-  onMount(() => {
-    const id = selectedSectionId();
-    if (id) list?.querySelector(`[data-section-row="${id}"]`)?.scrollIntoView({ block: "nearest" });
-  });
 
   /** One dialog at a time; a second click while a dialog is on its way does nothing. */
   const [prompting, setPrompting] = createSignal(false);
@@ -150,9 +150,9 @@ export function PublicPageEditor(props: {
     try {
       const options = kind === "monitor" ? ({ height: "full", refresh: true } as const) : {};
       await clipboard.copy(buildPublicVenueUrl(window.location.origin, venue().id, options));
-      toast.success(kind === "monitor" ? t().monitorLinkCopied : t().publicPageLinkCopied);
+      toast(kind === "monitor" ? t().monitorLinkCopied : t().publicPageLinkCopied, { status: "ok" });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().copyPublicPageFailed);
+      toast(error instanceof Error ? error.message : t().copyPublicPageFailed, { status: "bad" });
     } finally {
       setCopying(null);
     }
@@ -176,18 +176,22 @@ export function PublicPageEditor(props: {
   /** The row and control that had focus when a move started; the list renders its rows anew after a move. */
   let focusAfterMove: { id: string; direction: -1 | 1 } | null = null;
 
+  const moveLabel = (direction: -1 | 1, title: string) => `${direction === -1 ? words().moveUp : words().moveDown}: ${title}`;
   const restoreFocus = () => {
     const target = focusAfterMove;
-    if (!target || !list) return;
+    if (!target) return;
     // Focus stays where it is unless the move took it away: the row rendered anew, or its control got disabled.
     const active = document.activeElement as HTMLButtonElement | null;
     if (active && active !== document.body && active.isConnected && !active.disabled) return;
-    const row = list.querySelector(`[data-section-row="${target.id}"]`)?.closest("li");
-    const [up, down] = Array.from(row?.querySelectorAll<HTMLButtonElement>(".k2b-settings-collection__item-actions button") ?? []);
-    const preferred = target.direction === -1 ? up : down;
-    const fallback = target.direction === -1 ? down : up;
+    const section = sections().find((entry) => entry.id === target.id);
+    if (!section) return;
+    const button = (direction: -1 | 1) =>
+      document.querySelector<HTMLButtonElement>(`button[aria-label="${CSS.escape(moveLabel(direction, section.title))}"]`);
+    const preferred = button(target.direction);
+    const fallback = button(target.direction === -1 ? 1 : -1);
     (preferred && !preferred.disabled ? preferred : fallback)?.focus();
   };
+
   createEffect(on(sections, () => queueMicrotask(restoreFocus), { defer: true }));
   // Fresh workspace data carries the confirmed order; a local one only bridges a running save.
   createEffect(
@@ -358,10 +362,11 @@ export function PublicPageEditor(props: {
     const intent = { venueId: venue().id, id: section.id, title: section.title };
     return runPromptedAction(
       () =>
-        prompts.confirm(t().deletePublicSectionQuestion({ title: intent.title }), {
+        Dialog.confirm({
           title: t().deletePublicSection,
-          variant: "danger",
-          confirmText: t().delete,
+          description: t().deletePublicSectionQuestion({ title: intent.title }),
+          confirm: t().delete,
+          cancel: t().cancel,
         }),
       async (confirmed) => {
         if (!confirmed) return;
@@ -382,155 +387,127 @@ export function PublicPageEditor(props: {
     actions.abortAll();
   });
 
-  const SectionRow = (row: { section: PublicSection; index: number }): JSX.Element => (
-    <SettingsCollection.Item
-      title={
-        <span
-          data-section-row={row.section.id}
-          data-selected={selectedSectionId() === row.section.id ? "" : undefined}
-          title={row.section.title}
+  const sectionMenu = (section: PublicSection): MenuEntry[] => [
+    {
+      label: t().showOnPublicPage,
+      icon: "world",
+      checked: visible(section),
+      disabled: actions.pending(sectionKey(section.id)),
+      onClick: () => setVisible(section, !visible(section)),
+    },
+    "separator",
+    { label: t().editPublicSection, icon: "pencil", disabled: prompting(), onClick: () => void openEdit(section) },
+    { label: t().duplicateSection, icon: "copy", disabled: actions.pending(SET_KEY), onClick: () => duplicate(section) },
+    {
+      label: t().deleteSection,
+      icon: "trash",
+      danger: true,
+      disabled: actions.pending(SET_KEY),
+      onClick: () => void confirmDelete(section),
+    },
+  ];
+  return (
+    <Pane.Split>
+      <Pane
+        label={t().sections}
+        width={{ min: 360, default: 520 }}
+        scrollKey={`venue-public-${venue().id}`}
+        status={<StatusRow lead={words().sectionsCount({ count: sections().length })} loading={orderSaving()} />}
+      >
+        <Section
+          icon="world"
+          title={t().publicPage}
+          summary={publicEnabled() ? t().previewLiveDescription : t().publicPageOffNotice}
+          actions={[{ label: t().copyPageLink, icon: "copy", disabled: copying() !== null, onClick: () => void copyLink("page") }]}
         >
-          {row.section.title}
-        </span>
-      }
-      // The draft state reads below the title, so the title keeps the width the row's five controls leave.
-      description={
-        row.section.enabled ? sectionKindLabel(row.section.kind, t()) : `${sectionKindLabel(row.section.kind, t())} · ${t().sectionDraft}`
-      }
-      icon={<i class={sectionKindIcon(row.section.kind)} aria-hidden="true" />}
-    >
-      <SettingsCollection.Item.Actions>
-        <SettingsCollection.Item.Reorder
-          label={row.section.title}
-          index={row.index}
-          count={sections().length}
-          disabled={reorderBlocked()}
-          onMove={(direction) => move(row.section, direction)}
-        />
-        <Tooltip.Anchor content={t().showOnPublicPage}>
-          {/* A 44 px target, so the switch works with a finger. */}
-          <Switch
-            aria-label={t().sectionVisibleLabel({ title: row.section.title })}
-            value={visible(row.section)}
-            disabled={actions.pending(sectionKey(row.section.id))}
-            onValueChange={(enabled) => setVisible(row.section, enabled)}
-            class="[&_.k2b-switch]:min-h-11 [&_.k2b-switch]:min-w-11 [&_.k2b-switch]:justify-center"
+          <Check
+            switch
+            label={t().publicPageOn}
+            checked={publicEnabled()}
+            disabled={actions.pending("public-page")}
+            onChange={setPublicPage}
           />
-        </Tooltip.Anchor>
-        <IconButton
-          label={t().editSectionNamed({ title: row.section.title })}
-          size="sm"
-          disabled={actions.pending(sectionKey(row.section.id)) || prompting()}
-          onClick={() => void openEdit(row.section)}
-        >
-          <i class="ti ti-pencil" aria-hidden="true" />
-        </IconButton>
-        <Dropdown.Root
-          align="end"
-          disabled={actions.pending(sectionKey(row.section.id))}
-          items={[
-            {
-              label: t().duplicateSection,
-              icon: "ti ti-copy",
-              disabled: actions.pending(SET_KEY),
-              action: () => duplicate(row.section),
-            },
-            {
-              label: t().deleteSection,
-              icon: "ti ti-trash",
-              variant: "danger",
-              disabled: actions.pending(SET_KEY),
-              action: () => void confirmDelete(row.section),
-            },
+          <Row icon="external-link" lines={[t().openPublicPage, t().openPublicPageLabel]} href={`/app/venue/public/${venue().id}`} />
+          <Row
+            icon="device-tv"
+            lines={[t().copyMonitorLink, t().fullDisplayDescription]}
+            action={{ label: t().copyLink, icon: "copy", disabled: copying() !== null, onClick: () => void copyLink("monitor") }}
+          />
+        </Section>
+        <Section
+          icon="layout-list"
+          title={t().sections}
+          count={sections().length}
+          summary={t().sectionsDescription}
+          actions={[
+            { label: t().addSection, icon: "plus", disabled: actions.pending(SET_KEY) || prompting(), onClick: () => void openAdd() },
           ]}
         >
-          <Dropdown.Trigger iconOnly size="sm" label={t().sectionActions({ title: row.section.title })}>
-            <i class="ti ti-dots" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
-      </SettingsCollection.Item.Actions>
-    </SettingsCollection.Item>
-  );
-
-  return (
-    <div class="flex flex-col gap-3" data-public-page-editor="">
-      <div class="paper flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between" data-public-page-bar="">
-        <Switch
-          label={t().publicPageOn}
-          value={publicEnabled()}
-          disabled={actions.pending("public-page")}
-          onValueChange={setPublicPage}
-          class="[&_.k2b-switch]:min-h-11"
-        />
-        <div class="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" size="sm" loading={copying() === "page"} onClick={() => void copyLink("page")}>
-            <i class="ti ti-copy" aria-hidden="true" /> {t().copyPageLink}
-          </Button>
-          <Button type="button" variant="secondary" size="sm" loading={copying() === "monitor"} onClick={() => void copyLink("monitor")}>
-            <i class="ti ti-device-tv" aria-hidden="true" /> {t().copyMonitorLink}
-          </Button>
-          <ButtonLink
-            href={`/app/venue/public/${venue().id}`}
-            target="_blank"
-            rel="noreferrer"
-            variant="secondary"
-            size="sm"
-            title={t().openPublicPageLabel}
-          >
-            <i class="ti ti-external-link" aria-hidden="true" /> {t().openPublicPage}
-          </ButtonLink>
-        </div>
-      </div>
-      <Show when={!publicEnabled()}>
-        <InlineGuidance tone="info" icon="ti ti-world-off">
-          {t().publicPageOffNotice}
-        </InlineGuidance>
-      </Show>
-
-      {/* Below 1024 px the list stacks above the preview; from 1280 px its rows give titles more room. */}
-      <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]">
-        <div class="paper p-3" ref={list} data-public-sections="">
-          <SettingsCollection
-            title={t().sections}
-            description={t().sectionsDescription}
-            empty={t().noSections}
-            class="[&_li:has([data-selected])]:bg-[var(--k2b-hover)]"
-          >
-            <SettingsCollection.Action>
-              <Button type="button" size="sm" disabled={actions.pending(SET_KEY) || prompting()} onClick={() => void openAdd()}>
-                <i class="ti ti-plus" aria-hidden="true" /> {t().addSection}
-              </Button>
-            </SettingsCollection.Action>
-            <For each={sections()}>{(section, index) => <SectionRow section={section} index={index()} />}</For>
-          </SettingsCollection>
-          <p class="sr-only" aria-live="polite">
-            {announcement()}
-          </p>
-        </div>
-
-        <section class="flex min-w-0 flex-col gap-2" aria-labelledby="venue-public-preview-heading" data-public-preview="">
-          <div class="px-1">
-            <h2 id="venue-public-preview-heading" class="text-sm font-semibold text-primary">
-              {t().preview}
-            </h2>
-            <p class="text-xs text-dimmed">{venue().publicEnabled ? t().previewLiveDescription : t().previewOffDescription}</p>
-          </div>
-          <Show when={previewFailed()}>
-            <NoticeCard tone="danger" title={t().previewFailed} data-preview-error="">
-              <Button type="button" variant="secondary" size="sm" loading={previewQuery.refreshing()} onClick={() => void refreshPreview()}>
-                {t().retry}
-              </Button>
-            </NoticeCard>
+          <Show when={sections().length > 0} fallback={<Empty icon="layout-list" text={t().noSections} />}>
+            <List label={t().sections}>
+              <For each={sections()}>
+                {(section, index) => (
+                  <Row
+                    icon={iconName(sectionKindIcon(section.kind))}
+                    current={selectedSectionId() === section.id}
+                    lines={[
+                      section.title,
+                      section.enabled
+                        ? sectionKindLabel(section.kind, t())
+                        : `${sectionKindLabel(section.kind, t())} · ${t().sectionDraft}`,
+                    ]}
+                    end={
+                      <>
+                        <Button
+                          variant="ghost"
+                          icon="arrow-up"
+                          label={moveLabel(-1, section.title)}
+                          disabled={reorderBlocked() || index() === 0}
+                          onClick={() => move(section, -1)}
+                        />
+                        <Button
+                          variant="ghost"
+                          icon="arrow-down"
+                          label={moveLabel(1, section.title)}
+                          disabled={reorderBlocked() || index() === sections().length - 1}
+                          onClick={() => move(section, 1)}
+                        />
+                        <Menu
+                          label={t().sectionActions({ title: section.title })}
+                          disabled={actions.pending(sectionKey(section.id))}
+                          items={sectionMenu(section)}
+                        />
+                      </>
+                    }
+                  />
+                )}
+              </For>
+            </List>
           </Show>
+          {/* k2b-ui gap: no live region in v2; the move is announced to assistive technology here. */}
+          <Text type="meta" muted>
+            <span role="status" aria-live="polite">
+              {announcement()}
+            </span>
+          </Text>
+        </Section>
+      </Pane>
+      <Pane
+        label={t().preview}
+        scrollKey={`venue-preview-${venue().id}`}
+        status={<StatusRow lead={t().preview} loading={previewQuery.refreshing()} />}
+      >
+        <Show when={!previewFailed()} fallback={<Failed text={t().previewFailed} onRetry={() => void refreshPreview()} />}>
           <Show when={previewQuery.data()}>
             {(status) => (
-              <div class="flex min-w-0 flex-col gap-4 rounded-xl border border-zinc-200 p-3 sm:p-4 dark:border-zinc-800">
+              // k2b-ui gap: the public page is not on v2 yet; its own components draw the preview in a canvas.
+              <Canvas label={t().preview}>
                 <PublicPageBody status={status()} layout="preview" selectedSectionId={selectedSectionId()} feedback={<FeedbackPreview />} />
-              </div>
+              </Canvas>
             )}
           </Show>
-        </section>
-      </div>
-    </div>
+        </Show>
+      </Pane>
+    </Pane.Split>
   );
 }

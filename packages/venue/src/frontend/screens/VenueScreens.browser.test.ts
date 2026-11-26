@@ -119,6 +119,8 @@ const answer = async (route: Route, calls: Call[]) => {
   if (call.path.endsWith("/settings-context")) return route.fulfill({ json: fixtureSettings() });
   if (call.method === "PATCH" && call.path === "/api/venue/venues/Cafe01") return route.fulfill({ json: {} });
   if (call.method === "PATCH" && call.path.includes("/templates/")) return route.fulfill({ json: {} });
+  if (call.method === "PUT" && call.path.endsWith("/sections/order")) return route.fulfill({ json: {} });
+  if (call.method === "PATCH" && call.path.includes("/sections/")) return route.fulfill({ json: {} });
   if (call.path.endsWith("/calendar/my/renew"))
     return route.fulfill({ json: { href: "https://cloud.example.test/api/venue/calendar/new-token.ics" } });
   return route.fulfill({ status: 404, json: { message: "Not found" } });
@@ -349,6 +351,53 @@ describe("Venue on v2", () => {
     }
   }, 90_000);
 
+  test("public page: a section moves with its button and keeps focus, its switch saves only the visibility", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/app/venue/Cafe01/public");
+    try {
+      await shoot(tab, "public-editor-1440");
+      const down = tab.getByRole("button", { name: "Nach unten: Kuchen und Getränke" });
+      await down.focus();
+      await tab.keyboard.press("Enter");
+      await tab.waitForFunction(() =>
+        document.querySelector('[role="status"][aria-live="polite"]')?.textContent?.includes("Kuchen und Getränke"),
+      );
+      await settled(tab);
+      expect(writes(calls)[0]).toEqual({
+        method: "PUT",
+        path: "/api/venue/venues/Cafe01/sections/order",
+        body: { sectionIds: ["Sec002", "Sec001"] },
+      });
+      expect(await tab.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toContain("Kuchen und Getränke");
+      await tab
+        .getByRole("button", { name: /Heute Lesung/ })
+        .last()
+        .click();
+      await tab.getByRole("menuitemcheckbox", { name: "Auf der öffentlichen Seite zeigen" }).click();
+      await tab.waitForFunction(() => document.body.innerText.length > 0);
+      await settled(tab);
+      expect(writes(calls).find((call) => call.method === "PATCH")).toEqual({
+        method: "PATCH",
+        path: "/api/venue/venues/Cafe01/sections/Sec002",
+        body: { enabled: true },
+      });
+      // The public page switch reads the venue fresh and saves it with only the switch changed.
+      const before = calls.length;
+      // the switch input itself is drawn by its label, so the label takes the click
+      await tab.getByText("Öffentliche Seite an", { exact: true }).click();
+      await tab.waitForFunction(() => document.body.innerText.length > 0);
+      await settled(tab);
+      const after = calls.slice(before).filter((call) => !call.path.endsWith("/dashboard") && !call.path.endsWith("/public-preview"));
+      expect(after.map((call) => `${call.method} ${call.path}`)).toEqual([
+        "GET /api/venue/venues/Cafe01/settings-context",
+        "PATCH /api/venue/venues/Cafe01",
+      ]);
+      expect(after[1]?.body).toMatchObject({ publicEnabled: false, name: "Campus-Café Nord", slug: "campus-cafe" });
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("every page keeps the layout rules at 1440, 1024 and 390 px", async () => {
     const addresses = [
       "/app/venue",
@@ -356,6 +405,7 @@ describe("Venue on v2", () => {
       `${schedule}&shift=${lunchId}`,
       "/app/venue/Cafe01/my-shifts",
       "/app/venue/Cafe01/feedback",
+      "/app/venue/Cafe01/public",
       "/app/venue/Cafe01/settings",
       "/app/venue/Cafe01/settings/access",
       "/app/venue/Cafe01/settings/schedule",

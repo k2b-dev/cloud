@@ -438,17 +438,12 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
           <FeedbackPane {...props} dashboard={dashboard()} refreshing={dashboardQuery.refreshing()} />
         </Show>
         <Show when={view() === "public" && canAdmin(venue())}>
-          <Pane label={t().publicPage} scrollKey={`venue-public-${venue().id}`}>
-            {/* k2b-ui gap: the public page editor is not rebuilt on v2 yet; it keeps its behaviour in a canvas. */}
-            <Canvas label={t().publicPage}>
-              <PublicPageEditor
-                dashboard={dashboard()}
-                initialPreview={props.initialPublicPreview ?? null}
-                initialSectionId={props.initialSectionId ?? null}
-                reconcile={reconcileDashboard}
-              />
-            </Canvas>
-          </Pane>
+          <PublicPageEditor
+            dashboard={dashboard()}
+            initialPreview={props.initialPublicPreview ?? null}
+            initialSectionId={props.initialSectionId ?? null}
+            reconcile={reconcileDashboard}
+          />
         </Show>
       </Workspace>
       <SignupDialog
