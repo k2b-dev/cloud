@@ -2040,12 +2040,13 @@
 .k2-ui .k2-tree-chev[data-expanded] > .k2-icon:first-child {
   transform: rotate(90deg);
 }
-.k2-ui .k2-tree-chev[data-loading] > .k2-icon:nth-child(2),
+/* one primitive: the arrow of a tree holds its three icons in this order: arrow, loading, failed */
+.k2-ui .k2-tree-chev[data-loading] > .k2-icon:first-child + .k2-icon,
 .k2-ui .k2-table tr[data-more] .k2-tree-chev[data-loading] > .k2-icon {
   display: inline-block;
   animation: k2-spin 900ms linear infinite;
 }
-.k2-ui .k2-tree-chev[data-failed] > .k2-icon:nth-child(3) {
+.k2-ui .k2-tree-chev[data-failed] > .k2-icon:last-child {
   display: inline-block;
   color: var(--k2-bad);
 }
@@ -4121,12 +4122,13 @@
 .k2-ui .k2-nt-chev[data-expanded] > .k2-icon:first-child {
   transform: rotate(90deg);
 }
-.k2-ui .k2-nt-chev[data-loading] > .k2-icon:nth-child(2),
+/* one primitive: the arrow of a place in the tree holds its three icons in this order: arrow, loading, failed */
+.k2-ui .k2-nt-chev[data-loading] > .k2-icon:first-child + .k2-icon,
 .k2-ui .k2-nt-item[data-pending] > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon {
   display: inline-block;
   animation: k2-spin 900ms linear infinite;
 }
-.k2-ui .k2-nt-chev[data-failed]:not([data-loading]) > .k2-icon:nth-child(3) {
+.k2-ui .k2-nt-chev[data-failed]:not([data-loading]) > .k2-icon:last-child {
   display: inline-block;
   color: var(--k2-bad);
 }
