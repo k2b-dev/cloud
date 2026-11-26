@@ -137,7 +137,8 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | something wrong, waiting, a person's note, an AI summary | `Notice` with `tone` (`bad`, `warn`, `note`, `ai`) | `list-detail.tsx` |
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
-| a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
+| a form; several short values (domains, addresses), an image, a one-time code, a number on a range, a colour; a field that goes back to its default | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice`; `TagsInput`, `ImageInput`, `CodeInput`, `Slider`, `ColorInput`; `Field action` ("Auf Standard zurücksetzen") | `form.tsx`, `settings.tsx` |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
@@ -228,14 +229,13 @@ Cheapest first; stop at the first step that finds something, fix, repeat.
    lines, type roles and grips at 1440 and 390 px.
 5. **A screenshot** only when the outline leaves a doubt.
 
-In the Cloud monorepo one command runs all five on a screen file:
+In the Cloud monorepo one command runs all five on a screen file (details
+and use outside it: [seeing](references/seeing.md)):
 
 ```bash
 bun packages/ui/scripts/v2-preview.ts path/to/screen.tsx --text   # 1-3, no browser
 bun packages/ui/scripts/v2-preview.ts path/to/screen.tsx --png out # 1-5
 ```
-
-Details and use outside the monorepo: [seeing](references/seeing.md).
 
 ## Most common mistakes
 
