@@ -3214,6 +3214,12 @@
   padding: 4px 4px 0;
   border-top: 1px solid var(--k2-line);
 }
+.k2-ui .k2-msearch-error {
+  margin: 0;
+  padding: 8px 12px 12px;
+  font: var(--k2-t-meta);
+  color: var(--k2-bad);
+}
 .k2-ui .k2-msearch-empty {
   margin: 0;
   padding: 8px 12px 12px;

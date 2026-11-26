@@ -9,6 +9,8 @@ import { Bar, List, Menu, type MenuEntry, Pane, Row, Workspace } from "../src/v2
 declare global {
   interface Window {
     __deeds?: string[];
+    /** With `?async`: the server's answer to the last "Leere Aufgabe „…“", given by the test. */
+    __answer?: { ok: () => void; fail: () => void };
   }
 }
 
@@ -36,6 +38,20 @@ export function Demo() {
     did(`task:${title}`)();
     setTasks([...tasks(), title]);
   };
+  // `?async`: a task without a template is made on the server, which answers when the test says so
+  const slow = typeof location !== "undefined" && new URLSearchParams(location.search).has("async");
+  const make = (title: string) => () =>
+    slow
+      ? new Promise<void>((resolve, reject) => {
+          window.__answer = {
+            ok: () => {
+              add(title)();
+              resolve();
+            },
+            fail: () => reject(new Error("offline")),
+          };
+        })
+      : add(title)();
   const sections = [...new Set(list.map((template) => template.section))];
   const items: MenuEntry[] = [
     { label: "Leere Aufgabe", icon: "square-plus", meta: "N", onClick: add("Neue Aufgabe") },
@@ -66,7 +82,7 @@ export function Demo() {
                   empty: (query) => `Keine Vorlage passt zu „${query}“.`,
                   fallback: (query) => ({
                     title: "Ohne Vorlage",
-                    items: [{ label: `Leere Aufgabe „${query}“`, icon: "square-plus", onClick: add(query) }],
+                    items: [{ label: `Leere Aufgabe „${query}“`, icon: "square-plus", onClick: make(query) }],
                   }),
                 }}
               >

@@ -373,6 +373,9 @@ const MenuRoot = (props: MenuProps) => (
   </Show>
 );
 
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  typeof value === "object" && value !== null && "then" in value && typeof value.then === "function";
+
 /** Whether a search can hold these entries: deeds, loose or in sections without `choice`. */
 const searchable = (entries: readonly MenuEntry[]): boolean =>
   entries.every((entry) =>
@@ -449,6 +452,7 @@ const SearchMenu = (props: MenuProps & { search: MenuSearch }) => {
     onOpenChange: (next: boolean) => {
       if (next) setAlign(alignTo(trigger));
       else setQuery("");
+      setFailed(false);
       setOpen(next);
     },
   }));
@@ -463,12 +467,27 @@ const SearchMenu = (props: MenuProps & { search: MenuSearch }) => {
     groups()
       .flatMap((group) => group.items)
       .find((found) => found.key === key)?.item;
+  // a deed that failed says so under the entries; the menu stays, and the entry runs again
+  const [failed, setFailed] = createSignal(false);
+  const close = () => {
+    setOpen(false);
+    setQuery("");
+  };
+  /**
+   * Runs an entry. A deed that returns a Promise goes back to core, which keeps the entry pending (`data-pending`,
+   * `aria-busy`) until it settles: the menu closes once it succeeded and stays, saying so, when it failed.
+   */
   const run = (key: string) => {
     const item = find(key);
     if (!item || item.disabled) return;
-    setOpen(false);
-    setQuery("");
-    item.onClick?.();
+    setFailed(false);
+    const done = item.onClick?.();
+    if (!isThenable(done)) return close();
+    return Promise.resolve(done).then(close, (reason: unknown) => {
+      setFailed(true);
+      // core keeps the reason as the entry's error state
+      throw reason;
+    });
   };
   const list = useCommand(() => ({
     query: query(),
@@ -552,6 +571,11 @@ const SearchMenu = (props: MenuProps & { search: MenuSearch }) => {
           </list.List>
           <Show when={groups().length === 0}>
             <p class="k2-msearch-empty">{props.search.empty?.(query().trim()) ?? t().noMatch({ query: query().trim() })}</p>
+          </Show>
+          <Show when={failed()}>
+            <p class="k2-msearch-error" role="alert">
+              {t().failed}
+            </p>
           </Show>
         </list.Root>
       </popover.Popup>

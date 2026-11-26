@@ -157,3 +157,31 @@ test("phone: the field stays on top of the open menu, inside the window", async 
     { width: 390, touch: true },
   );
 });
+
+test("a deed that returns a Promise keeps its entry busy and the menu open; a failure says so, and it runs again", async () => {
+  await withPage("async", async (page) => {
+    await open(page);
+    await page.keyboard.type("Palette tauschen");
+    const entry = page.locator(`${menu} .k2-mi`, { hasText: "Leere Aufgabe „Palette tauschen“" });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__answer !== undefined);
+    expect(await entry.getAttribute("aria-busy")).toBe("true");
+    expect(await page.locator(menu).isVisible()).toBe(true);
+    // the server refuses: the menu stays with the text, and says so
+    await page.evaluate(() => window.__answer?.fail());
+    await page.locator(`${menu} [role='alert']`).waitFor();
+    expect(await page.locator(`${menu} [role='alert']`).textContent()).toBe("Das hat nicht geklappt. Versuch es noch einmal.");
+    await page.waitForFunction((selector) => !document.querySelector(selector)?.hasAttribute("aria-busy"), `${menu} .k2-mi`);
+    expect(await page.getByRole("combobox", { name: "Vorlage suchen" }).inputValue()).toBe("Palette tauschen");
+    // again: it succeeds, the menu closes, the task is there
+    await page.evaluate(() => {
+      window.__answer = undefined;
+    });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__answer !== undefined);
+    expect(await page.locator(`${menu} [role='alert']`).count()).toBe(0);
+    await page.evaluate(() => window.__answer?.ok());
+    await page.locator(menu).waitFor({ state: "hidden" });
+    expect(await deeds(page)).toEqual(["task:Palette tauschen"]);
+  });
+});

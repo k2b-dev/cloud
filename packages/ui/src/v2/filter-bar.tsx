@@ -345,10 +345,10 @@ const isPhone = () => !isServer && matchMedia(phoneQuery).matches;
 
 // ── FilterBar ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Where saved views come from and go to; leave it out and the bar offers no saving. */
 /** Where a change of the list's state came from: the person, in the bar, or back and forward in the history. */
 export type ListChange = { readonly source: "user" | "history" };
 
+/** Where saved views come from and go to; leave it out and the bar offers no saving. */
 export type FilterBarViews = {
   /**
    * The stores the app offers, in the order the dialog lists them. A store the person may not write appears only when
