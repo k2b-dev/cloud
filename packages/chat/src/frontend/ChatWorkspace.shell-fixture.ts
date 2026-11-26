@@ -41,7 +41,8 @@ export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspac
   const settings = await import("@k2b/cloud/server/middleware/settings");
   const help = await import("@k2b/cloud/ssr/help");
   const { Layout } = await import("@k2b/cloud/ssr");
-  const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
+  const { default: ChatWorkspace } =
+    options.ui === "v2" ? await import("./ChatWorkspaceV2.island") : await import("./ChatWorkspace.island");
   const spies = [
     stubRailSnapshot(),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),

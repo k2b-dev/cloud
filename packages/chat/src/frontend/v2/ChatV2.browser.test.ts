@@ -40,13 +40,11 @@ beforeAll(async () => {
     (request) => {
       const url = new URL(request.url);
       const chat = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
-      return { ...harness.props({ chat, panel: url.searchParams.get("panel") === "info" ? "info" : undefined }), v2: true };
+      return harness.props({ chat, panel: url.searchParams.get("panel") === "info" ? "info" : undefined });
     },
     { ui: "v2" },
   );
-  console.log("shell", performance.now());
   harness = await startChatHarness({ renderPage: shell.render });
-  console.log("harness", performance.now());
   for (const person of people) harness.addPerson(person);
   const [lena, jonas, mira, ada, felix, sara] = people;
   const end = harness.now();
@@ -66,9 +64,7 @@ beforeAll(async () => {
   harness.addChat({ members: [ada], count: 4, end: minutes(60 * 75) });
   harness.addChannel("Ankündigungen", "News for the whole team", true);
   harness.addChannel("IT-Hilfe", "Questions about devices and accounts", true);
-  console.log("fixture", performance.now());
   await pin(workshop);
-  console.log("pin", performance.now());
   browser = await launchBrowser({ serveShellCatalog: true });
   void viewer;
 }, 240_000);
@@ -92,9 +88,9 @@ const load = async (path: string, width: number, height: number) => {
   await page.evaluate(
     ({ props }) => {
       document.getElementById("root")!.replaceChildren();
-      return window.mountChat(props, "en");
+      return window.mountChat(props, "en", "v2");
     },
-    { props: { ...harness.props({ chat, panel: path.includes("panel=info") ? "info" : undefined }), v2: true } },
+    { props: harness.props({ chat, panel: path.includes("panel=info") ? "info" : undefined }) },
   );
   await settled(page);
   return { page, errors, close: () => context.close() };
@@ -113,7 +109,7 @@ for (const [width, height] of [
   test(`the list and the open chat keep the v2 rules at ${width} px`, async () => {
     const { page, errors, close } = await load(`/app/chat/c/${open}`, width, height);
     try {
-      await page.locator('[data-k2-part="Row"]', { hasText: "Werkstatt Nord" }).first().waitFor();
+      await page.locator(".chat-conversation__composer").waitFor();
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", skip: '[data-k2-part="Canvas"]' });
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
       // The composer stands inside the screen, under the history, at every width.
@@ -136,6 +132,27 @@ test("a chat opens from the list in place and the list stays", async () => {
     await page.waitForURL(new RegExp(`/app/chat/c/${open}`));
     await page.locator(".chat-conversation__composer").waitFor();
     expect(await page.locator('[data-k2-part="Row"][data-current]', { hasText: "Lieferung KW 49" }).count()).toBe(1);
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+});
+
+test("on the phone the list is the page, a chat is a page of its own, and its way back returns to the list", async () => {
+  const { page, errors, close } = await load("/app/chat", 390, 844);
+  try {
+    const row = page.locator('[data-k2-part="Row"]', { hasText: "Werkstatt Nord" }).first();
+    await row.waitFor();
+    const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+    expect(layout.problems).toEqual([]);
+    await shoot(page, "list-390");
+    await row.locator("a").click();
+    await page.waitForURL(/\/app\/chat\/c\//);
+    await page.locator(".chat-conversation__composer").waitFor();
+    expect(await row.isVisible()).toBe(false);
+    await page.locator('[data-k2-part="Back"] a, [data-k2-part="Back"] button').first().click();
+    await page.waitForURL((url) => url.pathname === "/app/chat");
+    await row.waitFor();
     expect(errors).toEqual([]);
   } finally {
     await close();

@@ -25,17 +25,11 @@ import { type Accessor, For, type JSX, Show, untrack } from "solid-js";
 import { chatMessages } from "../../messages";
 import { chatV2Messages } from "./chat-v2-messages";
 
-/**
- * k2b-ui gap (Canvas fill, #4223/#4284 not on main): the chat's history scrolls in its own feed and the composer
- * stays at the foot, so the drawing must be exactly as high as its pane. On main a Canvas takes only a height in px.
- * The canvas shrinks to its pane (it clips, so its least height is 0) around a spacer as tall as the screen, and the
- * drawing lies over the whole canvas. Replace both with `<Canvas height="fill">` once it lands.
- */
-const spacer = { display: "block", height: "100dvh" } as const;
-const drawing = { position: "absolute", inset: "0", display: "flex", "flex-direction": "column", "min-height": "0" } as const;
+/** Chat's own drawing (history and composer, the info) is a column that fills the pane; its history scrolls inside. */
+const drawing = { display: "flex", "flex-direction": "column", "min-height": "0", "min-width": "0" } as const;
 
 /** A deed in the head of the open chat: a button, pressed while it is on, turning while it runs. */
-export type ChatHeadButton = Action & { pressed?: boolean; busy?: boolean; words?: boolean };
+export type ChatHeadButton = Action & { pressed?: boolean; busy?: boolean; words?: boolean; keep?: boolean };
 
 /** A line about the list that needs the person: something failed, with its way out. */
 export type ChatListNotice = { tone: "bad" | "warn"; text: string; action?: Action };
@@ -88,6 +82,7 @@ const HeadButton = (props: { button: ChatHeadButton }) => (
         onNavigate={props.button.onNavigate}
         onClick={() => props.button.onClick?.()}
         pressed={props.button.pressed}
+        keep={props.button.keep}
         busy={props.button.busy}
         disabled={props.button.disabled}
       />
@@ -121,9 +116,11 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
       <V2WorkspaceNavigation label={props.nav.label} groups={props.nav.groups} foot={props.nav.foot} />
       <Workspace
         sidebarLabel={v2().sidebarWidth}
-        detail
+        // The chat keeps room to read: where list, chat and sidebar do not fit (a tablet), the sidebar is a drawer.
+        detail={520}
         detailEmpty={{ icon: "messages", text: v2().noneOpen }}
-        primary={props.newChat}
+        // On the phone the main action floats over the list only; in an open chat it would cover the composer.
+        primary={props.detail() ? undefined : props.newChat}
         sidebar={<Nav title={t().appName} icon="messages" groups={props.nav.groups} foot={props.nav.foot} />}
         head={
           <Bar
@@ -207,8 +204,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                     />
                   }
                 >
-                  <Canvas label={detail().label}>
-                    <span style={spacer} aria-hidden="true" />
+                  <Canvas label={detail().label} height="fill">
                     <div style={drawing}>{content}</div>
                   </Canvas>
                 </Pane>
@@ -230,8 +226,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                   />
                 }
               >
-                <Canvas label={v2().infoPane}>
-                  <span style={spacer} aria-hidden="true" />
+                <Canvas label={v2().infoPane} height="fill">
                   <div style={drawing}>{props.infoContent()}</div>
                 </Canvas>
               </Pane>
