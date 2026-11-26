@@ -32,8 +32,13 @@
 
 /* A page with a measure (`MinimalLayout ui="v2" measure`): from 768 px one task to read and decide stands as a column
    of 560 px, centred on the page background, as a card with the one hairline and the card radius (the page's one
-   child, its workspace). Below, it is the
-   page without a measure: the workspace fills the window above the footer, flat, and scrolls inside. */
+   child, its workspace). Below, it is the page without a measure: the workspace fills the window above the footer,
+   flat, and scrolls inside. On both, the task ends with its last part: no line under it, neither above the empty
+   window nor beside the card's own edge. */
+.minimal-layout-main[data-measure] > :only-child .k2-pane > .k2-scroll > :last-child,
+.minimal-layout-main[data-measure] > :only-child .k2-pane > .k2-scroll > solid-island:last-child > :last-child {
+  border-bottom: 0;
+}
 @media (min-width: 768px) {
   .minimal-layout[data-ui="v2"]:has(> .minimal-layout-main[data-measure]) {
     background: var(--k2-canvas);

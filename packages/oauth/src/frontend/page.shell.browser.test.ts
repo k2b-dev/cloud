@@ -8,6 +8,7 @@ import * as services from "@k2b/cloud/services";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
+import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
@@ -133,7 +134,9 @@ let browser: Browser;
 let assets: ShellAssets;
 let harness: string;
 beforeAll(async () => {
-  assets = await loadShellAssets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css") });
+  assets = await loadShellAssets(
+    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css") }, import.meta.dir),
+  );
   harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
@@ -155,7 +158,7 @@ describe("OAuth in the Cloud shell", () => {
     ];
     for (const [name, search, data] of cases) {
       const html = await firstHtml(search, data);
-      for (const width of [1440, 390]) {
+      for (const width of [1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/oauth${search}`, html, width });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
@@ -174,7 +177,7 @@ describe("OAuth in the Cloud shell", () => {
   test("a new client, its access and its secret open in the shell's frame; the secret is a fake", async () => {
     const nav = (await firstHtml("?nav", "normal")).replaceAll("<", "\\u003c");
     const html = await firstHtml("", "normal");
-    for (const width of [1440, 390]) {
+    for (const width of [1440, 1024, 390]) {
       const { context, tab, errors } = await openShellPage(browser, assets, {
         path: "/admin/oauth",
         html,

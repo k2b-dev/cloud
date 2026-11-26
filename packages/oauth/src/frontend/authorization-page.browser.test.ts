@@ -5,6 +5,7 @@ import { sessionOriginGuard } from "@k2b/cloud/server/middleware/session-origin"
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
+import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
 import { hoverInPlace, launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
@@ -18,7 +19,9 @@ const states = Object.keys(authorizationStates) as AuthorizationState[];
 let browser: Browser;
 let assets: ShellAssets;
 beforeAll(async () => {
-  assets = await loadShellAssets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css") });
+  assets = await loadShellAssets(
+    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css") }, import.meta.dir),
+  );
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -142,7 +145,7 @@ describe("OAuth authorization pages in a browser", () => {
     }
   });
 
-  for (const width of [390, 1440]) {
+  for (const width of [390, 1024, 1440]) {
     test(`every state keeps the v2 rules in both languages at ${width} px`, async () => {
       for (const state of states) {
         for (const locale of ["de", "en"] as const) {
@@ -239,7 +242,7 @@ describe("OAuth authorization pages in a browser", () => {
       }
     }, 60_000);
 
-    test(`a decision stands in a column of 560 px on the page background, on the phone across the whole width, at ${width} px`, async () => {
+    test(`a decision stands in a column of 560 px on the page background, on the phone across the whole width (the measure starts at 768 px), at ${width} px`, async () => {
       for (const state of ["consent", "confirm", "entry", "logout"] as const) {
         const { context, tab } = await open(state, "de", width);
         try {
@@ -257,7 +260,7 @@ describe("OAuth authorization pages in a browser", () => {
             };
           });
           const name = `${state} at ${width} px`;
-          if (width === 1440) {
+          if (width >= 768) {
             expect(page.right - page.left, name).toBeLessThanOrEqual(560);
             // centred: as much room on the left as on the right
             expect(Math.abs(page.left - (page.view - page.right)), name).toBeLessThanOrEqual(1);
@@ -279,12 +282,18 @@ describe("OAuth authorization pages in a browser", () => {
         const code = await tab.evaluate(() => {
           const element = document.querySelector('[data-testid="device-user-code"]')!;
           const look = getComputedStyle(element);
-          return { text: element.textContent, size: Number.parseFloat(look.fontSize), family: look.fontFamily, edge: look.borderTopWidth };
+          return {
+            text: element.textContent,
+            size: Number.parseFloat(look.fontSize),
+            family: look.fontFamily,
+            strip: look.backgroundColor,
+          };
         });
         expect(code.text).toBe("WDJB-MJHT");
         expect(code.size).toBeGreaterThanOrEqual(28);
         expect(code.family).toContain("monospace");
-        expect(code.edge).toBe("1px");
+        // a strip of its own: tinted, not the page's surface
+        expect(code.strip).not.toBe("rgba(0, 0, 0, 0)");
       } finally {
         await context.close();
       }

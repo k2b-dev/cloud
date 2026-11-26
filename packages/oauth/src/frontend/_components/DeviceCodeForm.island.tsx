@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Field, Input } from "@k2b/ui/v2";
+import { Band, Bar, Button, Field, Input, Text } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 import { oauthMessages } from "../messages";
 
@@ -15,7 +15,7 @@ const formatDeviceCodeInput = (value: string): string => {
 const CODE_FORM = "oauth-device-code";
 
 /** Code entry for the device approval page. Without JavaScript it is a plain GET form. */
-const DeviceCodeForm = (props: { code?: string; error?: string }) => {
+const DeviceCodeForm = (props: { hint: string; code?: string; error?: string }) => {
   const locale = useLocale();
   const t = () => oauthMessages.resolve([locale()]).t;
   const [code, setCode] = createSignal(formatDeviceCodeInput(props.code ?? ""));
@@ -23,7 +23,9 @@ const DeviceCodeForm = (props: { code?: string; error?: string }) => {
   return (
     <>
       <form id={CODE_FORM} method="get" action="/oauth/device" hidden />
+      {/* what to do, the field and the way on: one block below the head, with its own top edge */}
       <Band>
+        <Text>{props.hint}</Text>
         <Field label={t().deviceCodeLabel} error={props.error} required>
           <Input
             name="user_code"
@@ -38,14 +40,14 @@ const DeviceCodeForm = (props: { code?: string; error?: string }) => {
             autofocus
           />
         </Field>
+        <Bar
+          end={
+            <Button variant="primary" icon="arrow-right" type="submit" form={CODE_FORM}>
+              {t().deviceContinue}
+            </Button>
+          }
+        />
       </Band>
-      <Bar
-        end={
-          <Button variant="primary" icon="arrow-right" type="submit" form={CODE_FORM}>
-            {t().deviceContinue}
-          </Button>
-        }
-      />
     </>
   );
 };

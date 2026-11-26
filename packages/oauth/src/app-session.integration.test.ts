@@ -44,7 +44,7 @@ const post = (path: string, cookie: string, values: Record<string, string>) =>
     headers: { cookie, origin: ISSUER, "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": uniqueCallerAddress() },
     body: new URLSearchParams(values),
   });
-const blocked = encodeURIComponent(oauthMessages.resolve(["en"]).t.webSessionRequired);
+const blocked = "/oauth/error?error=web_session_required";
 
 suite("OAuth refuses the Cloud app's session", () => {
   beforeAll(async () => {

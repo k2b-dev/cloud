@@ -16,6 +16,9 @@ export const ConsentDecisionSchema = z.object({
 const localError = (c: Context<AuthContext>, description: string) =>
   c.redirect(`/oauth/error?error=invalid_request&error_description=${encodeURIComponent(description)}`);
 
+/** Only a browser sign-in on the web may decide; the error page says so in the person's language by this code. */
+const webOnly = (c: Context<AuthContext>) => c.redirect("/oauth/error?error=web_session_required");
+
 const actorForAudit = (user: AuthContext["Variables"]["user"]) => ({
   userId: user.id,
   uid: user.uid,
@@ -35,10 +38,10 @@ export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.
   const { request: requestId, decision } = decisionInput;
   // A grant would outlive removing the phone, so only the web may decide.
   const browserSignIn = await auth.browserSignIn(c);
-  if (!browserSignIn) return localError(c, t.webSessionRequired);
+  if (!browserSignIn) return webOnly(c);
   const sessionToken = c.get("sessionToken");
   const session = sessionToken ? await auth.session.authenticateRequest(c, sessionToken) : null;
-  if (!session) return localError(c, t.webSessionRequired);
+  if (!session) return webOnly(c);
   const issuer = publicCloudOrigin(await get<string>("app.url"));
   const requestOrigin = c.req.header("origin");
   if (requestOrigin && requestOrigin !== issuer) return localError(c, t.consentOriginInvalid);

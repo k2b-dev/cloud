@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { type AuthorizationState, authorizationStates, renderAuthorizationState, sample } from "./authorization-page.test-fixture";
+import {
+  type AuthorizationState,
+  authorizationStates,
+  renderAuthorizationState,
+  renderErrorPage,
+  sample,
+} from "./authorization-page.test-fixture";
 
 /**
  * The visible text of the page body, without scripts, with tags as spaces and whitespace collapsed.
@@ -232,8 +238,25 @@ describe("OAuth authorization pages", () => {
     const german = await renderAuthorizationState("error", "de");
     expect(heading(german)).toBe("Autorisierung fehlgeschlagen");
     expect(text(german)).toContain("Der Zugriff wurde nicht erlaubt.");
-    expect(text(german)).toContain("Details Your account is not allowed to use this application.");
+    expect(text(german)).toContain("Details Dein Konto darf diese Anwendung nicht verwenden.");
     expect(text(failed)).toMatch(/^.*Access was not allowed\..*Details Your account is not allowed/);
+
+    // a code that is no OAuth code is an unknown error; the page never repeats what the address made up
+    const forged = text(await renderErrorPage({ error: "<b>Bitte hier klicken</b>", client_name: "x".repeat(300) }, "de"));
+    expect(forged).toContain("Ein unbekannter Fehler ist aufgetreten.");
+    expect(forged).toContain("Fehlercode unknown_error");
+    expect(forged).not.toContain("Bitte hier klicken");
+    expect(forged).toContain(`Anwendung ${"x".repeat(200)} `);
+    expect(forged).not.toContain("x".repeat(201));
+    // a refusal that is no denial says what to do, not that access was not allowed
+    for (const [error, sentence] of [
+      ["sign_in_again", "Melde dich erneut im Browser an und gib den Code noch einmal ein."],
+      ["web_session_required", "Zugriff freigeben geht nur im Web."],
+    ] as const) {
+      const page = text(await renderErrorPage({ error }, "de"));
+      expect(page).toContain(sentence);
+      expect(page).not.toContain("Der Zugriff wurde nicht erlaubt.");
+    }
 
     const blocked = await renderAuthorizationState("blocked", "en");
     expect(heading(blocked)).toBe("Authorization failed");

@@ -1,8 +1,9 @@
 import { useLocale } from "@k2b/ui";
-import { Facts, Text } from "@k2b/ui/v2";
-import { Match, Show, Switch } from "solid-js";
+import { Band, Canvas, Facts, Text } from "@k2b/ui/v2";
+import { Match, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, DeviceCode, Outcome, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, Outcome, RequestedAccess } from "./AuthorizationParts";
+import { DeviceCodeDrawing } from "./DeviceCodeDrawing";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
 type DeviceOutcome = "approved" | "denied" | "expired" | "blocked";
@@ -35,17 +36,22 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
       <Match when={props.view.kind === "entry" && props.view}>
         {(view) => (
           <>
-            <Text>{t().deviceEnterCode}</Text>
-            <DeviceCodeForm code={view().code} error={view().error} />
+            <DeviceCodeForm hint={t().deviceEnterCode} code={view().code} error={view().error} />
           </>
         )}
       </Match>
       <Match when={props.view.kind === "confirm" && props.view}>
         {(view) => (
           <>
-            <Text weight="strong">{t().deviceConfirmTitle({ name: view().client.name })}</Text>
-            <Text>{t().deviceConfirmCode}</Text>
-            <DeviceCode label={t().deviceCodeLabel} code={view().code} />
+            {/* the question, what to compare and the code: one block below the head, with its own top edge */}
+            <Band>
+              <Text weight="strong">{t().deviceConfirmTitle({ name: view().client.name })}</Text>
+              <Text>{t().deviceConfirmCode}</Text>
+              {/* comparing the code with the terminal is what keeps a person from approving someone else's sign-in */}
+              <Canvas label={t().deviceCodeLabel}>
+                <DeviceCodeDrawing code={view().code} />
+              </Canvas>
+            </Band>
             <Facts
               items={[
                 { label: t().application, value: view().client.name },
@@ -53,10 +59,7 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
               ]}
             />
             <RequestedAccess scopes={view().scopes} />
-            <CautionNote>{t().deviceOwnCodeWarning}</CautionNote>
-            <Show when={view().reauthenticateHref}>
-              <ReauthenticateNote />
-            </Show>
+            <CautionNote text={t().deviceOwnCodeWarning} reauthenticate={!!view().reauthenticateHref} />
             <DecisionForm
               action="/oauth/device"
               request={view().request}

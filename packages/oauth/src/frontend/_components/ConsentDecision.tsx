@@ -1,8 +1,7 @@
 import { useLocale } from "@k2b/ui";
 import { Facts } from "@k2b/ui/v2";
-import { Show } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, RequestedAccess } from "./AuthorizationParts";
 
 export type ConsentDecisionView = {
   request: string;
@@ -33,10 +32,10 @@ export function ConsentDecision(props: { view: ConsentDecisionView }) {
         ]}
       />
       <RequestedAccess scopes={props.view.scopes} />
-      <CautionNote>{props.view.firstParty ? t().firstPartyOwnRequest : t().unverifiedDynamic}</CautionNote>
-      <Show when={props.view.reauthenticateHref}>
-        <ReauthenticateNote />
-      </Show>
+      <CautionNote
+        text={props.view.firstParty ? t().firstPartyOwnRequest : t().unverifiedDynamic}
+        reauthenticate={!!props.view.reauthenticateHref}
+      />
       <DecisionForm action="/oauth/consent" request={props.view.request} reauthenticateHref={props.view.reauthenticateHref} />
     </>
   );

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { createComponent } from "solid-js";
-import { serveCoreV2Sheet } from "../../../../tests/fixtures/core-v2-sheet";
+import { serveCoreV2Sheet } from "../../../../scripts/fixtures/core-v2-sheet";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // Every page a person sees during an authorization, rendered as the full HTML document the SSR
@@ -142,10 +142,15 @@ export const authorizationStates = {
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",
   blocked: "/fixture/app-session/oauth/device",
-  error: `/oauth/error?${new URLSearchParams({ error: "access_denied", error_description: "Your account is not allowed to use this application." })}`,
+  // the description is the one the app sends with this code, in the person's language (see `renderAuthorizationState`)
+  error: "/oauth/error?error=access_denied",
 } as const;
 
 export type AuthorizationState = keyof typeof authorizationStates;
+
+/** The error page for an address a sender (or anyone) wrote, in one language. */
+export const renderErrorPage = async (query: Record<string, string>, locale: "en" | "de"): Promise<string> =>
+  (await pages.request(`https://cloud.test/oauth/error?${new URLSearchParams(query)}`, { headers: { "Accept-Language": locale } })).text();
 
 /** The complete HTML document of one state in one language and theme. */
 export const renderAuthorizationState = async (
@@ -153,7 +158,11 @@ export const renderAuthorizationState = async (
   locale: "en" | "de",
   theme: "light" | "dark" = "light",
 ): Promise<string> => {
-  const response = await pages.request(`https://cloud.test${authorizationStates[state]}`, {
+  const path =
+    state === "error"
+      ? `${authorizationStates.error}&${new URLSearchParams({ error_description: oauthMessages.resolve([locale]).t.deviceNoAccess })}`
+      : authorizationStates[state];
+  const response = await pages.request(`https://cloud.test${path}`, {
     headers: { "Accept-Language": locale, Cookie: `theme=${theme}` },
   });
   // A session that may not grant access gets its answer as 403.

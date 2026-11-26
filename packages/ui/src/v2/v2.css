@@ -2611,6 +2611,8 @@
   grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 0 8px;
   align-items: center;
+  /* the rows keep their own height inside the band's least height: the sign stands beside a single line, not below */
+  align-content: center;
   min-height: var(--k2-h-row2);
   padding: 8px var(--k2-edge);
   border-bottom: var(--k2-hairline);

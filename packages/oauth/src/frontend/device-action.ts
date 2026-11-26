@@ -16,14 +16,18 @@ export const DeviceDecisionSchema = z.object({
 const blocked = (c: Context<AuthContext>, description: string) =>
   c.redirect(`/oauth/error?error=access_denied&error_description=${encodeURIComponent(description)}`, 303);
 
+/** A refusal whose reason is not a denial: the error page says it in the person's language by its own code. */
+const refused = (c: Context<AuthContext>, error: "web_session_required" | "device_session_required" | "sign_in_again") =>
+  c.redirect(`/oauth/error?error=${error}`, 303);
+
 /** Apply one approve or deny decision from the confirmation form, then show the result page. */
 export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.infer<typeof DeviceDecisionSchema>): Promise<Response> => {
   const { t } = oauthMessages.resolve([getLocale(c)]);
   const browserSignIn = await auth.browserSignIn(c);
-  if (!browserSignIn) return blocked(c, c.get("credentialKind") === "session" ? t.webSessionRequired : t.deviceSessionRequired);
+  if (!browserSignIn) return refused(c, c.get("credentialKind") === "session" ? "web_session_required" : "device_session_required");
   const sessionToken = c.get("sessionToken");
   const session = sessionToken ? await auth.session.authenticateRequest(c, sessionToken) : null;
-  if (!session) return blocked(c, t.webSessionRequired);
+  if (!session) return refused(c, "web_session_required");
   const issuer = publicCloudOrigin(await get<string>("app.url"));
   const requestOrigin = c.req.header("origin");
   if (requestOrigin && requestOrigin !== issuer) return blocked(c, t.consentOriginInvalid);
@@ -56,7 +60,7 @@ export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.i
     const retry = userCode ? await oauth.device.findPendingByUserCode(userCode) : null;
     if (userCode && retry?.id === pending.id)
       return c.redirect(`/oauth/device?user_code=${encodeURIComponent(oauth.device.formatUserCode(userCode))}`, 303);
-    return blocked(c, t.deviceSignInAgain);
+    return refused(c, "sign_in_again");
   }
   if (!decided) return c.redirect("/oauth/device?result=expired", 303);
   return c.redirect(`/oauth/device?result=${input.decision === "approve" ? "approved" : "denied"}`, 303);

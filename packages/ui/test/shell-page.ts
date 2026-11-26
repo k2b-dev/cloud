@@ -1,15 +1,16 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page, Route } from "playwright";
 import { pageErrors, settled } from "./browser";
 
 /**
  * A page of an app as Cloud draws it, for browser tests and design pictures without a running Cloud: the first HTML
- * of the real page (with its shell) or a test harness, served with the shell's own stylesheets, Plex fonts and icons.
- * Every request that leaves the test origin is refused, so a picture never depends on the network.
+ * of the real page (with its shell) or a test harness, served with the page's stylesheets, Plex fonts and icons.
+ * Every request that leaves the test origin is refused, so a picture never depends on the network. The page's
+ * stylesheets come from the caller (a Cloud app takes them from `scripts/fixtures/cloud-shell-sheets.ts`): the
+ * component library builds none of an application's styles.
  *
- *   const assets = await loadShellAssets({ appCss: resolve(dir, "../styles/app.css"), appId: "ipa-hosts" });
+ *   const assets = await loadShellAssets({ "/public/app.css": css });
  *   const { tab, errors, context } = await openShellPage(browser, assets, { path: "/admin/ipa-hosts", html, width: 1440 });
  */
 
@@ -26,31 +27,20 @@ export type ShellAssets = {
   head: string;
 };
 
-/** Builds the shell's stylesheets once per test file and serves them, the Plex fonts and the icons, at their paths. */
-export const loadShellAssets = async (app: { id: string; css: string }): Promise<ShellAssets> => {
+/** Serves the page's stylesheets (path to text, in the order of its head), the Plex fonts and the icons at their paths. */
+export const loadShellAssets = async (sheets: Record<string, string>): Promise<ShellAssets> => {
   const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
   const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
   const iconFont = /tabler-icons-[\w-]+\.woff2/.exec(icons)?.[0];
   if (!iconFont) throw new Error("The Tabler preset names no font");
-  const build = async (entry: string) => {
-    const result = await Bun.build({ entrypoints: [entry], plugins: [tailwind] });
-    if (!result.success) throw new AggregateError(result.logs, `Could not build ${entry}`);
-    return result.outputs[0]!.text();
-  };
-  // Core's v2.css: v2 and Cloud's v2 additions (the visitor frame and footer), as a v2-only page links it
-  const v2Page = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../cloud/src/styles/v2-page.css")] });
-  if (!v2Page.success) throw new AggregateError(v2Page.logs, "Could not build Core's v2.css");
-  const v2 = await v2Page.outputs[0]!.text();
   const stylesheets: Record<string, string> = {
     "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
     "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
-    "/public/global.css": await build(resolve(import.meta.dir, "../../../styles.css")),
-    [`/public/${app.id}/app.css`]: await build(app.css),
-    "/public/v2.css": v2,
+    ...sheets,
   };
   const fonts = resolve(uiDist, "fonts");
   return {
-    head: ["/public/fonts.css", "/public/tabler-icons.css", "/public/global.css", `/public/${app.id}/app.css`, "/public/v2.css"]
+    head: Object.keys(stylesheets)
       .map((href) => `<link rel="stylesheet" href="${href}">`)
       .join(""),
     serve: async (route, url) => {
