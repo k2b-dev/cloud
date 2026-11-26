@@ -5,10 +5,11 @@ import { type Context, Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { apiRoutes } from "./api";
 import { app, ssr } from "./config";
-import gatewayPage from "./frontend/page";
 import { gatewayOpsApiErrorMessage } from "./messages";
 import capabilitiesApiRoutes from "./observability/capabilities/api";
 import capabilitiesPage from "./observability/capabilities/page";
+import gatewayPage from "./observability/gateway/page";
+import { legacyRoutesHref } from "./observability/gateway/query";
 import infrastructureApiRoutes from "./observability/infrastructure/api";
 import infrastructurePage from "./observability/infrastructure/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
@@ -23,6 +24,7 @@ import natsApiRoutes from "./observability/nats/api";
 import natsPage from "./observability/nats/page";
 import notificationsApiRoutes from "./observability/notifications/api";
 import notificationsPage from "./observability/notifications/page";
+import { legacyNotificationsHref } from "./observability/notifications/query";
 import observabilityOverviewPage from "./observability/page";
 import postgresPage from "./observability/postgres/page";
 import redisPage from "./observability/redis/page";
@@ -89,7 +91,17 @@ export const router = new Hono<AuthContext>()
   )
   // The apps table moved to Administration › Apps; the old address lands there with a short hint.
   .get("/admin/observability/gateway", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/apps?moved=gateway", 302))
-  .get("/admin/observability/gateway/routes", auth.requireRole("admin", ssr.access), ...gatewayPage)
+  .get(
+    "/admin/observability/gateway/routes",
+    auth.requireRole("admin", ssr.access),
+    async (c, next) => {
+      // the search was named `search` before v2
+      const target = legacyRoutesHref(new URL(c.req.url).searchParams);
+      if (target) return c.redirect(target, 302);
+      await next();
+    },
+    ...gatewayPage,
+  )
   .get("/admin/observability", auth.requireRole("admin", ssr.access), ...observabilityOverviewPage)
   .get("/admin/observability/logs", auth.requireRole("admin", ssr.access), ...logsPage)
   .get("/admin/observability/runs", auth.requireRole("admin", ssr.access), ...runsPage)
@@ -118,7 +130,8 @@ export const router = new Hono<AuthContext>()
     "/admin/observability/deliveries",
     auth.requireRole("admin", ssr.access),
     async (c, next) => {
-      const target = legacyDeliveriesHref(new URL(c.req.url).searchParams);
+      const params = new URL(c.req.url).searchParams;
+      const target = legacyDeliveriesHref(params) ?? legacyNotificationsHref(params);
       if (target) return c.redirect(target, 302);
       await next();
     },

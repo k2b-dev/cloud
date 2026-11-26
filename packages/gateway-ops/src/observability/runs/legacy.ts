@@ -49,10 +49,10 @@ export const legacyJobsHref = (params: URLSearchParams): string => {
 
 /**
  * `/admin/observability/deliveries?…` as a runs address, for the deliveries view. The notification definitions and the
- * earlier notifications (`view=registry`, `view=legacy`) stay on their page: this returns null for them.
+ * earlier notifications (`tab=registry`, `tab=legacy`, before v2 `view=…`) stay on their page: this returns null for them.
  */
 export const legacyDeliveriesHref = (params: URLSearchParams): string | null => {
-  const view = params.get("view");
+  const view = params.get("tab") ?? params.get("view");
   if (view === "registry" || view === "legacy") return null;
   const next = new URLSearchParams({ kind: "delivery" });
   for (const [name, value] of params) {

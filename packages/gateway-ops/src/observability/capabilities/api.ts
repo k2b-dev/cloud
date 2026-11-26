@@ -12,15 +12,7 @@ import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
-import { ORIGIN_FILTERS, STATUS_FILTERS, WINDOWS, type WindowFilter } from "./filters";
-
-const WINDOW_MS: Record<WindowFilter, number> = {
-  "1h": 60 * 60 * 1000,
-  "24h": 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000,
-  "30d": 30 * 24 * 60 * 60 * 1000,
-  "90d": 90 * 24 * 60 * 60 * 1000,
-};
+import { ORIGIN_FILTERS, STATUS_FILTERS, WINDOW_MS, WINDOWS } from "./filters";
 
 const FilterQuerySchema = z.object({
   app: z.string().trim().min(1).max(200).optional(),

@@ -88,7 +88,7 @@ export const capabilityOpsMessages = i18n.define({
       properties: "Properties",
       technicalDetails: "Technical details",
       moreAboutCall: "More about this call",
-      callCount: ({ count }: { count: number }) => (count === 1 ? "1 call" : `${count} calls`),
+      callCount: ({ count }: { count: number }) => (count === 1 ? "1 call" : `${count.toLocaleString("en")} calls`),
     },
     de: {
       title: "Capabilities",
@@ -176,7 +176,7 @@ export const capabilityOpsMessages = i18n.define({
       properties: "Eigenschaften",
       technicalDetails: "Technische Details",
       moreAboutCall: "Mehr zu diesem Aufruf",
-      callCount: ({ count }) => (count === 1 ? "1 Aufruf" : `${count} Aufrufe`),
+      callCount: ({ count }) => (count === 1 ? "1 Aufruf" : `${count.toLocaleString("de")} Aufrufe`),
     },
   },
 });

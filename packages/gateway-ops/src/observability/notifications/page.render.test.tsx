@@ -34,104 +34,99 @@ const user = {
   managesGroupIds: [],
 } satisfies User;
 
-const delivery = (id: string, outgoingMailStatus: "sent" | "bounced" | "queued" | null, channel = "email") => ({
+const definition = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
-  eventId: id,
-  definitionId: "core.fixture",
-  appId: "core",
-  kind: "fixture",
-  label: "Fixture",
-  title: `Fixture ${id}`,
-  targetHref: null,
-  recipientLabel: "Book Reader",
-  recipientReference: "reader@example.test",
-  channel,
-  destinationLabel: "r***@example.test",
-  required: false,
-  routePriority: 1,
-  status: outgoingMailStatus === "queued" ? ("pending" as const) : ("delivered" as const),
-  outgoingMailId: outgoingMailStatus ? `00000000-0000-4000-8000-00000000000${id}` : null,
-  outgoingMailStatus,
-  attemptCount: 1,
-  errorCode: null,
-  errorMessage: null,
-  createdAt: new Date("2026-09-14T00:00:00Z"),
-  updatedAt: new Date("2026-09-14T00:00:00Z"),
-  deliveredAt: null,
+  appId: "mail",
+  kind: "mail.digest",
+  label: "Tägliche Zusammenfassung",
+  description: "Ungelesene Nachrichten des Tages",
+  recipientKind: "user",
+  recommendedChannels: ["email", "browser"],
+  requiredChannels: ["email"],
+  eventCount7d: 12_345,
+  failedDeliveryCount7d: 3,
+  lastSeenAt: new Date("2026-11-24T08:00:00Z"),
+  active: true,
+  ...overrides,
 });
-/** Mail delivery states and a channel without a dedicated color. */
-const deliveries = [delivery("1", "bounced"), delivery("2", "queued"), delivery("3", "sent"), delivery("4", null, "webhook")];
+const earlier = (id: string, status: "sent" | "pending" | "error") => ({
+  id,
+  status,
+  recipient: "reader@example.test",
+  subject: `Willkommen ${id}`,
+  content: "<p>Hallo</p>",
+  sentByName: null,
+  createdAt: new Date("2026-09-14T00:00:00Z"),
+  error: status === "error" ? "SMTP 550 mailbox unavailable" : null,
+});
 
-const expectNeutralChip = (chip: string | undefined) => {
-  expect(chip).toBeDefined();
-  const classes = /class="([^"]*)"/.exec(chip ?? "")?.[1] ?? "";
-  expect(classes).toContain("bg-[var(--ui-surface-muted)]");
-  expect(classes).toContain("text-secondary");
-  expect(classes).not.toMatch(/bg-blue-(?:50|100)|text-zinc-/);
+const server = () => {
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user });
+    c.set("user", user);
+    c.set("runtime", { apps: [] });
+    await next();
+  });
+  app.get("/admin/observability/deliveries", ...handler);
+  return app;
 };
 
-test("notification delivery page renders charts inside the SSR and request-locale context", async () => {
+/** The words a person reads in the first HTML. */
+const read = (html: string) =>
+  html
+    .replace(/<script[\s\S]*?<\/script>/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ");
+
+test("definitions and earlier notifications render on v2 from the address, with their figures, filters and deeds", async () => {
+  const list = spyOn(notificationsService.registry, "list").mockResolvedValue({
+    items: [definition("a"), definition("b", { label: "Alte Erinnerung", active: false, failedDeliveryCount7d: 0 })],
+    page: 1,
+    perPage: 100,
+    total: 2,
+    hasNext: false,
+  } as never);
+  const legacyList = spyOn(notificationsService.notification, "list").mockResolvedValue({
+    items: [earlier("1", "error"), earlier("2", "pending")],
+    page: 1,
+    perPage: 100,
+    total: 2,
+    hasNext: false,
+  } as never);
   const spies = [
     stubRailSnapshot(),
-    spyOn(cloud, "listApps").mockResolvedValue([]),
-    spyOn(notificationsService, "facets").mockResolvedValue({ appIds: [], channels: [] }),
-    spyOn(notificationsService.delivery, "list").mockResolvedValue({ items: deliveries, page: 1, perPage: 100, total: 4, hasNext: false }),
-    spyOn(notificationsService.delivery, "summary").mockResolvedValue({ total: 0, active: 0, delivered: 0, suppressed: 0, failed: 0 }),
-    spyOn(notificationsService.delivery, "timeseries").mockResolvedValue([
-      { at: new Date("2026-09-14T00:00:00Z"), total: 3, active: 0, delivered: 3, suppressed: 0, failed: 0 },
-    ]),
-    spyOn(notificationsService.registry, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
-    spyOn(notificationsService.registry, "summary").mockResolvedValue({ total: 0, active: 0, apps: 0, required: 0 }),
-    spyOn(notificationsService.notification, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
-    spyOn(notificationsService.notification, "summary").mockResolvedValue({ sent: 0, pending: 0, error: 0 }),
-    spyOn(notificationsService.notification, "searchSummary").mockResolvedValue({
-      total: 0,
-      sent: 0,
-      pending: 0,
-      error: 0,
-      system: 0,
-      latestCreatedAt: null,
-    }),
+    spyOn(cloud, "listApps").mockResolvedValue([{ id: "mail", name: "Mail", icon: "ti ti-mail" }] as never),
+    list,
+    spyOn(notificationsService.registry, "summary").mockResolvedValue({ total: 2, active: 1, apps: 1, required: 1 }),
+    legacyList,
+    spyOn(notificationsService.notification, "summary").mockResolvedValue({ sent: 4, pending: 1, error: 1 }),
+    spyOn(notificationsService.system, "pendingCount").mockResolvedValue(2),
   ];
   try {
-    const server = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
-    server.use("*", async (c, next) => {
-      c.set("actor", { kind: "user", user });
-      c.set("user", user);
-      c.set("runtime", { apps: [] });
-      await next();
+    const app = server();
+    const registry = await app.request("/admin/observability/deliveries?tab=registry&status=active&app=mail&q=digest", {
+      headers: { "Accept-Language": "de" },
     });
-    server.get("/admin/observability/deliveries", ...handler);
-    for (const locale of ["en", "de"]) {
-      const response = await server.request("/admin/observability/deliveries", { headers: { "Accept-Language": locale } });
-      const html = await response.text();
-      expect(response.status, html).toBe(200);
-      expect(html).toContain("k2b-chart-explorer");
-      expect(html).toContain("k2b-chart__svg");
-      expect(html).toContain("<svg");
-      expect(html).toContain(locale === "de" ? "Zustellungen" : "Deliveries");
-      // Mail status appears only where it adds to the delivery status.
-      expect(html).toContain(locale === "de" ? "E-Mail: Unzustellbar" : "Mail: Bounced");
-      expect(html).toContain(locale === "de" ? "E-Mail: In Warteschlange" : "Mail: Queued");
-      expect(html).not.toContain(locale === "de" ? "E-Mail: Gesendet" : "Mail: Sent");
-      expect(html).toContain('title="00000000-0000-4000-8000-000000000001"');
-      // The channel chip in the table, not the area's Gateway section with the same icon.
-      const table = html.slice(html.indexOf("<table"));
-      const channel = [...table.matchAll(/<span\b[^>]*>[\s\S]*?<\/span>/g)].find((match) => match[0].includes("ti ti-route"))?.[0];
-      expectNeutralChip(channel);
-      for (const view of ["registry", "legacy"]) {
-        const other = await server.request(`/admin/observability/deliveries?view=${view}`, { headers: { "Accept-Language": locale } });
-        expect(other.status, await other.text()).toBe(200);
-      }
-      const searched = await server.request("/admin/observability/deliveries?view=legacy&search=fixture", {
-        headers: { "Accept-Language": locale },
-      });
-      const searchedHtml = await searched.text();
-      expect(searched.status, searchedHtml).toBe(200);
-      const chips = [...searchedHtml.matchAll(/<span\b[^>]*>[\s\S]*?<\/span>/g)].map((match) => match[0]);
-      expectNeutralChip(chips.find((chip) => chip.includes('class="ti ti-search text-sm"')));
-      expectNeutralChip(chips.find((chip) => chip.includes('class="ti ti-alert-circle text-sm"')));
-    }
+    const registryHtml = await registry.text();
+    expect(registry.status, registryHtml).toBe(200);
+    expect(registryHtml).toContain('data-k2-part="Workspace"');
+    const registryText = read(registryHtml);
+    expect(registryText).toContain("Tägliche Zusammenfassung");
+    expect(registryText).toContain("12.345");
+    expect(list.mock.calls[0]![0]).toMatchObject({ filter: { search: "digest", appIds: ["mail"], active: true } });
+
+    const legacy = await app.request("/admin/observability/deliveries?tab=legacy&status=error&page=2", {
+      headers: { "Accept-Language": "de" },
+    });
+    const legacyText = read(await legacy.text());
+    expect(legacy.status).toBe(200);
+    expect(legacyText).toContain("Willkommen 1");
+    expect(legacyList.mock.calls[0]![0]).toMatchObject({
+      pagination: { page: 2, perPage: 100, offset: 100 },
+      access: { status: "error" },
+    });
   } finally {
     for (const spy of spies) spy.mockRestore();
   }

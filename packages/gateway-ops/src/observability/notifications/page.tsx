@@ -1,565 +1,142 @@
 import { listApps } from "@k2b/cloud";
-import { createPagination, hasRole, type NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { formatDateTime } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import OperationalCharts from "../../frontend/OperationalCharts.island";
-import { prepareOperationalCharts } from "../../frontend/operational-charts";
-import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
-import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
-import DeliveryFilterBar from "./_components/DeliveryFilterBar.island";
-import {
-  buildDeliveryNotificationsUrl,
-  buildLegacyNotificationsUrl,
-  buildRegistryNotificationsUrl,
-  type NotificationAppFilterOption,
-  notificationChannelIcon,
-  notificationChannelLabel,
-  parseDeliveryStatus,
-  parseFilterList,
-  parseLegacyStatus,
-  parseNotificationAdminView,
-  parseRegistryStatus,
-} from "./_components/filter-state";
-import NotificationActions from "./_components/NotificationActions.island";
-import NotificationFilterBar from "./_components/NotificationFilterBar.island";
-import NotificationViewSwitch from "./_components/NotificationViewSwitch.island";
-import RegistryFilterBar from "./_components/RegistryFilterBar.island";
+import { gatewayOpsMessages } from "../../messages";
+import { observabilityAdminNav } from "../_components/admin-nav";
+import type { KeyCell } from "../_components/KeyCells";
+import { areaText, readAttention } from "../_components/ObservabilityArea";
+import NotificationsScreen from "./_components/NotificationsScreen.island";
+import { legacyQuery, NOTIFICATIONS_PAGE_MAX, NOTIFICATIONS_PER_PAGE, NOTIFICATIONS_SEARCH_MAX, registryQuery } from "./query";
 import { notificationsService } from "./service";
 
-type DeliveryItem = Awaited<ReturnType<typeof notificationsService.delivery.list>>["items"][number];
-type RegistryItem = Awaited<ReturnType<typeof notificationsService.registry.list>>["items"][number];
-type LegacyItem = Awaited<ReturnType<typeof notificationsService.notification.list>>["items"][number];
-
-const parsePage = (value: string | undefined): number => {
-  const parsed = Number(value ?? "1");
-  return Number.isFinite(parsed) ? Math.max(1, Math.trunc(parsed)) : 1;
-};
-
-const paginationBase = (url: string): string => `${url}${url.includes("?") ? "&" : "?"}page=`;
-
-const channelChip = (channel: string, t: GatewayOpsMessages): JSX.Element => {
-  const tone =
-    channel === "email"
-      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-      : channel === "browser"
-        ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-200"
-        : "bg-[var(--ui-surface-muted)] text-secondary";
-  return (
-    <span class={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[10px] font-medium ${tone}`}>
-      <i class={`${notificationChannelIcon(channel)} text-xs`} />
-      {channel === "email" ? t.email : channel === "browser" ? t.browser : notificationChannelLabel(channel)}
-    </span>
-  );
-};
-
-const deliveryStatusBadge = (status: NotificationDeliveryStatus, t: GatewayOpsMessages): JSX.Element => {
-  const config = {
-    deferred: { label: t.deferred, icon: "ti ti-player-pause", tone: "neutral" },
-    pending: { label: t.pending, icon: "ti ti-clock", tone: "warning" },
-    sending: { label: t.sending, icon: "ti ti-send", tone: "running" },
-    delivered: { label: t.delivered, icon: "ti ti-check", tone: "ok" },
-    suppressed: { label: t.suppressed, icon: "ti ti-bell-off", tone: "neutral" },
-    failed: { label: t.failed, icon: "ti ti-alert-circle", tone: "error" },
-  } satisfies Record<NotificationDeliveryStatus, { label: string; icon: string; tone: StatusTone }>;
-  return <StatusBadge {...config[status]} />;
-};
-
-// A delivered notification can still bounce later; `sent` adds nothing to the delivery status.
-const outgoingMailLine = (item: DeliveryItem, t: GatewayOpsMessages): JSX.Element => {
-  const status = item.outgoingMailStatus;
-  if (!status || status === "sent") return null;
-  const label = { queued: t.queued, sending: t.sending, sent: t.sent, failed: t.failed, bounced: t.bounced, cancelled: t.canceled }[status];
-  const problem = status === "failed" || status === "bounced" || status === "cancelled";
-  return (
-    <p class={`mt-0.5 truncate text-[10px] ${problem ? "text-red-500" : "text-dimmed"}`} title={item.outgoingMailId ?? undefined}>
-      {t.outgoingMailStatus({ status: label })}
-    </p>
-  );
-};
-
-const legacyStatusBadge = (status: LegacyItem["status"], t: GatewayOpsMessages): JSX.Element => {
-  if (status === "sent") return deliveryStatusBadge("delivered", t);
-  if (status === "error") return deliveryStatusBadge("failed", t);
-  return deliveryStatusBadge("pending", t);
-};
-
-const buildAppOptions = (appIds: string[], liveApps: Awaited<ReturnType<typeof listApps>>): NotificationAppFilterOption[] => {
-  const liveById = new Map(liveApps.map((app) => [app.id, app]));
-  return appIds.map((id) => {
-    const app = liveById.get(id);
-    return { id, label: app?.name ?? id, icon: app?.icon ?? "ti ti-apps" };
-  });
-};
-
-const appCell = (appId: string, appById: ReadonlyMap<string, NotificationAppFilterOption>): JSX.Element => {
-  const app = appById.get(appId);
-  return (
-    <span class="inline-flex min-w-0 items-center gap-1.5" title={appId}>
-      <i class={`${app?.icon ?? "ti ti-apps"} shrink-0 text-sm text-dimmed`} />
-      <span class="truncate">{app?.label ?? appId}</span>
-    </span>
-  );
-};
-
+/**
+ * Notifications on v2: the definitions apps register (`tab=registry`) and the notifications sent before the delivery
+ * pipeline (`tab=legacy`). The router sends every other address of this path to the deliveries in Runs.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
-  const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
+  const dateConfig = getDateConfig(c);
   const user = expectUserBackedActor(c);
-  const isAdmin = hasRole(user, "admin");
-  const view = parseNotificationAdminView(c.req.query("view") ?? undefined);
-  const page = parsePage(c.req.query("page") ?? undefined);
-  const perPage = 100;
-  const search = (c.req.query("search") ?? "").trim();
+  const params = new URL(c.req.url).searchParams;
+  const view = params.get("tab") === "legacy" ? "legacy" : "registry";
+  const rawPage = Number(params.get("page") ?? 1);
+  const page = Number.isSafeInteger(rawPage) && rawPage >= 1 && rawPage <= NOTIFICATIONS_PAGE_MAX ? rawPage : 1;
+  const paging = { page, perPage: NOTIFICATIONS_PER_PAGE, offset: (page - 1) * NOTIFICATIONS_PER_PAGE };
+  const number = (value: number) => value.toLocaleString(locale);
+  const bounded = <S extends { search?: string }>(state: S): S =>
+    state.search && state.search.length > NOTIFICATIONS_SEARCH_MAX ? { ...state, search: undefined } : state;
 
-  const attention = await readAttention();
-  const renderPage = (description: string, content: () => JSX.Element) => () => (
-    <ObservabilityArea c={c} locale={locale} section="deliveries" attention={attention}>
-      <ObservabilityPane label={areaText(locale).deliveries} description={description}>
-        <div class="self-start">
-          <NotificationViewSwitch view={view} />
-        </div>
-        {content()}
-      </ObservabilityPane>
-    </ObservabilityArea>
+  const [registered, attention] = await Promise.all([listApps().catch(() => []), readAttention()]);
+  const apps = registered.map((app) => ({ id: app.id, label: app.name || app.id, icon: app.icon?.replace(/^ti\s+(ti-)?/, "") || "apps" }));
+  const appOf = (id: string) => apps.find((app) => app.id === id) ?? { id, label: id, icon: "apps" };
+
+  const registry =
+    view === "registry"
+      ? await (async () => {
+          const state = bounded(registryQuery(locale, apps).parse(params).state);
+          const [result, summary] = await Promise.all([
+            notificationsService.registry.list({
+              page,
+              perPage: NOTIFICATIONS_PER_PAGE,
+              filter: {
+                search: state.search,
+                appIds: state.filters.app ?? [],
+                active: state.filters.status ? state.filters.status === "active" : undefined,
+              },
+            }),
+            notificationsService.registry.summary(),
+          ]);
+          const cells: KeyCell[] = [
+            { icon: "list-details", label: t.definitions, value: number(summary.total), meta: t.durableCatalog },
+            { icon: "circle-check", label: t.activeDefinitions, value: number(summary.active), meta: t.latestAppCatalogs },
+            { icon: "apps", label: t.apps, value: number(summary.apps), meta: t.registeredCatalogs },
+            { icon: "lock", label: t.required, value: number(summary.required), meta: t.userLockedDelivery },
+          ];
+          return {
+            state,
+            total: result.total,
+            cells,
+            rows: result.items.map((item) => ({
+              id: item.id,
+              label: item.label,
+              description: item.description,
+              kind: item.kind,
+              app: appOf(item.appId),
+              recipientKind: item.recipientKind,
+              recommended: item.recommendedChannels,
+              required: item.requiredChannels,
+              events: number(item.eventCount7d),
+              failures: item.failedDeliveryCount7d,
+              lastSeen: item.lastSeenAt ? formatDateTime(item.lastSeenAt, dateConfig) : "—",
+              active: item.active,
+            })),
+          };
+        })()
+      : null;
+
+  const legacy =
+    view === "legacy"
+      ? await (async () => {
+          const state = bounded(legacyQuery(locale).parse(params).state);
+          const access = { isAdmin: true, sentBy: user.id };
+          const [result, summary, pendingSystem] = await Promise.all([
+            notificationsService.notification.list({
+              pagination: paging,
+              access: { ...access, search: state.search, status: state.filters.status },
+            }),
+            notificationsService.notification.summary({ access, days: 7 }),
+            notificationsService.system.pendingCount(),
+          ]);
+          const cells: KeyCell[] = [
+            {
+              icon: "alert-circle",
+              label: t.errors7d,
+              value: number(summary.error),
+              meta: summary.error > 0 ? t.last7Days : t.none,
+              tone: summary.error > 0 ? "bad" : undefined,
+            },
+            {
+              icon: "clock",
+              label: t.pending7d,
+              value: number(summary.pending),
+              meta: summary.pending > 0 ? t.last7Days : t.none,
+              tone: summary.pending > 0 ? "warn" : undefined,
+            },
+            { icon: "check", label: t.sent7d, value: number(summary.sent), meta: t.last7Days },
+          ];
+          return {
+            state,
+            total: result.total,
+            cells,
+            pendingSystem,
+            rows: result.items.map((item) => ({
+              id: item.id,
+              status: item.status,
+              recipient: item.recipient,
+              subject: item.subject,
+              content: item.content,
+              sentBy: item.sentByName ?? null,
+              created: formatDateTime(item.createdAt, dateConfig),
+              error: item.error ?? null,
+            })),
+          };
+        })()
+      : null;
+
+  return () => (
+    <AdminLayout c={c} ui="v2" title={areaText(locale).deliveries}>
+      <NotificationsScreen
+        nav={observabilityAdminNav(c, locale, attention, "deliveries")}
+        view={view}
+        apps={apps.map((app) => ({ id: app.id, label: app.label }))}
+        page={page}
+        registry={registry}
+        legacy={legacy}
+        open={view === "legacy" ? params.get("notification")?.slice(0, 100) || null : null}
+      />
+    </AdminLayout>
   );
-
-  if (view === "deliveries") {
-    const status = parseDeliveryStatus(c.req.query("status") ?? undefined);
-    const channels = parseFilterList(c.req.query("channels") ?? undefined);
-    const appIds = parseFilterList(c.req.query("apps") ?? undefined);
-    const deliveryFilter = {
-      search: search || undefined,
-      statuses: status === "all" ? undefined : [status],
-      channels,
-      appIds,
-    };
-    const [result, summary, timeseries, facets, liveApps] = await Promise.all([
-      notificationsService.delivery.list({
-        page,
-        perPage,
-        filter: deliveryFilter,
-      }),
-      notificationsService.delivery.summary({ days: 7, filter: deliveryFilter }),
-      notificationsService.delivery.timeseries({ days: 7, filter: deliveryFilter }),
-      notificationsService.facets(),
-      listApps().catch(() => []),
-    ]);
-    const appOptions = buildAppOptions(facets.appIds, liveApps);
-    const appById = new Map(appOptions.map((app) => [app.id, app]));
-    const pagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, result.total);
-    const baseUrl = paginationBase(buildDeliveryNotificationsUrl({ search, status, channels, appIds }));
-    const deliverySeries = (
-      [
-        [t.delivered, "delivered"],
-        [t.active, "active"],
-        [t.suppressed, "suppressed"],
-        [t.failed, "failed"],
-      ] as const
-    )
-      .filter(([, outcome]) => {
-        if (status === "all") return true;
-        if (status === "deferred" || status === "pending" || status === "sending") return outcome === "active";
-        return outcome === status;
-      })
-      .map(([label, outcome]) => ({
-        label,
-        data: timeseries.map((point) => ({ x: point.at.getTime(), y: point[outcome] })),
-      }));
-    const columns: DataTableColumn<DeliveryItem>[] = [
-      { id: "status", header: t.status, value: (item) => item.status },
-      { id: "notification", header: t.notification, value: (item) => item.title, cellClass: "max-w-[24rem]" },
-      { id: "app", header: t.app, value: (item) => appById.get(item.appId)?.label ?? item.appId },
-      { id: "recipient", header: t.recipient, value: (item) => item.recipientLabel, cellClass: "max-w-[18rem]" },
-      { id: "channel", header: t.channel, value: (item) => item.channel },
-      { id: "attempts", header: t.attempts, value: (item) => item.attemptCount, cellClass: "text-right tabular-nums" },
-      { id: "created", header: t.created, value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
-    ];
-
-    return renderPage(t.deliveryDescriptionPage, () => (
-      <>
-        <StatGrid columns={4}>
-          <StatCell
-            label={t.failed7d}
-            value={formatNumber(summary.failed, { locale })}
-            sub={summary.total > 0 ? t.totalCount({ count: formatNumber(summary.total, { locale }) }) : t.none}
-            valueClass={summary.failed > 0 ? "text-red-500" : "text-primary"}
-            accent={summary.failed > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
-          />
-          <StatCell
-            label={t.active7d}
-            value={formatNumber(summary.active, { locale })}
-            sub={t.activeDeliveryStates}
-            valueClass={summary.active > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-            accent={summary.active > 0 ? { tone: "amber", icon: "ti ti-clock" } : undefined}
-          />
-          <StatCell
-            label={t.delivered7d}
-            value={formatNumber(summary.delivered, { locale })}
-            sub={t.providerAccepted}
-            accent={{ tone: "emerald", icon: "ti ti-check" }}
-          />
-          <StatCell label={t.suppressed7d} value={formatNumber(summary.suppressed, { locale })} sub={t.policyOrFallback} />
-        </StatGrid>
-
-        <OperationalCharts
-          columns={2}
-          charts={prepareOperationalCharts(
-            [
-              {
-                kind: "line",
-                title: t.deliveryOutcomes,
-                description: t.deliveryOutcomesDescription,
-                series: deliverySeries,
-                maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
-              },
-              {
-                kind: "line",
-                title: `${t.failed} / ${t.suppressed}`,
-                series: deliverySeries.filter((series) => series.label === t.failed || series.label === t.suppressed),
-                maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
-              },
-            ],
-            locale,
-          )}
-        />
-
-        <div class="min-w-0" style="view-transition-name: admin-notification-deliveries-table">
-          <DataTable.Panel>
-            <DataTable.Header
-              title={t.deliveryAttempts}
-              subtitle={t.attemptsCount({
-                count: formatNumber(result.items.length, { locale }),
-                total: formatNumber(result.total, { locale }),
-              })}
-            />
-            <DataTable.Controls>
-              <DeliveryFilterBar
-                search={search}
-                status={status}
-                channels={channels}
-                appIds={appIds}
-                channelOptions={facets.channels}
-                appOptions={appOptions}
-              />
-            </DataTable.Controls>
-            <DataTable
-              rows={result.items}
-              columns={columns}
-              getRowId={(item) => item.id}
-              hoverRows
-              surface="plain"
-              empty={search ? t.noMatchingDeliveryAttempts : t.noDeliveryAttempts}
-              renderCell={({ row: item, col }) => {
-                if (col.id === "status") return deliveryStatusBadge(item.status, t);
-                if (col.id === "notification") {
-                  return (
-                    <div class="min-w-0">
-                      <p class="truncate font-medium text-primary" title={item.title}>
-                        {item.title}
-                      </p>
-                      <p class="truncate text-[10px] text-dimmed" title={item.definitionId}>
-                        {item.label}
-                      </p>
-                      {item.errorCode && (
-                        <p class="truncate text-[10px] text-red-500" title={item.errorMessage ?? item.errorCode}>
-                          {item.errorCode}
-                        </p>
-                      )}
-                    </div>
-                  );
-                }
-                if (col.id === "app") return appCell(item.appId, appById);
-                if (col.id === "recipient") {
-                  return (
-                    <div class="min-w-0">
-                      <p class="truncate text-primary" title={item.recipientLabel}>
-                        {item.recipientLabel}
-                      </p>
-                      {item.recipientReference !== item.recipientLabel && (
-                        <p class="truncate font-mono text-[10px] text-dimmed" title={item.recipientReference}>
-                          {item.recipientReference}
-                        </p>
-                      )}
-                    </div>
-                  );
-                }
-                if (col.id === "channel") {
-                  return (
-                    <div class="min-w-0">
-                      <div class="flex flex-wrap items-center gap-1">
-                        {channelChip(item.channel, t)}
-                        {item.required && <span class="text-[9px] font-medium uppercase text-dimmed">{t.required}</span>}
-                      </div>
-                      {outgoingMailLine(item, t)}
-                    </div>
-                  );
-                }
-                if (col.id === "attempts") return formatNumber(item.attemptCount, { locale });
-                if (col.id === "created") return <span class="text-dimmed">{formatDateTime(item.createdAt, dateConfig)}</span>;
-                return "";
-              }}
-            />
-            <DataTable.Footer>
-              <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
-            </DataTable.Footer>
-          </DataTable.Panel>
-        </div>
-      </>
-    ));
-  }
-
-  if (view === "registry") {
-    const status = parseRegistryStatus(c.req.query("status") ?? undefined);
-    const appIds = parseFilterList(c.req.query("apps") ?? undefined);
-    const [result, summary, facets, liveApps] = await Promise.all([
-      notificationsService.registry.list({
-        page,
-        perPage,
-        filter: { search: search || undefined, appIds, active: status === "all" ? undefined : status === "active" },
-      }),
-      notificationsService.registry.summary(),
-      notificationsService.facets(),
-      listApps().catch(() => []),
-    ]);
-    const appOptions = buildAppOptions(facets.appIds, liveApps);
-    const appById = new Map(appOptions.map((app) => [app.id, app]));
-    const pagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, result.total);
-    const baseUrl = paginationBase(buildRegistryNotificationsUrl({ search, status, appIds }));
-    const columns: DataTableColumn<RegistryItem>[] = [
-      { id: "app", header: t.app, value: (item) => appById.get(item.appId)?.label ?? item.appId },
-      { id: "notification", header: t.notification, value: (item) => item.label, cellClass: "max-w-[28rem]" },
-      { id: "recipient", header: t.recipient, value: (item) => item.recipientKind },
-      { id: "recommended", header: t.recommended, value: (item) => item.recommendedChannels.join(", ") },
-      { id: "required", header: t.required, value: (item) => item.requiredChannels.join(", ") },
-      { id: "events", header: t.events7d, value: (item) => item.eventCount7d, cellClass: "text-right tabular-nums" },
-      { id: "failures", header: t.failures7d, value: (item) => item.failedDeliveryCount7d, cellClass: "text-right tabular-nums" },
-      { id: "seen", header: t.lastSeenLabel, value: (item) => item.lastSeenAt, cellClass: "whitespace-nowrap" },
-      { id: "state", header: t.state, value: (item) => item.active },
-    ];
-
-    return renderPage(t.registryDescription, () => (
-      <>
-        <StatGrid columns={4}>
-          <StatCell label={t.definitions} value={formatNumber(summary.total, { locale })} sub={t.durableCatalog} />
-          <StatCell
-            label={t.activeDefinitions}
-            value={formatNumber(summary.active, { locale })}
-            sub={t.latestAppCatalogs}
-            accent={{ tone: "emerald", icon: "ti ti-check" }}
-          />
-          <StatCell label={t.apps} value={formatNumber(summary.apps, { locale })} sub={t.registeredCatalogs} />
-          <StatCell
-            label={t.required}
-            value={formatNumber(summary.required, { locale })}
-            sub={t.userLockedDelivery}
-            accent={{ tone: "amber", icon: "ti ti-lock" }}
-          />
-        </StatGrid>
-
-        <div class="min-w-0" style="view-transition-name: admin-notification-registry-table">
-          <DataTable.Panel>
-            <DataTable.Header
-              title={t.registeredNotificationKinds}
-              subtitle={t.definitionsCount({
-                count: formatNumber(result.items.length, { locale }),
-                total: formatNumber(result.total, { locale }),
-              })}
-            />
-            <DataTable.Controls>
-              <RegistryFilterBar search={search} status={status} appIds={appIds} appOptions={appOptions} />
-            </DataTable.Controls>
-            <DataTable
-              rows={result.items}
-              columns={columns}
-              getRowId={(item) => item.id}
-              hoverRows
-              surface="plain"
-              empty={search ? t.noMatchingRegisteredNotifications : t.noRegisteredDefinitions}
-              renderCell={({ row: item, col }) => {
-                if (col.id === "app") return appCell(item.appId, appById);
-                if (col.id === "notification") {
-                  return (
-                    <div class="min-w-0">
-                      <p class="truncate font-medium text-primary" title={item.label}>
-                        {item.label}
-                      </p>
-                      <p class="truncate text-[10px] text-dimmed" title={item.description}>
-                        {item.description}
-                      </p>
-                      <p class="truncate font-mono text-[9px] text-dimmed" title={item.id}>
-                        {item.kind}
-                      </p>
-                    </div>
-                  );
-                }
-                if (col.id === "recipient") {
-                  return (
-                    <span class="inline-flex items-center gap-1 text-xs capitalize text-secondary">
-                      <i class={item.recipientKind === "email" ? "ti ti-mail" : "ti ti-user"} />
-                      {item.recipientKind}
-                    </span>
-                  );
-                }
-                if (col.id === "recommended") {
-                  return item.recommendedChannels.length > 0 ? (
-                    <div class="flex flex-wrap gap-1">{item.recommendedChannels.map((channel) => channelChip(channel, t))}</div>
-                  ) : (
-                    <span class="text-dimmed">-</span>
-                  );
-                }
-                if (col.id === "required") {
-                  return item.requiredChannels.length > 0 ? (
-                    <div class="flex flex-wrap gap-1">{item.requiredChannels.map((channel) => channelChip(channel, t))}</div>
-                  ) : (
-                    <span class="text-dimmed">-</span>
-                  );
-                }
-                if (col.id === "events") return formatNumber(item.eventCount7d, { locale });
-                if (col.id === "failures") {
-                  return (
-                    <span class={item.failedDeliveryCount7d > 0 ? "text-red-500" : "text-dimmed"}>
-                      {formatNumber(item.failedDeliveryCount7d, { locale })}
-                    </span>
-                  );
-                }
-                if (col.id === "seen") return <span class="text-dimmed">{formatDateTime(item.lastSeenAt, dateConfig)}</span>;
-                if (col.id === "state") {
-                  return (
-                    <StatusBadge
-                      tone={item.active ? "ok" : "neutral"}
-                      label={item.active ? t.active : t.inactive}
-                      icon={item.active ? "ti ti-check" : "ti ti-archive"}
-                    />
-                  );
-                }
-                return "";
-              }}
-            />
-            <DataTable.Footer>
-              <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
-            </DataTable.Footer>
-          </DataTable.Panel>
-        </div>
-      </>
-    ));
-  }
-
-  const status = parseLegacyStatus(c.req.query("status") ?? undefined);
-  const [{ items, total }, summary, searchSummary] = await Promise.all([
-    notificationsService.notification.list({
-      pagination: { page, perPage },
-      access: { isAdmin, sentBy: user.id, search: search || undefined, status: status === "all" ? undefined : status },
-    }),
-    notificationsService.notification.summary({ access: { isAdmin, sentBy: user.id }, days: 7 }),
-    search ? notificationsService.notification.searchSummary({ access: { isAdmin, sentBy: user.id }, search }) : Promise.resolve(null),
-  ]);
-  const pagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, total);
-  const baseUrl = paginationBase(buildLegacyNotificationsUrl({ search, status }));
-  const columns: DataTableColumn<LegacyItem>[] = [
-    { id: "status", header: t.status, value: (item) => item.status },
-    { id: "recipient", header: t.recipient, value: (item) => item.recipient, cellClass: "font-mono text-[11px]" },
-    { id: "subject", header: t.subject, value: (item) => item.subject, cellClass: "max-w-[28rem]" },
-    { id: "sentBy", header: t.sentBy, value: (item) => item.sentByName },
-    { id: "created", header: t.created, value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
-    {
-      id: "actions",
-      header: <span class="sr-only">{t.actions}</span>,
-      headerClass: "w-px text-right",
-      cellClass: "text-right whitespace-nowrap",
-    },
-  ];
-
-  return renderPage(t.legacyNotificationsDescription, () => (
-    <>
-      <StatGrid columns={3}>
-        <StatCell
-          label={t.errors7d}
-          value={formatNumber(summary.error, { locale })}
-          sub={summary.error > 0 ? t.last7Days : t.none}
-          valueClass={summary.error > 0 ? "text-red-500" : "text-primary"}
-          accent={summary.error > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
-        />
-        <StatCell
-          label={t.pending7d}
-          value={formatNumber(summary.pending, { locale })}
-          sub={summary.pending > 0 ? t.last7Days : t.none}
-          valueClass={summary.pending > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-          accent={summary.pending > 0 ? { tone: "amber", icon: "ti ti-clock" } : undefined}
-        />
-        <StatCell
-          label={t.sent7d}
-          value={formatNumber(summary.sent, { locale })}
-          sub={t.last7Days}
-          accent={{ tone: "emerald", icon: "ti ti-check" }}
-        />
-      </StatGrid>
-
-      <div class="min-w-0" style="view-transition-name: admin-notification-legacy-table">
-        <DataTable.Panel>
-          <DataTable.Header
-            title={t.legacyEmailEntries}
-            subtitle={t.entriesCount({ count: formatNumber(items.length, { locale }), total: formatNumber(total, { locale }) })}
-          />
-          <DataTable.Controls>
-            <NotificationFilterBar search={search} status={status} />
-            {searchSummary && (
-              <div class="flex flex-wrap items-center gap-1.5">
-                <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ui-surface-muted)] text-secondary px-2.5 text-xs font-medium">
-                  <i class="ti ti-search text-sm" />
-                  {t.matches({ count: formatNumber(searchSummary.total, { locale }) })}
-                </span>
-                <span
-                  class={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${searchSummary.error > 0 ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-[var(--ui-surface-muted)] text-secondary"}`}
-                >
-                  <i class="ti ti-alert-circle text-sm" />
-                  {t.errorCountLabel({ count: formatNumber(searchSummary.error, { locale }) })}
-                </span>
-                <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-amber-100 px-2.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-                  <i class="ti ti-clock text-sm" />
-                  {t.pendingCountLabel({ count: formatNumber(searchSummary.pending, { locale }) })}
-                </span>
-              </div>
-            )}
-          </DataTable.Controls>
-          <DataTable
-            rows={items}
-            columns={columns}
-            getRowId={(item) => item.id}
-            hoverRows
-            surface="plain"
-            empty={search ? t.noMatchingLegacyNotifications : t.noLegacyNotifications}
-            renderCell={({ row: item, col }) => {
-              if (col.id === "status") return legacyStatusBadge(item.status, t);
-              if (col.id === "recipient") return item.recipient;
-              if (col.id === "subject")
-                return <span title={item.error ? `${item.subject} · ${item.error}` : item.subject}>{item.subject}</span>;
-              if (col.id === "sentBy") return <span class="text-dimmed">{item.sentByName ?? <span class="italic">{t.system}</span>}</span>;
-              if (col.id === "created") return <span class="text-dimmed">{formatDateTime(item.createdAt, dateConfig)}</span>;
-              if (col.id === "actions") {
-                return (
-                  <NotificationActions
-                    id={item.id}
-                    status={item.status}
-                    subject={item.subject}
-                    content={item.content}
-                    recipient={item.recipient}
-                    error={item.error}
-                    isAdmin={isAdmin}
-                  />
-                );
-              }
-              return "";
-            }}
-          />
-          <DataTable.Footer>
-            <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={baseUrl} />
-          </DataTable.Footer>
-        </DataTable.Panel>
-      </div>
-    </>
-  ));
 });
