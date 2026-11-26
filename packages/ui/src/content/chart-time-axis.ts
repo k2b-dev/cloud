@@ -12,26 +12,21 @@ export const chartTimeTicks = (domain: readonly [number, number], timeZone: stri
 export const chartTimeLabel = (tick: number, step: ChartTimeStep, axis: ChartTimeAxis) =>
   calendarTimeLabel(tick, step, axis, instantToZonedInput(new Date(tick), axis.timeZone).endsWith("T00:00"));
 
-/** A clock time in the axis's zone, always 24 hours: "07:00". */
-export const chartClock = (instant: number, axis: ChartTimeAxis): string =>
-  new Intl.DateTimeFormat(axis.locale ?? "en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: axis.timeZone }).format(
-    instant,
-  );
+const dayOf = (instant: number, timeZone: string) => instantToZonedInput(new Date(instant), timeZone).slice(0, 10);
 
-/**
- * A span of milliseconds in the unit of its size, the number in `locale`: "4 s" and "2,5 s", "12 min", "1 h 30 min".
- * Seconds below ten keep one decimal; minutes and hours are whole.
- */
-export const chartDuration = (milliseconds: number, locale = "en"): string => {
-  const number = (value: number, digits = 0) => new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value);
-  const seconds = Math.max(0, milliseconds) / 1000;
-  if (seconds < 59.5) return `${number(seconds, seconds < 10 ? 1 : 0)} s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${number(minutes)} min`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest ? `${number(hours)} h ${number(rest)} min` : `${number(hours)} h`;
-};
+/** Whether the span from `from` up to (not including) `to` reaches into a second day of the zone's calendar. */
+export const chartCrossesDay = (from: number, to: number, timeZone: string): boolean =>
+  dayOf(from, timeZone) !== dayOf(Math.max(from, to - 1), timeZone);
+
+/** A moment in the axis's zone, always 24 hours: "07:00", or with its day "26. Nov., 07:00". */
+export const chartClock = (instant: number, axis: ChartTimeAxis, withDay = false): string =>
+  new Intl.DateTimeFormat(axis.locale ?? "en", {
+    ...(withDay ? { day: "numeric", month: "short" } : {}),
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: axis.timeZone,
+  } as const).format(instant);
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const xTickLabel = /<text class="stdlib-chart-tick-label" x="(-?[\d.]+)" y="(-?[\d.]+)" text-anchor="middle">[^<]*<\/text>/g;

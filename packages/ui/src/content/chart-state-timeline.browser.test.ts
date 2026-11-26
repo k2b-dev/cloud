@@ -203,14 +203,16 @@ for (const width of [1440, 390])
         expect(axis.texts.length).toBeGreaterThanOrEqual(4);
         for (const text of axis.texts) expect(text).toMatch(/^(0[6-9]|1[0-8]):00$/);
         expect(axis.apart).toBe(true);
-        // the tooltip of a run: its clock times and its duration with a unit
+        // the tooltip of a run: its clock times and its duration in the calendar's words
         await page.locator(".k2-canvas > .k2b-chart").focus();
         await page.keyboard.press("ArrowRight");
         const tooltip = page.locator(".k2-canvas .k2b-chart__tooltip");
-        await page.waitForFunction(() => (document.querySelector(".k2-canvas .k2b-chart__tooltip")?.textContent ?? "").includes("min"));
+        await page.waitForFunction(() =>
+          /\d (Sek\.|Min|Std\.)/.test(document.querySelector(".k2-canvas .k2b-chart__tooltip")?.textContent ?? ""),
+        );
         const text = (await tooltip.textContent()) ?? "";
         expect(text).toMatch(/\d\d:\d\d/);
-        expect(text).toMatch(/\d+ (min|h)/);
+        expect(text).toMatch(/\d+ (Sek\.|Min|Std\.)/);
         expect(text).not.toMatch(/\d\.\d{3}/);
       },
       { timeAxis: true },

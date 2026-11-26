@@ -102,19 +102,35 @@ describe("state timeline over instants (timeAxis)", () => {
     expect(tickLabels(day())).toEqual(["26. Nov.", "06:00", "12:00", "18:00", "27. Nov."]);
   });
 
-  test("a run's duration has its unit, and its start and end are clock times", () => {
+  test("a run's duration reads in the calendar's words, and its start and end are clock times", () => {
     const svg = day();
-    expect(field(svg, 0, "duration")).toBe("4 s");
-    expect(field(svg, 1, "duration")).toBe("1 h 30 min");
-    expect(field(svg, 2, "duration")).toBe("12 min");
+    expect(field(svg, 0, "duration")).toBe("4 Sek.");
+    expect(field(svg, 1, "duration")).toBe("1 Std. 30");
+    expect(field(svg, 2, "duration")).toBe("12 Min");
     expect(field(svg, 0, "from")).toBe("07:00");
     expect(field(svg, 1, "to")).toBe("10:30");
+    // the words a host gives (Chart: its message catalog) win
+    expect(field(day({ formatDuration: (milliseconds: number) => `${milliseconds} ms` }), 0, "duration")).toBe("4000 ms");
+  });
+
+  test("a time names its day when the view or the run reaches into a second day", () => {
+    // a day: clock times only, also for a run that ends at midnight
+    const svg = day({ rows: [{ label: "Nacht", intervals: [{ from: at(22), to: at(24), state: "ok" }] }] });
+    expect(field(svg, 0, "from")).toBe("22:00");
+    // a run over midnight, cut at the end of a day's view: both ends with their day
+    const night = day({ rows: [{ label: "Nacht", intervals: [{ from: at(23), to: at(25), state: "ok" }] }] });
+    expect(field(night, 0, "from")).toBe("26. Nov., 23:00");
+    expect(field(night, 0, "to")).toBe("27. Nov., 01:00");
+    // a week: every time with its day, also a short run
+    const week = day({ domain: [dayStart, at(7 * 24)] });
+    expect(field(week, 0, "from")).toBe("26. Nov., 07:00");
+    expect(field(week, 0, "duration")).toBe("4 Sek.");
   });
 
   test("the page's own format still labels the axis and the times", () => {
     const svg = day({ xAxis: { format: (value: number) => `t${(value - dayStart) / 3_600_000}` } });
     expect(tickLabels(svg)).toEqual(["t0", "t6", "t12", "t18", "t24"]);
     expect(field(svg, 0, "from")).toBe("t7");
-    expect(field(svg, 0, "duration")).toBe("4 s");
+    expect(field(svg, 0, "duration")).toBe("4 Sek.");
   });
 });

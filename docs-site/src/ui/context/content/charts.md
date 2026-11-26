@@ -218,10 +218,18 @@ lane's accessible name.
 When the times are instants in Unix milliseconds, pass `timeAxis={{ timeZone }}`
 as on a line chart. The axis then steps on round wall times in that zone, for
 example every six hours across a day, with the date at midnight. Labels use
-24 hours in the page's language. The tooltip gives clock times and each
-duration with its unit: "4 s", "12 min", "1 h 30 min". `xAxis.format` still
-labels the axis and the times. Without `timeAxis`, the times are plain numbers
-and the duration has no unit.
+24 hours in the page's language. The tooltip gives clock times. When the view
+or the run reaches into a second day, each time also names its day
+("26. Nov., 23:00"). A duration reads as the calendar writes one, from the
+chart's message catalog: "4 Sek.", "12 Min", "1 Std. 30", "1 Tag 2 Std."
+("4 sec", "12 min", "1 hr 30 min", "1 day 2 hr" in English).
+`xAxis.format` still labels the axis and the times. Without `timeAxis`, the
+times are plain numbers and the duration has no unit.
+
+On the night the clocks go forward, the missing hour has no ticks: 03:00
+follows 01:00. On the night they go back, the hour that happens twice gets
+ticks only the first time, so the axis jumps from the last 02:xx tick in
+summer time to 03:00 in winter time.
 
 ## Bar charts
 
