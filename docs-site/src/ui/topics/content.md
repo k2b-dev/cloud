@@ -50,15 +50,27 @@ Values with their labels; `mono` and `copy` make a key, a token or an ID easy to
 
 ### Tiles
 
-Like things to press, such as attachments and media files; each opens its file.
+Like things to press, such as attachments and media files; each opens its file. `variant="media"` shows photos, pages and videos as a grid of pictures that people select.
 
 <Props of="Tiles Tile" />
+
+### Preview
+
+The large picture of the open thing at the top of its detail, 4:3; its symbol stands while the picture loads, fails or is missing.
+
+<Props of="Preview" />
 
 ### Canvas
 
 The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is free, and the rules do not measure it.
 
 <Props of="Canvas" />
+
+### Disclosure
+
+Something that opens in place, such as the answer to a question. Its content is made only while it is open: a closed answer is not in the page, so the browser's find in page does not reach it.
+
+<Props of="Disclosure" />
 
 ## Not in v2 yet
 
