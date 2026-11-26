@@ -219,7 +219,7 @@ try {
       const outline = await describeV2Page(tab, ".k2-sf-card");
       if (outline.includes("\nProblems (")) failed = true;
       section(`outline at ${width} px`, outline.split("\n"));
-      const layout = await measureV2Layout(tab, { root: "[data-k2-workspace], .frame" });
+      const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
       if (layout.problems.length) failed = true;
       section(
         `layout at ${width} px (${layout.measured.lines} lines, ${layout.measured.texts} texts measured)`,

@@ -2,9 +2,6 @@
 // as they are arranged, each with its mark, its figures and its state, then who changed what.
 import { Bar, Button, Cells, Chip, Digest, Input, Mark, Nav, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
 
-// The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { name: "Grids", color: "#047857", icon: "table" };
-
 // Each kind of thing has one colour, so a table looks like a table in the sidebar, in a row and in a sentence.
 const kind = {
   table: { icon: "table", color: "#008f4c" },
@@ -275,7 +272,7 @@ export default function PlaceHome(props: Props) {
 }
 
 // The app the screen belongs to (Grids): its colour and symbol, for the frame of a host around its pictures.
-export const app = { color: "#008f4c", icon: "table" };
+export const app = { name: "Grids", color: "#008f4c", icon: "table" };
 
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
