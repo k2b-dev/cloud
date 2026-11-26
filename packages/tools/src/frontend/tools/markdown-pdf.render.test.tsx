@@ -26,8 +26,10 @@ describe("Markdown to PDF tool", () => {
     expect(html).toContain("Neutral typography");
     expect(html).not.toContain("This replaces the print template");
     expect(html.match(/Generate PDF/g)?.length).toBeGreaterThanOrEqual(1);
-    expect(html).toContain("No PDF generated yet");
     expect(html).toContain("processed in memory and are not stored");
+    // no half of the page waits empty for a PDF: the preview comes with the first one
+    expect(html).not.toContain('aria-label="PDF preview"');
+    expect(html).not.toContain("No PDF generated yet");
   });
 
   test("shows prefilled CSS below the Markdown for the Custom template", () => {
@@ -45,6 +47,7 @@ describe("Markdown to PDF tool", () => {
     const ready = renderView({ initialMarkdown: "# Cloud", initialPreviewUrl: "https://example.test/preview.pdf" });
 
     expect(loading).toContain("Generating PDF…");
+    expect(loading).toContain('aria-label="PDF preview"');
     expect(loading).toContain("Cancel");
     expect(error).toContain("PDF generation failed");
     expect(error).toContain("PDF rendering is not configured.");

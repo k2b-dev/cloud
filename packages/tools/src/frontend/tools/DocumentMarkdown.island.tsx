@@ -92,6 +92,8 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
   const [result, setResult] = createSignal<DocumentMarkdownResult | null>(props.initialResult ?? null);
   const [error, setError] = createSignal(props.initialError ?? "");
   const [busy, setBusy] = createSignal(props.initialBusy ?? false);
+  // a drop that is not converted says so: one while another runs, or the others of several at once
+  const [refusal, setRefusal] = createSignal<{ title: string; text: string } | null>(null);
   let activeRequest: AbortController | null = null;
   let requestRevision = 0;
 
@@ -112,6 +114,9 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
     if (!file) return;
 
     cancel();
+    setRefusal(
+      files.length > 1 ? { title: t().onlyFirstTitle({ filename: file.name }), text: t().onlyFirst({ count: files.length - 1 }) } : null,
+    );
     setSelectedFilename(file.name);
     setResult(null);
     const validationError = validateDocumentMarkdownFile(file, t());
@@ -170,7 +175,8 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
       event.preventDefault();
       depth = 0;
       setDragging(false);
-      if (!busy()) void convert(files);
+      if (busy()) setRefusal({ title: t().busyDropTitle({ filename: files[0]!.name }), text: t().busyDrop });
+      else void convert(files);
     };
     document.addEventListener("dragenter", enter);
     document.addEventListener("dragleave", leave);
@@ -227,6 +233,13 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
           />
         }
       >
+        <Show when={refusal()}>
+          {(refused) => (
+            <Notice tone="warn" title={refused().title} actions={[{ label: t().hide, onClick: () => setRefusal(null) }]}>
+              {refused().text}
+            </Notice>
+          )}
+        </Show>
         <Show when={error()}>
           {(message) => (
             <Notice tone="bad" title={t().conversionFailedTitle} actions={[{ label: t().chooseDocument, onClick: choose }]}>
@@ -267,6 +280,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
                 ]}
               >
                 {/* The Markdown is drawn text: a fixed height, so a long document scrolls inside it. */}
+                {/* k2b-ui gap: no v2 code block yet (#4244); the Markdown stands in a Canvas until it lands. */}
                 <Canvas label={t().extractedFromAria({ filename: resolved().filename })} height={560}>
                   <pre
                     tabIndex={0}
