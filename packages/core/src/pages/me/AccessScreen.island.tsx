@@ -1,8 +1,9 @@
 import { Button, Empty, Notice, Pane, Row, Section } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
-import AccountWorkspace, { AccountTabs, sideWidth, useAccountMessages } from "./AccountWorkspace";
+import AccountWorkspace, { sideWidth, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
 import { useFreeIpaRequest } from "./freeipa-request";
+import { ACCOUNT_KINDS } from "./kinds";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
 
 type Group = { name: string; label: string; inherited: boolean };
@@ -41,7 +42,7 @@ export default function AccessScreen(props: AccessScreenProps) {
   return (
     <AccountWorkspace
       user={props.user}
-      place="account"
+      place="access"
       actions={
         <>
           <Show when={props.accountsUi}>
@@ -59,14 +60,13 @@ export default function AccessScreen(props: AccessScreenProps) {
         </>
       }
     >
-      <Pane label={t().accessAndGroups} head={<AccountTabs active="access" />}>
+      <Pane label={t().accessAndGroups}>
         <Pane.Split>
           <Pane label={t().groupMemberships}>
             <Section
               icon="users-group"
               title={t().groupMemberships}
               count={props.groups.length}
-              summary={t().groupMembershipsDescription}
               actions={[
                 {
                   label: props.showInherited ? t().directOnly : t().showInherited,
@@ -79,7 +79,7 @@ export default function AccessScreen(props: AccessScreenProps) {
                 <For each={props.groups}>
                   {(group) => (
                     <Row
-                      icon={group.inherited ? "git-branch" : "users"}
+                      mark={group.inherited ? ACCOUNT_KINDS.inheritedGroup : ACCOUNT_KINDS.group}
                       lines={[group.label]}
                       meta={group.inherited ? t().inheritedMembership : undefined}
                       href={groupHref("member", group.name)}
@@ -90,27 +90,22 @@ export default function AccessScreen(props: AccessScreenProps) {
             </Section>
           </Pane>
           <Pane side label={t().delegatedManagement} width={sideWidth}>
-            <Section
-              icon="user-shield"
-              title={t().delegatedManagement}
-              count={props.managed.length}
-              summary={t().delegatedManagementDescription}
-            >
+            <Section icon="user-shield" title={t().delegatedManagement} count={props.managed.length}>
               <Show when={props.managed.length > 0} fallback={<Empty icon="user-shield" text={t().noManagedGroups} />}>
                 <For each={props.managed}>
-                  {(group) => <Row icon="users" lines={[group.label]} href={groupHref("managed", group.name)} />}
+                  {(group) => <Row mark={ACCOUNT_KINDS.managedGroup} lines={[group.label]} href={groupHref("managed", group.name)} />}
                 </For>
               </Show>
             </Section>
             <Show when={props.freeIpa}>
               {(freeIpa) => (
-                <Section icon="building-fortress" title={t().freeIpaAccount} summary={t().freeIpaAccountDescription}>
+                <Section icon="building-fortress" title={t().freeIpaAccount}>
                   <Show
                     when={freeIpa().pendingSince}
                     fallback={
                       <Row
-                        icon="building-fortress"
-                        lines={[t().requestFreeIpaAccount]}
+                        mark={ACCOUNT_KINDS.freeIpa}
+                        lines={[t().requestFreeIpaAccount, t().freeIpaAccountDescription]}
                         action={{ label: t().requestFreeIpaAccount, onClick: request.request }}
                       />
                     }

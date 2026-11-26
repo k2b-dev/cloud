@@ -9,6 +9,7 @@ import ActivityScreen, { type ActivityScreenProps } from "./ActivityScreen.islan
 import { accountUserView } from "./account-view";
 import { activityLabel } from "./activity-labels";
 import { activityDaysOf, activityKindOf, activityQuery, deliveryStatusOf } from "./activity-query";
+import { ACCOUNT_KINDS } from "./kinds";
 import { accountMessages } from "./messages";
 import { notificationChannelMeta, notificationErrorText, notificationStatusMeta } from "./notification-ui";
 
@@ -16,6 +17,24 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+/** An account event as the kind of thing it touched, with the same mark as on the account's pages. */
+const eventMark = (action: string): { icon: string; color?: string } =>
+  action.startsWith("webauthn_credential.")
+    ? ACCOUNT_KINDS.passkey
+    : action.startsWith("service_account_credential.")
+      ? ACCOUNT_KINDS.apiKey
+      : action.startsWith("auth.pwa.device.")
+        ? ACCOUNT_KINDS.phone
+        : action === "accounts.user.change_own_password"
+          ? ACCOUNT_KINDS.password
+          : action === "auth.session.sign_out_others"
+            ? ACCOUNT_KINDS.session
+            : action === "accounts.user.remove_self"
+              ? ACCOUNT_KINDS.deletion
+              : action.startsWith("accounts.request.")
+                ? ACCOUNT_KINDS.freeIpa
+                : { icon: "user", color: "#0284c7" };
 
 /** A delivery's state as a word with its meaning: delivered is ok, failed is bad, a held or waiting one waits. */
 const deliveryTone = (status: NotificationDeliveryStatus): "ok" | "warn" | "bad" | undefined =>
@@ -34,7 +53,7 @@ export default ssr<AuthContext>(async (c) => {
   // An unknown or malformed app filter shows every app instead of an error page.
   const app = ApprovalListQuerySchema.shape.app.safeParse(c.req.query("app")).data;
   const page = parsePositiveInt(c.req.query("page"), 1);
-  const appNames = () => new Map(getLocalizedRuntimeContext(c).apps.map((entry) => [entry.id, entry.name]));
+  const appsById = () => new Map(getLocalizedRuntimeContext(c).apps.map((entry) => [entry.id, entry]));
 
   const loadContent = async (): Promise<ActivityScreenProps["content"]> => {
     if (kind === "open") return { kind, app, approvals: await loadPendingApprovals(c, app ? { app } : {}) };
@@ -46,7 +65,7 @@ export default ssr<AuthContext>(async (c) => {
         status: deliveryStatusOf(state),
         locale,
       });
-      const names = appNames();
+      const apps = appsById();
       return {
         kind,
         total: history.total,
@@ -57,7 +76,11 @@ export default ssr<AuthContext>(async (c) => {
           time: dates.formatDateTime(item.createdAt, { locale }),
           title: item.title,
           href: item.targetHref,
-          source: `${names.get(item.appId) ?? item.appId} · ${item.label} · ${notificationChannelMeta(item.channel, locale).label}`,
+          source: `${apps.get(item.appId)?.name ?? item.appId} · ${item.label} · ${notificationChannelMeta(item.channel, locale).label}`,
+          mark: {
+            icon: (apps.get(item.appId)?.icon ?? "ti ti-bell").replace(/^ti ti-/, ""),
+            color: apps.get(item.appId)?.appearance?.accent,
+          },
           state: { label: notificationStatusMeta(item.status, locale).label, tone: deliveryTone(item.status) },
           detail:
             notificationErrorText(item.errorCode, item.errorMessage, locale) ??
@@ -88,6 +111,7 @@ export default ssr<AuthContext>(async (c) => {
               ? { label: t.outcomeDenied, tone: "warn" }
               : { label: t.outcomeFailed, tone: "bad" },
         detail: null,
+        mark: eventMark(entry.action),
       })),
     };
   };

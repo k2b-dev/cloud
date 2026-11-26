@@ -2,11 +2,28 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { isModelsOnlyApiKey, type ServiceAccountCredential } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Button, Choice, confirm, DateInput, Dialog, Empty, Facts, Field, Input, Notice, Row, Section, Select, useToast } from "@k2b/ui/v2";
+import {
+  Button,
+  Chip,
+  Choice,
+  confirm,
+  DateInput,
+  Dialog,
+  Empty,
+  Facts,
+  Field,
+  Input,
+  Notice,
+  Row,
+  Section,
+  Select,
+  useToast,
+} from "@k2b/ui/v2";
 import { createSignal, For, type JSX, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
 import { useConnectSetup } from "./connect-setup";
+import { ACCOUNT_KINDS } from "./kinds";
 
 const CREATE_INTENT = { key: "create", value: "api-key" };
 
@@ -16,6 +33,8 @@ type ApiKeyDraft = { name: string; expiresAt: string | null; access?: ApiKeyAcce
 const EXPIRY_CHOICES = ["30", "90", "365", "never", "date"] as const;
 type Expiry = (typeof EXPIRY_CHOICES)[number];
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A key that stops working within this time is marked at its row. */
+const SOON_MS = 30 * DAY_MS;
 
 /** The last moment of a day (a date key) in a zone: a key chosen "until 15 December" works through that day. */
 const endOfDay = (day: string, timeZone: string): string =>
@@ -154,7 +173,6 @@ export const useApiKeys = (props: {
       icon="key"
       title={t().apiKeys}
       count={keys().length}
-      summary={t().apiKeysDescription}
       actions={[
         { label: t().createApiKey, icon: "plus", onClick: () => openCreate() },
         { label: t().connectAction, icon: "plug-connected", onClick: connect.open },
@@ -167,8 +185,15 @@ export const useApiKeys = (props: {
         <For each={keys()}>
           {(key) => (
             <Row
-              icon={isModelsOnlyApiKey(key) ? "sparkles" : "key"}
+              mark={isModelsOnlyApiKey(key) ? ACCOUNT_KINDS.modelsKey : ACCOUNT_KINDS.apiKey}
               lines={[key.name, line(key)]}
+              marks={
+                key.expiresAt && Date.parse(key.expiresAt) - base.getTime() < SOON_MS ? (
+                  <Chip status={Date.parse(key.expiresAt) <= base.getTime() ? "bad" : "warn"}>
+                    {Date.parse(key.expiresAt) <= base.getTime() ? t().expired : t().expiresSoon}
+                  </Chip>
+                ) : undefined
+              }
               end={
                 <Button
                   variant="ghost"
@@ -300,5 +325,5 @@ export const useApiKeys = (props: {
     </>
   );
 
-  return { section, dialogs, create: () => openCreate() };
+  return { section, dialogs, create: () => openCreate(), list: keys };
 };

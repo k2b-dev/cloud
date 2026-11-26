@@ -7,6 +7,7 @@ import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/brow
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
+import { ACCOUNT_KINDS } from "./kinds";
 
 const ADD_INTENT = { key: "add", value: "passkey" };
 
@@ -155,7 +156,6 @@ export default function PasskeysSection(props: {
         icon="fingerprint"
         title={t().passkeys}
         count={passkeys().length}
-        summary={t().passkeysDescription}
         actions={[{ label: t().addPasskey, icon: "plus", disabled: busy(), onClick: () => openCreate() }]}
       >
         <Show when={deleteError()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
@@ -168,7 +168,7 @@ export default function PasskeysSection(props: {
           <For each={passkeys()}>
             {(passkey) => (
               <Row
-                icon="fingerprint"
+                mark={ACCOUNT_KINDS.passkey}
                 lines={[passkey.name, line(passkey)]}
                 meta={passkey.backedUp ? t().synced : undefined}
                 end={

@@ -1,7 +1,7 @@
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Pane, Text, Workspace } from "@k2b/ui/v2";
 import { type JSX, onMount, Show } from "solid-js";
-import AccountWorkspace, { AccountTabs } from "../me/AccountWorkspace";
+import AccountWorkspace from "../me/AccountWorkspace";
 import type { AccountUserView } from "../me/account-view";
 import ApprovalNotice from "./ApprovalNotice";
 import type { ApprovalAvailability } from "./availability";
@@ -71,10 +71,8 @@ export default function PairScreen(props: PairScreenProps) {
       }
     >
       {(self) => (
-        <AccountWorkspace user={self().user} place="account">
-          <Pane label={t().pair} head={<AccountTabs active="security" />}>
-            {content()}
-          </Pane>
+        <AccountWorkspace user={self().user} place="security">
+          <Pane label={t().pair}>{content()}</Pane>
         </AccountWorkspace>
       )}
     </Show>

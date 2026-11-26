@@ -13,6 +13,7 @@ import {
 } from "../sign-out-others";
 import { useAccountMessages } from "./AccountWorkspace";
 import { signOutCurrentSession } from "./account-session";
+import { ACCOUNT_KINDS } from "./kinds";
 import { PasswordInput, PasswordSetupFields } from "./PasswordFields";
 
 type Outcome = "signed-out" | "sign-in-again" | "sign-out-failed";
@@ -141,14 +142,22 @@ export default function SignInSection(props: { userId: string; provider: UserPro
 
   return (
     <>
-      <Section icon="key" title={t().signInAndAccount} summary={t().signInAndAccountDescription}>
+      <Section icon="key" title={t().signInAndAccount}>
         <Show when={isIpa}>
-          <Row icon="lock" lines={[t().changePassword, t().changeFreeIpaPassword]} action={{ label: t().change, onClick: openPassword }} />
+          <Row
+            mark={ACCOUNT_KINDS.password}
+            lines={[t().password, t().changeFreeIpaPassword]}
+            action={{ label: t().change, onClick: openPassword }}
+          />
         </Show>
-        <Row icon="logout" lines={[t().signOut, t().signOutDescription]} action={{ label: t().signOut, onClick: signOut }} />
+        <Row
+          mark={ACCOUNT_KINDS.session}
+          lines={[t().thisBrowser, t().signOutDescription]}
+          action={{ label: t().signOut, onClick: signOut }}
+        />
         <Show when={isGuest}>
           <Row
-            icon="trash"
+            mark={ACCOUNT_KINDS.deletion}
             lines={[t().deleteAccount, t().deleteAccountDescription]}
             action={{ label: t().delete, onClick: () => void remove() }}
           />

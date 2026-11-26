@@ -1,14 +1,17 @@
 import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/privacy-timer";
 import type { KeyboardPlatform } from "@k2b/ui";
-import { Button, Cells, Empty, Facts, Notice, Pane, Row, Section } from "@k2b/ui/v2";
-import { For, Show } from "solid-js";
-import AccountWorkspace, { AccountTabs, sideWidth, twoActions, useAccountMessages } from "./AccountWorkspace";
+import { Button, Cells, Chip, Digest, Empty, Facts, Notice, Pane, Section } from "@k2b/ui/v2";
+import { Show } from "solid-js";
+import AccountWorkspace, { sideWidth, twoActions, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
+import { ACCOUNT_KINDS } from "./kinds";
 import { ACCOUNT_ACTIVITY_PATH } from "./paths";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
 import ScreenSection from "./ScreenSection";
 
 type Fact = { label: string; value: string };
+/** A key figure of the first row: its value, a line under it, and a state when it asks for something. */
+type Figure = { value: string; meta: string; status?: "warn" | "bad" };
 
 export type ProfileScreenProps = {
   user: AccountUserView;
@@ -29,8 +32,8 @@ export type ProfileScreenProps = {
     platform: KeyboardPlatform;
     sharedWorkstation?: { userId: string; minutes: number };
   };
-  /** One line per other account section, as the server counted it. */
-  summaries: Record<"security" | "access" | "notifications" | "developer", { value: string; meta: string }>;
+  /** The first row: how long the account lasts, how the person signs in, their groups and their keys. */
+  figures: Record<"validity" | "passkeys" | "groups" | "apiKeys", Figure>;
   /** The newest few entries of the account's activity, with their time formatted relative to the page's time. */
   activity: { label: string; context: string; when: string }[];
 };
@@ -53,24 +56,30 @@ export default function ProfileScreen(props: ProfileScreenProps) {
       ? ([{ label: actions.extending() ? t().extending : t().extendAccount, icon: "calendar-plus", onClick: extend }] as const)
       : undefined;
   };
+  // An expiry far away is a fact of the first row; only a near or passed one becomes a notice with its deed.
+  const urgentExpiry = () => {
+    const expiry = props.expiry;
+    return expiry && expiry.tone !== "note" ? expiry : null;
+  };
+  const value = (figure: Figure) => (figure.status ? <Chip status={figure.status}>{figure.value}</Chip> : figure.value);
 
   return (
     <AccountWorkspace
       user={props.user}
-      place="account"
+      place="profile"
       actions={
         <Button icon="camera" onClick={actions.changeAvatar}>
           {t().changeAvatar}
         </Button>
       }
     >
-      <Pane label={t().profile} head={<AccountTabs active="profile" />}>
+      <Pane label={t().profile}>
         <Show when={props.extendHint}>
           <Notice tone="note" icon="info-circle">
             {t().extendHint}
           </Notice>
         </Show>
-        <Show when={props.expiry}>
+        <Show when={urgentExpiry()}>
           {(expiry) => (
             <Notice tone={expiry().tone} icon="calendar-time" title={expiry().title} actions={extendAction()}>
               {expiry().before}
@@ -96,37 +105,39 @@ export default function ProfileScreen(props: ProfileScreenProps) {
         </Show>
         <Cells>
           <Cells.Cell
+            icon="calendar-time"
+            label={t().validUntil}
+            value={value(props.figures.validity)}
+            meta={props.figures.validity.meta}
+          />
+          <Cells.Cell
             icon="fingerprint"
+            color={ACCOUNT_KINDS.passkey.color}
             label={t().passkeys}
-            value={props.summaries.security.value}
-            meta={props.summaries.security.meta}
+            value={value(props.figures.passkeys)}
+            meta={props.figures.passkeys.meta}
             href="/me/security"
           />
           <Cells.Cell
             icon="users-group"
+            color={ACCOUNT_KINDS.group.color}
             label={t().groups}
-            value={props.summaries.access.value}
-            meta={props.summaries.access.meta}
+            value={value(props.figures.groups)}
+            meta={props.figures.groups.meta}
             href="/me/access"
           />
           <Cells.Cell
-            icon="bell"
-            label={t().notifications}
-            value={props.summaries.notifications.value}
-            meta={props.summaries.notifications.meta}
-            href="/me/notifications"
-          />
-          <Cells.Cell
             icon="key"
+            color={ACCOUNT_KINDS.apiKey.color}
             label={t().apiKeys}
-            value={props.summaries.developer.value}
-            meta={props.summaries.developer.meta}
+            value={value(props.figures.apiKeys)}
+            meta={props.figures.apiKeys.meta}
             href="/me/security"
           />
         </Cells>
         <Pane.Split>
           <Pane label={t().profileTitle}>
-            <Section icon="user" title={t().profileTitle} summary={t().profileDescription} actions={profileActions()}>
+            <Section icon="user" title={t().profileTitle} actions={profileActions()}>
               <Facts items={props.profileFacts} />
             </Section>
             <ScreenSection
@@ -136,19 +147,24 @@ export default function ProfileScreen(props: ProfileScreenProps) {
             />
           </Pane>
           <Pane side label={t().accountFacts} width={sideWidth}>
-            <Section icon="id" title={t().accountFacts}>
+            <Section icon="id" title={t().accountFacts} actions={urgentExpiry() ? undefined : extendAction()}>
               <Facts items={props.accountFacts} />
             </Section>
             <Section
               icon="activity"
-              title={t().recentSecurityActivity}
-              summary={t().recentSecurityActivityDescription}
+              title={t().recently}
               more={{ label: t().viewAll, href: `${ACCOUNT_ACTIVITY_PATH}?kind=sign-ins`, forward: true }}
             >
               <Show when={props.activity.length > 0} fallback={<Empty icon="clipboard-list" text={t().noRecentAccountActivity} />}>
-                <For each={props.activity}>
-                  {(entry) => <Row icon="shield-check" lines={[entry.label, entry.context]} time={entry.when} />}
-                </For>
+                <Digest
+                  label={t().recently}
+                  activity={props.activity.map((entry) => ({
+                    person: { name: props.user.name, image: props.user.image },
+                    text: entry.label,
+                    place: entry.context,
+                    time: entry.when,
+                  }))}
+                />
               </Show>
             </Section>
           </Pane>

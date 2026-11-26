@@ -45,6 +45,7 @@ const pages = {
   "/me/activity": (await import("./activity.page")).default,
 } as const;
 const { oldAccountAddresses } = await import("./old-addresses");
+const fixture = await import("./account-pages.test-fixture");
 type Path = keyof typeof pages;
 const { buildFontAssets } = await import("../../../scripts/font-assets");
 const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets");
@@ -66,9 +67,18 @@ const localUser: User = {
   ipa: null,
   accountExpires: "2027-03-31T00:00:00.000Z",
   lastLoginLocal: null,
-  memberofGroup: ["team-design", "team-events", "summer-party-2026"],
+  memberofGroup: [
+    "team-design",
+    "team-events",
+    "summer-party-2026",
+    "projekt-umzug",
+    "redaktion",
+    "it-support",
+    "fachschaft-informatik",
+    "betriebsrat-wahl",
+  ],
   memberofGroupIds: [],
-  manages: ["team-events"],
+  manages: ["team-events", "projekt-umzug", "redaktion"],
   managesGroupIds: [],
 };
 const now = "2026-09-30T10:00:00.000Z";
@@ -133,83 +143,20 @@ beforeEach(() => {
       const items = recursive ? [...direct, "inherited-fixture-team"] : direct;
       return { items, total: items.length, page: 1, perPage: items.length, hasNext: false };
     }),
-    spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue([
-      {
-        id: "00000000-0000-4000-8000-000000000101",
-        serviceAccountId: "00000000-0000-4000-8000-000000000102",
-        name: "Laptop scripts",
-        kind: "api_token",
-        status: "active",
-        tokenPrefix: "cld_7f3a",
-        scopes: [],
-        expiresAt: "2026-12-31T00:00:00.000Z",
-        lastUsedAt: now,
-        createdBy: null,
-        createdAt: now,
-        revokedAt: null,
-        revokedBy: null,
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000103",
-        serviceAccountId: "00000000-0000-4000-8000-000000000102",
-        name: "Dictation app",
-        kind: "api_token",
-        status: "active",
-        tokenPrefix: "cld_9b2c",
-        scopes: ["ai:inference"],
-        expiresAt: null,
-        lastUsedAt: null,
-        createdBy: null,
-        createdAt: now,
-        revokedAt: null,
-        revokedBy: null,
-      },
-    ] as never),
-    spyOn(services.webauthn, "listForUser").mockResolvedValue([
-      {
-        id: "00000000-0000-4000-8000-000000000201",
-        userId: localUser.id,
-        name: "Work laptop",
-        transports: ["internal"],
-        deviceType: "multiDevice",
-        backedUp: true,
-        createdAt: now,
-        lastUsedAt: now,
-      },
-    ]),
+    spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue(fixture.apiKeys),
+    spyOn(services.webauthn, "listForUser").mockResolvedValue(fixture.passkeys(localUser.id)),
     spyOn(services.audit, "listSelfServiceActivity").mockResolvedValue({
-      items: [
-        {
-          id: 1,
-          createdAt: now,
-          action: "webauthn_credential.authenticate",
-          label: "Signed in with a passkey",
-          outcome: "allowed",
-          context: null,
-        },
-        { id: 2, createdAt: now, action: "accounts.user.update", label: "Profile updated", outcome: "allowed", context: "Display name" },
-      ],
+      items: fixture.accountEvents,
+      total: 23,
     } as never),
-    spyOn(services.notifications.user.preferences, "list").mockResolvedValue({
-      availableChannels: ["inbox", "email"],
-      definitions: [
-        {
-          id: "core.account-expiry",
-          appId: "core",
-          kind: "account-expiry",
-          label: "Account expiry",
-          description: "Before your account expires.",
-          recommendedChannels: ["inbox", "email"],
-          requiredChannels: [],
-          excludedChannels: [],
-          excludedReason: null,
-          selectedChannels: ["inbox", "email"],
-          effectiveChannels: ["inbox", "email"],
-          customized: false,
-        },
-      ],
+    spyOn(services.notifications.user.preferences, "list").mockResolvedValue(fixture.notificationPreferences),
+    spyOn(services.notifications.user.history, "list").mockResolvedValue({
+      items: fixture.deliveries,
+      total: fixture.deliveries.length,
+      page: 1,
+      perPage: 25,
+      totalPages: 1,
     }),
-    spyOn(services.notifications.user.history, "list").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 25, totalPages: 0 }),
     spyOn(services.notifications.user.quiet, "get").mockResolvedValue({
       doNotDisturbUntil: null,
       quietHours: { timeZone: "Europe/Berlin", periods: [{ days: [1, 2, 3, 4, 5], start: "22:00", end: "07:00" }] },
@@ -222,19 +169,7 @@ beforeEach(() => {
       adminPairing: false,
     }),
     spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null } as never),
-    spyOn(services.appApproval, "listDevices").mockResolvedValue({
-      items: [
-        {
-          id: "00000000-0000-4000-8000-000000000301",
-          name: "Phone",
-          createdAt: now,
-          lastUsedAt: now,
-          revokedAt: null,
-          assisted: false,
-        },
-      ],
-      nextCursor: null,
-    }),
+    spyOn(services.appApproval, "listDevices").mockResolvedValue({ items: fixture.appDevices, nextCursor: null }),
     spyOn(server.auth.session, "getToken").mockReturnValue("demo-session" as never),
     spyOn(server.auth.session, "authenticateRequest").mockImplementation(async () => ({ user, data: { sid: "demo-session" } }) as never),
     // The page shell's own reads.
@@ -256,6 +191,8 @@ afterEach(() => {
 
 let browser: Browser;
 let css: string;
+/** The page template's two stylesheets, for pictures of the whole page in its shell. */
+let pageCss: { app: string; global: string; v2: string };
 beforeAll(async () => {
   // As the page template does: the layer order first, then Core's stylesheet, then the global one.
   const styles = [resolve(import.meta.dir, "../../styles/app.css"), resolve(import.meta.dir, "../../../../../styles.css")];
@@ -264,6 +201,7 @@ beforeAll(async () => {
   const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
   const v2Css = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css")), "utf8");
   css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss, v2Css].join("\n");
+  pageCss = { app: appCss!, global: globalCss!, v2: v2Css };
   if (shots) mkdirSync(shots, { recursive: true });
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
@@ -283,7 +221,7 @@ const request = (path: Path, locale: "en" | "de", query = "") =>
   new Hono()
     .use("*", async (c, next) => {
       c.set("user" as never, user as never);
-      c.set("runtime" as never, { apps: [] } as never);
+      c.set("runtime" as never, { apps: fixture.runtimeApps } as never);
       await next();
     })
     .get(path, ...(pages[path] as (typeof pages)["/me"]))
@@ -405,19 +343,20 @@ describe("account pages on v2", () => {
     expect(server.loadPendingApprovals).toHaveBeenCalledTimes(1);
   });
 
-  test("the account's areas are tabs with their own addresses, and the sidebar leads to the record and the activity", async () => {
+  test("the account's areas and its activity are entries of the sidebar, each with its own address", async () => {
     const html = await content("/me/security", "en");
     for (const href of ["/me", "/me/access", "/me/notifications", "/me/activity"]) expect(html).toContain(`href="${href}"`);
     // the phones of the mobile app stand there only while the installation offers the app
     expect(html).not.toContain("Phones with the app");
   });
 
-  test("warn about the account expiry only when it is close", async () => {
+  test("warn about the account expiry only when it is close; a far one is a fact of the first row", async () => {
     const tone = async (days: number) => {
       user = { ...localUser, accountExpires: new Date(Date.now() + days * 86_400_000).toISOString() };
       return /data-k2-part="Notice" data-tone="(\w+)"/.exec(await content("/me", "en"))?.[1];
     };
-    expect(await tone(120)).toBe("note");
+    expect(await tone(120)).toBeUndefined();
+    expect(await content("/me", "en")).toContain("Account valid until");
     expect(await tone(10)).toBe("warn");
     expect(await tone(-1)).toBe("bad");
   }, 30_000);
@@ -542,4 +481,44 @@ describe("account pages with the worst case of their data", () => {
       }
     expect(findings).toEqual([]);
   }, 120_000);
+});
+
+/** A stand-in for the installation's logo in the rail. */
+const BRAND_MARK =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#0f172a"/><text x="16" y="21" font-family="sans-serif" font-size="14" font-weight="700" fill="#fff" text-anchor="middle">C</text></svg>';
+
+// Pictures for the design review: the whole page as the server sends it, in the Cloud shell (rail, header, tinted
+// canvas), with the template's stylesheets and fonts and no island scripts. Only with CLOUD_ACCOUNT_SHOTS.
+describe.if(Boolean(shots))("account pages in the Cloud shell", () => {
+  test("pictures at 1440, 1024 and 390 px", async () => {
+    // the real page template: the stand-in shell is the first spy of every test
+    spies.shift()?.mockRestore();
+    for (const screen of screens)
+      for (const view of [desktop, tablet, phone]) {
+        const response = await request(screen.path, "de", screen.query);
+        const html = (await response.text()).replace("</head>", `<style>${pageCss.v2}</style></head>`);
+        const tab = await browser.newPage({
+          viewport: { width: view.width, height: view.height },
+          deviceScaleFactor: 1,
+          isMobile: view.touch,
+          hasTouch: view.touch,
+        });
+        try {
+          await tab.route(`${origin}/**`, (route) => {
+            const path = new URL(route.request().url()).pathname;
+            if (path === screen.path) return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+            if (path === "/public/core/app.css") return route.fulfill({ contentType: "text/css", body: pageCss.app });
+            if (path === "/public/global.css") return route.fulfill({ contentType: "text/css", body: pageCss.global });
+            if (path.startsWith("/branding/")) return route.fulfill({ contentType: "image/svg+xml", body: BRAND_MARK });
+            if (path.startsWith("/public/")) return route.fulfill({ path: join(root, path) }).catch(() => route.fulfill({ status: 404 }));
+            return route.fulfill({ status: 404, body: "" });
+          });
+          await tab.goto(`${origin}${screen.path}${screen.query ?? ""}`);
+          await tab.evaluate(() => document.fonts.ready);
+          await tab.screenshot({ path: join(shots!, `shell-${screen.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+  }, 240_000);
 });

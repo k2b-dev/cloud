@@ -1,10 +1,20 @@
 import { cloudMcpResourceUri, publicCloudOrigin } from "@k2b/cloud/api";
 import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { appApproval, coreSettings, pwaDevices, readAccountCategoryPolicy, serviceAccountCredentials, webauthn } from "@k2b/cloud/services";
+import {
+  appApproval,
+  audit,
+  coreSettings,
+  pwaDevices,
+  readAccountCategoryPolicy,
+  serviceAccountCredentials,
+  webauthn,
+} from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
+import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
 import { approvalAvailability } from "../app-approval/availability";
 import { accountUserView } from "./account-view";
+import { activityLabel } from "./activity-labels";
 import { activityHref } from "./activity-query";
 import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
@@ -32,21 +42,41 @@ export default ssr<AuthContext>(async (c) => {
   const appToken = phonesAvailable ? auth.session.getAppToken(c) : undefined;
   const appSession = appToken ? await auth.session.authenticateRequest(c, appToken) : null;
   const currentDeviceId = appSession?.data.kind === "app" && appSession.user.id === user.id ? appSession.data.deviceId : undefined;
-  const [categoryPolicy, approvalConfig, devices, freeIpaEnabledRaw, passkeys, phones, apiKeys, rawAppName, rawAppUrl, openAiApiEnabled] =
-    await Promise.all([
-      readAccountCategoryPolicy(),
-      appApproval.config(false).catch(() => null),
-      session
-        ? appApproval.listDevices({ userId: session.user.id, sid: session.data.sid, admin: isAdmin }).catch(() => null)
-        : Promise.resolve(null),
-      coreSettings.get<boolean>("freeipa.enable"),
-      webauthn.listForUser({ userId: user.id }),
-      phonesAvailable ? pwaDevices.list({ userId: user.id }, currentDeviceId) : Promise.resolve(null),
-      serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
-      coreSettings.get<string>("app.name"),
-      coreSettings.get<string>("app.url"),
-      coreSettings.get<boolean>("ai.openai_api_enabled"),
-    ]);
+  const [
+    categoryPolicy,
+    approvalConfig,
+    devices,
+    freeIpaEnabledRaw,
+    passkeys,
+    phones,
+    apiKeys,
+    rawAppName,
+    rawAppUrl,
+    openAiApiEnabled,
+    activityPage,
+  ] = await Promise.all([
+    readAccountCategoryPolicy(),
+    appApproval.config(false).catch(() => null),
+    session
+      ? appApproval.listDevices({ userId: session.user.id, sid: session.data.sid, admin: isAdmin }).catch(() => null)
+      : Promise.resolve(null),
+    coreSettings.get<boolean>("freeipa.enable"),
+    webauthn.listForUser({ userId: user.id }),
+    phonesAvailable ? pwaDevices.list({ userId: user.id }, currentDeviceId) : Promise.resolve(null),
+    serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
+    coreSettings.get<string>("app.name"),
+    coreSettings.get<string>("app.url"),
+    coreSettings.get<boolean>("ai.openai_api_enabled"),
+    audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 4 } }),
+  ]);
+  const now = new Date();
+  // relative to the time of this answer, so the server and the first paint agree
+  const recent = activityPage.items.map((entry) => ({
+    label: activityLabel(entry, t),
+    context: entry.context || t.accountContext,
+    when: dates.formatDateTimeRelative(entry.createdAt, { locale, base: now }),
+  }));
+  const passwordExpires = user.ipa?.passwordExpires;
   const availability = approvalAvailability(approvalConfig);
   const cloudUrl = publicCloudOrigin(rawAppUrl);
 
@@ -87,7 +117,17 @@ export default ssr<AuthContext>(async (c) => {
           cloudUrl,
           timeZone: getDateConfig(c).timeZone ?? "UTC",
         }}
-        now={new Date().toISOString()}
+        now={now.toISOString()}
+        recent={recent}
+        eventCount={activityPage.total}
+        password={
+          passwordExpires
+            ? {
+                value: dates.formatDate(passwordExpires, { locale }),
+                soon: Date.parse(passwordExpires) - now.getTime() < 14 * 86_400_000,
+              }
+            : null
+        }
       />
     </Layout>
   );

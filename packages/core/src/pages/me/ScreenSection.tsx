@@ -2,7 +2,7 @@ import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/privacy-timer";
 import { createPrivacyTimerChoice, PRIVACY_SHORTCUT, parsePrivacyTimer, requestPrivacyScreen } from "@k2b/cloud/ssr/privacy-timer-choice";
 import { createSharedWorkstationSwitch } from "@k2b/cloud/ssr/profile-actions";
 import { formatShortcut, type KeyboardPlatform, useLocale } from "@k2b/ui";
-import { Check, Field, Row, Section, Select, Text, useToast } from "@k2b/ui/v2";
+import { Check, Row, Section, Select, useToast } from "@k2b/ui/v2";
 import { createEffect, on, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 
@@ -30,40 +30,44 @@ export default function ScreenSection(props: {
   );
   const shortcut = () => formatShortcut(PRIVACY_SHORTCUT, { platform: props.platform, locale: locale() }).label;
   // k2b-ui gap: Section has no anchor id; PRIVACY_SETTINGS_HREF ("/me#screen") lands at the top of the profile.
+  // k2b-ui gap: `Setting` (#4223, not on main yet) puts name and hint left and the value beside them; until then a
+  // `Row` holds the control at its end, which reads the same way.
   return (
-    <Section icon="device-desktop" title={t().screenTitle} summary={t().screenDescription}>
-      <Field
-        name="privacyTimer"
-        label={privacy.messages().timer}
-        hint={privacy.saved() ? t().privacySaved : t().privacyTimerHint}
-        error={privacy.failed() !== null ? t().privacyNotSaved : undefined}
-      >
-        <Select
-          options={privacy.options()}
-          value={String(privacy.value())}
-          onChange={(value) => {
-            const seconds = parsePrivacyTimer(value);
-            if (seconds !== undefined) privacy.choose(seconds);
-          }}
-        />
-      </Field>
+    <Section icon="device-desktop" title={t().screenTitle}>
+      <Row
+        lines={[
+          privacy.messages().timer,
+          privacy.failed() !== null ? t().privacyNotSaved : privacy.saved() ? t().privacySaved : t().privacyTimerHint,
+        ]}
+        end={
+          <Select
+            label={privacy.messages().timer}
+            options={privacy.options()}
+            value={String(privacy.value())}
+            onChange={(value) => {
+              const seconds = parsePrivacyTimer(value);
+              if (seconds !== undefined) privacy.choose(seconds);
+            }}
+          />
+        }
+      />
       <Show when={props.sharedWorkstation}>
         {(workstation) => (
-          <>
-            <Check
-              switch
-              label={shared.messages().label}
-              checked={shared.shared()}
-              disabled={shared.pending()}
-              onChange={() => void shared.toggle()}
-            />
-            <Text muted type="meta">
-              {t().sharedWorkstationHint({ minutes: workstation().minutes })}
-            </Text>
-          </>
+          <Row
+            lines={[shared.messages().label, t().sharedWorkstationHint({ minutes: workstation().minutes })]}
+            end={
+              <Check
+                switch
+                label={shared.shared() ? t().on : t().off}
+                checked={shared.shared()}
+                disabled={shared.pending()}
+                onChange={() => void shared.toggle()}
+              />
+            }
+          />
         )}
       </Show>
-      <Row icon="eye-off" lines={[t().privacyNowTitle, shortcut()]} action={{ label: t().privacyTry, onClick: requestPrivacyScreen }} />
+      <Row lines={[t().privacyNowTitle, shortcut()]} action={{ label: t().privacyTry, onClick: requestPrivacyScreen }} />
     </Section>
   );
 }

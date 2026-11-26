@@ -18,6 +18,8 @@ export type ActivityRow = {
   state: { label: string; tone?: "ok" | "warn" | "bad" };
   /** A failure's reason, or where a delivery went. */
   detail: string | null;
+  /** What the entry is about: the app of a notification, the kind of thing of an account event. */
+  mark: { icon: string; color?: string };
 };
 
 export type ActivityScreenProps = {
@@ -39,13 +41,22 @@ export default function ActivityScreen(props: ActivityScreenProps) {
   const [state, setState] = createSignal(props.state);
   const entries = () => (props.content.kind === "open" ? null : props.content);
   const open = () => (props.content.kind === "open" ? props.content : null);
-  const lead = () => {
+  // The count is a fact of the bar; the lead says what needs the person.
+  const count = () => {
     const content = props.content;
     return content.kind === "open"
       ? t().openApprovalsCount({ count: content.approvals.items.length })
       : content.kind === "deliveries"
         ? t().deliveryCount({ count: content.total })
         : t().activityCount({ count: content.total });
+  };
+  const lead = () => {
+    const content = props.content;
+    if (content.kind === "open")
+      return content.approvals.items.length > 0 ? t().waitingForYou({ count: content.approvals.items.length }) : t().nothingWaiting;
+    const problems = content.rows.filter((row) => row.state.tone === "bad" || row.state.tone === "warn").length;
+    if (content.kind === "deliveries") return problems > 0 ? t().notDelivered({ count: problems }) : t().allDelivered;
+    return problems > 0 ? t().deniedAttempts({ count: problems }) : t().nothingUnusual;
   };
   const chip = (row: ActivityRow) =>
     row.state.tone ? <Chip status={row.state.tone}>{row.state.label}</Chip> : <Chip>{row.state.label}</Chip>;
@@ -59,7 +70,7 @@ export default function ActivityScreen(props: ActivityScreenProps) {
             <FilterBar
               query={query()}
               state={state()}
-              results={lead()}
+              results={count()}
               icons={{ kind: "list", status: "send", activityDays: "calendar" }}
               onChange={(next) => {
                 setState(next);
@@ -67,7 +78,7 @@ export default function ActivityScreen(props: ActivityScreenProps) {
                 void swapPage(activityPageHref(t(), next, 1), { replace: true, scroll: "preserve" });
               }}
             />
-            <StatusRow lead={lead()} />
+            <StatusRow lead={lead()} facts={[{ value: count() }]} />
           </>
         }
       >
@@ -96,13 +107,13 @@ export default function ActivityScreen(props: ActivityScreenProps) {
                   icon: "clipboard-list",
                   text: list().kind === "deliveries" ? t().noNotificationDeliveries : t().noActivityInRange,
                 }}
-                phone={(row) => ({ lines: [row.title, row.source], time: row.time, marks: chip(row) })}
+                // k2b-ui gap: a table cell cannot lead with the thing's mark yet (`Column mark`, #4223); the phone rows do.
+                phone={(row) => ({ mark: row.mark, lines: [row.title, row.source], time: row.time, marks: chip(row) })}
                 columns={[
                   { title: t().time, width: { min: 160, default: 170 }, cell: (row) => row.time },
                   {
                     title: list().kind === "deliveries" ? t().notification : t().activity,
-                    width: { min: 180, default: 240 },
-                    wrap: true,
+                    width: { min: 180, default: 250 },
                     cell: (row) => (row.href ? <Text href={row.href}>{row.title}</Text> : row.title),
                   },
                   {

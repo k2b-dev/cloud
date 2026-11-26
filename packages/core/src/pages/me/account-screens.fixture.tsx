@@ -61,6 +61,9 @@ export const securityProps = (): SecurityScreenProps => ({
     timeZone: "Europe/Berlin",
   },
   now: NOW,
+  recent: [{ label: "Signed in with a passkey", context: "Arbeitslaptop", when: "vor 2 Std." }],
+  eventCount: 12,
+  password: null,
 });
 
 /** Do not disturb with no pause and quiet hours on weekday nights, in Berlin. */

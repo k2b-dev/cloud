@@ -1,6 +1,6 @@
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { type Action, Bar, Nav, type NavItem, RecordHead, Tabs, Text, type TwoActions, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Nav, type NavGroup, RecordHead, type TwoActions, Workspace } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
 import type { AccountUserView } from "./account-view";
 import { accountMessages } from "./messages";
@@ -24,31 +24,14 @@ export const twoActions = (list: readonly Action[]): TwoActions | undefined => {
   return first ? (second ? [first, second] : [first]) : undefined;
 };
 
-/** The areas of the account record as the head of its pane. */
-export function AccountTabs(props: { active: AccountTab }) {
-  const t = useAccountMessages();
-  return (
-    <Tabs
-      label={t().accountSections}
-      items={(
-        [
-          { id: "profile", href: "/me", label: t().profile, icon: "user" },
-          { id: "security", href: "/me/security", label: t().securityAndDevices, icon: "shield-lock" },
-          { id: "access", href: "/me/access", label: t().accessAndGroups, icon: "users-group" },
-          { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "bell" },
-        ] satisfies { id: AccountTab; href: string; label: string; icon: string }[]
-      ).map((tab) => ({ label: tab.label, icon: tab.icon, href: tab.href, current: tab.id === props.active }))}
-    />
-  );
-}
-
 /**
- * The frame of the account pages on v2: the account and its activity in the sidebar (the phone menu lists the same).
- * The account record names the person in the head; the activity names itself. The head's end holds the page's deeds.
+ * The frame of the account pages on v2. The sidebar holds the account's areas and its activity (the phone menu lists
+ * the same), so the open area is the current entry and never a title of its own. The head names the person, the
+ * account's one "thing", small in one row, with the page's deeds at its end.
  */
 export default function AccountWorkspace(props: {
   user: AccountUserView;
-  place: "account" | "activity";
+  place: AccountTab | "activity";
   /** The page's deeds at the end of the head. */
   actions?: JSX.Element;
   /** The page's main deed, floating on the phone; the same deed stands as the primary button in `actions`. */
@@ -56,35 +39,44 @@ export default function AccountWorkspace(props: {
   children: JSX.Element;
 }) {
   const t = useAccountMessages();
-  const groups = (): { items: NavItem[] }[] => [
+  const groups = (): NavGroup[] => [
     {
-      items: [
-        { label: t().account, icon: "user-circle", href: "/me", current: props.place === "account" },
-        { label: t().activity, icon: "activity", href: ACCOUNT_ACTIVITY_PATH, current: props.place === "activity" },
-      ],
+      items: (
+        [
+          { id: "profile", href: "/me", label: t().profile, icon: "user" },
+          { id: "security", href: "/me/security", label: t().securityAndDevices, icon: "shield-lock" },
+          { id: "access", href: "/me/access", label: t().accessAndGroups, icon: "users-group" },
+          { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "bell" },
+        ] satisfies { id: AccountTab; href: string; label: string; icon: string }[]
+      ).map((area) => ({ label: area.label, icon: area.icon, href: area.href, current: area.id === props.place })),
+    },
+    {
+      items: [{ label: t().activity, icon: "activity", href: ACCOUNT_ACTIVITY_PATH, current: props.place === "activity" }],
     },
   ];
   return (
     <>
-      <V2WorkspaceNavigation label={t().account} groups={groups()} />
+      {/* on the phone the sidebar is a menu, so its title names the open place */}
+      <V2WorkspaceNavigation
+        label={
+          groups()
+            .flatMap((group) => group.items)
+            .find((item) => item.current)?.label ?? t().account
+        }
+        groups={groups()}
+      />
       <Workspace
         sidebar={<Nav title={t().account} icon="user-circle" groups={groups()} />}
         sidebarLabel={t().accountSections}
         head={
           <Bar
             start={
-              props.place === "account" ? (
-                <RecordHead
-                  name={props.user.name}
-                  avatar={{ name: props.user.name, image: props.user.image }}
-                  kinds={props.user.kinds}
-                  ids={[{ label: t().username, value: props.user.uid, copy: true }]}
-                />
-              ) : (
-                <Text type="body" weight="strong">
-                  {t().activity}
-                </Text>
-              )
+              <RecordHead
+                name={props.user.name}
+                avatar={{ name: props.user.name, image: props.user.image }}
+                kinds={props.user.kinds}
+                ids={[{ label: t().username, value: props.user.uid, copy: true }]}
+              />
             }
             end={props.actions}
           />

@@ -15,6 +15,8 @@ import RevokeDevice, { findRemoval, type RevokeRequest, revokeStorageKey, SavedR
 
 // Mirrors the server's readable minute after a device change expires.
 const removalResultGraceMs = 60_000;
+/** A paired device as a thing: the same mark as on the account's other pages (`me/kinds.ts`). */
+const DEVICE_MARK = { icon: "device-mobile-check", color: "#2563eb" };
 
 /** The paired sign-in app devices of the signed-in person, as a section of the security page. */
 export default function DevicesSection(props: {
@@ -154,7 +156,6 @@ export default function DevicesSection(props: {
         icon="device-mobile"
         title={t().devices}
         count={page() ? activeDevices().length : undefined}
-        summary={t().description}
         actions={
           props.availability === "configured"
             ? [{ label: t().pair, icon: "plus", disabled: !props.pairing, onClick: () => setPairingOpen(true) }]
@@ -185,7 +186,7 @@ export default function DevicesSection(props: {
             <For each={activeDevices()}>
               {(device) => (
                 <Row
-                  icon="device-mobile"
+                  mark={DEVICE_MARK}
                   lines={[device.name, deviceLine(device)]}
                   end={
                     <Menu

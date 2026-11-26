@@ -15,6 +15,7 @@ import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCle
 import { z } from "zod";
 import { ApprovalError, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
 import { useAccountMessages } from "./AccountWorkspace";
+import { ACCOUNT_KINDS } from "./kinds";
 
 const pwaApi = apiClient.auth.pwa.v1;
 const ResumeSchema = z.object({ id: z.string().uuid(), expiresAt: z.string().datetime() });
@@ -535,7 +536,6 @@ export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[];
       icon="device-mobile"
       title={t().pwaPhones}
       count={devices().length}
-      summary={props.summary}
       actions={[{ label: t().pwaPair, icon: "plus", onClick: () => open() }]}
     >
       <Show
@@ -547,7 +547,7 @@ export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[];
         <For each={devices()}>
           {(device) => (
             <Row
-              icon={icon(device.platform)}
+              mark={{ ...ACCOUNT_KINDS.phone, icon: icon(device.platform) }}
               lines={[device.name, `${device.current ? `${t().pwaThisPhone} · ` : ""}${t().pwaLastUsed({ when: day(device.lastUsedAt) })}`]}
               end={
                 <Button

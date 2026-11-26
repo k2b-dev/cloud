@@ -16,7 +16,7 @@ render(
       {screen === "security" ? (
         <SecurityScreen {...securityProps()} />
       ) : screen === "quiet" ? (
-        <AccountWorkspace user={userView} place="account">
+        <AccountWorkspace user={userView} place="notifications">
           <Pane label="Do not disturb">
             <QuietTimeSection initial={quietSettings} dateConfig={{ timeZone: "Europe/Berlin", locale: "en", firstDayOfWeek: 1 }} />
           </Pane>

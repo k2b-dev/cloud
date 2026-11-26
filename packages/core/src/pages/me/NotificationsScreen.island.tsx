@@ -1,7 +1,7 @@
 import type { NotificationQuietSettings, UserNotificationPreferencesResponse } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import { Pane } from "@k2b/ui/v2";
-import AccountWorkspace, { AccountTabs, sideWidth, useAccountMessages } from "./AccountWorkspace";
+import AccountWorkspace, { sideWidth, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
 import BrowserNotificationsSection from "./BrowserNotificationsSection";
 import NotificationPreferencesSections, { type NotificationAppMeta } from "./NotificationPreferencesSections";
@@ -17,8 +17,8 @@ export default function NotificationsScreen(props: {
 }) {
   const t = useAccountMessages();
   return (
-    <AccountWorkspace user={props.user} place="account">
-      <Pane label={t().notifications} head={<AccountTabs active="notifications" />}>
+    <AccountWorkspace user={props.user} place="notifications">
+      <Pane label={t().notifications}>
         <Pane.Split>
           <Pane label={t().notifications}>
             <NotificationPreferencesSections initial={props.preferences} apps={props.apps} />

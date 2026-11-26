@@ -1,12 +1,12 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserNotificationPreference, UserNotificationPreferencesResponse } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
-import { Check, Chip, Empty, Group, Section, Text, useToast } from "@k2b/ui/v2";
+import { Button, Chip, Empty, Inline, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import { notificationChannelAvailability, notificationChannelMeta } from "./notification-ui";
 
-export type NotificationAppMeta = { id: string; name: string; icon: string };
+export type NotificationAppMeta = { id: string; name: string; icon: string; color?: string };
 
 type PreferenceChange = { type: "set"; channels: string[] } | { type: "reset"; channels: string[] };
 
@@ -66,49 +66,56 @@ const Preference = (props: { preference: UserNotificationPreference; availableCh
       ...new Set(optionalChannels.map((channel) => availability(channel).description).filter((reason): reason is string => !!reason)),
     ].join(" ");
 
+  // The kind's channels as chips to press at the row's end; a channel the app always uses stands as a plain tag.
   return (
-    <Group
-      title={props.preference.label}
-      state={customized() ? <Chip tag>{t().customized}</Chip> : <Chip>{t().appDefault}</Chip>}
-      actions={
-        customized()
-          ? [
-              {
-                label: t().useAppDefault,
-                icon: "restore",
-                disabled: busy(),
-                onClick: () => void update({ type: "reset", channels: defaults }),
-              },
-            ]
-          : undefined
+    <Row
+      lines={
+        reasons()
+          ? [props.preference.label, props.preference.description, reasons()]
+          : [props.preference.label, props.preference.description]
       }
-    >
-      <Text muted>{props.preference.description}</Text>
-      <For each={props.preference.requiredChannels}>
-        {(channel) => (
-          <Check switch checked disabled label={t().requiredChannel({ label: notificationChannelMeta(channel, locale()).label })} />
-        )}
-      </For>
-      <For each={optionalChannels}>
-        {(channel) => (
-          <Check
-            switch
-            label={notificationChannelMeta(channel, locale()).label}
-            checked={!excluded.has(channel) && selected().includes(channel)}
-            disabled={busy() || excluded.has(channel) || !availability(channel).enabled}
-            onChange={(enabled) => toggle(channel, enabled)}
-          />
-        )}
-      </For>
-      <Show when={props.preference.requiredChannels.length === 0 && optionalChannels.length === 0}>
-        <Text muted>{t().noDeliveryChannel}</Text>
-      </Show>
-      <Show when={reasons()}>
-        <Text muted type="meta">
-          {reasons()}
-        </Text>
-      </Show>
-    </Group>
+      meta={customized() ? t().customized : undefined}
+      end={
+        <Inline>
+          <For each={props.preference.requiredChannels}>
+            {(channel) => (
+              <Chip tag icon={notificationChannelMeta(channel, locale()).icon.replace(/^ti ti-/, "")}>
+                {t().requiredChannel({ label: notificationChannelMeta(channel, locale()).label })}
+              </Chip>
+            )}
+          </For>
+          <For each={optionalChannels}>
+            {(channel) => {
+              const on = () => !excluded.has(channel) && selected().includes(channel);
+              const usable = () => !busy() && !excluded.has(channel) && availability(channel).enabled;
+              return (
+                <Chip
+                  icon={notificationChannelMeta(channel, locale()).icon.replace(/^ti ti-/, "")}
+                  pressed={on()}
+                  onClick={usable() ? () => toggle(channel, !on()) : undefined}
+                >
+                  {notificationChannelMeta(channel, locale()).label}
+                </Chip>
+              );
+            }}
+          </For>
+          <Show when={props.preference.requiredChannels.length === 0 && optionalChannels.length === 0}>
+            <Text muted type="meta">
+              {t().noDeliveryChannel}
+            </Text>
+          </Show>
+          <Show when={customized()}>
+            <Button
+              variant="ghost"
+              icon="restore"
+              label={t().useAppDefault}
+              disabled={busy()}
+              onClick={() => void update({ type: "reset", channels: defaults })}
+            />
+          </Show>
+        </Inline>
+      }
+    />
   );
 };
 
@@ -129,7 +136,12 @@ export default function NotificationPreferencesSections(props: {
     <Show when={groups.length > 0} fallback={<Empty icon="bell-off" text={t().noConfigurableNotifications} />}>
       <For each={groups}>
         {(group) => (
-          <Section icon={group.app.icon.replace(/^ti ti-/, "")} title={group.app.name} count={group.definitions.length}>
+          <Section
+            icon={group.app.icon.replace(/^ti ti-/, "")}
+            color={group.app.color}
+            title={group.app.name}
+            count={group.definitions.length}
+          >
             <For each={group.definitions}>
               {(preference) => <Preference preference={preference} availableChannels={props.initial.availableChannels} />}
             </For>

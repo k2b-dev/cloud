@@ -4,7 +4,6 @@ import {
   accountsAppService,
   audit,
   coreSettings,
-  notifications,
   readAccountCategoryPolicy,
   serviceAccountCredentials,
   webauthn,
@@ -16,6 +15,7 @@ import { dates } from "@k2b/stdlib";
 import { keyboardPlatform } from "@k2b/ui";
 import { ssr } from "../../config";
 import { accountUserView } from "./account-view";
+import { activityLabel } from "./activity-labels";
 import { type AccountMessages, accountMessages } from "./messages";
 import ProfileScreen from "./ProfileScreen.island";
 import { profileActionsUser } from "./profile-actions-user";
@@ -55,25 +55,34 @@ export default ssr<AuthContext>(async (c) => {
   const appName = rawAppName || "Cloud";
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
   const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
-  const [pendingRequest, apiKeys, passkeys, activityPage, notificationPreferences, screen] = await Promise.all([
+  const [pendingRequest, apiKeys, passkeys, activityPage, screen] = await Promise.all([
     user.provider === "local" ? accountsAppService.accountRequest.getPendingForUser({ userId: user.id }) : Promise.resolve(null),
     serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
     webauthn.listForUser({ userId: user.id }),
     audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 5 } }),
-    notifications.user.preferences.list(user.id, locale),
     screenPreferences.get(user.id),
   ]);
   // Only a browser session can mark its browser as a shared workstation; the mobile app's phone never is one.
   const sharedWorkstation = isAppSessionActor(c.get("actor"))
     ? undefined
     : { userId: user.id, minutes: Math.round((await sharedWorkstationIdleSeconds()) / 60) };
-  const customizedNotifications = notificationPreferences.definitions.filter((preference) => preference.customized).length;
   const action = c.req.query("action");
   const expiryNotice = user.accountExpires ? accountExpiryNotice(user.accountExpires, t) : null;
   const address = formatAddress(user.ipa?.address ?? { street: null, postalCode: null, city: null, state: null });
 
   const formatted = (value: string | null | undefined, fallback: string) => (value ? dates.formatDate(value, { locale }) : fallback);
   const now = new Date();
+  const lastUse = passkeys
+    .map((passkey) => passkey.lastUsedAt)
+    .filter((value) => value !== null)
+    .sort()
+    .at(-1);
+  // the key that stops working first, among those still active
+  const nextKeyExpiry = apiKeys
+    .filter((key) => key.status === "active" && key.expiresAt !== null && Date.parse(key.expiresAt) > now.getTime())
+    .map((key) => key.expiresAt as string)
+    .sort()
+    .at(0);
 
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account }]}>
@@ -97,8 +106,7 @@ export default ssr<AuthContext>(async (c) => {
         }
         limitedAccess={user.provider === "ipa" && user.profile === "guest"}
         profileFacts={[
-          { label: t.displayName, value: user.displayName || user.uid },
-          { label: t.username, value: user.uid },
+          // the name and the username stand in the head
           { label: t.email, value: user.mail ?? t.notSet },
           { label: t.phone, value: user.ipa?.phone ?? t.notSet },
           ...(user.ipa?.mobile && user.ipa.mobile !== user.ipa.phone ? [{ label: t.mobile, value: user.ipa.mobile }] : []),
@@ -107,25 +115,37 @@ export default ssr<AuthContext>(async (c) => {
         ]}
         accountFacts={[
           { label: t.accountType, value: accountCategoryLabel(user, categoryPolicy.login.label) },
-          { label: t.accountExpiry, value: formatted(user.accountExpires, t.noExpiry) },
-          { label: t.passwordExpiry, value: formatted(user.ipa?.passwordExpires, t.notApplicable) },
+          ...(user.ipa?.passwordExpires ? [{ label: t.passwordExpiry, value: formatted(user.ipa.passwordExpires, t.notApplicable) }] : []),
           { label: t.sshKeys, value: t.configuredKeys({ count: user.ipa?.sshPublicKeys.length ?? 0 }) },
         ]}
         screen={{ timerSeconds: screen.privacyTimerSeconds, platform, sharedWorkstation }}
-        summaries={{
-          security: {
-            value: t.passkeyCount({ count: passkeys.length }),
-            meta: activityPage.items.length > 0 ? t.recentActivityAvailable : t.noRecentActivity,
+        figures={{
+          validity: user.accountExpires
+            ? {
+                value: dates.formatDate(user.accountExpires, { locale }),
+                meta: expiryNotice?.title ?? "",
+                ...(expiryNotice && expiryNotice.tone !== "note" ? { status: expiryNotice.tone } : {}),
+              }
+            : { value: t.noExpiry, meta: accountCategoryLabel(user, categoryPolicy.login.label) },
+          passkeys:
+            passkeys.length > 0
+              ? {
+                  value: t.passkeyCount({ count: passkeys.length }),
+                  meta: lastUse ? t.lastSignIn({ date: dates.formatDateTimeRelative(lastUse, { locale, base: now }) }) : t.neverUsed,
+                }
+              : { value: t.passkeyCount({ count: 0 }), meta: t.noPasskeyYet, status: "warn" },
+          groups: { value: t.groupCount({ count: user.memberofGroup.length }), meta: t.managedCount({ count: user.manages.length }) },
+          apiKeys: {
+            value: t.apiKeyCount({ count: apiKeys.length }),
+            meta: nextKeyExpiry
+              ? t.nextKeyExpiry({ date: dates.formatDate(nextKeyExpiry, { locale }) })
+              : apiKeys.length > 0
+                ? t.keysWithoutExpiry
+                : t.cliAndSsh,
           },
-          access: { value: t.groupCount({ count: user.memberofGroup.length }), meta: t.managedCount({ count: user.manages.length }) },
-          notifications: {
-            value: customizedNotifications > 0 ? t.customizedPreferences({ count: customizedNotifications }) : t.usingAppDefaults,
-            meta: t.preferences,
-          },
-          developer: { value: t.apiKeyCount({ count: apiKeys.length }), meta: t.cliAndSsh },
         }}
-        activity={activityPage.items.slice(0, 3).map((entry) => ({
-          label: entry.label,
+        activity={activityPage.items.slice(0, 4).map((entry) => ({
+          label: activityLabel(entry, t),
           context: entry.context || t.accountContext,
           // relative to the time of this answer, so the server and the first paint agree
           when: dates.formatDateTimeRelative(entry.createdAt, { locale, base: now }),

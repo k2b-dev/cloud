@@ -15,7 +15,12 @@ export default ssr<AuthContext>(async (c) => {
     notifications.user.preferences.list(user.id, locale),
     notifications.user.quiet.get(user.id, getTimeZone(c)),
   ]);
-  const apps = getLocalizedRuntimeContext(c).apps.map((app) => ({ id: app.id, name: app.name, icon: app.icon }));
+  const apps = getLocalizedRuntimeContext(c).apps.map((app) => ({
+    id: app.id,
+    name: app.name,
+    icon: app.icon,
+    color: app.appearance?.accent,
+  }));
 
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.notifications }]}>

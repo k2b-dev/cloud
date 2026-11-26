@@ -9,14 +9,16 @@ import {
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, DatePicker, Dialog, Empty, Field, Group, Menu, Row, Section, Select, Text, useToast } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, Index, onCleanup, onMount } from "solid-js";
+import { Button, DatePicker, Dialog, Empty, Field, Menu, Row, Section, Select, Text, useToast } from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, Index, onCleanup, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import type { AccountMessages } from "./messages";
 
 const HOUR_MS = 60 * 60_000;
 /** How long to wait before asking again when a refresh failed or the server still reports a passed change. */
 const RETRY_MS = 30_000;
+/** Do not disturb as a thing: the same mark for the pause and each quiet period. */
+const QUIET_COLOR = "#6366f1";
 const DEFAULT_PERIOD: NotificationQuietPeriod = { days: [1, 2, 3, 4, 5, 6, 7], start: "22:00", end: "07:00" };
 const HALF_HOURS = Array.from({ length: 48 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`);
 // 1 January 2024 was a Monday, so day n of that week is ISO weekday n.
@@ -26,7 +28,6 @@ const weekdayOptions = (locale: string) =>
     label: new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(Date.UTC(2024, 0, day)),
   }));
 const timeOptions = (current: string) => (HALF_HOURS.includes(current) ? HALF_HOURS : [...HALF_HOURS, current].sort());
-const sameHours = (left: NotificationQuietHours, right: NotificationQuietHours) => JSON.stringify(left) === JSON.stringify(right);
 
 /** "Paused until 08:00" today, with the date when the end is on another day. */
 const formatUntil = (until: string, now: number, context: DateContext): string =>
@@ -64,15 +65,13 @@ export default function QuietTimeSection(props: { initial: NotificationQuietSett
   const toast = useToast();
   const context = () => ({ ...props.dateConfig, locale: locale() });
   const [settings, setSettings] = createSignal(props.initial);
-  const [draft, setDraft] = createSignal<NotificationQuietHours>(props.initial.quietHours);
   // One write at a time: each response replaces the whole snapshot, so an earlier one must not land last.
   const [saving, setSaving] = createSignal<"pause" | "hours" | null>(null);
   const [now, setNow] = createSignal(Date.now());
-  const dirty = () => !sameHours(draft(), settings().quietHours);
-  const invalid = () => draft().periods.some((period) => period.days.length === 0);
+  const hours = () => settings().quietHours;
   const timeZones = createMemo(() => {
     const zones = Intl.supportedValuesOf("timeZone");
-    return zones.includes(draft().timeZone) ? zones : [draft().timeZone, ...zones];
+    return zones.includes(hours().timeZone) ? zones : [hours().timeZone, ...zones];
   });
 
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -170,39 +169,60 @@ export default function QuietTimeSection(props: { initial: NotificationQuietSett
     if (await pause(until)) setCustomOpen(false);
   };
 
-  const saveHours = async () => {
-    const hours = draft();
-    if (await save("hours", { quietHours: hours })) {
-      // Take the saved form unless the periods changed while saving; those edits stay as unsaved changes.
-      if (sameHours(draft(), hours)) setDraft(settings().quietHours);
-      toast(t().quietHoursSaved, { status: "ok" });
-    }
+  /** Saves the quiet hours as a whole; the shown hours are always the saved ones. */
+  const saveHours = async (next: NotificationQuietHours): Promise<boolean> => {
+    const saved = await save("hours", { quietHours: next });
+    if (saved) toast(t().quietHoursSaved, { status: "ok" });
+    return saved;
   };
 
-  const updatePeriod = (index: number, change: Partial<NotificationQuietPeriod>) =>
-    setDraft((current) => ({
-      ...current,
-      periods: current.periods.map((period, position) => (position === index ? { ...period, ...change } : period)),
-    }));
+  // ── One quiet period in a dialog: a new one (index null) or a saved one ──
+  const [editing, setEditing] = createSignal<{ index: number | null; period: NotificationQuietPeriod } | null>(null);
+  const change = (update: Partial<NotificationQuietPeriod>) =>
+    setEditing((current) => (current ? { ...current, period: { ...current.period, ...update } } : current));
+  const savePeriod = async () => {
+    const current = editing();
+    if (!current || current.period.days.length === 0) return;
+    const periods = hours().periods;
+    const next =
+      current.index === null
+        ? [...periods, current.period]
+        : periods.map((period, position) => (position === current.index ? current.period : period));
+    if (await saveHours({ ...hours(), periods: next })) setEditing(null);
+  };
 
   const days = (period: NotificationQuietPeriod) => {
     const names = weekdayOptions(locale());
     return period.days.length === 7 ? t().quietEveryDay : period.days.map((day) => names[day - 1]?.label ?? String(day)).join(", ");
   };
-  const toggleDay = (index: number, period: NotificationQuietPeriod, day: number) =>
-    updatePeriod(index, {
+  const toggleDay = (day: number) => {
+    const period = editing()?.period;
+    if (!period) return;
+    change({
       days: (period.days.includes(day) ? period.days.filter((value) => value !== day) : [...period.days, day]).sort(
         (left, right) => left - right,
       ),
     });
+  };
   const pausedUntil = () => settings().doNotDisturbUntil;
 
   return (
     <>
-      <Section icon="moon" title={t().quietTitle} summary={t().quietDescription}>
+      <Section
+        icon="moon"
+        title={t().quietTitle}
+        actions={[
+          {
+            label: t().quietAddPeriod,
+            icon: "plus",
+            disabled: saving() !== null || hours().periods.length >= NOTIFICATION_QUIET_PERIOD_LIMIT,
+            onClick: () => setEditing({ index: null, period: DEFAULT_PERIOD }),
+          },
+        ]}
+      >
         <Row
-          icon={settings().state.active ? "moon" : "moon-off"}
-          lines={[t().pauseTitle, statusLabel(settings(), t(), now(), context())]}
+          mark={{ icon: settings().state.active ? "moon" : "moon-off", color: QUIET_COLOR }}
+          lines={[settings().state.active ? statusLabel(settings(), t(), now(), context()) : t().pauseNotPaused, t().quietDescription]}
           end={
             <Menu
               label={t().pauseUntil}
@@ -219,82 +239,38 @@ export default function QuietTimeSection(props: { initial: NotificationQuietSett
             </Menu>
           }
         />
-        <Index each={draft().periods} fallback={<Empty icon="clock" text={t().quietNoPeriods} />}>
+        <Index each={hours().periods} fallback={<Empty icon="clock" text={t().quietNoPeriods} />}>
           {(period, index) => (
-            <Group
-              icon="clock"
-              title={t().quietPeriodTitle({ from: period().start, to: period().end })}
-              meta={days(period())}
-              actions={[
-                {
-                  label: t().quietRemovePeriod,
-                  icon: "trash",
-                  onClick: () =>
-                    setDraft((current) => ({ ...current, periods: current.periods.filter((_, position) => position !== index) })),
-                },
-              ]}
-            >
-              <Field.Row>
-                <Field
-                  name={`quietDays${index}`}
-                  label={t().quietDays}
-                  error={period().days.length === 0 ? t().quietDaysRequired : undefined}
-                >
-                  <Menu
-                    label={t().quietDays}
-                    items={weekdayOptions(locale()).map((option) => ({
-                      label: option.label,
-                      checked: period().days.includes(Number(option.value)),
-                      onClick: () => toggleDay(index, period(), Number(option.value)),
-                    }))}
-                  >
-                    {period().days.length > 0 ? days(period()) : t().quietDaysRequired}
-                  </Menu>
-                </Field>
-                <Field name={`quietFrom${index}`} label={t().quietFrom}>
-                  <Select
-                    options={timeOptions(period().start)}
-                    value={period().start}
-                    onChange={(start) => start && updatePeriod(index, { start })}
-                  />
-                </Field>
-                <Field name={`quietTo${index}`} label={t().quietTo}>
-                  <Select
-                    options={timeOptions(period().end)}
-                    value={period().end}
-                    onChange={(end) => end && updatePeriod(index, { end })}
-                  />
-                </Field>
-              </Field.Row>
-            </Group>
+            <Row
+              mark={{ icon: "clock", color: QUIET_COLOR }}
+              lines={[t().quietPeriodTitle({ from: period().start, to: period().end }), days(period())]}
+              end={
+                <Menu
+                  label={t().quietPeriodActions}
+                  disabled={saving() !== null}
+                  items={[
+                    { label: t().change, icon: "pencil", onClick: () => setEditing({ index, period: period() }) },
+                    {
+                      label: t().quietRemovePeriod,
+                      icon: "trash",
+                      danger: true,
+                      onClick: () => void saveHours({ ...hours(), periods: hours().periods.filter((_, position) => position !== index) }),
+                    },
+                  ]}
+                />
+              }
+            />
           )}
         </Index>
-        <Field name="quietTimeZone" label={t().quietTimeZone} hint={t().quietHoursDescription}>
-          <Select
-            options={timeZones()}
-            value={draft().timeZone}
-            onChange={(timeZone) => timeZone && setDraft((current) => ({ ...current, timeZone }))}
-          />
-        </Field>
-        <Bar
+        <Row
+          lines={[t().quietTimeZone, t().quietHoursDescription]}
           end={
-            <>
-              <Button
-                icon="plus"
-                disabled={draft().periods.length >= NOTIFICATION_QUIET_PERIOD_LIMIT}
-                onClick={() => setDraft((current) => ({ ...current, periods: [...current.periods, DEFAULT_PERIOD] }))}
-              >
-                {t().quietAddPeriod}
-              </Button>
-              <Button
-                variant="primary"
-                busy={saving() === "hours"}
-                disabled={saving() === "pause" || !dirty() || invalid()}
-                onClick={() => void saveHours()}
-              >
-                {t().save}
-              </Button>
-            </>
+            <Select
+              label={t().quietTimeZone}
+              options={timeZones()}
+              value={hours().timeZone}
+              onChange={(timeZone) => timeZone && timeZone !== hours().timeZone && void saveHours({ ...hours(), timeZone })}
+            />
           }
         />
       </Section>
@@ -321,6 +297,59 @@ export default function QuietTimeSection(props: { initial: NotificationQuietSett
           onPick={(value) => void pickCustom(value)}
           autoFocus
         />
+      </Dialog>
+      <Dialog
+        title={editing()?.index === null ? t().quietAddPeriod : t().quietEditPeriod}
+        open={editing() !== null}
+        onOpenChange={(open) => !open && saving() === null && setEditing(null)}
+        foot={
+          <>
+            <Button disabled={saving() !== null} onClick={() => setEditing(null)}>
+              {t().cancel}
+            </Button>
+            <Button
+              variant="primary"
+              busy={saving() === "hours"}
+              disabled={(editing()?.period.days.length ?? 0) === 0}
+              onClick={() => void savePeriod()}
+            >
+              {t().save}
+            </Button>
+          </>
+        }
+      >
+        <Show when={editing()}>
+          {(current) => (
+            <Field.Row>
+              <Field name="quietDays" label={t().quietDays} error={current().period.days.length === 0 ? t().quietDaysRequired : undefined}>
+                <Menu
+                  label={t().quietDays}
+                  items={weekdayOptions(locale()).map((option) => ({
+                    label: option.label,
+                    checked: current().period.days.includes(Number(option.value)),
+                    onClick: () => toggleDay(Number(option.value)),
+                  }))}
+                >
+                  {current().period.days.length > 0 ? days(current().period) : t().quietDaysRequired}
+                </Menu>
+              </Field>
+              <Field name="quietFrom" label={t().quietFrom}>
+                <Select
+                  options={timeOptions(current().period.start)}
+                  value={current().period.start}
+                  onChange={(start) => start && change({ start })}
+                />
+              </Field>
+              <Field name="quietTo" label={t().quietTo}>
+                <Select
+                  options={timeOptions(current().period.end)}
+                  value={current().period.end}
+                  onChange={(end) => end && change({ end })}
+                />
+              </Field>
+            </Field.Row>
+          )}
+        </Show>
       </Dialog>
     </>
   );
