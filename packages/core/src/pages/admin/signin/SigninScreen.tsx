@@ -125,7 +125,7 @@ export type SigninFormScreenProps = Frame & {
 /** A registry section of the Sign-in & security area; Sign-in adds the app sign-in state and the sign-in locations. */
 export function SigninFormScreen(props: SigninFormScreenProps) {
   const locale = useLocale();
-  const s = () => settingsMessages.resolve([locale()]).t;
+  const _s = () => settingsMessages.resolve([locale()]).t;
   const n = () => adminToasts.resolve([locale()]).t;
   const [failure, setFailure] = createSignal<string | null>(null);
   return (
@@ -143,11 +143,7 @@ export function SigninFormScreen(props: SigninFormScreenProps) {
           </Notice>
         )}
       </Show>
-      <Show when={props.section === "freeipa"}>
-        <Notice tone="note" title={s().testsUseSaved}>
-          {s().testsUseSavedDescription}
-        </Notice>
-      </Show>
+      {/* the test uses the saved values: its button says so in its hint, not a box over the form */}
       <RegistryForm
         groups={props.groups}
         sections={props.sections}
