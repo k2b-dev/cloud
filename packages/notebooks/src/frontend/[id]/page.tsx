@@ -2,18 +2,16 @@ import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
-import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
 import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import { buildNoteUrl } from "../params";
 import BookGraphSurface from "./_components/book/BookGraphSurface";
 import BookSurface from "./_components/book/BookSurface";
-import NotebookGraph from "./_components/graph/NotebookGraph.island";
+import GraphWorkspace from "./_components/graph/GraphWorkspace.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
 import NoteWorkspace from "./_components/NoteWorkspace.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
-import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
 import VersionsWorkspace from "./_components/versions/VersionsWorkspace.island";
 import { loadNotebookPageData } from "./page-data";
@@ -277,70 +275,36 @@ export default ssr<AuthContext>(async (c) => {
         />
       </Layout>
     );
+  // Links: the notebook's graph, opened from a note or the sidebar.
   return () => (
     <Layout
       context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
       printHint={t.printHint}
       c={c}
       fullPage
-      title={[
-        { title: t.start, href: "/" },
-        { title: t.notebooks, href: "/app/notebooks" },
-        // Version history and the graph carry their own way back to the note, so the shell adds none there.
-        { title: notebook.name, ...(isVersionsMode || isGraphMode ? {} : { href: `/app/notebooks/${notebook.id}` }) },
-        ...(selectedNote ? [{ title: selectedNote.title }] : []),
-      ]}
+      fullWidth
+      ui="v2"
+      title={title}
     >
-      <link rel="stylesheet" href={katexStylesHref} />
       <RememberNotebook notebookId={notebook.id} />
-      {/* Write and Links draw no workspace head: their toolbar holds the navigation and Details buttons, and the note's
-          title is in the navigation. Read and version history have no toolbar and keep the head's buttons. */}
-      <AppWorkspace
-        mobileSurface="flush"
-        class="notebooks-workspace flex-1 min-h-0"
-        head={showsEditorToolbar || isGraphMode ? false : undefined}
-      >
-        <NotebookCommands
+      <NotebookCommands notebookId={notebook.id} notebookName={notebook.name} canWrite={canWrite} ownsSearchNavigation />
+      {/* Live changes reach the page through one workspace socket; the graph edits no note. */}
+      <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} initialNoteId={null} />
+      {graph && data.graphView ? (
+        <GraphWorkspace
+          ctx={ctx}
           notebookId={notebook.id}
           notebookName={notebook.name}
-          canWrite={canWrite}
-          ownsSearchNavigation={!selectedNote || isVersionsMode || isGraphMode}
+          selectedNoteId={selectedNoteId}
+          graph={graph}
+          from={ctx.presentationMode}
+          backHref={data.graphBack}
+          graphBack={data.graphBack}
+          view={data.graphView}
+          now={data.now}
+          timeZone={data.dateConfig.timeZone ?? "UTC"}
         />
-        {/* Live changes reach the page through one workspace socket; a note connects its own only while it is edited. */}
-        <WorkspaceEventBridge
-          notebookId={notebook.id}
-          appUrl={appUrl}
-          initialCursor={ctx.workspaceCursor}
-          initialNoteId={!isVersionsMode && !isGraphMode ? selectedNote?.id : null}
-        />
-
-        {/* The writable editor is the one with the toolbar and its navigation toggle. */}
-        <NotebookSidebar
-          ctx={ctx}
-          editorToolbar={showsEditorToolbar}
-          current={isGraphMode ? "graph" : undefined}
-          // Version history loads as a whole page, so its address is where Links returns to.
-          graphBack={isVersionsMode ? c.req.path + new URL(c.req.url).search : data.graphBack}
-        />
-
-        <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={false}>
-            {isGraphMode && graph && data.graphView ? (
-              <NotebookGraph
-                notebookId={notebook.id}
-                notebookName={notebook.name}
-                selectedNoteId={selectedNoteId}
-                graph={graph}
-                from={ctx.presentationMode}
-                backHref={data.graphBack}
-                view={data.graphView}
-                now={data.now}
-                timeZone={data.dateConfig.timeZone ?? "UTC"}
-              />
-            ) : null}
-          </AppWorkspace.Main>
-        </AppWorkspace.Content>
-      </AppWorkspace>
+      ) : null}
     </Layout>
   );
 });
