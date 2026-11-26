@@ -222,7 +222,7 @@
   overflow-wrap: anywhere;
 }
 .k2-ui > .k2-text,
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-dialog-body, .k2-pop-body) > .k2-text {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-dialog-body, .k2-pop-body) > .k2-text {
   display: block;
   padding-inline: var(--k2-edge);
 }
@@ -811,7 +811,7 @@
   flex-direction: column;
   min-width: 0;
 }
-.k2-ui .k2-sec > * {
+.k2-ui :is(.k2-sec, .k2-sec-body) > * {
   flex: none;
 }
 .k2-ui .k2-sh {
@@ -838,6 +838,18 @@
   align-items: center;
   margin-right: -8px;
 }
+/* A section that can fold: its content stands in a body without a box of its own, so its rhythm and lines are those of
+   any section; folded, the body is out of the page and the head stands alone above the section's line. The chevron
+   points down while the section is open and turns while it is folded. */
+.k2-ui .k2-sec-body {
+  display: contents;
+}
+.k2-ui .k2-sec-body[hidden] {
+  display: none;
+}
+.k2-ui .k2-sh .k2-btn[data-fold]:not([data-open]) > .k2-icon {
+  transform: rotate(-90deg);
+}
 .k2-ui .k2-stile {
   width: 20px;
   height: 20px;
@@ -857,8 +869,8 @@
   margin-left: -4px;
 }
 /* Rule 9: lines separate groups, not the items of a group. No line under the head, none between its rows. */
-.k2-ui .k2-sec > .k2-row,
-.k2-ui .k2-sec > .k2-list > .k2-row {
+.k2-ui :is(.k2-sec, .k2-sec-body) > .k2-row,
+.k2-ui :is(.k2-sec, .k2-sec-body) > .k2-list > .k2-row {
   border-bottom: 0;
 }
 .k2-ui .k2-sec-summary {
@@ -881,7 +893,7 @@
 .k2-ui .k2-pane[data-side] .k2-sh > .k2-icon {
   color: var(--k2-subtle);
 }
-.k2-ui .k2-pane[data-side] .k2-sec > .k2-facts {
+.k2-ui .k2-pane[data-side] :is(.k2-sec, .k2-sec-body) > .k2-facts {
   padding-top: 4px;
 }
 
@@ -907,7 +919,7 @@
 .k2-ui .k2-group + .k2-group {
   margin-top: 12px;
 }
-.k2-ui .k2-sec > .k2-group:last-child {
+.k2-ui :is(.k2-sec, .k2-sec-body) > .k2-group:last-child {
   margin-bottom: 12px;
 }
 .k2-ui .k2-gh {
@@ -1707,12 +1719,12 @@
 .k2-ui .k2-inline > * {
   flex: none;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
 /* A line of things that has no room wraps, in a column of any width, so no chip or action is cut in half (or lost);
    a line that fits stays one line. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane) > .k2-inline {
   flex-wrap: wrap;
   row-gap: 8px;
 }
@@ -1720,19 +1732,19 @@
    forms) with such a line: its things and its end flow as one line that wraps, the end after the last thing when it
    has room there. One line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line
    below), only a second line makes it higher. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]):has(> .k2-bar-start > .k2-inline) {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]):has(> .k2-bar-start > .k2-inline) {
   height: auto;
   min-height: var(--k2-h-bar);
   padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
   flex-wrap: wrap;
   row-gap: 8px;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start:has(> .k2-inline),
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start:has(> .k2-inline),
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start > .k2-inline {
   display: contents;
 }
 /* a button in the flow of a column keeps its own width and stands on the text edge (only the phone's FAB is wide) */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-btn {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane) > .k2-btn {
   align-self: flex-start;
   margin-inline: var(--k2-edge);
 }
@@ -2098,7 +2110,7 @@
   flex-direction: column;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
 }
 .k2-ui .k2-input {
@@ -2179,7 +2191,7 @@
   height: var(--k2-h-control-small);
 }
 /* a form in a section: 12 px between its rows of fields and choices, as in a dialog */
-.k2-ui .k2-sec > :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) + :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) {
+.k2-ui :is(.k2-sec, .k2-sec-body) > :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) + :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) {
   margin-top: 12px;
 }
 /* Field: label 20, control 36, hint or error; a field row shares one grid (K5) */
@@ -2197,15 +2209,15 @@
   row-gap: 4px;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
   padding: 0 var(--k2-edge);
 }
 /* a form reads down one column of a fixed width: its fields never run across a wide pane (settings stand as rows) */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > :is(.k2-field:not([data-setting]), .k2-frow) {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane) > :is(.k2-field:not([data-setting]), .k2-frow) {
   max-width: 600px;
 }
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {
   margin-inline: var(--k2-edge);
 }
 .k2-ui .k2-field-label {

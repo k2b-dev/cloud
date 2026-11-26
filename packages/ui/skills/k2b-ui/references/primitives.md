@@ -135,7 +135,11 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
-section, or a `Digest`, `Facts`, `Group`s.
+section, or a `Digest`, `Facts`, `Group`s. A section of a list that people
+fold (Chat's sections) takes `open` and `onOpenChange`: a chevron at the end
+of its head folds it, the app keeps the state, and the section keeps its
+head, rhythm and line, without a frame (a `Group` is a framed thing, not a
+part of a list).
 
 ### Group
 
