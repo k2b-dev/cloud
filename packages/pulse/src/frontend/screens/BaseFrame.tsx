@@ -34,7 +34,8 @@ type Props = {
 export const baseNavGroups = (bases: PulseBase[], currentId: string, words: { allBases: string; bases: string }): NavGroup[] => {
   const shown = navBases(bases, currentId);
   return [
-    { items: [{ label: words.allBases, icon: "layout-grid", href: "/app/pulse" }] },
+    // "" is the list of all bases itself
+    { items: [{ label: words.allBases, icon: "layout-grid", href: "/app/pulse", current: currentId === "" }] },
     {
       label: words.bases,
       items: shown.map((base) => ({

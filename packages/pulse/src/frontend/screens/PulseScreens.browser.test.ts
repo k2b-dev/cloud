@@ -231,7 +231,7 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
 
 /** The sources the API answers with: the page's variant decides, as the harness does for the first picture. */
 let variant = "normal";
-const allSources = () => (variant === "huge" ? manySources(1000) : fixtureSources);
+const allSources = () => (variant === "huge" ? manySources(1000) : variant === "empty" ? [] : fixtureSources);
 const open = async (view: View, address: string, options: { variant?: string; override?: Parameters<typeof answer>[2] } = {}) => {
   variant = options.variant ?? "normal";
   const context: BrowserContext = await browser.newContext({
@@ -311,7 +311,7 @@ describe("Pulse on v2", () => {
       await tab.getByRole("searchbox", { name: "Pulse-Basen durchsuchen" }).fill("web");
       await tab.waitForFunction(() => location.search === "?q=web");
       expect(await tab.getByText("1 von 7").isVisible()).toBe(true);
-      expect(await tab.getByText("Betrieb Werkstatt Nord").count()).toBe(0);
+      expect(await tab.locator('[data-k2-part="Table"]').getByText("Betrieb Werkstatt Nord").count()).toBe(0);
       await tab.getByRole("button", { name: "Neue Basis" }).first().click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("button", { name: "Erstellen" }).click();
@@ -526,11 +526,17 @@ describe("Pulse on v2", () => {
 
   test("worst-case names, endpoints and counts keep their rows and break nothing (break-ui)", async () => {
     const found: string[] = [];
+    // the worst names and counts, and a base without any source
     for (const view of [desktop, phone])
-      for (const address of ["/app/pulse", `/app/pulse/${baseId}`, `/app/pulse/${baseId}/sources/w1Aa2Bb3`]) {
-        const { context, tab, errors } = await open(view, address, { variant: "worst" });
+      for (const [variant, address] of [
+        ["worst", "/app/pulse"],
+        ["worst", `/app/pulse/${baseId}`],
+        ["worst", `/app/pulse/${baseId}/sources/w1Aa2Bb3`],
+        ["empty", `/app/pulse/${baseId}`],
+      ] as const) {
+        const { context, tab, errors } = await open(view, address, { variant });
         try {
-          const name = `worst-${address.replace(/[^a-z0-9]+/gi, "-")}-${view.width}`;
+          const name = `${variant}-${address.replace(/[^a-z0-9]+/gi, "-")}-${view.width}`;
           await shoot(tab, name);
           for (const problem of (await measureV2Layout(tab, { root: "#root" })).problems) found.push(`${name}: ${problem}`);
           const wide = await tab.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

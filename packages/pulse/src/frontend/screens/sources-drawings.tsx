@@ -47,15 +47,19 @@ export function SourcesHeroDrawing(props: {
   figure: string;
   label: string;
   meta: string;
-  buckets: readonly { ok: number; failed: number }[];
-  start: string;
-  caption: string;
-  end: string;
+  /** Today's fetches as bars, with the chart's ends and caption; or a `meter` instead. */
+  buckets?: readonly { ok: number; failed: number }[];
+  start?: string;
+  caption?: string;
+  end?: string;
   chartLabel: string;
+  /** How full something is: a bar in Pulse's soft colour, red from 90 %, with its caption under it. */
+  meter?: { value: number; of: number; caption: string };
   exceptions: readonly HeroException[];
 }) {
   const step = 8;
-  const width = () => Math.max(1, props.buckets.length) * step;
+  const width = () => Math.max(1, props.buckets?.length ?? 0) * step;
+  const share = () => (props.meter && props.meter.of > 0 ? Math.min(1, props.meter.value / props.meter.of) : 0);
   return (
     <div class="pulse-hero">
       <style>{HERO_CSS}</style>
@@ -65,25 +69,47 @@ export function SourcesHeroDrawing(props: {
         <span class="pulse-hero-m">{props.meta}</span>
       </div>
       <div class="pulse-hero-chart">
-        <svg width="100%" height="44" viewBox={`0 0 ${width()} 44`} preserveAspectRatio="none" role="img" aria-label={props.chartLabel}>
-          <For each={props.buckets}>
-            {(bucket, index) => (
-              <rect
-                x={index() * step}
-                y={bucket.failed > 0 ? 0 : 6}
-                width="6"
-                height={bucket.failed > 0 ? 44 : 38}
-                rx="1.5"
-                style={{ fill: bucket.failed > 0 ? "var(--k2-bad-dot)" : bucket.ok > 0 ? SOFT : "var(--k2-n200)" }}
-              />
-            )}
-          </For>
-        </svg>
-        <div class="pulse-hero-cap">
-          <span>{props.start}</span>
-          <span>{props.caption}</span>
-          <span>{props.end}</span>
-        </div>
+        <Show when={props.meter}>
+          {(meter) => (
+            <>
+              <svg width="100%" height="12" viewBox="0 0 1000 12" preserveAspectRatio="none" role="img" aria-label={props.chartLabel}>
+                <rect x="0" y="0" width="1000" height="12" rx="3" style={{ fill: "var(--k2-n100)" }} />
+                <rect
+                  x="0"
+                  y="0"
+                  width={(share() * 1000).toFixed(1)}
+                  height="12"
+                  rx="3"
+                  style={{ fill: share() >= 0.9 ? "var(--k2-bad-dot)" : SOFT }}
+                />
+              </svg>
+              <div class="pulse-hero-cap">
+                <span>{meter().caption}</span>
+              </div>
+            </>
+          )}
+        </Show>
+        <Show when={props.buckets}>
+          <svg width="100%" height="44" viewBox={`0 0 ${width()} 44`} preserveAspectRatio="none" role="img" aria-label={props.chartLabel}>
+            <For each={props.buckets}>
+              {(bucket, index) => (
+                <rect
+                  x={index() * step}
+                  y={bucket.failed > 0 ? 0 : 6}
+                  width="6"
+                  height={bucket.failed > 0 ? 44 : 38}
+                  rx="1.5"
+                  style={{ fill: bucket.failed > 0 ? "var(--k2-bad-dot)" : bucket.ok > 0 ? SOFT : "var(--k2-n200)" }}
+                />
+              )}
+            </For>
+          </svg>
+          <div class="pulse-hero-cap">
+            <span>{props.start}</span>
+            <span>{props.caption}</span>
+            <span>{props.end}</span>
+          </div>
+        </Show>
       </div>
       <div class="pulse-hero-ex">
         <For each={props.exceptions}>
@@ -223,7 +249,7 @@ const HERO_CSS = `
 .pulse-hero-ex{grid-area:ex;display:flex;flex-wrap:wrap;gap:6px 24px;min-width:0;padding-top:12px;border-top:1px solid var(--k2-n100)}
 .pulse-hero-exr{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--k2-text-2);min-width:0}
 .pulse-hero-exr b{font-weight:600}
-.pulse-hero-exr .pulse-hero-m{margin-left:2px}
+.pulse-hero-exr .pulse-hero-m{margin-left:2px;max-width:32ch}
 .pulse-hero-dot{width:7px;height:7px;border-radius:50%;background:var(--k2-ok-dot);flex:none}
 .pulse-hero-dot[data-tone=bad]{background:var(--k2-bad-dot)}
 .pulse-hero-dot[data-tone=off]{background:var(--k2-n400)}

@@ -320,7 +320,7 @@ export const fixtureSources: PulseSource[] = [
  * 10:39 and has timed out since 10:40; a paused or new source has none; the others bring theirs every minute.
  */
 export const fixtureMinutesFor = (sourceId: string): FetchMinute[] => {
-  const source = fixtureSources.find((item) => item.id === sourceId);
+  const source = [...fixtureSources, ...worstSources].find((item) => item.id === sourceId);
   if (!source || source.kind !== "metrics") return [];
   return Array.from({ length: SOURCE_HOUR_MINUTES }, (_, index): FetchMinute => {
     if (!source.enabled || (!source.lastError && !source.status.newestDataAt)) return { slot: "none", values: 0 };
@@ -332,7 +332,9 @@ export const fixtureMinutesFor = (sourceId: string): FetchMinute[] => {
 
 /** A source's last fetches, matching its state: the printer timed out at 10:40, 10:41 and 10:42; the others answer. */
 export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
-  const failing = sourceId === "s7Ee8Ff9";
+  // a failing source failed at 10:40, 10:41 and 10:42 with its own error
+  const broken = [...fixtureSources, ...worstSources].find((item) => item.id === sourceId)?.lastError ?? null;
+  const failing = broken !== null;
   const at = (minute: number) => `2026-11-25T09:${String(minute).padStart(2, "0")}:00.000Z`;
   return [42, 41, 40, 39, 38].map((minute, index) => {
     const failed = failing && minute >= 40;
@@ -346,7 +348,7 @@ export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
       metrics: failed ? 0 : failing ? 86 : 1_110,
       events: 0,
       states: 0,
-      errorMessage: failed ? TIMEOUT : null,
+      errorMessage: failed ? broken : null,
     };
   });
 };
@@ -609,7 +611,16 @@ export const worstSources: PulseSource[] = [
     seriesCount: undefined,
     todayCount: 123_456_789,
   }),
-  fixtureSource({ id: "w7Ee8Ff9", name: "X", status: status({ newestDataAt: null }), lastSeenAt: null, seriesCount: 0 }),
+  // one letter, new: no values and no fetches yet
+  fixtureSource({
+    id: "w7Ee8Ff9",
+    name: "X",
+    status: status({ newestDataAt: null }),
+    lastSeenAt: null,
+    seriesCount: 0,
+    todayCount: 0,
+    fetches: Array.from({ length: FETCH_TICKS }, (): FetchSlot => "none"),
+  }),
 ];
 
 /** A huge base for the scale check: `count` sources with invented names. */

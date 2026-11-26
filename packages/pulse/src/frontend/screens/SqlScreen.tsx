@@ -7,7 +7,7 @@ import { usePulseMessages } from "../use-messages";
 import { buildPulseWorkspaceHref, readWorkspacePathState, type WorkspaceRouteState } from "../workspace/routes";
 import { createSqlConsoleController, type SqlStatusBand, sqlConsoleInitialState } from "../workspace/sql-console-controller";
 import { readSqlDraftHistory, sqlDraftHistoryState } from "../workspace/sql-draft-history";
-import { SQL_CHART_MAX_POINTS, SQL_CHART_MAX_SERIES, sqlResultChart } from "../workspace/sql-result-chart";
+import { sqlResultChart } from "../workspace/sql-result-chart";
 import type { PulseWorkspaceProps } from "../workspace/types";
 import BaseFrame from "./BaseFrame";
 import { useScreenMessages } from "./messages";
@@ -354,18 +354,13 @@ export default function SqlScreen(props: SqlScreenProps) {
                       pointsShown: count(value().cut.pointsShown),
                       pointsTotal: count(value().cut.pointsTotal),
                     })} · ${t().sqlChartCutHint}`
-                  : t().sqlChartMeta({
-                      column: value().xColumn,
-                      series: value().cut.seriesShown,
-                      points: value().cut.pointsShown,
-                      formattedPoints: count(value().cut.pointsShown),
-                      maxSeries: count(SQL_CHART_MAX_SERIES),
-                      maxPoints: count(SQL_CHART_MAX_POINTS),
-                    })
+                  : // a chart that shows everything needs no words about its limits
+                    undefined
               }
             >
               <Canvas label={words().chart} height={240}>
-                <Chart {...value().chart} legendPlacement="top-start" style={{ height: "100%" }} />
+                {/* the first series in Pulse's colour: the chart belongs to the app that owns the data */}
+                <Chart {...value().chart} legendPlacement="top-start" style={{ height: "100%", "--stdlib-chart-c1": "#1e40af" }} />
               </Canvas>
             </Section>
           )}

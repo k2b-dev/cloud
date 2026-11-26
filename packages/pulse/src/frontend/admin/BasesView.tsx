@@ -5,13 +5,13 @@ import {
   Band,
   Bar,
   Button,
+  Canvas,
   Chip,
   Dialog,
   Empty,
   Facts,
   Failed,
   Field,
-  Icon,
   Input,
   List,
   Loading,
@@ -22,7 +22,6 @@ import {
   Section,
   Select,
   Setting,
-  StatusRow,
   Table,
   Text,
   useToast,
@@ -39,6 +38,7 @@ import type {
   PulsePolicy,
   ReadProfileName,
 } from "../../store/admin-contracts";
+import { type HeroException, SourcesHeroDrawing } from "../screens/sources-drawings";
 import { baseColor, iconName } from "../screens/store-state";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import { AdminClientError, adminClient } from "./admin-client";
@@ -427,7 +427,7 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
   const [disk, setDisk] = createSignal<InstanceDisk | null>(props.initialPage?.disk ?? null);
   const [used, setUsed] = createSignal(props.initialPage?.usedBytes ?? 0);
   const [loadFailed, setLoadFailed] = createSignal(!props.initialPage || !props.initialPolicy);
-  const [loading, setLoading] = createSignal(false);
+  const [_loading, setLoading] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [policyBusy, setPolicyBusy] = createSignal(false);
   const [rowBusy, setRowBusy] = createSignal<string | null>(null);
@@ -530,6 +530,28 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
       ? t().basesSubtitle({ count: total(), used: bytes(used(), locale()), free: bytes(free.freeBytes, locale()) })
       : t().basesSubtitleNoDisk({ count: total(), used: bytes(used(), locale()) });
   };
+  // what needs a look, each with the bases it concerns; every other base is fine and stays quiet
+  const exceptions = (): HeroException[] => {
+    const named = (list: AdminBaseRow[]) =>
+      `${list
+        .slice(0, 2)
+        .map((row) => row.name)
+        .join(", ")}${list.length > 2 ? ` +${number(list.length - 2, locale())}` : ""}`;
+    const failed = rows().filter((row) => row.store.state === "failed");
+    const busy = rows().filter((row) => ["provisioning", "clearing", "deleting"].includes(row.store.state));
+    const fine = rows().length - blocked().length - failed.length - busy.length;
+    return [
+      { tone: "ok" as const, count: number(fine, locale()), word: t().activeWord },
+      ...(blocked().length
+        ? [{ tone: "warn" as const, count: number(blocked().length, locale()), word: t().blockedWord, meta: named(blocked()) }]
+        : []),
+      ...(failed.length
+        ? [{ tone: "bad" as const, count: number(failed.length, locale()), word: t().failedWord, meta: named(failed) }]
+        : []),
+      ...(busy.length ? [{ tone: "off" as const, count: number(busy.length, locale()), word: t().busyWord, meta: named(busy) }] : []),
+      ...(running().length > 0 && followed.failed() ? [{ tone: "warn" as const, count: "", word: t().stateStale }] : []),
+    ];
+  };
   // the starting values one per line, each with its own name (label left, value right)
   const defaults = () => {
     const current = policy();
@@ -552,30 +574,42 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
   const stateCell = (row: AdminBaseRow) => {
     const value = badge(row);
     if (!value && row.rollupLag) return <Chip status="warn">{t().rollupLag}</Chip>;
-    // an active store says so quietly; only what needs a look gets a chip
-    if (!value)
-      return (
-        <Text tone="ok" weight="medium">
-          <Icon name="circle-check" /> {t().stateActive}
-        </Text>
-      );
+    // an active store says so quietly, without colour (identity B, rule 7); only what needs a look gets a chip
+    if (!value) return <Text>{t().stateActive}</Text>;
     return "status" in value && value.status ? <Chip status={value.status}>{value.label}</Chip> : <Chip>{value.label}</Chip>;
   };
   const admins = (row: AdminBaseRow) =>
     `${row.admins.length ? row.admins.join(", ") : t().noAdmins}${row.adminCount > row.admins.length ? ` ${t().adminsMore({ count: row.adminCount - row.admins.length })}` : ""}`;
 
   return (
-    <Pane
-      label={props.label}
-      scrollKey="pulse-admin-bases"
-      status={
-        <StatusRow
-          lead={loadFailed() ? t().basesTitle : lead()}
-          loading={loading()}
-          facts={running().length > 0 && followed.failed() ? [{ value: t().stateStale, after: t().staleHelp }] : []}
-        />
-      }
-    >
+    <Pane label={props.label} scrollKey="pulse-admin-bases">
+      {/* the one statement of the page (identity B): how much the stores hold of the disk, and the bases that need a
+          look by name; it becomes the shared hero band once @k2b/ui has it */}
+      <Show when={!loadFailed()}>
+        <Band label={t().basesTitle}>
+          <Canvas label={t().basesTitle}>
+            <SourcesHeroDrawing
+              figure={bytes(used(), locale())}
+              label={t().usedLabel}
+              meta={t().basesCount({ count: number(total(), locale()) })}
+              chartLabel={lead()}
+              meter={
+                disk()
+                  ? {
+                      value: used(),
+                      of: used() + disk()!.freeBytes,
+                      caption: t().diskCaption({
+                        free: bytes(disk()!.freeBytes, locale()),
+                        total: bytes(used() + disk()!.freeBytes, locale()),
+                      }),
+                    }
+                  : undefined
+              }
+              exceptions={exceptions()}
+            />
+          </Canvas>
+        </Band>
+      </Show>
       <Show
         when={!loadFailed() && policy()}
         fallback={<Failed text={`${t().basesLoadFailed} ${t().basesLoadFailedDescription}`} onRetry={() => void reload()} />}

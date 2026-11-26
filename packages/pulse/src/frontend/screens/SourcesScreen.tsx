@@ -77,15 +77,6 @@ const stateWord = (source: PulseSource, t: Words) => {
   );
 };
 
-const statusChip = (source: PulseSource, t: Words) => {
-  const status = sourceStatus(source, t);
-  const tone = { ok: "ok", warning: "warn", error: "bad", neutral: undefined } as const;
-  const kind = tone[status.tone];
-  // A source that delivers says so quietly, without colour (identity B, rule 7); only a problem gets colour.
-  if (kind === "ok") return <Text>{status.label}</Text>;
-  return kind ? <Chip status={kind}>{status.label}</Chip> : <Chip>{status.label}</Chip>;
-};
-
 /** An address that may break after each of its slashes, so it wraps at its segments and never inside a word. */
 const atSegments = (address: string) => address.split(/(?<=\/)/).map((part) => [part, <wbr />]);
 
@@ -133,11 +124,29 @@ export default function SourcesScreen(props: SourcesScreenProps) {
       failed: number(slots.filter((slot) => slot === "bad").length),
     });
   // the phone's second line: the kind, and today's values (the state stands as a chip at its end)
-  const phoneLine = (source: PulseSource) =>
-    [
+  // the phone's second line (study B): a problem first, in its colour ("● Fehler seit 10:40"), then the kind and
+  // today's values; a source that delivers starts with its kind
+  const phoneLine = (source: PulseSource) => {
+    const rest = [
       source.kind === "metrics" ? t().metricsEndpoint : t().httpIngest,
       source.todayCount ? words().valuesTodayShort({ count: number(source.todayCount) }) : words().noValuesToday,
     ].join(" · ");
+    const status = sourceStatus(source, t());
+    if (status.tone === "ok") return rest;
+    const tone = status.tone === "error" ? "bad" : status.tone === "warning" ? "warn" : undefined;
+    const since =
+      status.tone === "error" && source.lastErrorAt
+        ? ` ${words().sinceTime({ time: compactDate(source.lastErrorAt, dateContext()) })}`
+        : "";
+    return (
+      <>
+        <Text tone={tone} muted={tone === undefined}>
+          {`● ${status.label}${since}`}
+        </Text>
+        {` · ${rest}`}
+      </>
+    );
+  };
   const [loading, setLoading] = createSignal(false);
   const [search, setSearch] = createSignal(props.initialSearch ?? "");
   const [adding, setAdding] = createSignal(false);
@@ -333,7 +342,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             ) : undefined
           }
         >
-          <Show when={!search().trim() && figures()}>
+          {/* a base without sources has nothing to sum: the empty list says what to do */}
+          <Show when={!search().trim() && figures() && figures()!.total > 0 ? figures() : undefined}>
             {(all) => (
               <SourcesHero
                 figures={all()}
@@ -419,8 +429,6 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             phone={(source) => ({
               mark: sourceMark(source),
               lines: [source.name, phoneLine(source)],
-              // a source that delivers needs no word; a failing or paused one shows its state in colour and word
-              marks: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
             })}
             // identity B (study Pulse B): one line per source with its name, its state as dot and word, its fetches of the
             // last 30 minutes as the one column over time, and today's values. Kind, endpoint and last data stand in the
@@ -454,7 +462,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               {
                 title: words().dataColumn,
                 align: "end",
-                width: { min: 100, default: 108 },
+                width: { min: 110, default: 124 },
                 drop: true,
                 // one figure for every kind of source, so the column compares like with like; none today is a dash
                 cell: (source) => (source.todayCount ? number(source.todayCount) : "–"),

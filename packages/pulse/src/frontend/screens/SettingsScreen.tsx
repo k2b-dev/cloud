@@ -6,7 +6,6 @@ import { text } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import { DEFAULT_ICON_OPTIONS, useLocale } from "@k2b/ui";
 import {
-  Avatar,
   Bar,
   Button,
   Cells,
@@ -660,8 +659,8 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
 }
 
 /**
- * Beside every settings tab, the base at a glance: whether its store takes data and how full it is, who
- * administers it, and since when it exists. A part the open tab already shows in full stays out of the column.
+ * Beside every settings tab, the base at a glance: whether its store takes data and how full it is, and since when it
+ * exists. Each fact stands once: what a tab shows (members, retention) stays on that tab.
  */
 function BaseOverview(props: { base: PulseBase; tab: PulseSettingsTab }) {
   const t = usePulseMessages();
@@ -670,7 +669,7 @@ function BaseOverview(props: { base: PulseBase; tab: PulseSettingsTab }) {
   const store = () => baseStoreMessages.resolve([locale()]).t;
   const state = () => storeState(props.base.store, store());
   const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
-  const people = () => props.base.members ?? [];
+  const _people = () => props.base.members ?? [];
   return (
     <Pane side label={words().overview} width={{ min: 280, default: 340 }}>
       <Section title={words().overview}>
@@ -702,21 +701,6 @@ function BaseOverview(props: { base: PulseBase; tab: PulseSettingsTab }) {
               }
             />
           </Show>
-          <Show when={props.tab !== "members" && people().length > 0}>
-            <Row
-              mark={{ icon: "users", color: "var(--k2-muted)" }}
-              lines={[words().membersMeta({ count: props.base.memberCount })]}
-              end={
-                <Avatar.Stack
-                  people={people().map((member) => ({ name: principalLabel(member, locale()) }))}
-                  max={3}
-                  label={people()
-                    .map((member) => principalLabel(member, locale()))
-                    .join(", ")}
-                />
-              }
-            />
-          </Show>
         </List>
       </Section>
       <Section title={words().facts}>
@@ -727,9 +711,6 @@ function BaseOverview(props: { base: PulseBase; tab: PulseSettingsTab }) {
               value: new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date(props.base.createdAt)),
             },
             ...(props.tab === "general" ? [] : [{ label: t().settingsTimezone, value: props.base.timezone }]),
-            ...(props.tab === "retention"
-              ? []
-              : [{ label: t().rawDataRetention, value: words().retentionDays({ days: props.base.rawRetentionDays }) }]),
           ]}
         />
       </Section>

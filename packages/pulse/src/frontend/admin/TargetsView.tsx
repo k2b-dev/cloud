@@ -1,24 +1,6 @@
 import { useLocale } from "@k2b/ui";
-import {
-  Band,
-  Bar,
-  Button,
-  Dialog,
-  Empty,
-  Failed,
-  Field,
-  Input,
-  List,
-  Lookup,
-  Menu,
-  Notice,
-  Pane,
-  Row,
-  StatusRow,
-  Text,
-  useToast,
-} from "@k2b/ui/v2";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { Band, Bar, Button, Dialog, Empty, Failed, Field, Input, Lookup, Menu, Notice, Pane, Table, Text, useToast } from "@k2b/ui/v2";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { InternalTarget, InternalTargetsPage } from "../../store/admin-contracts";
 import { AdminClientError, adminClient } from "./admin-client";
 import { adminErrorText, type PulseAdminMessages, pulseAdminMessages } from "./pulse-admin-messages";
@@ -152,7 +134,7 @@ export default function TargetsView(props: {
   const [total, setTotal] = createSignal(props.initialPage?.total ?? 0);
   const [nextOffset, setNextOffset] = createSignal(props.initialPage?.nextOffset ?? null);
   const [loadFailed, setLoadFailed] = createSignal(!props.initialPage);
-  const [loading, setLoading] = createSignal(false);
+  const [_loading, setLoading] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [busy, setBusy] = createSignal<string | null>(null);
   const reload = async () => {
@@ -204,14 +186,21 @@ export default function TargetsView(props: {
       setBusy(null);
     }
   };
+  // a network stands apart from a single server, one port from all of a host
+  const targetMark = (row: InternalTarget) =>
+    row.scope === "network"
+      ? { icon: "network", color: "#7c3aed" }
+      : row.scope === "host_port"
+        ? { icon: "plug-connected", color: "#2563eb" }
+        : { icon: "server", color: "#0891b2" };
   return (
-    <Pane
-      label={props.label}
-      scrollKey="pulse-admin-targets"
-      status={<StatusRow lead={t().targetsCount({ count: total() })} loading={loading()} />}
-    >
+    <Pane label={props.label} scrollKey="pulse-admin-targets">
+      {/* one sentence of help and the count as meta; the head above carries the one deed */}
       <Band>
         <Text>{t().targetsIntro}</Text>
+        <Text type="meta" muted>
+          {t().targetsCount({ count: total() })}
+        </Text>
       </Band>
       <Show when={!loadFailed()} fallback={<Failed text={t().targetsLoadFailed} onRetry={() => void reload()} />}>
         {/* k2b-ui gap: v2 lists do not virtualize yet (lane MW); the list loads 50 targets a page. */}
@@ -225,30 +214,41 @@ export default function TargetsView(props: {
             />
           }
         >
-          <List label={t().targetsTitle}>
-            <For each={rows()}>
-              {(row) => (
-                <Row
-                  // a network stands apart from a single server, one port from all of a host
-                  mark={
-                    row.scope === "network"
-                      ? { icon: "network", color: "#7c3aed" }
-                      : row.scope === "host_port"
-                        ? { icon: "plug-connected", color: "#2563eb" }
-                        : { icon: "server", color: "#0891b2" }
-                  }
-                  lines={[row.entry, `${row.baseName} · ${scopeText(t(), row)}`]}
-                  end={
-                    <Menu
-                      label={t().removeTargetTitle({ entry: row.entry })}
-                      disabled={busy() !== null}
-                      items={[{ label: t().remove, icon: "x", danger: true, onClick: () => void remove(row) }]}
-                    />
-                  }
-                />
-              )}
-            </For>
-          </List>
+          {/* a dense table, one line per target (identity B, rule 4): what is released, for which base, how far */}
+          <Table
+            label={t().targetsTitle}
+            rows={rows()}
+            rowKey={(row) => row.id}
+            phone={(row) => ({ mark: targetMark(row), lines: [row.entry, `${row.baseName} · ${scopeText(t(), row)}`] })}
+            columns={[
+              {
+                title: t().targetColumn,
+                width: { min: 200, default: 280 },
+                mark: targetMark,
+                cell: (row) => <Text weight="strong">{row.entry}</Text>,
+              },
+              { title: t().baseColumn, width: { min: 160, default: 220 }, cell: (row) => row.baseName },
+              { title: t().scopeColumn, width: { min: 140, default: 180 }, drop: true, cell: (row) => scopeText(t(), row) },
+              {
+                title: t().releasedColumn,
+                width: { min: 110, default: 130 },
+                drop: true,
+                cell: (row) => new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date(row.createdAt)),
+              },
+              {
+                title: "",
+                align: "end",
+                width: { min: 56, default: 56 },
+                cell: (row) => (
+                  <Menu
+                    label={t().removeTargetTitle({ entry: row.entry })}
+                    disabled={busy() !== null}
+                    items={[{ label: t().remove, icon: "x", danger: true, onClick: () => void remove(row) }]}
+                  />
+                ),
+              },
+            ]}
+          />
         </Show>
         <Show when={nextOffset() !== null}>
           <Bar

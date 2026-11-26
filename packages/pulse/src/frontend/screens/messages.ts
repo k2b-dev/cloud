@@ -17,8 +17,6 @@ export const screenMessages = i18n.define({
       matchesCount: ({ count, total }: { count: number; total: number }) => `${count} of ${total}`,
       matchesFound: ({ count, more }: { count: number; more: boolean }) =>
         `${count}${more ? "+" : ""} ${count === 1 && !more ? "match" : "matches"}`,
-      storeTrouble: ({ count }: { count: number }) =>
-        `${count} ${i18n.plural(count, "en", { one: "store needs attention", other: "stores need attention" })}`,
       deletingTitle: "Being deleted",
       clearSearch: "Clear search",
       cancel: "Cancel",
@@ -84,6 +82,9 @@ export const screenMessages = i18n.define({
       storageColumn: "Storage",
       notMeasured: "not measured yet",
       todayCell: "Values today",
+      basesNav: "Bases",
+      sinceTime: ({ time }: { time: string }) => `since ${time}`,
+      storeCheck: ({ name, more }: { name: string; more: string }) => `Check store · ${name}${more}`,
       deliverWord: "deliver data",
       errorWord: "errors",
       restWord: "rest",
@@ -156,8 +157,6 @@ export const screenMessages = i18n.define({
       retentionDays: ({ days }) => `${days} ${i18n.plural(days, "de", { one: "Tag", other: "Tage" })}`,
       matchesCount: ({ count, total }) => `${count} von ${total}`,
       matchesFound: ({ count, more }) => `${count}${more ? "+" : ""} Treffer`,
-      storeTrouble: ({ count }) =>
-        `${count} ${i18n.plural(count, "de", { one: "Speicher braucht Aufmerksamkeit", other: "Speicher brauchen Aufmerksamkeit" })}`,
       deletingTitle: "Wird gelöscht",
       clearSearch: "Suche leeren",
       cancel: "Abbrechen",
@@ -223,6 +222,9 @@ export const screenMessages = i18n.define({
       storageColumn: "Speicher",
       notMeasured: "noch nicht gemessen",
       todayCell: "Werte heute",
+      basesNav: "Basen",
+      sinceTime: ({ time }) => `seit ${time}`,
+      storeCheck: ({ name, more }) => `Speicher prüfen · ${name}${more}`,
       deliverWord: "liefern Daten",
       errorWord: "Fehler",
       restWord: "ruhen",

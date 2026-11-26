@@ -41,22 +41,6 @@ export const pulseMessages = i18n.define({
       sqlHelperHint: "SQL helpers: bucket, rate, increase, histogram_quantile",
       sqlTables: ({ tables }: { tables: string }) => `Tables: ${tables}`,
       sqlExampleLabel: "Example SQL",
-      sqlChartMeta: ({
-        column,
-        series,
-        points,
-        formattedPoints,
-        maxSeries,
-        maxPoints,
-      }: {
-        column: string;
-        series: number;
-        points: number;
-        formattedPoints: string;
-        maxSeries: string;
-        maxPoints: string;
-      }) =>
-        `x: ${column} · ${series} series · ${formattedPoints} ${points === 1 ? "point" : "points"} · at most ${maxSeries} series and ${maxPoints} points`,
       sqlResultRows: ({ count, formatted }: { count: number; formatted: string }) => `${formatted} ${count === 1 ? "row" : "rows"}`,
       sqlResultStats: ({ elapsed, read }: { elapsed: string; read: string }) => `${elapsed} ms · ${read} MiB read`,
       sqlEmptyDetail: "no query yet",
@@ -491,22 +475,6 @@ export const pulseMessages = i18n.define({
       sqlHelperHint: "SQL-Hilfen: bucket, rate, increase, histogram_quantile",
       sqlTables: ({ tables }: { tables: string }) => `Tabellen: ${tables}`,
       sqlExampleLabel: "Beispiel-SQL",
-      sqlChartMeta: ({
-        column,
-        series,
-        points,
-        formattedPoints,
-        maxSeries,
-        maxPoints,
-      }: {
-        column: string;
-        series: number;
-        points: number;
-        formattedPoints: string;
-        maxSeries: string;
-        maxPoints: string;
-      }) =>
-        `x: ${column} · ${series} ${series === 1 ? "Reihe" : "Reihen"} · ${formattedPoints} ${points === 1 ? "Punkt" : "Punkte"} · höchstens ${maxSeries} Reihen und ${maxPoints} Punkte`,
       sqlResultRows: ({ count, formatted }: { count: number; formatted: string }) => `${formatted} ${count === 1 ? "Zeile" : "Zeilen"}`,
       sqlResultStats: ({ elapsed, read }: { elapsed: string; read: string }) => `${elapsed} ms · ${read} MiB gelesen`,
       sqlEmptyDetail: "noch keine Abfrage",

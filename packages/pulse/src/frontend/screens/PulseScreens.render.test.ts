@@ -48,7 +48,7 @@ describe("Pulse pages on the server", () => {
     const page = render(() =>
       createComponent(OverviewScreen, { bases: fixtureBases, deletingBases: fixtureDeletingBases, initialQuery: "" }),
     );
-    expect(page.text).toContain("2 Speicher brauchen Aufmerksamkeit");
+    expect(page.text).toContain("Speicher prüfen · Solaranlage Lager +1");
     expect(page.text).toContain("Betrieb Werkstatt Nord");
     expect(page.text).toContain("Schreiben gesperrt");
     expect(page.text).toContain("Wird gelöscht");
@@ -60,7 +60,8 @@ describe("Pulse pages on the server", () => {
       createComponent(OverviewScreen, { bases: [...worstBases, ...fixtureBases], deletingBases: [], initialQuery: "webshop" }),
     );
     expect(page.text).toContain("1 von 11");
-    expect(page.text).not.toContain("Archiv 2025");
+    // Archiv 2025 stays a place in the sidebar, but its row (with its blocked store) is filtered out
+    expect(page.text).not.toContain("Schreiben gesperrt");
   });
 
   test("sources lead with the hero and its exceptions, the table and the open source with its cause and hour", () => {

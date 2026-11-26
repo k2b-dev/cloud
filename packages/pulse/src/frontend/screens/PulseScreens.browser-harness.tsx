@@ -32,7 +32,14 @@ const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const variant = document.documentElement.dataset.variant ?? "normal";
 const bases = variant === "huge" ? manyBases(1000) : variant === "worst" ? [...worstBases, ...fixtureBases] : fixtureBases;
-const sources = variant === "huge" ? manySources(1000) : variant === "worst" ? [...worstSources, ...fixtureSources] : fixtureSources;
+const sources =
+  variant === "huge"
+    ? manySources(1000)
+    : variant === "worst"
+      ? [...worstSources, ...fixtureSources]
+      : variant === "empty"
+        ? []
+        : fixtureSources;
 const baseId = fixtureBases[0]!.id;
 
 const screen = (): JSX.Element => {

@@ -1,4 +1,4 @@
-import { Chip } from "@k2b/ui/v2";
+import { Chip, Text } from "@k2b/ui/v2";
 import type { BaseStoreStatus } from "../../store/admin-contracts";
 import type { baseStoreMessages } from "../workspace/base-store-messages";
 
@@ -17,7 +17,8 @@ export const storeState = (store: BaseStoreStatus, t: StoreWords): { status?: "o
 
 export const StoreChip = (props: { store: BaseStoreStatus; t: StoreWords }) => {
   const state = () => storeState(props.store, props.t);
-  return <Chip status={state().status ?? "ok"}>{state().label}</Chip>;
+  // an active store says so quietly, without colour (identity B, rule 7); only what needs a look gets a chip
+  return state().status === "ok" ? <Text>{state().label}</Text> : <Chip status={state().status ?? "warn"}>{state().label}</Chip>;
 };
 
 /** The data colour of a base, from its colour setting, for its symbol in lists. */
