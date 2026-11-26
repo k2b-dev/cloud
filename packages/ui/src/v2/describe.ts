@@ -506,8 +506,6 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
-      // words hidden on purpose (a narrow status row keeps the symbol, the words stay the name) are not cut
-      if (label !== control && label.getBoundingClientRect().width <= 1) continue;
       if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
@@ -531,13 +529,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
       if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || bar?.parentElement?.hasAttribute("data-slot"))) return false;
       const other = control.getBoundingClientRect();
-      if (!(other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom)) return false;
-      // The end of a page scrolls past the floating action; a control its scroller can lift clear is reachable.
-      const page = control.ownerDocument.scrollingElement;
-      let room = page ? page.scrollHeight - page.clientHeight - page.scrollTop : 0;
-      for (let up = control.parentElement; up && up !== page; up = up.parentElement)
-        if (/^(auto|scroll)$/.test(getComputedStyle(up).overflowY)) room += up.scrollHeight - up.clientHeight - up.scrollTop;
-      return room < other.bottom - box.top;
+      return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
     });
     if (covered.length)
       problems.push(
