@@ -43,7 +43,8 @@ export const makeLegalPage = (kind: LegalKind) =>
     return () => (
       <VisitorPage c={c} appName={appName} title={title}>
         {trimmedContent ? (
-          <Band label={title}>
+          // the text alone prints, without the page around it
+          <Band label={title} print>
             <Prose markdown={trimmedContent} />
           </Band>
         ) : (

@@ -98,7 +98,8 @@ A head and a status row keep their height.
 
 A block of free height with one line below. `tone`: `note`, `ai`, `yours`,
 `bad`, `warn` (meaning only). Holds `Text`, `Row`, `Prose`, `Tiles`,
-fields. A message in a thread is one `Band`.
+fields. A message in a thread is one `Band`. `print`: the band alone prints,
+without the page around it, such as a legal text.
 
 ### Cells and Cells.Cell
 

@@ -559,13 +559,21 @@ export type BandProps = {
   tone?: "note" | "ai" | "yours" | "bad" | "warn";
   /** A name for the band, for assistive technology. */
   label?: string;
+  /** What prints of the page: the band alone, without the page around it (`data-print-region`), such as a legal text. */
+  print?: boolean;
   /** `Text`, `Row`s, `Prose`, `Tiles` or fields. */
   children: JSX.Element;
 };
 
 /** A band of free height with one line below, from edge to edge. What stands in it draws no line of its own. */
 export const Band = (props: BandProps) => (
-  <section class="k2-band" data-k2-part="Band" data-tone={props.tone} aria-label={props.label}>
+  <section
+    class="k2-band"
+    data-k2-part="Band"
+    data-tone={props.tone}
+    aria-label={props.label}
+    data-print-region={props.print ? "" : undefined}
+  >
     {props.children}
   </section>
 );

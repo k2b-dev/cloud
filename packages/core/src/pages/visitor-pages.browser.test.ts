@@ -245,6 +245,8 @@ const measure = async (name: Name, width: number, locale: Locale) => {
             .map((element) => element.textContent?.trim() || element.getAttribute("aria-label"));
         })(),
         legalVersion: document.querySelector("[data-legal-version]")?.getAttribute("data-legal-version"),
+        // what prints: the legal text alone, without the page around it
+        printed: Array.from(document.querySelectorAll("[data-print-region]")).map((region) => region.textContent?.trim().slice(0, 20)),
       };
     });
     return { outline, problems: layout.problems, ...boxes };
@@ -285,6 +287,7 @@ describe("Core visitor pages on v2", () => {
           expect(page.footer!.top, context).toBeGreaterThanOrEqual(column.bottom);
           // The smokes accept the terms by the version on the consent form.
           if (name === "consent") expect(page.legalVersion, context).toBe("a".repeat(64));
+          expect(page.printed.length, context).toBe(name === "legal" ? 1 : 0);
         }
     }, 60_000);
 });
