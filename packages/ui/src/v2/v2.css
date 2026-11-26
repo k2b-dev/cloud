@@ -446,7 +446,6 @@
 }
 /* weaker than the workspace's drawer rule, which hides the button again while the sidebar is a drawer */
 .k2-ui :where(.k2-ws[data-collapsible]) > .k2-ws-main > [data-slot="head"] {
-  position: relative;
   --k2-ws-collapse: inline-flex;
   --k2-ws-drawer: 1;
 }

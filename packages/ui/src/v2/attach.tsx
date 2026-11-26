@@ -373,11 +373,6 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
 };
 
 /**
- * Attaches every Workspace of the page that is not inside an island (those attach themselves). The frame entry of a
- * page calls it once, after the page is there: in Cloud the `ui: "v2"` layout does; a standalone app writes a
- * `.client.tsx` with `onMount(() => onCleanup(attachWorkspaces()))` and renders it once on the page.
- */
-/**
  * Hides or shows the sidebar of the page's first workspace that has the collapse (`collapsible`), as its button and
  * Mod+Alt+S do: on a wide screen it collapses or expands it, and `onSidebarCollapsedChange` hears the change; where
  * the sidebar is a drawer, it opens or closes the drawer. For a command of the page, such as "Hide navigation" in a
@@ -392,6 +387,11 @@ export const toggleWorkspaceSidebar = (root?: ParentNode): boolean => {
   return false;
 };
 
+/**
+ * Attaches every Workspace of the page that is not inside an island (those attach themselves). The frame entry of a
+ * page calls it once, after the page is there: in Cloud the `ui: "v2"` layout does; a standalone app writes a
+ * `.client.tsx` with `onMount(() => onCleanup(attachWorkspaces()))` and renders it once on the page.
+ */
 export const attachWorkspaces = (options: AttachOptions = {}, root: ParentNode = document): (() => void) => {
   const stops = [...root.querySelectorAll<HTMLElement>("[data-k2-workspace]")]
     .filter((element) => !element.closest(island))
