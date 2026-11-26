@@ -72,7 +72,9 @@ const firstHtml = async (search: string, data: Data) => {
       const query = filter?.query?.toLowerCase();
       const found = query
         ? groups.filter((group) =>
-            [group.cn, group.description ?? "", ...group.hostDetails.map((host) => host.fqdn)].some((text) => text.toLowerCase().includes(query)),
+            [group.cn, group.description ?? "", ...group.hostDetails.map((host) => host.fqdn)].some((text) =>
+              text.toLowerCase().includes(query),
+            ),
           )
         : groups;
       return {
