@@ -90,7 +90,8 @@ const CheckNotice = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket
       </Notice>
     </Match>
     <Match when={props.bucket.check.state === "ok"}>
-      <Text type="meta" tone="ok">
+      {/* a reachable bucket is the good state: quiet words (identity rule 7) */}
+      <Text type="meta" muted>
         {`${props.t.okTested} ${props.bucket.check.checkedAt ? props.time(props.bucket.check.checkedAt) : ""} ${props.t.okDetail}`}
       </Text>
     </Match>
@@ -652,12 +653,15 @@ export default function StorageScreen(props: StorageScreenProps) {
                 marks: <StateChip t={t()} bucket={row} />,
               })}
               columns={[
+                // one line per row (identity rule 4): the name with the bucket's sign, where it lives, its state
                 {
                   title: t().name,
-                  width: { min: 200, default: 260 },
-                  cell: (row) => ({ lines: [storageBucketName(t(), row), storageBucketLine(t(), row)] }),
+                  width: { min: 180, default: 220 },
+                  mark: () => ({ icon: "database" }),
+                  cell: (row) => storageBucketName(t(), row),
                 },
-                { title: t().state, cell: (row) => <StateChip t={t()} bucket={row} /> },
+                { title: t().where, width: { min: 160, default: 240 }, drop: true, cell: (row) => storageBucketLine(t(), row) },
+                { title: t().state, width: { min: 130, default: 150 }, cell: (row) => <StateChip t={t()} bucket={row} /> },
               ]}
             />
             <Show when={items().length > 0 && items().every((bucket) => bucket.isDefault)}>

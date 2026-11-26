@@ -153,6 +153,24 @@ const defaultEntries = (): SettingFieldDef[] => {
 export const STORAGE_SCENARIOS = {
   liste: () => [defaultBucket(), ...furtherBuckets()],
   leer: () => [defaultBucket()],
+  // break-ui: a long name with an unbreakable endpoint and bucket, a one-letter name, non-Latin and emoji names
+  worst: () => [
+    defaultBucket(),
+    ...furtherBuckets().map((item, index) =>
+      index === 0
+        ? {
+            ...item,
+            name: "Archiv Rechnungen und Lieferscheine Werkstatt Nord-Ost 2019–2026",
+            endpoint: "https://s3.eu-central-1.objekt-anbieter.northwind-industries-holdings.example.com",
+            bucket: "cloud-archiv-rechnungen-lieferscheine-werkstatt-nord-ost-2019-2026",
+          }
+        : index === 1
+          ? { ...item, name: "Ö" }
+          : index === 2
+            ? { ...item, name: "Αρχείο πελατών 📦" }
+            : item,
+    ),
+  ],
   fehler: () => null,
 } satisfies Record<string, () => AdminStorageBucket[] | null>;
 export type StorageScenario = keyof typeof STORAGE_SCENARIOS;
