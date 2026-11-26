@@ -74,11 +74,14 @@ describe("OAuth authorization pages", () => {
         // the head names the task: the page's one heading
         expect(count(html, /<h1\b/g), context).toBe(1);
         expect(heading(html), context).toBeString();
-        expect(html, context).toContain('<footer class="minimal-layout-footer" data-ui="v2"');
+        // the platform's footer (its look follows the Core that serves the page)
+        expect(html, context).toContain('<footer class="minimal-layout-footer"');
         // The only navigation is the footer's legal links.
         expect(count(html, /<nav\b/g), context).toBe(1);
-        // no v1 card or control
-        expect(html, context).not.toMatch(/standalone-card|k2b-button|k2b-notice/);
+        // the page itself holds no v1 card or control
+        const main = /<main\b[\s\S]*<\/main>/.exec(html)?.[0] ?? "";
+        expect(main, context).toContain('data-k2-part="Workspace"');
+        expect(main, context).not.toMatch(/standalone-card|k2b-button|k2b-notice/);
       }
     }
   });
