@@ -21,6 +21,8 @@ const root = mkdtempSync(join(tmpdir(), "proxy-auth-shell-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
+const LOGO =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2563eb"/><path d="M9 20a5 5 0 0 1 1-9.9A7 7 0 0 1 23 12a4 4 0 0 1 0 8z" fill="#fff"/></svg>';
 const shots = process.env.CLOUD_PROXY_AUTH_SHELL_SHOTS;
 const origin = "https://cloud.example.test";
 
@@ -161,6 +163,8 @@ describe("Proxy Auth in the Cloud shell", () => {
             const path = resolve(fonts, url.pathname.slice("/public/fonts/".length));
             return path.startsWith(`${fonts}/`) ? route.fulfill({ path }) : route.fulfill({ status: 404 });
           }
+          // the shell's logos and app symbols: one invented mark, so no picture shows a broken image
+          if (route.request().resourceType() === "image") return route.fulfill({ contentType: "image/svg+xml", body: LOGO });
           // the islands stay as the server drew them: this is the first picture
           return route.fulfill({ status: 404, body: "" });
         });
