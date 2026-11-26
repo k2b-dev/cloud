@@ -1054,7 +1054,13 @@
   align-items: baseline;
   min-width: 0;
 }
+.k2-ui .k2-gh-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .k2-ui .k2-gh-title > .k2-gh-count {
+  flex: none;
   font: var(--k2-t-row);
   color: var(--k2-subtle);
 }
