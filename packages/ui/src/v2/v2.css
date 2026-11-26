@@ -3063,6 +3063,13 @@
   flex: none;
   color: var(--k2-subtle);
 }
+/* the value set now through an entry's submenu or panel: at the end, in the app's colour (as a filter's set bound) */
+.k2-ui .k2-mi-meta[data-set] {
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+  color: var(--k2-app-text);
+  font-weight: 600;
+}
 /* the pointer, the keys and an open submenu mark the same entry with the same fill */
 .k2-ui .k2-mi:is([data-highlighted], [data-open]) {
   background: var(--k2-n100);
@@ -3159,6 +3166,15 @@
   border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
   /* its content (the calendar) in the middle */
   align-items: center;
+}
+/* the head of a panel's sheet: its name, which leads back to the entries ("‹ Datum und Uhrzeit …") */
+.k2-ui .k2-pop[data-presentation="sheet"] > .k2-panel-back {
+  align-self: stretch;
+  width: auto;
+  height: 44px;
+  margin: 0 8px;
+  font-weight: 600;
+  color: var(--k2-text);
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {

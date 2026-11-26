@@ -12,7 +12,7 @@ import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailReaderMessages } from "../mail-reader-messages";
 import { createMailSummaryEdit } from "../mail-summary-edit";
 import { MailV2TimePicker } from "./MailV2TimePicker";
-import { mailV2LaterTimes, mailV2TimeZone } from "./mail-v2-later";
+import { mailV2LaterTimes, mailV2LaterValue, mailV2TimeZone } from "./mail-v2-later";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
 
@@ -83,9 +83,16 @@ export function createMailV2ReaderMenus(props: {
       if (Date.parse(at) <= Date.now()) return void toast.error(v2Text().laterPast);
       choose(at);
     };
+    // with a time set, the offered time that is it carries the tick
+    const set = current && Date.parse(current) > Date.now() ? Date.parse(current) : null;
     return [
       ...mailV2LaterTimes(props.dateConfig, v2Text(), Date.now()).map(
-        (time): MenuItem => ({ label: time.label, ...(time.meta ? { meta: time.meta } : {}), onClick: () => pick(time.at) }),
+        (time): MenuItem => ({
+          label: time.label,
+          ...(time.meta ? { meta: time.meta } : {}),
+          ...(set === null ? {} : { checked: Date.parse(time.at) === set }),
+          onClick: () => pick(time.at),
+        }),
       ),
       "separator",
       {
@@ -104,10 +111,13 @@ export function createMailV2ReaderMenus(props: {
       },
     ];
   };
+  /** A time that is set and still ahead, as the entry that changes it shows it. */
+  const setValue = (at: string | null) => (at && Date.parse(at) > Date.now() ? { current: mailV2LaterValue(at, props.dateConfig) } : {});
   const showLaterItem = (disabled: boolean): MenuItem => ({
     label: v2Text().showLater,
     icon: "clock",
     ...(disabled ? { disabled } : {}),
+    ...setValue(snoozedUntil()),
     get items() {
       return timeItems(readerText().laterField, snoozedUntil(), (at) => conversationState.snooze(at));
     },
@@ -124,18 +134,28 @@ export function createMailV2ReaderMenus(props: {
             "separator" as const,
           ]
         : []),
+      // the reminder reaches only this person, so its entries stand under a heading that says so
       {
-        label: conversationState.reminderDueAt() ? v2Text().changeReminder : v2Text().remindMe,
-        icon: "bell",
-        get items() {
-          return timeItems(readerText().reminderField, conversationState.reminderDueAt(), (at) => conversationState.setReminder(at));
-        },
+        title: readerText().reminderOnlyForYou,
+        items: [
+          {
+            label: conversationState.reminderDueAt() ? v2Text().changeReminder : v2Text().remindMe,
+            icon: "bell",
+            ...setValue(conversationState.reminderDueAt()),
+            get items() {
+              return timeItems(readerText().reminderField, conversationState.reminderDueAt(), (at) => conversationState.setReminder(at));
+            },
+          },
+          ...(conversationState.reminderDueAt()
+            ? [{ label: readerText().removeReminder, icon: "bell-off", onClick: () => conversationState.setReminder(null) }]
+            : []),
+        ],
       },
-      ...(conversationState.reminderDueAt()
-        ? [{ label: readerText().removeReminder, icon: "bell-off", onClick: () => conversationState.setReminder(null) }]
-        : []),
     ];
   };
+
+  /** Marks "Später anzeigen" in v1's builder of "…", so `more` puts the entry with its times in its place. */
+  const showLaterMark = () => undefined;
 
   const linkItems = (): DropdownAction[] =>
     links.canLink()
@@ -238,7 +258,7 @@ export function createMailV2ReaderMenus(props: {
                 : []),
               // its times come in `more` below, as the head's "Später" offers them
               ...(collaboration() && !headButtonsShown()
-                ? [{ label: readerText().showLater, icon: "ti ti-clock", disabled: status === "done", action: () => undefined }]
+                ? [{ label: readerText().showLater, icon: "ti ti-clock", disabled: status === "done", action: showLaterMark }]
                 : []),
             ],
             organize: {
@@ -315,9 +335,7 @@ export function createMailV2ReaderMenus(props: {
     // On the phone "…" also holds "Später anzeigen", with the same times as the head's "Später".
     more: (): MenuEntry[] =>
       mailV2MenuEntries(moreItems()).map((entry) =>
-        entry !== "separator" && "label" in entry && entry.label === readerText().showLater
-          ? showLaterItem(Boolean(entry.disabled))
-          : entry,
+        entry !== "separator" && "onClick" in entry && entry.onClick === showLaterMark ? showLaterItem(Boolean(entry.disabled)) : entry,
       ),
     /** What other apps linked to the open conversation, for the head's "n verknüpft". */
     linked: () => links.items(),

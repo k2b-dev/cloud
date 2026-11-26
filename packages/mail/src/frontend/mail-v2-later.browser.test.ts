@@ -312,6 +312,64 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
     }
   }, 60_000);
 
+  // Design check of #4157: what is set shows where it is changed. The entry names the time at its end in the app's
+  // colour, the offered time that is it carries the tick, and the reminder's entries say that only you get it.
+  test('a reminder that is set shows at its entry, its offered time carries the tick, under "only you"', async () => {
+    const { page, errors, sent } = await open();
+    try {
+      await head(page).getByRole("button", { name: "Später" }).click();
+      expect(await page.getByRole("group", { name: "Nur du bekommst die Erinnerung." }).count()).toBe(1);
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await page.getByRole("menuitem", { name: /^Morgen, 8:00/ }).click();
+      await openMenus(page, 0);
+      await calls(sent, 1);
+      await head(page).getByRole("button", { name: "Später" }).click();
+      const change = page.getByRole("menuitem", { name: /^Erinnerung ändern/ });
+      const value = change.locator(".k2-mi-meta[data-set]");
+      expect((await value.textContent())?.replace(/\u202f/g, " ")).toBe("Sa., 28. Nov., 8:00");
+      await change.hover();
+      expect(await page.getByRole("menuitemcheckbox", { name: /^Morgen, 8:00/ }).getAttribute("aria-checked")).toBe("true");
+      expect(await page.getByRole("menuitemcheckbox", { name: /^Montag, 8:00/ }).getAttribute("aria-checked")).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("on the phone the calendar's sheet names its step and leads back to the times", async () => {
+    const { page, errors } = await open(390);
+    try {
+      await head(page).getByRole("button", { name: "Später" }).tap();
+      await sheetAtRest(page);
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).tap();
+      await page.getByRole("menuitem", { name: /^Montag, 8:00/ }).waitFor();
+      await sheetAtRest(page);
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).tap();
+      await panel(page).waitFor();
+      await page.waitForFunction(
+        () =>
+          document.querySelector<HTMLElement>('.k2-pop[data-presentation="sheet"]')?.style.getPropertyValue("--drawer-progress") === "1",
+      );
+      const back = panel(page).getByRole("button", { name: "Datum und Uhrzeit …" });
+      const box = await back.boundingBox();
+      expect(box && box.height >= 44).toBe(true);
+      await back.tap();
+      await panel(page).waitFor({ state: "detached" });
+      await sheetAtRest(page);
+      expect(await page.getByRole("menuitem", { name: /^Montag, 8:00/ }).isVisible()).toBe(true);
+      // the phone's "…" offers "Später anzeigen" with its times, found by its deed, not its words
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await openMenus(page, 0);
+      await head(page).getByRole("button", { name: "Weitere Aktionen" }).tap();
+      await sheetAtRest(page);
+      expect(await page.getByRole("menuitem", { name: "Später anzeigen" }).getAttribute("aria-haspopup")).toBe("menu");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("on the phone the times are the sheet's next step, and one sets the reminder", async () => {
     const { page, errors, sent } = await open(390);
     try {

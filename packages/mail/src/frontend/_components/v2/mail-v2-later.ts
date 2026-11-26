@@ -8,6 +8,17 @@ export type MailV2LaterTime = { label: string; meta?: string; at: string };
 export const mailV2TimeZone = (config: DateContext) =>
   dates.normalizeTimeZone(config.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
 
+/** A time set now (a reminder, a snooze) as an entry shows it at its end: "Sa., 28. Nov., 8:00". */
+export const mailV2LaterValue = (at: string, config: DateContext) =>
+  new Intl.DateTimeFormat(config.locale, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: mailV2TimeZone(config),
+  }).format(new Date(at));
+
 /** Moves a date key ("2026-11-27") by whole days; the calendar, not the clock, so a DST change cannot shift it. */
 const shiftDay = (key: string, days: number) => {
   const [year, month, day] = key.split("-").map(Number) as [number, number, number];

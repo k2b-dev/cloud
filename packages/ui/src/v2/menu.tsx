@@ -29,6 +29,11 @@ export type MenuItem = {
   disabled?: boolean;
   /** A quiet hint at the end, such as the key that does the same ("⌘ D"). */
   meta?: string;
+  /**
+   * The value set now through this entry's submenu or panel, such as the time a reminder is due: it stands at the end
+   * in the app's colour, as a filter shows a bound that is set.
+   */
+  current?: string;
   /** An entry that toggles: `onClick` flips it. */
   checked?: boolean;
   /** A submenu, opened to the side. */
@@ -257,7 +262,13 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
       </span>
     </Show>
     <span class="k2-mi-label">{props.item.label}</span>
-    <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
+    <Show when={props.item.current ?? props.item.meta}>
+      {(meta) => (
+        <span class="k2-mi-meta" data-set={props.item.current ? "" : undefined}>
+          {meta()}
+        </span>
+      )}
+    </Show>
     {props.end}
   </>
 );
@@ -348,6 +359,20 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
           sideOffset={4}
           collisionPadding={8}
         >
+          {/* on the phone the sheet names its step and leads back to the entries, as a submenu's step does */}
+          <Show when={phone()}>
+            <button
+              type="button"
+              class="k2-mi k2-panel-back"
+              onClick={() => {
+                setOpen(false);
+                entry()?.focus();
+              }}
+            >
+              <Icon name="chevron-left" />
+              <span class="k2-mi-label">{props.item.label}</span>
+            </button>
+          </Show>
           {/* made once while open: new data for the menu keeps what was typed in the panel */}
           {untrack(() => props.item.panel?.(close))}
         </popover.Popup>
