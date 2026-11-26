@@ -26,7 +26,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { clientRow } from "../client-row";
 import { proxyAuthMessages } from "../messages";
@@ -103,7 +103,12 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const [created, setCreated] = createSignal<string | null>(null);
   // a client just created stands in the list behind its dialog; the next page load brings it from the server
   const [added, setAdded] = createSignal<ClientRow[]>([]);
-  const rows = () => [...props.clients, ...added()];
+  const rows = () => [...props.clients, ...added()].sort((a, b) => a.name.localeCompare(b.name, locale()));
+  /** No client yet and no search: the empty state is the one way to the first client, and there is nothing to search. */
+  const nothingYet = () => props.figures.total === 0 && added().length === 0 && !props.search;
+  const clientsHref = (client: ClientRow) =>
+    `${LIST}?${new URLSearchParams({ ...(props.search ? { search: props.search } : {}), client: client.id })}`;
+  const listHref = () => (props.search ? `${LIST}?${new URLSearchParams({ search: props.search })}` : LIST);
   const start = (client: ClientRow | "new") => {
     setDraft(
       client === "new"
@@ -164,29 +169,21 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     </Chip>
   );
 
-  /**
-   * The groups as chips; in a row only as many as its column holds whole (two short ones, else one) and "+n" for the
-   * rest, which the open client lists.
-   */
-  const groupChips = (client: ClientRow, row = false) => {
-    if (client.groups.length === 0) return blocked();
-    const fit = row ? (client.groups.slice(0, 2).reduce((sum, group) => sum + group.label.length, 0) <= 24 ? 2 : 1) : client.groups.length;
-    const shown = client.groups.slice(0, fit);
-    return (
+  /** The groups as words; without one, the fact that nobody gets through, with its sign. */
+  const groupWords = (client: ClientRow) =>
+    client.groups.length === 0 ? (
       <>
-        <For each={shown}>{(group) => <Chip icon="users-group">{group.label}</Chip>}</For>
-        <Show when={client.groups.length > shown.length}>
-          <Chip>{`+${number(client.groups.length - shown.length)}`}</Chip>
-        </Show>
+        <Icon name="lock" tone="warn" /> {t().blockedFact}
       </>
+    ) : (
+      client.groups.map((group) => group.label).join(", ")
     );
-  };
 
   const record = (client: ClientRow) => (
     <Pane
       detail
       label={client.name}
-      back={{ label: t().backToClients, href: LIST }}
+      back={{ label: t().backToClients, href: listHref() }}
       head={
         <Bar
           start={<Text weight="strong">{client.name}</Text>}
@@ -199,25 +196,20 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
               <Button icon="pencil" keep onClick={() => start(client)}>
                 {t().edit}
               </Button>
-              <Button variant="ghost" icon="x" label={t().close} href={LIST} />
+              <Button variant="ghost" icon="x" label={t().close} href={listHref()} />
             </>
           }
         />
       }
     >
-      <Show when={client.groups.length === 0}>
-        <Notice tone="warn" icon="lock">
-          {t().blockedNotice}
-        </Notice>
-      </Show>
       {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
       <Facts
         items={[
+          // who gets through comes first: the groups, or the fact that nobody does yet
+          { label: t().allowedGroups, value: <>{groupWords(client)}</> },
           { label: t().verifyUrl, value: verifyUrl(client.clientId), mono: true, copy: verifyUrl(client.clientId) },
           { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
-          // an empty description says nothing, and a client without a group says so in its notice above
           ...(client.description ? [{ label: t().description, value: client.description }] : []),
-          ...(client.groups.length > 0 ? [{ label: t().allowedGroups, value: <>{groupChips(client)}</> }] : []),
           { label: t().created, value: client.created },
         ]}
       />
@@ -240,10 +232,14 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
                   ? t().blockedLead({ count: props.figures.withoutGroups })
                   : t().allGatedLead({ count: props.figures.total })
             }
-            facts={[
-              ...(props.search ? [{ before: t().searchFact, value: props.search }] : []),
-              ...(rows().length > 0 ? [{ value: t().clientCount({ count: rows().length }) }] : []),
-            ]}
+            // quiet meta: the number of clients, or how many of them a search shows (the query stands in the field)
+            facts={
+              props.search
+                ? [{ before: t().shownOf({ shown: rows().length, total: props.figures.total }) }]
+                : rows().length > 0
+                  ? [{ before: t().clientCount({ count: rows().length }) }]
+                  : []
+            }
           />
         }
       >
@@ -253,17 +249,18 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           rowKey={(client) => client.id}
           sticky
           current={props.open ?? undefined}
-          open={(client) => ({ href: `${LIST}?client=${encodeURIComponent(client.id)}` })}
+          open={(client) => ({ href: clientsHref(client) })}
           // the empty state holds its way on; a search that finds nothing says so and how to see all again
           empty={
             props.search
               ? { icon: "search-off", text: t().noMatch({ query: props.search }), action: { label: t().resetSearch, href: LIST } }
-              : { icon: "shield-half", text: t().empty, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
+              : // the one way to the first client: the head and the phone's button hold none while the list is empty
+                { icon: "shield-half", text: t().empty, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
           }
           phone={(client) => ({
             lines: [<ClientName client={client} />, client.description || client.clientId],
             time: client.created,
-            marks: client.groups.length === 0 ? <Chip status="warn">{t().noGroups}</Chip> : undefined,
+            marks: client.groups.length === 0 ? blocked() : undefined,
           })}
           columns={[
             {
@@ -287,8 +284,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         <Show
           when={opened()}
           fallback={
-            <Pane detail label={t().clients} back={{ label: t().backToClients, href: LIST }}>
-              <Empty icon="file-off" text={t().notFound} action={{ label: t().backToClients, href: LIST }} />
+            <Pane detail label={t().clients} back={{ label: t().backToClients, href: listHref() }}>
+              <Empty icon="file-off" text={t().notFound} action={{ label: t().backToClients, href: listHref() }} />
             </Pane>
           }
         >
@@ -339,7 +336,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       nav={props.nav}
       detail={props.tab === "clients" && props.open ? 440 : undefined}
       // the main action on the list, floating at the bottom right on the phone; never over an open client or the setup
-      primary={props.tab === "clients" && !props.open ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
+      primary={props.tab === "clients" && !nothingYet() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
       head={
         <Bar
           start={
@@ -352,7 +349,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             />
           }
           end={
-            <Show when={props.tab === "clients"}>
+            <Show when={props.tab === "clients" && !nothingYet()}>
               <Input
                 type="search"
                 icon="search"
@@ -367,11 +364,9 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
                   if (event.key === "Escape" && input.value) location.assign(LIST);
                 }}
               />
-              <Show when={!props.open}>
-                <Button variant="primary" icon="plus" onClick={() => start("new")}>
-                  {t().newClient}
-                </Button>
-              </Show>
+              <Button variant="primary" icon="plus" onClick={() => start("new")}>
+                {t().newClient}
+              </Button>
             </Show>
           }
         />
@@ -425,10 +420,17 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           if (!open) location.reload();
         }}
         dismissible={false}
-        foot={<Button onClick={() => location.reload()}>{t().close}</Button>}
+        foot={
+          <>
+            <Button onClick={() => location.reload()}>{t().close}</Button>
+            <Button variant="primary" icon="route" href={`${LIST}?tab=setup`}>
+              {t().toSetup}
+            </Button>
+          </>
+        }
       >
         <Text>
-          <Icon name="circle-check" tone="ok" label={t().clientCreated} /> {t().copyLater}
+          <Icon name="circle-check" tone="ok" label={t().clientCreated} /> {t().nextStep}
         </Text>
         <Facts items={[{ label: t().verifyUrl, value: verifyUrl(created() ?? ""), mono: true, copy: verifyUrl(created() ?? "") }]} />
       </Dialog>

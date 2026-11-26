@@ -1,6 +1,7 @@
 import { groupDisplayName } from "@k2b/cloud/shared";
 import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
+import { matchesClientSearch } from "../../client-search";
 import ProxyAuthScreen from "./ProxyAuthScreen";
 import { fixtureClients, type ProxyAuthFixtureData } from "./proxy-auth-fixture-data";
 
@@ -14,23 +15,19 @@ const harnessNav: NavProps = {
 
 /** `nav` is the shell's own admin navigation when the screen stands in the real page (dialog pictures). */
 export const ProxyAuthFixture = (props: { search: string; data?: ProxyAuthFixtureData; nav?: NavProps }) => {
-  const clients = fixtureClients(props.data ?? "normal").map((client) => ({
+  const all = fixtureClients(props.data ?? "normal");
+  // the search as the service matches it
+  const search = new URLSearchParams(props.search).get("search") ?? "";
+  const toRow = (client: (typeof all)[number]) => ({
     id: client.id,
     clientId: client.clientId,
     name: client.name,
     description: client.description,
     groups: client.allowedGroups.map((group) => ({ id: group.id, label: groupDisplayName(group.name, "de") })),
     created: new Date(client.createdAt).toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" }),
-  }));
-  // the search as the page matches it: a name, an ID, a description or a group
-  const search = new URLSearchParams(props.search).get("search") ?? "";
-  const shown = search
-    ? clients.filter((client) =>
-        [client.name, client.clientId, client.description ?? "", ...client.groups.map((group) => group.label)].some((value) =>
-          value.toLowerCase().includes(search.toLowerCase()),
-        ),
-      )
-    : clients;
+  });
+  const clients = all.map(toRow);
+  const shown = all.filter((client) => matchesClientSearch(client, search)).map(toRow);
   return (
     <LocaleProvider locale="de">
       <ProxyAuthScreen

@@ -2,6 +2,7 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
+import { matchesClientSearch } from "../client-search";
 import { proxyAuthService } from "../service";
 import ProxyAuthScreen from "./_components/ProxyAuthScreen.island";
 import { clientRow } from "./client-row";
@@ -12,16 +13,9 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = proxyAuthMessages.resolve([locale]);
   const { items: all } = await proxyAuthService.client.list();
-  // the search is matched here, on every client: a name, an ID, a description or a group
+  // one read of all clients for the figures; the list shows those the service's search rule matches
   const search = (c.req.query("search") ?? "").trim().slice(0, 200);
-  const needle = search.toLowerCase();
-  const clients = needle
-    ? all.filter((client) =>
-        [client.name, client.clientId, client.description ?? "", ...client.allowedGroups.map((group) => group.name)].some((value) =>
-          value.toLowerCase().includes(needle),
-        ),
-      )
-    : all;
+  const clients = all.filter((client) => matchesClientSearch(client, search));
   const rawAppUrl = await get<string>("app.url");
   const baseUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
   const open = c.req.query("client")?.slice(0, 100) || null;
