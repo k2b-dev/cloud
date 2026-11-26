@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
+import { measureSidebarGutter, SIDEBAR_GUTTER } from "../_components/sidebar/sidebar-gutter.test-fixture";
 
 // The notes list in a real browser: a tag filter and the search write the address and the list follows it, favorites
 // are a tab, a reader stays in Book, the phone shows the worst case without sideways scrolling, and 1,200 notes keep
@@ -179,6 +180,27 @@ describe("the notes list on v2", () => {
       const first = tab.locator('[data-k2-part="List"] [data-k2-part="Row"] a').first();
       expect(await first.getAttribute("href")).toMatch(/\/app\/notebooks\/Lager1\/notes\/N\d{5}\?mode=book$/);
       expect(await tab.getByRole("button", { name: "Neue Notiz" }).count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the sidebar's switcher, search, chips and rows start on the v2 gutter, and nothing touches its edge", async () => {
+    const { context, tab, errors } = await open(wide, PATH);
+    try {
+      const { starts, touching } = await measureSidebarGutter(tab);
+      expect(touching).toEqual([]);
+      // one start for the whole sidebar: the top block on the rows' edge, the search field reaching as far as they do
+      expect(starts.map(({ name, left }) => [name, left])).toEqual([
+        ["switcher", SIDEBAR_GUTTER],
+        ["search", SIDEBAR_GUTTER],
+        ["chips", SIDEBAR_GUTTER],
+        ["first row", SIDEBAR_GUTTER],
+        ["foot row", SIDEBAR_GUTTER],
+      ]);
+      const right = Object.fromEntries(starts.map(({ name, right }) => [name, right]));
+      expect([right.search, right["first row"], right["foot row"]]).toEqual([SIDEBAR_GUTTER, SIDEBAR_GUTTER, SIDEBAR_GUTTER]);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
