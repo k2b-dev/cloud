@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Button, Chip, Cut, Input, List, Notice, Pane, Row, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Chip, Cut, Input, List, Menu, Notice, Pane, Row, Table, Tabs, Workspace } from "../src/v2";
 
 // Worst-case states of v2 primitives that change after the page is live (break-ui 25.11., review of #4210): a note that
 // grows, a tab that becomes the open one, words cut in the middle in a narrow box, an amount among a row's marks.
@@ -27,11 +27,42 @@ if (!root) throw new Error("worst: #root is missing");
 const files = [
   { id: "f1", name: "Angebote", kind: "Ordner", detail: "Ordner · Link", changed: "25.11.2026, 14:32" },
   { id: "f2", name: "Zuschnitt Küchenfront.dxf", kind: "Dateien", detail: "1.000 KB · Team", changed: "1.11.2026, 09:05" },
+  {
+    id: "f3",
+    name: "Stripe Zahlungen",
+    kind: "Dateien",
+    detail: `{"id":"evt_3QxK8m","type":"payment_intent.succeeded","data":${"x".repeat(240)}}`,
+    changed: "heute, 11:26",
+  },
 ];
 const [picked, setPicked] = createSignal<readonly string[]>([]);
+const [marked, setMarked] = createSignal(true);
 // `<body data-case="head">`: a head on the phone that holds views, a search, a filter and two deeds that keep their words
 const scenario = document.body.dataset.case;
-if (scenario === "table" || scenario === "head")
+// `<body data-case="rows">`: endpoints whose second line is an address of 300 characters without a break, beside a deed
+const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
+const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
+if (scenario === "rows")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Endpunkte">
+            <Row
+              icon="webhook"
+              lines={["Zahlungseingänge der Buchhaltung", address]}
+              meta="123.456 Anfragen"
+              time="zuletzt heute, 11:29"
+              action={{ label: "Adresse kopieren", icon: "copy", onClick: () => undefined }}
+            />
+            <Row icon="webhook" lines={["Stripe Zahlungen", hyphened]} time="heute, 11:26" marks={<Chip status="ok">POST</Chip>} />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "table" || scenario === "head" || scenario === "headmenu")
   render(
     () => (
       <Workspace
@@ -56,6 +87,13 @@ if (scenario === "table" || scenario === "head")
                     Gesperrt
                   </Button>
                 </>
+              ) : scenario === "headmenu" ? (
+                <>
+                  <Button keep pressed={marked()} onClick={() => setMarked(!marked())}>
+                    Markiert
+                  </Button>
+                  <Menu label="Weitere Aktionen" items={[{ label: "Einstellungen", onClick: () => undefined }]} />
+                </>
               ) : undefined
             }
           />
@@ -73,7 +111,11 @@ if (scenario === "table" || scenario === "head")
                 { title: "Name", cell: (file) => ({ lines: [file.name, file.detail] }), width: { min: 160, default: 320 } },
                 { title: "Geändert", cell: (file) => file.changed, width: { min: 120, default: 160 } },
               ]}
-              phone={(file) => ({ lines: [file.name, file.detail], time: file.changed })}
+              phone={(file) => ({
+                lines: [file.name, file.detail],
+                time: file.changed,
+                marks: file.id === "f3" ? <Chip status="ok">POST</Chip> : undefined,
+              })}
             />
           </Pane>
         </Pane.Split>
