@@ -43,6 +43,65 @@ const hourCycleOf = (locale: string): 12 | 24 => {
 };
 
 /**
+ * Core's time input in one clock: hour and minute as spinbuttons in the locale's clock (24 hours in German), never the
+ * browser's time field. Typing, the arrows, Backspace and the segment keys are core's; the adapter reads a pasted time.
+ */
+const TimeField = (props: {
+  value: string | null;
+  onChange: (value: string | null) => void;
+  locale: string;
+  hourCycle: 12 | 24;
+  labelledBy: string;
+  emptyText: string;
+  invalid: boolean;
+  onUnreadable: () => void;
+  onEnter: () => void;
+}) => {
+  const time = useTimeInput(() => ({
+    value: props.value,
+    onValueChange: props.onChange,
+    locale: props.locale,
+    hourCycle: props.hourCycle,
+    emptyText: props.emptyText,
+    onUnreadable: props.onUnreadable,
+  }));
+  return (
+    <time.Root
+      class="k2-input k2-time"
+      data-invalid={props.invalid ? "" : undefined}
+      aria-labelledby={props.labelledBy}
+      // Enter applies what the segments hold once core has taken what was typed: a native listener on the group runs
+      // after core's on the segment (also in a panel that stops keys) and before the form around it would be sent.
+      on:keydown={(event: KeyboardEvent) => {
+        if (event.key !== "Enter" || event.isComposing) return;
+        event.preventDefault();
+        props.onEnter();
+      }}
+    >
+      {(state: { segments?: TimeSegment[] }) => (
+        <For each={(state.segments ?? []).map((segment) => segment.key)}>
+          {(key) => {
+            const segment = () => (state.segments ?? []).find((each) => each.key === key);
+            return (
+              <Show
+                when={segment()?.editable}
+                fallback={
+                  <time.Literal segment={segment()} class="k2-time-sep">
+                    {segment()?.text}
+                  </time.Literal>
+                }
+              >
+                <time.Segment segment={segment()} class="k2-time-seg" />
+              </Show>
+            );
+          }}
+        </For>
+      )}
+    </time.Root>
+  );
+};
+
+/**
  * A month of days to pick one from: the month and year in the words of the locale, the arrows for the month before
  * and after, six weeks so turning the month never changes the height, and with `time` hour and minute below. The keys
  * are a grid's: arrows by day and week, PageUp and PageDown by month (with Shift by year), Home and End to the week's
@@ -69,7 +128,11 @@ export const DatePicker = (props: DatePickerProps) => {
       { defer: true },
     ),
   );
-  const time = useTimeInput(() => ({ value: clock(), onValueChange: setClock, locale: locale(), hourCycle: hourCycleOf(locale()) }));
+  const [unreadableTime, setUnreadableTime] = createSignal(false);
+  const changeClock = (next: string | null) => {
+    setClock(next);
+    setUnreadableTime(false);
+  };
   const timeLabel = createUniqueId();
   const calendar = useCalendar(() => ({
     value: chosen() ?? null,
@@ -155,40 +218,29 @@ export const DatePicker = (props: DatePickerProps) => {
           <span class="k2-dpick-label" id={timeLabel}>
             {t().time}
           </span>
-          {/* core's time input: hour and minute as spinbuttons in the locale's clock (24 hours in German), never the
-              browser's time field. Typing, the arrows and Backspace are core's; Enter applies, as "Übernehmen" does. The
-              handlers run as native listeners on the segments, so they also work in a panel that stops keys. */}
-          <time.Root class="k2-input k2-time" data-invalid={clock() === null ? "" : undefined} aria-labelledby={timeLabel}>
-            {(state: { segments?: TimeSegment[] }) => (
-              <For each={(state.segments ?? []).map((segment) => segment.key)}>
-                {(key) => {
-                  const segment = () => (state.segments ?? []).find((each) => each.key === key);
-                  return (
-                    <Show
-                      when={segment()?.editable}
-                      fallback={
-                        <time.Literal segment={segment()} class="k2-time-sep">
-                          {segment()?.text}
-                        </time.Literal>
-                      }
-                    >
-                      <time.Segment
-                        segment={segment()}
-                        class="k2-time-seg"
-                        aria-valuetext={segment()?.empty ? t().empty : undefined}
-                        onKeyDown={(event: KeyboardEvent) => {
-                          if (event.key !== "Enter" || event.isComposing) return;
-                          event.preventDefault();
-                          apply();
-                        }}
-                      />
-                    </Show>
-                  );
-                }}
-              </For>
+          {/* A new clock (24 hours or AM/PM, when the locale changes) makes the field anew from the time it holds: core
+              would keep the segments as typed in the old clock. */}
+          <Show when={hourCycleOf(locale())} keyed>
+            {(cycle) => (
+              <TimeField
+                value={clock()}
+                onChange={changeClock}
+                locale={locale()}
+                hourCycle={cycle}
+                labelledBy={timeLabel}
+                emptyText={t().empty}
+                invalid={clock() === null || unreadableTime()}
+                onUnreadable={() => setUnreadableTime(true)}
+                onEnter={apply}
+              />
             )}
-          </time.Root>
+          </Show>
         </div>
+      </Show>
+      <Show when={props.time && unreadableTime()}>
+        <p class="k2-dpick-error" role="alert">
+          {t().timeUnreadable}
+        </p>
       </Show>
       <Show when={props.error}>
         {(message) => (
