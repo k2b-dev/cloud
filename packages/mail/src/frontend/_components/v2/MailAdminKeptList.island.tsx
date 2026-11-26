@@ -2,23 +2,7 @@ import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { swapPage } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import {
-  Avatar,
-  Bar,
-  Button,
-  Chip,
-  Failed,
-  Inline,
-  Input,
-  Mark,
-  type NavProps,
-  Pane,
-  Path,
-  StatusRow,
-  Table,
-  Text,
-  useToast,
-} from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Failed, Inline, Input, Mark, type NavProps, Pane, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import { keptListHref } from "../../admin-sections";
 import { mailKeptAdminMessages } from "../../kept-admin-messages";
@@ -86,7 +70,6 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
       nav={props.nav}
       head={
         <Bar
-          start={<Path label={t().tabsLabel} items={[{ label: t().areaMail, href: "/admin/mail" }, { label: t().tabKept }]} />}
           end={
             <Input
               type="search"
@@ -175,6 +158,8 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
             })}
             // the widths fit beside the admin bar from 1024 px on; below that the table becomes `phone` rows
             columns={[
+              // columns that drop give way from the last one as the table gets narrower: the date first, then the
+              // sender, then who kept it, then the mailbox; the conversation and since when stay
               {
                 title: t().columnConversation,
                 width: { min: 220, default: 300 },
@@ -201,6 +186,17 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
                 drop: true,
               },
               {
+                title: t().columnKeptBy,
+                width: { min: 150, default: 170 },
+                cell: (row) => (
+                  <Inline>
+                    <Avatar name={row.keptBy} decorative />
+                    <Text>{row.keptBy}</Text>
+                  </Inline>
+                ),
+                drop: true,
+              },
+              {
                 title: t().columnSender,
                 width: { min: 150, default: 180 },
                 cell: (row) => (
@@ -222,17 +218,6 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
                   ) : (
                     "–"
                   ),
-                drop: true,
-              },
-              {
-                title: t().columnKeptBy,
-                width: { min: 150, default: 170 },
-                cell: (row) => (
-                  <Inline>
-                    <Avatar name={row.keptBy} decorative />
-                    <Text>{row.keptBy}</Text>
-                  </Inline>
-                ),
                 drop: true,
               },
               {

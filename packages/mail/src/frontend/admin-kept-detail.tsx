@@ -28,7 +28,7 @@ export default ssr<AuthContext>(async (c) => {
   const notFound = !result || (!result.ok && result.error.code === "NOT_FOUND") || (result.ok && !conversation);
 
   return () => (
-    <AdminLayout c={c} title="Mail" ui="v2">
+    <AdminLayout c={c} title={t.title} ui="v2">
       <MailAdminKeptRecord
         nav={adminNavigation(c, mailAdminSections(locale, "kept"))}
         record={

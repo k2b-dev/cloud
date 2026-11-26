@@ -145,7 +145,7 @@ describe("Admin › Mail › Kept on v2", () => {
       await table.waitFor();
       // a column head's name also carries the grip beside it, so its words are read as text
       const heads = (await table.getByRole("columnheader").allInnerTexts()).map((text) => text.trim()).filter(Boolean);
-      expect(heads).toEqual(["Unterhaltung", "Postfach", "Absender", "Datum", "Aufbewahrt von", "Aufbewahrt seit"]);
+      expect(heads).toEqual(["Unterhaltung", "Postfach", "Aufbewahrt von", "Absender", "Datum", "Aufbewahrt seit"]);
       await page.getByText("214 aufbewahrte Unterhaltungen").waitFor();
       await page.getByText("2 aus gelöschten Postfächern").waitFor();
 

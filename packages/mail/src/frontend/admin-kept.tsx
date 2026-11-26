@@ -70,7 +70,7 @@ export default ssr<AuthContext>(async (c) => {
   });
 
   return () => (
-    <AdminLayout c={c} title="Mail" ui="v2">
+    <AdminLayout c={c} title={t.title} ui="v2">
       <MailAdminKeptList
         nav={adminNavigation(c, mailAdminSections(locale, "kept"))}
         rows={rows}
