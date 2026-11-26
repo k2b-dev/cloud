@@ -114,6 +114,7 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
             settings={{ id: "settings", label: t.settings, icon: "settings", href: settingsHref, current: path === settingsHref }}
             tabsLabel={t.tabs}
             tabs={tabItems}
+            screen={props.screen || undefined}
             endpoints={countRoutes}
           />
         </Show>

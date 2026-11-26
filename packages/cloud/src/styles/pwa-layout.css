@@ -39,18 +39,6 @@ html[data-pwa-v2] body {
   padding-left: 0;
 }
 
-.k2-ui.pwa-v2[data-screen] .k2-tabbar {
-  display: none;
-}
-
-/* A screen of its own hides its tab bar on the phone (it stays in the page for `setPwaScreen`): the notices stand above
-   the home indicator alone. */
-@media not all and (min-width: 48rem) {
-  .k2-ui.pwa-v2[data-screen] .k2-notice-stack {
-    bottom: calc(env(safe-area-inset-bottom) + 12px);
-  }
-}
-
 .pwa-v2-nav {
   display: none;
 }

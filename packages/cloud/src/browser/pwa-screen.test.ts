@@ -25,12 +25,13 @@ test("opens and leaves a screen of its own in place on a v2 app page, and leaves
   const dom = createDomTestHarness();
   try {
     dom.root.innerHTML =
-      '<div class="k2-ui pwa-v2" data-tabs=""><main><button>Open chat</button></main></div><div class="other"><i></i></div>';
+      '<div class="k2-ui pwa-v2" data-tabs=""><main><button>Open chat</button></main><nav class="k2-tabbar"></nav></div><div class="other"><i></i></div>';
     const frame = dom.root.querySelector(".pwa-v2")!;
+    const bar = frame.querySelector(".k2-tabbar")!;
     setPwaScreen(dom.root.querySelector("button")!, true);
-    expect(frame.hasAttribute("data-screen")).toBe(true);
+    expect([frame.hasAttribute("data-screen"), bar.hasAttribute("hidden")]).toEqual([true, true]);
     setPwaScreen(dom.root.querySelector("button")!, false);
-    expect(frame.hasAttribute("data-screen")).toBe(false);
+    expect([frame.hasAttribute("data-screen"), bar.hasAttribute("hidden")]).toEqual([false, false]);
     setPwaScreen(dom.root.querySelector(".other i")!, true);
     expect(dom.root.querySelector("[data-screen], [data-k2b-screen]")).toBeNull();
   } finally {
