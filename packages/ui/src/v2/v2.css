@@ -655,10 +655,6 @@
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
 }
-/* a reader beside a list: its head is 52 px, so its line meets the status row next to it (K1) */
-.k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
-  height: var(--k2-h-status);
-}
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
   padding-right: 12px;
   gap: 4px;
@@ -669,6 +665,26 @@
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
   flex: 1;
   font: var(--k2-t-lead);
+}
+/* The title of an open entry may be long (a task, a subject): it takes a second line before it is cut with "…", and
+   the head grows with it; one line keeps the head's height (56, or 52 beside a list). The app gives the title its
+   full words as `Text title`, the tooltip of a cut title. */
+.k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
+  height: auto;
+  min-height: var(--k2-h-head);
+  padding-block: 8px;
+}
+/* a reader beside a list: its head is 52 px while its title is one line, so its line meets the status row next to it
+   (K1) */
+.k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
+  min-height: var(--k2-h-status);
+}
+.k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-end {
   gap: 4px;
@@ -3433,20 +3449,10 @@
   .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {
     display: none;
   }
-  /* The title of an open entry is the page's title here: it is never cut beside the actions the head keeps (a "…"),
-     it takes a second line instead, and the head grows with it; one line keeps the head's 52 px. */
+  /* the open entry is a page of its own here: its head is 52 px for one line of title, as everywhere on the phone */
   .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar,
   .k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
-    height: auto;
     min-height: var(--k2-h-status);
-    padding-block: 8px;
-  }
-  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
