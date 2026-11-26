@@ -47,13 +47,13 @@ const countObserved = () => {
   (window as unknown as { __k2Watched: () => number }).__k2Watched = () => [...own.values()].reduce((sum, set) => sum + set.size, 0);
 };
 
-const withPage = async (run: (page: Page) => Promise<void>, width = 1200) => {
+const withPage = async (run: (page: Page) => Promise<void>, width = 1200, scenario = "") => {
   const page = await browser.newPage({ viewport: { width, height: 700 } });
   page.setDefaultTimeout(3000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui" data-case="${scenario}"><div id="root"></div></body></html>`,
     );
     await page.evaluate(countObserved);
     await page.addScriptTag({ content: client });
@@ -176,6 +176,65 @@ test(
       });
       expect(row).toEqual({ at: "700", inView: true });
     });
+  },
+  TEST_TIMEOUT,
+);
+
+// W1b (Files activity): entries under day heads. A head is text in 600 with a quiet count, no band and no line; it
+// stands before the first entry of its group, also far down the list, and rows count among the rows only.
+test(
+  "a list of items stands under group heads: text and count, no band or line, kept in the window",
+  async () => {
+    await withPage(
+      async (page) => {
+        const head = page.locator('[data-k2-part="List"] .k2-list-head', { hasText: "Tag 1" }).first();
+        await head.waitFor();
+        const look = await head.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const words = element.firstElementChild ? getComputedStyle(element.firstElementChild).fontWeight : style.fontWeight;
+          return {
+            weight: words,
+            line: ["top", "bottom"].some((side) => Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0),
+            band: style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.backgroundColor !== "transparent",
+            next: element.nextElementSibling?.getAttribute("aria-posinset"),
+            count: element.textContent?.includes("7"),
+          };
+        });
+        expect(look).toEqual({ weight: "600", line: false, band: false, next: "1", count: true });
+        // the eighth entry is the first of day 2 and the eighth row: heads do not count as rows
+        expect(await page.evaluate(() => document.querySelector('a[href="#e8"]')?.parentElement?.getAttribute("aria-posinset"))).toBe("8");
+        const revealed = await page.evaluate(() => window.__k2Reveal?.("e500")?.getAttribute("aria-posinset") ?? null);
+        expect(revealed).toBe("500");
+        await settled(page);
+        // the head of day 72 (entries 498 to 504) stands right before entry 498
+        const before498 = await page.evaluate(
+          () => document.querySelector('a[href="#e498"]')?.parentElement?.previousElementSibling?.textContent ?? null,
+        );
+        expect(before498).toContain("Tag 72");
+        expect(await page.locator('[data-k2-part="List"] > *').count()).toBeLessThan(120);
+      },
+      1200,
+      "groups",
+    );
+  },
+  TEST_TIMEOUT,
+);
+
+test(
+  "a table of 1,000 rows in groups keeps only the rows in view, with their group rows",
+  async () => {
+    await withPage(
+      async (page) => {
+        expect(await page.locator(".k2-table tbody tr").count()).toBeLessThan(80);
+        await scrollTo(page, '.k2-pane[aria-label="Tabelle"] > .k2-scroll', 20000);
+        await settled(page);
+        const rows = await page.locator(".k2-table tbody tr:not([data-spacer])").allTextContents();
+        expect(rows.length).toBeLessThan(80);
+        expect(rows.some((text) => /^Tag \d+/.test(text))).toBe(true);
+      },
+      1200,
+      "groups",
+    );
   },
   TEST_TIMEOUT,
 );
