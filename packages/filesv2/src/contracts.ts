@@ -66,6 +66,8 @@ export type FileEntry = {
   size: number;
   modified: string;
   actions?: { write: boolean; move: boolean; share: boolean };
+  /** Listing metadata: visible last content author and active download links created by this reader. */
+  facts?: { author: { userId: string; name: string } | null; links: number };
 };
 /** Present when an administrator configured Collabora; the browser then offers editing and new documents. */
 export type EditorInfo = { documentFormat: DocumentFormat };

@@ -5,7 +5,7 @@ section: Operations
 order: 1560
 description: Understand recorded file transfers, folder creation, uncertain outcomes, and history retention in Files.
 tags: [operations, files, history, retention]
-updated: 2026-10-22
+updated: 2026-11-26
 ---
 
 # Files history
@@ -183,6 +183,21 @@ an administrator has downloaded. Operators should agree access and retention
 with the responsible privacy representatives, including a works council where
 applicable, before using history in a workplace.
 ## Read visible history
+
+Folder listings and name-search results include optional per-entry `facts`:
+`author` is the live account name and user ID of the last completed, recorded
+Cloud content change; it is null when no author is available or the reader
+cannot read local history. Renames and moves do not replace that author. Stable
+item IDs preserve attribution after a move; roots without them match the current
+full path. This describes recorded Cloud work, not changes by external writers.
+Foreign administrator listings also return null; foreign history remains behind
+the audited history reader. `links` counts active download links created by the
+reader, including for administrators. It excludes other people's links, expired
+links and revoked links, so zero does not mean an item has no public link.
+
+These facts use one batched SQL statement per nonempty listing page and at most
+one additional lookup for all distinct visible authors. Names use the same live
+account resolver as history, without a name cache or retained name snapshots.
 
 The Files history API, `cld filesv2 history`, and the `activity.list`,
 `activity.get`, and `activity.chain` capabilities use the same permission-aware

@@ -79,7 +79,7 @@ import { createActivityActions } from "./activity-actions";
 import { createActivityExportService } from "./activity-export";
 import { createActivityObservations } from "./activity-observations";
 import { type ActivityReadBudget, readStep, withActivityReadBudget } from "./activity-read-budget";
-import { type ActivityReadCall, createActivityReader, parseActivityInput } from "./activity-reader";
+import { type ActivityReadCall, type ActivityReaderDependencies, createActivityReader, parseActivityInput } from "./activity-reader";
 import { recordAdminHistoryRead } from "./admin-history-read";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
@@ -91,6 +91,7 @@ import { fileEntry } from "./file-entry";
 import { connectFilegate, type FilesRoot } from "./filegate-facade";
 import { createHomeProvisioning } from "./home-provisioning";
 import { createDirectoryLifecycle } from "./lifecycle";
+import { createListingFactsReader } from "./listing-facts";
 import {
   checkStorage,
   currentCredential,
@@ -735,6 +736,13 @@ export function createFilesService(
       if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
       items.push({ ...fileEntry(current.inspection.summary, relative, node), actions, highlight: highlight(below, ranges, within) });
     }
+    if (extras)
+      await listingFacts(
+        current,
+        items,
+        page.items.map(({ node }) => node),
+        input.signal,
+      );
     return {
       base: current.inspection.summary,
       path: current.relative,
@@ -1428,12 +1436,42 @@ export function createFilesService(
       : { rolledUp: 0, purged: 0 };
     return { activityChecked, activityPurged, shareAccessRolledUp: shareAccess.rolledUp, shareAccessPurged: shareAccess.purged };
   }
+  async function listingFacts(current: Awaited<ReturnType<typeof authorized>>, items: FileEntry[], nodes: Node[], signal?: AbortSignal) {
+    const binding = current.inspection.binding;
+    if (!binding || !items.length) return;
+    const byPath = new Map(nodes.map((node) => [node.path, node]));
+    const reader = createListingFactsReader({
+      requestContext: (actor, budget) => historyRequestContext(actor, budget, current),
+      displayNames: deps.displayNames,
+    });
+    const facts = await reader(
+      { actor: current.state.actor, requestAbort: signal },
+      {
+        binding,
+        baseId: current.inspection.summary.id,
+        folder: current.relative,
+        items: items.map((item) => {
+          const target = joinPath(binding.path, item.path);
+          return {
+            path: item.path,
+            target,
+            directory: item.directory,
+            itemId: current.info.stableIds ? (byPath.get(target)?.id ?? null) : null,
+          };
+        }),
+      },
+    );
+    for (const item of items) item.facts = facts.get(item.path);
+  }
   const activityExport = createActivityExportService({ requireAdmin, displayNames: deps.displayNames });
-  const activityReader = createActivityReader({
-    recordAdminRead: recordAdminHistoryRead,
-    requestContext: async (actor, budget) => {
-      const state = await context(actor, budget);
-      let admin = false;
+  async function historyRequestContext(
+    actor: RequestActor,
+    budget: ActivityReadBudget,
+    page?: Awaited<ReturnType<typeof authorized>>,
+  ): ReturnType<ActivityReaderDependencies["requestContext"]> {
+    const state = page?.state ?? (await context(actor, budget));
+    let admin = false;
+    if (!page)
       try {
         // Same canonical check as requireAdmin, without repeating self().
         await budget.run(() => deps.identities.inventory(actor, { kind: "groups", provider: "local" }));
@@ -1441,33 +1479,39 @@ export function createFilesService(
       } catch (error) {
         if (!((error instanceof AccountIdentityError || error instanceof FilesError) && [403, 404].includes(error.status))) throw error;
       }
-      const allowedBindingIds: string[] = [];
-      for (const item of state.candidates) {
-        if (item.area !== "cloud") continue;
-        if (issueFor(state.config, item.area, state.self.availability)) continue;
-        const found = await budget.run(() => deps.bindings.find(item));
-        for (const binding of found)
-          if (found.length === 1 && binding.lifecycle === "active" && sameBinding(binding, item) && !allowedBindingIds.includes(binding.id))
-            allowedBindingIds.push(binding.id);
-      }
-      const bases = new Map<string, ReturnType<typeof authorizedBase>>();
-      return {
-        userId: state.self.user.id,
-        admin,
-        config: state.config,
-        allowedBindingIds,
-        historyAvailable: admin || state.self.user.provider !== "ipa" || state.candidates.some((item) => item.area === "cloud"),
-        readOnlyAuthorized: (baseId, path) => {
-          budget.check();
-          let base = bases.get(baseId);
-          if (!base) {
-            base = authorizedBase(actor, baseId, state, true, budget);
-            bases.set(baseId, base);
-          }
-          return budget.run(async () => authorizedPath(await base, path, undefined, budget));
-        },
-      };
-    },
+    const allowedBindingIds: string[] = [];
+    for (const item of page ? [page.inspection.candidate] : state.candidates) {
+      if (item.area !== "cloud") continue;
+      if (issueFor(state.config, item.area, state.self.availability)) continue;
+      const found = page ? (page.inspection.binding ? [page.inspection.binding] : []) : await budget.run(() => deps.bindings.find(item));
+      for (const binding of found)
+        if (found.length === 1 && binding.lifecycle === "active" && sameBinding(binding, item) && !allowedBindingIds.includes(binding.id))
+          allowedBindingIds.push(binding.id);
+    }
+    const bases = new Map<string, ReturnType<typeof authorizedBase>>();
+    return {
+      userId: state.self.user.id,
+      admin,
+      config: state.config,
+      allowedBindingIds,
+      historyAvailable: admin || state.self.user.provider !== "ipa" || state.candidates.some((item) => item.area === "cloud"),
+      readOnlyAuthorized: (baseId, path) => {
+        budget.check();
+        // The listing already passed this exact readOnlyAuthorized chain. Reuse that folder proof;
+        // local Cloud children have no per-item Unix ACL checks. Never reuse it for another path/base.
+        if (page && baseId === page.inspection.summary.id && path === page.relative) return Promise.resolve(page);
+        let base = bases.get(baseId);
+        if (!base) {
+          base = authorizedBase(actor, baseId, state, true, budget);
+          bases.set(baseId, base);
+        }
+        return budget.run(async () => authorizedPath(await base, path, undefined, budget));
+      },
+    };
+  }
+  const activityReader = createActivityReader({
+    recordAdminRead: recordAdminHistoryRead,
+    requestContext: historyRequestContext,
     requireAdmin: async (actor, budget) => {
       await currentUser(actor, budget);
       await budget.run(() => deps.identities.inventory(actor, { kind: "groups", provider: "local" }));
@@ -1966,6 +2010,7 @@ export function createFilesService(
           actions: await entryActions(current, node, node.path, create),
         });
       }
+      await listingFacts(current, items, page.items);
       return {
         base: current.inspection.summary,
         path: current.relative,
