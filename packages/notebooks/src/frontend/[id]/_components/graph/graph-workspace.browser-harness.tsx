@@ -2,7 +2,16 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
 import { notesContext } from "../../notes/notes-list.fixture";
-import { bigGraph, crossAreaGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
+import {
+  bigGraph,
+  crossAreaGraph,
+  FIXTURE_NOW,
+  HANDBOOK_IDS,
+  handbookGraph,
+  oneLinkGraph,
+  unlinkedGraph,
+  worstGraph,
+} from "./graph.fixtures";
 import NotebookGraphWorkspace from "./NotebookGraphWorkspace.island";
 import { parseGraphViewState } from "./view-state";
 
@@ -13,6 +22,13 @@ const NOTEBOOKS: Record<string, { name: string; graph: () => NoteGraph; current:
   free01: { name: "Projekt Hallenumbau", graph: unlinkedGraph, current: null },
   none01: { name: "Leer", graph: () => ({ nodes: [], edges: [] }), current: null },
   pair01: { name: "Zwei Bereiche", graph: crossAreaGraph, current: "regal0" },
+  // the worst case (1,000 notes, limit-long, unbreakable, empty and non-Latin titles) and every count at 1
+  wrst01: {
+    name: "Qualitätshandbuch Logistikzentrum Nord – Wareneingang, Lager & Versand (Entwurf)",
+    graph: worstGraph,
+    current: "w00002",
+  },
+  one001: { name: "R", graph: oneLinkGraph, current: null },
 };
 
 /** Mounts the graph of the notebook in the address, as the page does: the view comes from the address. */
@@ -50,7 +66,8 @@ const mount = () => {
           notebookId={match[1]!}
           notebookName={notebook.name}
           selectedNoteId={match[2] ?? params.get("note") ?? notebook.current ?? graph.nodes[0]?.id ?? null}
-          graph={graph}
+          // `?unavailable=1`: the page could not load the graph
+          graph={params.get("unavailable") === "1" ? null : graph}
           view={parseGraphViewState(params)}
           now={FIXTURE_NOW}
           timeZone="Europe/Berlin"

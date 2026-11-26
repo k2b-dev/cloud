@@ -634,10 +634,14 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   const idleText = () => {
     const query = props.query.trim();
     if (!positions()) return t().graphArranging({ count: shownNotes().length });
-    if (!query)
-      return props.scopeTotal
+    if (!query) {
+      const count = props.scopeTotal
         ? t().graphNoteCountScoped({ notes: shownNotes().length, total: props.scopeTotal, links: drawnEdges().length })
         : t().graphNoteCount({ notes: shownNotes().length, links: drawnEdges().length });
+      // the exception of the drawn notes: those without a link (the filter "Nur unverknüpfte" shows them)
+      const unlinked = shownNotes().filter((note) => note.orphan).length;
+      return unlinked ? `${count} · ${t().graphUnlinkedCount({ count: unlinked })}` : count;
+    }
     if (queryHits())
       return props.neighborhood && filteredHits() > queryHits()
         ? t().graphNeighborhoodSearchHits({ query, count: queryHits(), total: filteredHits() })

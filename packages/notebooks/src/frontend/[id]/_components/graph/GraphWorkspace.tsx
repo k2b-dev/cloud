@@ -1,4 +1,5 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+import { dates } from "@k2b/stdlib";
 import type { NavigationController } from "@k2b/ui";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Canvas, Empty, Input, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
@@ -53,10 +54,7 @@ export default function GraphFrame(props: GraphFrameProps) {
           <Workspace
             sidebar={props.shell.sidebar}
             head={
-              <Bar
-                start={<Text weight="strong">{t().graphTitle}</Text>}
-                end={<Button icon="x" label={t().closeGraph} href={props.backHref ?? `/app/notebooks/${props.notebookId}`} keep />}
-              />
+              <Bar end={<Button icon="x" label={t().closeGraph} href={props.backHref ?? `/app/notebooks/${props.notebookId}`} keep />} />
             }
           >
             <Pane label={t().graphTitle}>
@@ -78,6 +76,7 @@ export default function GraphFrame(props: GraphFrameProps) {
 function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph }) {
   const g = useGraphView(props, { root: workspace, empty: EMPTY });
   const t = g.t;
+  const locale = useLocale();
   const linkOptions = () => [
     { value: "all" as const, label: t().graphLinksAll, icon: "circles" },
     { value: "linked" as const, label: t().graphLinksLinked, icon: "affiliate" },
@@ -126,10 +125,32 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
     <Workspace
       sidebar={props.shell.sidebar}
       head={
-        // the title only: the notebook stands in the sidebar and the note the graph started from is ringed in it, and a
-        // second line of words would push close off a phone's head
+        // ONE head row (rule: head as one block): the displays, or the list's count, at the start; search, filters, zoom,
+        // As list and close at the end. No title: the sidebar's current entry names the page, and on the phone the
+        // displays say where you are.
         <Bar
-          start={<Text weight="strong">{t().graphTitle}</Text>}
+          start={
+            <>
+              <Show when={g.hasLinks && !g.state().list}>
+                <Tabs
+                  label={t().graphDisplay}
+                  items={GRAPH_DISPLAY_REGISTRY.map((entry) => ({
+                    label: entry.label(t()),
+                    icon: entry.icon.replace(/^ti ti-/, ""),
+                    // k2b-ui gap: Tabs cannot mark a device default before the browser knows the width, so no tab is
+                    // current until then; the display itself is the same on both sides.
+                    current: g.display() === entry.id,
+                    onClick: () => g.update({ display: entry.id }),
+                  }))}
+                />
+              </Show>
+              {/* The list stands instead of the drawing: the head says how many notes it holds, and As list returns to
+                  the display. */}
+              <Show when={g.state().list && g.model.notes.length > 0}>
+                <Text type="meta">{listCount()}</Text>
+              </Show>
+            </>
+          }
           end={
             <>
               <Show when={g.model.notes.length > 0}>
@@ -151,6 +172,75 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                     </Show>
                   }
                 />
+              </Show>
+              {/* the list's order, also where its columns give way to rows (the phone) */}
+              <Show when={g.state().list && g.model.notes.length > 0}>
+                <Menu
+                  icon="arrows-sort"
+                  label={t().graphOrder}
+                  items={[
+                    {
+                      title: t().graphOrder,
+                      choice: g.state().sort ?? "tree",
+                      onChoose: (sort) => g.update({ sort: sort === "changed" || sort === "changed-asc" ? sort : null }),
+                      items: [
+                        { label: t().graphOrderTree, value: "tree" },
+                        { label: t().graphOrderNewest, value: "changed" },
+                        { label: t().graphOrderOldest, value: "changed-asc" },
+                      ],
+                    },
+                  ]}
+                />
+              </Show>
+              {/* Without links there is nothing to filter or zoom. */}
+              <Show when={g.hasLinks}>
+                {/* a symbol, so the phone keeps it in the head; the menu says which notes, depth and areas show */}
+                <Menu
+                  icon="filter"
+                  label={t().graphWhichNotes}
+                  items={[
+                    {
+                      title: t().graphWhichNotes,
+                      choice: g.state().links,
+                      onChoose: (links) => g.update({ links: linkOptions().find((option) => option.value === links)?.value ?? "all" }),
+                      items: linkOptions().map((option) => ({ label: option.label, icon: option.icon, value: option.value })),
+                    },
+                    // Umgebung's depth: one step or two around the centre
+                    ...(!g.state().list && g.display() === "neighborhood"
+                      ? [
+                          {
+                            title: t().graphDepth,
+                            choice: g.state().depth === 1 ? "1" : "2",
+                            onChoose: (depth: string) => g.update({ depth: depth === "1" ? 1 : 2 }),
+                            items: [
+                              { label: t().graphDepthOne, value: "1" },
+                              { label: t().graphDepthTwo, value: "2" },
+                            ],
+                          },
+                        ]
+                      : []),
+                    // k2b-ui gap: a menu entry takes no data colour, so an area shows no dot here; the graph keeps the colours.
+                    {
+                      title: t().graphAreas,
+                      items: g.model.areas
+                        .filter((area) => area.count > 0)
+                        .map((area) => ({
+                          label: g.areaName(area),
+                          meta: String(area.count),
+                          checked: !g.state().hide.includes(area.key),
+                          onClick: () => g.toggleArea(area.key),
+                        })),
+                    },
+                  ]}
+                />
+                {/* zoom has nothing to do in the list; on the phone the fingers zoom, so these give way there */}
+                <Show when={!g.state().list}>
+                  <Button icon="minus" label={t().zoomOut} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1 / 1.25)} />
+                  <Button icon="plus" label={t().zoomIn} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1.25)} />
+                  <Button icon="focus-centered" label={t().fitGraph} disabled={!g.showsGraph()} onClick={() => g.controls()?.fit()} />
+                </Show>
+              </Show>
+              <Show when={g.model.notes.length > 0}>
                 <Button
                   icon="list-details"
                   label={t().graphAsList}
@@ -165,109 +255,9 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
         />
       }
     >
-      <Pane
-        label={t().graphTitle}
-        // no row where there is nothing to switch or filter (no links) and no list to count
-        head={
-          g.hasLinks || g.state().list ? (
-            <Bar
-              start={
-                <>
-                  {/* The list stands instead of the drawing: its row says how many notes it holds, and the head's
-                      As list returns to the display. Beside the tabs the count would yield to them on the phone. */}
-                  <Show when={g.hasLinks && !g.state().list}>
-                    <Tabs
-                      label={t().graphDisplay}
-                      items={GRAPH_DISPLAY_REGISTRY.map((entry) => ({
-                        label: entry.label(t()),
-                        icon: entry.icon.replace(/^ti ti-/, ""),
-                        // k2b-ui gap: Tabs cannot mark a device default before the browser knows the width, so no tab is
-                        // current until then; the display itself is the same on both sides.
-                        current: g.display() === entry.id,
-                        onClick: () => g.update({ display: entry.id }),
-                      }))}
-                    />
-                  </Show>
-                  <Show when={g.state().list && g.model.notes.length > 0}>
-                    <Text type="meta">{listCount()}</Text>
-                  </Show>
-                </>
-              }
-              end={
-                // Without links there is nothing to filter or zoom.
-                <>
-                  {/* the list's order, also where its columns give way to rows (the phone) */}
-                  <Show when={g.state().list && g.model.notes.length > 0}>
-                    <Menu
-                      icon="arrows-sort"
-                      label={t().graphOrder}
-                      items={[
-                        {
-                          title: t().graphOrder,
-                          choice: g.state().sort ?? "tree",
-                          onChoose: (sort) => g.update({ sort: sort === "changed" || sort === "changed-asc" ? sort : null }),
-                          items: [
-                            { label: t().graphOrderTree, value: "tree" },
-                            { label: t().graphOrderNewest, value: "changed" },
-                            { label: t().graphOrderOldest, value: "changed-asc" },
-                          ],
-                        },
-                      ]}
-                    />
-                  </Show>
-                  <Show when={g.hasLinks}>
-                    {/* a symbol, so the phone keeps it in the head; the menu says which notes, depth and areas show */}
-                    <Menu
-                      icon="filter"
-                      label={t().graphWhichNotes}
-                      items={[
-                        {
-                          title: t().graphWhichNotes,
-                          choice: g.state().links,
-                          onChoose: (links) => g.update({ links: linkOptions().find((option) => option.value === links)?.value ?? "all" }),
-                          items: linkOptions().map((option) => ({ label: option.label, icon: option.icon, value: option.value })),
-                        },
-                        // Umgebung's depth: one step or two around the centre
-                        ...(!g.state().list && g.display() === "neighborhood"
-                          ? [
-                              {
-                                title: t().graphDepth,
-                                choice: g.state().depth === 1 ? "1" : "2",
-                                onChoose: (depth: string) => g.update({ depth: depth === "1" ? 1 : 2 }),
-                                items: [
-                                  { label: t().graphDepthOne, value: "1" },
-                                  { label: t().graphDepthTwo, value: "2" },
-                                ],
-                              },
-                            ]
-                          : []),
-                        // k2b-ui gap: a menu entry takes no data colour, so an area shows no dot here; the graph keeps the colours.
-                        {
-                          title: t().graphAreas,
-                          items: g.model.areas
-                            .filter((area) => area.count > 0)
-                            .map((area) => ({
-                              label: g.areaName(area),
-                              meta: String(area.count),
-                              checked: !g.state().hide.includes(area.key),
-                              onClick: () => g.toggleArea(area.key),
-                            })),
-                        },
-                      ]}
-                    />
-                    {/* zoom has nothing to do in the list */}
-                    <Show when={!g.state().list}>
-                      <Button icon="minus" label={t().zoomOut} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1 / 1.25)} />
-                      <Button icon="plus" label={t().zoomIn} disabled={!g.showsGraph()} onClick={() => g.controls()?.zoom(1.25)} />
-                      <Button icon="focus-centered" label={t().fitGraph} disabled={!g.showsGraph()} onClick={() => g.controls()?.fit()} />
-                    </Show>
-                  </Show>
-                </>
-              }
-            />
-          ) : undefined
-        }
-      >
+      {/* k2b-ui gap: context column (DR, #4340) – from ~1680 px the open note's links, people and last change beside the
+          drawing; the drawing takes the width meanwhile. */}
+      <Pane label={t().graphTitle}>
         <Switch>
           <Match when={g.model.notes.length === 0}>
             <Empty icon="affiliate" text={t().graphNoNotes} />
@@ -284,6 +274,8 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                     mark={{ icon: "file-text", color: `var(--notebook-graph-area-${note.area.slot})` }}
                     lines={[note.title || t().untitled]}
                     meta={g.model.areas.filter((area) => area.count > 0).length > 1 ? g.areaName(note.area) : undefined}
+                    // when it changed, so a row says what matters on the phone too
+                    time={dates.formatDateTimeRelative(note.updatedAt, { base: props.now, locale: locale() })}
                     strong={!!g.query().trim() && matchesQuery(note, g.query())}
                     href={g.noteHref(note.id)}
                   />
@@ -308,9 +300,8 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
             <GraphTable view={g} now={props.now} />
           </Match>
           <Match when={true}>
-            {/* k2b-ui gap: a Canvas cannot fill its pane; the app's stylesheet lets this one take the pane's height
-                (app.css, `.notebook-graph`), because each display draws to the size it is given. */}
-            <Canvas label={t().graphTitle}>
+            {/* the drawing takes the whole pane; each display draws to the size it is given */}
+            <Canvas label={t().graphTitle} height="fill">
               <GraphDisplays
                 graph={props}
                 view={g}
