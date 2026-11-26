@@ -301,7 +301,6 @@ describe("Venue on v2", () => {
       await tab.locator(".k2b-calendar-mobile-month__agenda").getByText("Mittagstheke").first().tap();
       await tab.waitForFunction(() => new URLSearchParams(location.search).has("shift"));
       await settled(tab);
-      await shoot(tab, "shift-open-390");
       expect(await tab.locator(':text-is("Mittagstheke"):visible').count()).toBeGreaterThan(0);
       const back = tab.getByRole("link", { name: "Schichtplan" }).first();
       expect(await back.isVisible()).toBe(true);
@@ -402,7 +401,6 @@ describe("Venue on v2", () => {
   test("a shift pauses from its menu; deleting the venue takes its typed name", async () => {
     const schedulePage = await open(desktop, "/app/venue/Cafe01/settings/schedule");
     try {
-      await shoot(schedulePage.tab, "settings-schedule-1440");
       await schedulePage.tab
         .getByRole("button", { name: /Mittagstheke/ })
         .first()
@@ -435,7 +433,6 @@ describe("Venue on v2", () => {
   test("public page: a section moves with its button and keeps focus, its switch saves only the visibility", async () => {
     const { context, tab, errors, calls } = await open(desktop, "/app/venue/Cafe01/public");
     try {
-      await shoot(tab, "public-editor-1440");
       const down = tab.getByRole("button", { name: "Nach unten: Kuchen und Getränke" });
       await down.focus();
       await tab.keyboard.press("Enter");
@@ -482,7 +479,6 @@ describe("Venue on v2", () => {
   test("feedback filters are statements in the filter bar and live in the address", async () => {
     const { context, tab, errors } = await open(desktop, "/app/venue/Cafe01/feedback");
     try {
-      await shoot(tab, "feedback-1440");
       await tab
         .getByRole("button", { name: /Zeitraum/ })
         .first()

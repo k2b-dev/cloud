@@ -235,12 +235,12 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
   const openModes = () => [
     { value: "regular", label: t().regular },
     { value: "staffed", label: t().staffedMode },
-    { value: "combined", label: t().both },
+    { value: "combined", label: words().openBoth },
   ];
   const signupModes = () => [
     { value: "templates", label: t().signupModeShifts },
     { value: "free", label: t().freeTime },
-    { value: "both", label: t().both },
+    { value: "both", label: words().signupBoth },
   ];
   const save = async () => {
     if (props.blocked || saving() || nameError() || slugError()) return;
@@ -342,7 +342,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
         </Setting>
         {/* k2b-ui gap (#4191): no colour or image input in v2; the v1 inputs keep their behaviour in a canvas. */}
         {/* each v1 input stands in the value column of its own setting row, so the page keeps one grid */}
-        <Setting name="accentColor" label={t().themeColor} was={was("accentColor", (value) => value)}>
+        <Setting name="accentColor" label={t().themeColor} hint={words().accentHint} was={was("accentColor", (value) => value)}>
           <Canvas label={t().themeColor}>
             <ColorInput
               aria-label={t().themeColor}

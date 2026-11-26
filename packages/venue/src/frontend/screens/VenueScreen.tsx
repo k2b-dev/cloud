@@ -586,7 +586,13 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
     return current && current.total > 0 ? current : null;
   };
   const pages = () => (page() ? Math.ceil(page()!.total / page()!.pageSize) : 1);
-  const stars = (rating: number) => `${"★".repeat(rating)}${"☆".repeat(5 - rating)}`;
+  // a rating in the colour of its meaning: four or five good, three middling, below that bad
+  const stars = (rating: number) => (
+    <>
+      <Text tone={rating >= 4 ? "ok" : rating === 3 ? "warn" : "bad"}>{`${"★".repeat(rating)}${"☆".repeat(5 - rating)}`}</Text>
+      {` ${rating}/5`}
+    </>
+  );
   return (
     <Pane
       label={t().feedback}
@@ -606,22 +612,16 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
         />
       }
     >
+      {/* the filter bar names the range once; the figures and the chart do not repeat it */}
       <Cells>
         <Cells.Cell
           icon="star"
           color="#d97706"
           label={t().averageRating}
           value={average() === null ? words().noRatingsYet : formatFeedbackRating(average()!, locale())}
-          meta={t().inLastDays({ count: days() })}
           loading={props.refreshing}
         />
-        <Cells.Cell
-          icon="message-star"
-          color="#2563eb"
-          label={t().ratings}
-          value={String(props.dashboard.feedback?.count ?? 0)}
-          meta={t().inLastDays({ count: days() })}
-        />
+        <Cells.Cell icon="message-star" color="#2563eb" label={t().ratings} value={String(props.dashboard.feedback?.count ?? 0)} />
         <Cells.Cell
           icon="message"
           color="#2563eb"
@@ -631,8 +631,8 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
         />
       </Cells>
       {/* one chart: the rating over the days; how many came per day stands in its tooltip and the figures above */}
-      <Section icon="chart-line" title={t().averageRating}>
-        <Canvas label={t().averageRating} height={180}>
+      <Section icon="chart-line" title={words().ratingPerDay}>
+        <Canvas label={words().ratingPerDay} height={180}>
           <Show when={ratingData().length > 0} fallback={<Empty icon="chart-line" text={t().noFeedbackInDays({ count: days() })} />}>
             <Chart
               kind={ratingData().length > 1 ? "line" : "scatter"}
@@ -663,11 +663,11 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
               : t().noFeedbackInDays({ count: days() }),
         }}
         phone={(entry) => ({
-          lines: [`${stars(entry.rating)} ${entry.rating}/5`, entry.comment || "–"],
+          lines: [stars(entry.rating), entry.comment || "–"],
           time: formatVenueDateTime(entry.createdAt, venue().timezone, locale()),
         })}
         columns={[
-          { title: words().ratingColumn, width: { min: 120, default: 130 }, cell: (entry) => `${stars(entry.rating)} ${entry.rating}/5` },
+          { title: words().ratingColumn, width: { min: 120, default: 130 }, cell: (entry) => stars(entry.rating) },
           // a rating without words leaves its cell quiet instead of saying "Kein Kommentar" in every such row
           { title: words().commentColumn, wrap: true, cell: (entry) => entry.comment || "" },
           {
