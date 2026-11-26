@@ -403,8 +403,14 @@ describe("a folder of Files on v2", () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo", "huge");
     try {
       const ready = performance.now() - started;
-      const rows = () => tab.locator("[data-k2-part=Table] tbody tr:not([data-group])").count();
-      expect(await rows()).toBe(50);
+      // The table keeps only the rows in view in the page; it says how many it holds (with its head and group rows).
+      const held = () =>
+        tab
+          .locator("[data-k2-part=Table] table")
+          .first()
+          .evaluate((table) => Number(table.getAttribute("aria-rowcount")));
+      const rendered = () => tab.locator("[data-k2-part=Table] tbody tr:not([data-group]) .k2-row-open").count();
+      expect(await held()).toBeGreaterThanOrEqual(51);
       const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
       await shoot(tab, "08-huge-1440");
       const more = tab.getByRole("button", { name: "Mehr laden", exact: true });
@@ -412,15 +418,16 @@ describe("a folder of Files on v2", () => {
       for (const count of [100, 150, 200]) {
         await more.click();
         await tab.waitForFunction(
-          (expected) => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === expected,
+          (expected) => Number(document.querySelector("[data-k2-part=Table] table")?.getAttribute("aria-rowcount")) >= expected + 1,
           count,
         );
       }
       const after = await tab.evaluate(() => document.querySelectorAll("*").length);
-      // k2b-ui gap: Table is not virtualized yet (lane MW, VirtualFeed); each loaded page adds its rows to the DOM.
       console.info(
-        `files huge fixture: 50 rows ready in ${Math.round(ready)} ms with ${nodes} DOM nodes; 200 rows after ${Math.round(performance.now() - grown)} ms with ${after} DOM nodes`,
+        `files huge fixture: first page ready in ${Math.round(ready)} ms with ${nodes} DOM nodes; 200 rows held after ${Math.round(performance.now() - grown)} ms with ${after} DOM nodes and ${await rendered()} rows in the page`,
       );
+      expect(await rendered()).toBeLessThan(100);
+      expect(after).toBeLessThan(nodes * 2);
       expect(ready).toBeLessThan(5000);
       expect(errors).toEqual([]);
     } finally {

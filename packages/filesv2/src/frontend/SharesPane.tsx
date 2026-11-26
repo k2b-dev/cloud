@@ -122,7 +122,7 @@ export default function SharesPane(props: {
               columns={[
                 {
                   title: b().shareName,
-                  width: { min: 220, default: 320 },
+                  width: { min: 200, default: 260 },
                   cell: (share) => ({
                     lines: [
                       <Inline>
@@ -136,22 +136,23 @@ export default function SharesPane(props: {
                     ],
                   }),
                 },
-                { title: b().v2Place, width: { min: 160, default: 240 }, drop: true, cell: place },
-                { title: b().shareExpires, width: { min: 110, default: 140 }, drop: true, cell: expires },
-                { title: b().shareState, width: { min: 110, default: 130 }, drop: true, cell: state },
+                { title: b().v2Place, width: { min: 140, default: 180 }, drop: true, cell: place },
+                { title: b().shareExpires, width: { min: 100, default: 110 }, drop: true, cell: expires },
+                { title: b().shareState, width: { min: 100, default: 120 }, drop: true, cell: state },
                 {
                   title: b().v2Deeds,
                   cell: (share) => (
                     <Show when={share.state === "active"}>
                       <Button
-                        variant="text"
+                        // The deed column takes what is left; a symbol with its name keeps the table within its column.
+                        variant="ghost"
                         icon="link-off"
+                        label={b().revoke}
+                        title={b().revoke}
                         busy={busy() === share.id}
                         disabled={Boolean(busy())}
                         onClick={() => void revoke(share)}
-                      >
-                        {b().revoke}
-                      </Button>
+                      />
                     </Show>
                   ),
                 },
