@@ -2,7 +2,6 @@ import {
   Avatar,
   Bar,
   Button,
-  Chip,
   Digest,
   Dot,
   Facts,
@@ -145,7 +144,9 @@ const newConnections = [3, 1, 4, 2, 0, 5, 3, 2, 6, 1, 0, 2, 4, 3, 7, 2, 1, 0, 3,
 
 const lastCell = (client: Client) =>
   client.stale ? (
-    <Chip status="warn">{client.last}</Chip>
+    <Text type="row" tone="warn">
+      <Dot status="warn" /> {client.last}
+    </Text>
   ) : (
     <Text type="row" muted>
       {client.last}
@@ -343,17 +344,19 @@ const sources: readonly Source[] = [
   { name: "Kühlhaus", icon: "snowflake", color: "#0284c7", state: "new", ticks: Array.from({ length: 30 }, () => "none") },
 ];
 
+// a state is a dot and a word: colour only for the problem, a good state neutral (identity B, rule 7)
 const stateChip = (source: Source) =>
   source.state === "bad" ? (
-    <Chip status="bad">Fehler seit 10:40</Chip>
+    <Text type="row" tone="bad">
+      <Dot status="bad" /> Fehler
+    </Text>
   ) : source.state === "ok" ? (
-    // good is neutral: a dot and the word, no tint (identity B, rule 7)
     <Text type="row">
       <Dot status="ok" /> liefert
     </Text>
   ) : (
     <Text type="row" muted>
-      {source.state === "paused" ? "pausiert" : "neu"}
+      <Dot /> {source.state === "paused" ? "pausiert" : "neu"}
     </Text>
   );
 
@@ -478,7 +481,14 @@ export const PulseScreen = (props: { list?: boolean }) => (
                 { title: "Zeit", cell: (fetch) => fetch.at },
                 {
                   title: "Ergebnis",
-                  cell: (fetch) => (fetch.what === "Zeitüberschreitung" ? <Chip status="bad">{fetch.what}</Chip> : fetch.what),
+                  cell: (fetch) =>
+                    fetch.what === "Zeitüberschreitung" ? (
+                      <Text type="row" tone="bad">
+                        {fetch.what}
+                      </Text>
+                    ) : (
+                      fetch.what
+                    ),
                 },
                 { title: "Dauer", align: "end", cell: (fetch) => fetch.took },
               ]}
@@ -510,5 +520,78 @@ export const PulseScreen = (props: { list?: boolean }) => (
         </Pane>
       )}
     </Pane.Split>
+  </Workspace>
+);
+
+// Break-ui for the hero and the head of an open thing: a huge figure, a name without spaces, long words everywhere,
+// and a hero with nothing but its figure (no history, no meta, no exceptions), beside the worst case.
+export const IdentityWorstScreen = (props: { part: "hero" | "head"; bare?: boolean }) => (
+  <Workspace>
+    {props.part === "hero" ? (
+      <Pane label="Worst" owner={OAUTH}>
+        {props.bare ? (
+          <Hero figure="0" label="aktive Verbindungen" />
+        ) : (
+          <Hero
+            figure="12.345.678.901"
+            label="aktive Verbindungen über alle Mandanten und Dienstkonten hinweg seit der Einrichtung"
+            meta="9.876.543 Personen · 1.234.567 neu in 7 Tagen · 98 Gruppen · 12 Mandanten · 3 Regionen"
+            trend={{
+              kind: "bars",
+              values: [0, 0, 0, 1_000_000, 0, 3, 0, 0, 0, 0],
+              label: "Neue Verbindungen je Tag: ein Tag mit einer Million, sonst fast keine",
+              start: "01.01.2026",
+              caption: "Neue Verbindungen je Tag über alle Mandanten und Dienstkonten hinweg",
+              end: "heute, 23:59",
+            }}
+            exceptions={[
+              {
+                icon: "world-plus",
+                count: "1.234.567",
+                word: "selbst registriert",
+                who: "Clientnamenohneleerzeichenundmitsehrvielentextdahinter",
+              },
+              { status: "warn", count: 98_765, word: "ungenutzt seit 30 Tagen", who: "MCP Inspector, Claude Code, Grafana, Nextcloud" },
+              { status: "bad", count: 3, word: "Fehler beim Erneuern des Geheimnisses", who: "seit 01.01.2026, 00:00" },
+              { status: "off", count: 12, word: "ruhen" },
+            ]}
+          />
+        )}
+      </Pane>
+    ) : (
+      <Pane
+        label="Detail"
+        owner={OAUTH}
+        head={
+          <ObjectHead
+            mark={{ initial: "Belegablagederbuchhaltungohneleerzeichen", color: "#0f766e" }}
+            name={props.bare ? "P" : "Belegablagederbuchhaltungohneleerzeichenundmitnochmehrtextdahinter"}
+            meta={
+              props.bare ? undefined : "Belegablage der Buchhaltung, der Lohnbuchhaltung und der Steuerberatung · vertraulich · verwaltet"
+            }
+            actions={props.bare ? undefined : <Button icon="pencil">Bearbeiten</Button>}
+            facts={
+              props.bare
+                ? undefined
+                : [
+                    { label: "Verbunden", value: "12.345.678 von 98.765.432" },
+                    { label: "Zuletzt", value: "vor 365 Tagen, 23:59" },
+                    { label: "Angelegt", value: "31.12.2026, 23:59" },
+                  ]
+            }
+            problem={
+              props.bare
+                ? undefined
+                : {
+                    title: "Liefert seit dem 01.01.2026, 00:00 keine Werte, und auch die letzten 1.234 Abrufe sind fehlgeschlagen",
+                    text: "Zeitüberschreitung nach 15 s, 1.234 Abrufe in Folge · Alarm an Felix Thal, Lena Hartwig, Ada Renz, Jonas Kern und 12 weitere",
+                  }
+            }
+          />
+        }
+      >
+        <Text>Inhalt</Text>
+      </Pane>
+    )}
   </Workspace>
 );

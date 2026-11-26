@@ -112,15 +112,16 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     },
   },
   keys: { 1440: {}, 390: {} },
-  // tabelle-grids.html; the table is wider than its column and scrolls sideways
+  // tabelle-grids.html; the table is wider than its column and scrolls sideways. The head of its columns is 34 high
+  // since identity B (26.11.), so the rows stand 2 px higher than in the mockup.
   table: {
     1440: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
       status: ['[data-k2-part="StatusRow"]', "250,57 1125x52"],
-      firstHead: ["thead th:nth-child(2)", "294,109 260x36"],
-      group: ["tbody tr[data-group]", "250,145 1724x36"],
-      row: ["tbody tr:nth-child(2)", "250,181 1724x40"],
-      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,181 176x40"],
+      firstHead: ["thead th:nth-child(2)", "294,109 260x34"],
+      group: ["tbody tr[data-group]", "250,143 1724x36"],
+      row: ["tbody tr:nth-child(2)", "250,179 1724x40"],
+      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,179 176x40"],
     },
     // The mockup has no head here (its path gives way to the phone bar). The head keeps its bar for the table's own
     // search as a symbol (#4139), so everything under it starts 56 px lower than in the mockup.

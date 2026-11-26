@@ -156,8 +156,8 @@ export type FactsProps = {
 };
 
 /**
- * Values with their labels: label 12 quiet, value 13, 32 px a row, copy at the value. The label column is as wide as
- * the longest label, at least 80 px and at most 160 px.
+ * Values with their labels: label 13 quiet, value 13, 32 px a row, copy at the value. One label column of 116 px and a
+ * gap of 16 in every list, so the values of all lists start on one edge.
  */
 export const Facts = (props: FactsProps) => {
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.

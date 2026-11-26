@@ -767,7 +767,8 @@
 /* The hero: the figure and its history side by side, what falls out of line in one line under them, one line below. */
 .k2-ui .k2-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  /* the history keeps 200 px: a long label wraps before it squeezes the drawing */
+  grid-template-columns: auto minmax(200px, 1fr);
   grid-template-areas: "figure trend" "ex ex";
   gap: 14px 32px;
   align-items: end;
@@ -794,13 +795,11 @@
 .k2-ui .k2-hero-label {
   font: var(--k2-t-body);
   font-weight: 500;
-  color: var(--k2-text);
-  white-space: nowrap;
+  color: var(--k2-text-2);
 }
 .k2-ui .k2-hero-meta {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
-  white-space: nowrap;
 }
 .k2-ui .k2-hero-trend {
   grid-area: trend;
@@ -865,7 +864,9 @@
   align-items: center;
   gap: 8px;
   white-space: nowrap;
-  color: var(--k2-text);
+  color: var(--k2-text-2);
+  max-width: 100%;
+  min-width: 0;
 }
 .k2-ui .k2-hero-ex > li > .k2-icon {
   font-size: 15px;
@@ -876,6 +877,9 @@
 }
 .k2-ui .k2-hero-ex > li > .k2-hero-meta {
   margin-left: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* The head of an open thing: the owner's tint as its ground, a sign of 40, the name in 18, three key facts. */
 .k2-ui .k2-ohead {
@@ -1960,12 +1964,13 @@
 }
 .k2-ui .k2-table th {
   position: relative;
-  height: var(--k2-h-columns);
+  /* identity B: a head of 34 over cells of 10 px padding, the rows 46 where they lead with a mark of 28 */
+  height: 34px;
   text-align: left;
   font: var(--k2-t-meta);
   font-weight: 500;
   color: var(--k2-subtle);
-  padding: 0 12px;
+  padding: 0 10px;
   /* the head of the columns is a quiet band with the strong line under it; the rows part by a very quiet one */
   background: var(--k2-n50);
   border-bottom: var(--k2-hairline);
@@ -1975,22 +1980,31 @@
 }
 .k2-ui .k2-table td {
   height: var(--k2-h-row);
-  padding: 0 12px;
+  padding: 0 10px;
   border-bottom: var(--k2-hairline-subtle);
   vertical-align: middle;
   min-width: 0;
 }
-/* a table whose rows lead with a thing's mark: 44 px rows and marks of 32, as the mockup's lists of files and folders */
+/* in a table of things what a row says beside its name is quieter than the name, which stands in 500 (identity B);
+   a table of data (Grids, a log) keeps its values in the full ink */
+.k2-ui .k2-table[data-marks] td {
+  color: var(--k2-muted);
+}
+.k2-ui .k2-table[data-marks] td:first-child {
+  color: var(--k2-text);
+  font-weight: 500;
+}
+/* a table whose rows lead with a thing's mark: rows of 46 and marks of 28 (identity B) */
 .k2-ui .k2-table[data-marks]:not([data-lines="2"]) td {
-  height: var(--k2-h-row-mark);
+  height: 46px;
 }
 .k2-ui .k2-table td > .k2-cell-lead > .k2-mk {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
 }
 .k2-ui .k2-table td > .k2-cell-lead > .k2-mk > .k2-icon {
-  font-size: 18px;
+  font-size: 16px;
 }
 .k2-ui .k2-table td > .k2-cell-lead > .k2-mk > .k2-mk-kind {
   font-size: 8px;
@@ -2327,8 +2341,9 @@
    160 px, where a longer label wraps */
 .k2-ui .k2-facts {
   display: grid;
-  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr);
-  gap: 0 8px;
+  /* one label column of 116 and a gap of 16, the same in every list of facts (identity B) */
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 0 16px;
   padding: 0 var(--k2-edge);
   align-items: start;
   min-width: 0;
@@ -2338,11 +2353,12 @@
   display: contents;
 }
 .k2-ui .k2-fact-pair > dt {
-  font: var(--k2-t-meta);
-  line-height: 20px;
+  font: var(--k2-t-row);
   color: var(--k2-subtle);
   padding: 6px 0;
-  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .k2-ui .k2-fact-pair > dd {
   display: flex;

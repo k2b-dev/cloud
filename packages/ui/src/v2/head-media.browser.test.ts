@@ -45,7 +45,11 @@ type Case =
   | "oauth-b"
   | "oauth-b-list"
   | "pulse-b"
-  | "pulse-b-list";
+  | "pulse-b-list"
+  | "hero-worst"
+  | "hero-bare"
+  | "head-worst"
+  | "head-bare";
 
 let browser: Browser;
 let client: string;
@@ -416,15 +420,15 @@ test("the open file shows a large preview 4:3 from edge to edge, and the list le
         mark: element.querySelector(".k2-mk")?.getBoundingClientRect().width,
         name: element.querySelector(".k2-cell-line")?.textContent,
       }));
-    // a table whose rows lead with a mark: rows of 44 px, marks of 32, as the mockup's list of files
-    expect(cell.mark).toBe(32);
+    // a table whose rows lead with a mark: rows of 46 px, marks of 28 (identity B)
+    expect(cell.mark).toBe(28);
     expect(cell.name).toBe("Aufmaß");
     expect(
       await page
         .locator(".k2-table[data-marks] tbody tr:not([data-group]) td")
         .first()
         .evaluate((td) => Math.round(td.getBoundingClientRect().height)),
-    ).toBe(44);
+    ).toBe(46);
     // the owner leads its cell as a person
     expect(await page.locator(".k2-table td .k2-cell-lead > .k2-av").count()).toBeGreaterThan(5);
   });
@@ -1674,3 +1678,40 @@ test("identity B: one picture of the data per row: ticks in the owner's soft col
     1440,
   );
 });
+
+for (const which of ["hero-worst", "hero-bare", "head-worst", "head-bare"] as const)
+  test(`identity B break-ui, ${which}: a huge figure, long words and missing parts never leave their place or cut a number`, async () => {
+    for (const width of [1440, 1024, 390])
+      await withPage(
+        which,
+        async (page) => {
+          const found = await page.evaluate(() => {
+            const hero = document.querySelector<HTMLElement>("[data-k2-part='Hero']");
+            const head = document.querySelector<HTMLElement>("[data-k2-part='ObjectHead']");
+            const inside = (element: Element | null) => {
+              if (!element || element.getClientRects().length === 0) return true;
+              const box = element.getBoundingClientRect();
+              const pane = element.closest(".k2-pane")!.getBoundingClientRect();
+              return box.left >= pane.left - 0.5 && box.right <= pane.right + 0.5;
+            };
+            const figure = hero?.querySelector<HTMLElement>("[data-k2-type='figure']");
+            const drawing = hero?.querySelector(".k2-hero-trend");
+            return {
+              // the figure is a number: always whole, never cut and never "…"
+              figure: !figure || figure.getClientRects().length === 0 || figure.scrollWidth <= figure.clientWidth + 1,
+              // every part and the words under the drawing stay inside the pane
+              parts: [
+                ...(hero?.querySelectorAll(":scope > *, .k2-hero-trend > *, .k2-hero-cap > *, .k2-hero-ex > li") ?? []),
+                ...(head?.querySelectorAll(":scope > *, .k2-ohead-top > *, .k2-ohead-facts > div") ?? []),
+              ].every(inside),
+              // the history keeps a width to be read
+              drawing: !drawing || drawing.getBoundingClientRect().width >= 200,
+            };
+          });
+          expect({ width, ...found }).toEqual({ width, figure: true, parts: true, drawing: true });
+          const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+          expect(layout.problems).toEqual([]);
+        },
+        width,
+      );
+  });
