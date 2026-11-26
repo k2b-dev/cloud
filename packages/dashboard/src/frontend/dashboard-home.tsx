@@ -1,6 +1,6 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
+import type { WidgetAnswer } from "@k2b/cloud/browser/widgets";
 import type { DashboardWidgetSize } from "@k2b/cloud/contracts";
-import type { WidgetAnswer } from "@k2b/cloud/server/widgets-within";
 import { openAppLaunchpad } from "@k2b/cloud/ssr/islands";
 import { announce, Button, IconButton, Placeholder, SegmentedControl, suppressTextSelection, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";

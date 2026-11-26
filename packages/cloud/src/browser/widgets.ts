@@ -13,6 +13,12 @@ export type {
   WidgetStreamStatus,
 } from "../contracts/widgets";
 
+/** One dashboard entry to ask for: the `requests` of `streamWidgets`, and of a server render's `loadWidgetsWithin`. */
+export type WidgetLoadRequest = { id: string; key: string; size?: DashboardWidgetSize; settings?: WidgetSettings };
+
+/** The answer of one widget, exactly the line Core's widget stream sends for it. */
+export type WidgetAnswer = Extract<WidgetStreamLine, { type: "widget" }>;
+
 /**
  * Asks Core for dashboard widgets and hands over each one as soon as it answers: `start` names the widgets, one
  * `widget` line follows per widget in the order they finish, then `done`. `keys` (`<appId>/<widgetId>`) limits the
@@ -23,7 +29,7 @@ export type {
  * or the stream breaks off.
  */
 export const streamWidgets = async (options: {
-  requests?: readonly { id: string; key: string; size?: DashboardWidgetSize; settings?: WidgetSettings }[];
+  requests?: readonly WidgetLoadRequest[];
   keys?: readonly string[];
   sizes?: Readonly<Record<string, DashboardWidgetSize>>;
   signal: AbortSignal;

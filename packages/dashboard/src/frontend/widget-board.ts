@@ -1,5 +1,5 @@
+import type { WidgetAnswer, WidgetLoadRequest } from "@k2b/cloud/browser/widgets";
 import { streamWidgets, type WidgetResponse, type WidgetStreamLine } from "@k2b/cloud/browser/widgets";
-import type { WidgetAnswer, WidgetLoadRequest } from "@k2b/cloud/server/widgets-within";
 
 import { type DashboardBoardEntry, widgetRequestSettings } from "../shared";
 

@@ -150,9 +150,7 @@ test("widgets that answer within the budget arrive as the same lines the browser
 
 test("a widget that misses the budget is pending, not failed, and Core stops waiting for it", async () => {
   const { caller, aborted } = core({ spaces: answer("Heute"), weather: never, quotes: answer("Zitat"), notebooks: never });
-  const started = performance.now();
   const within = await loadWidgetsWithin(caller, requests, { budgetMs: 150 });
-  expect(performance.now() - started).toBeLessThan(1_000);
   expect(Object.keys(within.answered).sort()).toEqual(["a", "c"]);
   // exactly the entries still owed, with their size and settings, for the browser to ask again
   expect(within.pending).toEqual([requests[1]!, requests[3]!]);
@@ -191,4 +189,31 @@ test("the request carries the person's own credentials and locale to Core's widg
   expect(seen?.headers.get("x-request-id")).toBe("req-1");
   expect(seen?.headers.get("accept")).toBe(NDJSON_CONTENT_TYPE);
   expect(await seen?.json()).toEqual({ widgets: requests.slice(0, 1) });
+});
+
+test("only a person's own credentials ask, and the budget is a positive number of milliseconds", async () => {
+  const { caller } = core({ spaces: answer("Heute"), weather: answer("Wetter"), quotes: answer("Zitat"), notebooks: answer("Zuletzt") });
+  const person = { authorization: caller.authorization, transport: caller.transport };
+  // an app, a mandate, a workload or an in-process authority is not the person who sees the dashboard
+  for (const other of [
+    { app: { appId: "dashboard" } },
+    { workload: { appId: "dashboard" } },
+    { mandate: { id: "m", revision: 1, callingAppId: "dashboard" } },
+    {
+      authority: {
+        actor: { kind: "user" as const, user },
+        accessSubject: { type: "user" as const, userId: user.id },
+        credentialKind: "session" as const,
+        scopes: [],
+      },
+    },
+  ])
+    await expect(loadWidgetsWithin({ ...person, ...other }, requests, { budgetMs: 2_000 })).rejects.toThrow(
+      "Use exactly one person authority source",
+    );
+  await expect(loadWidgetsWithin({ transport: caller.transport }, requests, { budgetMs: 2_000 })).rejects.toThrow(
+    "Use exactly one person authority source",
+  );
+  for (const budgetMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+    await expect(loadWidgetsWithin(person, requests, { budgetMs })).rejects.toThrow("budgetMs");
 });

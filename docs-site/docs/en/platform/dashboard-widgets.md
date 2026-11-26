@@ -445,7 +445,7 @@ share the concurrency, cancellation, and timeout rules above.
 ### Read widgets during a server render
 
 A page that renders widgets on the server, such as a dashboard, calls
-`loadWidgetsWithin()` from `@k2b/cloud/server/widgets-within`. It sends the
+`loadWidgetsWithin()` from `@k2b/cloud/server/widgets-within`; its request and answer types (`WidgetLoadRequest`, `WidgetAnswer`) come from `@k2b/cloud/browser/widgets`, so an island needs no server path. It sends the
 same `POST /api/widgets/v1` request with the person's own credentials (the
 caller you pass: `cookie`, `authorization`, `locale`, `requestId`, `signal`)
 and keeps what answers within `budgetMs`:
@@ -466,8 +466,12 @@ const { answered, pending } = await loadWidgetsWithin(
 - When the budget ends, the call stops reading, and Core stops every widget it
   still waits for. A request Core refuses or a broken stream leaves every entry
   pending; the call never throws.
-- `budgetMs` has no default. Derive it from measured widget times; the
-  `widget-timing` integration tests print each built-in widget's p50 and p95.
+- The caller is the person: their `cookie` or `authorization`. An app, a
+  mandate, a workload or an in-process authority is refused with an error.
+- `budgetMs` has no default and must be a positive number. Derive it from
+  measured widget times: the `widget-timing` integration tests print each
+  built-in widget's p50 and p95, measured in the app's process (without Core's
+  signing, fan-out and network), so add a margin for that part.
 
 `GET /api/widgets/v1/<appId>/<widgetId>` returns one widget as JSON with the
 same per-widget budget; append `?size=small` to ask for a size. It answers

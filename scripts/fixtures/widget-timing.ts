@@ -1,6 +1,8 @@
 // Measures a dashboard widget handler against the test Postgres: the data a widget budget is derived from. A timing
 // test calls `timeWidgetHandler` once per widget; the CI log then holds one line per widget:
 //   widget-timing <app>/<widget> size=<size> calls=20 p50=<ms> p95=<ms> max=<ms>
+// It measures the handler in-process: no Core signing, no fan-out, no network between Core and the app. A budget
+// taken from these numbers adds a margin for that part of the way.
 import { expect } from "bun:test";
 import { type Context, Hono } from "hono";
 import type { DashboardWidgetSize, User, WidgetSettingsDeclaration } from "../../packages/cloud/src/contracts";
