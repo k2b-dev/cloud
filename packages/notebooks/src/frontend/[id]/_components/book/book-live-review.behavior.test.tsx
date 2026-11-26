@@ -27,10 +27,10 @@ describe("independent Book live metadata regression", () => {
 
   test("the head's views follow the current note, its lock and the permission without remounting", async () => {
     const dom = createDomTestHarness();
-    const { default: BookWorkspace } = await import("./BookWorkspace");
+    const { default: BookPage } = await import("./BookPage");
     const dispose = render(
       () =>
-        createComponent(BookWorkspace, {
+        createComponent(BookPage, {
           notebookId: "book01",
           notebookName: "Handbook",
           notebookIcon: null,

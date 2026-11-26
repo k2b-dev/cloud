@@ -43,8 +43,44 @@ export const keepBookReadingPosition = (article: HTMLElement, scroller: HTMLElem
   const anchor = readingAnchor(article, scroller.getBoundingClientRect().top);
   if (!anchor) return () => {};
   return () => {
+    // the article moved on to another note meanwhile
+    if (!anchor.element.isConnected) return;
     const { top, height } = anchor.element.getBoundingClientRect();
     const delta = top + anchor.within * height - anchor.offset - scroller.getBoundingClientRect().top;
     if (Math.abs(delta) >= 1) scroller.scrollTop += delta;
+  };
+};
+
+/**
+ * Keeps the text at the top of Book's scroll port in place whenever the article's width changes: the workspace hides
+ * or shows its sidebar (its button or Mod+Alt+S), a grip moves, the window narrows. The position is read after each
+ * scroll; a new width puts it back in the same frame, after layout and before paint. Returns the stop.
+ */
+export const followBookReadingPosition = (article: HTMLElement, scroller: HTMLElement): (() => void) => {
+  let restore = keepBookReadingPosition(article, scroller);
+  let width = article.getBoundingClientRect().width;
+  let frame = 0;
+  const read = () => {
+    frame = 0;
+    restore = keepBookReadingPosition(article, scroller);
+  };
+  const onScroll = () => {
+    frame ||= requestAnimationFrame(read);
+  };
+  const sizes = new ResizeObserver(() => {
+    const next = article.getBoundingClientRect().width;
+    // a note that loads or a diagram that renders changes the height only
+    if (Math.abs(next - width) < 1) return;
+    width = next;
+    restore();
+    cancelAnimationFrame(frame);
+    read();
+  });
+  sizes.observe(article);
+  scroller.addEventListener("scroll", onScroll, { passive: true });
+  return () => {
+    sizes.disconnect();
+    cancelAnimationFrame(frame);
+    scroller.removeEventListener("scroll", onScroll);
   };
 };

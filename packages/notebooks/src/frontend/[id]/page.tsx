@@ -6,7 +6,7 @@ import { ssr } from "../../config";
 import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import { buildNoteUrl } from "../params";
-import BookWorkspace from "./_components/book/BookWorkspace.island";
+import BookPage from "./_components/book/BookPage";
 import BookGraphWorkspace from "./_components/graph/BookGraphWorkspace.island";
 import NotebookGraphWorkspace from "./_components/graph/NotebookGraphWorkspace.island";
 import { parseGraphViewState } from "./_components/graph/view-state";
@@ -90,7 +90,7 @@ export default ssr<AuthContext>(async (c) => {
         <RememberNotebook notebookId={data.notebook.id} />
         {/* Like the workspace, Book follows live changes, and a revoked grant or an ended session reloads it. */}
         <WorkspaceEventBridge notebookId={data.notebook.id} appUrl={data.appUrl} initialCursor={data.ctx.workspaceCursor} />
-        <BookWorkspace
+        <BookPage
           userId={data.ctx.userId}
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}

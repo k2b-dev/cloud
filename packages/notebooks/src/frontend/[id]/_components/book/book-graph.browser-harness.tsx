@@ -4,7 +4,7 @@ import type { NoteGraph } from "../../../../service/links";
 import BookGraphWorkspace from "../graph/BookGraphWorkspace.island";
 import type { GraphViewState } from "../graph/view-state";
 import type { BookNavigatorProps } from "./BookNavigatorBody";
-import BookWorkspace from "./BookWorkspace";
+import BookPage from "./BookPage";
 
 export type BookGraphFixtureProps = { navigator: BookNavigatorProps; graph: NoteGraph | null; view: GraphViewState; now: string };
 type Box = { x: number; width: number; height: number };
@@ -30,7 +30,7 @@ export function BookGraphFixture(props: BookGraphFixtureProps) {
         timeZone: "Europe/Berlin",
       })
     : // the Book page it opens from
-      createComponent(BookWorkspace, {
+      createComponent(BookPage, {
         ...props.navigator,
         current: undefined,
         fullWidth: false,

@@ -8,9 +8,8 @@ import { formatQueryPages, parseQueryPages, QUERY_PAGES_PARAM } from "../../../.
 import { attachmentFromContentUrl } from "../../../lib/editor/attachment-url";
 import { notebookWorkspaceMessages } from "../../messages";
 import { followFullWidth } from "../full-width";
-import { NAVIGATION_VISIBILITY_EVENT, NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT } from "../sidebar/navigation-visibility";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
-import { keepBookReadingPosition } from "./book-reading-position";
+import { followBookReadingPosition, keepBookReadingPosition } from "./book-reading-position";
 import {
   BOOK_CONTENT_EVENT,
   BOOK_SNAPSHOT_EVENT,
@@ -200,6 +199,13 @@ export default function BookController(props: Props) {
     const previousScrollRestoration = history.scrollRestoration;
     history.scrollRestoration = "manual";
     history.replaceState(history.state, "", `${initialHref}${window.location.hash}`);
+    // A reload (or a return to this entry by a new page load) comes back to where the reader was: the entry keeps its
+    // scroll, and the server's article is there already, so the text does not move once more.
+    const saved = (history.state as Record<string, unknown> | null)?.[SCROLL_KEY] as ScrollPosition | undefined;
+    if (saved && scrollContainer) {
+      scrollContainer.scrollTo(saved.left, saved.top);
+      window.scrollTo(saved.windowX, saved.windowY);
+    }
 
     const navigate = (url: URL, kind: "push" | "pop", scroll?: ScrollPosition, settled?: (error?: Error) => void) => {
       pending?.settled?.();
@@ -353,23 +359,12 @@ export default function BookController(props: Props) {
         detail.cover(workspace.invalidate());
       }
     };
-    // Showing or hiding the navigation can rewrap the article; the same text stays at the top.
-    let restoreReadingPosition: (() => void) | null = null;
-    const onNavigationWillChange = () => {
-      restoreReadingPosition = article && scrollContainer ? keepBookReadingPosition(article, scrollContainer) : null;
-    };
-    const onNavigationChanged = () => {
-      const restore = restoreReadingPosition;
-      restoreReadingPosition = null;
-      // After every listener of this event, so the navigation has already changed.
-      if (restore) queueMicrotask(restore);
-    };
+    // Hiding or showing the sidebar rewraps the article; the same text stays at the top.
+    const stopFollowing = article && scrollContainer ? followBookReadingPosition(article, scrollContainer) : () => {};
     document.addEventListener("click", onClick, true);
     document.addEventListener("submit", onSubmit);
     window.addEventListener("popstate", onPopState);
     window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
-    window.addEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
-    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
     scrollContainer?.addEventListener("scroll", saveScroll, { passive: true });
     window.addEventListener("scroll", saveScroll, { passive: true });
     onCleanup(() => {
@@ -380,8 +375,7 @@ export default function BookController(props: Props) {
       document.removeEventListener("submit", onSubmit);
       window.removeEventListener("popstate", onPopState);
       window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
-      window.removeEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
-      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
+      stopFollowing();
       scrollContainer?.removeEventListener("scroll", saveScroll);
       window.removeEventListener("scroll", saveScroll);
       history.scrollRestoration = previousScrollRestoration;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { LocaleProvider } from "@k2b/ui";
+import { WorkspaceLayout } from "@k2b/ui/v2";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
@@ -7,7 +8,7 @@ import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import { bookMessages } from "./messages";
 import "../detail/ssr-test-plugin";
 
-const { default: BookWorkspace } = await import("./BookWorkspace");
+const { default: BookPage } = await import("./BookPage");
 
 const render = (
   canWrite = false,
@@ -16,30 +17,36 @@ const render = (
   html: string | null = '<h1 id="welcome">Welcome</h1><p>Our handbook.</p>',
   historyIncomplete = false,
   selectedNoteId: string | null = html === null ? null : "note02",
+  sidebarCollapsed = false,
 ) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(BookWorkspace, {
-          notebookId: "book01",
-          notebookName: "Company handbook",
-          notebookIcon: null,
-          selectedNoteId,
-          currentHref: html === null ? "/app/notebooks/book01" : "/app/notebooks/book01/notes/note02",
-          canWrite,
-          locked,
-          historyIncomplete,
-          html,
-          noteTitle: "Welcome",
-          cursor: null,
-          navigationHidden: false,
-          fullWidth: false,
-          tags: [{ tag: "handbook", count: 2 }],
-          navigation: bookNavigationState(
-            [{ id: "note01", title: "Getting started", children: [{ id: "note02", title: "Welcome", children: [] }] }],
-            selectedNoteId,
-          ),
+        return createComponent(WorkspaceLayout, {
+          sidebarCollapsed,
+          get children() {
+            return createComponent(BookPage, {
+              notebookId: "book01",
+              notebookName: "Company handbook",
+              notebookIcon: null,
+              selectedNoteId,
+              currentHref: html === null ? "/app/notebooks/book01" : "/app/notebooks/book01/notes/note02",
+              canWrite,
+              locked,
+              historyIncomplete,
+              html,
+              noteTitle: "Welcome",
+              cursor: null,
+              navigationHidden: false,
+              fullWidth: false,
+              tags: [{ tag: "handbook", count: 2 }],
+              navigation: bookNavigationState(
+                [{ id: "note01", title: "Getting started", children: [{ id: "note02", title: "Welcome", children: [] }] }],
+                selectedNoteId,
+              ),
+            });
+          },
         });
       },
     }),
@@ -91,6 +98,26 @@ describe("Book on v2", () => {
     expect(html).not.toMatch(/CodeMirror|NoteEditor|NotebookDetailPanel|EditorToolbar|mode=write|mode=readonly/);
     expect(html).toContain("data-cloud-workspace-navigation");
   });
+  test("the frame and the article are server markup; only the navigation, the head and the live parts are islands", async () => {
+    const html = render(true);
+    expect(await selectHtml(html, "solid-island #notebook-book-content")).toHaveLength(0);
+    expect(await selectHtml(html, "solid-island [data-k2-workspace]")).toHaveLength(0);
+    const islands = (await selectHtml(html, "solid-island")).map((island) => island.attributes["data-file"]);
+    expect(islands.filter((file) => file?.startsWith("Book"))).toEqual([
+      "BookSidebar.island.tsx",
+      "BookHead.island.tsx",
+      "BookController.island.tsx",
+      "BookMermaid.island.tsx",
+      "BookCharts.island.tsx",
+    ]);
+    expect((await selectHtml(html, '[data-slot="head"]'))[0]?.text).toContain("Company handbook");
+  });
+  test("the sidebar can be hidden, and a page renders it hidden as the person left it", async () => {
+    expect(await selectHtml(render(), "[data-k2-workspace][data-collapsible]:not([data-collapsed])")).toHaveLength(1);
+    expect(
+      await selectHtml(render(false, false, "en", undefined, false, undefined, true), "[data-k2-workspace][data-collapsed]"),
+    ).toHaveLength(1);
+  });
   test("a page load shows the open page's sub-pages, so they stay reachable before or without JavaScript", () => {
     const html = render(false, false, "en", "<h1>Getting started</h1>", false, "note01");
     expect(html).toMatch(/role="treeitem"[^>]*aria-expanded="true"[^>]*data-k2b-nav-tree-id="note01"/);
@@ -109,7 +136,7 @@ describe("Book on v2", () => {
       ["Book", "/app/notebooks/book01/notes/note02?mode=book", "page"],
     ]);
     expect((await views(render(true, true))).map(([label]) => label)).toEqual(["Read", "Book"]);
-    // readers stay in Book: the head names the note instead
+    // readers stay in Book: the head names the notebook, and the note's title is the article's first heading
     expect(await views(render())).toEqual([]);
     expect(render()).not.toMatch(/mode=write|mode=readonly/);
   });
