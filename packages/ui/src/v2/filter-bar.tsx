@@ -495,22 +495,9 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   const tail = resolveChildren(() => props.end);
   // The phone's one menu of how the list shows: the sort, the grouping, then the app's own choices (display).
   const viewSections = (): MenuEntry[] => {
-    const sections: MenuEntry[] = [];
-    if (!props.query.sort.fixed)
-      sections.push({
-        title: t().sort,
-        choice: `${props.state.sort.field}.${props.state.sort.direction}`,
-        onChoose: (value) => apply((params) => params.set("sort", value)),
-        items: sortEntries(props.query, t()).map((entry) => ({ label: entry.label, value: entry.value })),
-      });
-    if (props.query.group && Object.keys(props.query.group).length > 0)
-      sections.push({
-        title: t().group,
-        choice: props.state.group ?? "",
-        onChoose: (value) => apply((params) => (value ? params.set("group", value) : params.delete("group"))),
-        items: groupEntries(props.query, t()).map((entry) => ({ label: entry.label, value: entry.value })),
-      });
-    return [...sections, ...(props.display ?? [])];
+    const sort = sortSection(props.query, props.state, t(), apply);
+    const group = groupSection(props.query, props.state, t(), apply);
+    return [...(sort ? [sort] : []), ...(group ? [group] : []), ...(props.display ?? [])];
   };
 
   return (
@@ -518,6 +505,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
       class="k2-fbar"
       data-k2-part="FilterBar"
       data-tail={tail() !== undefined || props.display?.length ? "" : undefined}
+      data-view={props.display?.length ? "" : undefined}
       role="group"
       aria-label={t().filters}
     >
@@ -1344,6 +1332,48 @@ const groupEntries = <F extends Fields, S extends string, G extends string>(quer
   return [{ value: "", label: t.noGroups }, ...Object.entries(groups).map(([key, group]) => ({ value: key, label: group.label }))];
 };
 
+/**
+ * The sort as a section of a menu with one choice; a choice whose state the address cannot hold is locked, so a choice
+ * never drops the filters. `ListOrder` and the phone's menu "Ansicht" share it.
+ */
+const sortSection = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+  state: ListQueryState<F, S, G>,
+  t: FilterMessages,
+  change: (edit: (params: URLSearchParams) => void) => unknown,
+): MenuSection | undefined => {
+  if (query.sort.fixed) return undefined;
+  const edit = (value: string) => (params: URLSearchParams) => params.set("sort", value);
+  return {
+    title: t.sort,
+    choice: `${state.sort.field}.${state.sort.direction}`,
+    onChoose: (value) => change(edit(value)),
+    items: sortEntries(query, t).map((entry) => ({
+      label: entry.label,
+      value: entry.value,
+      disabled: !follow(query, state, edit(entry.value)),
+    })),
+  };
+};
+
+/** The grouping as a section of a menu with one choice, locked as the sort is; nothing when the list has no groups. */
+const groupSection = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+  state: ListQueryState<F, S, G>,
+  t: FilterMessages,
+  change: (edit: (params: URLSearchParams) => void) => unknown,
+): MenuSection | undefined => {
+  const entries = groupEntries(query, t);
+  if (entries.length < 2) return undefined;
+  const edit = (value: string) => (params: URLSearchParams) => (value ? params.set("group", value) : params.delete("group"));
+  return {
+    title: t.group,
+    choice: state.group ?? "",
+    onChoose: (value) => change(edit(value)),
+    items: entries.map((entry) => ({ label: entry.label, value: entry.value, disabled: !follow(query, state, edit(entry.value)) })),
+  };
+};
+
 export type ListOrderProps<F extends Fields, S extends string, G extends string> = {
   query: ListQuery<F, S, G>;
   state: ListQueryState<F, S, G>;
@@ -1381,44 +1411,12 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
           </span>
         }
       >
-        <Menu
-          icon="arrows-sort"
-          label={t().sort}
-          items={[
-            {
-              title: t().sort,
-              choice: `${props.state.sort.field}.${props.state.sort.direction}`,
-              onChoose: (value) => change((params) => params.set("sort", value)),
-              items: sortEntries(props.query, t()).map((entry) => ({
-                label: entry.label,
-                value: entry.value,
-                disabled: !follow(props.query, props.state, (params) => params.set("sort", entry.value)),
-              })),
-            },
-          ]}
-        >
+        <Menu icon="arrows-sort" label={t().sort} items={[sortSection(props.query, props.state, t(), change)!]}>
           {words().sort}
         </Menu>
       </Show>
       <Show when={groups().length > 1}>
-        <Menu
-          icon="stack-2"
-          label={t().group}
-          items={[
-            {
-              title: t().group,
-              choice: props.state.group ?? "",
-              onChoose: (value) => change((params) => (value ? params.set("group", value) : params.delete("group"))),
-              items: groups().map((entry) => ({
-                label: entry.label,
-                value: entry.value,
-                disabled: !follow(props.query, props.state, (params) =>
-                  entry.value ? params.set("group", entry.value) : params.delete("group"),
-                ),
-              })),
-            },
-          ]}
-        >
+        <Menu icon="stack-2" label={t().group} items={[groupSection(props.query, props.state, t(), change)!]}>
           {words().group ? t().groupBy({ field: words().group ?? "" }) : t().noGroups}
         </Menu>
       </Show>

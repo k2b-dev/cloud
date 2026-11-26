@@ -2813,12 +2813,20 @@
     grid-template-areas: "label" "message" "control" "was";
     row-gap: 4px;
   }
+  .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action),
+  .k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+    grid-row: auto;
+  }
+}
+/* A setting with a deed needs the deed's room too ("Auf Standard zurücksetzen", about 170 px): below 800 px of pane its
+   name would get less than its room, so the deed stays at the end of the name's line and the value goes under it. */
+@container k2-pane (max-width: 799px) {
   .k2-ui .k2-field[data-setting][data-action] {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "label action" "message message" "control control" "was was";
+    row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action),
-  .k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+  .k2-ui .k2-field[data-setting][data-action] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
     grid-row: auto;
   }
 }
@@ -5108,6 +5116,21 @@
     margin-left: auto;
     padding-left: 8px;
     background: var(--k2-surface);
+  }
+  /* with it the strip fades before the menu, not under it: the menu stays whole and the statements run out beside it */
+  .k2-ui .k2-fbar[data-view] {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .k2-ui .k2-fbar-view::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 100%;
+    width: 24px;
+    background: linear-gradient(90deg, transparent, var(--k2-surface));
+    pointer-events: none;
   }
   .k2-ui .k2-fbar-flow {
     flex-wrap: nowrap;

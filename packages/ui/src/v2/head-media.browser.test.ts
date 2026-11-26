@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells" | "path" | "split-canvas";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells" | "path" | "split-canvas" | "long";
 
 let browser: Browser;
 let client: string;
@@ -68,9 +68,12 @@ test("on the phone how the list shows stays in reach: sort, grouping and display
     async (page) => {
       const button = page.locator(".k2-fbar-view").getByRole("button", { name: "Ansicht" });
       expect(await button.isVisible()).toBe(true);
-      // at the end of the bar, inside the window
+      // at the end of the bar, inside the window, and whole: the strip fades before it, not under it
       const box = (await button.boundingBox())!;
       expect(box.x + box.width).toBeLessThanOrEqual(390);
+      expect(
+        await page.locator(".k2-fbar").evaluate((bar) => getComputedStyle(bar).webkitMaskImage || getComputedStyle(bar).maskImage),
+      ).toBe("none");
       await button.click();
       await settled(page);
       const menu = page.getByRole("menu");
@@ -88,10 +91,30 @@ test("on the phone how the list shows stays in reach: sort, grouping and display
   );
 });
 
+test("at the length limit of the address the phone's 'Ansicht' locks a sort that would not fit, as the order's menu does", async () => {
+  await withPage(
+    "long",
+    async (page) => {
+      await page.locator(".k2-fbar-view").getByRole("button", { name: "Ansicht" }).click();
+      await settled(page);
+      const menu = page.getByRole("menu");
+      expect(await menu.getByRole("menuitemradio", { name: "Geändert ↓" }).getAttribute("aria-disabled")).toBe("true");
+      expect(await menu.getByRole("menuitemradio", { name: "Name ↑" }).getAttribute("aria-checked")).toBe("true");
+    },
+    390,
+  );
+});
+
 test("on the desktop the display is a menu of its own beside the order, and the phone's menu stays away", async () => {
   await withPage("list", async (page) => {
     expect(await page.locator(".k2-fbar-view").isVisible()).toBe(false);
     expect(await page.locator(".k2-fbar-display").getByRole("button", { name: /Liste/ }).isVisible()).toBe(true);
+    // choosing the grid shows the grid
+    await page.locator(".k2-fbar-display").getByRole("button", { name: /Liste/ }).click();
+    await settled(page);
+    await page.getByRole("menu").getByRole("menuitemradio", { name: "Raster" }).click();
+    await settled(page);
+    expect(await page.locator(".k2-tiles").count()).toBe(1);
   });
 });
 
@@ -327,29 +350,39 @@ test("the sidebar shows what the storage uses, as a meter with its words", async
 });
 
 test("a setting goes to one column by the width of its pane, so its name never runs into its value (review #4223)", async () => {
-  // at 800 px of window the settings pane is narrow beside the sidebar and the side column, while the window is no phone
-  for (const width of [800, 1024, 1440])
-    await withPage(
-      "settings",
-      async (page) => {
+  // at 800 px of window the settings pane is narrow beside the sidebar and the side column, while the window is no phone;
+  // at 1240 and 1300 the pane is about 630 and 690 px: room for name and value, but not for a deed beside them too
+  // one page, its window set to each width in turn: the layout follows the pane's width alone
+  await withPage(
+    "settings",
+    async (page) => {
+      for (const width of [800, 1024, 1240, 1300, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await settled(page);
         const crossed = await page.evaluate(() =>
           [...document.querySelectorAll("[data-k2-part='Setting']")]
             .map((setting) => {
               const label = setting.querySelector<HTMLElement>(".k2-field-label")!;
               const control = setting
-                .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was)")!
+                .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action)")!
                 .getBoundingClientRect();
               const box = label.getBoundingClientRect();
               const beside = control.left > box.left;
-              return { name: label.textContent, bad: label.scrollWidth > label.clientWidth + 1 || (beside && box.right > control.left) };
+              // beside its value a name keeps the room of a short name in one line ("Angemeldet bleiben")
+              const cramped = beside && (box.width < 160 || box.height > 20);
+              return {
+                name: label.textContent,
+                bad: cramped || label.scrollWidth > label.clientWidth + 1 || (beside && box.right > control.left),
+              };
             })
             .filter((setting) => setting.bad)
             .map((setting) => setting.name),
         );
-        expect(crossed).toEqual([]);
-      },
-      width,
-    );
+        expect({ width, crossed }).toEqual({ width, crossed: [] });
+      }
+    },
+    800,
+  );
 });
 
 test("on the phone the end of the list stays above the floating actions of a selection (review #4223)", async () => {
