@@ -375,6 +375,14 @@ describe("a folder of Files on v2", () => {
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("file") === "Notizen.md");
       await tab.getByText("Eigenschaften", { exact: true }).waitFor();
       expect(await tab.getByRole("button", { name: "Herunterladen", exact: true }).count()).toBeGreaterThan(0);
+      // the public link is a row: how often it was used in quiet words, no big figures; revoking is its row's deed
+      const links = tab.locator("[data-k2-part=List][aria-label='Öffentlicher Link']");
+      await links
+        .getByText(/Aufrufe?, \d+ Downloads? in \d+ Tagen/)
+        .first()
+        .waitFor();
+      expect(await tab.getByText("Seitenaufrufe").count()).toBe(0);
+      expect(await links.getByRole("button", { name: /^Aktionen für / }).count()).toBeGreaterThan(0);
       await shoot(tab, "02-detail-1440");
       await expectClean(tab);
       await tab.getByRole("link", { name: "Details schließen", exact: true }).first().click();

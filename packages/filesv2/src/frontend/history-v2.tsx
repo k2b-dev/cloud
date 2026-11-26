@@ -195,7 +195,7 @@ export type ActivityRowProps = {
   /** A batch's members, when the row opens them in place. */
   toggle?: { open: boolean; count: number; onToggle: () => void };
   /** `chain`: a step of one vanished item's history, which names where it came from as well. */
-  context?: "chain";
+  context?: "chain" | "item";
   /** One more quiet fact, such as the other members of its batch. */
   note?: string;
   /** The row shows its facts only; the deed belongs to what it stands under … */
@@ -277,9 +277,10 @@ export function ActivityRow(props: ActivityRowProps) {
   const channel = () => meta().filter((part) => !(part.kind === "via" && entry().via === "web"));
   // A row with a deed keeps its end for the deed: the time moves into its quiet line, so the two never overlap.
   const crowded = () => !!deed() || more().length > 0;
+  // the time as a machine reads it too, wherever the row says it
+  const stamp = () => <time dateTime={entry().time}>{time()}</time>;
   const facts = () =>
     [
-      crowded() ? time() : "",
       state()?.label,
       factsText(channel()),
       versionFailure(),
@@ -290,10 +291,22 @@ export function ActivityRow(props: ActivityRowProps) {
       .join(" · ");
   return (
     <Row
-      lines={facts() ? [sentenceLine(), facts()] : [sentenceLine()]}
+      lines={
+        crowded()
+          ? [
+              sentenceLine(),
+              <>
+                {stamp()}
+                {facts() ? ` · ${facts()}` : ""}
+              </>,
+            ]
+          : facts()
+            ? [sentenceLine(), facts()]
+            : [sentenceLine()]
+      }
       avatar={props.notes ? undefined : personOf(actor())}
       mark={props.notes ? (mark()?.mark ?? CHANGE_MARK) : undefined}
-      time={crowded() ? undefined : time()}
+      time={crowded() ? undefined : stamp()}
       href={props.toggle ? undefined : hrefOf(linked())}
       onNavigate={props.env.onNavigate}
       onOpen={props.toggle?.onToggle}

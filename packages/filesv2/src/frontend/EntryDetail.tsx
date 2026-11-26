@@ -27,7 +27,8 @@ import type { BaseSummary, EntryResult, FileEntry } from "../contracts";
 import { ENTRY_TYPE, entryRefId, FOLDER_TYPE } from "../resource-ref";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { createVersions, EntryHistory, type InspectorHistory } from "./entry-history";
+import { createEntryLinks, createVersions, EntryHistory, EntryVersions, type InspectorHistory } from "./entry-history";
+import { EntryLinksSection } from "./entry-links";
 import { entryMark } from "./entry-mark";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
@@ -239,6 +240,13 @@ function Loaded(
     () => props.item,
     async () => void (await props.onStale()),
   );
+  // the item's public links: their rows here, their access in the history's lines
+  const links = createEntryLinks({
+    base: () => props.base,
+    entry: () => props.item,
+    resourceId: () => props.result.resourceId,
+    history: () => props.history,
+  });
   const readOnly = () => props.item.actions?.write === false;
   const busy = () => props.actions.busy();
   const editable = () => props.actions.editable(props.item);
@@ -352,30 +360,38 @@ function Loaded(
           env={props.history?.env}
         />
       </Show>
-      {/* k2b-ui gap: public links, versions and the item's history are still the v1 parts of the detail; their v2
-          rebuild comes with the history views (Files PR 2). Their behaviour stays the same meanwhile. */}
-      <Band>
-        <Canvas label={h().publicLink}>
-          {/* The v1 parts bring no text edge of their own; until PR 2 they stand on the column's edge. */}
-          <div style={{ padding: "0 var(--k2-edge) 16px" }}>
-            <EntryHistory
-              base={props.base}
-              entry={props.item}
-              resourceId={props.result.resourceId}
-              busy={busy()}
-              onChanged={(path) => void props.onChanged(path)}
-              onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
-              locale={locale()}
-              history={props.history}
-              versions={versions}
-              currentAuthor={currentAuthor()}
-              versionsId={`filesv2-versions-${props.item.path}`}
-              versionsOpen
-              onShowVersions={() => document.getElementById(`filesv2-versions-${props.item.path}`)?.scrollIntoView({ block: "nearest" })}
-            />
-          </div>
-        </Canvas>
-      </Band>
+      <Show when={props.history}>{(history) => <EntryLinksSection links={links} env={history().env} />}</Show>
+      <Show when={!props.item.directory}>
+        <EntryVersions
+          base={props.base}
+          entry={props.item}
+          busy={busy()}
+          onChanged={(path) => void props.onChanged(path)}
+          onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+          locale={locale()}
+          env={props.history?.env}
+          versions={versions}
+          currentAuthor={currentAuthor()}
+        />
+      </Show>
+      {/* the item's history, its changes and the links' use as one list */}
+      <EntryHistory
+        base={props.base}
+        entry={props.item}
+        resourceId={props.result.resourceId}
+        busy={busy()}
+        onChanged={(path) => void props.onChanged(path)}
+        onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+        locale={locale()}
+        history={props.history}
+        versions={versions}
+        currentAuthor={currentAuthor()}
+        links={links}
+        // the versions' list in this detail, found by its name
+        onShowVersions={() =>
+          document.querySelector(`[data-k2-part="List"][aria-label="${CSS.escape(t().versions)}"]`)?.scrollIntoView({ block: "nearest" })
+        }
+      />
     </>
   );
 }
