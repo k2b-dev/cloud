@@ -1,7 +1,7 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, CodeFigure, Field, Inline, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, CodeFigure, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
@@ -144,12 +144,16 @@ export default function AppLoginForm(props: {
     }
   };
   // The password or email form for the same account, beside the form's own action; not while a request starts.
-  const fallbackButton = () =>
-    !busy() && props.fallback ? (
-      <Button variant="text" href={props.fallback.href} onClick={clear}>
-        {props.fallback.label}
-      </Button>
-    ) : undefined;
+  // a link like every other way out of a visitor form; following it drops the pending request
+  const fallbackButton = () => (!busy() && props.fallback ? <Text href={props.fallback.href}>{props.fallback.label}</Text> : undefined);
+  onMount(() => {
+    const leave = (event: MouseEvent) => {
+      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      if (link && props.fallback && link.getAttribute("href") === props.fallback.href) clear();
+    };
+    document.addEventListener("click", leave, true);
+    onCleanup(() => document.removeEventListener("click", leave, true));
+  });
   // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
   const formId = createUniqueId();
   return (
@@ -197,7 +201,7 @@ export default function AppLoginForm(props: {
                     autofocus
                   />
                 </Field>
-                <Inline>{fallbackButton()}</Inline>
+                {fallbackButton()}
               </Band>
               <FormActions
                 end={
@@ -217,7 +221,7 @@ export default function AppLoginForm(props: {
                   <Text muted>{t().waiting}</Text>
                   <CodeFigure value={request().comparison} label={t().comparison} />
                 </div>
-                <Inline>{fallbackButton()}</Inline>
+                {fallbackButton()}
               </Band>
               <FormActions
                 end={
