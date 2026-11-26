@@ -636,7 +636,7 @@ export default function StorageScreen(props: StorageScreenProps) {
         <Pane
           label={t().area}
           // the list keeps the ideal width of the identity study (~640 px); a narrower one falls into its phone form
-          width={{ min: 420, default: 620 }}
+          width={{ min: 360, default: 620 }}
           scrollKey="admin-storage"
           status={<StatusRow lead={t().bucketCount({ count: items().length })} />}
         >
@@ -658,12 +658,12 @@ export default function StorageScreen(props: StorageScreenProps) {
                 {
                   title: t().name,
                   // the minimum widths add up to less than the list's room beside an open bucket, so the table keeps its form
-                  width: { min: 150, default: 220 },
+                  width: { min: 150, default: 200 },
                   mark: () => ({ icon: "database" }),
                   cell: (row) => storageBucketName(t(), row),
                 },
-                { title: t().where, width: { min: 120, default: 220 }, drop: true, cell: (row) => storageBucketLine(t(), row) },
-                { title: t().state, width: { min: 120, default: 150 }, cell: (row) => <StateChip t={t()} bucket={row} /> },
+                { title: t().where, drop: true, cell: (row) => storageBucketLine(t(), row) },
+                { title: t().state, width: { min: 160, default: 170 }, cell: (row) => <StateChip t={t()} bucket={row} /> },
               ]}
             />
             <Show when={items().length > 0 && items().every((bucket) => bucket.isDefault)}>
