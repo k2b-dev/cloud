@@ -42,11 +42,6 @@ export type MobileShellHeaderProps = {
   back?: { href?: string; onClick?: () => void; label: string; withSidebar?: boolean };
   /** Controls after the title, such as a menu. */
   actions?: JSX.Element;
-  /**
-   * Controls after `actions` only while the shell shows no sidebar, because the sidebar already leads there, such as
-   * the way to Settings: never twice beside the sidebar.
-   */
-  phoneActions?: JSX.Element;
 };
 
 /**
@@ -364,13 +359,8 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
           <span class="k2b-mobile-shell__title-wide">{props.sidebarTitle}</span>
         </Show>
       </h1>
-      <Show when={props.actions || props.phoneActions}>
-        <div class="k2b-mobile-shell__actions">
-          {props.actions}
-          <Show when={props.phoneActions}>
-            <span class="k2b-mobile-shell__actions-narrow">{props.phoneActions}</span>
-          </Show>
-        </div>
+      <Show when={props.actions}>
+        <div class="k2b-mobile-shell__actions">{props.actions}</div>
       </Show>
     </header>
   );

@@ -40,17 +40,7 @@ render(
         });
       },
       get header() {
-        return createComponent(MobileShell.Header, {
-          title: "Tasks",
-          // the way to Settings, which the sidebar already holds in its foot
-          get phoneActions() {
-            const link = document.createElement("a");
-            link.href = "/settings";
-            link.className = "phone-settings";
-            link.textContent = "Settings";
-            return link;
-          },
-        });
+        return createComponent(MobileShell.Header, { title: "Tasks" });
       },
       get footer() {
         return createComponent(TabBar, { label: "App", items });
@@ -169,7 +159,6 @@ const frame = (page: Page) =>
     return {
       sidebar: shown(".k2b-mobile-shell__sidebar") ? box(".k2b-mobile-shell__sidebar")!.width : 0,
       tabBar: shown(".k2b-tab-bar"),
-      phoneSettings: shown(".phone-settings"),
       title: document.querySelector<HTMLElement>(".k2b-mobile-shell__title")?.innerText,
       sidebarHead: box(".k2b-mobile-shell__sidebar-head")?.height,
       header: box(".k2b-mobile-shell__header")?.height,
@@ -191,8 +180,6 @@ describe("MobileShell on wide screens", () => {
       try {
         const result = await frame(page);
         expect(result.tabBar).toBe(!sidebar);
-        // never twice: beside the sidebar its foot leads to Settings
-        expect(result.phoneSettings).toBe(!sidebar);
         expect(result.sidebar).toBe(sidebar ? 240 : 0);
         if (sidebar) expect(result.sidebarHead).toBe(result.header);
       } finally {
