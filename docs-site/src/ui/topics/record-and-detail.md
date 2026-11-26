@@ -44,7 +44,7 @@ The identity of the record in the head `Bar start`: picture, name, kinds and ide
 
 ### Cells
 
-Two to four key statements side by side, with the area's colour; one under the other on the phone.
+Two to four key statements side by side, with the area's colour; two by two on the phone.
 
 <Props of="Cells Cells.Cell" />
 

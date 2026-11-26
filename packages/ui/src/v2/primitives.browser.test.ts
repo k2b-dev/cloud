@@ -201,10 +201,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           expect(numbers.head).toBe(width < textEdge.phoneBelow ? heights.tabs : heights.head);
           expect(numbers.status).toBe(heights.status);
           // The rows as the mockup measures them: one line 40; two lines 53 and three lines 73 (their content of 36 and
-          // 56 px, 8 px above and below, and the line); with a button at the end 61. On the phone one line takes 60.
+          // 56 px, 8 px above and below, and the line); with a button at the end 60, the last row of its list, under
+          // which no line stands (look rule 4). On the phone one line takes 60.
           if (width >= textEdge.phoneBelow) {
             expect(numbers.bar).toBe(heights.bar);
-            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
+            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 60]);
           } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
           expect(numbers.title).toEqual(["ellipsis", true]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
@@ -677,14 +678,23 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     async () => {
       const page = await open("grid", { width: 390 });
       try {
+        // The way out stays in the row on its text edge; the actions float in a bar at the bottom (in reach of the
+        // thumb), inside the window, each word whole under its symbol.
         const buttons = await page.evaluate(() => {
           const row = document.querySelector('[data-k2-part="StatusRow"]')!;
           const right = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
-          return [...row.querySelectorAll(".k2-btn")].map((button) => [
-            button.textContent?.trim(),
-            button.getBoundingClientRect().right <= right + 0.5,
-            button.scrollWidth <= button.clientWidth,
-          ]);
+          const floating = row.querySelector(".k2-status-actions")!.getBoundingClientRect();
+          return [...row.querySelectorAll(".k2-btn")].map((button) => {
+            const box = button.getBoundingClientRect();
+            const inBar = button.parentElement?.classList.contains("k2-status-actions") ?? false;
+            const label = button.querySelector(".k2-btn-label") ?? button;
+            return [
+              button.textContent?.trim(),
+              inBar ? box.left >= floating.left && box.right <= floating.right && floating.bottom <= innerHeight : box.right <= right + 0.5,
+              // in the floating bar the word stands whole under its symbol; the way out may keep only its ×
+              inBar ? label.scrollWidth <= label.clientWidth + 1 : button.scrollWidth <= button.clientWidth,
+            ];
+          });
         });
         expect(buttons).toEqual([
           ["Exportieren", true, true],

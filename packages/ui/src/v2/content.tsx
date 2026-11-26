@@ -423,7 +423,8 @@ export type RowProps = {
   /**
    * The row stands in a selection, such as "10 ausgewählt" (pair it with `StatusRow selection`): a box in the lead,
    * named by the title, and the blue tint while `selected`, as `Table select` draws it. The box takes the place of the
-   * lead's symbol, person or dot. Open and selected combine: a selected row stays blue, and stays the open one.
+   * lead's symbol, person or dot; a `mark` stays beside it, so a file keeps its thumbnail. Open and selected combine: a
+   * selected row stays blue, and stays the open one.
    */
   select?: { selected: boolean; onChange: (selected: boolean) => void };
   /** "You are next", in the blue tint. */
@@ -432,6 +433,12 @@ export type RowProps = {
   time?: JSX.Element;
   /** Bottom right on the third line: chips, icons, people. */
   marks?: JSX.Element;
+  /**
+   * States that belong to the entry and must be read whole, such as the checks of a domain: `Chip`s with colour,
+   * symbol and word under the row's lines, on the text edge of its title. They wrap to further lines instead of being
+   * cut, on the phone too; the row grows only when they are there (40, 52 and 72 px stay as they are without them).
+   */
+  states?: JSX.Element;
   /** The one deed of this entry, a framed button at the end; on the phone it moves under the text. */
   action?: Action;
   /** At the end: a few icon buttons, such as "Reply" and "More". */
@@ -481,6 +488,7 @@ export const Row = (props: RowProps) => {
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
+  const states = resolveChildren(() => props.states);
   const title = createUniqueId();
   return (
     // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the place in the list is set only on a row of a List of items, which is a listitem
@@ -501,9 +509,10 @@ export const Row = (props: RowProps) => {
       data-yours={props.yours ? "" : undefined}
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
-      data-mark={props.mark && !props.avatar && !props.select ? "" : undefined}
+      data-mark={props.mark && !props.avatar ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
+      data-states={states() !== undefined ? "" : undefined}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}
@@ -553,7 +562,13 @@ export const Row = (props: RowProps) => {
             </Show>
           }
         >
-          {(select) => <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />}
+          {(select) => (
+            <>
+              <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />
+              {/* a thing's mark stays beside the box (a file keeps its thumbnail); a symbol, person or dot gives way */}
+              <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
+            </>
+          )}
         </Show>
       </span>
       <span class="k2-row-l1">
@@ -586,6 +601,9 @@ export const Row = (props: RowProps) => {
       <Show when={marks() !== undefined}>
         <span class="k2-row-marks">{marks()}</span>
       </Show>
+      <Show when={states() !== undefined}>
+        <span class="k2-row-states">{states()}</span>
+      </Show>
     </div>
   );
 };
@@ -605,6 +623,10 @@ export type Column<T> = {
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
+  /** The cell leads with the thing's mark: a file's thumbnail or type, a base's symbol (24 px, rule: each thing its mark). */
+  mark?: (row: T) => MarkProps;
+  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. */
+  avatar?: (row: T) => Person;
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.
@@ -684,7 +706,10 @@ type KeyedTable<T> = {
   };
   /** The key of the open row, in the tint of the app. */
   current?: string;
-  /** Rows of a group follow one another under a tinted group row of 36 px (no frame: it would cut the columns). */
+  /**
+   * Rows of a group follow one another under its head: text in 600 with its count, no band and no line under it; the
+   * line under the row before it separates the groups (no frame: it would cut the columns).
+   */
   group?: (row: T) => TableGroup;
 };
 
@@ -706,7 +731,8 @@ const isPair = (value: CellValue): value is CellLines =>
   "lines" in value;
 
 /**
- * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
+ * A group of rows: its key, its head (such as a state chip), quiet figures after it, and its count, quiet after the
+ * head on the desktop and on the phone.
  * The head is made where it stands (the table and the phone list each make their own), so it is a function.
  */
 export type TableGroup = { key: string; head: () => JSX.Element; meta?: string; count?: string };
@@ -794,7 +820,20 @@ export const Table = <T,>(props: TableProps<T>) => {
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
 
-  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
+  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget, row?: T) => {
+    const lines = cellLines(column, value, target);
+    // a cell that leads with the thing's mark or a person: the lead beside its lines, the lines cut as before
+    const mark = row !== undefined ? column.mark?.(row) : undefined;
+    const person = row !== undefined ? column.avatar?.(row) : undefined;
+    if (!mark && !person) return lines;
+    return (
+      <span class="k2-cell-lead">
+        {mark ? <Mark {...mark} /> : person ? <Avatar {...person} decorative /> : null}
+        <span class="k2-cell-lines">{lines}</span>
+      </span>
+    );
+  };
+  const cellLines = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
@@ -963,6 +1002,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                       <td colSpan={span()}>
                         <span class="k2-group-row">
                           {item.group.head()}
+                          <Show when={item.group.count}>
+                            <span class="k2-group-row-count">{item.group.count}</span>
+                          </Show>
                           <Show when={item.group.meta}>
                             <span class="k2-group-row-meta">{item.group.meta}</span>
                           </Show>
@@ -999,7 +1041,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                                 data-sticky={firstSticky(columnIndex())}
                                 style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                               >
-                                {cell(column, cellsOf(item.row)[columnIndex()]!, columnIndex() === 0 ? target : undefined)}
+                                {cell(column, cellsOf(item.row)[columnIndex()]!, columnIndex() === 0 ? target : undefined, item.row)}
                               </td>
                             )}
                           </For>
@@ -1030,13 +1072,17 @@ export const Table = <T,>(props: TableProps<T>) => {
                 rowKey={itemKey}
                 row={(item) =>
                   "group" in item ? (
-                    <div class="k2-bar" role="presentation">
-                      <div class="k2-bar-start">
+                    // the same head as in the table: text in 600 with its count, no band and no line under it
+                    <div class="k2-table-phone-group" role="presentation">
+                      <span class="k2-group-row">
                         {item.group.head()}
-                        <Show when={item.group.count ?? item.group.meta}>
-                          <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
+                        <Show when={item.group.count}>
+                          <span class="k2-group-row-count">{item.group.count}</span>
                         </Show>
-                      </div>
+                        <Show when={item.group.meta}>
+                          <span class="k2-group-row-meta">{item.group.meta}</span>
+                        </Show>
+                      </span>
                     </div>
                   ) : (
                     (() => {

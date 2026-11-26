@@ -76,6 +76,8 @@ export {
   Select,
   type SelectOption,
   type SelectProps,
+  Setting,
+  type SettingProps,
 } from "./controls";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
@@ -111,6 +113,8 @@ export {
   type IconProps,
   Mark,
   type MarkProps,
+  Preview,
+  type PreviewProps,
   Progress,
   type ProgressProps,
   Spark,
