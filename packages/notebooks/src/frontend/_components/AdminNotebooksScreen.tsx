@@ -111,17 +111,19 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
     >
       <Pane
         label={t().notebooks}
+        // k2b-ui gap: StatusRow takes no toned chip yet (its marks, #4259), and its facts leave on the phone; the notebooks
+        // nobody can reach therefore stand in the lead, which stays. Nothing found is said once, by the empty table.
         status={
-          // k2b-ui gap: StatusRow takes no toned chip yet (its marks, #4259), and its facts leave on the phone; the
-          // notebooks nobody can reach therefore stand in the lead, which stays. Nothing found has no figures to state.
-          <StatusRow
-            lead={
-              props.orphaned > 0
-                ? t().statusNoAccess({ count: props.total, orphaned: props.orphaned })
-                : t().statusNotebooks({ count: props.total })
-            }
-            facts={props.total > 0 ? [{ value: props.permissions, after: t().factAccessEntries }] : undefined}
-          />
+          props.total > 0 ? (
+            <StatusRow
+              lead={
+                props.orphaned > 0
+                  ? t().statusNoAccess({ count: props.total, orphaned: props.orphaned })
+                  : t().statusNotebooks({ count: props.total })
+              }
+              facts={[{ value: props.permissions, after: t().factAccessEntries }]}
+            />
+          ) : undefined
         }
       >
         <Table

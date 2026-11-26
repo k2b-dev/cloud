@@ -154,8 +154,8 @@ test("the search goes into the address, and an empty result says so", async () =
   const empty = await open("/admin/notebooks?empty=1&search=Zeppelin");
   try {
     await empty.getByText("Keine Notizbücher passen zu „Zeppelin“.").waitFor();
-    // nothing found has no figures to state, and the search can be reset
-    expect((await empty.locator('[data-k2-part="StatusRow"]').textContent())?.trim()).toBe("0 Notizbücher");
+    // nothing found is said once, by the empty table, which offers to reset the search
+    expect(await empty.locator('[data-k2-part="StatusRow"]').count()).toBe(0);
     expect(await empty.getByRole("link", { name: "Suche zurücksetzen" }).getAttribute("href")).toBe("/admin/notebooks");
   } finally {
     await empty.close();
