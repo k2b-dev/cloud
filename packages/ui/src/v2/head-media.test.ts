@@ -131,3 +131,14 @@ test("a setting with a deed shows it once, whatever control it names (merge guar
     expect(markup.split("Auf Standard zurücksetzen").length - 1).toBe(1);
   }
 });
+
+test("among media the place to make one is the last tile: a dashed picture with a plus, then what it makes", () => {
+  const markup = html(Tiles, {
+    variant: "media",
+    label: "Ordner",
+    items: [{ icon: "folder", title: "Aufmaß", href: "#aufmass" }],
+    create: { title: "Neuer Ordner", meta: "oder Dateien hierher ziehen", onClick: () => {} },
+  });
+  expect(markup).toMatch(/data-create[^>]*>.*k2-tile-make.*Neuer Ordner.*oder Dateien hierher ziehen/s);
+  expect(markup.indexOf("Aufmaß")).toBeLessThan(markup.indexOf("Neuer Ordner"));
+});

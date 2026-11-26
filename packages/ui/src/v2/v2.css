@@ -1024,6 +1024,18 @@
 .k2-ui .k2-tile-media > .k2-mk > .k2-icon {
   font-size: 32px;
 }
+/* the place to make one: the picture's place dashed, a plus in its middle */
+.k2-ui .k2-tile-media > .k2-tile-make {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  border: 1px dashed var(--k2-line-control);
+  border-radius: 6px;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-media > .k2-tile-make > .k2-icon {
+  font-size: 24px;
+}
 .k2-ui .k2-tile-media > .k2-mk > .k2-mk-kind {
   left: 6px;
   bottom: 6px;

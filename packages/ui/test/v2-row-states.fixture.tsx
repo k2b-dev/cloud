@@ -54,7 +54,9 @@ export const RowStatesScreen = () => (
             lines={["werkstatt.handwerk-und-restaurierung-am-alten-markt.example.org", "Weiterleitung auf example.org"]}
             states={
               <>
-                <Chip status="bad">Zertifikat läuft in 3 Tagen ab: werkstatt.handwerk-und-restaurierung-am-alten-markt.example.org, erneuern</Chip>
+                <Chip status="bad">
+                  Zertifikat läuft in 3 Tagen ab: werkstatt.handwerk-und-restaurierung-am-alten-markt.example.org, erneuern
+                </Chip>
                 <Chip status="ok">SPF gültig</Chip>
               </>
             }

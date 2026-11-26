@@ -701,7 +701,7 @@ export type TilesProps = {
    * such as the bases of Grids or the projects of a team. Without it: small tiles in one wrapping line (attachments).
    */
   variant?: "card" | "media";
-  /** Cards only: the last card makes a new thing. */
+  /** The last tile makes a new thing: a dashed card, or among media a dashed picture with a plus ("Neuer Ordner"). */
   create?: TileCreate;
   /**
    * Media only: the tiles stand in a selection (pair it with `StatusRow selection`). Each tile has a box on its
@@ -794,6 +794,27 @@ const TileMake = (props: { create: TileCreate }) => (
   </div>
 );
 
+/** The place to make a new thing among media: a dashed picture with a plus, then what it makes and a quiet hint. */
+const TileMakeMedia = (props: { create: TileCreate }) => (
+  <div class="k2-tile" role="listitem" data-create="" data-open={props.create.href !== undefined || props.create.onClick ? "" : undefined}>
+    <span class="k2-tile-media">
+      <span class="k2-tile-make">
+        <Icon name="plus" />
+      </span>
+    </span>
+    <span class="k2-tile-title" title={props.create.title}>
+      <RowOpen href={props.create.href} onOpen={props.create.onClick}>
+        {props.create.title}
+      </RowOpen>
+    </span>
+    <Show when={props.create.meta}>
+      <span class="k2-tile-line">
+        <span class="k2-tile-meta">{props.create.meta}</span>
+      </span>
+    </Show>
+  </div>
+);
+
 const keyOf = (tile: Tile) => tile.key ?? tile.href ?? tile.title;
 
 /**
@@ -848,6 +869,7 @@ export const Tiles = (props: TilesProps) => (
   >
     <Show when={props.variant === "media"}>
       <For each={props.items}>{(tile) => <TileMedia tile={tile} select={props.select} />}</For>
+      <Show when={props.create}>{(create) => <TileMakeMedia create={create()} />}</Show>
     </Show>
     <Show
       when={props.variant === "card"}
