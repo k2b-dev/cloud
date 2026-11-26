@@ -111,3 +111,36 @@ test("the head names the page in its one h1: the title, else the Nav's current e
   expect(headings(page({ head: deeds }))).toEqual([]);
   expect(page({})).not.toContain('data-slot="head"');
 });
+
+// A password manager reads the server's markup, before the island hydrates: what it may fill in stands there (#4173).
+test("a text field sends autocomplete, length, keyboard, spelling and capitals in the server's markup", () => {
+  const markup = renderToString(() =>
+    createComponent(Input, {
+      label: "Code",
+      name: "code",
+      type: "password",
+      autocomplete: "one-time-code",
+      maxLength: 8,
+      inputMode: "numeric",
+      spellcheck: false,
+      autocapitalize: "off",
+    }),
+  );
+  const input = markup.match(/<input[^>]*>/)?.[0] ?? "";
+  for (const attribute of [
+    'name="code"',
+    'autocomplete="one-time-code"',
+    'maxlength="8"',
+    'inputmode="numeric"',
+    'spellcheck="false"',
+    'autocapitalize="off"',
+  ])
+    expect(input).toContain(attribute);
+  expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", spellcheck: true }))).toContain(
+    'spellcheck="true"',
+  );
+  // without them the field stays as it was: no attribute is guessed
+  expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
+    /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
+  );
+});
