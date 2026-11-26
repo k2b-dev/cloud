@@ -254,10 +254,11 @@ venue's programme, a public form, a share). In Cloud it stands in
 `MinimalLayout ui="v2"`. A head `Bar` with the brand as `RecordHead` (its
 initials on its colour) and the one task as the primary with `keep` and short
 words, so on a phone the brand and the task share one row and nothing floats
-over a row; the status row as one statement with toned chips ("1 fast voll",
-"1 ausgebucht"), never the figures a column repeats. The programme is one
-`Table` grouped by day: the event with when and where, its type as a
-`Chip tag` in its colour, its host as `Avatar` (every event has one, so every
+over a row; the status row names what asks to act as toned chips ("1 fast
+voll", "1 ausgebucht"), and only on a quiet day the day's count, never the
+figures a group head or a column repeats. The programme is one
+`Table` grouped by day: the event with when, where and its type (the title
+keeps the room at 1024), its host as `Avatar` (every event has one, so every
 phone row leads with a mark and the text edge never jumps), the seats taken
 as `Progress` (a value with a limit gets a meter), and the seats: a `Chip`
 with colour, sign and word only for the exceptions (booked out, almost full),
@@ -265,7 +266,7 @@ quiet words for the rest. A page to read has no grips: its columns and its
 side column keep a `fixed` width. On the phone each event is a row of two lines
 with its seats, and a day is a plain group head. A `Pane side` holds the
 visit: free places as a meter, the way in as `Facts`, the rooms with their
-load, and access as a `Notice`. `states` exports kiosk (the same page on a
+load, and access as a `Section` of its own (good news is no notice). `states` exports kiosk (the same page on a
 wall screen: no task, what runs now first, what comes next in the side
 column, "aktualisiert sich jede Minute" in the head), empty and failed.
 

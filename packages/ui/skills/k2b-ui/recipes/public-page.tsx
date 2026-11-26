@@ -168,17 +168,7 @@ const programme = (events: Listed[]) => (
     columns={[
       {
         title: "Veranstaltung",
-        cell: (event) => ({ lines: [event.title, `${event.time} · ${event.room}`] }),
-      },
-      {
-        title: "Art",
-        width: { min: 100, default: 112, fixed: true },
-        drop: true,
-        cell: (event) => (
-          <Chip tag color={kinds[event.kind].color} icon={kinds[event.kind].icon}>
-            {kinds[event.kind].label}
-          </Chip>
-        ),
+        cell: (event) => ({ lines: [event.title, `${event.time} · ${event.room} · ${kinds[event.kind].label}`] }),
       },
       {
         title: "Leitung",
@@ -188,7 +178,7 @@ const programme = (events: Listed[]) => (
       },
       {
         title: "Belegt",
-        width: { min: 172, default: 196, fixed: true },
+        width: { min: 150, default: 160, fixed: true },
         drop: true,
         cell: (event) => (
           <Progress
@@ -242,7 +232,11 @@ export default function VenueProgramme(props: Props) {
             <Bar
               start={
                 <Inline>
-                  <Text weight="strong">{props.kiosk ? "Jetzt: Offene Holzwerkstatt · Werkraum" : `Heute ${events().length}`}</Text>
+                  <Show when={props.kiosk || (almost() === 0 && full() === 0)}>
+                    <Text weight="strong">
+                      {props.kiosk ? "Jetzt: Offene Holzwerkstatt · Werkraum" : `Heute ${events().length} Veranstaltungen`}
+                    </Text>
+                  </Show>
                   <Show when={almost() > 0}>
                     <Chip status="warn" icon="alert-triangle">{`${almost()} fast voll`}</Chip>
                   </Show>
@@ -308,9 +302,9 @@ export default function VenueProgramme(props: Props) {
             </Section>
           </Show>
           <Show when={!props.kiosk}>
-            <Notice tone="note" icon="wheelchair" title="Barrierefrei">
-              Alle Säle sind stufenlos über den Hof erreichbar. Eine Höranlage gibt es im Großen Saal.
-            </Notice>
+            <Section icon="wheelchair" color="#15803d" title="Barrierefrei">
+              <Text>Alle Säle sind stufenlos über den Hof erreichbar. Eine Höranlage gibt es im Großen Saal.</Text>
+            </Section>
           </Show>
         </Pane>
       </Pane.Split>
