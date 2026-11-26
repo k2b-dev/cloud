@@ -2377,6 +2377,36 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
+/* An entry with a quiet second line (the place of a chat, W7 26.11.): the words and what ends the entry on the first
+   line, the second line under the words, each one line cut with "…"; the symbol stands beside the words. */
+.k2-ui .k2-ni[data-meta] {
+  display: grid;
+  /* the symbol and the words; a dot and a count take columns of their own only when they are there */
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-auto-columns: auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 0;
+  height: auto;
+  min-height: var(--k2-h-dense);
+  padding-block: 4px;
+}
+.k2-ui .k2-ni[data-meta] > :not(.k2-ni-meta) {
+  grid-row: 1;
+}
+.k2-ui .k2-ni[data-meta] > .k2-ni-meta {
+  grid-row: 2;
+  grid-column: 2 / -1;
+}
+.k2-ui .k2-ni-meta {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--k2-t-meta);
+  font-weight: 400;
+  color: var(--k2-subtle);
+}
 /* a closed fold that holds the open entry carries its tint, so the open place never hides */
 .k2-ui .k2-ni[aria-current],
 .k2-ui .k2-ni[data-holds-current][aria-expanded="false"] {
@@ -2422,6 +2452,18 @@
 }
 .k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni > .k2-ni-count {
   display: none;
+}
+/* an entry with a second line keeps that line as it is (review of #4293): the room for the "…" comes off its first line
+   only, and its count keeps its column unseen, so the columns of both lines stay */
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni[data-meta] {
+  padding-right: 8px;
+}
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni[data-meta] > .k2-ni-name {
+  margin-inline-end: 24px;
+}
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni[data-meta] > .k2-ni-count {
+  display: block;
+  visibility: hidden;
 }
 @media (hover: none) {
   .k2-ui .k2-ni-row > .k2-btn {

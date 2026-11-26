@@ -31,6 +31,11 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 type NavEntryBase = {
   /** The words of the entry. */
   label: string;
+  /**
+   * A quiet second line under the words, such as the place of a chat: one line, cut with "…", and part of the
+   * entry's name for assistive technology. An entry with it is a little taller.
+   */
+  meta?: string;
   /** A count at the end, such as unread mails: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The open one. */
@@ -126,6 +131,9 @@ const NavEnd = (props: { item: NavItem }) => {
       <Show when={props.item.count !== undefined}>
         <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
       </Show>
+      <Show when={props.item.meta}>
+        <span class="k2-ni-meta">{props.item.meta}</span>
+      </Show>
     </>
   );
 };
@@ -169,6 +177,7 @@ const NavLink = (props: { item: NavItem; level: number }) => (
     onClick={() => props.item.onClick?.()}
     class="k2-ni"
     data-k2-part="Nav.Item"
+    data-meta={props.item.meta ? "" : undefined}
     aria-current={props.item.current ? "page" : undefined}
     data-level={props.level > 1 ? String(props.level) : undefined}
   >
@@ -193,6 +202,7 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
         id={`${id}-fold`}
         class="k2-ni"
         data-k2-part="Nav.Item"
+        data-meta={props.item.meta ? "" : undefined}
         data-fold=""
         aria-expanded={open() ? "true" : "false"}
         aria-controls={open() ? id : undefined}
