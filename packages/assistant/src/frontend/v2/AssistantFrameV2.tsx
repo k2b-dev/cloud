@@ -22,8 +22,8 @@ export type AssistantFrameV2Props = {
   nav: Omit<AssistantNavOptions, "showDetails">;
   /** The chat the page shows, whose deeds stand behind the head's "…"; null on a view or a Project. */
   openChat: Accessor<AiConversation | null>;
-  /** Opens what belongs to the open chat (files, results, sources), "In diesem Chat". */
-  openContext: () => void;
+  /** Opens what belongs to the open chat (files, results, sources) beside it, under the given title. */
+  openContext: (title: string) => void;
   /** Where the page stands after "Gustav": the open chat, Project or view. */
   path: Accessor<readonly { label: string; href?: string }[]>;
   newChat: Accessor<Action>;
@@ -85,8 +85,8 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
         </Canvas>
       </Pane>
       <Show when={props.tabs.open()}>
-        {/* k2b-ui gap: a pane that is no detail stands under the chat on the phone; the tabs there should give way
-            while the chat is in front. */}
+        {/* k2b-ui gap (Z2, gap a): in a Split on the phone only the pane in front should stand; a pane that is no
+            detail still stands under the chat. Take Z2's fix in once it lands; no app CSS here. */}
         <Pane
           label={v2().tabsPane}
           detail={props.tabs.focused()}
@@ -108,7 +108,8 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
         sidebar={<Nav title={t().assistant} icon="moustache" groups={nav.groups()} foot={nav.foot()} />}
         head={
           <Bar
-            start={<Path label={t().assistant} items={path()} />}
+            // Only a path that says more than the sidebar's "Gustav": a chat, a Project or a view.
+            start={props.path().length > 0 ? <Path label={t().assistant} items={path()} /> : undefined}
             end={
               <>
                 {/* k2b-ui gap: the head's search should be a symbol that opens over the head on click or "/" (look
@@ -128,7 +129,7 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
                     <Menu
                       label={v2().chatActions}
                       items={[
-                        { label: v2().inThisChat, icon: "layout-list", onClick: props.openContext },
+                        { label: v2().inThisChat, icon: "layout-list", onClick: () => props.openContext(v2().inThisChat) },
                         "separator",
                         ...nav.chatMenu(chat()),
                       ]}

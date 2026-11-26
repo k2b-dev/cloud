@@ -462,6 +462,38 @@ test("an existing chat still loads at its old address under the name Gustav", as
   expect(html).toContain(chat.title);
 });
 
+test("a chat with stored tabs and no tab in its address opens on the chat: the server draws no detail", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  mockCodeQueries([]);
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(chat));
+  spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
+  spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
+  spies.push(spyOn(ai, "loadAiStreamState").mockResolvedValue({ type: "state", conversation: chat, messages: [], activeTurn: null }));
+  spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+  const tab = { id: "web-1", key: JSON.stringify(["web", "Lieferant", "https://lieferant.example.org/"]), title: "Lieferant" };
+  spies.push(
+    spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({
+      state: { tabs: [tab], layout: null, front: "web-1" },
+      revision: 1,
+    }),
+  );
+  const response = await request("https://cloud.example.test/app/assistant?conversation=chat1");
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  // The page's island, on v2; the stored tab travels with it, and nothing is the open detail before the person opens it.
+  expect(html).toContain('data-file="AssistantWorkspace.island.tsx"');
+  expect(html).toContain("Lieferant");
+  expect(html).not.toMatch(/data-k2-part="Pane"[^>]*data-detail/);
+});
+
 test("the panel starts without selecting an unrelated recent chat and renders no second shell", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
@@ -481,6 +513,10 @@ test("the panel starts without selecting an unrelated recent chat and renders no
   expect(lookup).not.toHaveBeenCalled();
   expect(html).toContain("cloud-panel-page");
   expect(html).not.toContain('id="cloud-shell-data"');
+  // The panel is its own island with v1's frame, and its chat pane keeps the class its container query reads.
+  expect(html).toContain('data-file="AssistantPanel.island.tsx"');
+  expect(html).not.toContain('data-file="AssistantWorkspace.island.tsx"');
+  expect(html).toContain("assistant-chat-pane");
   expect(html).toContain('href="/app/assistant/panel?conversation=chat1"');
   // No head row and no suggestions: "All chats" under the composer opens the application in the host window.
   expect(html).not.toContain("Open full view");

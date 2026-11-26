@@ -1907,18 +1907,26 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
   const [contextHead, setContextHead] = createSignal(true);
   const openContextSheet = () =>
     // The phone sheet loads when it opens.
-    void import("./AssistantChatContextSheet").then(({ openAssistantContextBoxSheet }) =>
-      openAssistantContextBoxSheet({
-        state: contextState,
-        actions: contextBoxActions(),
-        project: activeConversationProject(),
-        wrap: (content) => (
-          <LocaleProvider locale={locale()}>
-            <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
-          </LocaleProvider>
-        ),
-      }),
-    );
+    void import("./AssistantChatContextSheet")
+      .then(({ openAssistantContextBoxSheet }) =>
+        openAssistantContextBoxSheet({
+          state: contextState,
+          actions: contextBoxActions(),
+          project: activeConversationProject(),
+          wrap: (content) => (
+            <LocaleProvider locale={locale()}>
+              <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
+            </LocaleProvider>
+          ),
+        }),
+      )
+      .catch(() =>
+        toast.error(t().partLoadFailed, {
+          title: t().partNotLoaded,
+          duration: 0,
+          action: { label: t().reloadPage, onClick: () => window.location.reload() },
+        }),
+      );
   // The tabs belong to the chat and the person: another chat shows its own tabs.
   createEffect(
     on(
@@ -3702,6 +3710,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     archiveBlocker,
     openContextSheet,
     setContextHead,
+    /** What belongs to the open chat (files, results, sources) as a tab beside it, "In diesem Chat". */
+    openChatContext: (title: string) => openContextOverview("context", title),
   };
 }
 

@@ -80,7 +80,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         openPreferences: () => void openAssistantPrefsModal(),
         onConversationUpdated: w.updateConversation,
       }}
-      openContext={w.openContextSheet}
+      openContext={(title) => w.openChatContext(title)}
       openChat={() => (w.mainView() || w.activeProject() ? null : (w.activeConversation() ?? null))}
       path={headPath}
       newChat={() => ({

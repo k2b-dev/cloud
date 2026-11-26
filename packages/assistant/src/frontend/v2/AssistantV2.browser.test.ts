@@ -15,6 +15,7 @@ import {
   FIXTURE_OPEN_ID,
   FIXTURE_PLACE_CHATS,
   FIXTURE_QUESTIONS,
+  FIXTURE_WORST_MESSAGES,
   fixtureConversations,
   fixtureProjects,
 } from "./assistant-v2.fixture";
@@ -135,7 +136,7 @@ const propsOf = (scene: Scene, url: URL) => {
     initialDetail: open
       ? {
           conversation: open,
-          messages: FIXTURE_MESSAGES.map((entry) => ({ ...entry, conversationId: open.id })),
+          messages: (state === "worst" ? FIXTURE_WORST_MESSAGES : FIXTURE_MESSAGES).map((entry) => ({ ...entry, conversationId: open.id })),
           hasMoreMessages: false,
           activeTurn: null,
           timeline: [],
@@ -464,7 +465,8 @@ describe("Assistant on v2", () => {
         expect(await layoutProblems(page)).toEqual([]);
         expect(await page.getByText("Version 2 von „Lagerliste exportieren“ einschalten").count()).toBe(1);
         expect(await page.getByRole("button", { name: "Chat wiederherstellen" }).count()).toBe(1);
-        // One count of what waits: the sidebar's badge and the page's statement say the same.
+        // One count of what waits: the sidebar's badge and the page's statement say the same, the server's count (5),
+        // although the page's first lists hold fewer questions than that.
         if (view === wide) {
           expect(await page.locator('[data-k2-part="Nav"] a[href="/app/assistant?approvals=1"] .k2-ni-count').textContent()).toBe("5");
           expect(await page.locator('[data-k2-part="StatusRow"]').textContent()).toContain("5 offen");
@@ -559,6 +561,8 @@ describe("Assistant on v2", () => {
       const { context, page, errors } = await open(wide, "/app/assistant", { state });
       try {
         const ready = Math.round(performance.now() - started);
+        // The end of the bounded list: "Weitere Chats …" in the picture.
+        if (state === "huge") await page.getByRole("button", { name: "Weitere Chats …" }).scrollIntoViewIfNeeded();
         await shoot(page, `1440-measure-${state}`);
         const counts = await page.evaluate(() => ({
           all: document.querySelectorAll("*").length,
@@ -579,7 +583,8 @@ describe("Assistant on v2", () => {
     }
   }, 90_000);
 
-  test("on the phone a chat with stored tabs opens on the chat; the server's first picture and the first render agree", async () => {
+  // The stored tab's place under the chat on the phone is Z2's gap (a); its visibility test comes with Z2.
+  test("on the phone a stored tab is no detail on the first picture, and the composer stands in view", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant", { tabs: true });
     try {
       expect(await page.locator('[data-k2-part="Pane"][data-detail]').count()).toBe(0);

@@ -120,7 +120,8 @@ default; `devSourcemap` opts into `"inline"` or `"none"`.
 `transform()` in `src/transform.ts` runs one Babel pass:
 
 - the SSR-only wrapper plugin collects `.island` and `.client` default
-  imports, wraps their JSX usages in `<solid-island>` or `<solid-client>`,
+  imports, wraps their JSX usages by the import's own name (a variable that
+  holds the component is not seen, so its usage renders unwrapped) in `<solid-island>` or `<solid-client>`,
   injects `data-id`, `data-props`, and dev-only `data-file`, keeps SSR
   children for islands, emits empty wrappers for clients, and imports
   `toJSON` from `seroval` as `__seroval_toJSON` and writes

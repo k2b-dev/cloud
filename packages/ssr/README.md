@@ -8,7 +8,9 @@ This library renders Solid components on the server and renders only interactive
 
 It uses file conventions:
 
-- `*.island.tsx`: SSR, then client re-rendered
+- `*.island.tsx`: SSR, then client re-rendered (use the imported island in JSX by its import name; a variable that
+  holds it, such as `const Island = flag ? A : B; <Island />`, renders without its island wrapper and never runs in
+  the browser: write each island out, `flag ? <A {...props} /> : <B {...props} />`)
 - `*.client.tsx`: client-only (no SSR HTML content)
 - `*.tsx`: server-only output
 

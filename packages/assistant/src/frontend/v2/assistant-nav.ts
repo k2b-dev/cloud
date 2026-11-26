@@ -243,7 +243,8 @@ export function createAssistantNav(options: AssistantNavOptions) {
             } satisfies NavItem,
           ]
         : []),
-      { label: t().allChats, icon: "messages", onClick: options.openAllChats },
+      // Every chat is one entry: here while the sidebar holds them all, as "Weitere Chats …" at the list's end when not.
+      ...(options.moreConversations() ? [] : [{ label: t().allChats, icon: "messages", onClick: options.openAllChats }]),
     ];
     const projects: NavGroup = {
       label: t().projects,

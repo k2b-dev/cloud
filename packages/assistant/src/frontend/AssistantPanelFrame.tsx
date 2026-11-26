@@ -64,7 +64,7 @@ export default function AssistantPanelFrame(frame: { w: AssistantWorkspaceParts 
             label={w.artifactCopy().chat}
             scroll={false}
             minSize={360}
-            class="assistant-w.chat-pane flex min-h-0 flex-col"
+            class="assistant-chat-pane flex min-h-0 flex-col"
           >
             <w.MainContent />
           </AppWorkspace.MainPane>

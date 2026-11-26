@@ -104,7 +104,7 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("createAiPastedTextFile(text)");
     expect(workspace).toContain("onShowText:");
     expect(page).toContain('coreSettings.get<string>("app.url")');
-    expect(page).toContain("cloudUrl={publicCloudOrigin(appUrl)}");
+    expect(page).toContain("cloudUrl: publicCloudOrigin(appUrl)");
     // The server counts references in the text with attachments, so every limit check does too.
     expect(workspace).toContain("composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS");
     expect(workspace).not.toMatch(/composerAttachmentsFor\([^)]*\)\.length >= AI_TURN_ATTACHMENT_MAX_ITEMS/);

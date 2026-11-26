@@ -127,10 +127,22 @@ const WORST: AiConversation[] = [
   ...USUAL.slice(5),
 ];
 
+// Real titles, as a month of work produces them: what, for whom, and a number where work has one.
+const HUGE_TOPICS = ["Angebot", "Rechnung", "Aufmaß", "Lieferung", "Rückfrage", "Termin", "Mahnung", "Bestellung", "Protokoll", "Entwurf"];
+const HUGE_FOR = [
+  "Küche Lindqvist",
+  "Bad Oswald",
+  "Treppe Winter",
+  "Praxis Berger",
+  "Hotel Seeblick",
+  "Kita Sonnenhof",
+  "Familie Yilmaz",
+  "Büro Hartwig",
+];
 const HUGE: AiConversation[] = Array.from({ length: 100 }, (_, index) =>
   chat(
     `Hug${String(index).padStart(4, "0")}`,
-    `Chat ${index + 1}: ${["Angebot", "Rechnung", "Termin", "Bestellung", "Notiz"][index % 5]} ${index + 1}`,
+    `${HUGE_TOPICS[index % HUGE_TOPICS.length]} ${HUGE_FOR[(index * 3) % HUGE_FOR.length]}${index % 4 === 0 ? ` 2026-${100 + index}` : ""}`,
     index * 45,
   ),
 );
@@ -184,6 +196,20 @@ export const FIXTURE_MESSAGES: AiStoredMessage[] = [
 ];
 
 export const FIXTURE_OPEN_ID = "Tod003";
+
+/** The worst case's open chat: a long unbroken address, a long compound word, CJK text, emoji and a wide table. */
+export const FIXTURE_WORST_MESSAGES: AiStoredMessage[] = [
+  message(
+    1,
+    "user",
+    "Vergleiche https://lieferant-beispiel.example.org/katalog/2026/arbeitsplatten/granit-schwarz-poliert-30mm?variante=kante-gefast&lager=nord mit dem Angebot.",
+  ),
+  message(
+    2,
+    "assistant",
+    "Donaudampfschifffahrtsgesellschaftskapitänsmützenabzeichenhersteller ist kein Lieferant aus deiner Liste.\n\n日本の取引先への見積書：御見積金額は一二〇万円です。納期は三週間を予定しております。🪚🪵🔨\n\n| Position | Menge | Einzelpreis | Lieferant | Lieferzeit | Bemerkung |\n| --- | --- | --- | --- | --- | --- |\n| Arbeitsplatte Granit schwarz poliert 30 mm | 2 | 740,00 € | Steinwerk Nord | 3 Wochen | Kante gefast, Ausschnitt für Kochfeld |\n| Montage | 6 Std. | 78,00 € | Werkstatt | – | inklusive Anfahrt |",
+  ),
+];
 
 /** Waiting for you: one approval of a mail, a version to switch on, a secret, and two automations that need the person. */
 export const FIXTURE_APPROVAL = {
