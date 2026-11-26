@@ -707,6 +707,11 @@
 .k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
   border-block: 0;
 }
+/* a band that holds only a bar (an action line in the flow of a column) is that bar: the bar keeps its own height, so
+   it stands like every other bar of the column */
+.k2-ui .k2-band:has(> .k2-bar:only-child) {
+  padding-block: 0;
+}
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
 .k2-ui .k2-cells {

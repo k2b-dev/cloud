@@ -164,6 +164,10 @@ const measure = async (view: View, query: string, options: Options = {}) => {
         )
           .filter((element) => !element.form)
           .map((element) => element.outerHTML.slice(0, 80)),
+        // the lines of deeds in the column: an action line (a band with only its bar) and the closing bar
+        actionLines: Array.from(
+          document.querySelectorAll("[data-k2-part=Pane] :is(.k2-band:has(> .k2-bar:only-child), .k2-scroll > .k2-bar)"),
+        ).map((line) => Math.round(line.getBoundingClientRect().height)),
         scrollWidth: document.documentElement.scrollWidth,
         // Controls and words the column cuts off at its edge (it clips, so the page itself never scrolls sideways).
         cut: (() => {
@@ -311,6 +315,8 @@ describe("sign-in page in a browser", () => {
             expect(Math.abs(column.left - (view.width - column.right)), context).toBeLessThanOrEqual(1);
             expect(column.top, context).toBeGreaterThanOrEqual(24);
             tops.add(column.top);
+            // every line of deeds stands as high as a bar, one after the other alike (a band draws its line below the bar)
+            expect(Math.max(...page.actionLines) - Math.min(...page.actionLines), `${context} ${page.actionLines}`).toBeLessThanOrEqual(1);
           } else {
             expect([column.left, column.width], context).toEqual([0, view.width]);
           }
