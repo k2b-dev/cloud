@@ -167,17 +167,6 @@ services:
   # Extras — only started with `--profile extra` or ad-hoc via dev:app
   # ══════════════════════════════════════════════════════════════════
 
-  app-capabilities:
-    <<: *app
-    container_name: app-capabilities
-    profiles: [extra]
-    volumes:
-      - ./packages/cloud/src:/app/packages/cloud/src
-      - ./packages/cloud/scripts:/app/packages/cloud/scripts
-      - ./packages/capabilities/src:/app/packages/capabilities/src
-      - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/capabilities/src/index.ts
-
   app-notebooks:
     <<: *app
     container_name: app-notebooks

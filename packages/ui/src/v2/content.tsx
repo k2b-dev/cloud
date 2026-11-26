@@ -18,7 +18,7 @@ import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
-import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
+import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
 import type { Action, OnNavigate, Person, Status } from "./types";
 
@@ -41,6 +41,7 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /** The words. */
   children: JSX.Element;
 };
 
@@ -77,7 +78,11 @@ export type ProseProps =
       markdown: string;
       children?: never;
     }
-  | { markdown?: never; children: JSX.Element };
+  | {
+      markdown?: never;
+      /** Reading text as elements, when it is not Markdown. */
+      children: JSX.Element;
+    };
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
 export const Prose = (props: ProseProps) => {
@@ -116,7 +121,9 @@ export const Inline = (props: InlineProps) => (
 // ── Facts ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Fact = {
+  /** The quiet label before the value. */
   label: string;
+  /** The value: words, a `Chip` or a link. */
   value: JSX.Element;
   /** A quiet word under the value, such as "Standard". */
   hint?: string;
@@ -130,11 +137,20 @@ export type Fact = {
 };
 
 export type FactsProps = {
+  /** The labels with their values, in their order. */
   items: readonly Fact[];
   /** All facts on one line, labels quiet before their values. */
   inline?: boolean;
   /** At the end of the inline line, such as "Print". */
   end?: JSX.Element;
+  /**
+   * The values are on their way: a quiet bar lies on each, while labels, hints and copy buttons (not yet usable) stay.
+   * A value that is there (a refresh) keeps its exact room unseen under the bar, its lines, chips and wrapping; a value
+   * not there yet (`""`, `undefined`) is a bar of one line. So nothing moves when they come. Assistive technology
+   * hears "Wird geladen…" at each value. Give the labels the values will have, and `copy` (an empty string is
+   * enough) where a value will have it.
+   */
+  loading?: boolean;
 };
 
 /**
@@ -144,19 +160,24 @@ export type FactsProps = {
 export const Facts = (props: FactsProps) => {
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
-    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined}>
+    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined} aria-busy={props.loading ? "true" : undefined}>
       <For each={props.items}>
         {(item) => (
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
               <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
-                {item.value}
+                <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
+                  {item.value}
+                </Show>
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
                 </Show>
               </span>
-              <Show when={!props.inline && item.copy}>{(value) => <CopyButton label={item.label} value={value()} />}</Show>
+              {/* while the value is on its way its copy button stands, not yet usable, so nothing moves when it comes */}
+              <Show when={!props.inline && (props.loading ? item.copy !== undefined : item.copy)}>
+                <CopyButton label={item.label} value={item.copy ?? ""} disabled={props.loading} />
+              </Show>
             </dd>
           </div>
         )}
@@ -178,7 +199,12 @@ export const Facts = (props: FactsProps) => {
 
 const ListContext = createContext(false);
 
-export type ListProps = { children: JSX.Element; label?: string };
+export type ListProps = {
+  /** The entries, each a `Row`. */
+  children: JSX.Element;
+  /** A name for the list, for assistive technology. */
+  label?: string;
+};
 
 /**
  * Rows that come or go above the place someone works on (a new mail on top) leave that place where it was: the
@@ -434,7 +460,9 @@ export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
 export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
+  /** The head of the column. */
   title: string;
+  /** What a cell shows: one line, or two lines named as such. */
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
@@ -467,7 +495,9 @@ export type OpenTarget =
   | { href?: undefined; onNavigate?: undefined; onOpen: () => void };
 
 type TableBase<T> = {
+  /** The columns, in order; see `Column`. */
   columns: readonly Column<T>[];
+  /** The rows. */
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;

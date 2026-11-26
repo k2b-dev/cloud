@@ -37,7 +37,11 @@ The working surface of an app: one per screen.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
-  and folds back, its words kept, on blur or Escape.
+  and folds back, its words kept, on blur or Escape. A host that offers the
+  page's search in a bar of its own (the Cloud shell's phone bar) marks the
+  v2 scope with `data-k2-host-search`: the folded search then leaves the head
+  to its tabs and the Tab key's order on the phone, and the host focuses the
+  field from its bar (a head with a path opens it over the first row).
 
 ### Pane
 
@@ -71,14 +75,8 @@ grip where a pane has `width`. A `Pane.Split` may stand inside a `Pane`
 under that pane's `Tabs` head, after content that spans both columns (see
 `record.tsx`).
 
-Until v2 has a `Dialog`, a screen "with the dialog open" shows the dialog's
-form as one more `Pane detail` at the end of the split: a head `Bar` with
-its title and a close button, `Band`s of fields, a footer `Bar`. Mark it
-with a `k2b-ui gap` comment. `detail` makes it leave on the phone, where the
-form is its own route. Its confirm button is a default (framed) button: the
-page's one primary stays in the head, and `Workspace primary` must never
-confirm a dialog. When the list beside it is a table, give the dialog pane
-a `width` so the table keeps its columns.
+A short task above the page is a `Dialog` (see "Overlays"), not one more
+pane; `Workspace primary` never confirms a dialog.
 
 ### Bar
 
@@ -105,7 +103,9 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron). Use for the key statements of a record.
+`href` (adds a chevron), `loading` (a bar lies on value and `meta`;
+what is there keeps its room unseen under it, a value not there yet is one
+line; symbol and label stay). Use for the key statements of a record.
 
 ### Tiles
 
@@ -224,7 +224,12 @@ edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
-line with `end` (such as a print button).
+line with `end` (such as a print button). `loading` while the values are on
+their way: labels, hints and copy buttons (not yet usable) stay, and a
+quiet bar lies on each value. A value that is there (a refresh) keeps its
+exact room unseen under the bar (lines, chips, wrapping); a value not there
+yet (`""`) is a bar of one line. Give `copy: ""` where a value will have
+one.
 
 ### Text
 
@@ -289,9 +294,32 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
   `placeholder`.
-- `DateInput`: `value`, `onInput`, `placeholder`.
+- `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
+  writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
+  text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
+  the calendar symbol opens `DatePicker` below the field. A form gets the
+  date key under `name`; text that is no date (also "2026-02-30") marks the
+  field and makes the form invalid. `timeZone` says which day "heute" is
+  ("UTC" by default); give the same zone on the server and in the island.
+- `DatePicker`: one month of days to pick from (a calendar grid: arrows,
+  PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
+  the week; six weeks, so its height never changes). `value`, `onPick`,
+  `min`, `max`, `timeZone` (which day is today), `label`, `error`,
+  `onClear` ("Leeren"), `autoFocus`; `time` adds the ui-sdk time input: hour
+  and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
+  in American English; typing, arrows, Backspace; never the browser's time
+  field), applied
+  with "Übernehmen". Use it inside a popover or sheet; a form field is
+  `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
@@ -364,7 +392,22 @@ lines instead of cutting a thing.
   ids give way first (always on the phone), then the name is cut with "…";
   the head's actions keep their place.
 
-## Overlays: Menu, Popover, Toast
+## Overlays: Dialog, Menu, Popover, Toast
+
+- `Dialog`: `title`, `open` and `onOpenChange` (the screen keeps the open
+  state), `foot` (the buttons, the main one last: the dialog's own one
+  primary), children (fields, a notice, text; they scroll). 480 px in the
+  middle; below 768 px a sheet from the bottom that a swipe down closes.
+  The first field takes the focus (on the sheet the first control that is
+  no text field), else the first action of the foot; focus stays inside,
+  Escape and the close button close it, focus returns to what opened it.
+  `dismissible={false}`: a press outside, a swipe and the back gesture do
+  not close it; Escape, the close button and the foot still do.
+- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
+  `true` when the person agrees. An alert dialog without a close button,
+  never a sheet; focus starts on the other button, Escape answers no, a
+  press outside does nothing. Call it from a menu entry with `void`, so the
+  menu closes while it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the
@@ -387,40 +430,9 @@ lines instead of cutting a thing.
   right-click.
 - `Popover`: a panel behind a button: the button's look like `Menu`,
   `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
-  child (a `Button`) after a moment on hover or focus.
-- `useToast()`: call it in the component, then
-  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
-  One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
-  (`bad` is announced at once).
-  A toast reports a deed; it never replaces `Failed` or a `Notice` at the
-  place of a problem.
-
-## Overlays: Menu, Popover, Toast
-
-- `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
-  `variant`, `disabled`; children are the words). Without words it is the
-  quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
-  Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
-  (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
-  first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
-- `Menu.Context`: `items`, and one element as child, such as a `Row`. A
-  right-click or a long press opens the menu at the pointer, Shift+F10 at
-  the element. It adds no wrapper, so a `Row` stays a child of its `List`.
-  Give the same entries to a "…" in the row's `end` for those who do not
-  right-click.
-- `Popover`: a panel behind a button: the button's look like `Menu`,
-  `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
+  and a press outside close it. Like the menu's "…", a button without words
+  stays in a head on the phone; there the panel is a sheet from the bottom,
+  which a swipe down also closes. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.

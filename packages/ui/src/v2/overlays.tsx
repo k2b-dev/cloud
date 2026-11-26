@@ -11,8 +11,11 @@ import { Icon } from "./marks";
 // ── Dialog ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type DialogProps = {
+  /** The heading in the head of the dialog, which also names it for assistive technology. */
   title: string;
+  /** Whether the dialog shows; the screen keeps this state, such as a signal set by the button that opens it. */
   open: boolean;
+  /** Called with `false` when Escape, the close button, a press outside or a swipe closes the dialog. */
   onOpenChange: (open: boolean) => void;
   /** The buttons at the foot, the main one last. */
   foot: JSX.Element;
@@ -34,10 +37,11 @@ const focusable =
 const phoneQuery = "not all and (min-width: 768px)";
 
 /**
- * Whether the window is the v2 phone; false on the server, where a dialog is closed anyway. In the browser it is known
- * from the start, so a dialog on the phone is a sheet from its first render on (and core prepares the sheet early).
+ * Whether the window is the v2 phone; false on the server, where a dialog or panel is closed anyway. In the browser it
+ * is known from the start, so a dialog or a popover's panel on the phone is a sheet from its first render on (and core
+ * prepares the sheet early). Internal: `Dialog` and `Popover`.
  */
-const usePhone = () => {
+export const usePhone = () => {
   const [phone, setPhone] = createSignal(!isServer && matchMedia(phoneQuery).matches);
   onMount(() => {
     const media = matchMedia(phoneQuery);
