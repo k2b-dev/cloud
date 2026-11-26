@@ -5,6 +5,11 @@ import { Icon } from "./marks";
 import { type OverlayMessages, useOverlayMessages } from "./overlay-messages";
 
 export type ToastOptions = {
+  /**
+   * The outcome in one to three words, such as "Nicht kopiert", above the message, which then says what happened or
+   * what to do. Without it the message is the toast's one line and is that short itself.
+   */
+  title?: string;
   /** Takes the deed back: the toast offers "Undo" and runs this when pressed. */
   undo?: () => unknown;
   /** `ok` for a deed that worked, `bad` for one that failed (announced at once). Without it the toast only reports. */
@@ -52,7 +57,7 @@ const openWhileShowing = (region: HTMLElement) => {
 
 /** The toasts of one owner at the bottom in the middle, newest on top, at most three; nothing moves when one comes. */
 const ToastRegion = (props: { parts: ToasterParts; host?: (element: HTMLElement) => void }) => {
-  const { Region, Toast, Title, Action } = props.parts;
+  const { Region, Toast, Title, Description, Action } = props.parts;
   return (
     <Region
       class="k2-toasts"
@@ -68,9 +73,10 @@ const ToastRegion = (props: { parts: ToasterParts; host?: (element: HTMLElement)
       toast={(view) => (
         <Toast id={view().id} class="k2-toast" data-type={view().type}>
           <Show when={statusIcon(view().type)}>{(icon) => <Icon name={icon().name} tone={icon().tone} />}</Show>
-          <Title id={view().id} class="k2-toast-text">
-            {view().title}
-          </Title>
+          <div class="k2-toast-text" data-titled={view().description ? "" : undefined}>
+            <Title id={view().id}>{view().title}</Title>
+            <Show when={view().description}>{(description) => <Description id={view().id}>{description()}</Description>}</Show>
+          </div>
           <Show when={view().actionLabel}>
             {(label) => (
               <Action id={view().id} class="k2-btn" data-variant="text">
@@ -90,7 +96,8 @@ const showOf =
     const undo = options.undo;
     const retry = options.retry;
     return parts.toaster.show({
-      title: message,
+      // a title names the outcome, and the message under it describes it
+      ...(options.title ? { title: options.title, description: message } : { title: message }),
       type: options.status === "bad" ? "error" : options.status === "ok" ? "success" : "default",
       action: retry ? { label: t().retry, onAction: retry } : undo && { label: t().undo, onAction: undo },
     });

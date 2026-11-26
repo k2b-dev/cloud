@@ -143,7 +143,7 @@ export const CodeBlock = (props: CodeBlockProps) => {
     );
     if (done) toast(t().copied, { status: "ok" });
     // a hidden code cannot be selected by hand: the sentence says to show it first
-    else toast(masked() ? t().copyFailedHidden : t().copyFailed, { status: "bad" });
+    else toast(masked() ? t().copyFailedHidden : t().copyFailed, { status: "bad", title: t().notCopied });
   };
   const showAll = () => {
     setAll(true);

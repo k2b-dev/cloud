@@ -193,6 +193,13 @@ for (const width of [1440, 390]) {
       });
       await block(page, "cloud.env").getByRole("button", { name: "Kopieren: cloud.env" }).click();
       await page.getByText("Kopieren hat nicht geklappt; markiere den Code und kopiere ihn mit der Tastatur.").waitFor();
+      // the outcome as the toast's title, the sentence under it
+      expect(
+        await page
+          .locator('[data-slot="toast"] .k2-toast-text[data-titled]')
+          .first()
+          .evaluate((text) => [...text.children].map((part) => part.textContent)),
+      ).toEqual(["Nicht kopiert", "Kopieren hat nicht geklappt; markiere den Code und kopiere ihn mit der Tastatur."]);
       await block(page, "gateway_ed25519").getByRole("button", { name: "Kopieren: gateway_ed25519" }).click();
       await page.getByText("Kopieren hat nicht geklappt; drücke „Zeigen“, markiere den Code und kopiere ihn mit der Tastatur.").waitFor();
     });

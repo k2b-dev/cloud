@@ -438,7 +438,9 @@ lines instead of cutting a thing.
   and a press outside close it. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
-  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
+  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`. A
+  `title` names the outcome in one to three words above a longer message:
+  `toast("Kopieren hat nicht geklappt; …", { title: "Nicht kopiert", status: "bad" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
   `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
   (`bad` is announced at once).

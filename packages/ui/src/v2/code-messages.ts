@@ -7,6 +7,7 @@ const codeMessages = i18n.define({
   messages: {
     en: {
       copied: "Copied",
+      notCopied: "Not copied",
       copyFailed: "Copying did not work; select the code and copy it with your keyboard.",
       copyFailedHidden: "Copying did not work; press “Show”, then select the code and copy it with your keyboard.",
       show: "Show",
@@ -16,6 +17,7 @@ const codeMessages = i18n.define({
     },
     de: {
       copied: "Kopiert",
+      notCopied: "Nicht kopiert",
       copyFailed: "Kopieren hat nicht geklappt; markiere den Code und kopiere ihn mit der Tastatur.",
       copyFailedHidden: "Kopieren hat nicht geklappt; drücke „Zeigen“, markiere den Code und kopiere ihn mit der Tastatur.",
       show: "Zeigen",

@@ -3480,6 +3480,10 @@
   padding-block: 12px;
   overflow-wrap: anywhere;
 }
+/* a toast with a title: the outcome in 600, the sentence under it */
+.k2-ui .k2-toast-text[data-titled] > :first-child {
+  font-weight: 600;
+}
 .k2-ui .k2-toast > .k2-icon {
   flex: none;
   color: var(--k2-surface);
