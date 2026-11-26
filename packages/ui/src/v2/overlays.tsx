@@ -167,6 +167,8 @@ export type ConfirmOptions = {
   confirm: string;
   /** The words of the other button; "Abbrechen" by default. */
   cancel?: string;
+  /** Agreeing destroys something (deletes, revokes, removes a device): the agreeing button is red. */
+  danger?: boolean;
 };
 
 /**
@@ -253,7 +255,13 @@ const ConfirmSurface = (props: { question: Question<ConfirmOptions> }) => {
             <parts.Close class="k2-btn" data-k2-part="Button">
               <span class="k2-btn-label">{parts.payload()?.cancel ?? t().cancel}</span>
             </parts.Close>
-            <parts.Close class="k2-btn" data-k2-part="Button" data-variant="primary" value="confirm">
+            <parts.Close
+              class="k2-btn"
+              data-k2-part="Button"
+              data-variant="primary"
+              data-danger={parts.payload()?.danger ? "" : undefined}
+              value="confirm"
+            >
               <span class="k2-btn-label">{parts.payload()?.confirm}</span>
             </parts.Close>
           </div>

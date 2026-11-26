@@ -11,6 +11,8 @@ declare global {
   interface Window {
     __k2Drop?: (which: 1 | 2) => void;
     __k2Ask?: () => void;
+    /** Asks a dangerous question ("Gerät entfernen?") from the page. */
+    __k2AskDanger?: () => void;
     __k2Shorten?: () => void;
   }
 }
@@ -19,6 +21,10 @@ export function Demo() {
   const [first, setFirst] = createSignal(true);
   const [second, setSecond] = createSignal(document.documentElement.dataset.two !== undefined);
   window.__k2Drop = (which) => (which === 1 ? setFirst : setSecond)(false);
+  window.__k2AskDanger = () =>
+    void Dialog.confirm({ title: "Gerät entfernen?", confirm: "Entfernen", danger: true }).then((answer) => {
+      document.body.dataset.answer = String(answer);
+    });
   window.__k2Ask = () =>
     void Dialog.confirm({ title: "Weiter?", confirm: "Ja" }).then((answer) => {
       document.body.dataset.answer = String(answer);

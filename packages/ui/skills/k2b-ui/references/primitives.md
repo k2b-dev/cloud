@@ -391,11 +391,13 @@ lines instead of cutting a thing.
   Escape and the close button close it, focus returns to what opened it.
   `dismissible={false}`: a press outside, a swipe and the back gesture do
   not close it; Escape, the close button and the foot still do.
-- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
-  `true` when the person agrees. An alert dialog without a close button,
-  never a sheet; focus starts on the other button, Escape answers no, a
-  press outside does nothing. Call it from a menu entry with `void`, so the
-  menu closes while it asks.
+- `Dialog.confirm({ title, confirm, description?, cancel?, danger? })`:
+  resolves `true` when the person agrees. An alert dialog without a close
+  button, never a sheet; focus starts on the other button, Escape answers
+  no, a press outside does nothing. `danger` makes the agreeing button red:
+  use it for every deed that destroys (delete, revoke, remove a member or a
+  device). Call it from a menu entry with `void`, so the menu closes while
+  it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the

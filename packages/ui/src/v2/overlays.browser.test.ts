@@ -360,6 +360,24 @@ const answerOf = async (page: Page, from: "page" | "island") => {
   return page.evaluate((which) => document.body.dataset[which === "page" ? "answer" : "other"], from);
 };
 
+test("Dialog.confirm with danger: the agreeing button is red with white words, the other keeps the focus", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2AskDanger?.());
+    const dialog = page.getByRole("alertdialog", { name: "Gerät entfernen?" });
+    await dialog.waitFor();
+    await settled(page);
+    const agree = dialog.getByRole("button", { name: "Entfernen" });
+    expect(await agree.getAttribute("data-danger")).toBe("");
+    const [fill, words] = await agree.evaluate((button) => [getComputedStyle(button).backgroundColor, getComputedStyle(button).color]);
+    expect(fill).toBe("rgb(185, 28, 28)");
+    expect(words).toBe("rgb(255, 255, 255)");
+    // the focus starts on the other button, as for every question: Enter alone never destroys
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Abbrechen");
+    await page.keyboard.press("Escape");
+    expect(await answerOf(page, "page")).toBe("false");
+  });
+});
+
 test("Dialog.confirm with two Workspaces: the first answers, the other takes over, without one it brings its own", async () => {
   await withPage(
     async (page) => {
