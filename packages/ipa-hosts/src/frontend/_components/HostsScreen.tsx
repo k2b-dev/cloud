@@ -377,6 +377,7 @@ export default function HostsScreen(props: HostsScreenProps) {
               </Button>
               <Button
                 icon="pencil"
+                keep
                 onClick={() => (setFailure(null), setGroupDraft({ cn: group.cn, name: group.cn, description: group.description ?? "" }))}
               >
                 {t().edit}
@@ -423,6 +424,7 @@ export default function HostsScreen(props: HostsScreenProps) {
                 </Button>
                 <Button
                   icon="pencil"
+                  keep
                   onClick={() => {
                     setFailure(null);
                     setMacErrors([]);
