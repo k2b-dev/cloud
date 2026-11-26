@@ -63,9 +63,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 - The frame (`Workspace`, `Pane`, `Pane.Split`, `Nav`, heads, `Bar`) is server
   markup. One frame entry per page brings what it needs in the browser:
   `attachWorkspaces()` binds the drawer of the sidebar, its collapse
-  (`collapsible`, Mod+Alt+S), the grips and the folds of the `Nav`, and answers
-  `Dialog.confirm` and `useToast`; the drawer, the alert dialog and the toaster
-  load on their first use. A command of the page, such as "Hide navigation"
+  (`collapsible`, Mod+Alt+S), the grips of its seams and tables and the folds
+  of the `Nav`, and answers `Dialog.confirm` and `useToast`; the drawer, the
+  alert dialog and the toaster load on their first use, a grip when the
+  pointer or the focus reaches it. A `Table` with column widths stands inside
+  the Workspace, or its column grips do nothing. A command of the page, such as "Hide navigation"
   in a search, calls `toggleWorkspaceSidebar()`: it does what the button and
   Mod+Alt+S do. A Cloud page with `ui: "v2"` has it. A standalone
   app renders one `.client.tsx` on the page:

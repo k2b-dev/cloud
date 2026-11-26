@@ -370,27 +370,28 @@ const attach = (element: HTMLElement, options: AttachOptions, rendered: boolean)
   // still holds or the grip still has the focus; a load that fails on a press or a key says so, with "Retry".
   const bindGrip = (grip: HTMLElement) => {
     let handle: GripHandle | undefined;
-    let pressed = false;
+    // the press that still holds; a press that was let go before the load is not run, nor one a later press replaced
+    let held: PointerEvent | undefined;
     const bind = (parts: Live) => (handle ??= parts.bindGrip(grip));
     const ahead = () => void load().then(bind, () => {});
     listen(grip, "pointerenter", ahead);
     listen(grip, "focus", ahead);
     listen(grip, "pointerdown", (event) => {
       if (handle || !(event instanceof PointerEvent) || event.button !== 0 || !event.isPrimary) return;
-      // no text selection while it loads
+      // no text selection while it loads; the grip keeps the pointer, so its release comes here wherever it happens
       event.preventDefault();
-      pressed = true;
-      const release = () => {
-        pressed = false;
-      };
-      window.addEventListener("pointerup", release, { once: true });
-      window.addEventListener("pointercancel", release, { once: true });
+      held = event;
+      grip.setPointerCapture?.(event.pointerId);
       void withLive(bind)
         .then((live) => {
-          if (pressed) live?.press(event);
+          if (held === event) live?.press(event);
         })
         .catch(() => {});
     });
+    const release = (event: Event) => {
+      if (event instanceof PointerEvent && event.pointerId === held?.pointerId) held = undefined;
+    };
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) listen(grip, type, release);
     listen(grip, "keydown", (event) => {
       if (handle || !(event instanceof KeyboardEvent) || event.altKey || event.ctrlKey || event.metaKey) return;
       if (!["ArrowLeft", "ArrowRight", "Home", "End", "Enter"].includes(event.key)) return;

@@ -66,9 +66,12 @@ descendant.
 A v2 `Workspace` renders on the server as plain markup: its frame, columns,
 heads and bars load no script. On a `Layout ui="v2"` page, Cloud adds one
 frame entry that attaches every Workspace outside an island: the sidebar's
-drawer and its collapse, the grips, the folds of the `Nav`, `Dialog.confirm`
-and `useToast`. The drawer, the alert dialog and the toaster load on their
-first use. A Workspace with `collapsible` keeps a hidden sidebar in the app's
+drawer and its collapse, the grips of its seams and of its tables' columns,
+the folds of the `Nav`, `Dialog.confirm` and `useToast`. The drawer, the alert
+dialog and the toaster load on their first use; a grip loads its behavior when
+the pointer or the focus reaches it, and a press or a key before that takes
+effect once it has loaded. Only a Workspace wakes a server-rendered `Table`'s
+column grips: render a `Table` with column widths inside one. A Workspace with `collapsible` keeps a hidden sidebar in the app's
 workspace cookie, so the next page renders it hidden from the server. Make
 only the parts with browser behavior islands, such as a table whose rows open
 on a press or a sidebar entry with `onClick`; a Workspace inside an island

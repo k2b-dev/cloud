@@ -192,6 +192,9 @@ export const Workspace = (props: WorkspaceProps) => {
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
       : (props.detailEmpty ?? { icon: "click", text: t().nothingSelected });
+  // The columns are made here, before the workspace's own element: they register their widths as they are made, and the
+  // server writes the element's attributes (its room) before it renders what stands inside it.
+  const body = resolveChildren(() => <ColumnsContext.Provider value={{ register, empty }}>{props.children}</ColumnsContext.Provider>);
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.
@@ -298,7 +301,7 @@ export const Workspace = (props: WorkspaceProps) => {
             {head()}
           </div>
         </Show>
-        <ColumnsContext.Provider value={{ register, empty }}>{props.children}</ColumnsContext.Provider>
+        {body()}
       </div>
       <Show when={sidebar()}>
         <style>{drawerRule()}</style>
