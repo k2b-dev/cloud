@@ -2,6 +2,7 @@ import { Link } from "@k2b/ssr/nav";
 import {
   createContext,
   createMemo,
+  createSignal,
   createUniqueId,
   For,
   type JSX,
@@ -14,10 +15,11 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
+import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, custom, Dot, Icon } from "./marks";
+import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
 import type { Action, OnNavigate, Person, Status } from "./types";
@@ -290,10 +292,13 @@ export type RowProps = {
   lines: RowLines;
   /** A quiet note after the title, such as a count or an address. */
   meta?: JSX.Element;
-  /** The lead: a symbol in the colour of its area … */
+  /** The lead: a quiet symbol for what the row is … */
   icon?: string;
-  /** … the data colour of that symbol … */
-  color?: string;
+  /**
+   * … the mark of the thing the row stands for (a base, a file with its thumbnail, a table): its symbol on a tint of
+   * its colour, or its picture; 24 px in a row of one line, 32 px in a row of two or three …
+   */
+  mark?: MarkProps;
   /** … or a person. */
   avatar?: Person;
   /** Unread: a dot leads and the first two lines turn 600. */
@@ -305,7 +310,8 @@ export type RowProps = {
   /**
    * The row stands in a selection, such as "10 ausgewählt" (pair it with `StatusRow selection`): a box in the lead,
    * named by the title, and the blue tint while `selected`, as `Table select` draws it. The box takes the place of the
-   * lead's symbol, person or dot. Open and selected combine: a selected row stays blue, and stays the open one.
+   * lead's symbol, person or dot; a `mark` stays beside it, so a file keeps its thumbnail. Open and selected combine: a
+   * selected row stays blue, and stays the open one.
    */
   select?: { selected: boolean; onChange: (selected: boolean) => void };
   /** "You are next", in the blue tint. */
@@ -314,6 +320,12 @@ export type RowProps = {
   time?: JSX.Element;
   /** Bottom right on the third line: chips, icons, people. */
   marks?: JSX.Element;
+  /**
+   * States that belong to the entry and must be read whole, such as the checks of a domain: `Chip`s with colour,
+   * symbol and word under the row's lines, on the text edge of its title. They wrap to further lines instead of being
+   * cut, on the phone too; the row grows only when they are there (40, 52 and 72 px stay as they are without them).
+   */
+  states?: JSX.Element;
   /** The one deed of this entry, a framed button at the end; on the phone it moves under the text. */
   action?: Action;
   /** At the end: a few icon buttons, such as "Reply" and "More". */
@@ -357,6 +369,7 @@ export const Row = (props: RowProps) => {
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
+  const states = resolveChildren(() => props.states);
   const title = createUniqueId();
   return (
     <div
@@ -373,9 +386,10 @@ export const Row = (props: RowProps) => {
       data-yours={props.yours ? "" : undefined}
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
+      data-mark={props.mark && !props.avatar ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
-      style={custom({ "--k2-c": props.color })}
+      data-states={states() !== undefined ? "" : undefined}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}
@@ -395,7 +409,9 @@ export const Row = (props: RowProps) => {
           />
         </Show>
       </Show>
-      <span class="k2-row-lead">
+      {/* in a selection with a mark the lead holds both, the box before the mark (a mark the stylesheet cannot ask for
+          through an island's wrapper) */}
+      <span class="k2-row-lead" data-pair={props.select && props.mark ? "" : undefined}>
         <Show
           when={props.select}
           fallback={
@@ -403,14 +419,21 @@ export const Row = (props: RowProps) => {
               when={props.avatar}
               fallback={
                 <Show
-                  when={props.icon}
+                  when={props.mark}
                   fallback={
-                    <Show when={props.unread}>
-                      <Dot status="ok" />
+                    <Show
+                      when={props.icon}
+                      fallback={
+                        <Show when={props.unread}>
+                          <Dot status="ok" />
+                        </Show>
+                      }
+                    >
+                      {(name) => <Icon name={name()} />}
                     </Show>
                   }
                 >
-                  {(name) => <Icon name={name()} />}
+                  {(mark) => <Mark {...mark()} />}
                 </Show>
               }
             >
@@ -418,7 +441,13 @@ export const Row = (props: RowProps) => {
             </Show>
           }
         >
-          {(select) => <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />}
+          {(select) => (
+            <>
+              <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />
+              {/* a thing's mark stays beside the box (a file keeps its thumbnail); a symbol, person or dot gives way */}
+              <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
+            </>
+          )}
         </Show>
       </span>
       <span class="k2-row-l1">
@@ -447,6 +476,9 @@ export const Row = (props: RowProps) => {
       <Show when={marks() !== undefined}>
         <span class="k2-row-marks">{marks()}</span>
       </Show>
+      <Show when={states() !== undefined}>
+        <span class="k2-row-states">{states()}</span>
+      </Show>
     </div>
   );
 };
@@ -466,6 +498,10 @@ export type Column<T> = {
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
+  /** The cell leads with the thing's mark: a file's thumbnail or type, a base's symbol (24 px, rule: each thing its mark). */
+  mark?: (row: T) => MarkProps;
+  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. */
+  avatar?: (row: T) => Person;
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.
@@ -511,7 +547,14 @@ type TableBase<T> = {
    * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
    * the second line, such as the state of the entry as a chip.
    */
-  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element; marks?: JSX.Element };
+  phone?: (row: T) => {
+    lines: readonly [JSX.Element, JSX.Element];
+    avatar?: Person;
+    /** The thing's mark (a file's thumbnail, a base's symbol), as `Row mark`. */
+    mark?: MarkProps;
+    time?: JSX.Element;
+    marks?: JSX.Element;
+  };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
    * come; `rows` (3 when not set) and `lines` (1 or 2) say how many and how high.
@@ -550,6 +593,35 @@ export type TableProps<T> = TableBase<T> & (KeyedTable<T> | PlainTable);
 const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
   <Show when={props.sorted}>{(sorted) => <Icon name={sorted() === "descending" ? "arrow-down" : "arrow-up"} />}</Show>
 );
+
+/**
+ * The grip at the start of a column head: it moves the width of the column before it (`useGrip`). A column is at
+ * most as wide as the table's visible width; the table scrolls sideways when its columns need more.
+ */
+const ColumnGrip = (props: { label: string; width: { min: number; default: number }; value: number; onChange: (px: number) => void }) => {
+  const grip = useGrip({
+    label: () => props.label,
+    value: () => props.value,
+    onChange: (px) => props.onChange(px),
+    min: () => props.width.min,
+    reset: () => props.width.default,
+    direction: () => 1,
+    measure: (element) => {
+      const head = element.parentElement?.previousElementSibling;
+      const scroller = element.closest(".k2-table-scroll");
+      const now = head?.getBoundingClientRect().width;
+      if (!now || !scroller) return undefined;
+      return { now, max: scroller.clientWidth };
+    },
+    // the table's visible width and every column head
+    observe: (element) => {
+      const scroller = element.closest(".k2-table-scroll");
+      const heads = element.parentElement?.parentElement?.children ?? [];
+      return scroller ? [scroller, ...heads] : [...heads];
+    },
+  });
+  return <span class="k2-cgrip" {...grip} />;
+};
 
 /** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
 const isPair = (value: CellValue): value is CellLines =>
@@ -622,11 +694,28 @@ export const Table = <T,>(props: TableProps<T>) => {
     select.onChange(on ? [...select.selected, rowKey] : select.selected.filter((selectedKey) => selectedKey !== rowKey));
   };
   const span = () => props.columns.length + (props.select ? 1 : 0);
+  // The widths the grips gave columns, by index; a column keeps its default until then.
+  const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
+  const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
+  const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
 
-  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
+  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget, row?: T) => {
+    const lines = cellLines(column, value, target);
+    // a cell that leads with the thing's mark or a person: the lead beside its lines, the lines cut as before
+    const mark = row !== undefined ? column.mark?.(row) : undefined;
+    const person = row !== undefined ? column.avatar?.(row) : undefined;
+    if (!mark && !person) return lines;
+    return (
+      <span class="k2-cell-lead">
+        {mark ? <Mark {...mark} /> : person ? <Avatar {...person} decorative /> : null}
+        <span class="k2-cell-lines">{lines}</span>
+      </span>
+    );
+  };
+  const cellLines = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
@@ -663,6 +752,8 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
+          // a column that leads with the thing's mark makes every row 44 px with a mark of 32, as the mockup's lists
+          data-marks={props.columns.some((column) => column.mark) ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
         >
@@ -673,13 +764,7 @@ export const Table = <T,>(props: TableProps<T>) => {
               </Show>
               {/* every column is its default wide; in a small table the last one takes the rest of the row */}
               <For each={props.columns}>
-                {(column, index) => (
-                  <col
-                    style={
-                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
-                    }
-                  />
-                )}
+                {(column, index) => <col style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined} />}
               </For>
             </colgroup>
           </Show>
@@ -703,15 +788,14 @@ export const Table = <T,>(props: TableProps<T>) => {
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
                     <Show when={index() > 0 && props.columns[index() - 1]?.width}>
-                      <span
-                        class="k2-cgrip"
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={props.columns[index() - 1]!.title}
-                        aria-valuemin={props.columns[index() - 1]!.width!.min}
-                        aria-valuenow={props.columns[index() - 1]!.width!.default}
-                        tabindex="0"
-                      />
+                      {(width) => (
+                        <ColumnGrip
+                          label={props.columns[index() - 1]?.title ?? ""}
+                          width={width()}
+                          value={columnWidth(index() - 1) ?? width().default}
+                          onChange={(px) => setSizes((sizes) => ({ ...sizes, [index() - 1]: px }))}
+                        />
+                      )}
                     </Show>
                     <Show
                       when={column.sort}
@@ -820,7 +904,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                               data-sticky={firstSticky(columnIndex())}
                               style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                             >
-                              {cell(column, values()[item.index]![columnIndex()]!, columnIndex() === 0 ? target : undefined)}
+                              {cell(column, values()[item.index]![columnIndex()]!, columnIndex() === 0 ? target : undefined, item.row)}
                             </td>
                           )}
                         </For>
@@ -858,6 +942,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                           <Row
                             lines={form.lines}
                             avatar={form.avatar}
+                            mark={form.mark}
                             time={form.time}
                             marks={form.marks}
                             strong

@@ -10,9 +10,12 @@
  *   enforce this.
  */
 
+// The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
+export { useLocale } from "../intl/locale";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
+  type ActivityEntry,
   Digest,
   type DigestEntry,
   type DigestProps,
@@ -73,6 +76,8 @@ export {
   Select,
   type SelectOption,
   type SelectProps,
+  Setting,
+  type SettingProps,
 } from "./controls";
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";
@@ -92,13 +97,31 @@ export {
   Pane,
   type PaneProps,
   type Tile,
+  type TileCreate,
+  type TileStat,
   Tiles,
   type TilesProps,
   Workspace,
   type WorkspaceProps,
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
-export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
+export {
+  Avatar,
+  type AvatarProps,
+  type AvatarStackProps,
+  Chip,
+  type ChipProps,
+  Icon,
+  type IconProps,
+  Mark,
+  type MarkProps,
+  Preview,
+  type PreviewProps,
+  Progress,
+  type ProgressProps,
+  Spark,
+  type SparkProps,
+} from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
 // The overlays: v2 shapes on the behaviour layer.
