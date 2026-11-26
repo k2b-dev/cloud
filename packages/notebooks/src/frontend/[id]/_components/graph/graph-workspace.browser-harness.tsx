@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
-import { notesContext, sampleNotes } from "../../notes/notes-list.fixture";
+import { notesContext } from "../../notes/notes-list.fixture";
 import { bigGraph, crossAreaGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
 import NotebookGraphWorkspace from "./NotebookGraphWorkspace.island";
 import { parseGraphViewState } from "./view-state";
@@ -22,8 +22,23 @@ const mount = () => {
   const notebook = match ? NOTEBOOKS[match[1]!] : undefined;
   if (!root || !match || !notebook) return;
   const params = new URLSearchParams(location.search);
-  const graph = notebook.graph();
-  const base = notesContext(sampleNotes(4));
+  // `?scope=1`: a large notebook whose graph holds the pages around one page
+  const graph =
+    params.get("scope") === "1" ? { ...notebook.graph(), scope: { around: notebook.current ?? "", total: 20_000 } } : notebook.graph();
+  // the sidebar lists this notebook's top-level pages
+  const base = notesContext(
+    graph.nodes
+      .filter((node) => node.parentId === null)
+      .map((node) => ({
+        shortId: node.id,
+        title: node.title,
+        preview: null,
+        tags: [],
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
+        lockedAt: null,
+      })),
+  );
   const ctx = { ...base, notebook: { ...base.notebook, id: match[1]!, name: notebook.name } };
   const locale = params.get("lang") === "de" ? "de" : "en";
   document.documentElement.lang = locale;

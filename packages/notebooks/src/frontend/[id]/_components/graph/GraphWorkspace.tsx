@@ -120,16 +120,10 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
     <Workspace
       sidebar={props.shell.sidebar}
       head={
+        // the title only: the notebook stands in the sidebar and the note the graph started from is ringed in it, and a
+        // second line of words would push close off a phone's head
         <Bar
-          start={
-            <>
-              <Text weight="strong">{t().graphTitle}</Text>
-              <Text muted>
-                {props.notebookName}
-                <Show when={g.current()}>{(note) => ` · ${t().graphFrom({ title: note().title || t().untitled })}`}</Show>
-              </Text>
-            </>
-          }
+          start={<Text weight="strong">{t().graphTitle}</Text>}
           end={
             <>
               <Show when={g.model.notes.length > 0}>
@@ -276,11 +270,11 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
               <For each={g.model.notes}>
                 {(note) => (
                   <Row
-                    icon="point-filled"
-                    // the note's area, as the graph colours it
+                    icon="file-text"
+                    // the note in its area's colour, as the graph draws it; the area's name only where there are several
                     color={`var(--notebook-graph-area-${note.area.slot})`}
                     lines={[note.title || t().untitled]}
-                    meta={g.areaName(note.area)}
+                    meta={g.model.areas.filter((area) => area.count > 0).length > 1 ? g.areaName(note.area) : undefined}
                     strong={!!g.query().trim() && matchesQuery(note, g.query())}
                     href={g.noteHref(note.id)}
                   />

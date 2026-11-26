@@ -890,9 +890,9 @@ test.each(["note02", "other1"])(
     expect(props.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note01");
     expect(props.view).toMatchObject({ display: "neighborhood", depth: 2, sort: null });
     expect(props.timeZone).toBe("UTC");
-    // the head names where the graph was opened from
-    const [head] = await select(html, '[data-k2-workspace] [data-k2-part="Bar"]');
-    expect(head?.text).toContain(`von „${queryNote === "note02" ? "Team notes" : "Private folder"}“`);
+    // Close leads back to the note the graph was opened from
+    const [close] = await select(html, 'a[aria-label="Graph schließen"]');
+    expect(close?.attributes.href).toContain(`/notes/${queryNote === "note02" ? "note02" : "note01"}`);
     expect(html).not.toContain("Foreign note");
   },
 );
