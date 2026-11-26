@@ -9,7 +9,8 @@ import { measureV2Layout } from "./testing";
 
 // Ticks (test/v2-ticks.client.tsx, the sources of a monitoring app): one tick per time slot, ok in the soft colour of
 // the app, a failure red and taller, an empty slot nothing. 140 × 20 px in a table cell, the width of its place with
-// `stretch`; a failure keeps 3:1 against the page in light and dark, and stays apart in forced colors.
+// `stretch`; ok stands 2:1 and a failure 3:1 apart from the page in light and dark; a slot without data is a low stub; more
+// slots than a cell holds stay in it; in forced colors a failure stays apart.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -24,7 +25,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (options: { width: number; dark?: boolean; forced?: boolean }, run: (page: Page) => Promise<void>) => {
+const withPage = async (
+  options: { width: number; dark?: boolean; forced?: boolean; many?: boolean },
+  run: (page: Page) => Promise<void>,
+) => {
   const page = await browser.newPage({ viewport: { width: options.width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -33,6 +37,7 @@ const withPage = async (options: { width: number; dark?: boolean; forced?: boole
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${options.dark ? ' data-theme="dark"' : ""}><div id="root"></div></body></html>`,
     );
+    if (options.many) await page.evaluate(() => Object.assign(window, { __k2Many: true }));
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -46,11 +51,11 @@ const withPage = async (options: { width: number; dark?: boolean; forced?: boole
 /** The ticks of the first table row and of the detail: their box, and the height and colour of each slot by state. */
 const read = (page: Page) =>
   page.evaluate(() => {
-    const rgb = (color: string) =>
-      color
-        .match(/[\d.]+/g)!
-        .slice(0, 4)
-        .map(Number);
+    // rgb(0–255) from a plain colour, color(srgb 0–1) from a color-mix()
+    const rgb = (color: string) => {
+      const values = color.match(/[\d.]+/g)!.map(Number);
+      return color.startsWith("color(srgb") ? [...values.slice(0, 3).map((value) => value * 255), values[3] ?? 1] : values.slice(0, 4);
+    };
     const luminance = (color: string) => {
       const [r, g, b] = rgb(color).map((channel) => {
         const c = channel / 255;
@@ -73,6 +78,7 @@ const read = (page: Page) =>
         return {
           height: tick.getBoundingClientRect().height,
           color: style.backgroundColor,
+          luminance: luminance(style.backgroundColor),
           drawn: style.backgroundColor !== "rgba(0, 0, 0, 0)" && alpha !== 0,
           contrast: Math.round(contrast(style.backgroundColor, page) * 10) / 10,
         };
@@ -88,13 +94,19 @@ const read = (page: Page) =>
         none: slot("none"),
       };
     };
-    const [row, , , , detail] = [...document.querySelectorAll(".k2-ticks")];
-    const failing = document.querySelectorAll(".k2-ticks")[1]!;
-    return { row: of(row!), failing: of(failing), detail: of(detail!), band: Math.round(detail!.parentElement!.clientWidth) };
+    // prometheus-nord, postgres-haupt (the open row), nginx-zugriffe (new, empty slots first), node-exporter, the detail
+    const [row, failing, fresh, , detail] = [...document.querySelectorAll(".k2-ticks")];
+    return {
+      row: of(row!),
+      failing: of(failing!),
+      fresh: of(fresh!),
+      detail: of(detail!),
+      band: Math.round(detail!.parentElement!.clientWidth),
+    };
   });
 
 for (const dark of [false, true])
-  test(`${dark ? "dark" : "light"}: a tick per slot, ok soft in the app colour, a failure red, taller and 3:1 against the page`, async () => {
+  test(`${dark ? "dark" : "light"}: a tick per slot, ok soft but apart from the page, a failure red, taller and 3:1`, async () => {
     await withPage({ width: 1440, dark }, async (page) => {
       const { row, failing } = await read(page);
       expect({ width: row.width, height: row.height, role: row.role, slots: row.slots }).toEqual({
@@ -103,8 +115,9 @@ for (const dark of [false, true])
         role: "img",
         slots: 30,
       });
-      expect(row.label).toBe("prometheus-nord: 30 Abrufe, alle erfolgreich");
-      expect(failing.ok!.drawn).toBe(true);
+      expect(row.label).toBe("prometheus-nord, letzte 30 Minuten: alle 30 Abrufe erfolgreich");
+      // ok is soft, yet stands about 2:1 apart from the page in light (45 %) and dark (62 %) alike
+      expect(row.ok!.contrast).toBeGreaterThanOrEqual(1.9);
       expect(failing.bad!.drawn).toBe(true);
       expect(failing.bad!.color).not.toBe(failing.ok!.color);
       expect(failing.bad!.height).toBeGreaterThan(failing.ok!.height);
@@ -113,24 +126,40 @@ for (const dark of [false, true])
     });
   });
 
-test("an empty slot draws nothing and keeps its place; a new source starts with empty slots", async () => {
+test("in the open row ok stands a little darker than in the other rows", async () => {
   await withPage({ width: 1440 }, async (page) => {
+    const { row, failing } = await read(page);
+    expect(failing.ok!.luminance).toBeLessThan(row.ok!.luminance);
+  });
+});
+
+test("a slot without data is a low stub that keeps its place; a new source starts with such slots", async () => {
+  await withPage({ width: 1440 }, async (page) => {
+    const { fresh } = await read(page);
+    const states = await page.evaluate(() =>
+      [...document.querySelectorAll(".k2-ticks")[2]!.children].map((tick) => tick.getAttribute("data-s")).join(" "),
+    );
+    expect(states.startsWith("none ".repeat(18))).toBe(true);
+    expect(fresh.none!.drawn).toBe(true);
+    expect(fresh.none!.height).toBe(4);
+    expect(fresh.none!.height).toBeLessThan(fresh.ok!.height);
+  });
+});
+
+test("more slots than a cell holds stay inside its 140 px and leave the next column alone", async () => {
+  await withPage({ width: 1440, many: true }, async (page) => {
     const found = await page.evaluate(() => {
-      const ticks = document.querySelectorAll(".k2-ticks")[2]!;
-      const slots = [...ticks.children].map((tick) => ({
-        state: tick.getAttribute("data-s"),
-        width: tick.getBoundingClientRect().width,
-        color: getComputedStyle(tick).backgroundColor,
-      }));
+      const ticks = [...document.querySelectorAll(".k2-ticks")][4]!;
+      const box = ticks.getBoundingClientRect();
+      const next = ticks.closest("td")!.nextElementSibling!.getBoundingClientRect();
       return {
-        states: slots.map((slot) => slot.state).join(""),
-        widths: new Set(slots.map((slot) => Math.round(slot.width * 10))).size,
-        empty: slots[0]!.color,
+        slots: ticks.children.length,
+        width: Math.round(box.width),
+        clip: getComputedStyle(ticks).overflowX,
+        apart: next.left >= box.right,
       };
     });
-    expect(found.states.startsWith("none".repeat(18))).toBe(true);
-    expect(found.widths).toBe(1);
-    expect(found.empty).toBe("rgba(0, 0, 0, 0)");
+    expect(found).toEqual({ slots: 500, width: 140, clip: "clip", apart: true });
   });
 });
 
@@ -175,11 +204,14 @@ test("with stretch at 390 the slots give way below their cap and fill the room b
 
 test("forced colors: the ticks stay drawn and a failure stays apart from ok", async () => {
   await withPage({ width: 1440, forced: true }, async (page) => {
-    const { failing } = await read(page);
+    const { failing, fresh } = await read(page);
     expect(failing.ok!.drawn).toBe(true);
     expect(failing.bad!.drawn).toBe(true);
     expect(failing.bad!.color).not.toBe(failing.ok!.color);
     expect(failing.bad!.height).toBeGreaterThan(failing.ok!.height);
+    // a slot without data stays a stub, lower than ok
+    expect(fresh.none!.drawn).toBe(true);
+    expect(fresh.none!.height).toBeLessThan(fresh.ok!.height);
   });
 });
 

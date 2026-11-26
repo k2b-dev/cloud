@@ -195,15 +195,20 @@ export const Dot = (props: { status?: Status | "app"; label?: string }) => (
   <span class="k2-dot" data-status={props.status} role="img" aria-label={props.label} aria-hidden={props.label ? undefined : "true"} />
 );
 
-/** The state of one time slot of `Ticks`: it went well, it failed, or nothing happened (no data). */
+/** The state of one time slot of `Ticks`: it went well, it failed, or there is no data for it. */
 export type TickState = "ok" | "bad" | "none";
 
 export type TicksProps = {
-  /** One state per time slot, oldest first, such as one per minute of the last 30 minutes. */
+  /**
+   * One state per time slot, oldest first, such as one per minute of the last 30 minutes. They read in the writing
+   * direction: the oldest at the start (on the right in a page written right to left). In a table cell at most 60
+   * slots: the cell's 140 px hold no more, and a strip with more is cut at its end.
+   */
   slots: readonly TickState[];
   /**
-   * What the ticks say, in one sentence a person who cannot see them gets the same from: what, over which time, and
-   * how many failed, such as "postgres-haupt: 30 Abrufe in 30 Minuten, 3 fehlgeschlagen".
+   * What the ticks say, in one sentence a person who cannot see them gets the same from, always in the same form:
+   * what, over which time, then what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen
+   * fehlgeschlagen".
    */
   label: string;
   /** The data colour of what the ticks belong to; without it the colour of the app. Failures stay red. */
@@ -217,7 +222,8 @@ export type TicksProps = {
 
 /**
  * One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a
- * failure red and taller, an empty slot nothing. 20 px high; the one column of a list that shows its data over time.
+ * failure red and taller, a slot without data a low stub. 20 px high; the one column of a list that shows its data
+ * over time.
  */
 export const Ticks = (props: TicksProps) => (
   <span
