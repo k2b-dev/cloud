@@ -58,6 +58,8 @@ export type ChatListSection = {
   empty?: string;
   /** The way to more of them, such as the next page of chats. */
   more?: Action;
+  /** The person folded this group away (v1's remembered sections). */
+  folded?: boolean;
 };
 
 /** What a row shows of its unread state: the count, a dot for a chat marked unread without new messages, or nothing. */
@@ -133,6 +135,9 @@ export default function ChatListV2(props: { sections: Accessor<readonly ChatList
         const ids = createMemo(() => section().rows.map((row) => row.id), undefined, { equals: sameKeys });
         const byId = createMemo(() => new Map(section().rows.map((row) => [row.id, row])));
         return (
+          // k2b-ui gap: v1 folded every section and remembered it (`collapsed`). `Section` cannot fold, and `Group` is
+          // a framed box (a box in the list pane, a double line under the status row); a `Section` that folds with a
+          // controlled `open`/`onOpenChange` is asked for. Until then the sections stay open; `folded` is ready for it.
           <Section title={section().title} count={section().count} actions={section().actions} more={section().more}>
             <Show when={ids().length > 0} fallback={<Show when={section().empty}>{(empty) => <Row lines={[empty()]} />}</Show>}>
               <List label={`${props.context.label}: ${section().title}`}>

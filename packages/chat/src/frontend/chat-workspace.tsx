@@ -3412,20 +3412,24 @@ export function ChatWorkspaceView(
     const discussions = systemRows();
     const systemMore = Object.values(systemList.page()?.cursors ?? {}).some(Boolean);
     return [
-      ...(pinnedRows().length > 0 ? [{ key: "pinned", title: t().pinnedChats, rows: pinnedRows() }] : []),
+      ...(pinnedRows().length > 0
+        ? [{ key: "pinned", title: t().pinnedChats, rows: pinnedRows(), folded: collapsed().includes("pinned") }]
+        : []),
       {
         key: "chats",
+        folded: collapsed().includes("chats"),
         title: t().chats,
         rows: plain,
         empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
         actions: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
         more: moreChats(),
       },
-      ...(channels.length > 0 ? [{ key: "channels", title: t().channels, rows: channels }] : []),
+      ...(channels.length > 0 ? [{ key: "channels", title: t().channels, rows: channels, folded: collapsed().includes("channels") }] : []),
       ...(discussions.length > 0 || systemMore
         ? [
             {
               key: "system",
+              folded: !systemExpanded(),
               title: t().systemChats,
               count: discussions.reduce((sum, row) => sum + row.unread, 0) || undefined,
               rows: discussions,
