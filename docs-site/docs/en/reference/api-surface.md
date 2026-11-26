@@ -29,7 +29,9 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/shared` | Supported, portable | Shared helpers, including `previewSourceKind` and `PreviewVariant` for [file previews](/en/docs/platform/previews) |
-| `@k2b/cloud/shared/*` | Supported, portable | One module of the shared helpers, such as `@k2b/cloud/shared/format` or `@k2b/cloud/shared/principal-label`: an island that imports one carries only it, while the barrel brings every helper and its libraries |
+| `@k2b/cloud/shared/account-display` | Supported, portable | `groupDisplayName` and the other account names of `@k2b/cloud/shared`, alone: an island carries only them |
+| `@k2b/cloud/shared/format` | Supported, portable | `formatNumber`, `formatDateTime` and the other formatters of `@k2b/cloud/shared`, alone |
+| `@k2b/cloud/shared/principal-label` | Supported, portable | `principalLabel` and its messages, alone; the `@k2b/cloud/shared` barrel brings every helper and its libraries |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts, including [`AssistantPlaceSchema`](/en/docs/ai/assistant-places) |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |

@@ -120,6 +120,8 @@ describe(`island error fallback in ${browserName}`, () => {
       flakyBroken = false;
       await alert.getByRole("button", { name: "Retry" }).click();
       await showsRevision(page, "flaky", 4);
+      // the focus was on Retry, which left: it goes on to what the island renders again, not to the page
+      await page.waitForFunction(() => document.activeElement?.closest('section[data-feed="flaky"]') !== null);
       expect(await page.getByRole("alert").count()).toBe(0);
       expect(reported).toHaveLength(1);
     } finally {
