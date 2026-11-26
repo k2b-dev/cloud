@@ -162,11 +162,25 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   /** The groups that get through, as words; a client without one says so quietly (its state says the rest). */
   const groupLine = (client: ClientRow) =>
     client.groups.length === 0 ? t().noGroups : client.groups.map((group) => group.label).join(", ");
+  /** A name cut by grapheme to the room it has; the open client says it whole. */
+  const clip = (text: string, room: number) => {
+    const graphemes = [...new Intl.Segmenter(locale(), { granularity: "grapheme" }).segment(text)].map((part) => part.segment);
+    return graphemes.length > room
+      ? `${graphemes
+          .slice(0, room - 1)
+          .join("")
+          .trimEnd()}…`
+      : text;
+  };
+  /** The room of a key figure's quiet line, which does not cut itself (k2b-ui gap). */
+  const STRIP_LINE = 24;
   /** The groups in one short line: the first, then how many more; the open client lists them all. */
-  const groupShort = (client: ClientRow) =>
-    client.groups.length <= 1
+  const groupShort = (client: ClientRow, room = 40) =>
+    client.groups.length === 0
       ? groupLine(client)
-      : t().groupAndMore({ name: client.groups[0]!.label, count: number(client.groups.length - 1) });
+      : client.groups.length === 1
+        ? clip(client.groups[0]!.label, room)
+        : t().groupAndMore({ name: clip(client.groups[0]!.label, room), count: number(client.groups.length - 1) });
 
   /** A figure in the person's number format. */
   const number = (value: number) => value.toLocaleString(locale());
@@ -214,7 +228,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           icon="users-group"
           label={t().allowedGroups}
           value={number(client.groups.length)}
-          meta={client.groups.length === 0 ? t().chooseGroups : groupShort(client)}
+          meta={client.groups.length === 0 ? t().chooseGroups : groupShort(client, STRIP_LINE)}
         />
         <Cells.Cell icon="calendar" label={t().created} value={client.created} />
       </Cells>

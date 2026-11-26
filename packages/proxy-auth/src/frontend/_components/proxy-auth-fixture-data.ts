@@ -17,11 +17,13 @@ const group = (name: string) => ({
 
 const client = (index: number, name: string, description: string | null, groups: string[]): ProxyAuthClient => ({
   id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-  clientId: `pa_${name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 60) || String(index)}`,
+  clientId: `pa_${
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || String(index)
+  }`,
   name,
   description,
   allowedGroups: groups.map(group),
