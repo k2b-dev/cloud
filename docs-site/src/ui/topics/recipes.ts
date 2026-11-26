@@ -2,15 +2,20 @@ import { createComponent, type JSX } from "solid-js";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
 import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
+import * as files from "../../../../packages/ui/skills/k2b-ui/recipes/files";
 import * as filteredTable from "../../../../packages/ui/skills/k2b-ui/recipes/filtered-table";
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
 import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-detail";
 import * as frame from "../../../../packages/ui/skills/k2b-ui/recipes/frame";
+import * as home from "../../../../packages/ui/skills/k2b-ui/recipes/home";
 import * as listDetail from "../../../../packages/ui/skills/k2b-ui/recipes/list-detail";
 import * as mail from "../../../../packages/ui/skills/k2b-ui/recipes/mail";
 import * as publicPage from "../../../../packages/ui/skills/k2b-ui/recipes/public-page";
+import * as overview from "../../../../packages/ui/skills/k2b-ui/recipes/overview";
 import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
 import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/record-groups";
+import * as settings from "../../../../packages/ui/skills/k2b-ui/recipes/settings";
+import * as settingsPage from "../../../../packages/ui/skills/k2b-ui/recipes/settings-page";
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
 
@@ -45,15 +50,20 @@ export const recipes = {
   actions,
   content,
   dialogs,
+  files,
   "filtered-table": filteredTable,
   form,
   "form-detail": formDetail,
   frame,
+  home,
   "list-detail": listDetail,
   mail,
   "public-page": publicPage,
+  overview,
   record,
   "record-groups": recordGroups,
+  "settings-page": settingsPage,
+  settings,
   states,
   table,
 } satisfies Record<string, RecipeModule>;

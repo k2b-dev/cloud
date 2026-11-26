@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
-import { Icon } from "./marks";
+import { safeColor } from "./colors";
+import { custom, Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
 import type { OnNavigate } from "./types";
@@ -15,6 +16,12 @@ export type MenuItem = {
   label: string;
   /** A Tabler icon name without the `ti-` prefix. */
   icon?: string;
+  /**
+   * A data colour of what the entry stands for (an area of a notebook, a calendar): a dot in the place of the symbol,
+   * or the symbol in that colour. Hex, `oklch()` or `var(--name)`; anything else leaves the entry neutral (no dot). A
+   * hex colour is kept at 3:1 on the menu in light and dark; `oklch()` and `var()` stand as given.
+   */
+  color?: string;
   /** The deed; a returned Promise keeps the menu open and the entry busy until it settles. */
   onClick?: () => unknown;
   /** The page the entry opens, as a link. */
@@ -83,6 +90,8 @@ export type TriggerProps = {
 export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
+  /** The words also show as a hint, where a narrow place shows the symbol alone (as among the deeds of a selection). */
+  titled?: boolean;
 };
 
 /**
@@ -125,7 +134,9 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
 
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
-  entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
+  entries.some(
+    (entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon || safeColor(entry.color) !== undefined),
+  );
 
 const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; lead?: boolean }) => {
   const lead = () => props.lead ?? hasLead(props.entries);
@@ -234,18 +245,31 @@ const kindOf = (entry: MenuItem): EntryKind =>
 
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
-const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
-  <>
-    <Show when={props.lead}>
-      <span class="k2-mi-lead">
-        <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
-      </span>
-    </Show>
-    <span class="k2-mi-label">{props.item.label}</span>
-    <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
-    {props.end}
-  </>
-);
+const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => {
+  // a value that is no colour leaves the entry neutral: no dot, no colour
+  const color = () => safeColor(props.item.color);
+  return (
+    <>
+      <Show when={props.lead}>
+        <span class="k2-mi-lead" data-color={color() ? "" : undefined} style={custom({ "--k2-c": color() })}>
+          <Show
+            when={props.item.icon}
+            fallback={
+              <Show when={color()}>
+                <span class="k2-mi-dot" />
+              </Show>
+            }
+          >
+            {(name) => <Icon name={name()} />}
+          </Show>
+        </span>
+      </Show>
+      <span class="k2-mi-label">{props.item.label}</span>
+      <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
+      {props.end}
+    </>
+  );
+};
 
 /** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */
 const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; value: string; lead: boolean }) => {
@@ -332,6 +356,10 @@ const MenuRoot = (props: MenuProps) => {
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
+  const hint = () => {
+    const shown = words();
+    return typeof shown === "string" ? shown : undefined;
+  };
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("end");
   const level = useMenuLevels(() => ({
@@ -354,7 +382,7 @@ const MenuRoot = (props: MenuProps) => {
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
-        title={iconOnly() ? name() : undefined}
+        title={iconOnly() ? name() : props.titled ? hint() : undefined}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
