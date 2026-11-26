@@ -559,7 +559,12 @@ const ColumnGrip = (props: { label: string; width: { min: number; default: numbe
       if (!now || !scroller) return undefined;
       return { now, max: scroller.clientWidth };
     },
-    room: (element) => element.closest(".k2-table-scroll"),
+    // the table's visible width and every column head
+    observe: (element) => {
+      const scroller = element.closest(".k2-table-scroll");
+      const heads = element.parentElement?.parentElement?.children ?? [];
+      return scroller ? [scroller, ...heads] : [...heads];
+    },
   });
   return <span class="k2-cgrip" {...grip} />;
 };

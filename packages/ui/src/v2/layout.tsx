@@ -94,7 +94,7 @@ const centerGrip = (grip: HTMLElement) => {
 };
 
 /** A grip on a seam: its name and the one column it moves. */
-type SeamGrip = Omit<GripOptions, "label" | "min" | "reset" | "room"> & { label: string; width: Width };
+type SeamGrip = Omit<GripOptions, "label" | "min" | "reset" | "observe"> & { label: string; width: Width };
 
 /** The grip of a seam: a pointer drag or the keys move the width of its column (`useGrip`). */
 const SeamGrip = (props: { grip: SeamGrip }) => {
@@ -106,8 +106,11 @@ const SeamGrip = (props: { grip: SeamGrip }) => {
     reset: () => props.grip.width.default,
     direction: () => props.grip.direction(),
     measure: (element) => props.grip.measure(element),
-    // the row of columns around the seam
-    room: (element) => element.parentElement?.parentElement,
+    // the row of columns around the seam and every column in it
+    observe: (element) => {
+      const row = element.parentElement?.parentElement;
+      return row ? [row, ...row.children] : [];
+    },
   });
   const [ref, attrs] = splitProps(grip, ["ref"]);
   return (
@@ -227,8 +230,10 @@ export const Workspace = (props: WorkspaceProps) => {
   const id = createUniqueId();
   // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
   // this workspace's width. It is the one rule here that is made per workspace, since the room is the workspace's own.
+  // A sidebar its grip made wider gives way first when the window narrows, so the columns keep their minimum.
   const drawerRule = () =>
-    `@media (min-width: 768px) { @container k2-ws-${id} (width < ${room()}px) { ` +
+    `@media (min-width: 768px) { .k2-ui [data-k2-ws="${id}"] > .k2-ws-side { max-width: calc(100% - ${room() - width().default}px); } ` +
+    `@container k2-ws-${id} (width < ${room()}px) { ` +
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
     `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
   const [drawerOpen, setDrawerOpen] = createSignal(false);

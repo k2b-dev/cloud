@@ -22,49 +22,57 @@ export type GripOptions = {
   min: Accessor<number>;
   /** The width Enter puts the column back to: its default. */
   reset: Accessor<number>;
-  /** 1: the column stands left of the grip and grows as the grip moves right; -1: it stands right of the grip. */
+  /**
+   * 1: the column stands before the grip (left of it, right of it in a right-to-left page) and grows as the grip moves
+   * away from it; -1: it stands after the grip.
+   */
   direction: Accessor<1 | -1>;
   /**
    * The page now: the column's rendered width (its flex may hold it below its value) and the most it may take beside
    * the columns around it. Nothing while it is not laid out (hidden on the phone).
    */
   measure: (grip: HTMLElement) => { now: number; max: number } | undefined;
-  /** The box whose size changes the room: the most is measured again when it resizes. */
-  room: (grip: HTMLElement) => Element | null | undefined;
+  /** The boxes whose size changes the column or its room (the column, its neighbours, their row): measured again then. */
+  observe: (grip: HTMLElement) => Iterable<Element>;
 };
 
 /**
  * The behaviour of one column grip (a seam between panes, a table head): a separator that moves the width of one
  * column in px, while the columns around it give way by their own layout. ui-sdk's `bindDrag` follows the pointer
- * (capture, a drag outside the window, Escape puts the width back, no click on release); keys move 8 px (Shift 64),
- * Home and End go to the minimum and the most, Enter back to the default. `Resizable` does not fit here: it lays out
- * a flex group in percent, and these columns are px widths in a stylesheet, one of them in a table.
+ * (capture, a drag outside the window, Escape puts the width back, no click on release); a lost capture ends the drag
+ * where it is. Keys move 8 px (Shift 64), Home and End go to the minimum and the most, Enter back to the default. The
+ * arrows and the pointer move the grip the way they point, also in a right-to-left page. `Resizable` does not fit
+ * here: it lays out a flex group in percent, and these columns are px widths in a stylesheet, one of them in a table.
  *
- * The server and the first render say the width and the minimum; the most depends on the window and comes once the
- * page is live, as `aria-valuemax`. Spread the result on the grip element.
+ * The server and the first render say the column's value, its minimum and no most. Once the page is live the grip says
+ * the width the column has and the most it can take, measured again whenever the column, a neighbour or their row
+ * changes size. Spread the result on the grip element; its stylesheet gives it `touch-action: none`, so a touch drag
+ * stays the grip's.
  */
 export function useGrip(options: GripOptions) {
   const t = useBehaviorMessages();
-  const [max, setMax] = createSignal<number>();
+  const [seen, setSeen] = createSignal<{ now: number; max: number }>();
   const [dragging, setDragging] = createSignal(false);
   let grip: HTMLElement | undefined;
   let stop: (() => void) | undefined;
   const read = () => {
     const now = grip && options.measure(grip);
-    if (now) setMax(Math.round(Math.max(now.max, options.min())));
+    if (now) setSeen({ now: Math.round(now.now), max: Math.round(Math.max(now.max, now.now, options.min())) });
     return now;
   };
   const clamp = (px: number, most: number) => Math.round(Math.min(Math.max(px, options.min()), Math.max(most, options.min())));
   // where a move starts: the width the column has, which its flex may hold below its value
   const start = (now: number) => Math.min(options.value(), now);
+  // the way the column grows on screen: +1 to the right
+  const sign = () => options.direction() * (grip && getComputedStyle(grip).direction === "rtl" ? -1 : 1);
+  const said = () => seen()?.now ?? Math.round(options.value());
 
   if (!isServer) {
     onMount(() => {
       read();
-      const room = grip && options.room(grip);
-      if (!room || typeof ResizeObserver === "undefined") return;
+      if (!grip || typeof ResizeObserver === "undefined") return;
       const observer = new ResizeObserver(() => read());
-      observer.observe(room);
+      for (const element of options.observe(grip)) observer.observe(element);
       onCleanup(() => observer.disconnect());
     });
     onCleanup(() => stop?.());
@@ -74,7 +82,7 @@ export function useGrip(options: GripOptions) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const now = read();
     if (!now) return;
-    const step = (event.shiftKey ? LARGE_STEP_PX : STEP_PX) * options.direction();
+    const step = (event.shiftKey ? LARGE_STEP_PX : STEP_PX) * sign();
     let next: number;
     if (event.key === "ArrowLeft") next = start(now.now) - step;
     else if (event.key === "ArrowRight") next = start(now.now) + step;
@@ -93,19 +101,32 @@ export function useGrip(options: GripOptions) {
     // no text selection while dragging; the focus still comes to the grip, so the keys go on from here
     event.preventDefault();
     grip.focus({ preventScroll: true });
+    const element = grip;
     const before = options.value();
     const from = start(now.now);
     const x = event.clientX;
+    const way = sign();
+    const done = () => {
+      stop = undefined;
+      setDragging(false);
+      element.removeEventListener("lostpointercapture", lost);
+    };
+    // the capture went elsewhere (the grip left the page, another element took the pointer): the drag ends here
+    const lost = (lostEvent: PointerEvent) => {
+      if (lostEvent.pointerId !== event.pointerId || !stop) return;
+      stop();
+      done();
+    };
     setDragging(true);
-    stop = bindDrag(grip, event, {
+    stop = bindDrag(element, event, {
       cancelOnEscape: true,
-      onMove: (sample) => options.onChange(clamp(from + (sample.x - x) * options.direction(), now.max)),
+      onMove: (sample) => options.onChange(clamp(from + (sample.x - x) * way, now.max)),
       onEnd: (_, canceled) => {
-        stop = undefined;
-        setDragging(false);
+        done();
         if (canceled) options.onChange(before);
       },
     });
+    element.addEventListener("lostpointercapture", lost);
   };
 
   return {
@@ -122,13 +143,13 @@ export function useGrip(options: GripOptions) {
       return options.min();
     },
     get "aria-valuenow"() {
-      return Math.round(options.value());
+      return said();
     },
     get "aria-valuemax"() {
-      return max();
+      return seen()?.max;
     },
     get "aria-valuetext"() {
-      return t().width({ px: Math.round(options.value()) });
+      return t().width({ px: said() });
     },
     get "data-dragging"() {
       return dragging() ? "" : undefined;
