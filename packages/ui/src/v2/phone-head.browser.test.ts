@@ -11,6 +11,8 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
+import { demoBundle } from "../../test/v2-behavior/harness";
+import type {} from "../../test/v2-behavior/phone-head.entry";
 import type {} from "../../test/v2-phone-head.entry";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-phone-head-"));
@@ -42,6 +44,7 @@ const hostScript = await (async () => {
   if (!build.success) throw new AggregateError(build.logs, "host script build failed");
   return build.outputs[0]!.text();
 })();
+const islandScript = await demoBundle("phone-head");
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 // a host as Cloud's shell on the phone: its bar with the app and the one search, the screen below it
 const hostCss =
@@ -83,7 +86,7 @@ const open = async (screen: string) => {
   await page.setContent(
     `<!doctype html><html lang="de"><head><style>${css}</style><style>${hostCss}</style></head><body>` +
       `<div class="host" data-k2-host-search><div class="host-bar"><button type="button" aria-label="Suche" data-k2-host-search-button>S</button></div>` +
-      `<div class="frame k2-ui">${screen}</div></div></body></html>`,
+      `<div class="frame k2-ui" id="root">${screen}</div></div></body></html>`,
   );
   await settled(page);
   return page;
@@ -184,27 +187,50 @@ test("with a detail open the head and its search give way: the host's search is 
   }
 }, 30_000);
 
-test("Escape gives the focus back to the host's search, and a folded search with words marks the host's button", async () => {
+/** The head of a path and a search as its island renders it, behind the host's search button, which has the focus. */
+const openIsland = async (takeEscape: boolean) => {
   const page = await open(pathAndSearch);
+  await page.addScriptTag({ content: `window.__takeEscape = ${takeEscape};` });
+  await page.addScriptTag({ content: islandScript });
+  await page.waitForFunction(() => window.__mounted === true);
+  await settled(page);
+  await page.locator("[data-k2-host-search-button]").focus();
+  return page;
+};
+const focusedHostButton = (page: Page) => page.evaluate(() => document.activeElement?.hasAttribute("data-k2-host-search-button") === true);
+
+test("Escape folds the search and gives the focus back to the host's button, and the folded words mark it", async () => {
+  const page = await openIsland(false);
   try {
-    await page.addScriptTag({ content: hostScript });
+    await settled(page);
     const dot = () => page.evaluate(() => getComputedStyle(document.querySelector("[data-k2-host-search-button]")!, "::after").content);
     expect(await dot()).toBe("none");
     // a search without a placeholder of its own shows its name while empty
     expect(await page.locator('[data-slot="head"] .k2-input[data-search] input').getAttribute("placeholder")).toBe("In Verträgen suchen");
-    await page.locator("[data-k2-host-search-button]").focus();
+    expect(await page.evaluate(() => window.__focusPageSearch())).toBe(true);
+    await page.keyboard.type("Miet");
+    // the island folds the field on Escape and keeps its words
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.hasAttribute("data-k2-host-search-button") === true);
+    expect(await page.locator('[data-slot="head"] .k2-input[data-search] input').inputValue()).toBe("Miet");
+    expect(await dot()).not.toBe("none");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("an app that takes Escape keeps the field open, and leaving it later never sends the focus to the host", async () => {
+  const page = await openIsland(true);
+  try {
     expect(await page.evaluate(() => window.__focusPageSearch())).toBe(true);
     await page.keyboard.type("Miet");
     await page.keyboard.press("Escape");
-    // the field folds (its island blurs it on Escape)
-    await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
-    await page.waitForFunction(() => document.activeElement?.hasAttribute("data-k2-host-search-button") === true);
-    // the folded search keeps its words (its island keeps Escape from clearing them; this page has no island)
-    await page.evaluate(() => {
-      const field = document.querySelector<HTMLInputElement>('[data-slot="head"] .k2-input[data-search] input');
-      if (field) field.value = "Miet";
-    });
-    expect(await dot()).not.toBe("none");
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement?.closest(".k2-input[data-search]") !== null)).toBe(true);
+    // a tap on a row later (the open field lies over the first): the focus leaves it, but not for the host's button
+    await page.getByText("Wartungsvertrag Aufzug").click();
+    await settled(page);
+    expect(await focusedHostButton(page)).toBe(false);
   } finally {
     await page.close();
   }
