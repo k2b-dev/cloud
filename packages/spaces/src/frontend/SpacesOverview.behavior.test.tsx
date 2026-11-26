@@ -101,7 +101,8 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
     expect(requests.map(({ url }) => url.pathname).sort()).toEqual(["/api/spaces/overview/activity", "/api/spaces/overview/work"]);
     expect(covered).toBe(false);
     expect(work()?.textContent).toContain("mine task");
-    expect(activity()?.textContent).toContain("Created “mine task” in Example");
+    // The sentence names who, then the item with its mark in place of the quotes.
+    expect(activity()?.textContent).toContain("System · Created mine task in Example");
     expect(work()?.querySelector('[data-k2-part="Loading"]')).toBeNull();
     expect(dom.root.textContent).not.toContain("No activity yet");
 
@@ -126,7 +127,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
       );
     await refresh;
     expect(covered).toBe(true);
-    expect(activity()?.textContent).toContain("Created “Created task” in Example");
+    expect(activity()?.textContent).toContain("Created Created task in Example");
   } finally {
     dispose();
     globalThis.fetch = originalFetch;

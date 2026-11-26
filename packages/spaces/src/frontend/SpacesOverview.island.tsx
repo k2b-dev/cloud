@@ -4,13 +4,34 @@ import { listenPopState, navigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Empty, Failed, List, Loading, Pane, Row, Section, Tabs, useToast, Workspace } from "@k2b/ui/v2";
+import {
+  Band,
+  Bar,
+  Button,
+  Chip,
+  Digest,
+  Empty,
+  Failed,
+  List,
+  Loading,
+  Mark,
+  Pane,
+  Row,
+  Section,
+  type StatusFact,
+  StatusRow,
+  Tabs,
+  Text,
+  Tiles,
+  useToast,
+  Workspace,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { formatDeadline } from "@/presentation/deadline";
+import { deadlineDayKey, formatDeadline } from "@/presentation/deadline";
 import { spaceCommandMessages } from "../commands";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
-import SpacesNav, { useSpacesNav } from "./_components/spaces-nav";
+import SpacesNav, { SPACE_MARK_ICON, useSpacesNav } from "./_components/spaces-nav";
 import { listenSpacesNavigationHints, type SidebarSpace } from "./[id]/_components/sidebar/spaces-navigation";
 import { subscribeToSpacesDataInvalidation } from "./[id]/_components/workspace/workspace-events";
 import { readResponseError } from "./lib/response";
@@ -194,35 +215,80 @@ export default function SpacesOverview(props: Props) {
     };
     return labels[entry.action] ?? text.activityOther({ action: entry.action.replaceAll(".", " "), space: entry.space.name });
   };
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const now = Date.parse(props.now);
+  /** "15 min", "2 h": how long until something starts, in the reader's words. */
+  const duration = (minutes: number) =>
+    minutes < 60
+      ? new Intl.NumberFormat(locale(), { style: "unit", unit: "minute", unitDisplay: "short" }).format(minutes)
+      : new Intl.NumberFormat(locale(), { style: "unit", unit: "hour", unitDisplay: "short", maximumFractionDigits: 1 }).format(
+          minutes / 60,
+        );
+  /** Today's first entries across the reader's Spaces; "My work" brings them, the other views do not. */
+  const agenda = () => activeWork()?.agenda ?? work.data()?.agenda ?? props.initialWork.agenda ?? [];
+  const overdueCount = () => {
+    const today = deadlineDayKey(props.now, props.dateConfig);
+    const mine = view() === "mine" ? (activeWork()?.items ?? []) : props.initialWork.view === "mine" ? props.initialWork.items : [];
+    return mine.filter((item) => item.deadline && !item.startsAt && deadlineDayKey(item.deadline, props.dateConfig) < today).length;
+  };
+  const nextUp = () => agenda().find((item) => item.startsAt && Date.parse(item.startsAt) > now);
+  /** The first row says what counts today: the work for this person, what is overdue, and what comes next. */
+  const statement = (): StatusFact[] => {
+    const next = nextUp();
+    return [
+      ...(next?.startsAt
+        ? [
+            {
+              before: t().nextUp,
+              value: `${next.title} ${dates.formatTime(next.startsAt, props.dateConfig)}`,
+              after: t().inTime({ duration: duration(Math.round((Date.parse(next.startsAt) - now) / 60_000)) }),
+            },
+          ]
+        : []),
+    ];
+  };
+  const lead = () =>
+    [t().forYou({ count: number(counts().mine) }), ...(overdueCount() > 0 ? [`${number(overdueCount())} ${t().overdue}`] : [])].join(" · ");
+  const agendaTime = (item: WorkItem) =>
+    item.startsAt
+      ? `${dates.formatTime(item.startsAt, props.dateConfig)}${item.endsAt ? `–${dates.formatTime(item.endsAt, props.dateConfig)}` : ""}`
+      : item.deadline && !item.deadlineAllDay && item.deadline.includes("T")
+        ? dates.formatTime(item.deadline, props.dateConfig)
+        : t().today;
+  /** What someone did, as one sentence: who, then the deed with the thing's mark and name, quiet place and time. */
+  const activitySentence = (entry: ActivityItem) => {
+    const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? "");
+    const sentence = activityDescription(entry);
+    const found = title ? sentence.indexOf(title) : -1;
+    // The thing's mark and name take the place of the quotes around its title.
+    const quoted = found > 0 && /[“„"«]/u.test(sentence[found - 1] ?? "") && /[”“"»]/u.test(sentence[found + title.length] ?? "");
+    const at = quoted ? found - 1 : found;
+    const end = quoted ? found + title.length + 1 : found + title.length;
+    const kind = entry.action.startsWith("event.") ? "calendar-event" : entry.action.startsWith("space.") ? SPACE_MARK_ICON : "checkbox";
+    return (
+      <>
+        <Text weight="strong">{entry.actor.displayName}</Text>
+        {" · "}
+        {at < 0 ? (
+          sentence
+        ) : (
+          <>
+            {sentence.slice(0, at)}
+            <Mark icon={kind} color={entry.space.color} />
+            <Text weight="strong">{title}</Text>
+            {sentence.slice(end)}
+          </>
+        )}
+        {entry.occurrenceCount > 1 ? ` ×${entry.occurrenceCount}` : ""}
+      </>
+    );
+  };
   const activityHref = (entry: ActivityItem) =>
     entry.item ? `/app/spaces/${entry.space.id}?item=${entry.item.id}` : `/app/spaces/${entry.space.id}`;
   const avatarSrc = (entry: ActivityItem) =>
     entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
       ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`
       : undefined;
-  const ActivityRow = (rowProps: { entry: ActivityItem }) => {
-    const entry = rowProps.entry;
-    const lines: [string, string] = [activityDescription(entry), entry.actor.displayName];
-    const time = dates.formatDateTimeRelative(entry.lastOccurredAt, { ...props.dateConfig, base: props.now });
-    return entry.actor.kind === "user" ? (
-      <Row
-        avatar={{ name: entry.actor.displayName, image: avatarSrc(entry) }}
-        lines={lines}
-        time={time}
-        meta={entry.occurrenceCount > 1 ? `×${entry.occurrenceCount}` : undefined}
-        href={activityHref(entry)}
-      />
-    ) : (
-      <Row
-        icon={entry.actor.kind === "system" ? "settings" : "robot"}
-        lines={lines}
-        time={time}
-        meta={entry.occurrenceCount > 1 ? `×${entry.occurrenceCount}` : undefined}
-        href={activityHref(entry)}
-      />
-    );
-  };
-
   return (
     <Workspace
       sidebar={<SpacesNav nav={nav} />}
@@ -253,7 +319,26 @@ export default function SpacesOverview(props: Props) {
       primary={{ label: t().newTask, icon: "plus", onClick: () => void composeTask() }}
     >
       <Pane.Split>
-        <Pane label={t().myWork} scrollKey="spaces-overview-work">
+        <Pane
+          label={t().myWork}
+          scrollKey="spaces-overview-work"
+          // The lead keeps what is overdue, as the phone shows no facts; the next entry follows as a fact.
+          status={<StatusRow lead={lead()} facts={statement()} />}
+        >
+          <Show when={view() === "mine" && agenda().length > 0}>
+            <Band label={t().agenda}>
+              <Tiles
+                label={t().agenda}
+                items={agenda().map((item) => ({
+                  icon: item.startsAt ? "calendar-event" : "checkbox",
+                  color: item.spaceColor ?? undefined,
+                  title: item.title,
+                  meta: `${agendaTime(item)} · ${item.spaceName}`,
+                  href: `/app/spaces/${item.spaceShortId}?item=${item.shortId}`,
+                }))}
+              />
+            </Band>
+          </Show>
           <Show
             when={activeWork()}
             fallback={
@@ -310,7 +395,15 @@ export default function SpacesOverview(props: Props) {
               <Show when={activityError()}>
                 {(message) => <Failed text={`${t().couldNotLoadActivity}: ${message()}`} onRetry={reloadActivity} />}
               </Show>
-              <For each={activityItems()}>{(entry) => <ActivityRow entry={entry} />}</For>
+              <Digest
+                label={t().activity}
+                activity={activityItems().map((entry) => ({
+                  person: { name: entry.actor.displayName, image: avatarSrc(entry) },
+                  text: activitySentence(entry),
+                  time: dates.formatDateTimeRelative(entry.lastOccurredAt, { ...props.dateConfig, base: props.now }),
+                  href: activityHref(entry),
+                }))}
+              />
               <Show when={pageError()}>{(message) => <Failed text={message()} onRetry={() => void loadMoreActivity()} />}</Show>
               <Show when={activity.hasMore() && !pageError()}>
                 <Bar

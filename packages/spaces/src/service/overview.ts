@@ -11,7 +11,8 @@ import { spacesPublicResources } from "./public-resources";
 /** Both SSR and view navigation use the same permission-filtered reads and limits. */
 export async function loadOverviewWork(params: { userId: string; view: OverviewView; dateConfig: DateContext }): Promise<OverviewWork> {
   const [dashboard, mine, writable] = await Promise.all([
-    dashboardSnapshot({ ...params, view: params.view === "mine" ? "counts" : params.view, todoLimit: 30 }),
+    // "My work" reads today's first entries with its counts, for its agenda; the same statement as the Today view.
+    dashboardSnapshot({ ...params, view: params.view === "mine" ? "today" : params.view, todoLimit: 30 }),
     params.view === "mine" ? listMyTasks({ userId: params.userId, limit: 100, dateConfig: params.dateConfig }) : Promise.resolve([]),
     // The same permission check as a change through the API, read once for every row.
     spacesService.space
@@ -19,22 +20,24 @@ export async function loadOverviewWork(params: { userId: string; view: OverviewV
       .then((page) => new Set(page.items.map((space) => space.id))),
   ]);
   const items = params.view === "mine" ? mine : params.view === "today" ? dashboard.events : dashboard.todos;
+  const row = (item: (typeof items)[number] | (typeof dashboard.events)[number]) => ({
+    shortId: item.shortId,
+    spaceShortId: item.spaceShortId,
+    spaceName: item.spaceName,
+    spaceColor: item.spaceColor,
+    title: item.title,
+    priority: item.priority,
+    startsAt: "startsAt" in item ? item.startsAt : null,
+    endsAt: "endsAt" in item ? item.endsAt : null,
+    deadline: item.deadline,
+    deadlineAllDay: item.deadlineAllDay,
+    canWrite: writable.has(item.spaceId),
+  });
   return {
     view: params.view,
     counts: { mine: dashboard.assignedToMeCount, today: dashboard.todayCount, upcoming: dashboard.upcomingCount },
-    items: items.map((item) => ({
-      shortId: item.shortId,
-      spaceShortId: item.spaceShortId,
-      spaceName: item.spaceName,
-      spaceColor: item.spaceColor,
-      title: item.title,
-      priority: item.priority,
-      startsAt: "startsAt" in item ? item.startsAt : null,
-      endsAt: "endsAt" in item ? item.endsAt : null,
-      deadline: item.deadline,
-      deadlineAllDay: item.deadlineAllDay,
-      canWrite: writable.has(item.spaceId),
-    })),
+    items: items.map(row),
+    ...(params.view === "mine" ? { agenda: dashboard.events.map(row) } : {}),
   };
 }
 

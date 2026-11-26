@@ -2,23 +2,24 @@ import { z } from "zod";
 import { DeadlineAllDaySchema, DeadlineInputSchema, ResourceShortIdSchema } from "./contracts";
 
 export const OverviewViewSchema = z.enum(["mine", "today", "upcoming"]);
+const OverviewWorkItemSchema = z.object({
+  shortId: ResourceShortIdSchema,
+  spaceShortId: ResourceShortIdSchema,
+  spaceName: z.string(),
+  spaceColor: z.string().nullable(),
+  title: z.string(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).nullable(),
+  startsAt: z.string().nullable(),
+  endsAt: z.string().nullable(),
+  deadline: DeadlineInputSchema.nullable(),
+  deadlineAllDay: DeadlineAllDaySchema,
+  canWrite: z.boolean().describe("The reader may change the item, such as check it off"),
+});
 export const OverviewWorkSchema = z.object({
   view: OverviewViewSchema,
-  items: z.array(
-    z.object({
-      shortId: ResourceShortIdSchema,
-      spaceShortId: ResourceShortIdSchema,
-      spaceName: z.string(),
-      spaceColor: z.string().nullable(),
-      title: z.string(),
-      priority: z.enum(["low", "medium", "high", "urgent"]).nullable(),
-      startsAt: z.string().nullable(),
-      endsAt: z.string().nullable(),
-      deadline: DeadlineInputSchema.nullable(),
-      deadlineAllDay: DeadlineAllDaySchema,
-      canWrite: z.boolean().describe("The reader may change the item, such as check it off"),
-    }),
-  ),
+  items: z.array(OverviewWorkItemSchema),
+  /** Today's first events and due items across the reader's Spaces, for the agenda of "My work"; not in other views. */
+  agenda: z.array(OverviewWorkItemSchema).optional(),
   counts: z.object({ mine: z.number(), today: z.number(), upcoming: z.number() }),
 });
 export type OverviewView = z.infer<typeof OverviewViewSchema>;

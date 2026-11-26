@@ -38,6 +38,9 @@ testFor("database")("selected overview views preserve counts, filters and access
         expect(selected.items.map((item) => item.shortId)).toEqual(
           (view === "today" ? full.events : full.todos).map((item) => item.shortId),
         );
+      // "My work" carries today's agenda, the same entries as the Today view; the other views carry none.
+      if (view === "mine") expect(selected.agenda?.map((item) => item.shortId)).toEqual(full.events.map((item) => item.shortId));
+      else expect(selected.agenda).toBeUndefined();
       expect(selected.items.some((item) => item.spaceName === "Accessible overview fixture")).toBe(true);
     }
     // The Cloud app's summary counts the same work without loading any list.

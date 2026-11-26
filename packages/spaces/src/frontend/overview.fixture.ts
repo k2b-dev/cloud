@@ -33,7 +33,13 @@ export const overviewWork: OverviewWork = {
   counts: { mine: 3, today: 1, upcoming: 4 },
   items: [
     task({ shortId: "Item01", title: "Clear out shelf B", deadline: "2026-10-16", deadlineAllDay: true }),
-    task({ shortId: "Item03", title: "Agree on the route plan for week 43", priority: "high" }),
+    task({
+      shortId: "Item03",
+      title: "Agree on the route plan for week 43",
+      priority: "high",
+      deadline: "2026-10-13",
+      deadlineAllDay: true,
+    }),
     task({
       shortId: "Item21",
       spaceShortId: "Space2",
@@ -43,6 +49,25 @@ export const overviewWork: OverviewWork = {
       startsAt: "2026-10-15T14:00:00+02:00",
       endsAt: "2026-10-15T15:00:00+02:00",
     }),
+  ],
+  agenda: [
+    task({ shortId: "Cal001", title: "Stand-up at ramp 1", startsAt: "2026-10-15T09:15:00+02:00", endsAt: "2026-10-15T09:30:00+02:00" }),
+    task({
+      shortId: "Cal003",
+      title: "Quarterly review with purchasing",
+      startsAt: "2026-10-15T11:00:00+02:00",
+      endsAt: "2026-10-15T12:00:00+02:00",
+    }),
+    task({
+      shortId: "Item21",
+      spaceShortId: "Space2",
+      spaceName: "Ideas",
+      spaceColor: "#2563eb",
+      title: "Collect ideas for the winter catalogue",
+      startsAt: "2026-10-15T14:00:00+02:00",
+      endsAt: "2026-10-15T15:00:00+02:00",
+    }),
+    task({ shortId: "Item07", title: "Count stock on shelf B", deadline: "2026-10-15T16:00:00+02:00" }),
   ],
 };
 
@@ -88,7 +113,31 @@ export const overviewWorstSpaces: SidebarSpace[] = [
 
 export const overviewWorstWork: OverviewWork = {
   view: "mine",
-  counts: { mine: 98_765, today: 0, upcoming: 1_234_567 },
+  counts: { mine: 98_765, today: 5, upcoming: 1_234_567 },
+  agenda: [
+    task({
+      shortId: "Cal101",
+      title: longName,
+      spaceName: longName,
+      startsAt: "2026-10-15T09:05:00+02:00",
+      endsAt: "2026-10-15T17:45:00+02:00",
+    }),
+    task({ shortId: "Cal102", title: "Ü", startsAt: "2026-10-15T09:05:00+02:00", endsAt: "2026-10-15T09:10:00+02:00" }),
+    task({
+      shortId: "Cal103",
+      title: "会议准备：年度预算审查和团队规划",
+      spaceColor: null,
+      startsAt: "2026-10-15T10:00:00+02:00",
+      endsAt: null,
+    }),
+    task({
+      shortId: "Cal104",
+      title: "https://example.com/a/very/long/unbreakable/path/without/any/spaces",
+      deadline: "2026-10-15",
+      deadlineAllDay: true,
+    }),
+    task({ shortId: "Cal105", title: "Inventur Kühlhaus", startsAt: "2026-10-15T23:30:00+02:00", endsAt: "2026-10-16T01:00:00+02:00" }),
+  ],
   items: [
     task({ shortId: "Item01", title: longName, spaceName: longName, priority: "urgent", deadline: "2026-10-01", deadlineAllDay: true }),
     task({ shortId: "Item02", title: "Ü", priority: "low" }),

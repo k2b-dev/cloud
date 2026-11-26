@@ -100,8 +100,9 @@ describe("Spaces overview", () => {
     const html = render(null, "de-CH");
     expect(html).toContain("Für mich");
     expect(html).toContain("Meine Arbeit");
-    expect(html).toContain("„Ship overview“ in Launch erledigt");
-    expect(html).not.toContain("Completed “Ship overview”");
+    // The item's mark and name stand where the quotes were.
+    expect(textOf(html)).toContain("Sofie · Ship overview in Launch erledigt");
+    expect(textOf(html)).not.toContain("Completed");
   });
 
   test("renders the Spaces in the sidebar, the views as tabs, and the work and activity as rows", () => {
@@ -118,10 +119,10 @@ describe("Spaces overview", () => {
     expect(html).toMatch(/<a[^>]*class="k2-tab "[^>]*aria-current="page"[^>]*href="\/app\/spaces"/);
     expect(html).toContain('aria-label="Search Spaces"');
     expect(html).toContain("New task");
-    // The work opens its item; the activity names who did what and links to the item.
+    // The work opens its item; the activity is a sentence: who, the deed, and the item with its mark, linked to it.
     expect(html).toContain("Ship overview");
     expect(html.match(/href="\/app\/spaces\/Space1\?item=Item01"/g)).toHaveLength(2);
-    expect(textOf(html)).toContain("Completed “Ship overview” in Launch");
+    expect(textOf(html)).toContain("Sofie · Completed Ship overview in Launch");
     expect(textOf(html)).toContain("Sofie");
     expect(textOf(html)).toContain("2 hours ago");
     expect(html).not.toContain('data-k2-part="Loading"');
@@ -132,6 +133,7 @@ describe("Spaces overview", () => {
     expect(textOf(html)).toContain("Could not load activity: Activity unavailable");
     expect(html).toContain("Retry");
     expect(html).not.toContain("Space and item changes will appear here.");
-    expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf("Completed “Ship overview”"));
+    expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf("Completed"));
+    expect(html.indexOf("Completed")).toBeGreaterThan(-1);
   });
 });

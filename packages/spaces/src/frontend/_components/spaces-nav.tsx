@@ -15,6 +15,9 @@ import { overviewMessages } from "../overview-messages";
 
 export type SpacesNavProps = SpacesSidebarData & { current: SpacesSidebarCurrent; canCreate: boolean };
 
+/** The symbol of a Space wherever it stands: in the sidebar, in its head, beside its work. */
+export const SPACE_MARK_ICON = "layout-kanban";
+
 /**
  * The places of Spaces on v2: "My work", the calendar of all Spaces, and every Space in pin order with its open count.
  * A Space's "…" pins or unpins it; the pins live in the settings cookie and reach the phone menu at once.
@@ -57,12 +60,14 @@ export function useSpacesNav(props: SpacesNavProps) {
     {
       label: "Spaces",
       action: props.canCreate ? { label: t().newSpace, icon: "plus", onClick: () => setCreating(true) } : undefined,
-      // Each Space carries its mark: its symbol (a pin when pinned) on its colour.
+      // Each Space carries one mark, the same in the head of the Space: the symbol of a Space on its colour. Pinned Spaces
+      // come first; the pin is a deed in the entry's menu, not a second kind of mark.
+      // k2b-ui gap: a Mark has no initial ("P" on the Space colour) for things without a symbol of their own.
       items: orderSidebarSpaces(props.spaces, pinned()).map((space) => {
         const isPinned = pinned().includes(space.id);
         return {
           label: space.name,
-          icon: isPinned ? "pin" : "point-filled",
+          icon: SPACE_MARK_ICON,
           color: space.color ?? undefined,
           href: `/app/spaces/${space.id}`,
           onClick: visit,
@@ -86,10 +91,11 @@ export function useSpacesNav(props: SpacesNavProps) {
 const CreateSpaceDialog = lazy(() => import("./CreateSpaceDialog"));
 
 /** The sidebar of every Spaces page, the same entries in the shell's phone menu, and the "New space" dialog. */
-export default function SpacesNav(props: { nav: ReturnType<typeof useSpacesNav> }) {
+export default function SpacesNav(props: { nav: ReturnType<typeof useSpacesNav>; label?: string }) {
   return (
     <>
-      <V2WorkspaceNavigation label="Spaces" groups={props.nav.groups()} />
+      {/* The phone bar names the open place, such as the Space, and opens the same entries as the sidebar. */}
+      <V2WorkspaceNavigation label={props.label ?? "Spaces"} groups={props.nav.groups()} />
       <Nav title="Spaces" icon="layout-kanban" groups={props.nav.groups()} />
       <Show when={props.nav.creating()}>
         <CreateSpaceDialog open onClose={() => props.nav.setCreating(false)} />
