@@ -60,7 +60,7 @@ Data that failed to load once, with "Erneut versuchen" in the language of the pa
 
 ### Notice
 
-A band with a sign, a sentence and its consequence, and at most two deeds; a deed that cannot be taken now is `disabled`, and the sentence says why.
+A band with a sign, a sentence and its consequence, and at most two deeds; a deed that cannot be taken now is `disabled`, and the sentence says why. A person's note and an AI summary keep their line breaks; a long one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen" over the end of the last one, so nothing moves when the page comes alive.
 
 <Props of="Notice" />
 
