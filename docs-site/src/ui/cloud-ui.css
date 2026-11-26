@@ -210,6 +210,19 @@
     place-items: center;
     color: var(--k2-muted);
   }
+  /* the one button of the picture that works: it takes the pointer also while the bar lets it through */
+  .ui-v2-phonebar__search {
+    padding: 0;
+    border: 0;
+    border-radius: var(--k2-r-control);
+    background: none;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+  .ui-v2-phonebar__search:focus-visible {
+    outline: 2px solid var(--k2-blue);
+    outline-offset: -2px;
+  }
   /* What the Cloud shell does: while an open detail brings its way back (the part `Back`), that way back takes the
      place of the app's name in the phone bar. The app moves up into the bar's row, the bar keeps only search and more
      (it lies above, as a picture), and the real, focusable `Back` stands at the name's place. */
