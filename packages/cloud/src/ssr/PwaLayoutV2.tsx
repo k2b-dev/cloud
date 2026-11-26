@@ -129,6 +129,7 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
           )}
         </main>
         <PwaRuntimeV2
+          tabBar={navigation}
           keepalive={!!user}
           accountId={user?.id}
           builds={builds}

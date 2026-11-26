@@ -327,6 +327,38 @@ describe("PwaLayout ui v2 in a browser", () => {
       }
     }, 60_000);
 
+  test("before the page comes alive, a notice already stands above the tab bar, and above the home indicator on a screen", async () => {
+    // what the runtime's island shows; the server's page holds the stack, empty
+    const notice =
+      '<div class="k2-notice" data-k2-part="Notice" data-tone="warn" role="note"><i class="ti ti-wifi-off k2-icon"></i><span class="k2-notice-text">Offline</span></div>';
+    for (const [path, above] of [
+      ["/pwa/inventory", "bar"],
+      ["/pwa/inventory/screen", "home indicator"],
+    ] as const) {
+      const page = await open(path, 390, "v2.css");
+      try {
+        const result = await page.evaluate((markup) => {
+          const stack = document.querySelector("[data-k2-part='NoticeStack']")!;
+          stack.innerHTML = markup;
+          const bar = document.querySelector(".k2-tabbar");
+          return {
+            tabBar: stack.hasAttribute("data-tab-bar"),
+            stack: stack.getBoundingClientRect().bottom,
+            bar: bar && bar.getClientRects().length > 0 ? bar.getBoundingClientRect().top : undefined,
+          };
+        }, notice);
+        expect(result.tabBar).toBe(true);
+        if (above === "bar") expect(Math.round(result.stack)).toBe(Math.round(result.bar! - 12));
+        else {
+          expect(result.bar).toBeUndefined();
+          expect(Math.round(result.stack)).toBe(844 - insets.bottom - 12);
+        }
+      } finally {
+        await page.close();
+      }
+    }
+  }, 60_000);
+
   test("a screen page has no tab bar and keeps clear of the home indicator, also when it becomes one in place", async () => {
     const measure = (page: Page) =>
       page.evaluate(() => ({

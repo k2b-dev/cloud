@@ -43,6 +43,13 @@ html[data-pwa-v2] body {
   display: none;
 }
 
+/* A screen of its own has no tab bar on the phone: the notices stand above the home indicator alone. */
+@media not all and (min-width: 48rem) {
+  .k2-ui.pwa-v2[data-screen] .k2-notice-stack[data-tab-bar] {
+    bottom: calc(env(safe-area-inset-bottom) + 12px);
+  }
+}
+
 .pwa-v2-nav {
   display: none;
 }

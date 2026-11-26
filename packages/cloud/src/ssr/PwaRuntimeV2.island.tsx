@@ -11,7 +11,12 @@ import { type PwaRuntimeProps, startPwaRuntime, THEME_PREFERENCE_EVENT } from ".
  * the page moves when one comes or goes, and the panes keep their room free; "Hide" takes one away. A hidden offline
  * notice comes again the next time the phone goes offline.
  */
-export default function PwaRuntimeV2(props: PwaRuntimeProps) {
+export type PwaRuntimeV2Props = PwaRuntimeProps & {
+  /** The page has its tab bar on the phone: the notices stand above it, from the server's page on. */
+  tabBar: boolean;
+};
+
+export default function PwaRuntimeV2(props: PwaRuntimeV2Props) {
   const locale = useLocale();
   const t = () => pwaMessages.resolve([locale()]).t;
   const [offline, setOffline] = createSignal(false);
@@ -38,7 +43,7 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
   });
 
   return (
-    <NoticeStack>
+    <NoticeStack tabBar={props.tabBar}>
       <Show when={offline()}>
         <Notice tone="warn" icon="wifi-off" actions={[{ label: t().hide, onClick: () => setOffline(false) }]}>
           {t().offlineConsequence}

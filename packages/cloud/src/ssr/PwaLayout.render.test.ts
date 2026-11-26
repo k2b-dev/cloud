@@ -506,9 +506,9 @@ describe("PwaLayout ui v2", () => {
       const tab = (href: string) => document.querySelector(`.k2-tabbar > .k2-tab[href="${href}"]`)!;
       expect(tab("/pwa/alpha").querySelector(".k2-unread")?.textContent).toBe("3");
       expect(tab("/pwa/alpha").querySelector(".k2-unread")?.getAttribute("aria-hidden")).toBe("true");
-      expect(tab("/pwa/alpha").querySelector(".k2-vh")?.textContent).toBe("3 ungelesen");
+      expect(tab("/pwa/alpha").querySelector(".k2-hidden-text")?.textContent).toBe("3 ungelesen");
       expect(tab("/pwa/beta").querySelector(".k2-unread")?.textContent).toBe("99+");
-      expect(tab("/pwa/beta").querySelector(".k2-vh")?.textContent).toBe("Mehr als 99 ungelesen");
+      expect(tab("/pwa/beta").querySelector(".k2-hidden-text")?.textContent).toBe("Mehr als 99 ungelesen");
       expect([...document.querySelectorAll(".k2-tabbar > .k2-tab")].some((link) => link.hasAttribute("title"))).toBe(false);
       // In the sidebar the badge is the attention count beside the summary's quiet one; one signal each.
       const entry = document.querySelector('.pwa-v2-nav a[href="/pwa/alpha"]')!;
