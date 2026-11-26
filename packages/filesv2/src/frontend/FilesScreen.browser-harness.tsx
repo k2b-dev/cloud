@@ -13,6 +13,7 @@ import {
   fixtureFavorites,
   fixtureListing,
   fixtureMarkdown,
+  fixtureMine,
   fixturePage,
   fixtureRecent,
   fixtureSearch,
@@ -69,7 +70,8 @@ if (view === "overview") {
 }
 if (view === "activity") {
   const filters = parseActivityFilters(params) ?? {};
-  snapshot.activity = { filters, page: fixtureActivity(fixture) };
+  // "Me" shows this person's own changes, as the reader answers it
+  snapshot.activity = { filters, page: filters.actor === "me" && fixture === "plain" ? fixtureMine() : fixtureActivity(fixture) };
   snapshot.marks = filters.actor === "me" ? [] : undefined;
 }
 if (view === "edit") snapshot.editor = fixtureMarkdown(location.origin, fixture);

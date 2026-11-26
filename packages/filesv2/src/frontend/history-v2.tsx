@@ -63,7 +63,14 @@ export function SentenceText(props: { parts: readonly Part[]; mark?: { name: str
           <Match when={part.kind === "name" && part}>
             {(item) => (
               <>
-                <Show when={props.mark && props.mark.name === item().text ? props.mark.mark : null}>{(mark) => <Mark {...mark()} />}</Show>
+                <Show when={props.mark && props.mark.name === item().text ? props.mark.mark : null}>
+                  {(mark) => (
+                    // in a sentence the mark is the symbol alone, apart from the name: its type letters would wrap
+                    <>
+                      <Mark icon={mark().icon} color={mark().color} image={mark().image} />{" "}
+                    </>
+                  )}
+                </Show>
                 <Text weight="strong">{item().text}</Text>
                 <Show when={item().hint}>{(hint) => ` (${hint()})`}</Show>
               </>
@@ -256,7 +263,10 @@ export function ActivityRow(props: ActivityRowProps) {
           ? { label: h().retry, icon: "refresh", onClick: () => void versions.refresh() }
           : deedOf(rowAction(props.row, h(), actions() ?? {}, { links: true }), h(), props.actions?.onRestoreTrash, props.onChanged)),
   );
-  const more = createMemo(() => moreDeeds(entry(), actor(), h(), props.env, props.actions));
+  // In "Me" every change is the person's own: there is nobody to write to.
+  const more = createMemo(() =>
+    moreDeeds(entry(), actor(), h(), props.env, props.mode === "me" ? { ...props.actions, onContact: undefined } : props.actions),
+  );
   const time = () => (props.dated ? formatWhen(entry().time, locale(), h(), props.env) : formatTime(entry().time, locale(), props.env));
   // Version evidence is extra: when it cannot be read the row says so and offers to read it again.
   const versionFailure = () => {
@@ -266,8 +276,11 @@ export function ActivityRow(props: ActivityRowProps) {
   const sentenceLine = () => <SentenceText parts={linked()} mark={props.mode === "me" ? null : mark()} />;
   // The web is how most changes come; only another channel (the API, an app, the Assistant) is worth a word.
   const channel = () => meta().filter((part) => !(part.kind === "via" && entry().via === "web"));
+  // A row with a deed keeps its end for the deed: the time moves into its quiet line, so the two never overlap.
+  const crowded = () => !!deed() || more().length > 0;
   const facts = () =>
     [
+      crowded() ? time() : "",
       state()?.label,
       factsText(channel()),
       versionFailure(),
@@ -281,7 +294,7 @@ export function ActivityRow(props: ActivityRowProps) {
       lines={facts() ? [sentenceLine(), facts()] : [sentenceLine()]}
       avatar={props.mode === "all" && !props.member ? personOf(actor()) : undefined}
       mark={props.mode === "me" && !props.member ? (mark()?.mark ?? { icon: "history" }) : undefined}
-      time={time()}
+      time={crowded() ? undefined : time()}
       href={props.toggle ? undefined : hrefOf(linked())}
       onNavigate={props.env.onNavigate}
       onOpen={props.toggle?.onToggle}

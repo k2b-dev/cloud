@@ -20,7 +20,6 @@ import {
   List,
   ListOrder,
   Loading,
-  Mark,
   Menu,
   type MenuEntry,
   Nav,
@@ -51,7 +50,6 @@ import { useBrowserMessages } from "./browser-messages";
 import { preferencesCookie, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import { directoryContext, directoryPageCount, directoryPages } from "./directory-pages";
 import EntryDetail from "./EntryDetail";
-import { entryIcon } from "./entry-icon";
 import { entryMark, storageMark } from "./entry-mark";
 import { historyExecutionHref } from "./execution-url";
 import FavoritesPane from "./FavoritesPane";
@@ -708,7 +706,10 @@ export default function FilesScreen(props: {
   const lead = () => {
     const shown = directory();
     if (!shown) return "";
-    if (!searching()) return b().pageItems(shown.items.length);
+    if (!searching()) {
+      const bytes = shown.items.reduce((sum, entry) => sum + (entry.directory ? 0 : entry.size), 0);
+      return b().v2EntriesSize({ count: shown.items.length, more: shown.next ? "+" : "", size: formatFileViewSize(bytes, locale()) });
+    }
     if (typeof shown.total !== "number") return b().searchResults(shown.items.length);
     return shown.truncated ? b().searchTruncated(shown.total) : b().searchTotal(shown.total);
   };
@@ -718,43 +719,6 @@ export default function FilesScreen(props: {
       .reduce((sum, entry) => sum + entry.size, 0);
   const movable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.move !== false);
   const shareable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.share !== false);
-  /** The deeds of one entry, behind its "…". */
-  const entryMenu = (entry: FileEntry): MenuEntry[] => [
-    entry.directory
-      ? { label: b().open, icon: "folder-open", href: folderHref(entry.path), onNavigate }
-      : actions.editable(entry)
-        ? { label: entry.actions?.write === false ? b().openReadOnly : b().edit, icon: "pencil", onClick: () => edit(entry) }
-        : { label: b().preview, icon: "eye", onClick: () => actions.preview(entry) },
-    { label: b().details, icon: "info-circle", href: withFile(entry.path), onNavigate },
-    {
-      label: entry.directory ? b().downloadZip : t().download,
-      icon: "download",
-      disabled: actions.busy(),
-      onClick: () => actions.startDownload([entry]),
-    },
-    ...(entry.actions?.share !== false ? [{ label: b().shareSelection, icon: "world-share", onClick: () => share([entry.path]) }] : []),
-    ...(searching()
-      ? []
-      : [
-          "separator" as const,
-          { label: b().rename, icon: "pencil", disabled: entry.actions?.move === false, onClick: () => void actions.rename(entry) },
-          { label: b().duplicate, icon: "copy", disabled: !canCreate(), onClick: () => actions.duplicate(entry) },
-          {
-            label: b().moveTo,
-            icon: "arrow-move-right",
-            disabled: entry.actions?.move === false,
-            onClick: () => void actions.moveOrCopy([entry]),
-          },
-          { label: b().copyTo, icon: "folder-symlink", onClick: () => void actions.moveOrCopy([entry], true) },
-        ]),
-    {
-      label: b().trashSelection,
-      icon: "trash",
-      danger: true,
-      disabled: entry.actions?.move === false,
-      onClick: () => void actions.trashItems([entry]),
-    },
-  ];
   /** What can be done with the chosen entries, at the place of the status row while they are chosen. */
   const selectionActions = () => {
     const items = chosenEntries();
@@ -781,6 +745,22 @@ export default function FilesScreen(props: {
               onClick: () => void actions.moveOrCopy(items),
             },
             { label: b().copyTo, icon: "folder-symlink", disabled: actions.busy(), onClick: () => void actions.moveOrCopy(items, true) },
+            ...(items.length === 1
+              ? [
+                  {
+                    label: b().rename,
+                    icon: "pencil",
+                    disabled: actions.busy() || items[0]!.actions?.move === false,
+                    onClick: () => void actions.rename(items[0]!),
+                  },
+                  {
+                    label: b().duplicate,
+                    icon: "copy",
+                    disabled: actions.busy() || !canCreate(),
+                    onClick: () => actions.duplicate(items[0]!),
+                  },
+                ]
+              : []),
             {
               label: b().moveToNewFolder,
               icon: "folder-plus",
@@ -1003,7 +983,7 @@ export default function FilesScreen(props: {
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
         // No empty half (look rule 5): the detail stands only while an entry is open.
         detail={screen() === "folder" && !snapshot().moved && openPath() ? true : undefined}
-        primary={screen() === "folder" && !snapshot().moved ? uploadAction() : undefined}
+        primary={screen() === "folder" && !snapshot().moved && !openPath() ? uploadAction() : undefined}
         head={
           <Bar
             start={<Path label={b().v2Where} items={pathItems()} />}
@@ -1047,9 +1027,12 @@ export default function FilesScreen(props: {
                   />
                   <Show when={canCreate() && !searching()}>
                     <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
-                    <Button variant="primary" icon="upload" disabled={actions.busy()} onClick={actions.pickFiles}>
-                      {b().upload}
-                    </Button>
+                    {/* Beside an open file the upload stays in "+": on the phone nothing floats over the file. */}
+                    <Show when={!openPath()}>
+                      <Button variant="primary" icon="upload" disabled={actions.busy()} onClick={actions.pickFiles}>
+                        {b().upload}
+                      </Button>
+                    </Show>
                   </Show>
                 </Show>
               </>
@@ -1158,74 +1141,70 @@ export default function FilesScreen(props: {
           <Pane.Split>
             <Pane
               label={t().files}
-              width={{ min: 440, default: 720 }}
+              // the list takes the whole width; only beside an open file it keeps its own, with a grip
+              width={openPath() ? { min: 440, default: 720 } : undefined}
               scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}
               status={
                 <Show when={directory()}>
-                  <Show when={folderState()}>
-                    {(state) => (
-                      <FilterBar
-                        query={queries().folder}
-                        state={state()}
-                        onChange={changeFolder}
-                        icons={FILTER_ICONS}
-                        timeZone={timeZone()}
-                        results={lead()}
-                      />
-                    )}
-                  </Show>
-                  <Show when={searchListState()}>
-                    {(state) => (
-                      <FilterBar
-                        query={queries().search}
-                        state={state()}
-                        onChange={changeSearch}
-                        icons={FILTER_ICONS}
-                        timeZone={timeZone()}
-                        results={lead()}
-                      />
-                    )}
-                  </Show>
-                  <StatusRow
-                    lead={lead()}
-                    loading={workspace.pending()}
-                    select={
-                      entries().length
-                        ? {
-                            label: b().selectAll,
-                            checked: chosen().length === 0 ? false : chosenEntries().length === entries().length ? true : "mixed",
-                            onChange: (checked) => setChosen(checked ? entries().map((entry) => entry.path) : []),
-                          }
-                        : undefined
-                    }
-                    selection={
-                      chosenEntries().length
-                        ? {
-                            count: [
-                              b().selectedActions(chosenEntries().length),
-                              chosenBytes() ? formatFileViewSize(chosenBytes(), locale()) : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · "),
-                            actions: selectionActions(),
-                            clear: { label: b().clear, onClick: () => setChosen([]) },
-                          }
-                        : undefined
-                    }
-                    filters={
+                  <Show
+                    when={chosenEntries().length}
+                    fallback={
                       <>
                         <Show when={folderState()}>
-                          {(state) => <ListOrder query={queries().folder} state={state()} onChange={changeFolder} />}
+                          {(state) => (
+                            <FilterBar
+                              query={queries().folder}
+                              state={state()}
+                              onChange={changeFolder}
+                              icons={FILTER_ICONS}
+                              timeZone={timeZone()}
+                              results={lead()}
+                              end={
+                                <>
+                                  <ListOrder query={queries().folder} state={state()} onChange={changeFolder} />
+                                  <Menu icon={grid() ? "layout-grid" : "list"} items={viewMenu()}>
+                                    {grid() ? b().grid : b().list}
+                                  </Menu>
+                                </>
+                              }
+                            />
+                          )}
                         </Show>
                         <Show when={searchListState()}>
-                          {(state) => <ListOrder query={queries().search} state={state()} onChange={changeSearch} />}
-                        </Show>
-                        <Show when={!searching()}>
-                          <Menu icon={grid() ? "layout-grid" : "list"} label={b().view} items={viewMenu()} />
+                          {(state) => (
+                            <FilterBar
+                              query={queries().search}
+                              state={state()}
+                              onChange={changeSearch}
+                              icons={FILTER_ICONS}
+                              timeZone={timeZone()}
+                              results={lead()}
+                              end={<ListOrder query={queries().search} state={state()} onChange={changeSearch} />}
+                            />
+                          )}
                         </Show>
                       </>
                     }
-                  />
+                  >
+                    <StatusRow
+                      lead=""
+                      select={{
+                        label: b().selectAll,
+                        checked: chosenEntries().length === entries().length ? true : "mixed",
+                        onChange: (checked) => setChosen(checked ? entries().map((entry) => entry.path) : []),
+                      }}
+                      selection={{
+                        count: [
+                          b().selectedActions(chosenEntries().length),
+                          chosenBytes() ? formatFileViewSize(chosenBytes(), locale()) : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" · "),
+                        actions: selectionActions(),
+                        clear: { label: b().clear, onClick: () => setChosen([]) },
+                      }}
+                    />
+                  </Show>
                 </Show>
               }
             >
@@ -1336,9 +1315,8 @@ export default function FilesScreen(props: {
                               const count = number(rows().filter((other) => other.entry.directory === folders).length);
                               return {
                                 key: folders ? "folders" : "files",
-                                head: () => <Text weight="strong">{folders ? b().filterFolders : b().filterFiles}</Text>,
+                                head: () => (folders ? b().filterFolders : b().filterFiles),
                                 count,
-                                meta: count,
                               };
                             }
                           : undefined
@@ -1361,70 +1339,79 @@ export default function FilesScreen(props: {
                       columns={[
                         {
                           title: t().name,
-                          width: { min: 160, default: 240 },
+                          width: { min: 160, default: 220 },
                           sort: sortTarget("name"),
-                          cell: (row) => {
-                            const name = (
-                              <Inline>
-                                <Mark {...entryMark(row.entry)} />
-                                <Text>{row.entry.name}</Text>
-                              </Inline>
-                            );
-                            return searching() ? { lines: [name, placeOf(row.entry)] } : name;
-                          },
+                          mark: (row) => entryMark(row.entry),
+                          cell: (row) => (searching() ? { lines: [row.entry.name, placeOf(row.entry)] } : row.entry.name),
                         },
                         {
-                          // Who changed it last, as far as this person may see the history; the name is its hint.
+                          // Who changed it last, as far as this person may see the history.
                           title: b().v2From,
-                          width: { min: 48, default: 48 },
+                          width: { min: 110, default: 120 },
                           drop: true,
-                          cell: (row) => (row.entry.facts?.author ? <Avatar name={row.entry.facts.author.name} /> : ""),
+                          // k2b-ui gap: `Column avatar` takes no row without a person (an author the history hides); the cell
+                          // draws the avatar beside the name meanwhile.
+                          cell: (row) => {
+                            const author = row.entry.facts?.author;
+                            return author ? (
+                              <Inline>
+                                <Avatar name={author.name} />
+                                <Text>{author.name}</Text>
+                              </Inline>
+                            ) : (
+                              ""
+                            );
+                          },
                         },
                         {
                           // Who reaches it: its own download links, else the team of a group storage or only you.
                           title: b().v2Sharing,
-                          width: { min: 96, default: 112 },
+                          width: { min: 96, default: 110 },
                           drop: true,
                           cell: (row) => (
-                            <Inline>
-                              <Icon name={row.entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock"} />
-                              <Text>{sharing(row.entry)}</Text>
-                            </Inline>
+                            <Text>
+                              <Icon name={row.entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock"} />{" "}
+                              {sharing(row.entry)}
+                            </Text>
                           ),
                         },
                         {
-                          title: t().size,
-                          width: { min: 80, default: 88 },
-                          align: "end",
-                          drop: true,
-                          sort: sortTarget("size"),
-                          cell: (row) => sizeText(row.entry),
-                        },
-                        {
                           title: t().modified,
-                          width: { min: 110, default: 130 },
+                          width: { min: 100, default: 120 },
                           drop: true,
                           sort: sortTarget("modified"),
                           cell: (row) => (row.fresh ? b().justCreated : when(row.entry.modified)),
                         },
                         {
-                          title: b().v2Deeds,
-                          cell: (row) => <Menu label={b().v2DeedsFor({ name: row.entry.name })} items={entryMenu(row.entry)} />,
+                          title: t().size,
+                          width: { min: 72, default: 90 },
+                          align: "end",
+                          sort: sortTarget("size"),
+                          cell: (row) => sizeText(row.entry),
                         },
                       ]}
                     />
                   }
                 >
-                  {/* k2b-ui gap: Tiles show no picture, size or selection and open as a page (lane Y2: Tiles with
-                      images S/M/L); the grid lists symbols until then. */}
+                  {/* k2b-ui gap: the listing has no thumbnail address yet, so a tile shows its type's mark. */}
                   <Show when={rows().length} fallback={<Empty {...emptyState()} />}>
                     <Tiles
+                      variant="media"
                       label={t().files}
+                      select={{
+                        selected: chosen(),
+                        onChange: (key, on) => setChosen((now) => (on ? [...now, key] : now.filter((each) => each !== key))),
+                      }}
                       items={rows().map((row) => ({
-                        icon: entryIcon(row.entry),
-                        color: entryMark(row.entry).color,
+                        key: row.key,
+                        ...entryMark(row.entry),
                         title: row.entry.name,
-                        meta: row.entry.directory ? b().kindFolder : sizeText(row.entry),
+                        meta: row.fresh ? b().justCreated : when(row.entry.modified),
+                        people: row.entry.facts?.author ? [{ name: row.entry.facts.author.name }] : [],
+                        sign: {
+                          icon: row.entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock",
+                          label: sharing(row.entry),
+                        },
                         href: openTarget(row.entry).href,
                       }))}
                     />

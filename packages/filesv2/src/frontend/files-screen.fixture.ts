@@ -360,13 +360,11 @@ export function fixtureStorages(fixture: FixtureCase): BaseSummary[] {
 }
 
 /** All storage: the favorites, and what this person did last. */
-export const fixtureRecent = () => ({
-  // "Recently by you" holds this person's own changes only: Mira's.
-  page: {
-    ...fixtureActivity("plain"),
-    items: fixtureActivity("plain")
-      .items.slice(0, 5)
-      .map((item) => ({ ...item, actor: { kind: "user" as const, ...PEOPLE[0]! } })),
-  },
-  opened: [],
-});
+/** This person's own changes (Mira's), as the reader answers "me"; `limit` as the overview asks for five. */
+export const fixtureMine = (limit?: number): ActivityPage => {
+  const items = fixtureActivity("plain").items.map((item) => ({ ...item, actor: { kind: "user" as const, ...PEOPLE[0]! } }));
+  const shown = limit ? items.slice(0, limit) : items;
+  return { ...fixtureActivity("plain"), items: shown, visibleCount: shown.length };
+};
+/** "Recently by you" on all storage: the first five of this person's own changes. */
+export const fixtureRecent = () => ({ page: fixtureMine(5), opened: [] });

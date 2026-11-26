@@ -1,5 +1,5 @@
 import { toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Dialog, Failed, Icon, Inline, Mark, type OnNavigate, Pane, StatusRow, Table, Text } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Dialog, Failed, Icon, Inline, type OnNavigate, Pane, StatusRow, Table, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, SharePage, ShareView } from "../contracts";
@@ -105,7 +105,10 @@ export default function SharesPane(props: {
       scrollKey="filesv2-shares"
       status={
         <StatusRow
-          lead={page() ? b().v2ActiveShares({ count: active(), more: page()!.next ? "+" : "" }) : b().sharesTitle}
+          // the lead counts the rows it stands over; the active ones are its fact
+          lead={
+            page() ? b().v2SharesLead({ count: page()!.items.length, more: page()!.next ? "+" : "", active: active() }) : b().sharesTitle
+          }
           loading={loading()}
         />
       }
@@ -120,44 +123,65 @@ export default function SharesPane(props: {
               // A link opens the folder it stands for; its deeds stay at the row's end.
               open={(share) => ({ href: filesUrl(share.base.id, share.scope), onNavigate: props.onNavigate })}
               empty={{ icon: "world-share", text: b().noShares }}
-              phone={(share) => ({ lines: [share.title, place(share)], time: expires(share), marks: state(share) })}
+              phone={(share) => ({
+                lines: [share.title, `${what(share)} · ${by(share)}`],
+                mark: KIND_MARK[share.kind],
+                time: expires(share),
+                marks: state(share),
+              })}
               columns={[
                 {
                   title: b().shareName,
-                  width: { min: 180, default: 210 },
-                  cell: (share) => ({
-                    lines: [
-                      <Inline>
-                        <Mark {...KIND_MARK[share.kind]} label={share.kind === "inbox" ? b().inboxShare : b().downloadShare} />
-                        <Text weight="medium">{share.title}</Text>
-                        <Show when={share.passwordProtected}>
-                          <Icon name="lock" label={p().protected} />
-                        </Show>
-                      </Inline>,
-                      `${what(share)} · ${by(share)}`,
-                    ],
-                  }),
-                },
-                { title: b().v2Place, width: { min: 120, default: 150 }, drop: true, cell: place },
-                { title: b().shareExpires, width: { min: 80, default: 90 }, drop: true, cell: expiresCell },
-                { title: b().shareState, width: { min: 120, default: 130 }, drop: true, cell: state },
-                {
-                  title: b().v2Deeds,
+                  width: { min: 180, default: 200 },
+                  mark: (share) => ({ ...KIND_MARK[share.kind], label: share.kind === "inbox" ? b().inboxShare : b().downloadShare }),
                   cell: (share) => (
-                    <Show when={share.state === "active"}>
-                      <Button
-                        // The deed column takes what is left; a symbol with its name keeps the table within its column.
-                        variant="ghost"
-                        icon="link-off"
-                        label={b().revoke}
-                        title={b().revoke}
-                        busy={busy() === share.id}
-                        disabled={Boolean(busy())}
-                        onClick={() => void revoke(share)}
-                      />
-                    </Show>
+                    <Text>
+                      {share.title}
+                      <Show when={share.passwordProtected}>
+                        {" "}
+                        <Icon name="lock" label={p().protected} />
+                      </Show>
+                    </Text>
                   ),
                 },
+                {
+                  title: b().v2From,
+                  width: { min: 120, default: 130 },
+                  drop: true,
+                  avatar: (share) => ({ name: share.createdBy }),
+                  cell: (share) => (share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy),
+                },
+                {
+                  title: b().shareState,
+                  width: { min: 130, default: 140 },
+                  drop: true,
+                  cell: (share) => (
+                    <Inline>
+                      {state(share)}
+                      <Show when={share.state === "active"}>
+                        <Button
+                          variant="ghost"
+                          icon="link-off"
+                          label={b().revoke}
+                          title={b().revoke}
+                          busy={busy() === share.id}
+                          disabled={Boolean(busy())}
+                          onClick={() => void revoke(share)}
+                        />
+                      </Show>
+                    </Inline>
+                  ),
+                },
+                { title: b().shareExpires, width: { min: 80, default: 84 }, drop: true, cell: expiresCell },
+                {
+                  title: b().v2Accesses,
+                  width: { min: 64, default: 72 },
+                  align: "end",
+                  drop: true,
+                  cell: (share) => String(share.accessCount),
+                },
+                // the place takes the rest of the width: a deep folder is the longest words of a link
+                { title: b().v2Place, drop: true, cell: place },
               ]}
             />
             <Show when={shown().next}>

@@ -254,27 +254,6 @@
   height: 12px;
   margin: 18px 0 8px 8px;
 }
-.filesv2-history-skeleton__tile {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-}
-.filesv2-history-skeleton__title {
-  width: 40%;
-  height: 20px;
-  margin-bottom: 10px;
-}
-.filesv2-history-hit--skeleton .filesv2-history-skeleton__meta + .filesv2-history-skeleton__meta {
-  width: 52%;
-  margin-top: 8px;
-}
-.filesv2-history-skeleton__now {
-  display: inline-block;
-  width: 60%;
-  height: 14px;
-  vertical-align: middle;
-}
-
 .filesv2-history-scanned {
   margin: 0.75rem 0 0 0.5rem;
   font-size: 0.875rem;
@@ -289,114 +268,11 @@
 }
 
 /* Vanished item */
-.filesv2-history-result {
-  max-width: 760px;
-  padding: 0.375rem 0.5rem 0;
-}
-.filesv2-history-result__label {
-  margin: 0.375rem 0 0.875rem;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-muted);
-}
-.filesv2-history-result__label strong {
-  font-weight: 600;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-history-hit {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 0.875rem;
-}
-.filesv2-history-hit--skeleton {
-  min-height: 120px;
-}
 /* The box of the shared file-type tile; its chip and type colour stay with `FileTypeIcon`. A block box, so the moved
    notice puts no line gap under it. */
-.k2b-ui .k2b-file-type-icon.filesv2-history-hit__tile {
-  display: flex;
-  width: 44px;
-  height: 44px;
-  font-size: 22px;
-}
-.filesv2-history-hit__title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.625rem;
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  color: var(--k2b-text);
-}
-.filesv2-history-hit__now {
-  margin: 0.375rem 0 0;
-  font-size: 0.9375rem;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-history-hit__now strong {
-  font-weight: 600;
-  color: var(--k2b-text);
-}
-.filesv2-history-hit__why {
-  margin: 0.25rem 0 0;
-  font-size: 0.84375rem;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-history-hit__buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-.filesv2-history-hit__buttons:empty {
-  display: none;
-}
-.filesv2-history-hit__checking {
-  margin: 0.5rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-muted);
-}
-.filesv2-history-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  max-width: 640px;
-  margin: 0.875rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-history-note .ti {
-  margin-top: 1px;
-  color: var(--k2b-text-muted);
-}
-.filesv2-history-section {
-  margin-top: 1.625rem;
-}
-.filesv2-history-chain {
-  margin-top: 1.75rem;
-}
-.filesv2-history-section__title {
-  margin: 0 0 0.375rem 0.5rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-history-chain .filesv2-history-row {
-  min-height: 0;
-}
-
 /* The approved detail uses plain, flush section headings and compact read-only facts. */
 .k2b-ui .k2b-app-workspace__detail .k2b-detail-panel.filesv2-inspector .k2b-detail-panel__body {
   gap: 1rem;
-}
-.k2b-ui .filesv2-inspector-info .k2b-description-list[data-layout="rows"] .k2b-description-list__item {
-  min-height: 0;
-  grid-template-rows: auto;
-  padding-block: 3px;
-}
-.k2b-ui .filesv2-inspector-info .k2b-description-list[data-layout="rows"] .k2b-description-list__item dt {
-  padding-block-start: 0;
 }
 @media not all and (any-pointer: coarse) {
   .k2b-ui .filesv2-inspector-versions .k2b-button.k2b-detail-panel__action {
@@ -409,52 +285,14 @@
   width: calc(100% - 2.25rem);
 }
 /* The phone's version count reads as a value of the facts list; it opens the versions. */
-.k2b-ui .filesv2-inspector-info [data-inspector-only="phone"] .k2b-button[data-variant="text"] {
-  font-size: inherit;
-  font-weight: inherit;
-}
-
 /* Details: the preview leads the panel without a heading. A PDF shows its whole first page, narrower than the panel,
    in an area of 26rem (at most 60 % of the screen's height); images and video keep their frames. The expand icon
    floats in the top corner, a pill of small controls like the PDF's bar (`k2b-pill`), beside a centred page rather than
    over it. */
-.filesv2-inspector-preview {
-  position: relative;
-  min-width: 0;
-}
-.k2b-ui .filesv2-inspector-preview .k2b-pdf-viewer {
-  height: min(26rem, 60svh);
-  flex: none;
-}
-.k2b-ui .filesv2-inspector-preview__expand {
-  position: absolute;
-  z-index: 1;
-  top: 0.5rem;
-  right: 0.5rem;
-}
 /* The approved order: preview, then the action bar 12px below it; a folder starts with the bar. */
-.filesv2-inspector-lead {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.filesv2-inspector-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem;
-}
-@media (any-pointer: coarse) {
-  .filesv2-inspector-actions {
-    row-gap: 0.625rem;
-  }
-}
+
 /* Info rows that belong to one form only; the shared list has no per-row class. */
-@container k2b-app-area (min-width: 48rem) {
-  .k2b-ui .filesv2-inspector-info .k2b-description-list .k2b-description-list__item:has([data-inspector-only="phone"]) {
-    display: none;
-  }
-}
+
 /* Phones show the short form: the preview, no folder Info, the change date and version count only, and the versions
    list once the count opens it. */
 @container k2b-app-area (max-width: 47.999rem) {
@@ -466,30 +304,6 @@
 }
 
 /* Old address of a moved item */
-.filesv2-history-moved {
-  max-width: 560px;
-  margin: 90px auto 0;
-}
-.filesv2-history-moved .filesv2-history-hit__tile {
-  margin-bottom: 1.125rem;
-}
-.filesv2-history-moved__title {
-  margin: 0 0 0.5rem;
-  font-size: 1.5rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.filesv2-history-moved__now {
-  margin: 0 0 0.375rem;
-  font-size: 0.9375rem;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-history-moved__why {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--k2b-text-secondary);
-}
-
 /* Item history in the detail */
 .filesv2-item-history__line {
   display: flex;
@@ -588,34 +402,6 @@
   font-size: 0.78125rem;
   color: var(--k2b-text-muted);
 }
-.filesv2-share-facts__subtitle {
-  margin: 0.625rem 0 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--k2b-text-secondary);
-}
-.filesv2-share-facts__periods {
-  margin: 0.125rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-.filesv2-share-facts__periods li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 0.5rem;
-  min-height: 28px;
-  padding: 0.25rem 0;
-  font-size: 0.8125rem;
-}
-.filesv2-share-facts__periods time {
-  color: var(--k2b-text-secondary);
-}
-.filesv2-share-facts__periods span {
-  margin-left: auto;
-  font-size: 0.78125rem;
-  color: var(--k2b-text-muted);
-}
 .filesv2-share-facts__revoke {
   margin-top: 0.375rem;
 }
@@ -659,34 +445,8 @@
   .filesv2-history-day__title {
     margin-left: 0;
   }
-  .filesv2-history-result {
-    padding: 0.25rem 0 0;
-  }
-  .filesv2-history-hit {
-    grid-template-columns: 40px minmax(0, 1fr);
-    gap: 0.75rem;
-  }
-  .filesv2-history-hit .k2b-file-type-icon.filesv2-history-hit__tile {
-    width: 40px;
-    height: 40px;
-  }
-  .filesv2-history-hit__title {
-    font-size: 1.125rem;
-  }
-  .filesv2-history-hit__now {
-    font-size: 0.90625rem;
-  }
-  .filesv2-history-hit__buttons > * {
-    flex: 1;
-  }
-  /* Over the shared button height; the shared touch area still reaches 44px. */
-  .k2b-ui .filesv2-history-hit__buttons .k2b-button {
-    min-height: 42px;
-  }
-  .filesv2-history-moved {
-    margin: 28px 0 0;
-  }
-}
+              /* Over the shared button height; the shared touch area still reaches 44px. */
+    }
 
 /* One named container owns the admin table/list switch across the Cloud and application stylesheets. */
 .filesv2-admin-history-table { display: none; }
@@ -699,35 +459,12 @@
 .k2b-ui .k2b-data-table.filesv2-admin-history-data { font-size: 0.84375rem; }
 .k2b-ui .filesv2-admin-history-data .k2b-data-table__head-row > th { font-size: 0.78125rem; }
 /* History's approved empty/error presentation, using the shared Placeholder and feedback semantics. */
-.k2b-ui .k2b-placeholder.filesv2-history-placeholder { gap: 6px; padding: 72px 20px; }
-.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); margin-bottom: 6px; }
-.k2b-ui .k2b-placeholder.filesv2-history-placeholder[data-state="error"] .k2b-placeholder__icon { background: var(--k2b-danger-surface); color: var(--k2b-danger-text); }
-.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__title { font-size: 15px; }
-.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__description { max-width: 420px; }
-.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__action { margin-top: 12px; }
 @container filesv2-history (max-width: 40rem) {
-  .k2b-ui .k2b-placeholder.filesv2-history-placeholder { padding: 48px 8px; }
-  .filesv2-history-head__filters .k2b-filter-chip > i:not(.k2b-filter-chip__chevron) { display: none; }
+    .filesv2-history-head__filters .k2b-filter-chip > i:not(.k2b-filter-chip__chevron) { display: none; }
   .k2b-ui .filesv2-history-head__filters .k2b-filter-chip { padding-inline: 7px; gap: 4px; }
 }
 
 /* History pages keep the host title visible on phones, including an opened old address. */
-@container k2b-app-area (max-width: 47.9375rem) {
-  .k2b-ui :is(.filesv2-workspace--activity, .filesv2-workspace--moved) > .k2b-app-workspace__head[data-trail="title"] {
-    display: flex;
-    min-height: 3.75rem;
-    padding-inline: 1rem;
-  }
-  .k2b-ui :is(.filesv2-workspace--activity, .filesv2-workspace--moved) > .k2b-app-workspace__head .k2b-page-title__title {
-    font-size: 1.5rem;
-    height: auto;
-    line-height: 2rem;
-  }
-}
-
-@container files-browser (max-width: 40rem) {
-  .k2b-ui .k2b-placeholder.filesv2-history-placeholder { padding: 48px 8px; }
-}
 
 /* Compact rows: the activity list, one line each on a wide area. Under "All": a small avatar and the actor in their
    own columns (both left out when the actor repeats), then the change in note style with the item first, then the
@@ -735,9 +472,6 @@
    element; verbs and places stay quiet. A long line ends in an ellipsis instead of wrapping, so every row keeps one
    height. A row's action covers the facts on hover and focus instead of taking a column. The page uses the full
    width, like every other page of Files. */
-.filesv2-history-list--compact {
-  max-width: none;
-}
 .filesv2-history-row[data-variant="compact"] {
   position: relative;
   grid-template-columns: 20px 8.5rem minmax(0, 1fr) auto;

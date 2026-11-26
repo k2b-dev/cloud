@@ -463,6 +463,11 @@ export const browserMessages = i18n.define({
       v2Place: "Location",
       v2Understood: "Understood",
       v2Close: "Close",
+      v2SharesLead: (values: { count: number; more: string; active: number }) =>
+        `${values.count}${values.more} ${values.count === 1 && !values.more ? "link" : "links"} · ${values.active} active`,
+      v2Accesses: "Opened",
+      v2EntriesSize: (values: { count: number; more: string; size: string }) =>
+        `${values.count}${values.more} ${values.count === 1 && !values.more ? "entry" : "entries"} · ${values.size}`,
       v2TodayByYou: (values: { count: number; more: string }) =>
         values.count === 0
           ? "Nothing changed by you today"
@@ -941,6 +946,11 @@ export const browserMessages = i18n.define({
       v2Place: "Ort",
       v2Understood: "Verstanden",
       v2Close: "Schließen",
+      v2SharesLead: (values: { count: number; more: string; active: number }) =>
+        `${values.count}${values.more} ${values.count === 1 && !values.more ? "Link" : "Links"} · ${values.active} aktiv`,
+      v2Accesses: "Geöffnet",
+      v2EntriesSize: (values: { count: number; more: string; size: string }) =>
+        `${values.count}${values.more} ${values.count === 1 && !values.more ? "Eintrag" : "Einträge"} · ${values.size}`,
       v2TodayByYou: (values: { count: number; more: string }) =>
         values.count === 0
           ? "Heute noch nichts von dir geändert"

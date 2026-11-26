@@ -15,6 +15,7 @@ import {
   fixtureFavorites,
   fixtureListing,
   fixtureMarkdown,
+  fixtureMine,
   fixturePage,
   fixtureSearch,
   fixtureShares,
@@ -25,6 +26,7 @@ import {
 // renames, moves and trashes them, on a desktop and on a phone. The test stands in for the server: the page and the
 // Files API answer from the same invented folders.
 const ui = resolve(import.meta.dir, "../../../ui");
+const uiDist = resolve(ui, "dist");
 const origin = "https://cloud.example.test";
 setDefaultTimeout(30_000);
 const shots = process.env.CLOUD_FILES_SCREEN_SHOTS;
@@ -111,6 +113,8 @@ const shell =
 const page = (fixture: FixtureCase) =>
   `<!doctype html><html lang="de" class="light" data-fixture="${fixture}"><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
+  // Cloud's typeface as Core serves it (IBM Plex); without it the page falls back to the system font.
+  `<link rel="stylesheet" href="${origin}/public/fonts.css">` +
   `<style>${css}</style></head>` +
   `<body class="k2b-ui k2-ui">${shell}<div id="root"></div><script src="/harness.js"></script></body></html>`;
 
@@ -198,7 +202,14 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     if (url.pathname === `${api}/favorites`) return route.fulfill({ json: fixtureFavorites });
     // An item's own history stays empty; Activity answers with the day of the fixture.
     if (url.pathname === `${api}/activity`)
-      return route.fulfill({ json: url.searchParams.get("scope") ? emptyHistory : fixtureActivity(fixture) });
+      // "me" is answered as the server answers it: the person's own changes only.
+      return route.fulfill({
+        json: url.searchParams.get("scope")
+          ? emptyHistory
+          : url.searchParams.get("actor") === "me"
+            ? fixtureMine(Number(url.searchParams.get("limit")) || undefined)
+            : fixtureActivity(fixture),
+      });
     if (url.pathname === `${api}/shares`) return route.fulfill({ json: fixtureShares(fixture) });
     if (url.pathname === `${api}/recent`) return route.fulfill({ json: [] });
     if (url.pathname.startsWith(`${api}/bases/demo/preview`)) return route.fulfill({ status: 404, body: "" });
@@ -210,6 +221,9 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
       });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
+    if (url.pathname === "/public/fonts.css") return route.fulfill({ contentType: "text/css", path: join(uiDist, "plex.css") });
+    if (url.pathname.startsWith("/public/fonts/") && !url.pathname.includes(".."))
+      return route.fulfill({ contentType: "font/woff2", path: join(uiDist, "fonts", url.pathname.slice("/public/fonts/".length)) });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
@@ -222,12 +236,35 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
 /** The names of the rows the folder shows, in order. */
 const names = (tab: Page) =>
   tab
-    .locator("[data-k2-part=Table] tbody tr:not([data-group]) td:nth-child(2) [data-k2-part=Text]")
+    .locator("[data-k2-part=Table] tbody tr:not([data-group]) td:nth-child(2) .k2-cell-line")
     .evaluateAll((cells) => cells.map((cell) => (cell.textContent ?? "").trim()));
 const rowLink = (tab: Page, name: string) => tab.locator("[data-k2-part=Table] tbody tr .k2-row-open").filter({ hasText: name }).first();
 const shoot = async (tab: Page, name: string) => {
-  if (shots) await tab.screenshot({ path: join(shots, `files-v2-${name}.png`) });
+  if (!shots) return;
+  // the picture shows the page at rest: the focus a click left stays out of it, the open row shows its tint
+  await tab.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
+  await tab.mouse.move(0, 0);
+  await tab.screenshot({ path: join(shots, `files-v2-${name}.png`) });
 };
+/**
+ * Parts of a row that cover each other: its time under its deed or its "…", a deed over the time (error class "row
+ * action without reserved space", found by the design review 26.11.). Empty when every row keeps its parts apart.
+ */
+const rowOverlaps = (tab: Page) =>
+  tab.evaluate(() => {
+    const found: string[] = [];
+    const meet = (a: DOMRect, b: DOMRect) =>
+      a.width > 0 && b.width > 0 && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+    for (const row of document.querySelectorAll<HTMLElement>("[data-k2-part=Row]")) {
+      const time = row.querySelector(":scope > .k2-row-time, .k2-row-time");
+      if (!time) continue;
+      const box = time.getBoundingClientRect();
+      for (const part of row.querySelectorAll<HTMLElement>(".k2-row-end, button:not(.k2-row-open), a.k2-btn"))
+        if (!part.contains(time) && meet(box, part.getBoundingClientRect()))
+          found.push(`"${(time.textContent ?? "").trim()}" under "${(part.textContent || part.getAttribute("aria-label") || "").trim()}"`);
+    }
+    return found;
+  });
 const expectClean = async (tab: Page) => {
   await tab.mouse.move(0, 0);
   const outline = await describeV2Page(tab, "#root");
@@ -286,7 +323,7 @@ describe("a folder of Files on v2", () => {
       await tab.waitForFunction(
         () =>
           [
-            ...document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group]) td:nth-child(2) [data-k2-part=Text]"),
+            ...document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group]) td:nth-child(2) .k2-cell-line"),
           ][2]?.textContent?.trim() === "Zuschnitt Küchenfront.dxf",
       );
       const sorted = await names(tab);
@@ -309,7 +346,7 @@ describe("a folder of Files on v2", () => {
       await field.press("Enter");
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "angebot");
       await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === 3);
-      expect(await tab.locator("[data-k2-part=StatusRow]").innerText()).toContain("3 Treffer");
+      expect(await tab.locator("[data-k2-part=FilterBar]").innerText()).toContain("3 Treffer");
       await shoot(tab, "03-search-1440");
       await field.focus();
       await field.press("Escape");
@@ -332,18 +369,23 @@ describe("a folder of Files on v2", () => {
         expect(await status.getByRole("button", { name: deed }).count()).toBe(1);
       await shoot(tab, "04-selection-1440");
       await status.getByRole("button", { name: /Auswahl aufheben/ }).click();
-      await status.getByText(/Einträge geladen/).waitFor();
+      // the filter row with the count comes back in its place
+      await tab
+        .locator("[data-k2-part=FilterBar]")
+        .getByText(/Einträge ·/)
+        .waitFor();
 
-      await tab.getByRole("button", { name: "Aktionen für Notizen.md", exact: true }).click();
-      await tab.getByRole("menuitem", { name: "Umbenennen", exact: true }).click();
+      // One chosen entry adds rename and duplicate to the deeds of the selection.
+      await tab.getByRole("checkbox", { name: /Notizen\.md/ }).check();
+      await tab.locator("[data-k2-part=StatusRow]").getByRole("button", { name: "Umbenennen" }).click();
       const name = tab.getByRole("dialog").getByRole("textbox").last();
       await name.fill("Notizen neu.md");
       await name.press("Enter");
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("file") === "Notizen neu.md");
       expect(seen.posts.at(-1)).toEqual({ path: "/bases/demo/rename", body: { path: "Notizen.md", name: "Notizen neu.md" } });
 
-      await tab.getByRole("button", { name: "Aktionen für Lieferplan.pdf", exact: true }).click();
-      await tab.getByRole("menuitem", { name: "In den Papierkorb", exact: true }).click();
+      await tab.getByRole("checkbox", { name: /Lieferplan\.pdf/ }).check();
+      await tab.locator("[data-k2-part=StatusRow]").getByRole("button", { name: "In den Papierkorb" }).click();
       await tab.getByRole("alertdialog").or(tab.getByRole("dialog")).getByRole("button", { name: "In den Papierkorb" }).click();
       await tab.waitForFunction(() => document.querySelector("[role=status], [role=alert]") !== null);
       expect(seen.posts.at(-1)).toEqual({ path: "/bases/demo/delete", body: { paths: ["Lieferplan.pdf"] } });
@@ -482,7 +524,7 @@ describe("the views beside the folders on v2", () => {
 
       await nav.getByRole("link", { name: "Alle Ablagen" }).click();
       await tab.waitForFunction(() => !new URL(location.href).search);
-      await tab.locator("[data-k2-part=Tiles][data-variant=card]").waitFor();
+      await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]").first().waitFor();
       expect(await tab.locator("[data-k2-part=Digest]").innerText()).toContain("Ansicht Front Eiche.jpg");
       await shoot(tab, "14-overview-1440");
       await expectClean(tab);
@@ -499,6 +541,29 @@ describe("the views beside the folders on v2", () => {
       await context.close();
     }
   });
+
+  // Guard of the error class "row action without reserved space": no time stands under a deed or a "…", on any row.
+  for (const view of [wide, phone])
+    for (const fixture of ["plain", "worst", "huge"] as const)
+      test(`Activity rows keep their time apart from their deeds at ${view.name}px (${fixture})`, async () => {
+        const { context, tab, errors } = await open(view, "/app/filesv2?view=activity", fixture);
+        try {
+          expect(await rowOverlaps(tab)).toEqual([]);
+          if (fixture === "huge") {
+            await tab.evaluate(() => {
+              const column = [...document.querySelectorAll<HTMLElement>(".k2-scroll")].find(
+                (element) => element.scrollHeight > element.clientHeight,
+              );
+              if (column) column.scrollTop = column.scrollHeight / 2;
+            });
+            await tab.waitForTimeout(150);
+            expect(await rowOverlaps(tab)).toEqual([]);
+          }
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      });
 
   test("Activity's search finds a vanished file in the address, and a link is revoked after a question", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/filesv2?view=activity");
@@ -622,7 +687,10 @@ describe("the views beside the folders on v2", () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2", "huge");
     try {
       const ready = performance.now() - started;
-      expect(await tab.locator("[data-k2-part=Tiles][data-variant=card] [role=listitem]").count()).toBe(201);
+      // the storages are one list that keeps only its rows in view; it says how many it holds
+      const storages = tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]");
+      expect(await storages.first().getAttribute("aria-setsize")).toBe("201");
+      expect(await storages.count()).toBeLessThan(80);
       console.info(`overview of 200 storages ready in ${Math.round(ready)} ms`);
       await expectClean(tab);
       expect(ready).toBeLessThan(5000);

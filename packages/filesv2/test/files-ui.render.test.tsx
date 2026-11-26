@@ -98,7 +98,7 @@ describe("Filesv2 server-rendered feedback", () => {
     });
     for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf", "Today 1 change by you"])
       expect(overview).toContain(text);
-    expect(overview).toContain('data-variant="card"');
+    expect(overview).toContain('aria-label="All storage"');
     expect(overview).toContain('data-k2-part="Digest"');
     expect(overview).not.toContain('data-k2-part="Loading"');
 
@@ -140,7 +140,7 @@ describe("Filesv2 server-rendered feedback", () => {
         next: null,
       },
     });
-    for (const text of ["Unterlagen Lindqvist", "1 active link", "Revoke", "3 accesses"]) expect(shares).toContain(text);
+    for (const text of ["Unterlagen Lindqvist", "1 link · 1 active", "Revoke", "3 accesses"]) expect(shares).toContain(text);
     expect(shares).not.toContain('data-k2-part="Loading"');
   });
 
@@ -260,7 +260,9 @@ describe("Filesv2 server-rendered feedback", () => {
         />
       </LocaleProvider>
     ));
-    for (const text of ["Drafts", "Budget 2027.xlsx", "Notes.md", "Projects", "Upload", "3 items loaded"]) expect(html).toContain(text);
+    for (const text of ["Drafts", "Budget 2027.xlsx", "Notes.md", "Projects", "3 entries ·"]) expect(html).toContain(text);
+    // beside an open file the upload stays in "+", so nothing floats over the file on the phone
+    expect(html).not.toContain('>Upload<');
     expect(html).toContain('data-k2-part="Workspace"');
     expect(html).toContain('data-k2-part="Table"');
     expect(html).toContain('data-k2-part="Path"');

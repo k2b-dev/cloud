@@ -1,5 +1,5 @@
 import { MarkdownEditor, prompts, toast } from "@k2b/ui";
-import { Canvas, Failed, Loading, Notice, Pane, StatusRow } from "@k2b/ui/v2";
+import { Canvas, Chip, Failed, Loading, Notice, Pane, StatusRow } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkdownLaunch } from "../contracts";
@@ -195,7 +195,17 @@ export default function MarkdownPane(props: {
   const state = () =>
     saving() ? t().saving : dirty() ? t().unsaved : saved() ? t().saved : props.launch.canWrite ? t().v2AllSaved : t().v2ReadOnly;
   return (
-    <Pane label={props.launch.entry.name} status={<StatusRow lead={state()} loading={saving() || loading()} />}>
+    <Pane
+      label={props.launch.entry.name}
+      // the file is the title; whether its draft is saved is a state beside it
+      status={
+        <StatusRow
+          lead={props.launch.entry.name}
+          loading={saving() || loading()}
+          filters={<Chip status={dirty() ? "warn" : "ok"}>{state()}</Chip>}
+        />
+      }
+    >
       <Show when={error() && ready()}>
         <Notice
           tone="warn"
@@ -211,7 +221,8 @@ export default function MarkdownPane(props: {
         <Notice tone="note">{t().readonly}</Notice>
       </Show>
       <Canvas label={props.launch.entry.name}>
-        <div ref={fill.ref} style={{ height: fill.height() }}>
+        {/* the editor's own edge is 12 px; 8 more put its text on the page's text edge of 20 px */}
+        <div ref={fill.ref} style={{ height: fill.height(), "padding-inline": "8px" }}>
           <Show when={!loading()} fallback={<Loading rows={12} />}>
             <Show when={ready()} fallback={<Failed text={error() || t().failed} onRetry={() => void load()} />}>
               <MarkdownEditor

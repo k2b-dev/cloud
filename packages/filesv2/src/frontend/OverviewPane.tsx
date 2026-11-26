@@ -1,12 +1,15 @@
 import { useLocale } from "@k2b/ui";
 import {
+  Chip,
   Digest,
   type ActivityEntry as DigestActivity,
   Empty,
   Failed,
+  List,
   Notice,
   type OnNavigate,
   Pane,
+  Row,
   Section,
   StatusRow,
   Tiles,
@@ -144,21 +147,25 @@ export default function OverviewPane(props: {
         </Notice>
       ))}
       <Section icon="folders" color={FILES_COLOR} title={b().storageSection} count={props.bases.length} summary={b().createInStorage}>
-        <Tiles
-          variant="card"
+        {/* Rows, not cards: a few storages fill no grid, and many stay one list that keeps only its rows in view. */}
+        <List
           label={b().allStorage}
-          items={props.bases.map((base) => ({
-            ...storageMark(base),
-            title: baseLabel(base, b(), locale()),
-            href: filesUrl(base.id),
-            onNavigate: props.onNavigate,
-            stats: [
-              { icon: base.kind === "users" ? "lock" : "users", label: base.kind === "users" ? b().onlyYou : t().group },
-              { label: t()[base.area] },
-              ...(base.status !== "existing" ? [{ label: t()[base.status], status: "warn" as const }] : []),
-            ],
-            foot: base.kind === "users" ? base.name : undefined,
-          }))}
+          items={props.bases}
+          rowKey={(base) => base.id}
+          row={(base) => (
+            <Row
+              mark={storageMark(base)}
+              lines={[
+                baseLabel(base, b(), locale()),
+                [base.kind === "users" ? b().onlyYou : t().group, t()[base.area], base.kind === "users" ? base.name : ""]
+                  .filter(Boolean)
+                  .join(" · "),
+              ]}
+              href={filesUrl(base.id)}
+              onNavigate={props.onNavigate}
+              end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}
+            />
+          )}
         />
       </Section>
       <Section

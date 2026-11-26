@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Failed, FilterBar, List, Notice, Pane, StatusRow, Text } from "@k2b/ui/v2";
+import { Bar, Button, Empty, Failed, FilterBar, List, ListOrder, Notice, Pane, Text } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
 import type { MarkedEntry } from "../contracts";
@@ -174,9 +174,10 @@ export default function ActivityPane(props: ActivityPaneProps) {
             icons={FILTER_ICONS}
             names={props.who ? { who: [props.who] } : undefined}
             timeZone={props.env.timeZone}
-            results={lead()}
+            results={props.initial ? lead() : undefined}
+            // the count is quiet words in the filter row, with the fixed order; no second row of figures
+            end={<ListOrder query={props.query} state={props.state} onChange={props.onChange} />}
           />
-          <StatusRow lead={props.initial ? lead() : h().activity} loading={props.pending} />
         </>
       }
     >

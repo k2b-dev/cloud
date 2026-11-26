@@ -192,7 +192,7 @@ function OtherHit(props: { hit: SearchHit; env: HistoryEnvironment; actions?: Hi
               `${deleted} · ${formerly}`,
             ]}
             mark={entryMark({ name: before().name, directory: before().directory === true })}
-            time={formatWhen(entry().time, locale(), h(), props.env)}
+            time={restore ? undefined : formatWhen(entry().time, locale(), h(), props.env)}
             action={
               restore
                 ? {

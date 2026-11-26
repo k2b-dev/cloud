@@ -57,11 +57,12 @@ export default function MovedPane(props: {
   const mark = entryMark({ name: name(), directory: true });
   return (
     <Pane label={h().movedTitleFolder} status={<StatusRow lead={h().movedTitleFolder} />}>
+      {/* The note about the bookmark leads; the section's one line closes the page, no second line under a note. */}
+      <Notice tone="note">
+        <SentenceText parts={fill(h().bookmarkNote, { path: [{ kind: "place", segments: props.oldAddress }] })} />
+      </Notice>
       <Section icon={mark.icon} color={mark.color} title={name()} actions={deeds()} summary={<SentenceText parts={now()} />}>
         <Row avatar={personOf(actor())} lines={[<SentenceText parts={why()} />, props.oldAddress.join(" › ")]} />
-        <Notice tone="note">
-          <SentenceText parts={fill(h().bookmarkNote, { path: [{ kind: "place", segments: props.oldAddress }] })} />
-        </Notice>
       </Section>
     </Pane>
   );

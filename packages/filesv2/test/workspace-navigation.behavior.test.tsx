@@ -260,7 +260,7 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     // The server read every part: nothing asks for itself after the first picture.
     expect(apiRequests).toHaveLength(0);
-    const cards = () => dom.root.querySelectorAll('[data-k2-part="Tiles"][data-variant="card"] [role="listitem"]');
+    const cards = () => dom.root.querySelectorAll('[data-k2-part="List"][aria-label="All storage"] [data-k2-part="Row"]');
     expect(cards()).toHaveLength(2);
     const failed = () => [...dom.root.querySelectorAll('[data-k2-part="Failed"]')];
     expect(failed()).toHaveLength(2);
