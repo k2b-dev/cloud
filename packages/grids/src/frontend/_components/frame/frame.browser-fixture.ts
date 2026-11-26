@@ -15,6 +15,8 @@ import { recordsFilterStatements } from "../records-view/filter-statements";
 import { parseRecordsState } from "../records-view/query-url";
 import type RecordsView from "../records-view/RecordsView";
 import { fields as tableFields, records as tableRecords } from "../table/database-table.fixture-data";
+import type WorkflowScreen from "../workflows/WorkflowScreen";
+import { parseWorkflowUrlState } from "../workflows/workflow-url-state";
 import type { NavigationState } from "../workspace/navigation-catalog";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
 
@@ -565,5 +567,129 @@ export const templateFixture = (variant: FixtureVariant, params: URLSearchParams
     initialState: state,
     initialBrowserPage: { items, path: state.path, cursor: null, hasMore: false, folders },
     dateConfig: DATE_CONFIG,
+  };
+};
+
+type WorkflowRunFixture = Parameters<typeof WorkflowScreen>[0]["initialOverview"]["runs"]["items"][number];
+const RUN_STATES: WorkflowRunFixture["status"][] = [
+  "succeeded",
+  "succeeded",
+  "failed",
+  "succeeded",
+  "running",
+  "needs_attention",
+  "succeeded",
+];
+const RUN_CHANNELS: WorkflowRunFixture["channel"][] = ["record", "schedule", "api", "bulk", "scanner"];
+
+const workflowRun = (index: number, variant: FixtureVariant): WorkflowRunFixture => {
+  const status = RUN_STATES[index % RUN_STATES.length]!;
+  const created = minutesAgo(index * 37 + 3);
+  return {
+    id: `RUN${String(index).padStart(5, "0")}`,
+    workflowId: "W1",
+    launcherId: null,
+    baseId: "Bas001",
+    workflowRevision: 7,
+    mode: index % 9 === 4 ? "dryRun" : "execute",
+    channel: RUN_CHANNELS[index % RUN_CHANNELS.length]!,
+    actorUserId: null,
+    serviceAccountId: null,
+    inputs: {},
+    status,
+    result: null,
+    error:
+      status === "failed"
+        ? {
+            code: "workflow.step_failed",
+            retryable: false,
+            message:
+              variant === "worst"
+                ? "Die Rechnung konnte nicht erzeugt werden, weil der Kunde Bäckerei-Sonnenkorn-Filiale-Nordhausen-Hauptbahnhof keine Steuernummer hat"
+                : "Kunde ohne Steuernummer",
+          }
+        : null,
+    resultMessage: status === "succeeded" ? `Rechnung R-2026-${String(1000 - index).padStart(4, "0")} erzeugt` : null,
+    createdAt: created,
+    startedAt: status === "queued" ? null : created,
+    finishedAt: status === "running" ? null : new Date(Date.parse(created) + 2_400 + index * 90).toISOString(),
+  };
+};
+
+/** The workflow "Rechnung stellen" with its runs; `?run=` opens one, `?status=` and `?channel=` filter them. */
+export const workflowFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof WorkflowScreen>[0] => {
+  const filters = parseWorkflowUrlState(params);
+  const count = variant === "huge" ? 1000 : variant === "worst" ? 9 : 24;
+  const runs = Array.from({ length: count }, (_, index) => workflowRun(index, variant)).filter(
+    (run) => (filters.status === "all" || run.status === filters.status) && (filters.channel === "all" || run.channel === filters.channel),
+  );
+  const frame = baseHomeFixture(variant, { edit: false, groups: false });
+  const selected = params.get("run");
+  const selectedRun = runs.find((run) => run.id === selected) ?? null;
+  const workflow = {
+    id: "W1",
+    baseId: "Bas001",
+    name: variant === "worst" ? "Rechnung-stellen-und-an-Buchhaltung-und-Steuerberatung-übergeben" : "Rechnung stellen",
+    description: variant === "worst" ? null : "Erzeugt die Rechnung eines erledigten Auftrags und schickt sie an den Kunden.",
+    enabled: true,
+    revision: 7,
+    plan: { inputs: [], bindings: {}, triggers: [{ kind: "recordEvent" }] },
+  } as unknown as Parameters<typeof WorkflowScreen>[0]["workflows"][number];
+  const failed = runs.filter((run) => run.status === "failed").length;
+  const attention = runs.filter((run) => run.status === "needs_attention").length;
+  const counts = {
+    total: count,
+    active: 1,
+    queued: 0,
+    running: 1,
+    waiting: 0,
+    succeeded: count - failed - attention - 1,
+    failed,
+    canceled: 0,
+    needsAttention: attention,
+    errorRate: Math.round(((failed + attention) / count) * 1000) / 10,
+    avgDurationMs: 2_900,
+    p99DurationMs: 8_400,
+    lastRunAt: runs[0]?.createdAt ?? null,
+  };
+  return {
+    frame: { ...frame, route: { kind: "workflows", activeKey: "workflow:W1" } },
+    revision: FIXTURE_REVISION,
+    baseId: "Bas001",
+    tables: frame.catalog.tables,
+    activeWorkflow: workflow,
+    workflowHref: "/app/grids/Bas001/workflows/W1",
+    selectedRunId: selectedRun?.id ?? null,
+    initialSelectedRun: selectedRun
+      ? {
+          run: selectedRun,
+          inputLabels: {},
+          provenance: { workflowName: workflow.name, actorLabel: "Mira Solberg", serviceAccountLabel: null, launcherName: null },
+          steps: [],
+          stepsTruncated: false,
+          documents: { items: [], total: 0, hasMore: false, nextOffset: null },
+        }
+      : null,
+    workflows: [workflow],
+    workflowLevels: { W1: "admin" },
+    canRunActiveWorkflow: true,
+    canManageActiveWorkflow: true,
+    editMode: false,
+    initialOverview: {
+      filters,
+      stats: {
+        window: filters.window,
+        ...counts,
+        failedLast24h: failed,
+        byWorkflow: [{ workflowId: "W1", latestStatus: runs[0]?.status ?? null, ...counts }],
+      },
+      runs: { items: runs, nextCursor: null },
+      launchers: [],
+      triggerState: {
+        schedule: null,
+        recordEvents: [{ tableId: frame.catalog.tables[0]!.id, event: "updated", state: "active", hasFilter: true }],
+      },
+    },
+    liveCursor: null,
   };
 };

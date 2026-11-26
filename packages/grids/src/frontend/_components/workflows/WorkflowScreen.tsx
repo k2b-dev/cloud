@@ -1,23 +1,37 @@
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
-  Button,
   DataTable,
   type DataTableColumn,
   dialogCore,
-  FilterChip,
-  type FilterChipSection,
   NoticeCard,
   PanelDialog,
   Placeholder,
   panelDialogWorkspaceOptions,
   prompts,
-  StatCell,
-  StatGrid,
   StatusBadge,
-  Tag,
   useLocale,
+  Button as V1Button,
 } from "@k2b/ui";
+import {
+  Bar,
+  Button,
+  Canvas,
+  Cells,
+  Chip,
+  Empty,
+  FilterBar,
+  Loading,
+  Menu,
+  type MenuEntry,
+  Notice,
+  Pane,
+  RecordHead,
+  Row,
+  Section,
+  type Status,
+  Table,
+} from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, Show, Suspense } from "solid-js";
 import type { z } from "zod";
 import { apiClient } from "../../../api/client";
@@ -30,8 +44,11 @@ import {
   PublicWorkflowInvocationReceiptSchema,
   PublicWorkflowTriggerRuntimeStateSchema,
 } from "../../../api/workflow-public-contracts";
+import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import { scannerLauncherPromptInputSources } from "../../../workflows/contracts";
+import GridsFrame, { LiveNotice } from "../frame/GridsFrame";
 import { errorMessage } from "../utils/api-helpers";
+import type { NavigationState } from "../workspace/navigation-catalog";
 import type {
   PublicWorkflow,
   PublicWorkflowLauncher,
@@ -39,12 +56,14 @@ import type {
   PublicWorkflowRunStats,
   PublicWorkflowTriggerRuntimeState,
   PublicWorkspaceWorkflowOverview,
+  PublicWorkspaceWorkflowRunDetail,
 } from "../workspace/workspace-public-state-model";
 import { workflowMessages } from "./messages";
 import { WorkflowAutomaticTriggerState } from "./WorkflowAutomaticTriggerState";
 import { WorkflowEditor } from "./WorkflowEditor";
 import { WorkflowLauncherManager } from "./WorkflowLauncherManager";
 import { WorkflowRevisionHistory } from "./WorkflowRevisionHistory";
+import { WorkflowRunDetailPanel } from "./WorkflowRunDetailPanel";
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import type { WorkflowScannerState } from "./WorkflowScannerSurface";
 import {
@@ -56,6 +75,7 @@ import {
   workflowRunStatusTone,
 } from "./workflow-display";
 import { reconcileWorkflowRunList, type WorkflowRunListFilter } from "./workflow-run-list";
+import { runsListState, urlStateOf, type WorkflowRunsListState, workflowRunsQuery } from "./workflow-runs-query";
 import {
   parseWorkflowUrlState,
   type WorkflowRunChannelFilter,
@@ -68,20 +88,24 @@ const WorkflowScannerSurface = lazy(() => import("./WorkflowScannerSurface"));
 
 type WorkflowRunStatsWindow = PublicWorkflowRunStats["window"];
 
-type Props = {
+export type WorkflowScreenProps = {
+  frame: NavigationState;
+  revision?: WorkspaceRevision;
   baseId: string;
   tables: PublicTable[];
   activeWorkflow: PublicWorkflow | null;
+  /** The address of the workflow without its filters, such as `/app/grids/<base>/workflows/<workflow>`. */
+  workflowHref: string;
+  /** The run the address opens (`?run=`), and its detail as the server read it. */
   selectedRunId: string | null;
-  runUpdate: PublicWorkflowRun | null;
-  canCreateWorkflows: boolean;
+  initialSelectedRun: PublicWorkspaceWorkflowRunDetail | null;
+  workflows: PublicWorkflow[];
+  workflowLevels: Record<string, "none" | "read" | "write" | "admin">;
   canRunActiveWorkflow: boolean;
   canManageActiveWorkflow: boolean;
   editMode: boolean;
   initialOverview: PublicWorkspaceWorkflowOverview;
-  onWorkflowChanged: () => void;
-  onSelectRun: (runId: string | null) => void;
-  /** The page's live cursor, for the scanner's run updates. */
+  /** The page's live cursor, for the scanner's and the run's updates. */
   liveCursor: string | null;
 };
 
@@ -119,6 +143,8 @@ type WorkflowsPageApi = {
 };
 
 const workflowsPageApi = apiClient.workflows as unknown as WorkflowsPageApi;
+
+const STATS_WINDOWS: WorkflowRunStatsWindow[] = ["10m", "1h", "12h", "24h", "7d", "30d"];
 
 const statsWindowLabel = (value: WorkflowRunStatsWindow, locale: string): string => {
   const t = workflowMessages.resolve([locale]).t;
@@ -205,42 +231,33 @@ function EmailDeliveryTable(props: {
   );
 }
 
-export default function WorkflowsPage(props: Props) {
+/**
+ * A workflow of a base on v2: its name, state and deeds in the head; how it ran (last run, runs, error rate) as one
+ * strip of figures; its automatic triggers; its runs, filtered in the address, with the open run beside them.
+ */
+export default function WorkflowScreen(props: WorkflowScreenProps) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
-  const statsWindowOptions = createMemo<FilterChipSection[]>(() => [
-    {
-      options: (["10m", "1h", "12h", "24h", "7d", "30d"] as WorkflowRunStatsWindow[]).map((value) => ({
-        value,
-        label: statsWindowLabel(value, locale()),
-        icon: "ti ti-clock",
-      })),
-    },
-  ]);
-  const runStatusOptions = createMemo<FilterChipSection[]>(() => [
-    {
-      options: [
-        { value: "all", label: t().allStatuses, icon: "ti ti-list" },
-        { value: "queued", label: t().queued, icon: "ti ti-clock" },
-        { value: "running", label: t().running, icon: "ti ti-loader" },
-        { value: "waiting", label: t().waitingStatus, icon: "ti ti-hourglass" },
-        { value: "succeeded", label: t().succeeded, icon: "ti ti-circle-check" },
-        { value: "failed", label: t().failed, icon: "ti ti-alert-circle" },
-        { value: "needs_attention", label: t().needsAttention, icon: "ti ti-alert-triangle" },
-        { value: "canceled", label: t().canceled, icon: "ti ti-ban" },
-      ],
-    },
-  ]);
-  const runChannelOptions = createMemo<FilterChipSection[]>(() => [
-    {
-      options: [
-        { value: "all", label: t().allChannels, icon: "ti ti-list" },
-        ...(["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as PublicWorkflowRun["channel"][]).map(
-          (value) => ({ value, label: workflowChannelLabel(value, locale()), icon: "ti ti-route" }),
-        ),
-      ],
-    },
-  ]);
+  const [selectedRunId, setSelectedRunId] = createSignal(props.selectedRunId);
+  const [runUpdate, setRunUpdate] = createSignal<PublicWorkflowRun | null>(null);
+  /** Opens a run (or closes it with `null`) as a step in the address, so Back closes it again. */
+  const selectRun = (runId: string | null) => {
+    const url = new URL(window.location.href);
+    if (runId) url.searchParams.set("run", runId);
+    else url.searchParams.delete("run");
+    window.history.pushState(null, "", `${url.pathname}${url.search}`);
+    setRunUpdate(null);
+    setSelectedRunId(runId);
+  };
+  onMount(() => {
+    const step = () => {
+      setRunUpdate(null);
+      setSelectedRunId(new URL(window.location.href).searchParams.get("run"));
+    };
+    window.addEventListener("popstate", step);
+    onCleanup(() => window.removeEventListener("popstate", step));
+  });
+  const workflowChanged = () => window.location.reload();
   const [statsWindow, setStatsWindow] = createSignal<WorkflowRunStatsWindow>(props.initialOverview.filters.window);
   const [runStatus, setRunStatus] = createSignal<WorkflowRunStatusFilter>(props.initialOverview.filters.status);
   const [runChannel, setRunChannel] = createSignal<WorkflowRunChannelFilter>(props.initialOverview.filters.channel);
@@ -318,7 +335,7 @@ export default function WorkflowsPage(props: Props) {
       return fetchRuns(null, abortSignal);
     },
     onSuccess: (page) => {
-      setRuns(reconcileWorkflowRunList(page.items, props.runUpdate, currentRunFilter(), true));
+      setRuns(reconcileWorkflowRunList(page.items, runUpdate(), currentRunFilter(), true));
       setNextCursor(page.nextCursor ?? null);
       setLoadFailure("runs");
     },
@@ -332,7 +349,7 @@ export default function WorkflowsPage(props: Props) {
     },
     onSuccess: (page) => {
       if (!page) return;
-      setRuns((current) => reconcileWorkflowRunList([...current, ...page.items], props.runUpdate, currentRunFilter(), true));
+      setRuns((current) => reconcileWorkflowRunList([...current, ...page.items], runUpdate(), currentRunFilter(), true));
       setNextCursor(page.nextCursor ?? null);
       setLoadFailure("runs");
     },
@@ -378,7 +395,7 @@ export default function WorkflowsPage(props: Props) {
 
   let appliedRunUpdate = "";
   createEffect(() => {
-    const update = props.runUpdate;
+    const update = runUpdate();
     if (!update) return;
     const signature = `${update.id}:${update.status}:${update.finishedAt ?? ""}:${update.error?.message ?? ""}`;
     if (signature === appliedRunUpdate) return;
@@ -471,22 +488,6 @@ export default function WorkflowsPage(props: Props) {
     statsMut.mutate();
   };
 
-  const changeRunStatus = (value: string[]) => {
-    const next = (value[0] as WorkflowRunStatusFilter | undefined) ?? "all";
-    if (next === runStatus()) return;
-    setRunStatus(next);
-    replaceUrlState(currentUrlState());
-    runsMut.mutate();
-  };
-
-  const changeRunChannel = (value: string[]) => {
-    const next = (value[0] as WorkflowRunChannelFilter | undefined) ?? "all";
-    if (next === runChannel()) return;
-    setRunChannel(next);
-    replaceUrlState(currentUrlState());
-    runsMut.mutate();
-  };
-
   onMount(() => {
     const onPopState = () => {
       const next = parseWorkflowUrlState(new URL(window.location.href).searchParams);
@@ -512,7 +513,7 @@ export default function WorkflowsPage(props: Props) {
           tables={props.tables}
           workflow={workflow}
           setDismissHandler={context.setDismissHandler}
-          onChanged={() => props.onWorkflowChanged()}
+          onChanged={workflowChanged}
           onClose={close}
         />
       ),
@@ -526,7 +527,7 @@ export default function WorkflowsPage(props: Props) {
         <WorkflowLauncherManager
           workflow={workflow}
           tables={props.tables}
-          onChanged={props.onWorkflowChanged}
+          onChanged={workflowChanged}
           onClose={close}
           setDismissHandler={context.setDismissHandler}
         />
@@ -541,7 +542,7 @@ export default function WorkflowsPage(props: Props) {
         <WorkflowRevisionHistory
           workflow={workflow}
           canRestore={props.canManageActiveWorkflow}
-          onChanged={props.onWorkflowChanged}
+          onChanged={workflowChanged}
           onClose={close}
         />
       ),
@@ -619,7 +620,7 @@ export default function WorkflowsPage(props: Props) {
       return { runId: receipt.runId, status: receipt.status };
     },
     onSuccess: (receipt) => {
-      props.onSelectRun(receipt.runId);
+      selectRun(receipt.runId);
       runsMut.mutate();
       statsMut.mutate();
     },
@@ -635,17 +636,6 @@ export default function WorkflowsPage(props: Props) {
     if (input === undefined) return;
     runMut.mutate({ input, mode });
   };
-
-  const runColumns = createMemo<DataTableColumn<PublicWorkflowRun>[]>(() => [
-    { id: "status", header: t().status, value: (run) => run.status, cellClass: "whitespace-nowrap" },
-    { id: "started", header: t().started, value: (run) => run.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "channel", header: t().channel, value: (run) => run.channel, cellClass: "whitespace-nowrap" },
-    { id: "mode", header: t().mode, value: (run) => run.mode, cellClass: "whitespace-nowrap" },
-    { id: "result", header: t().result, value: (run) => run.error?.message ?? run.resultMessage, cellClass: "max-w-[32rem]" },
-    { id: "duration", header: t().duration, value: (run) => formatDuration(run, locale()), cellClass: "whitespace-nowrap" },
-    // A revision is a version number: its digits stay ungrouped.
-    { id: "revision", header: t().revision, value: (run) => String(run.workflowRevision), align: "right" },
-  ]);
 
   const openEmailActivity = async () => {
     const workflow = activeWorkflow();
@@ -671,9 +661,9 @@ export default function WorkflowsPage(props: Props) {
                   {(message) => (
                     <NoticeCard tone="danger" bodyClass="flex items-center justify-between gap-3" role="alert">
                       <span>{message()}</span>
-                      <Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={() => emailDeliveriesMut.mutate()}>
+                      <V1Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={() => emailDeliveriesMut.mutate()}>
                         <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                      </Button>
+                      </V1Button>
                     </NoticeCard>
                   )}
                 </Show>
@@ -696,230 +686,269 @@ export default function WorkflowsPage(props: Props) {
     }
   };
 
+  const runsQuery = createMemo(() => workflowRunsQuery(locale()));
+  const changeRuns = (next: WorkflowRunsListState) => {
+    const state = urlStateOf(next, currentUrlState());
+    if (state.status === runStatus() && state.channel === runChannel()) return;
+    setRunStatus(state.status);
+    setRunChannel(state.channel);
+    replaceUrlState(state);
+    runsMut.mutate();
+  };
+  const windowChoice = (): MenuEntry[] => [
+    {
+      title: t().metricsWindow,
+      choice: statsWindow(),
+      onChoose: (value) => changeStatsWindow([value]),
+      items: STATS_WINDOWS.map((value) => ({ label: statsWindowLabel(value, locale()), value })),
+    },
+  ];
+  const failing = () => (activeStats()?.failed ?? 0) + (activeStats()?.needsAttention ?? 0) > 0;
+  const runTone = (status: PublicWorkflowRun["status"]): Status | undefined => {
+    const tone = workflowRunStatusTone(status);
+    return tone === "ok" ? "ok" : tone === "error" ? "bad" : tone === "running" ? "warn" : undefined;
+  };
+  const runChip = (run: PublicWorkflowRun) => {
+    const status = runTone(run.status);
+    const label = workflowRunStatusLabel(run.status, locale());
+    return status ? <Chip status={status}>{label}</Chip> : label;
+  };
+  /** The workflow's address with its filters, and the run it opens. */
+  const runHref = (runId: string | null) => {
+    const filtered = workflowUrlStateHref(new URL(props.workflowHref, "https://grids.invalid"), currentUrlState());
+    const url = new URL(filtered, "https://grids.invalid");
+    if (runId) url.searchParams.set("run", runId);
+    return `${url.pathname}${url.search}`;
+  };
+
+  const more = (workflow: PublicWorkflow): MenuEntry[] => [
+    { label: t().emailActivity, icon: "mail", onClick: () => void openEmailActivity() },
+    { label: t().refresh, icon: "refresh", onClick: reloadAll },
+    ...(props.canManageActiveWorkflow
+      ? [
+          {
+            title: t().manage,
+            items: [
+              { label: t().runOptions, icon: "rocket", onClick: () => void openLaunchers(workflow) },
+              { label: t().history, icon: "history", onClick: () => void openHistory(workflow) },
+              { label: t().manage, icon: "settings", onClick: () => void openEditor(workflow) },
+            ],
+          },
+        ]
+      : []),
+  ];
+
+  const head = (workflow: PublicWorkflow) => (
+    <Bar
+      start={
+        // k2b-ui gap: RecordHead hides its ids at 0 px, which the layout rules reject; until MW fixes it the head shows
+        // the name and the state, the triggers stand in their section and the description as the author's note below
+        <RecordHead name={workflow.name} kinds={[workflow.enabled ? t().enabled : t().disabled]} />
+      }
+      end={
+        <>
+          <Show when={props.canRunActiveWorkflow}>
+            <For each={scannerLaunchers()}>
+              {(launcher) => (
+                <Button icon="barcode" onClick={() => void openScanner(workflow, launcher)}>
+                  {launcher.name}
+                </Button>
+              )}
+            </For>
+            <Button icon="flask" disabled={runMut.loading()} onClick={() => void runWorkflow("dryRun")}>
+              {t().dryRun}
+            </Button>
+          </Show>
+          <Menu items={more(workflow)} />
+          <Show when={props.canRunActiveWorkflow}>
+            <Button
+              variant="primary"
+              icon="player-play"
+              busy={runMut.loading()}
+              disabled={!workflow.enabled}
+              onClick={() => void runWorkflow()}
+            >
+              {t().runWorkflow}
+            </Button>
+          </Show>
+        </>
+      }
+    />
+  );
+
   return (
-    <Show
-      when={activeWorkflow()}
-      fallback={
-        <div class="flex min-h-0 flex-1">
-          <Placeholder
-            variant="panel"
-            class="flex-1"
-            title={t().noWorkflows}
-            description={props.editMode ? t().createWorkflowSidebar : t().enableEditMode}
-          />
-        </div>
+    <GridsFrame
+      state={props.frame}
+      activeKeys={props.activeWorkflow ? [`workflow:${props.activeWorkflow.id}`] : []}
+      revision={props.revision}
+      head={
+        <Show when={activeWorkflow()} fallback={<Bar />}>
+          {(workflow) => head(workflow())}
+        </Show>
+      }
+      primary={
+        props.canRunActiveWorkflow && activeWorkflow()?.enabled
+          ? { label: t().runWorkflow, icon: "player-play", onClick: () => void runWorkflow() }
+          : undefined
       }
     >
-      {(workflow) => (
-        <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden" data-scroll-preserve="grids-workflow-runs">
-          <header class="flex min-w-0 flex-col gap-2" style="view-transition-name: grids-workflows-title">
-            <div class="min-w-0">
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 class="min-w-0 truncate text-base font-semibold text-primary">{workflow().name}</h1>
-                <StatusBadge tone={workflow().enabled ? "ok" : "neutral"} label={workflow().enabled ? t().enabled : t().disabled} />
-                <Tag size="sm">{triggerSummary(workflow(), locale())}</Tag>
-              </div>
-              <Show when={workflow().description}>{(description) => <p class="mt-0.5 text-xs text-dimmed">{description()}</p>}</Show>
-            </div>
-            <div class="flex min-w-0 flex-wrap items-center gap-2" role="toolbar" aria-label={t().workflowActions}>
-              <Show when={props.canRunActiveWorkflow}>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  type="button"
-                  class="shrink-0"
-                  disabled={runMut.loading() || !workflow().enabled}
-                  onClick={() => void runWorkflow()}
-                >
-                  <i class={runMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-play"} /> {t().runWorkflow}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  class="shrink-0"
-                  disabled={runMut.loading()}
-                  onClick={() => void runWorkflow("dryRun")}
-                >
-                  <i class="ti ti-flask" /> {t().dryRun}
-                </Button>
-                <For each={scannerLaunchers()}>
-                  {(launcher) => (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      type="button"
-                      class="shrink-0"
-                      onClick={() => void openScanner(workflow(), launcher)}
-                    >
-                      <i class="ti ti-barcode" /> {launcher.name}
+      <Show
+        when={activeWorkflow()}
+        fallback={
+          <Pane label={t().workflowRuns}>
+            <Empty icon="route" text={props.editMode ? t().createWorkflowSidebar : t().enableEditMode} />
+          </Pane>
+        }
+      >
+        {(workflow) => (
+          <Pane.Split>
+            <Pane
+              label={t().workflowRuns}
+              scrollKey={`grids-workflow-runs-${workflow().id}`}
+              status={
+                <FilterBar
+                  query={runsQuery()}
+                  state={runsListState(runsQuery(), currentUrlState())}
+                  onChange={changeRuns}
+                  icons={{ status: "circle-dashed", channel: "route" }}
+                  results={t().runCount({ count: runs().length, more: Boolean(nextCursor()) })}
+                />
+              }
+            >
+              <LiveNotice />
+              <Show when={workflow().description}>{(description) => <Notice tone="note">{description()}</Notice>}</Show>
+              <Show when={loadError()}>
+                {(message) => (
+                  <Notice tone="bad" actions={[{ label: t().retry, icon: "refresh", onClick: reloadAll }]}>
+                    {message()}
+                  </Notice>
+                )}
+              </Show>
+              <Bar
+                start={t().healthOver({ window: statsWindowLabel(statsWindow(), locale()) })}
+                end={<Menu icon="clock" label={t().metricsWindow} items={windowChoice()} />}
+              />
+              <Show when={stats()} fallback={<Loading rows={1} lines={2} />}>
+                <Cells>
+                  <Cells.Cell
+                    icon="activity"
+                    label={t().lastRun}
+                    value={
+                      activeStats()?.latestStatus ? (
+                        <Chip status={runTone(activeStats()!.latestStatus!) ?? "ok"}>
+                          {workflowRunStatusLabel(activeStats()!.latestStatus!, locale())}
+                        </Chip>
+                      ) : (
+                        t().noRuns
+                      )
+                    }
+                    meta={activeStats()?.lastRunAt ? formatDate(activeStats()!.lastRunAt!, locale()) : undefined}
+                  />
+                  <Cells.Cell
+                    icon="list"
+                    label={t().runs}
+                    value={(activeStats()?.total ?? 0).toLocaleString(locale())}
+                    meta={t().activeNow({ count: activeStats()?.active ?? 0 })}
+                  />
+                  <Cells.Cell
+                    icon="alert-triangle"
+                    label={t().errorRate}
+                    value={
+                      failing() ? (
+                        <Chip status="bad">{formatPercent(activeStats()?.errorRate ?? 0, locale())}</Chip>
+                      ) : (
+                        formatPercent(activeStats()?.errorRate ?? 0, locale())
+                      )
+                    }
+                    meta={t().p99Meta({ value: formatMetricDuration(activeStats()?.p99DurationMs ?? null, locale()) })}
+                  />
+                </Cells>
+              </Show>
+              <Show
+                when={triggerState() && (triggerState()!.schedule || triggerState()!.recordEvents.length > 0) ? triggerState() : null}
+                fallback={
+                  <Section title={t().automaticTriggers}>
+                    <Row icon="hand-click" lines={[triggerSummary(workflow(), locale())]} />
+                  </Section>
+                }
+              >
+                {(state) => <WorkflowAutomaticTriggerState state={state()} tables={props.tables} />}
+              </Show>
+              <Table
+                label={t().workflowRuns}
+                rows={runs()}
+                rowKey={(run) => run.id}
+                sticky
+                current={selectedRunId() ?? undefined}
+                loading={runsMut.loading() && runs().length === 0}
+                open={(run) => ({
+                  href: runHref(run.id),
+                  onNavigate: () => selectRun(run.id),
+                })}
+                empty={{ icon: "player-play", text: t().noMatchingRuns }}
+                phone={(run) => ({
+                  lines: [
+                    run.error?.message ?? run.resultMessage ?? workflowRunStatusLabel(run.status, locale()),
+                    `${workflowChannelLabel(run.channel, locale())} · ${run.mode === "dryRun" ? t().dryRun : t().execute} · ${formatDuration(run, locale())}`,
+                  ],
+                  time: formatDate(run.createdAt, locale()),
+                  marks: runTone(run.status) ? (
+                    <Chip status={runTone(run.status)!}>{workflowRunStatusLabel(run.status, locale())}</Chip>
+                  ) : undefined,
+                })}
+                columns={[
+                  { title: t().status, width: { min: 180, default: 190 }, cell: runChip },
+                  { title: t().started, width: { min: 160, default: 170 }, cell: (run) => formatDate(run.createdAt, locale()) },
+                  {
+                    title: t().channel,
+                    width: { min: 100, default: 120 },
+                    drop: true,
+                    cell: (run) => `${workflowChannelLabel(run.channel, locale())}${run.mode === "dryRun" ? ` · ${t().dryRun}` : ""}`,
+                  },
+                  {
+                    title: t().result,
+                    width: { min: 160, default: 280 },
+                    drop: true,
+                    cell: (run) => run.error?.message ?? run.resultMessage ?? "–",
+                  },
+                  { title: t().duration, width: { min: 70, default: 90 }, align: "end", cell: (run) => formatDuration(run, locale()) },
+                  // A revision is a version number: its digits stay ungrouped.
+                  { title: t().revision, align: "end", drop: true, cell: (run) => String(run.workflowRevision) },
+                ]}
+              />
+              <Show when={nextCursor()}>
+                <Bar
+                  end={
+                    <Button icon="chevrons-down" busy={loadMoreRunsMut.loading()} onClick={() => loadMoreRunsMut.mutate()}>
+                      {t().moreRuns}
                     </Button>
-                  )}
-                </For>
-              </Show>
-              <Show when={props.editMode && props.canManageActiveWorkflow}>
-                <Button variant="success" size="sm" type="button" class="shrink-0" onClick={() => void openLaunchers(workflow())}>
-                  <i class="ti ti-rocket" /> {t().runOptions}
-                </Button>
-                <Button variant="success" size="sm" type="button" class="shrink-0" onClick={() => void openHistory(workflow())}>
-                  <i class="ti ti-history" /> {t().history}
-                </Button>
-                <Button variant="success" size="sm" type="button" class="shrink-0" onClick={() => void openEditor(workflow())}>
-                  <i class="ti ti-settings" /> {t().manage}
-                </Button>
-              </Show>
-            </div>
-          </header>
-
-          <Show when={triggerState() && (triggerState()!.schedule || triggerState()!.recordEvents.length > 0) ? triggerState() : null}>
-            {(state) => <WorkflowAutomaticTriggerState state={state()} tables={props.tables} />}
-          </Show>
-
-          <Show when={loadError()}>
-            {(message) => (
-              <NoticeCard tone="danger" bodyClass="flex items-center justify-between gap-3" role="alert">
-                <span>{message()}</span>
-                <Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={reloadAll}>
-                  <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                </Button>
-              </NoticeCard>
-            )}
-          </Show>
-
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <span class="text-xs text-dimmed">{t().healthOver({ window: statsWindowLabel(statsWindow(), locale()) })}</span>
-            <FilterChip
-              label={t().metricsWindow}
-              icon="ti ti-clock"
-              options={statsWindowOptions()}
-              value={[statsWindow()]}
-              onValueChange={changeStatsWindow}
-              defaultValue={["24h"]}
-              isActive={statsWindow() !== "24h"}
-            />
-          </div>
-
-          <Show
-            when={stats()}
-            fallback={
-              <Placeholder
-                surface="paper"
-                state={statsMut.loading() ? "loading" : "error"}
-                title={statsMut.loading() ? t().loadingStatistics : t().statisticsUnavailable}
-              />
-            }
-          >
-            <StatGrid columns={5} size="sm">
-              <StatCell
-                label={t().lastRun}
-                value={activeStats()?.latestStatus ? workflowRunStatusLabel(activeStats()!.latestStatus!, locale()) : t().noRuns}
-                sub={
-                  activeStats()?.lastRunAt
-                    ? formatDate(activeStats()?.lastRunAt ?? "", locale())
-                    : statsWindowLabel(statsWindow(), locale())
-                }
-                valueClass={
-                  activeStats()?.latestStatus === "failed" || activeStats()?.latestStatus === "needs_attention"
-                    ? "text-red-600 dark:text-red-400"
-                    : undefined
-                }
-              />
-              <StatCell label={t().runs} value={activeStats()?.total ?? 0} accent={{ tone: "zinc", icon: "ti ti-list" }} />
-              <StatCell label={t().active} value={activeStats()?.active ?? 0} accent={{ tone: "blue", icon: "ti ti-player-play" }} />
-              <StatCell
-                label={t().errorRate}
-                value={formatPercent(activeStats()?.errorRate ?? 0, locale())}
-                valueClass={
-                  (activeStats()?.failed ?? 0) + (activeStats()?.needsAttention ?? 0) > 0 ? "text-red-600 dark:text-red-400" : undefined
-                }
-                accent={
-                  (activeStats()?.failed ?? 0) + (activeStats()?.needsAttention ?? 0) > 0
-                    ? { tone: "red", icon: "ti ti-alert-triangle" }
-                    : undefined
-                }
-              />
-              <StatCell
-                label={t().p99Runtime}
-                value={formatMetricDuration(activeStats()?.p99DurationMs ?? null, locale())}
-                accent={{ tone: "zinc", icon: "ti ti-hourglass" }}
-              />
-            </StatGrid>
-          </Show>
-
-          <section class="flex min-h-0 flex-1 flex-col gap-2">
-            <div class="flex flex-wrap items-end justify-between gap-2">
-              <div class="min-w-0">
-                <h2 class="text-sm font-semibold text-primary">{t().runs}</h2>
-                <p class="text-xs text-dimmed">{t().runsDescription}</p>
-              </div>
-              <Button variant="secondary" size="sm" type="button" class="shrink-0" onClick={() => void openEmailActivity()}>
-                <i class="ti ti-mail" /> {t().emailActivity}
-              </Button>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <FilterChip
-                label={t().status}
-                icon="ti ti-filter"
-                options={runStatusOptions()}
-                value={[runStatus()]}
-                onValueChange={changeRunStatus}
-                defaultValue={["all"]}
-                isActive={runStatus() !== "all"}
-              />
-              <FilterChip
-                label={t().channel}
-                icon="ti ti-route"
-                options={runChannelOptions()}
-                value={[runChannel()]}
-                onValueChange={changeRunChannel}
-                defaultValue={["all"]}
-                isActive={runChannel() !== "all"}
-              />
-              <Button variant="ghost" size="sm" type="button" class="ml-auto" onClick={reloadAll}>
-                <i
-                  class={
-                    runsMut.loading() || statsMut.loading() || triggerStateMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"
                   }
-                />{" "}
-                {t().refresh}
-              </Button>
-            </div>
-            <DataTable
-              ariaLabel={t().workflowRuns}
-              rows={runs()}
-              columns={runColumns()}
-              getRowId={(run) => run.id}
-              selectedRowId={props.selectedRunId}
-              density="compact"
-              highlightColumns={false}
-              fillHeight
-              class="paper min-h-[18rem] flex-1 overflow-auto"
-              scrollPreserveKey={`grids-workflow-runs-${workflow().id}`}
-              hasMore={!!nextCursor()}
-              loadingMore={runsMut.loading() || loadMoreRunsMut.loading()}
-              onLoadMore={() => loadMoreRunsMut.mutate()}
-              onRowClick={(run) => props.onSelectRun(run.id)}
-              empty={runsMut.loading() ? t().loadingRuns : t().noMatchingRuns}
-              renderCell={({ row: run, col, render, value }) => {
-                if (col.id === "status") {
-                  return <StatusBadge tone={workflowRunStatusTone(run.status)} label={workflowRunStatusLabel(run.status, locale())} />;
-                }
-                if (col.id === "started") return <span class="text-dimmed">{formatDate(run.createdAt, locale())}</span>;
-                if (col.id === "channel") return workflowChannelLabel(run.channel, locale());
-                if (col.id === "mode") return run.mode === "dryRun" ? t().dryRun : t().execute;
-                if (col.id === "result") {
-                  return (
-                    <span class={run.error ? "text-red-600 dark:text-red-400" : "text-dimmed"}>
-                      {run.error?.message ?? run.resultMessage ?? "—"}
-                    </span>
-                  );
-                }
-                return render(value);
-              }}
-            />
-          </section>
-        </div>
-      )}
-    </Show>
+                />
+              </Show>
+            </Pane>
+            <Show keyed when={selectedRunId()}>
+              {(runId) => (
+                <Pane label={t().runDetails} detail back={{ label: t().runs, href: runHref(null) }}>
+                  {/* k2b-ui gap: the run's detail (steps, inputs, documents, provenance) stays its v1 panel until it is rebuilt */}
+                  <Canvas label={t().runDetails} height="fill">
+                    <WorkflowRunDetailPanel
+                      runId={runId}
+                      initialDetail={props.initialSelectedRun?.run.id === runId ? props.initialSelectedRun : null}
+                      workflows={props.workflows}
+                      workflowLevels={props.workflowLevels}
+                      tables={props.tables}
+                      liveCursor={props.liveCursor}
+                      onRunUpdated={setRunUpdate}
+                      onSelectRun={selectRun}
+                      onClose={() => selectRun(null)}
+                    />
+                  </Canvas>
+                </Pane>
+              )}
+            </Show>
+          </Pane.Split>
+        )}
+      </Show>
+    </GridsFrame>
   );
 }

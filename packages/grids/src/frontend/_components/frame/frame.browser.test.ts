@@ -633,3 +633,62 @@ describe("the documents of a template on v2", () => {
     }
   }, 90_000);
 });
+
+describe("a workflow on v2", () => {
+  const workflow = "/app/grids/Bas001/workflows/W1";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const each of [wide, narrow, phone])
+        for (const [name, address] of [
+          ["workflow", workflow],
+          ["workflow-run", `${workflow}?run=RUN00002`],
+        ] as const) {
+          const { context, tab, errors } = await open(each, address, variant);
+          try {
+            await shoot(tab, `grids-${name}-${variant}-light-${each.name}`);
+            await expectClean(tab);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 120_000);
+
+  test("a run opens beside the runs in the address, and Back closes it", async () => {
+    const { context, tab, errors } = await open(wide, workflow);
+    try {
+      expect(await tab.locator("[data-k2-part=Pane][data-detail]").count()).toBe(0);
+      await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").nth(2).locator("a").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("run") === "RUN00002");
+      expect(await tab.locator("[data-k2-part=Pane][data-detail]").count()).toBe(1);
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("run"));
+      expect(await tab.locator("[data-k2-part=Pane][data-detail]").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a status filter from an old link stands as a statement", async () => {
+    const { context, tab, errors } = await open(wide, `${workflow}?status=failed`);
+    try {
+      expect(await tab.locator("[data-k2-part=FilterBar]").textContent()).toContain("Fehlgeschlagen");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 runs keep only the rows in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, workflow, "huge");
+    try {
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(`grids workflow huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms`);
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});

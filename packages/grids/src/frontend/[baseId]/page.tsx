@@ -12,6 +12,7 @@ import QueryScreen from "../_components/query/QueryScreen.island";
 import RecordsScreen from "../_components/records-view/RecordsScreen.island";
 import { parseDocumentViewMode, parseNavigationExpansion } from "../_components/sidebar/GridsSettingsStore";
 import RememberGridsPath from "../_components/sidebar/RememberGridsPath.island";
+import WorkflowScreen from "../_components/workflows/WorkflowScreen.island";
 import GridsWorkspace from "../_components/workspace/GridsWorkspace";
 import { projectPublicWorkspaceState } from "../_components/workspace/workspace-public-state";
 import { loadGridsWorkspaceState } from "../_components/workspace/workspace-state";
@@ -103,6 +104,14 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
         <RememberGridsPath />
         <DocumentsScreen state={state} />
+      </Layout>
+    );
+
+  if (state.route.kind === "workflows")
+    return () => (
+      <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
+        <RememberGridsPath />
+        <WorkflowScreen state={state} />
       </Layout>
     );
 

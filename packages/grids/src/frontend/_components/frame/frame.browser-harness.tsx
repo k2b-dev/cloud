@@ -7,6 +7,7 @@ import { basesQuery, parseBasesAddress } from "../overview/bases-query";
 import QueryScreen from "../query/QueryScreen";
 import QueryViewScreen from "../query/QueryViewScreen";
 import RecordsView from "../records-view/RecordsView";
+import WorkflowScreen from "../workflows/WorkflowScreen";
 import BaseHome from "./BaseHome";
 import {
   baseHomeFixture,
@@ -17,6 +18,7 @@ import {
   queryViewFixture,
   recordsFixture,
   templateFixture,
+  workflowFixture,
 } from "./frame.browser-fixture";
 import { homeTab, resourcesQuery } from "./resources-query";
 
@@ -32,7 +34,9 @@ const params = new URLSearchParams(location.search);
 render(
   () => (
     <LocaleProvider locale="de">
-      {location.pathname.includes("/document/") ? (
+      {location.pathname.includes("/workflows/") ? (
+        <WorkflowScreen {...workflowFixture(variant, params)} />
+      ) : location.pathname.includes("/document/") ? (
         <DocumentTemplateScreen {...templateFixture(variant, params)} />
       ) : location.pathname.endsWith("/query") ? (
         <QueryScreen {...queryFixture(variant, params)} />
