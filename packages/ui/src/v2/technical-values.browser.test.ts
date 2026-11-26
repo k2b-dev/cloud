@@ -61,9 +61,9 @@ const linesOf = (page: Page, selector: string) =>
           range.setEnd(node, index + 1);
           const box = range.getBoundingClientRect();
           if (!box.width) continue;
-          if (top === undefined || Math.abs(box.top - top) > 4) lines.push("");
+          if (top === undefined || Math.abs(box.top - top) > 4) lines.push(node.textContent![index]!);
+          else lines.push(`${lines.pop() ?? ""}${node.textContent![index]}`);
           top = box.top;
-          lines[lines.length - 1] += node.textContent![index];
         }
       const midWord = lines
         .slice(0, -1)
