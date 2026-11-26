@@ -881,12 +881,12 @@ export const TimeBand = (props: {
   // title is 15 px in the week, 16 px in the day view and 20 px when "l" (see the band's CSS), the time takes 19 px
   // with its margin (21 px when "l"), and the band's padding 10 px. Nothing is cut through its letters. A phone has
   // lower hours and the type of "m": its own lines and time, which the CSS of a phone chooses, so the server's markup
-  // is the same for both. Where a phone's week lays a later band over this one, the title and time end above it.
+  // is the same for both. Where a phone's week lays a later band over this one, the title and time end above it. A title
+  // of one line is one line of text cut once at its end, as Apple cuts it, never a first word with the rest hidden.
   const layout = (pixels: number, titleLine: number, metaLine: number, padding: number) => {
     const meta = pixels >= padding + titleLine + metaLine;
     const lines = Math.min(2, Math.max(1, Math.floor((pixels - padding - (meta ? metaLine : 0)) / titleLine)));
-    // one line ends in "…" once, never in a hyphen before it
-    return { meta, lines, hyphens: lines === 1 ? "manual" : "auto" };
+    return { meta, lines };
   };
   const large = () => size() === "l";
   const wide = () => layout(pixels(), large() ? 20 : props.hourPx >= 56 ? 16 : 15, large() ? 21 : 19, 10);
@@ -912,16 +912,14 @@ export const TimeBand = (props: {
       data-display={event().display}
       data-meta={wide().meta ? undefined : "none"}
       data-meta-phone={phone().meta ? undefined : "none"}
+      data-lines={String(wide().lines)}
+      data-lines-phone={String(phone().lines)}
       data-beside={props.band.beside ? "" : undefined}
       style={{
         "--k2b-calendar-more": props.band.more ? "1.75rem" : undefined,
         "--k2b-calendar-accent": eventAccent(event()),
         "--k2b-calendar-lane": String(props.band.lane),
         "--k2b-calendar-lanes": String(props.band.lanes),
-        "--k2b-calendar-lines": String(wide().lines),
-        "--k2b-calendar-lines-phone": String(phone().lines),
-        "--k2b-calendar-hyphens": wide().hyphens,
-        "--k2b-calendar-hyphens-phone": phone().hyphens,
         "--k2b-calendar-progress": running() ? `${(((now() - props.band.start) / length()) * 100).toFixed(1)}%` : undefined,
         top: `calc(${termsCss(top())} + 1px)`,
         height: `max(var(--k2b-calendar-band-min), calc(${termsCss(subtractTerms(bottom(), top()))} - 2px))`,
@@ -999,8 +997,9 @@ export const TimeMore = (props: {
   const [open, setOpen] = createSignal(false);
   const label = () => messages().calendarMoreEventsAt({ count: props.more.bands.length, time: view.clock(props.more.minute) });
   const top = () => dayTopTerms(view.wake(), props.expanded, props.more.minute);
-  // Pressing the "+n" of an open list closes it as a press outside before the click arrives: that click leaves it closed.
-  let pressedAt = Number.NEGATIVE_INFINITY;
+  // Pressing the "+n" of an open list closes it as a press outside before the click arrives: that one click leaves it
+  // closed. A click with no press before it, such as a screen reader's, opens it.
+  let pressedAt = 0;
   let closedAt = Number.NEGATIVE_INFINITY;
   const toggle = (event: MouseEvent) => {
     if (!list || !button) return;
@@ -1008,9 +1007,16 @@ export const TimeMore = (props: {
       list.hidePopover();
       return;
     }
-    if (event.detail > 0 && closedAt >= pressedAt) return;
+    if (event.detail > 0 && closedAt >= pressedAt) {
+      closedAt = Number.NEGATIVE_INFINITY;
+      return;
+    }
     list.showPopover();
-    placeCalendarPopover(button, list);
+    // the "+n" stands at the column's end: the list opens from there towards the days, never past the calendar's edge
+    const rect = button.getBoundingClientRect();
+    const width = list.offsetWidth;
+    const end = getComputedStyle(button).direction === "rtl" ? rect.left : rect.right - width;
+    placeCalendarPopover(new DOMRect(end, rect.top, width, rect.height), list);
     list.querySelector<HTMLElement>("a,button,[tabindex]:not([tabindex='-1'])")?.focus();
   };
   return (
@@ -1020,7 +1026,8 @@ export const TimeMore = (props: {
         type="button"
         class="k2b-calendar-more"
         style={{ top: `calc(${termsCss(top())} + 1px)` }}
-        aria-label={label()}
+        // its name starts with what it shows (WCAG 2.5.3); the list it opens is named without the "+"
+        aria-label={`+${label()}`}
         aria-haspopup="dialog"
         aria-expanded={open() ? "true" : "false"}
         tabIndex={props.tabIndex}

@@ -2491,10 +2491,10 @@
   outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
-/* A band's title, then its time. The lines have a fixed height, so the band can say how many fit
-   (--k2b-calendar-lines, from its height): the title ends at a whole line, with "…" once at its end. A word longer
-   than the band is hyphenated in the page's language; only a word the browser cannot hyphenate breaks inside the word,
-   instead of ending in "…" of its own. */
+/* A band's title, then its time. The lines have a fixed height, so the band can say how many fit (data-lines, from
+   its height). Two lines end at a whole line with "…" once at its end; a word longer than the band is hyphenated in
+   the page's language, and only a word the browser cannot hyphenate breaks inside the word. One line is one line of
+   text, cut once by its letters with "…" as Apple cuts it, never a first word with the rest hidden. */
 .k2b-ui .k2b-calendar-band .k2b-calendar-event__title {
   max-width: 100%;
   font-size: 0.75rem;
@@ -2510,18 +2510,31 @@
 .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__title {
   display: -webkit-box;
   flex: none;
+  overflow: hidden;
   white-space: normal;
-  hyphens: var(--k2b-calendar-hyphens, auto);
+  hyphens: auto;
   overflow-wrap: break-word;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--k2b-calendar-lines, 2);
+  -webkit-line-clamp: 2;
+}
+
+.k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"])[data-lines="1"] .k2b-calendar-event__title {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* A phone has lower hours: its own count of lines and its own room for the time (TimeBand). */
 @container k2b-calendar-days (max-width: 40rem) {
-  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__title {
-    hyphens: var(--k2b-calendar-hyphens-phone, auto);
-    -webkit-line-clamp: var(--k2b-calendar-lines-phone, 2);
+  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"])[data-lines-phone="1"] .k2b-calendar-event__title {
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"])[data-lines-phone="2"] .k2b-calendar-event__title {
+    display: -webkit-box;
+    white-space: normal;
   }
 
   .k2b-ui .k2b-calendar-band[data-meta-phone="none"] .k2b-calendar-event__meta {
@@ -2530,9 +2543,15 @@
 }
 
 @container k2b-calendar-week (max-width: 40rem) {
-  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__title {
-    hyphens: var(--k2b-calendar-hyphens-phone, auto);
-    -webkit-line-clamp: var(--k2b-calendar-lines-phone, 2);
+  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"])[data-lines-phone="1"] .k2b-calendar-event__title {
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"])[data-lines-phone="2"] .k2b-calendar-event__title {
+    display: -webkit-box;
+    white-space: normal;
   }
 
   .k2b-ui .k2b-calendar-band[data-meta-phone="none"] .k2b-calendar-event__meta {

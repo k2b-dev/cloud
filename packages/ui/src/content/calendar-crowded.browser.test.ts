@@ -123,6 +123,14 @@ const bands = (page: Page) =>
             title.nextElementSibling?.matches(".k2b-calendar-event__meta") || !band.querySelector(".k2b-calendar-event__meta"),
           ),
           lines: Math.round(box.height / line),
+          // a title on one line is one line of text cut once at its end, never a wrapped first word with the rest hidden
+          cutOnce:
+            Math.round(box.height / line) !== 1 ||
+            (() => {
+              const range = document.createRange();
+              range.selectNodeContents(title);
+              return new Set([...range.getClientRects()].filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top))).size <= 1;
+            })(),
           // filled in its colour, with a colour edge of 3 px at its start
           filled: getComputedStyle(band).backgroundColor !== "rgb(255, 255, 255)",
           edge: getComputedStyle(band).boxShadow.includes("3px 0px 0px"),
@@ -164,6 +172,7 @@ for (const view of ["week", "day"] as const)
             filled: band.filled,
             edge: band.edge,
             clear: band.clear,
+            cutOnce: band.cutOnce,
           }).toEqual({
             id: band.id,
             inside: true,
@@ -174,6 +183,7 @@ for (const view of ["week", "day"] as const)
             filled: true,
             edge: true,
             clear: true,
+            cutOnce: true,
           });
         }
         // at most two bands at any time; the rest are counted in "+n" buttons, and together they are all 31
@@ -185,6 +195,16 @@ for (const view of ["week", "day"] as const)
         expect(shown.length + counts.reduce((sum, count) => sum + count, 0)).toBe(31);
         // no "+n" covers another or a band
         const chips = await boxes(page, ".k2b-calendar-more");
+        // each "+n" lies whole inside its day's column
+        const outside = await page.locator(".k2b-calendar-more").evaluateAll(
+          (buttons) =>
+            buttons.filter((button) => {
+              const rect = button.getBoundingClientRect();
+              const column = button.parentElement?.getBoundingClientRect();
+              return !column || rect.left < column.left - 0.5 || rect.right > column.right + 0.5;
+            }).length,
+        );
+        expect(outside).toBe(0);
         const drawn = await boxes(page, ".k2b-calendar-band");
         for (const [index, chip] of chips.entries()) {
           expect(chips.filter((other, each) => each !== index && cover(chip, other))).toEqual([]);
@@ -197,9 +217,15 @@ for (const view of ["week", "day"] as const)
         expect(name).toMatch(/^\+(1 weiterer Termin|\d+ weitere Termine) ab \d\d:\d\d$/);
         expect(name.startsWith((await first.textContent()) ?? "-")).toBe(true);
         await first.click();
-        const list = page.getByRole("dialog", { name });
+        // the list is named by its heading, without the "+" the button shows
+        const list = page.getByRole("dialog", { name: name.slice(1) });
         await list.waitFor();
         expect(await list.locator("[data-calendar-event]").count()).toBe(counts[0] ?? 0);
+        // the list opens towards the days, from the column's end where the "+n" stands, never past the calendar's edge
+        const chipRight = await first.evaluate((button) => button.getBoundingClientRect().right);
+        const placed = await list.evaluate((element) => element.getBoundingClientRect());
+        // on a phone there is not always room towards the days: then it stands at the screen's start
+        expect(placed.right <= chipRight + 0.5 || placed.left <= 8.5).toBe(true);
         await page.keyboard.press("Escape");
         await list.waitFor({ state: "hidden" });
         expect(await first.evaluate((button) => document.activeElement === button)).toBe(true);
@@ -210,6 +236,11 @@ for (const view of ["week", "day"] as const)
         await list.waitFor({ state: "hidden" });
         await settled(page);
         expect(await list.isVisible()).toBe(false);
+        // an activation without a press before it (a screen reader's click) opens it
+        await first.dispatchEvent("click", { detail: 1 });
+        await list.waitFor();
+        await page.keyboard.press("Escape");
+        await list.waitFor({ state: "hidden" });
       } finally {
         await page.close();
       }
