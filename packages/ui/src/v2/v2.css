@@ -4205,6 +4205,38 @@
   justify-content: center;
   margin-top: 32px;
 }
+/* the invitation: a symbol and quiet words, no frame; the words fit the device (keys or a tap), both in the markup */
+.k2-ui .k2-es-invite {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--k2-h-control-small);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--k2-r-control);
+  background: none;
+  font: var(--k2-t-row);
+  color: var(--k2-subtle);
+  cursor: pointer;
+}
+.k2-ui .k2-es-invite:hover {
+  color: var(--k2-text);
+}
+.k2-ui .k2-es-invite:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-es-invite-touch {
+  display: none;
+}
+@media not all and (hover: hover) and (pointer: fine) {
+  .k2-ui .k2-es-invite-keys {
+    display: none;
+  }
+  .k2-ui .k2-es-invite-touch {
+    display: inline;
+  }
+}
 @media not all and (min-width: 768px) {
   .k2-ui .k2-errorscreen {
     padding: 32px 16px 16px;

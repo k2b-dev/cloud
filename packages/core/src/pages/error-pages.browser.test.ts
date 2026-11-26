@@ -162,6 +162,15 @@ describe("error pages on v2", () => {
           expect(await actions.first().getAttribute("href")).toBe(page.primary);
           // the waiting game only as an invitation, where it is offered
           expect(await screen.locator(".k2-es-foot").count()).toBe(page.game ? 1 : 0);
+          if (page.game) {
+            // a plain symbol with quiet words, no frame, and the words that fit the device: keys or a tap
+            const invite = screen.getByRole("button", { name: "Mini-Spiel starten" });
+            expect(await invite.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("none");
+            expect(await invite.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+            const keys = invite.locator(".k2-es-invite-keys");
+            const touch = invite.locator(".k2-es-invite-touch");
+            expect([await keys.isVisible(), await touch.isVisible()]).toEqual(view.touch ? [false, true] : [true, false]);
+          }
           // the words stand in the middle of the page
           const box = await screen.locator(".k2-es-stack").boundingBox();
           const pane = await screen.boundingBox();

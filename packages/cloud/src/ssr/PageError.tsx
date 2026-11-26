@@ -90,7 +90,7 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
           action={action}
           retryHref={`${c.req.path}${new URL(c.req.url).search}`}
           labels={{ retry: t.retry, search: t.search }}
-          game={offered ? <ErrorPageGame t={game()} /> : undefined}
+          game={offered ? <ErrorPageGame t={game()} keys={t.inviteKeys} touch={t.inviteTouch} /> : undefined}
         />
       </Layout>
     );

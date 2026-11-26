@@ -13,6 +13,8 @@ export const pageErrorMessages = i18n.define({
       home: "Go to home page",
       retry: "Try again",
       search: "Search",
+      inviteKeys: "Press Space to pass the time",
+      inviteTouch: "Tap to pass the time",
     },
     de: {
       forbidden: "Dafür fehlt dir der Zugriff",
@@ -24,6 +26,8 @@ export const pageErrorMessages = i18n.define({
       home: "Zur Startseite",
       retry: "Erneut versuchen",
       search: "Suchen",
+      inviteKeys: "Leertaste drücken, um dir die Zeit zu vertreiben",
+      inviteTouch: "Tippen, um dir die Zeit zu vertreiben",
     },
   },
 });

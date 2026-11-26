@@ -1,5 +1,5 @@
-import { Chip } from "@k2b/ui/v2";
-import { createSignal } from "solid-js";
+import { ErrorScreen } from "@k2b/ui/v2";
+import { onCleanup, onMount } from "solid-js";
 import { importOnDemand } from "../browser/reload";
 import type { MaintenanceGameFactory, MaintenanceGameTexts } from "../maintenance-game";
 
@@ -28,19 +28,32 @@ const loadFactory = async (): Promise<MaintenanceGameFactory | undefined> => {
   return isFactory(loaded) ? loaded : undefined;
 };
 
+/** Space belongs to the page only when nothing that takes keys has the focus: no field, button, link or editor. */
+const pageHasTheKeys = (target: EventTarget | null): boolean => {
+  if (!(target instanceof Element)) return true;
+  if (target === document.body || target === document.documentElement) return true;
+  if (target.closest("input, textarea, select, button, a[href], [contenteditable=''], [contenteditable='true'], [role='textbox'], dialog"))
+    return false;
+  return target.closest('[data-k2-part="ErrorScreen"]') !== null;
+};
+
 /**
- * The waiting game's invitation at the foot of an error page: nothing is drawn until the person asks. Then the game
- * opens over the error screen, its road below the page's words, and a round starts.
+ * The waiting game's invitation at the foot of an error page: a symbol and quiet words, nothing drawn until the person
+ * asks. The button starts it, and so does Space while the focus is on the page itself (as a browser's offline game
+ * does), never while typing in a field such as the shell's search. The game then opens over the error screen, its road
+ * below the page's words, and a round starts; it handles motion and keys itself from then on.
  */
-export default function ErrorPageGame(props: { t: MaintenanceGameTexts }) {
-  const [busy, setBusy] = createSignal(false);
+export default function ErrorPageGame(props: { t: MaintenanceGameTexts; keys: string; touch: string }) {
+  let started = false;
   const start = async () => {
-    if (busy()) return;
-    setBusy(true);
+    if (started) return;
+    started = true;
     const host = document.querySelector<HTMLElement>('[data-k2-part="ErrorScreen"]');
     const factory = host ? await loadFactory() : undefined;
-    setBusy(false);
-    if (!factory || !host) return;
+    if (!factory || !host) {
+      started = false;
+      return;
+    }
     const game = factory({
       host,
       anchor: () => host.querySelector(".k2-es-stack"),
@@ -52,9 +65,15 @@ export default function ErrorPageGame(props: { t: MaintenanceGameTexts }) {
     game.open();
     game.start();
   };
-  return (
-    <Chip icon="robot" onClick={() => void start()}>
-      {props.t.start}
-    </Chip>
-  );
+  onMount(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (started || event.key !== " " || event.isComposing || event.repeat || event.defaultPrevented) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || !pageHasTheKeys(event.target)) return;
+      event.preventDefault();
+      void start();
+    };
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => document.removeEventListener("keydown", onKey));
+  });
+  return <ErrorScreen.Invite icon="robot" label={props.t.start} keys={props.keys} touch={props.touch} onClick={() => void start()} />;
 }

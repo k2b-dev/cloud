@@ -3,9 +3,11 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
-// The error page's waiting game is an invitation: nothing is drawn until the person asks. Then the game opens over the
-// error screen, its road below the page's words, and a round starts at once.
-test("the invitation opens the game over the error screen, below its words, and starts a round", async () => {
+// The error page's waiting game is an invitation: nothing is drawn until the person asks, with the button or with
+// Space while the focus is on the page itself (as a browser's offline game). Then the game opens over the error screen,
+// its road below the page's words, and a round starts. Typing a space in a field, such as the shell's search, never
+// starts it.
+const mount = async () => {
   const dom = createDomTestHarness();
   const { maintenanceGameMessages } = await import("../maintenance-game");
   const { default: ErrorPageGame } = await import("./ErrorPageGame.island");
@@ -15,6 +17,10 @@ test("the invitation opens the game over the error screen, below its words, and 
   words.className = "k2-es-stack";
   host.append(words);
   dom.root.append(host);
+  // the shell's search field, outside the error screen
+  const search = dom.document.createElement("input");
+  search.type = "search";
+  dom.root.append(search);
   const open = mock(() => {});
   const start = mock(() => {});
   const factory = mock((options: { host: HTMLElement; anchor: () => Element | null }) => {
@@ -25,19 +31,76 @@ test("the invitation opens the game over the error screen, below its words, and 
   // the game's source defines the factory as this global; a page that loaded it once finds it there
   Reflect.set(dom.window, "__k2bLauf", factory);
   const t = maintenanceGameMessages.resolve(["de"]).t;
-  const dispose = render(() => createComponent(ErrorPageGame, { t }), host);
+  const dispose = render(
+    () =>
+      createComponent(ErrorPageGame, {
+        t,
+        keys: "Leertaste drücken, um dir die Zeit zu vertreiben",
+        touch: "Tippen, um dir die Zeit zu vertreiben",
+      }),
+    host,
+  );
+  const started = async () => {
+    for (let attempt = 0; start.mock.calls.length === 0 && attempt < 30; attempt += 1) await Bun.sleep(10);
+    return start.mock.calls.length > 0;
+  };
+  const space = (target: EventTarget) => target.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+  return {
+    dom,
+    host,
+    search,
+    factory,
+    open,
+    start,
+    started,
+    space,
+    cleanup: () => {
+      dispose();
+      Reflect.deleteProperty(dom.window, "__k2bLauf");
+      dom.cleanup();
+    },
+  };
+};
+
+test("the invitation is a plain button named in one sentence, with the words for keys and for a tap in its markup", async () => {
+  const page = await mount();
   try {
-    const invitation = Array.from(host.querySelectorAll<HTMLElement>("button, a")).find((item) => item.textContent?.includes(t.start));
-    expect(invitation).toBeDefined();
-    expect(factory).not.toHaveBeenCalled();
-    invitation!.click();
-    for (let attempt = 0; start.mock.calls.length === 0 && attempt < 50; attempt += 1) await Bun.sleep(10);
-    expect(factory).toHaveBeenCalledTimes(1);
-    expect(open).toHaveBeenCalledTimes(1);
-    expect(start).toHaveBeenCalledTimes(1);
+    const invite = page.host.querySelector<HTMLButtonElement>('button[data-k2-part="ErrorScreen.Invite"]');
+    expect(invite?.getAttribute("aria-label")).toBe("Mini-Spiel starten");
+    expect(invite?.querySelector(".k2-es-invite-keys")?.textContent).toBe("Leertaste drücken, um dir die Zeit zu vertreiben");
+    expect(invite?.querySelector(".k2-es-invite-touch")?.textContent).toBe("Tippen, um dir die Zeit zu vertreiben");
+    expect(page.factory).not.toHaveBeenCalled();
+    invite!.click();
+    expect(await page.started()).toBe(true);
+    expect(page.factory).toHaveBeenCalledTimes(1);
+    expect(page.open).toHaveBeenCalledTimes(1);
   } finally {
-    dispose();
-    Reflect.deleteProperty(dom.window, "__k2bLauf");
-    dom.cleanup();
+    page.cleanup();
+  }
+});
+
+test("Space on the page starts the game once, like a browser's offline game", async () => {
+  const page = await mount();
+  try {
+    page.space(page.dom.document.body);
+    expect(await page.started()).toBe(true);
+    page.space(page.dom.document.body);
+    await Bun.sleep(30);
+    // the game takes its keys itself from then on
+    expect(page.factory).toHaveBeenCalledTimes(1);
+  } finally {
+    page.cleanup();
+  }
+});
+
+test("a space typed in the shell's search never starts the game", async () => {
+  const page = await mount();
+  try {
+    page.search.focus();
+    page.space(page.search);
+    expect(await page.started()).toBe(false);
+    expect(page.factory).not.toHaveBeenCalled();
+  } finally {
+    page.cleanup();
   }
 });
