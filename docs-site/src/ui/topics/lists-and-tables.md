@@ -38,7 +38,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### List
 
-Many like things, one per line; `label` names it.
+Many like things, one per line; `label` names it. Rows part with a quiet line, and the open or chosen row takes the tint of the app the rows belong to (`color`, the page's app by default).
 
 <Props of="List" />
 
@@ -50,7 +50,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. Rows part with a quiet line, the head with a clear one; the open or chosen row takes the tint of its app (`color`).
 
 <Props of="Table Column" />
 

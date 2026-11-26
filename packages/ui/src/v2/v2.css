@@ -30,9 +30,12 @@
   --k2-muted: #4b4b55;
   --k2-subtle: #6b6b74;
 
-  /* the one hairline, the edge of a control, a grip at rest */
+  /* Two line weights (identity B). The clear line separates two things: a head and its content, a list and its
+     detail, one section and the next, a frame. The quiet line only parts the rows and cells of one thing. */
   --k2-line: var(--k2-n200);
   --k2-hairline: 1px solid var(--k2-line);
+  --k2-line-subtle: var(--k2-n100);
+  --k2-hairline-subtle: 1px solid var(--k2-line-subtle);
   --k2-line-control: var(--k2-n300);
   --k2-grip: #8a8a94;
 
@@ -980,6 +983,21 @@
   gap: 12px;
 }
 
+/* The rows of another app (a List's or a Table's `color`) take that app's colour: its ink and tint follow from it as
+   they do on the page, in each theme. The platform's readable ink belongs to the page's app, so it is not taken here. */
+.k2-ui [data-k2-owner] {
+  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
+  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 8%, var(--k2-surface));
+  --k2-app-text: var(--k2-app-ink-mix, var(--k2-blue-ink));
+  --k2-app-tint: var(--k2-app-tint-mix, var(--k2-blue-tint));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-owner],
+.k2-ui.dark [data-k2-owner],
+.k2-ui[data-theme="dark"] [data-k2-owner] {
+  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
+  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 28%, var(--k2-surface));
+}
+
 /* ── Row: 40 · 52 · 72 by its lines; roles by line; square, also when it opens something ────────────────────── */
 .k2-ui .k2-list {
   display: flex;
@@ -995,7 +1013,7 @@
   align-items: center;
   min-height: var(--k2-h-row);
   padding: 8px var(--k2-edge);
-  border-bottom: var(--k2-hairline);
+  border-bottom: var(--k2-hairline-subtle);
   min-width: 0;
   color: inherit;
 }
@@ -1149,9 +1167,9 @@
 .k2-ui .k2-row[data-yours] {
   background: var(--k2-blue-tint);
 }
-/* a row chosen in a selection takes the blue tint of a selected table row; open and chosen at once, it stays blue */
+/* a row chosen in a selection takes the tint of its app too, as an open row and a selected table row do */
 .k2-ui .k2-row[data-selected] {
-  background: var(--k2-blue-tint);
+  background: var(--k2-app-tint);
 }
 /* the box of a row in a selection stands in the lead; its target reaches 12 px to the edge, 8 px towards the title
    (the gap before it) and 8 px up and down (36 × 36 px), inside the row, so a finger meets it and never the title or
@@ -1266,7 +1284,7 @@
 .k2-ui .k2-table td {
   height: var(--k2-h-row);
   padding: 0 12px;
-  border-bottom: var(--k2-hairline);
+  border-bottom: var(--k2-hairline-subtle);
   vertical-align: middle;
   min-width: 0;
 }
@@ -1409,7 +1427,15 @@
   background: var(--k2-app-tint);
 }
 .k2-ui .k2-table[data-grid] tbody tr[data-selected] > td {
-  background: var(--k2-blue-tint);
+  background: var(--k2-app-tint);
+}
+/* Forced colours drop the tint: the open and the chosen rows stand in a frame of the system's highlight. */
+@media (forced-colors: active) {
+  .k2-ui .k2-row:is([data-current], [data-selected]),
+  .k2-ui .k2-table tbody tr:is([aria-current], [data-selected]) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 .k2-ui .k2-table[data-grid] td:not([data-select]):hover {
   box-shadow: inset 0 0 0 1px var(--k2-line-control);

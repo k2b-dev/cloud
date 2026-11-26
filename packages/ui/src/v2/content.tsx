@@ -206,6 +206,11 @@ export type ListProps = {
   children: JSX.Element;
   /** A name for the list, for assistive technology. */
   label?: string;
+  /**
+   * The colour of the app the rows belong to, for the tint of the open and the chosen row, such as rows of the files
+   * app inside another app; the app of the page by default.
+   */
+  color?: string;
 };
 
 /**
@@ -276,7 +281,15 @@ export const List = (props: ListProps) => {
     if (list) keepPlace(list);
   });
   return (
-    <div ref={list} class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
+    <div
+      ref={list}
+      class="k2-list"
+      data-k2-part="List"
+      data-k2-owner={props.color ? "" : undefined}
+      style={custom({ "--k2-app": props.color })}
+      role="list"
+      aria-label={props.label}
+    >
       <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
     </div>
   );
@@ -503,6 +516,11 @@ type TableBase<T> = {
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;
+  /**
+   * The colour of the app the rows belong to, for the tint of the open and the chosen rows, such as rows of the files
+   * app inside another app; the app of the page by default.
+   */
+  color?: string;
   /** The first column (and the box column) stays while the table scrolls sideways; an edge shows behind it. */
   sticky?: boolean;
   /** The column the rows are sorted by now: an arrow in its head and darker words (a column's `sort` makes it pressable). */
@@ -686,6 +704,8 @@ export const Table = <T,>(props: TableProps<T>) => {
       <div
         class="k2-table-scroll"
         data-k2-part="Table"
+        data-k2-owner={props.color ? "" : undefined}
+        style={custom({ "--k2-app": props.color })}
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
       >
