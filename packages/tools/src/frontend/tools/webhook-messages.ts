@@ -51,6 +51,7 @@ export const webhookMessages = i18n.define({
       refresh: "Refresh",
       loadFailed: "The requests could not be loaded. The endpoints and their addresses keep working.",
       endpointsLoadFailed: "The endpoints could not be loaded. Their addresses keep receiving requests.",
+      bothLoadFailed: "Endpoints and requests could not be loaded. The addresses keep receiving requests.",
       needsPerson:
         "The webhook tester belongs to a person: its endpoints and requests are theirs. A service account has none; sign in as a person to use it.",
       newestRequests: ({ count }: { count: number }) => `The newest ${count.toLocaleString("en")} requests`,
@@ -152,6 +153,7 @@ export const webhookMessages = i18n.define({
       refresh: "Aktualisieren",
       loadFailed: "Die Anfragen konnten nicht geladen werden. Endpunkte und Adressen funktionieren weiter.",
       endpointsLoadFailed: "Die Endpunkte konnten nicht geladen werden. Ihre Adressen nehmen weiter Anfragen an.",
+      bothLoadFailed: "Endpunkte und Anfragen konnten nicht geladen werden. Die Adressen nehmen weiter Anfragen an.",
       needsPerson:
         "Der Webhook-Tester gehört einer Person: Endpunkte und Anfragen sind ihre. Ein Dienstkonto hat keine; melde dich als Person an, um ihn zu nutzen.",
       newestRequests: ({ count }) => `Die neuesten ${count.toLocaleString("de")} Anfragen`,
