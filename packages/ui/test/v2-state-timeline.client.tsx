@@ -13,6 +13,8 @@ declare global {
     __k2Twin?: boolean;
     /** Gives every state a long name, so the legend needs more lines than the chart has room for. */
     __k2LongStates?: boolean;
+    /** Reads the times as instants (`timeAxis` in UTC) instead of the page's own clock format. */
+    __k2TimeAxis?: boolean;
   }
 }
 
@@ -100,7 +102,7 @@ render(
               rows={rows}
               states={states}
               domain={[start, start + 12 * HOUR]}
-              xAxis={{ format: time }}
+              {...(window.__k2TimeAxis ? { timeAxis: { timeZone: "UTC" } } : { xAxis: { format: time } })}
               legend
               interactive
               style={{ height: "100%" }}

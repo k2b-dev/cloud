@@ -24,7 +24,7 @@ afterAll(async () => {
 });
 
 /** `dir`: the page is written right to left; `twin`: a hidden timeline of the same lanes stands first on the page. */
-type PageOptions = { dir?: "rtl"; twin?: boolean; longStates?: boolean };
+type PageOptions = { dir?: "rtl"; twin?: boolean; longStates?: boolean; timeAxis?: boolean };
 
 const withPage = async (width: number, run: (page: Page) => Promise<void>, options: PageOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -36,6 +36,7 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>, optio
     );
     if (options.twin) await page.evaluate(() => Reflect.set(window, "__k2Twin", true));
     if (options.longStates) await page.evaluate(() => Reflect.set(window, "__k2LongStates", true));
+    if (options.timeAxis) await page.evaluate(() => Reflect.set(window, "__k2TimeAxis", true));
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await page.locator(".k2-canvas > .k2b-chart > .k2b-chart__svg > svg").waitFor();
@@ -183,3 +184,35 @@ test("at 390, with eight long state names: the lanes keep 18 px each and the leg
     { longStates: true },
   );
 });
+
+for (const width of [1440, 390])
+  test(`at ${width}, over instants: the axis reads round clock times in German, and a run's tooltip says how long it took`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const axis = await page.evaluate(() => {
+          const chart = document.querySelector(".k2-canvas > .k2b-chart > .k2b-chart__svg > svg")!;
+          const labels = [...chart.querySelectorAll<SVGTextElement>(".stdlib-chart-heatmap-label")];
+          const boxes = labels.map((label) => label.getBoundingClientRect());
+          return {
+            texts: labels.map((label) => label.textContent),
+            apart: boxes.every((box, index) => index === 0 || box.left >= boxes[index - 1]!.right),
+          };
+        });
+        // 06:00 to 18:00 in steps of whole hours, never a minute of a decimal step, and no label on another
+        expect(axis.texts.length).toBeGreaterThanOrEqual(4);
+        for (const text of axis.texts) expect(text).toMatch(/^(0[6-9]|1[0-8]):00$/);
+        expect(axis.apart).toBe(true);
+        // the tooltip of a run: its clock times and its duration with a unit
+        await page.locator(".k2-canvas > .k2b-chart").focus();
+        await page.keyboard.press("ArrowRight");
+        const tooltip = page.locator(".k2-canvas .k2b-chart__tooltip");
+        await page.waitForFunction(() => (document.querySelector(".k2-canvas .k2b-chart__tooltip")?.textContent ?? "").includes("min"));
+        const text = (await tooltip.textContent()) ?? "";
+        expect(text).toMatch(/\d\d:\d\d/);
+        expect(text).toMatch(/\d+ (min|h)/);
+        expect(text).not.toMatch(/\d\.\d{3}/);
+      },
+      { timeAxis: true },
+    );
+  });

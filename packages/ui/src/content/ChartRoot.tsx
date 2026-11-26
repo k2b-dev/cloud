@@ -173,7 +173,15 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
     // A state timeline names its states in the HTML legend below the drawing, and its definitions get the ids of this
     // instance (unique per page, on the server and in the browser).
-    return drawing.kind === "stateTimeline" ? { ...drawing, legend: false, idPrefix: `${chartTooltipId}-drawing` } : drawing;
+    // A time axis speaks the page's language unless the caller names one.
+    return drawing.kind === "stateTimeline"
+      ? {
+          ...drawing,
+          legend: false,
+          idPrefix: `${chartTooltipId}-drawing`,
+          timeAxis: drawing.timeAxis && { locale: locale(), ...drawing.timeAxis },
+        }
+      : drawing;
   };
   const messages = useUiMessages();
   const chartMessages = useChartMessages();

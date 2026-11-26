@@ -8,6 +8,7 @@ import {
   seriesPaint,
   svgRoot,
 } from "../charts/core/svg-renderers";
+import { type ChartTimeAxis, chartClock, chartDuration, chartTimeLabel, chartTimeStep, chartTimeTicks } from "./chart-time-axis";
 
 export type StateTimelineDomain = readonly [number, number];
 
@@ -38,6 +39,13 @@ export type StateTimelineChartOptions = {
   states?: StateTimelineState[];
   domain?: StateTimelineDomain;
   xAxis?: { format?: (value: number) => string; label?: string };
+  /**
+   * The times are instants (Unix milliseconds): the axis steps on round wall times in `timeZone` (hours across a day,
+   * days across weeks), as a line chart's `timeAxis` does, its labels in `locale` (24 hours; the day at midnight);
+   * the tooltip gives clock times and each duration with its unit ("4 s", "12 min", "1 h 30 min"). `xAxis.format`
+   * still labels the axis and the times. `Chart` fills `locale` from the page.
+   */
+  timeAxis?: ChartTimeAxis;
   legend?: boolean;
   interactive?: boolean;
   /**
@@ -146,6 +154,8 @@ export const renderStateTimelineSvg = (
   const stateIndexes = new Map(stateKeys.map((state, index) => [state, index]));
   const body: string[] = [];
   const lanes: string[] = [];
+  // a start or end in the tooltip: the page's format, else the clock time of an instant
+  const when = (value: number) => opts.xAxis?.format?.(value) ?? (opts.timeAxis ? chartClock(value, opts.timeAxis) : undefined);
   // A host stretches the drawing to its box while text keeps its pixel size, so the room a lane name has in pixels is
   // known only in the browser. Each name starts at the left edge and the gutter cuts it off with a short fade: in the
   // drawing's own units, the cut scales with the box and always ends before the plot. The full name stays in the
@@ -190,9 +200,13 @@ export const renderStateTimelineSvg = (
               grid: [index, rowIndex],
               values: [
                 { key: "state", value: interval.state, formatted: stateLabel },
-                { key: "from", value: intervalFrom, formatted: opts.xAxis?.format?.(intervalFrom) },
-                { key: "to", value: intervalTo, formatted: opts.xAxis?.format?.(intervalTo) },
-                { key: "duration", value: intervalTo - intervalFrom },
+                { key: "from", value: intervalFrom, formatted: when(intervalFrom) },
+                { key: "to", value: intervalTo, formatted: when(intervalTo) },
+                {
+                  key: "duration",
+                  value: intervalTo - intervalFrom,
+                  formatted: opts.timeAxis ? chartDuration(intervalTo - intervalFrom, opts.timeAxis.locale) : undefined,
+                },
                 ...((interval.tooltip ?? interval.label) ? [{ key: "detail", value: interval.tooltip ?? interval.label ?? "" }] : []),
               ],
             },
@@ -220,9 +234,17 @@ export const renderStateTimelineSvg = (
     );
   }
 
+  // instants step on round wall times, as many as fit at about 48 units a label; plain numbers on nice steps
+  const timeAxis = opts.timeAxis;
+  const timeStep = timeAxis ? chartTimeStep(viewport[1] - viewport[0], Math.max(4, Math.floor((plotRight - plotLeft) / 48))) : undefined;
   const tickTarget = Math.max(2, Math.min(8, Math.floor((plotRight - plotLeft) / 110)));
-  const ticks = extendDomainToNice(viewport[0], viewport[1], niceStep(viewport[1] - viewport[0], tickTarget)).ticks;
-  const format = opts.xAxis?.format ?? ((value: number) => fmt(value));
+  const ticks =
+    timeAxis && timeStep
+      ? chartTimeTicks(viewport, timeAxis.timeZone, timeStep)
+      : extendDomainToNice(viewport[0], viewport[1], niceStep(viewport[1] - viewport[0], tickTarget)).ticks;
+  const format =
+    opts.xAxis?.format ??
+    (timeAxis && timeStep ? (value: number) => chartTimeLabel(value, timeStep, timeAxis) : (value: number) => fmt(value));
   for (const tick of ticks) {
     if (tick < viewport[0] || tick > viewport[1]) continue;
     const x = mapRange(tick, viewport, [plotLeft, plotRight]);
