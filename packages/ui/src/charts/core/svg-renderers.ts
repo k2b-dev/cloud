@@ -27,9 +27,9 @@ import {
   renderReferenceLines,
   renderXAxisCategorical,
   renderYAxis,
+  seriesPaint,
   smoothPathD,
   svgRoot,
-  seriesPaint,
 } from "./svg-common";
 
 /**

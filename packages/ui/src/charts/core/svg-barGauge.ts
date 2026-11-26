@@ -8,8 +8,8 @@ import {
   formatNumberValue,
   normalizeMinMax,
   renderHeader,
-  svgRoot,
   seriesPaint,
+  svgRoot,
   thresholdForIndex,
   thresholdIndexForValue,
 } from "./svg-common";

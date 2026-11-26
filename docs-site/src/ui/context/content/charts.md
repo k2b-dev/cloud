@@ -193,6 +193,24 @@ keyboard inspection and linked cursors follow the actual plot below the legend.
   series={[{ label: "Orders", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }] }]} />
 ```
 
+## A state timeline
+
+A state with its own `color` fills its intervals and its swatch with that
+colour. The series palette applies only to states without a colour. Give each
+state a `label` as well: the colour and the word name the state together.
+
+The legend stands below the timeline and wraps at any width. It takes at most
+40% of the height that you give the chart and scrolls beyond that. Each lane
+name starts at the left edge. The label column cuts off a long name with a
+short fade before the plot. The full name stays in the tooltip and in the
+lane's accessible name.
+
+```tsx
+<Chart kind="stateTimeline" legend interactive style={{ height: "100%" }}
+  states={[{ state: "error", label: "Failed", color: "#ef4444" }]}
+  rows={[{ label: "worker:files:thumbnails", intervals: [{ from: 0, to: 60_000, state: "error" }] }]} />
+```
+
 ## Bar charts
 
 A bar chart labels every category; it never thins or drops category labels.
