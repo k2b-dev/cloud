@@ -283,6 +283,28 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "the figure type (30/34 600) stands once per screen in its hero; a second figure or the figure type elsewhere is a finding",
+    async () => {
+      const figure = (n: number) => `<p data-k2-type="figure" style="font:var(--k2-t-figure);margin:12px var(--k2-edge)">${n}</p>`;
+      const loose = '<p style="font:var(--k2-t-figure);margin:12px var(--k2-edge)">97</p>';
+      const cases: [string, string[]][] = [
+        [figure(178), []],
+        [figure(178) + figure(97), ["the figure type stands 2 times: one figure per screen"]],
+        [loose, [expect.stringMatching(/^text outside the type roles: 30px\/34px 600 in p/)]],
+      ];
+      for (const [body, found] of cases) {
+        const page = await open(columns(body));
+        try {
+          expect((await measureV2Layout(page)).type).toEqual(found);
+        } finally {
+          await page.close();
+        }
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: two lines 1.5 px apart read as one thick line, a double line; 2 px apart they are two",
     async () => {
       const apart = (gap: number) =>

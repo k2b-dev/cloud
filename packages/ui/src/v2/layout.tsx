@@ -18,6 +18,7 @@ import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
+import { safeColor } from "./colors";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
@@ -410,6 +411,12 @@ export type PaneProps = {
   /** The side column of a record (the info column): quieter sections. */
   side?: boolean;
   /**
+   * The colour of the app the content belongs to, where it differs from the app one is in, such as the indigo of
+   * OAuth in the administration (identity B): hero, drawings, the open row and the head of the open thing take it;
+   * the shell keeps the colour of its app. A hex colour or a token; one that is no colour is left out.
+   */
+  owner?: string;
+  /**
    * A name under which the page keeps this column's scroll position, such as "mail-list": back and forward bring
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
    */
@@ -459,6 +466,8 @@ export const Pane = (props: PaneProps) => {
       });
     });
   });
+  // the owner's colour only when it is one: a value that is no colour leaves the app's colour standing
+  const owner = () => (props.owner === undefined ? undefined : safeColor(props.owner));
   return (
     <section
       ref={(element) => {
@@ -472,9 +481,11 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
+      data-owner={owner() ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        "--k2-app": owner(),
       })}
     >
       {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}

@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
+import { OAuthScreen, PulseScreen } from "./v2-identity-b.fixture";
 import {
   AgendaTilesScreen,
   AreasMenuScreen,
@@ -52,7 +53,11 @@ declare global {
       | "section-foot"
       | "facts"
       | "dialog-inline"
-      | "agenda";
+      | "agenda"
+      | "oauth-b"
+      | "oauth-b-list"
+      | "pulse-b"
+      | "pulse-b-list";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -81,6 +86,10 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
+      ) : which === "oauth-b" || which === "oauth-b-list" ? (
+        <OAuthScreen list={which === "oauth-b-list"} />
+      ) : which === "pulse-b" || which === "pulse-b-list" ? (
+        <PulseScreen list={which === "pulse-b-list"} />
       ) : which === "agenda" ? (
         <AgendaTilesScreen />
       ) : which === "dialog-inline" ? (

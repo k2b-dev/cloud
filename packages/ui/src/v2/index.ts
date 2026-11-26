@@ -94,6 +94,7 @@ export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+export { Hero, type HeroException, type HeroProps, type HeroTrend, ObjectHead, type ObjectHeadProps } from "./identity";
 // Layer 1: the primitives.
 export {
   Band,
@@ -121,6 +122,7 @@ export {
   type AvatarStackProps,
   Chip,
   type ChipProps,
+  Dot,
   Icon,
   type IconProps,
   Mark,
@@ -131,6 +133,9 @@ export {
   type ProgressProps,
   Spark,
   type SparkProps,
+  type TickState,
+  Ticks,
+  type TicksProps,
 } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
@@ -148,5 +153,5 @@ export {
   type SectionProps,
 } from "./structure";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
-export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
+export { figureRole, fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
 export type { Action, OnNavigate, Person, Status, TwoActions, Width } from "./types";

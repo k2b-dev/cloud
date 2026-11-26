@@ -18,6 +18,12 @@ export const typeRoles = {
 
 export type TypeRole = keyof typeof typeRoles;
 
+/**
+ * The one figure of a screen (identity B): the number or statement that counts today, in its hero; tabular numbers.
+ * A fifth size beside the four roles, once per screen and nowhere else.
+ */
+export const figureRole = { size: 30, lineHeight: 34, weight: 600 } as const;
+
 /** The three weights; emphasis is a weight, never a size. */
 export const fontWeights = [400, 500, 600] as const;
 

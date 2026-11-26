@@ -18,6 +18,16 @@ One base: key numbers with a short history in `Cells`, then its tables, forms an
 
 <Example recipe="home" height="720" default="Busy" />
 
+## One hero, a tinted head, the owner's colour
+
+Every screen (direction B, 26.11.) gets three things that work the same everywhere:
+
+- **One `Hero` right under the head:** the one figure or statement that counts today, in the figure type (30/34, 600, once per screen) and in the colour of the app the thing belongs to. Its real history stands beside it (bars, an area or ticks from data the app has), and what falls out of line stands under it as one line: "● number word · who".
+- **A tinted `ObjectHead` on the open thing:** the tint of its app as ground, its sign in 40, its name in 18, one meta line and up to three key facts. A problem stands red right there.
+- **One picture of the data per row:** `Ticks`, `Spark` or `Avatar.Stack`, in the soft colour of the app; red only for a failure.
+
+The shell shows where you are (the colour of the app you are in); the content shows whose it is: `Pane owner` gives the hero, the drawings, the open row and the object head the colour of the app the thing belongs to, such as the indigo of OAuth in the administration. Two weights of line: a very quiet one between the rows of a table or list, the strong hairline where two things part (a head from its content, a list from its detail, groups).
+
 ## Mark, symbol or avatar?
 
 ### Mark
@@ -55,6 +65,24 @@ A few bars of a short history beside a number or on a card, the last in full col
 
 <Props of="Spark" />
 
+### Hero
+
+The one figure of a screen with its real history and its exceptions, right under the head; stacked on the phone.
+
+<Props of="Hero HeroTrend HeroException" />
+
+### ObjectHead
+
+The head of an open thing on the tint of its app: sign, name, meta, deeds, three key facts and a problem in place.
+
+<Props of="ObjectHead" />
+
+### Ticks
+
+One tick per fetch or check in the soft colour of the app, a failed one red and taller, none a quiet stub.
+
+<Props of="Ticks" />
+
 ### Tiles card
 
 Things as cards: mark, name, figures, people and a short history; the last card makes a new thing.
@@ -81,14 +109,14 @@ Until they ship, use the nearest part and write `// k2b-ui gap: …` at that pla
 - Give each thing its mark wherever it appears, with the same colour and symbol.
 - Give a kind of thing (table, form, workflow) one colour across the app.
 - Write an activity as one sentence: who, the deed, the thing with its mark.
-- Show a state on a card or row as a chip or a figure with its tone and its word.
+- Show a state on a card or row as a chip or a figure with its tone and its word; when it is good, a neutral dot and word.
 
 ### Don't
 
 - Lead a row for a thing with a plain grey symbol when the thing has a colour.
 - Use a `Spark` instead of the number it explains.
-- Put a second card or a box inside a card.
-- Colour a mark for decoration; its colour comes from the data.
+- Put a second card or a box inside a card, a second figure on a screen, or a second picture of the data in a row.
+- Colour a mark for decoration; its colour comes from the data. A hero's history comes from data the app has, never invented.
 
 ## Next
 

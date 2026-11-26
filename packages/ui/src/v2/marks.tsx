@@ -306,6 +306,28 @@ export const Spark = (props: SparkProps) => {
   );
 };
 
+/** One fetch or check: it worked, it failed, or there was none. */
+export type TickState = "ok" | "bad" | "none";
+
+export type TicksProps = {
+  /** The fetches or checks in their order, oldest first, such as the last 30 minutes of a source. */
+  values: readonly TickState[];
+  /** What they say, in one sentence, such as "30 Abrufe, 3 fehlgeschlagen seit 10:40". */
+  label: string;
+  /** Where they stand: `row`, small in a table cell or a row (the default); `hero`, across the drawing of a `Hero`. */
+  place?: "row" | "hero";
+};
+
+/**
+ * The shape of a list's data over time in one column (identity B): a tick per fetch or check in the soft colour of the
+ * app the thing belongs to, a failed one red and taller, none a quiet stub. Only one such picture per row.
+ */
+export const Ticks = (props: TicksProps) => (
+  <span class="k2-ticks" data-k2-part="Ticks" data-place={props.place === "hero" ? "hero" : undefined} role="img" aria-label={props.label}>
+    <For each={props.values}>{(state) => <i data-state={state} />}</For>
+  </span>
+);
+
 export type ChipProps = {
   children: JSX.Element;
   /** A symbol before the word. */

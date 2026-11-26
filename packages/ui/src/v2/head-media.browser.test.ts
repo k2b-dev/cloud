@@ -41,7 +41,11 @@ type Case =
   | "section-foot"
   | "facts"
   | "dialog-inline"
-  | "agenda";
+  | "agenda"
+  | "oauth-b"
+  | "oauth-b-list"
+  | "pulse-b"
+  | "pulse-b-list";
 
 let browser: Browser;
 let client: string;
@@ -1511,5 +1515,162 @@ test("on the phone a row that leads with a mark is 56 px with a mark of 40; a ro
       expect(mark).toBe(32);
     },
     1024,
+  );
+});
+
+// Identity B (Valentin 26.11., v2-identity-study v1): the hero, the tinted head of the open thing, the owner's colour,
+// one picture of the data per row, and two weights of line.
+const rgb = (color: string) => color.replace(/\s/g, "");
+
+for (const which of ["oauth-b", "pulse-b"] as const)
+  test(`identity B, ${which}: one figure per screen in the owner's colour, its real history beside it, the exceptions as one line`, async () => {
+    for (const width of [1920, 1440, 1024, 390])
+      await withPage(
+        // on the phone an open thing is the page: the hero stands over the list alone
+        width === 390 ? `${which}-list` : which,
+        async (page) => {
+          // the shell is in the colour of the app one is in (here the administration's)
+          await page.evaluate(() => document.body.style.setProperty("--k2-app", "#0284c7"));
+          const found = await page.evaluate(() => {
+            const hero = document.querySelector<HTMLElement>("[data-k2-part='Hero']")!;
+            const figure = hero.querySelector<HTMLElement>("[data-k2-type='figure']")!;
+            const style = getComputedStyle(figure);
+            const drawing = hero.querySelector(".k2-hero-trend [role='img']")!;
+            const ex = [...hero.querySelectorAll(".k2-hero-ex > li")];
+            const owner = getComputedStyle(hero.closest("[data-owner]")!).getPropertyValue("--k2-app").trim();
+            return {
+              figures: document.querySelectorAll("[data-k2-type='figure']").length,
+              type: [style.fontSize, style.lineHeight, style.fontWeight, style.fontVariantNumeric],
+              ink: style.color,
+              owner,
+              drawn: [
+                drawing.tagName,
+                (drawing.getAttribute("aria-label") ?? "").length > 20,
+                Math.round(drawing.getBoundingClientRect().width) > 100,
+              ],
+              // the exceptions stand in one line (or wrap as one), under the figure, never as rows of their own
+              exceptions: ex.length,
+              under: ex.every((item) => item.getBoundingClientRect().top >= figure.getBoundingClientRect().bottom),
+            };
+          });
+          expect(found.figures).toBe(1);
+          expect(found.type).toEqual(["30px", "34px", "600", "tabular-nums"]);
+          expect(found.owner).toBe(which === "oauth-b" ? "#4338ca" : "#1e40af");
+          // the figure in the owner's ink, not the shell's
+          expect(found.ink).not.toBe("rgb(2, 132, 199)");
+          // a drawing of the real history, named in a sentence, as wide as its place gives
+          expect({ which, width, drawn: found.drawn.slice(1) }).toEqual({ which, width, drawn: [true, true] });
+          expect(found.exceptions).toBe(which === "oauth-b" ? 2 : 3);
+          expect(found.under).toBe(true);
+          const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+          expect(layout.problems).toEqual([]);
+        },
+        width,
+      );
+  });
+
+test("identity B: the open thing has a head on the owner's tint, a sign of 40, its name in 18, three facts, a problem red in place", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "pulse-b",
+      async (page) => {
+        await page.evaluate(() => document.body.style.setProperty("--k2-app", "#0284c7"));
+        const found = await page.evaluate(() => {
+          const head = document.querySelector<HTMLElement>("[data-k2-part='ObjectHead']")!;
+          const mark = head.querySelector(".k2-mk")!.getBoundingClientRect();
+          const name = getComputedStyle(head.querySelector(".k2-ohead-name")!);
+          const problem = head.querySelector<HTMLElement>(".k2-ohead-problem")!;
+          const row = document.querySelector<HTMLElement>(".k2-table tr[aria-current] > td");
+          return {
+            ground: getComputedStyle(head).backgroundColor,
+            row: row ? getComputedStyle(row).backgroundColor : null,
+            mark: [mark.width, mark.height],
+            name: [name.fontSize, name.fontWeight],
+            problem: [getComputedStyle(problem).color, problem.textContent?.startsWith("Liefert seit 10:40 keine Werte")],
+            deeds: getComputedStyle(head.querySelector(".k2-ohead-end")!).display,
+          };
+        });
+        expect(found.mark).toEqual([40, 40]);
+        expect(found.name).toEqual(["18px", "600"]);
+        // the problem in the colour of wrong, right in the head
+        expect(found.problem).toEqual(["rgb(185, 28, 28)", true]);
+        // a tint of the owner's colour, the same as the open row's
+        expect(found.ground).not.toBe("rgba(0, 0, 0, 0)");
+        if (width === 1440) expect(found.row).toBe(found.ground);
+        // on the phone the deeds stand in the bar of the detail
+        expect(found.deeds).toBe(width === 390 ? "none" : "flex");
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("identity B: the shell keeps the colour of the app one is in, the content takes its owner's", async () => {
+  await withPage(
+    "oauth-b",
+    async (page) => {
+      await page.evaluate(() => document.body.style.setProperty("--k2-app", "#0284c7"));
+      const found = await page.evaluate(() => {
+        const tint = (element: Element) => getComputedStyle(element).backgroundColor;
+        const current = document.querySelector(".k2-ws-side [aria-current='page'], .k2-ws-side .k2-ni[data-current]");
+        return {
+          shell: current ? tint(current) : null,
+          content: tint(document.querySelector(".k2-table tr[aria-current] > td")!),
+          head: tint(document.querySelector("[data-k2-part='ObjectHead']")!),
+        };
+      });
+      expect(found.content).toBe(found.head);
+      expect(found.shell).not.toBeNull();
+      expect(found.shell).not.toBe(found.content);
+    },
+    1440,
+  );
+});
+
+test("identity B: rows part by a very quiet line, the head of the columns by the strong one; the open row draws none", async () => {
+  await withPage(
+    "pulse-b",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const table = document.querySelector(".k2-pane:not([data-detail]) .k2-table")!;
+        const line = (element: Element) => rgb(getComputedStyle(element).borderBottomColor);
+        const rgb = (color: string) => color.replace(/\s/g, "");
+        const plain = table.querySelector("tbody tr:not([aria-current]) > td")!;
+        return {
+          head: line(table.querySelector("th")!),
+          row: line(plain),
+          open: rgb(getComputedStyle(table.querySelector("tbody tr[aria-current] > td")!).borderBottomColor),
+        };
+      });
+      expect(found.head).toBe("rgb(228,228,231)");
+      expect(found.row).toBe("rgb(244,244,245)");
+      expect(found.open).toBe("rgba(0,0,0,0)");
+    },
+    1440,
+  );
+});
+
+test("identity B: one picture of the data per row: ticks in the owner's soft colour, a failed fetch red and taller", async () => {
+  await withPage(
+    "pulse-b-list",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll(".k2-pane .k2-table tbody tr")];
+        const pictures = rows.map((row) => row.querySelectorAll(".k2-ticks, .k2-spark, .k2-avs").length);
+        const ticks = rows[0]!.querySelectorAll<HTMLElement>(".k2-ticks > i");
+        const ok = ticks[0]!.getBoundingClientRect();
+        const bad = ticks[ticks.length - 1]!.getBoundingClientRect();
+        return {
+          pictures: [...new Set(pictures)],
+          heights: [ok.height, bad.height],
+          bad: getComputedStyle(ticks[ticks.length - 1]!).backgroundColor,
+        };
+      });
+      expect(found.pictures).toEqual([1]);
+      expect(found.heights).toEqual([12, 16]);
+      expect(found.bad).toBe("rgb(239, 68, 68)");
+    },
+    1440,
   );
 });

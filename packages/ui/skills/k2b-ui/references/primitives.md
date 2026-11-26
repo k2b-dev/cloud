@@ -47,9 +47,13 @@ The working surface of an app: one per screen.
 
 A column that scrolls, with no padding: everything in it reaches both edges.
 
-- `head` (a `Bar` or `Tabs`), `status` (what stays under the head while
-  the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
-  with the state of an open entry above a reader), `label`.
+- `head` (a `Bar` or `Tabs`; an `ObjectHead` on an open thing), `status`
+  (what stays under the head while the column scrolls: a `StatusRow` of 52 px
+  above a list, or a `Bar` of 40 px with the state of an open entry above a
+  reader), `label`.
+- `owner`: the colour of the app the content belongs to where it differs
+  from the app one is in (OAuth's indigo in the administration). Hero,
+  drawings, the open row and the object head take it; the shell keeps its own.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
   limits, Enter back to the default) move the width; a reload starts at the
@@ -94,6 +98,21 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 `Inline` wraps: its things and its `end` flow as one line, one line stays
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
+
+### Hero, ObjectHead, Ticks (identity B)
+
+`Hero`: the one figure of a screen right under its head, in the figure type
+(30/34, 600, tabular, once per screen) and the owner's colour: `figure`,
+`label`, `meta`, `trend` (`{ kind: "bars" | "area" | "ticks", values,
+label, start, caption, end }`, only from real data), `exceptions` (`{
+status | icon, count, word, who }`, one line of "● number word · who").
+`ObjectHead` as the `head` of an open thing: `mark` (40 px), `name` (18),
+`meta`, `actions` (in the phone's bar there), up to three `facts` and a
+`problem` (`{ title, text }`, red in place), on the owner's tint. `Ticks`
+(`values` of `ok`, `bad`, `none`, `label`): one picture of a row's data
+over time. `Dot` (`status`): a good state is a neutral dot and word. Rows of
+a table or list part by a very quiet line; the strong hairline parts two
+things (head from content, list from detail, groups).
 
 ### Band
 

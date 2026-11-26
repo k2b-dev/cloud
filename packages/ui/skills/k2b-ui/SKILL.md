@@ -182,17 +182,17 @@ Dense is not busy: show more, never the same thing twice (design pass 26.11.).
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
-  `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
+  `width`, `detail`, `side`, `owner`), `Pane.Split`, `Bar` (start, end), `Band`
   (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
   `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Steps`.
+  `Chip`, `Progress`, `Spark`, `Ticks`, `Dot`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
   `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
   `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
-  `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
+  `RecordHead`, `ObjectHead`, `Hero`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
   `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
