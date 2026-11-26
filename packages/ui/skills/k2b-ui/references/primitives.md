@@ -553,7 +553,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the way out), `secondary` (a second, quieter way out after it, as a
+  text button, such as "Filter zurücksetzen" and "Ganzes Notizbuch
+  zeigen"; the first stays the one a focus that comes to the state reaches).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.

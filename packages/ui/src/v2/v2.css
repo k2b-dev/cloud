@@ -4752,8 +4752,16 @@
 .k2-ui .k2-state-text {
   overflow-wrap: anywhere;
 }
-.k2-ui .k2-state > .k2-btn {
+.k2-ui .k2-state > .k2-btn,
+.k2-ui .k2-state-ways > .k2-btn {
   height: var(--k2-h-control-small);
+}
+/* two ways out side by side, the quiet one after; on a narrow column the second goes under the first */
+.k2-ui .k2-state-ways {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .k2-ui .k2-sign {
   width: 40px;

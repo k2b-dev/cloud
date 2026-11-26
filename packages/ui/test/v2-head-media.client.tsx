@@ -6,6 +6,7 @@ import {
   AreasMenuScreen,
   CanvasFillScreen,
   DeepPathScreen,
+  EmptyWaysScreen,
   LongAddressScreen,
   RowStatesScreen,
   SelectionScreen,
@@ -30,7 +31,8 @@ declare global {
       | "split-list-canvas"
       | "selection"
       | "long"
-      | "areas";
+      | "areas"
+      | "empty-ways";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -49,6 +51,8 @@ render(
         <RowStatesScreen />
       ) : which === "areas" ? (
         <AreasMenuScreen />
+      ) : which === "empty-ways" ? (
+        <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
       ) : which === "long" ? (

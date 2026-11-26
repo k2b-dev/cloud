@@ -4,6 +4,8 @@ import {
   Button,
   Canvas,
   Chip,
+  Empty,
+  Failed,
   FilterBar,
   Inline,
   Input,
@@ -281,3 +283,25 @@ export const SelectionScreen = () => (
     </Pane.Split>
   </Workspace>
 );
+
+// The surroundings of a note that did not load: once loaded again, nothing matches its filter. Two ways out, the
+// first the one that keeps the place (Notebooks W2 #4245); the focus on „Erneut versuchen“ goes to the first.
+export const EmptyWaysScreen = () => {
+  const [failed, setFailed] = createSignal(true);
+  return (
+    <Workspace>
+      <Pane label="Umgebung">
+        {failed() ? (
+          <Failed text="Die Umgebung konnte nicht geladen werden." onRetry={() => setFailed(false)} />
+        ) : (
+          <Empty
+            icon="filter-off"
+            text="Keine Notizen in der Umgebung mit diesem Filter."
+            action={{ label: "Filter zurücksetzen", onClick: () => {} }}
+            secondary={{ label: "Ganzes Notizbuch zeigen", href: "#notizbuch" }}
+          />
+        )}
+      </Pane>
+    </Workspace>
+  );
+};
