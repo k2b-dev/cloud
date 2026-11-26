@@ -301,10 +301,11 @@ test(
 );
 
 // Review of #4211: the current page of a sidebar is always in the page and shown on load: in a long group, in an open
-// fold of a long group (r2), and in a short group without a window (r2 P3).
+// fold of a long group (r2), two folds down (r3 P3), and in a short group without a window (r2 P3).
 for (const [scenario, name] of [
   ["nav", "Tabelle 700"],
   ["navfold", "Archiv Tabelle 30"],
+  ["navdeep", "Archiv 2025 Tabelle 30"],
   ["navshort", "Tabelle 38"],
 ] as const)
   test(

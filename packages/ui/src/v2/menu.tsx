@@ -341,15 +341,21 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
  * head or a section; with words it is a framed button with a chevron. Keys, typeahead, focus and placement come from
  * the behaviour layer; the menu lines up with the end of a button on the right and the start of one on the left.
  */
-/** The deeds a phone head folds away (see `Bar`): the head's own "…" takes them in after its entries. */
+/**
+ * The deeds a phone head folds away (see `Bar`): the head's own "…" takes them in after its entries. That is the
+ * first "…" that stands right in the head's end (`data-head-menu`); one inside a wrapper hides on the phone anyway.
+ */
 export const HeadFoldContext = createContext<Accessor<readonly MenuEntry[]>>();
 
 const MenuRoot = (props: MenuProps) => {
   const folded = useContext(HeadFoldContext);
   // on the phone, where the head folds them, the "…" of a head also holds the deeds that kept their words
   const [phone, setPhone] = createSignal(false);
+  const [first, setFirst] = createSignal(false);
   onMount(() => {
-    if (!folded || typeof matchMedia === "undefined") return;
+    if (!folded || !iconOnly() || typeof matchMedia === "undefined") return;
+    const end = trigger?.parentElement;
+    setFirst(!!end?.classList.contains("k2-bar-end") && end.querySelector(":scope > [data-head-menu]") === trigger);
     const wide = matchMedia("(min-width: 768px)");
     const follow = () => setPhone(!wide.matches);
     follow();
@@ -381,6 +387,8 @@ const MenuRoot = (props: MenuProps) => {
         data-menu={iconOnly() ? undefined : ""}
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
+        // a "…" in a head can take the deeds it folds: the stylesheet then leaves out the bar's own (see `Bar`)
+        data-head-menu={folded && iconOnly() ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
       >
@@ -389,7 +397,7 @@ const MenuRoot = (props: MenuProps) => {
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
         <Entries
           level={level}
-          entries={folded && iconOnly() && phone() && folded().length > 0 ? [...props.items, "separator", ...folded()] : props.items}
+          entries={folded && first() && phone() && folded().length > 0 ? [...props.items, "separator", ...folded()] : props.items}
         />
       </level.Popup>
     </>

@@ -56,13 +56,23 @@ if (scenario === "rows")
               action={{ label: "Adresse kopieren", icon: "copy", onClick: () => undefined }}
             />
             <Row icon="webhook" lines={["Stripe Zahlungen", hyphened]} time="heute, 11:26" marks={<Chip status="ok">POST</Chip>} />
+            <Row
+              icon="webhook"
+              lines={[
+                "Protokoll",
+                <a class="k2-link" href="#protokoll">
+                  Letzte Anfragen öffnen
+                </a>,
+              ]}
+              time="heute, 11:20"
+            />
           </List>
         </Pane>
       </Workspace>
     ),
     root,
   );
-else if (scenario === "table" || scenario === "head" || scenario === "headmenu")
+else if (scenario === "table" || scenario === "head" || scenario === "headmenu" || scenario === "headicon" || scenario === "headtwo")
   render(
     () => (
       <Workspace
@@ -94,6 +104,19 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu")
                   </Button>
                   <Menu label="Weitere Aktionen" items={[{ label: "Einstellungen", onClick: () => undefined }]} />
                 </>
+              ) : scenario === "headicon" ? (
+                // a kept deed with words beside a kept icon button, and no "…" of the app's own
+                <>
+                  <Button keep>Freigeben</Button>
+                  <Button keep icon="star" label="Favorit" />
+                </>
+              ) : scenario === "headtwo" ? (
+                // two "…" of the app's own beside a kept deed: the first takes the deed, the second keeps its own
+                <>
+                  <Button keep>Freigeben</Button>
+                  <Menu label="Weitere Aktionen" items={[{ label: "Einstellungen", onClick: () => undefined }]} />
+                  <Menu icon="eye" label="Ansicht" items={[{ label: "Kompakt", onClick: () => undefined }]} />
+                </>
               ) : undefined
             }
           />
@@ -115,6 +138,8 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu")
                 lines: [file.name, file.detail],
                 time: file.changed,
                 marks: file.id === "f3" ? <Chip status="ok">POST</Chip> : undefined,
+                // the row's deeds, which a column of deeds offers on the desktop
+                end: <Menu label={`Aktionen für ${file.name}`} items={[{ label: "Umbenennen", onClick: () => undefined }]} />,
               })}
             />
           </Pane>
