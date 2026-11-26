@@ -79,3 +79,16 @@ test("standalone Markdown examples typecheck against the current UI contract", (
     .map((diagnostic) => `${diagnostic.file?.text.split("\n")[0]}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
   expect(failures).toEqual([]);
 }, 30_000);
+
+// An edited API line must stay TypeScript: a slip such as `class?: string;| "md"; class?: string;` is a syntax error.
+// (`tsx` blocks may show a JSX fragment of several elements; `ts` blocks, such as an API reference, are whole code.)
+test("every ts block of a UI context page parses without a syntax error", () => {
+  const failures: string[] = [];
+  for (const file of pages) {
+    for (const [, code] of readFileSync(file, "utf8").matchAll(/```ts(?:[ \t][^\n]*)?\n([\s\S]*?)```/g)) {
+      const { diagnostics = [] } = ts.transpileModule(code!, { reportDiagnostics: true, fileName: "example.ts" });
+      for (const diagnostic of diagnostics) failures.push(`${file}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
+    }
+  }
+  expect(failures).toEqual([]);
+});
