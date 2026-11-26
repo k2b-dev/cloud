@@ -35,7 +35,11 @@ render(
             ? { days: Array.from({ length: 30 }, () => 0), changes: 0, people: 0, notes: 0, newNotes: 0, latest: null }
             : sample === "worst"
               ? worstFigures()
-              : { ...sampleFigures(), notes: all.length }
+              : {
+                  ...sampleFigures(),
+                  notes: all.length,
+                  newNotes: all.filter((note) => Date.parse(NOTES_NOW) - Date.parse(note.createdAt) < 30 * 86_400_000).length,
+                }
         }
         ignored={null}
         mode={mode}

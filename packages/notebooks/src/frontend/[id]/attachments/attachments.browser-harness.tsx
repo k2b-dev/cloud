@@ -48,8 +48,15 @@ const worst: Attachment[] = [
 const sample = document.documentElement.dataset.sample;
 const all = sample === "empty" ? [] : sample === "worst" ? worst : ATTACHMENTS;
 const search = new URLSearchParams(location.search).get("search") ?? "";
-// uploads per day in 30 days, the same uploads the figure counts
-const uploads = Array.from({ length: 30 }, (_, index) => (all.length === 0 || index % 7 > 4 ? 0 : (index * 5) % 4));
+// uploads per day in the 30 days up to now, from the sample's own dates (the server counts them the same way)
+const DAY = 86_400_000;
+const uploads = Array.from({ length: 30 }, (_, index) => {
+  const end = Date.parse(NOTES_NOW) - (29 - index) * DAY;
+  return all.filter((attachment) => {
+    const at = Date.parse(attachment.createdAt);
+    return at <= end && at > end - DAY;
+  }).length;
+});
 const shown = all.filter((attachment) => attachment.filename.toLowerCase().includes(search.toLowerCase()));
 
 render(
