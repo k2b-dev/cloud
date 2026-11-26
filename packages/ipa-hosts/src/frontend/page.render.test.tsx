@@ -100,3 +100,62 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     for (const spy of spies) spy.mockRestore();
   }
 });
+
+test("an open group pages its hosts: the pager names the page, a host keeps it for the way back, a page past the end opens the last", async () => {
+  const members = Array.from({ length: 120 }, (_, index) => host(`h${String(index).padStart(3, "0")}.example`, ["server"]));
+  const read50 = spyOn(ipaHostsService.hostgroup, "getWithHosts").mockImplementation(async ({ cn, page, perPage }) =>
+    cn === "server"
+      ? {
+          cn,
+          description: null,
+          hosts: [],
+          hostgroups: [],
+          hostDetails: members.slice((page - 1) * perPage, page * perPage),
+          hostTotal: members.length,
+        }
+      : null,
+  );
+  const spies = [
+    stubRailSnapshot(),
+    read50,
+    spyOn(ipaHostsService.hostgroup, "listWithHosts").mockResolvedValue({
+      items: [],
+      page: 1,
+      perPage: 100,
+      total: 1,
+      hasNext: false,
+    } as never),
+    spyOn(ipaHostsService.host, "listUngrouped").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false } as never),
+    spyOn(ipaHostsService.host, "get").mockResolvedValue(null),
+    spyOn(ipaHostsService, "stats").mockResolvedValue({ hostsInGroups: 120, hostsTotal: 120 } as never),
+  ];
+  try {
+    const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+    app.use("*", async (c, next) => {
+      c.set("actor", { kind: "user", user });
+      c.set("user", user);
+      c.set("runtime", { apps: [] });
+      await next();
+    });
+    app.get("/admin/ipa-hosts", ...handler);
+    const html = await (await app.request("/admin/ipa-hosts?group=server&hosts_page=2", { headers: { "Accept-Language": "de" } })).text();
+    expect(read50.mock.calls[0]![0]).toEqual({ cn: "server", page: 2, perPage: 50 });
+    expect(read(html)).toContain("2 / 3");
+    expect(read(html)).toContain("h050.example");
+    expect(html).toContain("hosts_page=3");
+    // a host opened from page 2 leads back to page 2
+    expect(html).toMatch(/href="[^"]*host=h050\.example[^"]*"/);
+    expect(html).toMatch(/group=server&amp;host=h050\.example&amp;hosts_page=2|group=server&amp;hosts_page=2&amp;host=h050\.example/);
+    const past = await app.request("/admin/ipa-hosts?group=server&hosts_page=9", { headers: { "Accept-Language": "de" } });
+    expect(past.status).toBe(302);
+    expect(past.headers.get("location")).toBe("/admin/ipa-hosts?group=server&hosts_page=3");
+    // a page number whose offset no database takes opens the first page
+    const huge = await app.request(`/admin/ipa-hosts?group=server&hosts_page=${Number.MAX_SAFE_INTEGER}`, {
+      headers: { "Accept-Language": "de" },
+    });
+    expect(huge.status).toBe(200);
+    expect(read50.mock.calls.at(-1)![0]).toEqual({ cn: "server", page: 1, perPage: 50 });
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});

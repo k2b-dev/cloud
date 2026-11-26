@@ -445,7 +445,8 @@ export const hostgroupListWithHosts = async (params: {
 
 /**
  * One host group by its exact name, for the record a page opens: its sub-groups and one page of its hosts (by name) with
- * the number of all of them, so a group of any size reads in bounded work. Null when the mirror has none. One statement.
+ * the number of all of them, so a group of any size answers with bounded output; counting and ordering read the
+ * group's member rows through `idx_ipa_hosts_host_hostgroups_hostgroup`. Null when the mirror has none. One statement.
  */
 export const hostgroupGetWithHosts = async (
   cn: string,

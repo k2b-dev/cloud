@@ -446,7 +446,8 @@ export default function HostsScreen(props: HostsScreenProps) {
   );
 
   const hostRecord = (host: IpaHost) => {
-    const back = openGroup() ? href({ group: openGroup(), host: null }) : href({ host: null });
+    // back to the group's page this host was opened from
+    const back = openGroup() ? href({ group: openGroup(), host: null, hostsPage: props.group?.paging.page }) : href({ host: null });
     return (
       <Pane
         detail
