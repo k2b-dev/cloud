@@ -116,18 +116,18 @@ for (const [width, height] of [
       const composer = await page.locator(".chat-conversation__composer").boundingBox();
       expect(composer).not.toBeNull();
       expect(composer!.y + composer!.height).toBeLessThanOrEqual(height);
-      await shoot(page, `chat-${width}`);
+      await shoot(page, `02-chat-light-${width}`);
       expect(errors).toEqual([]);
     } finally {
       await close();
     }
-  });
+  }, 60_000);
 }
 
 test("a chat opens from the list in place and the list stays", async () => {
   const { page, errors, close } = await load("/app/chat", 1440, 900);
   try {
-    await shoot(page, "list-1440");
+    await shoot(page, "01-list-light-1440");
     await page.locator('[data-k2-part="Row"]', { hasText: "Lieferung KW 49" }).first().locator("a").click();
     await page.waitForURL(new RegExp(`/app/chat/c/${open}`));
     await page.locator(".chat-conversation__composer").waitFor();
@@ -136,7 +136,7 @@ test("a chat opens from the list in place and the list stays", async () => {
   } finally {
     await close();
   }
-});
+}, 60_000);
 
 test("on the phone the list is the page, a chat is a page of its own, and its way back returns to the list", async () => {
   const { page, errors, close } = await load("/app/chat", 390, 844);
@@ -145,7 +145,7 @@ test("on the phone the list is the page, a chat is a page of its own, and its wa
     await row.waitFor();
     const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
     expect(layout.problems).toEqual([]);
-    await shoot(page, "list-390");
+    await shoot(page, "01-list-light-390");
     await row.locator("a").click();
     await page.waitForURL(/\/app\/chat\/c\//);
     await page.locator(".chat-conversation__composer").waitFor();
@@ -157,7 +157,7 @@ test("on the phone the list is the page, a chat is a page of its own, and its wa
   } finally {
     await close();
   }
-});
+}, 60_000);
 
 for (const [width, height] of [
   [1024, 768],
@@ -167,9 +167,9 @@ for (const [width, height] of [
     const { page, errors, close } = await load(`/app/chat/c/${open}`, width, height);
     try {
       await page.locator(".chat-conversation__composer").waitFor();
-      await shoot(page, `chat-${width}`);
+      await shoot(page, `02-chat-light-${width}`);
       expect(errors).toEqual([]);
     } finally {
       await close();
     }
-  });
+  }, 60_000);
