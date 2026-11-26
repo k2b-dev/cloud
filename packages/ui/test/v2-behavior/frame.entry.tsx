@@ -1,6 +1,6 @@
 import { createRoot } from "solid-js";
 import { render } from "solid-js/web";
-import { attachWorkspaces, confirm, Dialog, useToast } from "../../src/v2";
+import { attachWorkspaces, confirm, Dialog, toggleWorkspaceSidebar, useToast } from "../../src/v2";
 import type {} from "./mount";
 
 declare global {
@@ -13,6 +13,8 @@ declare global {
     __detach: () => void;
     /** Opens a modal v2 dialog of the page, such as one an island shows. */
     __openDialog: () => void;
+    /** A command of the page that hides or shows the sidebar. */
+    __toggleSidebar: () => boolean;
   }
 }
 
@@ -23,6 +25,7 @@ createRoot(() => {
   const toast = useToast();
   window.__toast = (message) => void toast(message);
 });
+window.__toggleSidebar = () => toggleWorkspaceSidebar();
 window.__confirm = () => confirm({ title: "Auftrag verwerfen?", confirm: "Verwerfen" });
 window.__openDialog = () => {
   const box = document.createElement("div");

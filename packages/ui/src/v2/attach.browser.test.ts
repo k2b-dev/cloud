@@ -173,6 +173,35 @@ test("on a wide screen the sidebar collapses and expands by its button and Mod+A
   });
 });
 
+test("a command of the page hides and shows the sidebar as its button does, opens the drawer where it is one, and nothing once detached", async () => {
+  await withPage(1440, async (page) => {
+    const collapse = page.locator(".k2-ws-collapse");
+    const side = page.locator(".k2-ws-side");
+    expect(await page.evaluate(() => window.__toggleSidebar())).toBe(true);
+    await side.waitFor({ state: "hidden" });
+    expect(await collapse.getAttribute("aria-expanded")).toBe("false");
+    expect(await collapse.getAttribute("aria-label")).toBe("Seitenleiste zeigen");
+    expect(await page.evaluate(() => window.__toggleSidebar())).toBe(true);
+    await side.waitFor({ state: "visible" });
+    expect(await page.evaluate(() => window.__collapsed)).toEqual([true, false]);
+    await page.evaluate(() => window.__detach());
+    expect(await page.evaluate(() => window.__toggleSidebar())).toBe(false);
+    expect(await page.evaluate(() => window.__collapsed)).toEqual([true, false]);
+  });
+  await withPage(900, async (page) => {
+    const drawer = page.locator(".k2-drawer");
+    expect(await page.evaluate(() => window.__toggleSidebar())).toBe(true);
+    await drawer.waitFor();
+    expect(await page.evaluate(() => window.__toggleSidebar())).toBe(true);
+    await drawer.waitFor({ state: "detached" });
+    expect(await page.evaluate(() => window.__collapsed)).toEqual([]);
+  });
+  // on the phone the sidebar leaves: there is nothing to hide
+  await withPage(390, async (page) => {
+    expect(await page.evaluate(() => window.__toggleSidebar())).toBe(false);
+  });
+});
+
 test("a fold of the server's Nav opens and closes", async () => {
   await withPage(1440, async (page) => {
     const fold = page.getByRole("button", { name: "Archiv" });

@@ -22,6 +22,7 @@ import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { Empty } from "./states";
 import type { Action, Width } from "./types";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +66,8 @@ export type WorkspaceProps = {
   sidebarLabel?: string;
   /**
    * The sidebar can be hidden on a wide screen: a button at the start of the head and Mod+Alt+S hide and show it.
-   * `attachWorkspace` reports each change (`onSidebarCollapsedChange`) for the page to keep.
+   * `attachWorkspace` reports each change (`onSidebarCollapsedChange`) for the page to keep. A command of the page
+   * ("Hide navigation") does the same with `toggleWorkspaceSidebar()`.
    */
   collapsible?: boolean;
   /**
@@ -147,6 +149,7 @@ const ColumnsContext = createContext<Columns | undefined>();
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
+  const words = useWorkspaceMessages();
   const layout = useContext(LayoutContext);
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
@@ -240,8 +243,8 @@ export const Workspace = (props: WorkspaceProps) => {
                   aria-controls={`${id}-side`}
                   aria-expanded={collapsed() ? "false" : "true"}
                   aria-keyshortcuts="Control+Alt+S Meta+Alt+S"
-                  aria-label={collapsed() ? t().showSidebar : t().hideSidebar}
-                  title={collapsed() ? t().showSidebar : t().hideSidebar}
+                  aria-label={collapsed() ? t().showSidebar : words().hideSidebar}
+                  title={collapsed() ? t().showSidebar : words().hideSidebar}
                 >
                   <Icon name="layout-sidebar" />
                 </button>

@@ -10,7 +10,7 @@
  *   enforce this.
  */
 
-export { type AttachOptions, attachWorkspace, attachWorkspaces } from "./attach";
+export { type AttachOptions, attachWorkspace, attachWorkspaces, toggleWorkspaceSidebar } from "./attach";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {

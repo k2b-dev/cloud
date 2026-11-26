@@ -65,7 +65,9 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   `attachWorkspaces()` binds the drawer of the sidebar, its collapse
   (`collapsible`, Mod+Alt+S), the grips and the folds of the `Nav`, and answers
   `Dialog.confirm` and `useToast`; the drawer, the alert dialog and the toaster
-  load on their first use. A Cloud page with `ui: "v2"` has it. A standalone
+  load on their first use. A command of the page, such as "Hide navigation"
+  in a search, calls `toggleWorkspaceSidebar()`: it does what the button and
+  Mod+Alt+S do. A Cloud page with `ui: "v2"` has it. A standalone
   app renders one `.client.tsx` on the page:
   `export default () => { onMount(() => onCleanup(attachWorkspaces())); return null; }`.
 - Keep islands small: a control, a row's actions, a list that updates. What
