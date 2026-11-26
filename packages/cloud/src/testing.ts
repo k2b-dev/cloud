@@ -10,8 +10,8 @@ import * as watcher from "./_internal/runtime-watcher";
  * `@k2b/cloud/testing`: an app's page as Cloud draws it, for browser tests and design pictures without a running
  * Cloud. Needs Playwright in the consumer; nothing here is part of the runtime exports.
  *
- * - `loadShellAssets({ id, css })`: Cloud's global.css, the app's own sheet and, with `v2Page`, Core's v2.css, built
- *   from this Cloud, with the Plex fonts and the icons, served at the paths a page asks for.
+ * - `loadShellAssets({ id, css })`: the app's own sheet and Cloud's global.css or, with `v2Page`, Core's v2.css in its
+ *   place, built from this Cloud, with the Plex fonts and the icons, served at the paths a page asks for.
  * - `openShellPage(browser, assets, { path, html, width, errors })`: the first HTML of a page (or a harness) at one
  *   width, light; every request that leaves the test origin is refused, so a picture never depends on the network.
  * - `serveCoreV2Sheet()`: the registered Core declares its `/public/v2.css`, as every current installation does.
@@ -41,9 +41,10 @@ const build = async (entry: string, withTailwind: boolean) => {
 };
 
 /**
- * Builds the page's stylesheets once per test file and serves them, the Plex fonts and the icons at their paths: Cloud's
- * global.css, the app's sheet at `/public/<id>/app.css` and, for a page that links Core's v2.css alone (a visitor page
- * on `MinimalLayout ui="v2"`, an app page on `PwaLayout ui="v2"`), that sheet with `v2Page`.
+ * Builds the page's stylesheets once per test file and serves them, the Plex fonts and the icons at their paths, in the
+ * order a page links them (`pageStylesheetLinks`): fonts, icons, the app's sheet at `/public/<id>/app.css`, then Cloud's
+ * global.css or, for a page that links Core's v2.css alone (a visitor page on `MinimalLayout ui="v2"`, an app page on
+ * `PwaLayout ui="v2"`), that sheet with `v2Page`.
  */
 export const loadShellAssets = async (app: { id: string; css: string; v2Page?: boolean }): Promise<ShellAssets> => {
   const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
@@ -54,9 +55,10 @@ export const loadShellAssets = async (app: { id: string; css: string; v2Page?: b
   const stylesheets: Record<string, string> = {
     "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
     "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
-    "/public/global.css": await build(resolve(styles, "global.css"), true),
     [`/public/${app.id}/app.css`]: await build(app.css, true),
-    ...(app.v2Page ? { "/public/v2.css": await build(resolve(styles, "v2-page.css"), false) } : {}),
+    ...(app.v2Page
+      ? { "/public/v2.css": await build(resolve(styles, "v2-page.css"), false) }
+      : { "/public/global.css": await build(resolve(styles, "global.css"), true) }),
   };
   const fonts = resolve(uiDist, "fonts");
   return {
