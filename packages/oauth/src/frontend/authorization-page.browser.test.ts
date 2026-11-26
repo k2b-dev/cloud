@@ -29,12 +29,19 @@ afterAll(async () => {
 const open = async (state: AuthorizationState, locale: "en" | "de", width: number) =>
   openShellPage(browser, assets, { path: "/authorization-page", html: await renderAuthorizationState(state, locale), width });
 
-/** Every box in the page and the footer, rounded to hundredths of a pixel. */
+/**
+ * Every box in the page and the footer on the document, rounded to hundredths of a pixel: a page taller than the window
+ * scrolls a hovered control into view, which moves nothing.
+ */
 const boxes = (page: Page) =>
   page.evaluate(() =>
     Array.from(document.querySelectorAll("main, main *, footer, footer *"), (element) => {
+      // an element without a box to see (the fields of a hidden form, an empty toast region) moves nothing
       const box = element.getBoundingClientRect();
-      return [box.x, box.y, box.width, box.height].map((value) => Math.round(value * 100) / 100).join(",");
+      if (box.width === 0 && box.height === 0) return "none";
+      return [box.x + window.scrollX, box.y + window.scrollY, box.width, box.height]
+        .map((value) => Math.round(value * 100) / 100)
+        .join(",");
     }),
   );
 
@@ -238,7 +245,7 @@ describe("OAuth authorization pages in a browser", () => {
         try {
           const page = await tab.evaluate(() => {
             const box = document.querySelector("[data-k2-workspace]")!.getBoundingClientRect();
-            const field = document.querySelector('input[name="user_code"]')?.getBoundingClientRect();
+            const field = document.querySelector('input[name="user_code"]:not([type="hidden"])')?.getBoundingClientRect();
             return { left: box.left, right: box.right, view: document.documentElement.clientWidth, field: field?.left ?? null };
           });
           const name = `${state} at ${width} px`;

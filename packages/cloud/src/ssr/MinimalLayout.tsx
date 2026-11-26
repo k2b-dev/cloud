@@ -34,7 +34,7 @@ export type MinimalLayoutProps = {
   /**
    * With `ui="v2"`: the page is one task to read and decide, such as a consent or a code to enter. Its workspace stands
    * as a column of 560 px, centred on the page background, so its words and its buttons stay together; on a phone it
-   * takes the whole width.
+   * takes the whole width. (Beside a Core older than its v2.css the page keeps the whole width.)
    */
   measure?: boolean;
 };
@@ -43,8 +43,6 @@ export type MinimalLayoutProps = {
 const OLDER_CORE = {
   page: "display:flex;flex-direction:column;min-height:100dvh",
   main: "display:flex;flex:1 1 auto;min-height:0;min-width:0",
-  // the column of a page with a measure, without the card (its edge and the page background come with v2.css)
-  measure: "justify-content:center;align-items:flex-start",
 };
 
 export default function MinimalLayout(props: MinimalLayoutProps) {
@@ -69,10 +67,11 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
         {props.children}
       </main>
     ) : (
+      // beside an older Core the measure has no column: its sheet does not know the attribute
       <main
         class="k2-ui minimal-layout-main"
         data-measure={props.measure ? "" : undefined}
-        style={[OLDER_CORE.main, kiosk ? "height:100dvh" : "", props.measure ? OLDER_CORE.measure : ""].filter(Boolean).join(";")}
+        style={kiosk ? `${OLDER_CORE.main};height:100dvh` : OLDER_CORE.main}
       >
         {props.children}
       </main>

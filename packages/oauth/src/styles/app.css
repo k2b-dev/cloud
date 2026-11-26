@@ -8,7 +8,7 @@
 /* The code a device shows, in its own drawing (`DeviceCode`): large and in the mono face, so a person compares it with
    the terminal sign by sign before allowing. */
 .oauth-device-code {
-  margin: 0;
+  margin: 0 var(--k2-edge);
   padding: 16px;
   border: var(--k2-hairline);
   border-radius: var(--k2-r-control);

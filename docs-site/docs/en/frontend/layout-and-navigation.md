@@ -550,6 +550,12 @@ state. Beside a Core from before `v2.css` the page keeps that Core's
 `global.css` and the v1 footer, and its content stays v2; see
 [Upgrade Core before v2 visitor pages](/en/docs/operations/deployment-requirements#upgrade-core-before-v2-visitor-pages).
 
+Add `measure` when the page is one task to read and decide, such as a consent
+or a code to enter: from 768 px its workspace stands as a column of 560 px,
+centred on the page background, so the words and the buttons stay together;
+on a phone it keeps the whole width. Beside a Core older than its `v2.css` the
+page keeps the whole width.
+
 ```tsx
 <MinimalLayout c={c} ui="v2">
   <VenueProgramme />
