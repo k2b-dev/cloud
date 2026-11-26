@@ -2561,10 +2561,15 @@
 .k2-ui .k2-bar[data-status-row] > .k2-bar-start {
   flex: 1 1 0;
 }
-/* the lead gives way before a control is cut or covered; with controls that fold it keeps about a word down to 320 px */
+/* The lead gives way before a control is cut or covered. The lead and the figures share the room before the filters,
+   each up to its own width, so what one does not need goes to the other: a short lead leaves the figures all the rest
+   (the row's room without filters); a long lead is cut with "…" while short figures keep their width; where both are
+   long, the lead keeps 40 % and the later figures fold. In a row narrower than 480 px the lead keeps 60 %, about a
+   word beside two folded controls. */
 .k2-ui .k2-bar-start > .k2-status-lead {
-  flex: 0 1 auto;
+  flex: 2 1 0;
   min-width: 0;
+  max-width: max-content;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2582,15 +2587,12 @@
 /* The key figures stand on one line that hides what wraps: where not all fit before the filters, the later ones wrap
    out of sight, whole figure by whole figure, and none runs under a control (#4149). The empty first item, one line
    high, lets even the first figure go whole instead of being cut; its gap and the row's make the 16 px after the
-   lead. The filters keep their room. Then the parts give way in order: a long lead is cut with "…" first while the
-   figures keep their width, down to about 40 % of the room before the filters; only then do the figures fold, as they
-   may take at most the other 60 %, and never so much that the lead and its loading mark keep less than 7.5 rem (about
-   a word) in a narrow row. */
+   lead. The filters keep their room; the lead and the figures share the rest (see the lead above). */
 .k2-ui .k2-bar-start > .k2-status-facts {
   display: flex;
   flex-wrap: wrap;
-  flex: 0 0 auto;
-  max-width: min(60%, 100% - 7.5rem);
+  flex: 3 1 0;
+  max-width: max-content;
   column-gap: 8px;
   min-width: 0;
   height: 1lh;
@@ -2599,6 +2601,15 @@
 .k2-ui .k2-status-facts::before {
   content: "";
   height: 1lh;
+}
+/* a narrow row: the lead keeps 60 % where both are long, about a word beside two folded controls */
+@container k2-status (max-width: 479px) {
+  .k2-ui .k2-bar-start > .k2-status-lead {
+    flex-grow: 3;
+  }
+  .k2-ui .k2-bar-start > .k2-status-facts {
+    flex-grow: 2;
+  }
 }
 .k2-ui .k2-bar[data-status-row] > .k2-bar-end {
   flex: none;

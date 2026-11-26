@@ -715,6 +715,32 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "green: text that scrolls in its own box, or stands out of its place on purpose, does not run under a neighbour",
+    async () => {
+      const long = "zeile_eins = holeDieEinträgeAusDemProtokollUndSortiereSie(nachDerZeit)";
+      const page = await open(
+        columns(
+          [
+            // code that scrolls sideways in its own box, and a bar of words that scrolls
+            `<div class="row" style="width:240px"><pre class="k2-t-row" data-probe="code" style="margin:0; overflow-x:auto">${long}</pre></div>`,
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="bar" style="overflow-x:auto; white-space:nowrap">Alle · Fehler · Warnungen · Hinweise · Gateway · Mail · Zustellung</div></div>',
+            // moved on purpose: a transform, a negative margin, an indent
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="moved" style="display:inline-block; transform:translateX(-24px)">Verschoben</span></div>',
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="pulled" style="display:inline-block; margin-left:-8px">Eingerückt</span></div>',
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="indent" style="text-indent:-12px">Hängend</div></div>',
+          ].join(""),
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut.filter((line) => line.includes("runs"))).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "free drawing in Canvas is never measured",
     async () => {
       const page = await open(

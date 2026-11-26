@@ -440,9 +440,11 @@ export type StatusRowProps = {
    */
   loading?: boolean;
   /**
-   * Key figures after the lead. They keep their width while a long lead is cut with "…" (down to about 40 % of the
-   * room before the filters); then they give way, the later ones first and whole, so the filters keep their words and
-   * no figure runs under them. They take at most 60 % of that room. On the phone they go. Put what must stay in `lead`.
+   * Key figures after the lead. They share the room before the filters with the lead, each up to its own width:
+   * beside a short lead they take all the rest (without filters, the row's room); beside a long lead they keep their
+   * width and the lead is cut with "…"; where both are long the lead keeps 40 % (60 % in a row below 480 px) and the
+   * later figures give way, whole, so the filters keep their words and no figure runs under them. On the phone they
+   * go. Put what must stay in `lead`.
    */
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */

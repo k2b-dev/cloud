@@ -610,17 +610,23 @@ function measureInPage(options: InPage): DomResult {
     for (const element of elements) {
       if (!(element instanceof HTMLElement) || element.closest(options.controls) || hiddenName(element)) continue;
       if (!Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) continue;
-      if (["absolute", "fixed"].includes(getComputedStyle(element).position)) continue;
+      const own = getComputedStyle(element);
+      if (["absolute", "fixed"].includes(own.position)) continue;
+      // A box that scrolls its own text (code, a scrolling bar of words) shows the rest on scroll; a box moved on purpose
+      // (a transform, a negative margin, an indent) may stand out of its place.
+      if (["auto", "scroll"].includes(own.overflowX)) continue;
+      if (own.transform !== "none" || Number.parseFloat(own.textIndent) !== 0) continue;
+      if (Number.parseFloat(own.marginLeft) < 0 || Number.parseFloat(own.marginRight) < 0) continue;
       let parent = element.parentElement;
       while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
       if (!parent || !root.contains(parent) || getComputedStyle(parent).overflowX !== "visible") continue;
       const place = parent.getBoundingClientRect();
       // only what is in sight: a box that clips its own text (with "…") keeps it inside, whatever the text's range says
       const clip = hardClipX(element);
-      const own = textBoxes(element, (node) => node.parentElement !== element);
+      const boxes = textBoxes(element, (node) => node.parentElement !== element);
       const out = Math.max(
         0,
-        ...own.map((box) => Math.max(Math.min(box.right, clip.right) - place.right, place.left - Math.max(box.left, clip.left))),
+        ...boxes.map((box) => Math.max(Math.min(box.right, clip.right) - place.right, place.left - Math.max(box.left, clip.left))),
       );
       if (out > 1)
         cut.push(

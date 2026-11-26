@@ -27,6 +27,8 @@ declare global {
     __k2Proxy?: () => void;
     /** Three key figures, for a long lead beside figures and filters (the order of giving way). */
     __k2ThreeFacts?: () => void;
+    /** Mail's list column: a select box, a short lead, one long figure and no filters. */
+    __k2MailFact?: () => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -90,6 +92,11 @@ const [proxy, setProxy] = createSignal(false);
 window.__k2Proxy = () => setProxy(true);
 const [three, setThree] = createSignal(false);
 window.__k2ThreeFacts = () => setThree(true);
+const [mail, setMail] = createSignal(false);
+window.__k2MailFact = () => {
+  setFilters(false);
+  setMail(true);
+};
 const liveBlocked = () =>
   logs() === "until-now" ? "Live nur mit Zeitraum bis jetzt" : logs() === "first-page" ? "Live nur auf der ersten Seite" : undefined;
 
@@ -146,32 +153,37 @@ render(
           label="Protokolle"
           status={
             <StatusRow
+              select={mail() ? { label: "Alle auswählen" } : undefined}
               lead={
-                proxy()
-                  ? "1 Client ist bis zur Konfiguration gesperrt"
-                  : logs()
-                    ? "300 von 12.345 Einträgen"
-                    : longLead()
-                      ? "11 von 11 Einträgen aus Gateway, Mail, Zustellung und dem Abgleich der Kalender"
-                      : filters()
-                        ? "11 von 11 Einträgen"
-                        : "4 neu"
+                mail()
+                  ? "7 ungelesen"
+                  : proxy()
+                    ? "1 Client ist bis zur Konfiguration gesperrt"
+                    : logs()
+                      ? "300 von 12.345 Einträgen"
+                      : longLead()
+                        ? "11 von 11 Einträgen aus Gateway, Mail, Zustellung und dem Abgleich der Kalender"
+                        : filters()
+                          ? "11 von 11 Einträgen"
+                          : "4 neu"
               }
               loading={loading()}
               facts={[
-                ...(proxy()
-                  ? []
-                  : logs()
-                    ? [
-                        { value: "1.204", after: "Fehler" },
-                        { value: 321, after: "Warnungen" },
-                        ...(liveBlocked() ? [{ after: liveBlocked() }] : []),
-                      ]
-                    : [
-                        { value: 6, after: "Fehler" },
-                        { value: 5, after: "Warnungen" },
-                        ...(three() ? [{ value: 2, after: "Quellen" }] : []),
-                      ]),
+                ...(mail()
+                  ? [{ before: "Heute", value: 12, after: "erledigt · 5 davon automatisch" }]
+                  : proxy()
+                    ? []
+                    : logs()
+                      ? [
+                          { value: "1.204", after: "Fehler" },
+                          { value: 321, after: "Warnungen" },
+                          ...(liveBlocked() ? [{ after: liveBlocked() }] : []),
+                        ]
+                      : [
+                          { value: 6, after: "Fehler" },
+                          { value: 5, after: "Warnungen" },
+                          ...(three() ? [{ value: 2, after: "Quellen" }] : []),
+                        ]),
                 ...(more()
                   ? [
                       { before: "zuletzt", value: "10:43:48", after: "aus dem Gateway" },

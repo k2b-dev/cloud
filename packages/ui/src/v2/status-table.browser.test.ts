@@ -208,7 +208,10 @@ for (const live of ["on", "until-now", "first-page"] as const)
           expectHeld(found, column > 320);
           expect(found.controls.map((control) => control.name)).toEqual(["Live", "Eingang ↓", "Keine Gruppen"]);
           expect(found.words).toEqual(column <= 600 ? [false, false, false] : [true, true, true]);
-          if (column >= 1024) expect(found.shown.slice(0, 2)).toEqual([true, true]);
+          // where they fit beside the lead, every figure stays, also the reason live is blocked; at 1024 px the reason
+          // does not fit beside the whole lead and the counts, and only it gives way
+          if (column >= 1440) expect(found.shown.every(Boolean)).toBe(true);
+          if (column === 1024) expect(found.shown.slice(0, 2)).toEqual([true, true]);
           const toggle = page.getByRole("button", { name: "Live", exact: true });
           expect(await toggle.isDisabled()).toBe(live !== "on");
           expect(await toggle.getAttribute("aria-pressed")).toBe(live === "on" ? "true" : "false");
@@ -239,10 +242,10 @@ for (const width of [1440, 1024])
             title: lead.title,
           };
         });
-        // at 1440 the list beside the entry may hold the whole lead; at 1024 it is cut
+        // at 1440 the list beside the entry holds the whole lead; at 1024 it is cut with "…"
         expect(found).toEqual({
           detail: true,
-          cut: width === 1024 ? true : found.cut,
+          cut: width === 1024,
           ellipsis: true,
           clear: true,
           title: "1 Client ist bis zur Konfiguration gesperrt",
@@ -253,11 +256,17 @@ for (const width of [1440, 1024])
     );
   });
 
-// The order of giving way (Tools, U3): a long lead beside three figures and the filters is cut with "…" first, down to
-// about 40 % of the room before the filters, while the figures keep their width; only then do the figures fold. On the
-// phone the figures and filters leave and the lead takes the row.
-for (const width of [1440, 1024, 390])
-  test(`${width} px, a long lead, three figures and filters: the lead gives way first and keeps about 40 %`, async () => {
+// The order of giving way (Tools, U3): the lead and the figures share the room before the filters, each up to its own
+// width. In rows of 1440 and 1024 px the figures keep their width and only the lead gives way (cut with "…" at 1024 px);
+// in a row of 700 px both are long for their part: the lead is cut and keeps 40 %, the later figures fold. On the phone
+// the figures and filters leave and the lead takes the row.
+for (const [width, column] of [
+  [1440, 1440],
+  [1440, 1024],
+  [1440, 700],
+  [390, 390],
+] as const)
+  test(`a row of ${column} px, a long lead, three figures and filters: the lead gives way first, then the figures`, async () => {
     await withPage(
       async (page) => {
         await page.evaluate(() => {
@@ -266,20 +275,60 @@ for (const width of [1440, 1024, 390])
         });
         await settled(page);
         const found = await page.evaluate(statusRow);
-        // on the phone the figures and filters have left, so only the lead is measured there
-        if (width >= 768) expectHeld(found);
+        if (width < 768) {
+          // on the phone the figures and filters have left, so only the lead is measured there
+          expect(found.lead).toEqual({ cut: true, ellipsis: true, word: true });
+          return;
+        }
+        expectHeld(found);
         const room = await page.evaluate(() => {
           const row = document.querySelector('[data-k2-part="StatusRow"]')!;
-          const start = row.querySelector(".k2-bar-start")!.getBoundingClientRect().width;
-          return { start, lead: row.querySelector(".k2-status-lead")!.getBoundingClientRect().width };
+          return {
+            lead: row.querySelector(".k2-status-lead")!.getBoundingClientRect().width,
+            facts: row.querySelector(".k2-status-facts")!.getBoundingClientRect().width,
+          };
         });
-        if (width >= 768) {
-          // the figures keep their width while the lead gives way
-          expect(found.shown).toEqual([true, true, true]);
-          if (found.lead.cut) expect(room.lead).toBeGreaterThanOrEqual(room.start * 0.4 - 32);
-        } else expect(found.lead).toEqual({ cut: true, ellipsis: true, word: true });
+        // the lead gives way first: every figure keeps its width, the lead is what is cut
+        if (column >= 1024) expect(found.shown).toEqual([true, true, true]);
+        if (column === 1024) expect(found.lead.cut).toBe(true);
+        if (column === 700) {
+          // then the figures: the lead is cut and keeps its 40 %, the later figures fold
+          expect(found.lead.cut).toBe(true);
+          expect(found.shown[0]).toBe(true);
+          expect(found.shown.filter(Boolean).length).toBeLessThan(3);
+          expect(Math.abs(room.lead / (room.lead + room.facts) - 0.4)).toBeLessThanOrEqual(0.02);
+        }
       },
-      { width },
+      { width, column },
+    );
+  });
+
+// Mail's list column (a select box, a short lead, one long figure, no filters): beside the short lead the figure takes
+// all the rest of the row (Opus review of #4259: a cap on the figures hid it). At 432 px the figure is longer than that
+// rest where the type is wide, and folds whole; at 520 px it fits and stays in sight.
+for (const column of [432, 520])
+  test(`a status row ${column} px wide as Mail's list draws it gives its one long figure all the rest`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2MailFact?.());
+        await settled(page);
+        const found = await page.evaluate(statusRow);
+        expect(found.width).toBe(column);
+        expectHeld(found);
+        expect(found.lead.cut).toBe(false);
+        // the figures reach the end of the row's start: they take the rest, no cap
+        const rest = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          return (
+            row.querySelector(".k2-bar-start")!.getBoundingClientRect().right -
+            row.querySelector(".k2-status-facts")!.getBoundingClientRect().right
+          );
+        });
+        // at 432 px the figure is in sight where the engine's type lets it fit, else it was given all the rest
+        if (column === 432) expect(found.shown[0] || rest <= 2).toBe(true);
+        if (column === 520) expect(found.shown).toEqual([true]);
+      },
+      { column },
     );
   });
 

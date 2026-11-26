@@ -343,10 +343,11 @@ lines instead of cutting a thing.
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
   the row never refreshes), `facts: { before?, value?, after? }[]` (they
-  keep their width while a long lead is cut, down to about 40 % of the room
-  before the filters; then the later ones give way whole, so the filters keep
-  their words; at most 60 % of that room; they go on the phone; put what must
-  stay in `lead`),
+  share the room before the filters with the lead, each up to its own width:
+  beside a short lead they take the rest, beside a long lead they keep their
+  width and the lead is cut; where both are long the lead keeps 40 % (60 %
+  below 480 px) and the later figures give way whole, so the filters keep
+  their words; they go on the phone; put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
