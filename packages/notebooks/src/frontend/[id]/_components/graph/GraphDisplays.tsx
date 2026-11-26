@@ -15,8 +15,6 @@ import { DEFAULT_GRAPH_DISPLAY, PHONE_GRAPH_DISPLAY } from "./view-state";
 export default function GraphDisplays(props: {
   graph: GraphProps;
   view: GraphView;
-  /** What stands over the drawing without moving it, such as Book's live-update notice. */
-  overlay?: JSX.Element;
   /** Hands the focus to the way out that replaces Umgebung when a new centre has no visible links. */
   focusEmpty: () => void;
   /** What stands in Umgebung's place around a note without visible links: the frame's way out. */
@@ -84,7 +82,6 @@ export default function GraphDisplays(props: {
   );
   return (
     <div class="notebook-graph" data-display={g().display() ?? undefined}>
-      {props.overlay}
       {/* A large notebook draws the pages around one page; the line says so from the first paint, so nothing moves. */}
       <Show when={props.graph.graph.scope}>
         {(scope) => (

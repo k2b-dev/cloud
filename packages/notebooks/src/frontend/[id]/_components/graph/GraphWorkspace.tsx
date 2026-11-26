@@ -16,8 +16,11 @@ export type GraphShell = {
   sidebar: JSX.Element;
   navigation: NavigationController;
   navigationLabel: string;
-  /** What stands over the drawing without moving it, such as Book's live-update notice. */
-  overlay?: JSX.Element;
+  /**
+   * What follows the notebook while the graph shows, such as Book's live updates: mounted once beside the workspace,
+   * so it keeps its state in the list, the empty states and every display, and its notice lies over the page.
+   */
+  live?: JSX.Element;
 };
 
 export type GraphFrameProps = Omit<GraphProps, "graph"> & {
@@ -43,6 +46,7 @@ export default function GraphFrame(props: GraphFrameProps) {
     <>
       {/* k2b-ui gap: Nav tree – the phone menu keeps the v1 navigation with the whole tree. */}
       <WorkspaceNavigationProvider navigation={props.shell.navigation} label={props.shell.navigationLabel} />
+      {props.shell.live}
       <Show
         when={props.graph}
         fallback={
@@ -305,7 +309,6 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
               <GraphDisplays
                 graph={props}
                 view={g}
-                overlay={props.shell.overlay}
                 focusEmpty={focusEmpty}
                 // Umgebung keeps its announcement while its way out stands in the drawing's place
                 neighborhoodEmpty={

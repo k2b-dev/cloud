@@ -15,7 +15,7 @@ export default function BookGraphWorkspace(props: Omit<GraphFrameProps, "shell">
         sidebar: <BookNavigatorBody navigator={navigator} current={props.navigator.current} />,
         navigation: navigator.mobileNavigation,
         navigationLabel: navigator.state().notebookName,
-        overlay: <BookGraphLive notebookId={props.notebookId} bookHref={props.navigator.currentHref} />,
+        live: <BookGraphLive notebookId={props.notebookId} bookHref={props.navigator.currentHref} />,
       }}
     />
   );

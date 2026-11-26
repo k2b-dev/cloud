@@ -1002,8 +1002,10 @@
 :root {
   --notebook-graph-head: 3.25rem;
 }
+/* Book's live-update notice lies over the page below the workspace head and the pane head (56 px each), so it moves
+   nothing when it appears and covers neither close, the search nor the filters. */
 .notebook-graph-live-notice {
-  top: calc(var(--notebook-graph-head) + 3rem);
+  top: 8rem;
 }
 .notebook-graph__head {
   display: flex;
