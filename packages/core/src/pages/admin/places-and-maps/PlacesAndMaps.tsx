@@ -23,6 +23,7 @@ import {
   Loading,
   type NavProps,
   Notice,
+  Progress,
   Row,
   Section,
   Select,
@@ -516,11 +517,27 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
               </Show>
               <Facts
                 items={[
+                  // values with a limit get a bar (identity B, rule 3)
                   {
                     label: monthName(data().month.period),
-                    value: t().usageValue({ used: number(data().month.used), limit: number(data().month.limit) }),
+                    value: (
+                      <Progress
+                        value={data().month.used}
+                        of={Math.max(data().month.limit, 1)}
+                        label={t().usageValue({ used: number(data().month.used), limit: number(data().month.limit) })}
+                      />
+                    ),
                   },
-                  { label: t().today, value: t().usageValue({ used: number(data().today.used), limit: number(data().today.allowance) }) },
+                  {
+                    label: t().today,
+                    value: (
+                      <Progress
+                        value={data().today.used}
+                        of={Math.max(data().today.allowance, 1)}
+                        label={t().usageValue({ used: number(data().today.used), limit: number(data().today.allowance) })}
+                      />
+                    ),
+                  },
                   ...(data().month.used > 0
                     ? GEO_USAGE_GROUPS.map((group) => ({ label: shareLabel(group), value: share(data(), group) }))
                     : []),
@@ -538,9 +555,10 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
 
   return (
     <BaseFrame nav={props.nav} section="places" documentationHref={props.documentationHref}>
+      {/* this month's usage first: the figure that matters on this screen (k2b-ui gap: the hero band comes with DP) */}
+      {usageSection()}
       {keySection()}
       {budgetSection()}
-      {usageSection()}
     </BaseFrame>
   );
 }
