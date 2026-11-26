@@ -230,9 +230,6 @@ packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
 packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
 packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
 packages/mail/src/frontend/mail-workspace.tsx | untitled | t().settingsRefreshFailed
-packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().downloadStarted
-packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().stopKeepingDone
-packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | untitled | t().downloadStarted
 packages/mail/src/frontend/_components/MailCalendarInvitation.tsx | untitled | result.outcome === "created" ? messages().eventAdded : result.outcome === "unchanged" ? messages().eventUpToDate : messages().eventUpdated
 packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | messages().providerConnectedSendingPending
 packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | messages().readyToSend({ address: identity.fromAddress })

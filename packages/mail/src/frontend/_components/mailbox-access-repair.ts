@@ -1,14 +1,11 @@
 import { openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { mutation } from "@k2b/stdlib/solid";
-import { IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo } from "solid-js";
 import { apiClient } from "../../api/client";
-import { mailSettingsMessages } from "./mail-settings-messages";
+import type { mailSettingsMessages } from "./mail-settings-messages";
 import { mailboxAccessLevels, mailboxAccessScope } from "./mailbox-access-levels";
 
-type MailAdminMailboxActionsProps = {
+export type MailboxAccessTarget = {
   mailboxId: string;
   mailboxName: string;
 };
@@ -22,15 +19,20 @@ const readErrorMessage = async (response: Pick<Response, "json">, fallback: stri
   }
 };
 
-type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
+export type MailboxAccessMessages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
 
-const loadAccess = async (mailboxId: string, messages: Messages): Promise<AccessEntry[]> => {
+const loadAccess = async (mailboxId: string, messages: MailboxAccessMessages): Promise<AccessEntry[]> => {
   const response = await apiClient.admin.mailboxes[":mailboxId"].access.$get({ param: { mailboxId } });
   if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedLoadMailboxPermissions));
   return response.json();
 };
 
-const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries: AccessEntry[], messages: Messages, locale: string) => {
+const openPermissionDialog = async (
+  props: MailboxAccessTarget,
+  entries: AccessEntry[],
+  messages: MailboxAccessMessages,
+  locale: string,
+) => {
   // Set by every saved change, also when a later one fails and the person discards the rest.
   let wrote = false;
   await openAccessDialog({
@@ -68,26 +70,9 @@ const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries
   if (wrote) refreshCurrentPath();
 };
 
-export default function MailAdminMailboxActions(props: MailAdminMailboxActionsProps) {
-  const locale = useLocale();
-  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
-  const accessMutation = mutation.create<AccessEntry[], void>({
-    mutation: () => loadAccess(props.mailboxId, messages()),
-    onSuccess: (entries) => void openPermissionDialog(props, entries, messages(), locale()),
-    onError: (error) => void prompts.error(error.message),
-  });
-
-  return (
-    <Tooltip.Anchor content={messages().managePermissions}>
-      <IconButton
-        type="button"
-        class="h-7 w-7"
-        label={messages().managePermissionsFor({ name: props.mailboxName })}
-        disabled={accessMutation.loading()}
-        onClick={() => accessMutation.mutate(undefined)}
-      >
-        <i class={accessMutation.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-shield text-sm"} aria-hidden="true" />
-      </IconButton>
-    </Tooltip.Anchor>
-  );
-}
+/**
+ * Opens the shared access dialog of one mailbox for an administrator, loaded fresh, and shows the page again when a
+ * change was saved. Throws the server's reason when the access cannot be loaded.
+ */
+export const repairMailboxAccess = async (target: MailboxAccessTarget, messages: MailboxAccessMessages, locale: string) =>
+  openPermissionDialog(target, await loadAccess(target.mailboxId, messages), messages, locale);

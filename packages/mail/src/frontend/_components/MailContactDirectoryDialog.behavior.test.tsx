@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { MAIL_CONTACT_DIRECTORY_DEFAULTS } from "../../contact-directory-settings";
 import type { ContactDirectoryAdminView } from "../../service/contact-directory";
@@ -56,7 +55,7 @@ describe("Mail admin contact directory dialog", () => {
     await settle();
   });
 
-  test("opens from the summary, shows field errors, and saves the Contacts defaults", async () => {
+  test("shows field errors and saves the Contacts defaults", async () => {
     const dom = createDomTestHarness();
     const bodies: unknown[] = [];
     const responses = [
@@ -79,8 +78,9 @@ describe("Mail admin contact directory dialog", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { default: MailAdminContactDirectory } = await import("./MailAdminContactDirectory.island");
-    const dispose = render(() => createComponent(MailAdminContactDirectory, { view }), dom.root);
+    // the Mailboxes page opens the dialog from its contact directory row and shows what it saved
+    const { openMailContactDirectoryDialog } = await import("./MailContactDirectoryDialog");
+    const opened = openMailContactDirectoryDialog(view, "en");
     const button = (label: string) => {
       const found = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
         (candidate) => candidate.textContent?.trim() === label,
@@ -88,11 +88,8 @@ describe("Mail admin contact directory dialog", () => {
       if (!found) throw new Error(`Missing button: ${label}`);
       return found;
     };
-    const summary = () => dom.document.querySelector('[data-testid="mail-contact-directory-summary"]')?.textContent;
 
     try {
-      expect(summary()).toBe("CRM · Custom");
-      button("Configure").click();
       await settle();
       const dialog = dom.document.querySelector("dialog");
       expect(dialog?.textContent).toContain("Contact directory");
@@ -114,11 +111,10 @@ describe("Mail admin contact directory dialog", () => {
       await settle();
       expect(bodies[1]).toEqual({ method: "PUT", body: { ...MAIL_CONTACT_DIRECTORY_DEFAULTS, replaceUnreadable: [] } });
       expect(dom.document.querySelector("dialog[open]")).toBeNull();
-      expect(summary()).toBe("Contacts · Defaults");
+      expect(await opened).toMatchObject({ config: MAIL_CONTACT_DIRECTORY_DEFAULTS });
     } finally {
       const { dialogCore } = await import("@k2b/ui");
       dialogCore.close();
-      dispose();
       dom.cleanup();
     }
   });
@@ -133,14 +129,9 @@ describe("Mail admin contact directory dialog", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { default: MailAdminContactDirectory } = await import("./MailAdminContactDirectory.island");
-    const dispose = render(() => createComponent(MailAdminContactDirectory, { view }), dom.root);
-    const configure = () =>
-      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
-        (candidate) => candidate.textContent?.trim() === "Configure",
-      );
+    const { openMailContactDirectoryDialog } = await import("./MailContactDirectoryDialog");
+    const opened = openMailContactDirectoryDialog(view, "en");
     try {
-      configure()?.click();
       await settle();
       const dialog = dom.document.querySelector("dialog");
       expect(dialog?.textContent).toContain("Suggest recipients");
@@ -148,10 +139,10 @@ describe("Mail admin contact directory dialog", () => {
       await settle();
       expect(dom.document.querySelector("dialog")?.textContent ?? "").not.toContain("Suggest recipients");
       expect(requests).toBe(0);
+      expect(await opened).toBeFalsy();
     } finally {
       const { dialogCore } = await import("@k2b/ui");
       dialogCore.close();
-      dispose();
       dom.cleanup();
     }
   });

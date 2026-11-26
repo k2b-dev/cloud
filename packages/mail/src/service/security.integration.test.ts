@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
 import {
   assessMessage,
+  countReportsPerDay,
   createPolicy,
   createProtectedIdentity,
   deletePolicy,
@@ -232,6 +234,56 @@ suite("Mail security operations", () => {
     expect(reopened.ok && reopened.data.resolutionNote).toBeNull();
     expect(reopened.ok && reopened.data.reportCount).toBe(1);
     expect(await countEvents()).toBe(before);
+  });
+
+  test("reports per day: one bounded statement, days in the request's time zone, empty days zero", async () => {
+    const mailbox = await createMailbox(adminContext, { name: `Mail security days ${suffix}` });
+    if (!mailbox.ok) throw new Error(mailbox.error.message);
+    mailboxIds.push(mailbox.data.id);
+    const reportIds: string[] = [];
+    for (const index of [0, 1, 2]) {
+      const [message] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes, content_hash, hydration_status)
+        VALUES (${newShortId()}, ${mailbox.data.id}::uuid, ${`<mail-security-day-${index}-${suffix}@example.test>`}, 'Day', 'day', now(), 64,
+          ${crypto.randomUUID().replaceAll("-", "").padEnd(64, "0")}, 'complete')
+        RETURNING id`;
+      const reported = await reportMessage({ context: adminContext, mailboxId: mailbox.data.id, messageId: message!.id });
+      if (!reported.ok) throw new Error(reported.error.message);
+      reportIds.push(reported.data.id);
+    }
+    // a span no other test writes: 00:30 in Berlin is still the day before in UTC, and one report lies before the window
+    const at = ["2031-03-28T23:30:00Z", "2031-03-29T10:00:00Z", "2031-02-01T10:00:00Z"];
+    for (const [index, id] of reportIds.entries())
+      await sql`UPDATE mail.security_reports SET created_at = ${at[index]!}::timestamptz WHERE id = ${id}::uuid`;
+    const now = new Date("2031-03-29T12:00:00Z");
+
+    expect(await countReportsPerDay(userContext, { now })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    // the first call of a process loads what the admin check caches; the meter counts a page load after that
+    await countReportsPerDay(adminContext, { now, timeZone: "Europe/Berlin" });
+    const meter = await meterSql();
+    let berlin: Awaited<ReturnType<typeof countReportsPerDay>> | undefined;
+    try {
+      const statements = await meter.during(async () => {
+        berlin = await countReportsPerDay(adminContext, { now, timeZone: "Europe/Berlin" });
+      });
+      // the admin check and the one grouped count; never a statement per report or per day
+      expect(statements.filter((statement) => statement.includes("mail.security_reports"))).toHaveLength(1);
+      expect(statements).toHaveLength(2);
+    } finally {
+      await meter.close();
+    }
+    if (!berlin?.ok) throw new Error("Reports per day failed");
+    expect(berlin.data).toHaveLength(30);
+    expect(berlin.data[0]).toEqual({ day: "2031-02-28", count: 0 });
+    expect(berlin.data.at(-1)).toEqual({ day: "2031-03-29", count: 2 });
+    expect(berlin.data.reduce((sum, day) => sum + day.count, 0)).toBe(2);
+
+    const utc = await countReportsPerDay(adminContext, { now, timeZone: "Not/AZone" });
+    if (!utc.ok) throw new Error(utc.error.message);
+    expect(utc.data.slice(-2)).toEqual([
+      { day: "2031-03-28", count: 1 },
+      { day: "2031-03-29", count: 1 },
+    ]);
   });
 
   test("a spoofed From claiming a sender identity is still assessed and reportable", async () => {

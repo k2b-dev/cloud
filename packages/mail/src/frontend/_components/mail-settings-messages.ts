@@ -789,6 +789,9 @@ export const mailSettingsMessages = i18n.define({
       noSubject: "No subject",
       moreActionsFor: ({ name }: { name: string }) => `More actions for ${name}`,
       addSecurityRule: "Add Mail security rule",
+      fieldRequired: "Fill in this field",
+      commaSeparated: "Separate several with commas.",
+      atMostEntries: ({ max }: { max: number }) => `At most ${max} entries`,
       rulesAffectEveryMailbox: "Rules affect every mailbox",
       securityRuleScopeDescription:
         "Block only a known bad address or domain. Trust only a known sender whose visible domain also passes authentication from a configured receiving server; trust never overrides a block.",
@@ -1709,6 +1712,9 @@ export const mailSettingsMessages = i18n.define({
       noSubject: "Kein Betreff",
       moreActionsFor: ({ name }) => `Weitere Aktionen für ${name}`,
       addSecurityRule: "Sicherheitsregel für Mail hinzufügen",
+      fieldRequired: "Bitte ausfüllen",
+      commaSeparated: "Mehrere durch Komma trennen.",
+      atMostEntries: ({ max }) => `Höchstens ${max} Einträge`,
       rulesAffectEveryMailbox: "Regeln gelten für alle Postfächer",
       securityRuleScopeDescription:
         "Blockiere nur bekannte schädliche Adressen oder Domains. Vertraue nur bekannten Absendern, deren sichtbare Domain auch eine bestandene Authentifizierung von einem konfigurierten Empfangsserver aufweist. Vertrauen setzt eine Blockierung nie außer Kraft.",
