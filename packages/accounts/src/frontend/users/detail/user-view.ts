@@ -1,6 +1,7 @@
 import type { PwaDeviceView } from "@k2b/cloud/contracts";
 import type { linuxIdentities } from "@k2b/cloud/services";
 import type { User } from "@/contracts";
+import type { KeyPage } from "../../service-accounts/account-keys";
 import { USERS_PAGE_PATH } from "../query";
 
 /** The areas of a user's record; each is a tab, named in the address as `?tab=`. */
@@ -49,16 +50,6 @@ export type UserGroupView = {
   direct: boolean;
 };
 
-export type UserKeyView = {
-  id: string;
-  name: string;
-  tokenPrefix: string;
-  modelsOnly: boolean;
-  created: string;
-  expires: string | null;
-  lastUsed: string | null;
-};
-
 export type UserSignInDeviceView = { id: string; name: string; assisted: boolean; paired: string; lastUsed: string | null };
 
 export type UserAppDeviceView = { id: string; name: string; platform: PwaDeviceView["platform"]; paired: string; lastUsed: string };
@@ -74,6 +65,12 @@ export type UserRecordView = {
   /** The account's category and its extra roles, as words. */
   kinds: string[];
   expired: boolean;
+  /** Where the account stands, as the user list says it: signed in, never signed in, or ended. */
+  status: "active" | "invited" | "expired";
+  /** The last Cloud sign-in, formatted; null when there was none. */
+  lastSignIn: string | null;
+  /** The newest things done to the account, worded on the server; null when the log could not be read. */
+  activity: { actor: string; actorImage?: string; action: string; when: string }[] | null;
   /** When it expired or expires, formatted; null when it never does. */
   expires: string | null;
   facts: UserFact[];
@@ -86,9 +83,12 @@ export type UserRecordView = {
   managed: UserGroupView[];
   /** Groups the person already belongs to in any way; the add dialog leaves them out. */
   memberGroupIds: string[];
-  keys: UserKeyView[];
-  keysTotal: number;
-  keysHref: string;
+  /** The first page of the person's own API keys for the key section; null when it could not be read. */
+  keys: KeyPage | null;
+  /** Whether a key may be limited to AI models. */
+  modelsAvailable: boolean;
+  /** The reader's time zone: the key section's dates follow it. */
+  timeZone: string;
   /** Null when they could not be loaded: an administrator must still see that a device may exist. */
   signInDevices: UserSignInDeviceView[] | null;
   appDevices: UserAppDeviceView[] | null;

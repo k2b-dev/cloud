@@ -1,15 +1,15 @@
 import { cloudAvatarImage } from "@k2b/cloud/account/ui";
-import { accountCategory, accountCategoryLabel, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
+import { accountCategory, accountCategoryLabel } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import {
   accountsAppService as accountsService,
   appApproval,
+  audit,
   coreSettings,
   linuxIdentities,
   pwaDevices,
   readAccountCategoryPolicy,
-  serviceAccountCredentials,
   serviceAccounts,
 } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
@@ -20,8 +20,11 @@ import { ssr } from "../../../config";
 import AccountsNavigation from "../../AccountsNavigation.island";
 import { accountsNavigationItems } from "../../accounts-nav";
 import { isAgentRecordKind, renderAgentRecord } from "../../agents/agent-record";
+import { auditMessages } from "../../audit/messages";
+import { auditRows } from "../../audit/rows";
 import { getSupplementalRoles } from "../../lib/account-badges";
 import { accountsMessages } from "../../messages";
+import { firstKeyPage } from "../../service-accounts/account-keys.server";
 import { usersListContext, usersListHref, usersQuery } from "../query";
 import UserScreen from "./UserScreen.island";
 import type { UserFact, UserGroupView, UserRecordView } from "./user-view";
@@ -29,7 +32,8 @@ import { userTabFrom } from "./user-view";
 
 /** The most groups and keys one page lists: the services' page limits, as before. */
 const GROUPS_PER_PAGE = 1000;
-const KEYS_PER_PAGE = 100;
+/** Events the overview shows of what was done to the account; the audit log holds the rest. */
+const ACTIVITY_ROWS = 5;
 
 const formatAddress = (a: {
   street: string | null;
@@ -74,27 +78,32 @@ export default ssr<AuthContext>(async (c) => {
     return ssr.error(c, 404, { action: { label: t.backToUsers, href: listHref } });
   }
   const linux = await linuxIdentities.get(sessionUser, id);
-  const [categoryPolicy, freeIpaEnabled, localEmailOptional, cloudName, approvalConfig] = await Promise.all([
+  const timeZone = getTimeZone(c);
+  const now = new Date();
+  const [categoryPolicy, freeIpaEnabled, localEmailOptional, cloudName, approvalConfig, modelsAvailable] = await Promise.all([
     readAccountCategoryPolicy(),
     coreSettings.get<boolean>("freeipa.enable"),
     coreSettings.get<boolean>("user.local_email_optional"),
     coreSettings.get<string>("app.name"),
     appApproval.config().catch(() => null),
+    coreSettings.get<boolean>("ai.openai_api_enabled"),
   ]);
 
-  const [pendingRequests, recursiveGroupsPage, managedGroupsPage, directGroupIds, apiKeysPage, devices, phones] = await Promise.all([
-    accountsService.accountRequest.countPending(),
-    accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { userId: id, mode: "member" } }),
-    accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { userId: id, mode: "managed" } }),
-    accountsService.user.groupId.list({ userId: id, recursive: false }),
-    serviceAccountCredentials.listOverview({
-      pagination: { page: 1, perPage: KEYS_PER_PAGE },
-      filter: { userId: id, serviceAccountKind: "user_delegated", credentialStatus: "active" },
-    }),
-    // Null shows "could not be loaded" instead of hiding a device an administrator may need to revoke.
-    appApproval.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
-    pwaDevices.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
-  ]);
+  const [pendingRequests, recursiveGroupsPage, managedGroupsPage, directGroupIds, apiKeysPage, devices, phones, events] = await Promise.all(
+    [
+      accountsService.accountRequest.countPending(),
+      accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { userId: id, mode: "member" } }),
+      accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { userId: id, mode: "managed" } }),
+      accountsService.user.groupId.list({ userId: id, recursive: false }),
+      // the person's own keys: the first page the key section pages on from, through the same service as before
+      firstKeyPage({ kind: "person", userId: id }, { locale, timeZone, now }),
+      // Null shows "could not be loaded" instead of hiding a device an administrator may need to revoke.
+      appApproval.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
+      pwaDevices.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
+      // the newest things done to the account, as the audit log lists them for it
+      audit.list({ pagination: { page: 1, perPage: ACTIVITY_ROWS }, filter: { target: id, automatic: "hide" } }).catch(() => null),
+    ],
+  );
   const directGroupsPage =
     directGroupIds.length > 0
       ? await accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { ids: directGroupIds } })
@@ -111,7 +120,7 @@ export default ssr<AuthContext>(async (c) => {
     direct: direct.has(group.id),
   });
 
-  const now = new Date();
+  const auditWords = auditMessages.resolve([locale]).t;
   const isExpired = user.accountExpires ? new Date(user.accountExpires) < now : false;
   const day = (value: string) => dates.formatDate(value, { locale });
   const moment = (value: string) => dates.formatDateTime(value, { locale });
@@ -153,6 +162,18 @@ export default ssr<AuthContext>(async (c) => {
       ...getSupplementalRoles(user).map((role) => (role === "group-manager" ? t.groupManager : t.admin)),
     ],
     expired: isExpired,
+    status: isExpired ? "expired" : user.lastLoginLocal ? "active" : "invited",
+    lastSignIn: user.lastLoginLocal ? moment(user.lastLoginLocal) : null,
+    activity: events
+      ? auditRows(events.items, { t, locale, timeZone, now, today: auditWords.today, yesterday: auditWords.yesterday, names: [] }).map(
+          (row) => ({
+            actor: row.actor.label,
+            actorImage: row.actor.userId ? cloudAvatarImage({ kind: "user", userId: row.actor.userId }) : undefined,
+            action: row.action.label,
+            when: `${row.day}, ${row.time}`,
+          }),
+        )
+      : null,
     expires: user.accountExpires ? day(user.accountExpires) : null,
     facts,
     sshFingerprints: ipa?.sshFingerprints ?? [],
@@ -162,17 +183,9 @@ export default ssr<AuthContext>(async (c) => {
     allCount: allGroups.length,
     managed: managedGroupsPage.items.map(groupView),
     memberGroupIds: [...new Set([...allGroups.map((group) => group.id), ...direct])],
-    keys: apiKeysPage.items.map((key) => ({
-      id: key.id,
-      name: key.name,
-      tokenPrefix: key.tokenPrefix,
-      modelsOnly: isModelsOnlyApiKey(key),
-      created: moment(key.createdAt),
-      expires: key.expiresAt ? moment(key.expiresAt) : null,
-      lastUsed: key.lastUsedAt ? moment(key.lastUsedAt) : null,
-    })),
-    keysTotal: apiKeysPage.total,
-    keysHref: `/app/accounts/api-keys?kind=user_delegated&status=active&search=${encodeURIComponent(user.uid)}`,
+    keys: apiKeysPage,
+    modelsAvailable: modelsAvailable === true,
+    timeZone,
     signInDevices:
       devices?.map((device) => ({
         id: device.id,

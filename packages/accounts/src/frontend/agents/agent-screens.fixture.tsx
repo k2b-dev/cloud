@@ -1,9 +1,9 @@
 import { LocaleProvider } from "@k2b/ui";
-import AgentScreen, { type AgentView } from "./AgentScreen";
-import AgentsScreen, { type AgentListEntry } from "./AgentsScreen";
 import { KEYS_PER_PAGE, type KeyPage, toKeyPage } from "../service-accounts/account-keys";
 import type { AccountKey } from "../service-accounts/api-key-row";
 import { agentKeys, directoryPage, HUGE_TOTAL, hugeSources, worstKeys } from "../service-accounts/keys-and-new-user.fixture";
+import AgentScreen, { type AgentView } from "./AgentScreen";
+import AgentsScreen, { type AgentListEntry } from "./AgentsScreen";
 import { AGENT_ID } from "./agent-screens.fixture-ids";
 
 // Frozen sample data for the agent screens: dates are formatted text as the server sends them, ids are fixed.
@@ -34,7 +34,11 @@ const keyPage = (state: KeysState): KeyPage | null =>
       : state === "worst"
         ? firstKeys(worstKeys)
         : state === "huge"
-          ? toKeyPage({ items: hugeSources(1, KEYS_PER_PAGE), total: HUGE_TOTAL }, 1, { locale: "de", timeZone: "Europe/Berlin", now: new Date("2026-11-25T12:00:00.000Z") })
+          ? toKeyPage({ items: hugeSources(1, KEYS_PER_PAGE), total: HUGE_TOTAL }, 1, {
+              locale: "de",
+              timeZone: "Europe/Berlin",
+              now: new Date("2026-11-25T12:00:00.000Z"),
+            })
           : firstKeys(agentKeys);
 
 export const AgentScreenFixture = (props: { keys?: KeysState; active?: boolean }) => (

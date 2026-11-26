@@ -52,9 +52,7 @@ export default function AgentScreen(props: Props) {
       sidebar={<AccountsNav active="agents" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
-          start={
-            <RecordHead name={props.agent.name} avatar={{ name: props.agent.name, image: props.agent.image }} kinds={[t().agent]} />
-          }
+          start={<RecordHead name={props.agent.name} avatar={{ name: props.agent.name, image: props.agent.image }} kinds={[t().agent]} />}
         />
       }
     >
@@ -103,7 +101,10 @@ export default function AgentScreen(props: Props) {
             <DirectoryAccessSection account={{ id: props.agent.id, name: props.agent.name }} initial={props.directory} />
           </Pane>
           <Pane side label={t().details} width={{ min: 300, default: 380 }}>
-            <Section title={t().agent} actions={[{ label: accounts().agentChangePicture, icon: "photo", onClick: () => void changePicture() }]}>
+            <Section
+              title={t().agent}
+              actions={[{ label: accounts().agentChangePicture, icon: "photo", onClick: () => void changePicture() }]}
+            >
               <Facts
                 items={[
                   { label: t().created, value: props.agent.created },

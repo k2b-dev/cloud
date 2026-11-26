@@ -4,8 +4,10 @@ import {
   Bar,
   Button,
   Cells,
+  Chip,
   type ConfirmOptions,
   Dialog,
+  Digest,
   Empty,
   Facts,
   Failed,
@@ -25,6 +27,7 @@ import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../../AccountsNav";
 import { useAccountsMessages } from "../../messages";
+import ApiKeysSection from "../../service-accounts/ApiKeysSection";
 import LinuxIdentitySection from "./linux-identity";
 import { number, useUserRecordMessages } from "./messages";
 import { createCloudAppPairing } from "./pair-cloud-app";
@@ -36,7 +39,6 @@ import {
   removeAvatar,
   removeMembership,
   resetPassword,
-  revokeApiKey,
   revokeSignInDevice,
   saveAvatar,
   setAdmin,
@@ -82,6 +84,8 @@ export default function UserScreen(props: Props) {
   const { showChanges, openPage } = usePageSwap();
   const record = () => props.record;
   const n = (count: number) => number(count, locale());
+  /** All of the person's active keys, also those beyond the first page; 0 while they could not be read. */
+  const keysTotal = () => record().keys?.total ?? 0;
   /** Both kinds of device, or null when either list could not be loaded. */
   const deviceCount = () => {
     const signIn = record().signInDevices;
@@ -366,18 +370,22 @@ export default function UserScreen(props: Props) {
         {(date) => <Notice tone="warn">{r().expiredNotice({ date: date() })}</Notice>}
       </Show>
       <Cells>
+        {/* the state of the account as colour, sign and word, with its last sign-in and its end */}
         <Cells.Cell
           icon={user().profile === "guest" ? "user" : "user-check"}
           color={area.access}
-          label={t().access}
-          value={user().profile === "user" ? t().fullAccount : t().guestAccount}
-          meta={
-            record().expires
-              ? record().expired
-                ? r().expiredOn({ date: record().expires ?? "" })
-                : r().expiresOn({ date: record().expires ?? "" })
-              : r().neverExpires
+          label={user().profile === "user" ? t().fullAccount : t().guestAccount}
+          value={
+            <Chip status={record().status === "active" ? "ok" : record().status === "invited" ? "warn" : "bad"}>
+              {record().status === "active" ? r().statusActive : record().status === "invited" ? r().statusInvited : r().statusExpired}
+            </Chip>
           }
+          meta={[
+            record().lastSignIn ? r().lastSignIn({ date: record().lastSignIn ?? "" }) : r().neverSignedIn,
+            record().expires && !record().expired ? r().expiresOn({ date: record().expires ?? "" }) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
         <Cells.Cell
           icon="users-group"
@@ -391,14 +399,7 @@ export default function UserScreen(props: Props) {
           }
           href={href("groups")}
         />
-        <Cells.Cell
-          icon="key"
-          color={area.keys}
-          label={t().apiKeys}
-          value={n(record().keysTotal)}
-          meta={r().keysMeta}
-          href={href("keys")}
-        />
+        <Cells.Cell icon="key" color={area.keys} label={t().apiKeys} value={n(keysTotal())} meta={r().keysMeta} href={href("keys")} />
         <Cells.Cell
           icon="devices"
           color={area.devices}
@@ -429,6 +430,32 @@ export default function UserScreen(props: Props) {
           <Show when={record().linux}>{(linux) => <LinuxIdentitySection initial={linux()} />}</Show>
         </Pane>
         <Pane side label={r().details} width={{ min: 280, default: 360 }}>
+          {/* what was done to the account lately, as sentences with the person who did it */}
+          <Section
+            icon="activity"
+            color={area.access}
+            title={r().activity}
+            more={record().activity?.length ? { label: r().allActivity, href: can().auditOnUserHref, forward: true } : undefined}
+          >
+            <Show when={record().activity} fallback={<Text muted>{r().activityFailed}</Text>}>
+              {(entries) => (
+                <Show when={entries().length > 0} fallback={<Text muted>{r().noActivity}</Text>}>
+                  <Digest
+                    label={r().activity}
+                    activity={entries().map((entry) => ({
+                      person: { name: entry.actor, image: entry.actorImage },
+                      text: (
+                        <>
+                          <Text weight="strong">{entry.actor}</Text> {entry.action}
+                        </>
+                      ),
+                      time: entry.when,
+                    }))}
+                  />
+                </Show>
+              )}
+            </Show>
+          </Section>
           <Section icon="id" color={area.access} title={t().account}>
             <Facts
               items={record().facts.map((fact) => ({
@@ -502,56 +529,14 @@ export default function UserScreen(props: Props) {
     </>
   );
 
+  // the person's own keys: the section every account shows, paging the API itself (lane C)
   const keys = () => (
-    <Section
-      icon="key"
-      color={area.keys}
-      title={t().apiKeys}
-      count={n(record().keysTotal)}
-      summary={t().personalAutomationKeys({ count: record().keysTotal })}
-      more={{ label: t().viewAll, href: record().keysHref, forward: true }}
-    >
-      <Show when={record().keys.length > 0} fallback={<Empty icon="key" text={t().noActiveApiKeys} />}>
-        <For each={record().keys}>
-          {(entry) => (
-            <Row
-              mark={{ icon: "key", color: area.keys }}
-              lines={[
-                entry.name,
-                [
-                  r().keyLine({ prefix: entry.tokenPrefix, created: entry.created }),
-                  entry.expires ? r().keyExpires({ date: entry.expires }) : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-              ]}
-              meta={entry.modelsOnly ? t().modelsOnlyKey : undefined}
-              time={entry.lastUsed ? r().usedOn({ date: entry.lastUsed }) : r().neverUsed}
-              end={
-                <Button
-                  variant="ghost"
-                  icon="key-off"
-                  label={t().revokeApiKeyLabel({ name: entry.name })}
-                  busy={busy() === `key:${entry.id}`}
-                  onClick={() =>
-                    void changed(
-                      `key:${entry.id}`,
-                      {
-                        title: r().revokeKeyQuestion({ name: entry.name }),
-                        description: r().revokeKeyConsequence,
-                        confirm: t().revoke,
-                        cancel: t().cancel,
-                      },
-                      () => revokeApiKey(entry.id, t()),
-                    )
-                  }
-                />
-              }
-            />
-          )}
-        </For>
-      </Show>
-    </Section>
+    <ApiKeysSection
+      account={{ kind: "person", userId: user().id, name: record().title, active: !record().expired }}
+      first={record().keys}
+      modelsAvailable={record().modelsAvailable}
+      timeZone={record().timeZone}
+    />
   );
 
   const devices = () => (
@@ -709,7 +694,7 @@ export default function UserScreen(props: Props) {
                 href: href("groups", props.recursive),
                 current: props.tab === "groups",
               },
-              { label: t().apiKeys, icon: "key", count: n(record().keysTotal), href: href("keys"), current: props.tab === "keys" },
+              { label: t().apiKeys, icon: "key", count: n(keysTotal()), href: href("keys"), current: props.tab === "keys" },
               {
                 label: r().devices,
                 icon: "devices",

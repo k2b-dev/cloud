@@ -43,10 +43,6 @@ export const removeAppDevice = async (userId: string, deviceId: string, t: Accou
   );
 };
 
-export const revokeApiKey = async (credentialId: string, t: AccountsMessages) => {
-  await taken(await apiClient["service-accounts"].credentials[":id"].$delete({ param: { id: credentialId } }), t.revokeApiKeyFailed);
-};
-
 export const removeMembership = async (groupId: string, userId: string, t: AccountsMessages) => {
   await taken(
     await apiClient.groups[":id"].members.$delete({ param: { id: groupId }, json: { type: "user", id: userId } }),

@@ -17,7 +17,6 @@ if (!isServer) {
       users: {
         ":id": { devices: { ":deviceId": { $delete: answer("device") } }, "app-devices": { ":deviceId": { $delete: answer("app") } } },
       },
-      "service-accounts": { credentials: { ":id": { $delete: answer("key") } } },
       groups: { ":id": { members: { $delete: answer("remove"), $post: answer("add") } } },
     },
   }));
@@ -69,17 +68,15 @@ describe("revoking and removing on a user's record", () => {
     ]);
   });
 
-  test("an API key is revoked by its id, and memberships change for this person only", async () => {
-    const { revokeApiKey, removeMembership, addMembership, t } = await load();
-    await revokeApiKey("key-id", t);
+  test("memberships change for this person only, and a failure gets the deed's own sentence", async () => {
+    const { removeMembership, addMembership, t } = await load();
     await removeMembership("group-a", "user-id", t);
     await addMembership("group-b", "user-id", t);
     expect(requests).toEqual([
-      { kind: "key", param: { id: "key-id" } },
       { kind: "remove", param: { id: "group-a" }, json: { type: "user", id: "user-id" } },
       { kind: "add", param: { id: "group-b" }, json: { type: "user", id: "user-id" } },
     ]);
     answers = [new Response(null, { status: 500 })];
-    await expect(revokeApiKey("key-id", t)).rejects.toThrow(t.revokeApiKeyFailed);
+    await expect(removeMembership("group-a", "user-id", t)).rejects.toThrow(t.removeFailed);
   });
 });

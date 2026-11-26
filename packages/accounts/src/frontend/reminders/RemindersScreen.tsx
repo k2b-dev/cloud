@@ -186,13 +186,13 @@ export default function RemindersScreen(props: RemindersScreenProps) {
             },
             {
               title: t().targetExpiry,
-              width: { min: 180, default: 220 },
+              width: { min: 220, default: 250 },
               cell: (row) => r().daysBefore({ when: row.target, count: row.days }),
               drop: true,
             },
             { title: t().attempts, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.attempts, drop: true },
-            { title: t().lastAttempt, width: { min: 130, default: 150 }, cell: (row) => row.lastAttempt ?? "–", drop: true },
-            { title: t().kind, cell: () => t().accountExpiry, drop: true },
+            // the lifecycle records one kind of reminder (account expiry), so the list needs no column for it
+            { title: t().lastAttempt, cell: (row) => row.lastAttempt ?? "–", drop: true },
           ]}
         />
         <Show when={props.pages > 1}>

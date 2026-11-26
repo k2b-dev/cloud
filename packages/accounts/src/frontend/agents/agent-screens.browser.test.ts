@@ -9,20 +9,20 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import "../../../../ui/test/solid-ssr-preload";
-import type { AgentKeyOpen, AgentKeySort } from "./agent-keys";
-import { AGENT_ID, KEY_IDS } from "./agent-screens.fixture-ids";
+import { accountsMessages } from "../messages";
+import type { KeysState } from "./agent-screens.fixture";
+import { AGENT_ID } from "./agent-screens.fixture-ids";
 import { agentMessages } from "./messages";
 
-// An administrator sees an agent's API keys on v2, creates one and sees its token once, and revokes one after a second
-// question. The test answers the administration API itself; the screens render from frozen fixtures.
+// An administrator opens an agent in the account record on v2: its state, key figures, API keys and directory access.
+// The screens render from frozen fixtures; the test answers the routes itself.
 const root = mkdtempSync(join(tmpdir(), "accounts-agent-screens-browser-"));
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const ui = resolve(import.meta.dir, "../../../../ui");
 const origin = "https://cloud.example.test";
 const shots = process.env.CLOUD_AGENT_SCREENS_SHOTS;
 const t = agentMessages.resolve(["de"]).t;
-const TOKEN = "k2b_sa_test_4f7c1e0b9a2d4c6e8f00112233445566";
-const keysPath = `/api/admin/identity/service-accounts/${AGENT_ID}/api-keys`;
+const accounts = accountsMessages.resolve(["de"]).t;
 // the agent's robot, as the avatar route serves it
 const robot = renderAvatarSvg({
   v: 1,
@@ -93,12 +93,7 @@ afterAll(async () => {
 type View = { width: number; height: number; touch: boolean; name: string };
 const desktop: View = { width: 1280, height: 860, touch: false, name: "1280" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
-type State =
-  | { screen: "agents"; empty?: boolean }
-  | { screen: "agent"; keys?: "sample" | "empty" | "failed" | "huge"; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean };
-/** What the API answers next: a create answers with a token, a status, or a lost connection; a revoke with a status. */
-type Api = { create: "token" | 400 | 500 | "lost"; revoke: number[]; posts: unknown[]; deletes: string[]; pages: string[] };
-const api = (create: Api["create"] = "token", revoke: number[] = [200]): Api => ({ create, revoke, posts: [], deletes: [], pages: [] });
+type State = { screen: "agents"; empty?: boolean } | { screen: "agent"; keys?: KeysState; active?: boolean };
 
 const page = (state: State, dark: boolean) =>
   `<!doctype html><html lang="de" class="${dark ? "dark" : "light"}" data-state='${JSON.stringify(state)}'><head><meta charset="utf-8">` +
@@ -106,24 +101,8 @@ const page = (state: State, dark: boolean) =>
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
-/** The agent page's state from its address, as the server reads it. */
-const stateOf = (url: URL, extra: Partial<Extract<State, { screen: "agent" }>>): State => {
-  const key = url.searchParams.get("key");
-  const sort = url.searchParams.get("sort");
-  return {
-    screen: "agent",
-    ...extra,
-    sort: sort === "name" || sort === "used" ? sort : "created",
-    open: key === "new" ? { kind: "new" } : key ? { kind: "key", id: key } : { kind: "none" },
-  };
-};
-
-const open = async (
-  view: View,
-  address: string,
-  answers: Api,
-  options: { dark?: boolean; state?: Partial<Extract<State, { screen: "agent" }>>; list?: { empty?: boolean } } = {},
-) => {
+/** Opens a screen; the record's state comes from the test, as the server would read it for the agent. */
+const open = async (view: View, state: State, options: { dark?: boolean } = {}) => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -135,120 +114,65 @@ const open = async (
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
-  const logged: string[] = [];
-  tab.on("console", (message) => logged.push(message.text()));
+  const posts: string[] = [];
   await tab.route(`${origin}/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === "/app/accounts/agents")
-      return route.fulfill({
-        contentType: "text/html; charset=utf-8",
-        body: page({ screen: "agents", ...options.list }, Boolean(options.dark)),
-      });
-    if (url.pathname === `/app/accounts/users/${AGENT_ID}`) {
-      answers.pages.push(`${url.pathname}${url.search}`);
-      return route.fulfill({
-        contentType: "text/html; charset=utf-8",
-        body: page(stateOf(url, options.state ?? {}), Boolean(options.dark)),
-      });
-    }
+    if (url.pathname === "/app/accounts/agents" || url.pathname === `/app/accounts/users/${AGENT_ID}`)
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(state, Boolean(options.dark)) });
     if (url.pathname === `/api/accounts/users/${AGENT_ID}/avatar`) return route.fulfill({ contentType: "image/svg+xml", body: robot });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
-    if (url.pathname === keysPath && request.method() === "POST") {
-      answers.posts.push(request.postDataJSON());
-      if (answers.create === "lost") return route.abort("connectionreset");
-      if (answers.create === 400) return route.fulfill({ status: 400, json: { message: "Name ist zu lang." } });
-      if (answers.create === 500) return route.fulfill({ status: 500, json: { message: "Internal server error" } });
-      return route.fulfill({ status: 201, json: { credential: { id: KEY_IDS[0] }, token: TOKEN } });
-    }
-    if (url.pathname.startsWith(`${keysPath}/`) && request.method() === "DELETE") {
-      answers.deletes.push(url.pathname);
-      const status = answers.revoke.shift() ?? 200;
-      return route.fulfill(status === 200 ? { json: { revoked: true } } : { status, json: { message: "Internal server error" } });
-    }
+    if (request.method() !== "GET") posts.push(url.pathname);
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
-  await tab.goto(`${origin}${address}`);
+  await tab.goto(`${origin}${state.screen === "agents" ? "/app/accounts/agents" : `/app/accounts/users/${AGENT_ID}`}`);
   await tab.evaluate(() => document.fonts.ready);
   await settled(tab);
-  return { context, tab, errors, logged };
+  return { context, tab, errors, posts };
 };
 
 const shoot = async (tab: Page, name: string) => {
   if (shots) await tab.screenshot({ path: join(shots, `agents-v2-${name}.png`) });
 };
 
-// The page and an open dialog each have their one primary action; the outline counts them per surface.
 const expectClean = async (tab: Page) => {
+  await tab.mouse.move(0, 0);
   const outline = await describeV2Page(tab, "#root");
-  expect(outline).not.toContain("Problems (");
+  expect(outline.includes("Problems (") ? outline : "").toBe("");
   const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
   expect(layout.problems).toEqual([]);
   return outline;
 };
 
-describe("an agent's API keys on v2", () => {
-  test("the list, an agent's keys, the order and the states keep the v2 rules at 1280 and 390 px", async () => {
-    const tableWidths: number[] = [];
-    for (const view of [desktop, phone]) {
-      for (const [name, address, options] of [
-        ["list", "/app/accounts/agents", {}],
-        ["list-empty", "/app/accounts/agents", { list: { empty: true } }],
-        ["detail", `/app/accounts/users/${AGENT_ID}`, {}],
-        ["detail-sorted", `/app/accounts/users/${AGENT_ID}?sort=name`, {}],
-        ["detail-empty", `/app/accounts/users/${AGENT_ID}`, { state: { keys: "empty" } }],
-        ["detail-failed", `/app/accounts/users/${AGENT_ID}`, { state: { keys: "failed" } }],
-        ["detail-disabled", `/app/accounts/users/${AGENT_ID}`, { state: { active: false } }],
-        ["detail-key", `/app/accounts/users/${AGENT_ID}?key=${KEY_IDS[0]}`, {}],
-      ] as const) {
-        const { context, tab, errors } = await open(view, address, api(), options);
+// The keys and the directory access are the record's sections from service-accounts/; their deeds (a new key with
+// its token once, refusals, a lost answer, revoke, replacing a legacy key, paging through 1,284 keys, sharing and
+// removing directory entries) are tested in service-accounts/keys-and-new-user.browser.test.ts. Here: the agent kind
+// of the record around them, in every state, and the list while it has its route.
+describe("an agent in the account record on v2", () => {
+  test("the list and the agent's record keep the v2 rules at 1280 and 390 px in every state", async () => {
+    const states: [string, State][] = [
+      ["list", { screen: "agents" }],
+      ["list-empty", { screen: "agents", empty: true }],
+      ["detail", { screen: "agent" }],
+      ["detail-empty", { screen: "agent", keys: "empty" }],
+      ["detail-failed", { screen: "agent", keys: "failed" }],
+      ["detail-disabled", { screen: "agent", active: false }],
+      ["detail-worst", { screen: "agent", keys: "worst" }],
+    ];
+    for (const view of [desktop, phone])
+      for (const [name, state] of states) {
+        const { context, tab, errors } = await open(view, state);
         try {
           const outline = await expectClean(tab);
           if (name === "list-empty") expect(outline).toContain(t.noAgents.slice(0, 30));
-          if (name === "detail-empty") expect(outline).toContain(t.noKeys.slice(0, 30));
           if (name === "detail-failed") expect(outline).toContain(t.retry);
           if (name === "detail-disabled") expect(outline).toContain(t.agentDisabledNotice.slice(0, 30));
-          // the phone row says that a key has expired
-          if (name === "detail" && view === phone) expect(outline).toContain(`${t.legacyLimited} · ${t.expired}`);
-          // a column head sorts and keeps the open key open; pressed again, it goes back to the newest first
-          const nameHead = tab.locator("thead th", { hasText: t.name }).locator("a");
-          if (name === "detail-key" && view === desktop)
-            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/users/${AGENT_ID}?sort=name&key=${KEY_IDS[0]}`);
-          if (name === "detail-sorted" && view === desktop) {
-            expect(await tab.locator("thead th[aria-sort='ascending']").textContent()).toContain(t.name);
-            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/users/${AGENT_ID}`);
-            // the rows stand in the order the head names, as the server sorts them
-            const names = await tab.locator("tbody tr td:first-child .k2-cell-line:not([data-second])").allTextContents();
-            expect(names).toEqual(["Alter Export-Job", "Laptop Jana", "MCP-Server Team Ops"]);
-          }
-          if (view === desktop && name === "detail-key") {
-            // the open key's row carries the app's tint; the others stay on the surface
-            await settled(tab);
-            const [open, other] = await tab.evaluate(() => {
-              const background = (selector: string) => {
-                const cell = document.querySelector(selector);
-                return cell ? getComputedStyle(cell).backgroundColor : "missing";
-              };
-              return [background("tbody tr[aria-current] > td"), background("tbody tr:not([aria-current]) > td")];
-            });
-            expect(open).not.toBe("missing");
-            expect(open).not.toBe(other);
-            expect(open).not.toMatch(/^rgba?\(255, 255, 255|^rgba\(0, 0, 0, 0\)$/);
-          }
-          // a disabled agent's keys rest: no green chip contradicts the notice
-          if (name === "detail-disabled" && view === desktop) {
-            expect(await tab.locator("tbody [data-k2-part='Chip']", { hasText: t.keyInactive }).count()).toBe(3);
-            expect(await tab.locator("tbody [data-k2-part='Chip']", { hasText: t.keyActive }).count()).toBe(0);
-          }
-          if (name === "detail-disabled" && view === phone) expect(outline).toContain(`${t.fullAccess} · ${t.keyInactive}`);
           // the side column says what a key reaches and that it lives only while its agent is active
-          if (name === "detail") expect(outline).toContain(t.reachTitle);
-          // the table keeps its edge when a key opens: the side column and the open key share one width
-          if (view === desktop && (name === "detail" || name === "detail-key")) {
-            await settled(tab);
-            tableWidths.push((await tab.locator("[data-k2-part='Pane'][aria-label='API Keys']").first().boundingBox())?.width ?? 0);
+          if (name === "detail") {
+            expect(outline).toContain(t.reachTitle);
+            expect(outline).toContain("Jana Berger");
           }
           await shoot(tab, `${name}-${view.name}`);
           expect(errors).toEqual([]);
@@ -256,157 +180,17 @@ describe("an agent's API keys on v2", () => {
           await context.close();
         }
       }
-    }
-    expect(tableWidths).toHaveLength(2);
-    expect(tableWidths[0]).toBeGreaterThan(0);
-    expect(tableWidths[1]).toBe(tableWidths[0]!);
   }, 240_000);
 
-  test("creating a key shows its token once, with a copy button, and closing drops it from the page", async () => {
-    for (const view of [desktop, phone]) {
-      const answers = api();
-      const { context, tab, errors, logged } = await open(view, `/app/accounts/users/${AGENT_ID}`, answers);
-      try {
-        // the dialog opens from the page, so Back has a page to return to
-        await tab.getByRole("link", { name: t.createKey }).filter({ visible: true }).first().click();
-        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}?key=new`);
-        const dialog = tab.locator("[data-k2-part='Dialog']");
-        await dialog.getByRole("heading", { name: t.createKeyFor({ name: "Wochenbericht" }) }).waitFor();
-        await settled(tab);
-        await shoot(tab, `create-${view.name}`);
-        // without a name nothing is sent
-        await dialog.getByRole("button", { name: t.create }).click();
-        await dialog.getByText(t.keyNameRequired).waitFor();
-        expect(answers.posts).toEqual([]);
-        await dialog.getByRole("textbox", { name: t.keyName }).fill("Neuer Bericht-Export");
-        await dialog.getByRole("radio", { name: t.modelsOnly }).check();
-        await dialog.getByRole("button", { name: t.create }).click();
-        await dialog.getByText(TOKEN).waitFor();
-        expect(answers.posts).toEqual([{ name: "Neuer Bericht-Export", access: "models", expiresAt: null }]);
-        await dialog.getByText(t.oneTime).waitFor();
-        // the title says what happened
-        await dialog.getByRole("heading", { name: t.created_ }).waitFor();
-        expect(await dialog.getByRole("button", { name: /kopieren|copy/i }).count()).toBe(1);
-        await settled(tab);
-        await shoot(tab, `created-${view.name}`);
-        // an outside press (a swipe on the phone sheet ends the same way) keeps the dialog and its only copy
-        await tab.mouse.click(4, 4);
-        await settled(tab);
-        expect(await dialog.getByText(TOKEN).isVisible()).toBe(true);
-        await dialog.getByRole("button", { name: t.done }).click();
-        // the address no longer names the dialog, and the token is nowhere on the page
-        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}`);
-        await tab.getByText(t.keysCount({ count: 3 })).waitFor();
-        // closing replaced the dialog's entry: Back shows the page from before it, without the dialog
-        await tab.goBack();
-        await settled(tab);
-        expect(tab.url()).toBe(`${origin}/app/accounts/users/${AGENT_ID}`);
-        expect(await dialog.count()).toBe(0);
-        expect(await tab.content()).not.toContain(TOKEN);
-        expect(logged.filter((line) => line.includes(TOKEN))).toEqual([]);
-        expect(errors).toEqual([]);
-      } finally {
-        await context.close();
-      }
-    }
-  }, 120_000);
-
-  test("a refused key says why; a lost answer forbids a second creation", async () => {
-    for (const create of [400, 500, "lost"] as const) {
-      const answers = api(create);
-      const { context, tab, errors } = await open(desktop, `/app/accounts/users/${AGENT_ID}?key=new`, answers);
-      try {
-        const dialog = tab.locator("[data-k2-part='Dialog']");
-        await dialog.getByRole("textbox", { name: t.keyName }).fill("Neuer Bericht-Export");
-        await dialog.getByRole("button", { name: t.create }).click();
-        if (create === 400) {
-          // the app's own sentence, not the server's text
-          await dialog.getByText(t.createRefused).waitFor();
-          expect(await dialog.getByRole("button", { name: t.create }).isDisabled()).toBe(false);
-          // without a token an outside press closes the form, so the token's guard in the create test is real
-          await tab.mouse.click(4, 4);
-          await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}`);
-        } else {
-          await dialog.getByText(t.createUncertain).waitFor();
-          expect(await dialog.getByRole("button", { name: t.create }).isDisabled()).toBe(true);
-        }
-        expect(answers.posts).toHaveLength(1);
-        expect(errors).toEqual([]);
-      } finally {
-        await context.close();
-      }
-    }
-  }, 60_000);
-
-  test("revoking asks first, says when it failed, and shows the list after it worked", async () => {
-    for (const view of [desktop, phone]) {
-      const answers = api("token", [500, 200]);
-      const { context, tab, errors } = await open(view, `/app/accounts/users/${AGENT_ID}`, answers);
-      try {
-        // the key opens from the list, so Back has the list to return to
-        await tab
-          .getByRole("link", { name: /Laptop Jana/ })
-          .filter({ visible: true })
-          .first()
-          .click();
-        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}?key=${KEY_IDS[0]}`);
-        const pane = tab.locator("[data-k2-part='Pane'][aria-label='Laptop Jana']");
-        const ask = async () => {
-          await pane.getByRole("button", { name: t.revoke }).click();
-          const question = tab.getByRole("alertdialog", { name: t.revokeTitle({ name: "Laptop Jana" }) });
-          await question.waitFor();
-          await settled(tab);
-          return question;
-        };
-        // the question starts on "Abbrechen"; Escape answers no and sends nothing
-        let question = await ask();
-        await question.getByText(t.revokeConsequence).waitFor();
-        expect(await tab.evaluate(() => document.activeElement?.textContent?.trim())).toBe(t.cancel);
-        await shoot(tab, `revoke-${view.name}`);
-        await tab.keyboard.press("Escape");
-        await question.waitFor({ state: "detached" });
-        expect(answers.deletes).toEqual([]);
-        // a failed revoke says so beside the key, which stays
-        question = await ask();
-        await question.getByRole("button", { name: t.revoke }).click();
-        await pane.getByText(t.revokeFailed).waitFor();
-        await shoot(tab, `revoke-failed-${view.name}`);
-        question = await ask();
-        await question.getByRole("button", { name: t.revoke }).click();
-        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}`);
-        expect(answers.deletes).toEqual([`${keysPath}/${KEY_IDS[0]}`, `${keysPath}/${KEY_IDS[0]}`]);
-        // the revoked key's entry was replaced: Back leads to the list from before, never to a key that is gone
-        await tab.goBack();
-        await settled(tab);
-        expect(tab.url()).toBe(`${origin}/app/accounts/users/${AGENT_ID}`);
-        expect(errors).toEqual([]);
-      } finally {
-        await context.close();
-      }
-    }
-  }, 120_000);
-
-  test("an agent with 1,284 keys lists one page of 100 with the true count, pages through them and opens quickly", async () => {
-    const { context, tab, errors } = await open(desktop, `/app/accounts/users/${AGENT_ID}`, api(), { state: { keys: "huge" } });
+  test("an agent with 1,284 keys shows the true count and one bounded page, ready quickly", async () => {
+    const { context, tab, errors } = await open(desktop, { screen: "agent", keys: "huge" });
     try {
-      const rows = tab.locator("[data-k2-part=Table] tbody tr");
-      await rows.first().waitFor();
+      await tab.locator("[data-k2-part='Section'] [data-k2-part='Row']").first().waitFor();
       // the screen stood within 1.5 s of the page's answer, as the harness measured it in the page
       expect(Number(await tab.evaluate(() => document.documentElement.dataset.ready))).toBeLessThan(1500);
-      expect(await rows.count()).toBe(100);
+      expect(await tab.locator("[data-k2-part='Cells.Cell']", { hasText: "1.284" }).count()).toBe(1);
+      expect(await tab.locator("[data-k2-part='Row']").count()).toBeLessThanOrEqual(60);
       expect(await tab.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(4000);
-      // the true count with the locale's separator, and no column order across pages
-      await tab
-        .getByText(t.keysCount({ count: 1284 }))
-        .first()
-        .waitFor();
-      expect(t.keysCount({ count: 1284 })).toBe("1.284 API Keys");
-      await tab.getByText(t.sortAllOnly).waitFor();
-      expect(await tab.locator("thead th a").count()).toBe(0);
-      await tab.getByText(t.pageOf({ page: 1, pages: 13 })).waitFor();
-      await tab.getByRole("link", { name: t.next }).click();
-      await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}?page=2`);
-      await tab.getByText("Kasse 101", { exact: true }).first().waitFor();
       await expectClean(tab);
       await shoot(tab, "detail-huge-1280");
       expect(errors).toEqual([]);
@@ -415,16 +199,27 @@ describe("an agent's API keys on v2", () => {
     }
   }, 60_000);
 
-  test("the page and the dialog keep the rules in the dark", async () => {
-    for (const address of [`/app/accounts/users/${AGENT_ID}`, `/app/accounts/users/${AGENT_ID}?key=new`]) {
-      const { context, tab, errors } = await open(desktop, address, api(), { dark: true });
-      try {
-        await expectClean(tab);
-        await shoot(tab, address.endsWith("new") ? "create-dark-1280" : "detail-dark-1280");
-        expect(errors).toEqual([]);
-      } finally {
-        await context.close();
-      }
+  test("a new key starts from the record's key section, in its dialog", async () => {
+    const { context, tab, errors, posts } = await open(desktop, { screen: "agent" });
+    try {
+      await tab.getByRole("button", { name: accounts.createMachineKey }).first().click();
+      await tab.locator("[data-k2-part='Dialog']").waitFor();
+      await shoot(tab, "create-1280");
+      expect(posts).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the record keeps the rules in the dark", async () => {
+    const { context, tab, errors } = await open(desktop, { screen: "agent" }, { dark: true });
+    try {
+      await expectClean(tab);
+      await shoot(tab, "detail-dark-1280");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
     }
   }, 60_000);
 });

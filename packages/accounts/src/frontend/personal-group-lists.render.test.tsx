@@ -122,6 +122,7 @@ test("direct and indirect user memberships hide personal groups and keep normal 
     spyOn(services.serviceAccountCredentials, "listOverview").mockResolvedValue(empty),
     spyOn(services.appApproval, "listUserDevices").mockResolvedValue([]),
     spyOn(services.pwaDevices, "listUserDevices").mockResolvedValue([]),
+    spyOn(services.audit, "list").mockResolvedValue({ items: [], page: 1, perPage: 5, total: 0, hasNext: false }),
   ];
   try {
     for (const query of ["", "?recursive=true"]) {
@@ -168,6 +169,7 @@ test("list page 2 -> a user's page -> back lands on page 2 with the same filters
     spyOn(services.serviceAccountCredentials, "listOverview").mockResolvedValue(empty),
     spyOn(services.appApproval, "listUserDevices").mockResolvedValue([]),
     spyOn(services.pwaDevices, "listUserDevices").mockResolvedValue([]),
+    spyOn(services.audit, "list").mockResolvedValue({ items: [], page: 1, perPage: 5, total: 0, hasNext: false }),
   ];
   try {
     const list = await server().request("/app/accounts/users?status=active&sort=login.desc&page=2", {

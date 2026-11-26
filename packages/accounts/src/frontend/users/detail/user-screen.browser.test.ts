@@ -10,7 +10,7 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../..
 import "../../../../../ui/test/solid-ssr-preload";
 import { accountsMessages } from "../../messages";
 import { userRecordMessages } from "./messages";
-import { DEVICE_ID, type FixtureName, GROUP_ID, KEY_ID, PHONE_ID, USER_ID } from "./user-record.fixture";
+import { DEVICE_ID, type FixtureName, GROUP_ID, PHONE_ID, USER_ID } from "./user-record.fixture";
 
 // An administrator works with a person's record on v2: the areas as tabs, memberships with and without inherited
 // groups, removing a membership, revoking keys and devices, the account's deeds with their dialogs, and pairing the
@@ -155,7 +155,8 @@ const open = async (view: View, address: string, fixture: FixtureName = "sample"
       const search = (url.searchParams.get("search") ?? "").toLowerCase();
       const groups = [
         { id: GROUP_ID(1), name: "Verkauf", provider: "local" },
-        { id: GROUP_ID(7), name: "Lager", provider: "local" },
+        { id: GROUP_ID(5), name: "Lager", provider: "local" },
+        { id: GROUP_ID(20), name: "Lagerhalle Süd", provider: "local" },
         { id: GROUP_ID(8), name: "Laden Nord", provider: "local" },
       ].filter((group) => group.name.toLowerCase().includes(search));
       return route.fulfill({ json: { groups } });
@@ -330,16 +331,8 @@ describe("a user's record on v2", () => {
     }
   }, 60_000);
 
-  test("keys, sign-in devices and app devices are revoked or removed after a question; a failure keeps them and says so", async () => {
+  test("sign-in devices and app devices are revoked or removed after a question; a failure keeps them and says so", async () => {
     for (const [address, label, title, confirm, path, fallback] of [
-      [
-        `${page}?tab=keys`,
-        t.revokeApiKeyLabel({ name: "Backup-Skript" }),
-        r.revokeKeyQuestion({ name: "Backup-Skript" }),
-        t.revoke,
-        `/api/accounts/service-accounts/credentials/${KEY_ID(1)}`,
-        t.revokeApiKeyFailed,
-      ],
       [
         `${page}?tab=devices`,
         t.revokeDeviceLabel({ name: "Pixel 8" }),
@@ -472,15 +465,15 @@ describe("a user's record on v2", () => {
       await dialog.getByRole("button", { name: t.add }).click();
       await dialog.getByText(r.chooseGroup).waitFor();
       await dialog.getByRole("searchbox").fill("la");
-      await dialog.getByRole("option", { name: /Lager/ }).click();
+      await dialog.getByRole("option", { name: /Lagerhalle Süd/ }).click();
       // a group the person is already in is not offered
-      expect(await dialog.getByRole("option", { name: /Verkauf/ }).count()).toBe(0);
+      expect(await dialog.getByRole("option", { name: /^Lager$/ }).count()).toBe(0);
       await shoot(tab, "add-groups-light-1440");
       const reloaded = next(tab, page);
       await dialog.getByRole("button", { name: t.add }).click();
       await reloaded;
       expect(seen.requests).toEqual([
-        { method: "POST", path: `/api/accounts/groups/${GROUP_ID(7)}/members`, body: { type: "user", id: USER_ID } },
+        { method: "POST", path: `/api/accounts/groups/${GROUP_ID(20)}/members`, body: { type: "user", id: USER_ID } },
       ]);
       expect(errors).toEqual([]);
     } finally {

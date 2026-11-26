@@ -146,6 +146,7 @@ const server = (options: Options = {}) => {
       },
     }),
     spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(2),
+    spyOn(services.audit, "list").mockResolvedValue({ items: [], page: 1, perPage: 5, total: 0, hasNext: false }),
     spyOn(services.accountsAppService.group, "list").mockImplementation(async (input) =>
       page(
         input.scope?.ids
@@ -223,7 +224,7 @@ test("a person's record renders every area on the server, with no loading state 
     ],
     ["?tab=groups", ["Mitglied in", "Verkauf", "Aus Verkauf entfernen", "Aushilfen"], ["Alle Mitarbeitenden", "Linux-Identität"]],
     ["?tab=groups&recursive=true", ["Alle Mitarbeitenden", "Nur direkte"], []],
-    ["?tab=keys", ["Backup-Skript", "Preis-Assistent", "cld_k1ab_", "Nur KI-Modelle"], []],
+    ["?tab=keys", ["Backup-Skript", "Preis-Assistent", "Nur KI-Modelle"], []],
     ["?tab=devices", ["Pixel 8", "iPhone im Laden", "Cloud-App koppeln"], []],
   ] as const) {
     const { status, html } = await render(`${record}${tab}`);
