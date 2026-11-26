@@ -5,8 +5,7 @@ import { createEffect, createSignal, on, untrack } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { RecordQuery } from "../../../contracts";
 import FilterPanel, { blankLeaf, type FilterLeaf, isFilterLeafComplete } from "../toolbar/FilterPanel";
-import { filterableFields } from "../toolbar/filter-ops";
-import SortPanel, { blankSortRow, isSortRowComplete, type SortRow } from "../toolbar/SortPanel";
+import SortPanel, { isSortRowComplete, type SortRow } from "../toolbar/SortPanel";
 import { recordsScreenMessages } from "./screen-messages";
 import type { ToolbarQueryPatch } from "./toolbar-query";
 
@@ -68,14 +67,6 @@ export default function RecordsQueryDialog(props: RecordsQueryDialogProps) {
     setSort(next);
     commit();
   };
-  const addSort = () => {
-    const blank = blankSortRow(props.fields);
-    if (blank) changeSort([...sort(), blank]);
-  };
-  const addFilter = () => {
-    const blank = blankLeaf(props.fields);
-    if (blank) setFilter([...filter(), blank]);
-  };
   return (
     <Dialog
       title={t().queryTitle}
@@ -98,11 +89,7 @@ export default function RecordsQueryDialog(props: RecordsQueryDialogProps) {
         </>
       }
     >
-      <Section
-        icon="filter"
-        title={t().filter}
-        actions={filterableFields(props.fields).length > 0 ? [{ label: t().filter, icon: "plus", onClick: addFilter }] : undefined}
-      >
+      <Section icon="filter" title={t().filter}>
         {/* k2b-ui gap: v2 has no multi-select, date range, date-time or person picker yet (lane Y); the filter rows keep
             their v1 editors here so every operator and value kind stays usable. */}
         <Canvas label={t().filter}>
@@ -115,7 +102,7 @@ export default function RecordsQueryDialog(props: RecordsQueryDialogProps) {
           />
         </Canvas>
       </Section>
-      <Section icon="arrows-sort" title={t().sortAndGroup} actions={[{ label: t().sortAndGroup, icon: "plus", onClick: addSort }]}>
+      <Section icon="arrows-sort" title={t().sortAndGroup}>
         <Canvas label={t().sortAndGroup}>
           <SortPanel fields={props.fields} rows={sort} onRowsChange={changeSort} />
         </Canvas>
