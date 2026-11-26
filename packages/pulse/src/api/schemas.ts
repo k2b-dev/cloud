@@ -1,7 +1,7 @@
 import { AccessMemberSchema, PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
-import { METRIC_TYPES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
+import { FETCH_BUCKET_MINUTES, FETCH_TICKS, METRIC_TYPES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
 
 export { SOURCE_PAGE_MAX };
 
@@ -271,11 +271,26 @@ export const SourceFiguresSchema = z.object({
     .nonnegative()
     .nullable()
     .describe("Values delivered today in the base's zone; null while the store cannot answer"),
+  fetchesToday: z
+    .object({
+      ok: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+      buckets: z
+        .array(z.object({ ok: z.number().int().nonnegative(), failed: z.number().int().nonnegative() }))
+        .max((24 * 60) / FETCH_BUCKET_MINUTES + 6),
+    })
+    .nullable()
+    .describe(`Today's fetches of the metrics sources, per ${FETCH_BUCKET_MINUTES} minutes since midnight in the base's zone`),
 });
 
 export const SourceSchema = z.object({
   seriesCount: z.number().int().nonnegative().optional(),
   todayCount: z.number().int().nonnegative().nullable().optional(),
+  fetches: z
+    .array(z.enum(["ok", "bad", "none"]))
+    .max(FETCH_TICKS)
+    .optional()
+    .describe(`In lists, for metrics sources: the last ${FETCH_TICKS} minutes of fetches, oldest first`),
   id: PulseShortIdSchema,
   baseId: PulseShortIdSchema,
   kind: z.enum(SOURCE_KINDS),

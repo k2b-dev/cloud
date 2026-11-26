@@ -53,6 +53,15 @@ export type PulseSourceRejections = { last24h: number; lastReason: string | null
 export const SOURCE_PAGE_MAX = 500;
 
 /** The figures of all of a base's sources; `failing` names the first three, `today` is null while the store cannot answer. */
+/** Minutes of fetches a source row shows, one slot per minute. */
+export const FETCH_TICKS = 30;
+/** The width of one bucket of today's fetches. */
+export const FETCH_BUCKET_MINUTES = 10;
+/** One minute of a source's fetches: all succeeded, one failed, or none ran. */
+export type FetchSlot = "ok" | "bad" | "none";
+/** Today's fetches of a base: how many succeeded and failed, per FETCH_BUCKET_MINUTES since midnight in its zone. */
+export type FetchesToday = { ok: number; failed: number; buckets: { ok: number; failed: number }[] };
+
 export type SourceFigures = {
   total: number;
   active: number;
@@ -60,11 +69,15 @@ export type SourceFigures = {
   failing: { id: string; name: string }[];
   series: number;
   today: number | null;
+  /** Today's fetches of the base's metrics sources; null when they could not be read. */
+  fetchesToday: FetchesToday | null;
 };
 
 export type PulseSource = {
   seriesCount?: number;
   todayCount?: number | null;
+  /** In lists, for metrics sources: the last FETCH_TICKS minutes of fetches, oldest first. */
+  fetches?: FetchSlot[];
   id: string;
   baseId: string;
   kind: SourceKind;

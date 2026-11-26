@@ -1,6 +1,15 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
-import type { PulseBase, PulseSource, PulseSourceScrape, SourceFigures } from "../../contracts";
+import {
+  FETCH_BUCKET_MINUTES,
+  FETCH_TICKS,
+  type FetchesToday,
+  type FetchSlot,
+  type PulseBase,
+  type PulseSource,
+  type PulseSourceScrape,
+  type SourceFigures,
+} from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
 import type { SavedQuery } from "../../service/saved-queries";
 import type { BaseStoreStatus } from "../../store/admin-contracts";
@@ -183,7 +192,20 @@ const status = (patch: Partial<PulseSource["status"]> = {}): PulseSource["status
   ...patch,
 });
 
-export const fixtureSource = (patch: Partial<PulseSource> & Pick<PulseSource, "id" | "name">): PulseSource => ({
+/**
+ * A metrics source's last minutes of fetches as the list reads them: every minute fine, none while paused, every
+ * minute failed while it fails (the printer has not answered since yesterday evening). Push sources record none.
+ */
+const fetchesOf = (source: PulseSource): PulseSource => {
+  if (source.kind !== "metrics" || "fetches" in source) return source;
+  const slot: FetchSlot = !source.enabled ? "none" : source.lastError ? "bad" : "ok";
+  return { ...source, fetches: Array.from({ length: FETCH_TICKS }, () => slot) };
+};
+
+export const fixtureSource = (patch: Partial<PulseSource> & Pick<PulseSource, "id" | "name">): PulseSource =>
+  fetchesOf(fixtureSource0(patch));
+
+const fixtureSource0 = (patch: Partial<PulseSource> & Pick<PulseSource, "id" | "name">): PulseSource => ({
   baseId: "b7Kq2mX9",
   kind: "metrics",
   enabled: true,
@@ -338,6 +360,31 @@ export const figuresOf = (sources: PulseSource[]): SourceFigures => {
     failing: failing.slice(0, 3).map((source) => ({ id: source.id, name: source.name })),
     series: sources.reduce((sum, source) => sum + (source.seriesCount ?? 0), 0),
     today: sources.reduce((sum, source) => sum + (source.todayCount ?? 0), 0),
+    fetchesToday: fetchesTodayOf(sources),
+  };
+};
+
+/**
+ * Today's fetches as the server sums them: every enabled metrics source fetches once per interval since midnight in
+ * the base's zone (10:42 now, so 64 full buckets and two minutes of the next), failing ones fail every time.
+ */
+const fetchesTodayOf = (sources: PulseSource[]): FetchesToday => {
+  const minutes = 10 * 60 + 42;
+  const buckets = Array.from({ length: Math.ceil(minutes / FETCH_BUCKET_MINUTES) }, (_, index) => {
+    const span = Math.min(FETCH_BUCKET_MINUTES, minutes - index * FETCH_BUCKET_MINUTES);
+    const bucket = { ok: 0, failed: 0 };
+    for (const source of sources) {
+      if (source.kind !== "metrics" || !source.enabled) continue;
+      const fetches = Math.round((span * 60) / (source.scrapeIntervalSeconds ?? 60));
+      if (source.lastError) bucket.failed += fetches;
+      else bucket.ok += fetches;
+    }
+    return bucket;
+  });
+  return {
+    ok: buckets.reduce((sum, bucket) => sum + bucket.ok, 0),
+    failed: buckets.reduce((sum, bucket) => sum + bucket.failed, 0),
+    buckets,
   };
 };
 

@@ -7,13 +7,10 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
-  Cells,
   Chip,
-  type Column,
   Dialog,
   Empty,
   Facts,
-  Icon,
   Inline,
   Input,
   List,
@@ -50,6 +47,7 @@ import { createPulseWorkspaceQueries } from "../workspace/workspace-queries";
 import BaseFrame, { baseHref } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
 import { EditSourceDialog, NewSourceDialog } from "./SourceDialogs";
+import { SourcesHero } from "./SourcesHero";
 
 export type SourcesScreenProps = PulseWorkspaceProps & {
   /** `?q=`: the words the source list is filtered by. */
@@ -64,13 +62,8 @@ const statusChip = (source: PulseSource, t: Words) => {
   const status = sourceStatus(source, t);
   const tone = { ok: "ok", warning: "warn", error: "bad", neutral: undefined } as const;
   const kind = tone[status.tone];
-  // A healthy source says so quietly; only what needs a look gets a chip, so the exceptions stand out.
-  if (kind === "ok")
-    return (
-      <Text tone="ok" weight="medium">
-        <Icon name="circle-check" /> {status.label}
-      </Text>
-    );
+  // A source that delivers says so quietly, without colour (identity B, rule 7); only a problem gets colour.
+  if (kind === "ok") return <Text>{status.label}</Text>;
   return kind ? <Chip status={kind}>{status.label}</Chip> : <Chip>{status.label}</Chip>;
 };
 
@@ -93,13 +86,6 @@ const atSegments = (address: string) => address.split(/(?<=\/)/).map((part) => [
 /** The mark of a source's kind: a scraped metrics endpoint and pushed events look different in every list. */
 export const sourceMark = (source: PulseSource) =>
   source.kind === "metrics" ? { icon: "chart-dots", color: "#7c3aed" } : { icon: "webhook", color: "#0891b2" };
-
-const sourceLine = (source: PulseSource, t: Words) =>
-  source.kind === "metrics"
-    ? [t.metricsEndpoint, t.scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 }), source.endpointUrl ?? t.noEndpointShort].join(
-        " · ",
-      )
-    : `${t.httpIngest} · ${t.tokenIngestEndpoint}`;
 
 /** The path every push source sends its values to. */
 const INGEST_PATH = "/api/pulse/ingest";
@@ -134,9 +120,12 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const toast = useToast();
   const baseId = props.initialBaseId;
   const selectedSourceId = () => props.initialRouteState.sourceId;
-  // beside an open source the list keeps only the columns without `wide`, so it never scrolls sideways
-  const besideDetail = (columns: readonly (Column<PulseSource> & { wide?: true })[]) =>
-    selectedSourceId() ? columns.filter((column) => !column.wide) : columns;
+  // the phone's second line: the kind, and today's values (the state stands as a chip at its end)
+  const phoneLine = (source: PulseSource) =>
+    [
+      source.kind === "metrics" ? t().metricsEndpoint : t().httpIngest,
+      source.todayCount ? words().valuesTodayShort({ count: number(source.todayCount) }) : words().noValuesToday,
+    ].join(" · ");
   const [loading, setLoading] = createSignal(false);
   const [search, setSearch] = createSignal(props.initialSearch ?? "");
   const [adding, setAdding] = createSignal(false);
@@ -334,48 +323,11 @@ export default function SourcesScreen(props: SourcesScreenProps) {
         >
           <Show when={!search().trim() && figures()}>
             {(all) => (
-              // k2b-ui gap: no history per day is stored for sources yet, so the cells carry no Spark (see the PR notes).
-              <Cells>
-                <Cells.Cell
-                  icon="alert-circle"
-                  color={all().failingCount ? "#dc2626" : "#059669"}
-                  label={words().errorsCell}
-                  value={number(all().failingCount)}
-                  meta={
-                    // the newest failure by name, the others as a number, so a long name never fills the cell
-                    all().failingCount
-                      ? all().failingCount > 1
-                        ? `${all().failing[0]?.name} +${all().failingCount - 1}`
-                        : all().failing[0]?.name
-                      : words().sourcesFine
-                  }
-                  href={all().failingCount === 1 ? sourceHref(all().failing[0]!) : undefined}
-                  loading={refreshing()}
-                />
-                <Cells.Cell
-                  icon="plug-connected"
-                  label={words().activeCell}
-                  value={number(all().active)}
-                  meta={all().total > all().active ? `${number(all().total - all().active)} ${words().pausedAfter}` : words().noneOff}
-                  loading={refreshing()}
-                />
-                <Cells.Cell
-                  icon="chart-dots"
-                  color="#7c3aed"
-                  label={words().seriesCell}
-                  value={number(all().series)}
-                  meta={words().fromMetrics}
-                  loading={refreshing()}
-                />
-                <Cells.Cell
-                  icon="webhook"
-                  color="#0891b2"
-                  label={words().todayCell}
-                  value={all().today === null ? "—" : number(all().today!)}
-                  meta={words().sinceMidnight}
-                  loading={refreshing()}
-                />
-              </Cells>
+              <SourcesHero
+                figures={all()}
+                loading={refreshing()}
+                failingHref={all().failingCount === 1 ? sourceHref(all().failing[0]!) : undefined}
+              />
             )}
           </Show>
           <Show when={removedNotice()}>
@@ -442,49 +394,24 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             }
             phone={(source) => ({
               mark: sourceMark(source),
-              lines: [source.name, sourceLine(source, t())],
-              // a healthy source needs no word; a failing or paused one shows its state in colour, symbol and word
+              lines: [source.name, phoneLine(source)],
+              // a source that delivers needs no word; a failing or paused one shows its state in colour and word
               marks: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
             })}
-            // one line per source (filtered-table recipe, dense rule a): what it is, how it reaches Pulse, its state for
-            // every row, when data came last, and today's values aligned at the end; beside an open source only the
-            // name, the state and today's values stay, so the list never scrolls sideways
-            columns={besideDetail([
+            // identity B: one line per source with its name, its state (quiet when it delivers) and today's values; the
+            // fetches of the last 30 minutes join as the one column over time once @k2b/ui has ticks. Kind, endpoint
+            // and last data stand in the detail, and on the phone in the second line.
+            columns={[
               {
                 title: t().source,
-                width: { min: 180, default: 240 },
+                width: { min: 200, default: 320 },
                 mark: sourceMark,
                 cell: (source) => source.name,
               },
               {
-                title: words().kindColumn,
-                wide: true,
-                width: { min: 150, default: 190 },
-                drop: true,
-                cell: (source) =>
-                  source.kind === "metrics"
-                    ? `${t().metricsEndpoint} · ${t().scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 })}`
-                    : t().httpIngest,
-              },
-              {
-                title: words().endpointColumn,
-                wide: true,
-                width: { min: 160, default: 200 },
-                drop: true,
-                // the address Pulse reads, or the one a push source sends to
-                cell: (source) => (source.kind === "metrics" ? (source.endpointUrl ?? t().noEndpointShort) : INGEST_PATH),
-              },
-              {
                 title: words().sourceStatusColumn,
-                width: { min: 120, default: 140 },
+                width: { min: 130, default: 150 },
                 cell: (source) => statusChip(source, t()),
-              },
-              {
-                title: words().lastDataColumn,
-                wide: true,
-                width: { min: 150, default: 190 },
-                drop: true,
-                cell: (source) => (source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet),
               },
               {
                 title: words().dataColumn,
@@ -494,7 +421,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 // one figure for every kind of source, so the column compares like with like
                 cell: (source) => (source.todayCount == null ? "—" : number(source.todayCount)),
               },
-            ])}
+            ]}
           />
           <Show when={queries.baseData.hasMore()}>
             <Bar

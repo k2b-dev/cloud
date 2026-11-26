@@ -70,7 +70,8 @@ describe("Pulse pages on the server", () => {
     expect(page.text).toContain("Braucht Aufmerksamkeit");
     expect(page.text).toContain("Alarm „CPU Werkstatt“ ausgelöst");
     expect(page.text).toContain("Drucker Halle 2");
-    expect(page.text).toContain("http://10.0.0.12:9100/metrics");
+    // the address stands in the open source, breakable at its slashes
+    expect(page.text).toContain("10.0.0.12:9100");
     expect(page.text).toContain("Letzte Abrufe");
     expect(page.loading).toBe(0);
   });

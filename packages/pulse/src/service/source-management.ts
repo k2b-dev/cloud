@@ -3,12 +3,13 @@ import type { RequestActor, ServiceAccount, ServiceAccountCredential, User } fro
 import { err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { SQL } from "bun";
-import type { PulseSource, PulseSourceScrape, SourceFigures, SourceKind } from "../contracts";
+import { FETCH_TICKS, type FetchSlot, type PulseSource, type PulseSourceScrape, type SourceFigures, type SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
 import { recordBaseActivity } from "./base-activity";
 import { checkScrapeTarget } from "./scrape-target";
+import { fetchesToday, fetchTicks } from "./fetch-timeline";
 import { sourceCounts } from "./source-counts";
 import { tryMirrorSource } from "./source-mirror";
 import { EMPTY_SOURCE_REJECTIONS, sourceRejectionSummaries } from "./source-rejections";
@@ -220,11 +221,17 @@ export const listSources = async (
     rows.map((row) => row.id),
     now,
   );
+  // the page's metrics sources' last minutes of fetches, in one read
+  const ticks = await fetchTicks(
+    rows.filter((row) => row.kind === "metrics").map((row) => row.id),
+    now,
+  );
   return ok(
     rows.map((row) => ({
       ...withRejections(mapSource(row, now), rejections),
       seriesCount: counts.get(row.id)?.seriesCount ?? 0,
       todayCount: counts.get(row.id)?.todayCount ?? (counts.has("") ? 0 : null),
+      ...(row.kind === "metrics" ? { fetches: ticks.get(row.id) ?? Array.from({ length: FETCH_TICKS }, (): FetchSlot => "none") } : {}),
     })),
   );
 };
@@ -253,12 +260,17 @@ export const sourceFigures = async (
   const access = await requireBaseAccess(baseId, user, "read");
   if (!access.ok) return fail(access.error);
   const [totals, failing, counts] = await Promise.all([
-    sql<{ total: number; active: number; failing: number; ids: string[] }[]>`
-      SELECT count(*)::int AS total,
-        count(*) FILTER (WHERE enabled)::int AS active,
-        count(*) FILTER (WHERE enabled AND last_error IS NOT NULL)::int AS failing,
-        COALESCE(array_agg(id::text), '{}') AS ids
-      FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`,
+    sql<{ total: number; active: number; failing: number; ids: string[]; metrics: string[]; timezone: string }[]>`
+      SELECT count(s.id)::int AS total,
+        count(s.id) FILTER (WHERE s.enabled)::int AS active,
+        count(s.id) FILTER (WHERE s.enabled AND s.last_error IS NOT NULL)::int AS failing,
+        COALESCE(array_agg(s.id::text) FILTER (WHERE s.id IS NOT NULL), '{}') AS ids,
+        COALESCE(array_agg(s.id::text) FILTER (WHERE s.kind = 'metrics'), '{}') AS metrics,
+        b.timezone
+      FROM pulse.bases b
+      LEFT JOIN pulse.sources s ON s.base_id = b.id AND NOT s.deleted
+      WHERE b.id = ${baseId}::uuid
+      GROUP BY b.timezone`,
     sql<{ id: string; name: string }[]>`
       SELECT short_id AS id, name FROM pulse.sources
       WHERE NOT deleted AND enabled AND last_error IS NOT NULL AND base_id = ${baseId}::uuid
@@ -268,6 +280,8 @@ export const sourceFigures = async (
   ]);
   const ids = totals[0]?.ids ?? [];
   const known = counts.has("");
+  // a day that cannot be read leaves the figures standing without it
+  const fetches = await fetchesToday(baseId, totals[0]?.metrics ?? [], totals[0]?.timezone ?? "UTC", now).catch(() => null);
   return ok({
     total: totals[0]?.total ?? 0,
     active: totals[0]?.active ?? 0,
@@ -275,6 +289,7 @@ export const sourceFigures = async (
     failing,
     series: ids.reduce((sum, id) => sum + (counts.get(id)?.seriesCount ?? 0), 0),
     today: known ? ids.reduce((sum, id) => sum + (counts.get(id)?.todayCount ?? 0), 0) : null,
+    fetchesToday: fetches,
   });
 };
 
