@@ -69,6 +69,7 @@ const splitBuild = async (): Promise<Split> => {
 const withSplitPage = async (
   live: (fulfil: () => Promise<void>, abort: () => Promise<void>) => Promise<void>,
   run: (page: Page) => Promise<void>,
+  body = markup,
 ) => {
   const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
   page.setDefaultTimeout(4000);
@@ -80,7 +81,7 @@ const withSplitPage = async (
       if (name === "")
         return route.fulfill({
           contentType: "text/html",
-          body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style></head><body>${markup}<script type="module" src="/${split.entry}"></script></body></html>`,
+          body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style></head><body>${body}<script type="module" src="/${split.entry}"></script></body></html>`,
         });
       if (name === split.liveChunk) return live(file, () => route.abort());
       return file();
@@ -427,4 +428,48 @@ test("a collapse button that comes later works: the island's Workspace attaches 
   } finally {
     await page.close();
   }
+});
+
+test("two workspaces that fail to load share one notice, which leaves with the workspaces that wait", async () => {
+  await withSplitPage(
+    (_fulfil, abort) => abort(),
+    async (page) => {
+      // at 900 px both sidebars are drawers: a press on each button waits for the drawer that does not load
+      const toggles = page.locator(".k2-ws-toggle");
+      expect(await toggles.count()).toBe(2);
+      await toggles.nth(0).click();
+      await page.locator("[data-k2-ws-failed]").waitFor({ state: "attached" });
+      await toggles.nth(1).click();
+      await page.waitForTimeout(300); // settled: the second failure must not add a notice, which shows only by its count
+      expect(await page.locator("[data-k2-ws-failed]").count()).toBe(1);
+      expect(await page.getByRole("alert").count()).toBe(1);
+      // the workspaces go (a page swap): what waits for them is dropped, and the notice with it
+      await page.evaluate(() => window.__detach());
+      await page.locator("[data-k2-ws-failed]").waitFor({ state: "detached" });
+    },
+    // two workspaces one under the other: each demo frame stands in a box of its own instead of filling the window
+    [markup, markup].map((frame) => frame.replace("position:fixed;inset:0", "position:relative;height:400px")).join(""),
+  );
+});
+
+// Known gap of @ui-sdk/core 0.1.0-beta.14 (issue drafted in #4230): an open modal's focus trap keeps Tab inside the
+// dialog, also from a lasting layer (`bindPersistentLayer`) such as the toaster or this notice; the pointer reaches it.
+// `failing` until core lets Tab reach lasting layers: this test turns red then, and becomes a plain test.
+test.failing("Tab reaches the notice's button over an open modal dialog", async () => {
+  await withSplitPage(
+    (_fulfil, abort) => abort(),
+    async (page) => {
+      await page.evaluate(() => window.__openDialog());
+      await page.getByRole("dialog", { name: "Auftrag" }).waitFor();
+      await page.evaluate(() => window.__toast("Gespeichert"));
+      await page.locator("[data-k2-ws-failed] [data-lasting]").waitFor({ state: "attached" });
+      const onRetry = () => page.evaluate(() => document.activeElement?.closest("[data-k2-ws-failed]") !== null);
+      let reached = false;
+      for (let step = 0; step < 8 && !reached; step++) {
+        await page.keyboard.press("Tab");
+        reached = await onRetry();
+      }
+      expect(reached).toBe(true);
+    },
+  );
 });
