@@ -336,6 +336,9 @@ export default function QueryScreen(props: QueryScreenProps) {
                 {t().queryWithAi}
               </Button>
               <Menu items={more()} />
+              <Button variant="primary" icon="bookmark-plus" disabled={!query().trim()} onClick={() => setSaving(true)}>
+                {t().saveAsView}
+              </Button>
             </>
           }
         />

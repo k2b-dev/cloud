@@ -206,6 +206,9 @@ type WorkspaceDocumentTemplateRoute = {
   canManageTemplate: boolean;
   initialRecordId: string | null;
   initialDocumentViewMode: GridsDocumentViewMode;
+  /** The search and the open year and month the address names (`q`, `path=2026/11`). */
+  initialSearch: string;
+  initialPath: string[];
   initialBrowserPage: DocumentBrowseResponse;
 };
 

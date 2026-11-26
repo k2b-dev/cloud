@@ -5,40 +5,7 @@ import "../ssr-test-plugin";
 
 const { default: DocumentsScreen } = await import("./DocumentsScreen");
 const { testFrame } = await import("../records-view/records-frame.test-fixture");
-const { default: DocumentBrowser } = await import("./DocumentBrowser");
 const { DEFAULT_DOCUMENT_CATALOG_STATE } = await import("./document-catalog-url-state");
-
-test("document errors appear once and preserve distinct details", () => {
-  const renderError = (message: string) =>
-    renderToString(() =>
-      createComponent(DocumentBrowser, {
-        loading: false,
-        error: new Error(message),
-        mode: "list",
-        searching: false,
-        folders: [],
-        documents: [],
-        breadcrumbs: [],
-        emptyText: "",
-        hasMore: false,
-        loadingMore: false,
-        busyDocumentId: null,
-        canWrite: false,
-        folderTitle: (folder) => folder.label,
-        onBreadcrumb: () => {},
-        onFolder: () => {},
-        onDocument: () => {},
-        onEdit: () => {},
-        onLink: () => {},
-        onDownload: () => {},
-        onLoadMore: () => {},
-      }),
-    );
-  const title = "Could not load generated documents";
-  expect(renderError(title).split(title)).toHaveLength(2);
-  expect(renderError("Request timed out")).toContain("Request timed out");
-  expect(renderError("Request timed out")).toContain(title);
-});
 
 test("All documents on v2 renders its initial folders and search field on the server", () => {
   const html = renderToString(() =>

@@ -5,6 +5,7 @@ import { currentActorUser } from "../../api/permissions";
 import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";
 import DocumentsScreen from "../_components/documents/DocumentsScreen.island";
+import DocumentTemplateScreen from "../_components/documents/DocumentTemplateScreen.island";
 import BaseHome from "../_components/frame/BaseHome.island";
 import { homeTab, resourcesQuery } from "../_components/frame/resources-query";
 import QueryScreen from "../_components/query/QueryScreen.island";
@@ -102,6 +103,14 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
         <RememberGridsPath />
         <DocumentsScreen state={state} />
+      </Layout>
+    );
+
+  if (state.route.kind === "documentTemplate")
+    return () => (
+      <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
+        <RememberGridsPath />
+        <DocumentTemplateScreen state={state} />
       </Layout>
     );
 

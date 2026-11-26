@@ -2,13 +2,11 @@ import { AppWorkspace } from "@k2b/ui";
 import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { GridsWorkflowRun } from "../../../workflows/contracts";
 import CustomAppBuilder from "../custom-apps/CustomAppBuilder";
-import DocumentTemplateWorkspace from "../documents/DocumentTemplateWorkspace";
 import { WorkflowRunDetailPanel } from "../workflows/WorkflowRunDetailPanel";
 import WorkflowsPage from "../workflows/WorkflowsPage";
 import { workspaceMainClass } from "./workspace-layout";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
-type PublicWorkspaceDocumentTemplateRoute = Extract<PublicOkWorkspaceState["route"], { kind: "documentTemplate" }>;
 type PublicWorkspaceWorkflowsRoute = Extract<PublicOkWorkspaceState["route"], { kind: "workflows" }>;
 
 export default function GridsRoute(props: { state: PublicOkWorkspaceState; userId?: string; now?: string }) {
@@ -55,7 +53,14 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
   });
 
   // Records render on v2 in records-view/RecordsScreen; this island serves the remaining kinds.
-  if (route.kind === "records" || route.kind === "documents" || route.kind === "query" || route.kind === "queryResultView") return null;
+  if (
+    route.kind === "records" ||
+    route.kind === "documents" ||
+    route.kind === "query" ||
+    route.kind === "queryResultView" ||
+    route.kind === "documentTemplate"
+  )
+    return null;
 
   return (
     <>
@@ -79,26 +84,6 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
                   onWorkflowChanged={reloadRoute}
                   onSelectRun={updateWorkflowRun}
                   liveCursor={state.liveCursor}
-                />
-              );
-            })()}
-          </Match>
-          <Match when={route.kind === "documentTemplate"}>
-            {(() => {
-              const document = route as PublicWorkspaceDocumentTemplateRoute;
-              return (
-                <DocumentTemplateWorkspace
-                  baseId={state.base.id}
-                  table={document.table}
-                  template={document.template}
-                  editableTemplate={document.editableTemplate}
-                  canWriteTemplate={document.canWriteTemplate}
-                  canManageTemplate={document.canManageTemplate}
-                  editMode={state.adminModeRequested}
-                  initialRecordId={document.initialRecordId}
-                  initialDocumentViewMode={document.initialDocumentViewMode}
-                  initialBrowserPage={document.initialBrowserPage}
-                  dateConfig={state.dateConfig}
                 />
               );
             })()}

@@ -5,6 +5,8 @@
  */
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
 import type { PublicBase, PublicTable, PublicView } from "../../../api/public-dto";
+import type DocumentTemplateScreen from "../documents/DocumentTemplateScreen";
+import { parseTemplateDocumentsState } from "../documents/DocumentTemplateScreen";
 import { documentCatalogIsFlat, parseDocumentCatalogUrlState } from "../documents/document-catalog-url-state";
 import type { BasesOverviewProps } from "../overview/BasesOverview";
 import type QueryScreen from "../query/QueryScreen";
@@ -513,5 +515,55 @@ export const queryViewFixture = (variant: FixtureVariant): Parameters<typeof Que
       truncated: false,
       page: { size: 100, start: 0, returned: months, nextCursor: variant === "huge" ? "cursor-100" : null },
     },
+  };
+};
+
+/** The documents of the template "Rechnung": newest first, or by year and month, as the address asks. */
+export const templateFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof DocumentTemplateScreen>[0] => {
+  const state = parseTemplateDocumentsState(params, "list");
+  const count = variant === "huge" ? 1000 : variant === "worst" ? 12 : 18;
+  const all = Array.from({ length: count }, (_, index) => ({
+    ...document(index, variant),
+    templateId: "TPL001",
+    workflowId: null,
+    workflowRunId: null,
+  }));
+  const matching = state.q ? all.filter((each) => each.filename.toLowerCase().includes(state.q.toLowerCase())) : all;
+  const [year, month] = state.path;
+  const folders =
+    state.mode !== "folders" || month
+      ? []
+      : year
+        ? ["11", "10", "09"].map((each, index) => ({
+            kind: "month" as const,
+            key: each,
+            label: each,
+            path: [year, each],
+            count: [9, 6, 3][index]!,
+          }))
+        : [{ kind: "year" as const, key: "2026", label: "2026", path: ["2026"], count }];
+  const items = folders.length ? [] : matching;
+  const frame = baseHomeFixture(variant, { edit: false, groups: false });
+  return {
+    frame: { ...frame, route: { kind: "documentTemplate", activeKey: "documentTemplate:TPL001" } },
+    revision: FIXTURE_REVISION,
+    baseId: "Bas001",
+    table: ORDERS,
+    template: {
+      id: "TPL001",
+      tableId: "table",
+      name: variant === "worst" ? "Rechnung-mit-Leistungsnachweis-und-Zahlungsplan-für-Großkunden" : "Rechnung",
+      description: null,
+      enabled: true,
+      position: 0,
+      createdAt: "2026-09-09T00:00:00Z",
+      updatedAt: "2026-09-09T00:00:00Z",
+    } as unknown as Parameters<typeof DocumentTemplateScreen>[0]["template"],
+    editableTemplate: null,
+    canWriteTemplate: true,
+    initialRecordId: null,
+    initialState: state,
+    initialBrowserPage: { items, path: state.path, cursor: null, hasMore: false, folders },
+    dateConfig: DATE_CONFIG,
   };
 };

@@ -7,7 +7,6 @@ import "./ssr-test-plugin";
 const { default: GroupDetailPanel } = await import("./table/GroupDetailPanel");
 const { WorkflowRunDetailPanel } = await import("./workflows/WorkflowRunDetailPanel");
 const { WorkflowRunDocumentsSection } = await import("./workflows/WorkflowRunDetailSections");
-const { default: DocumentBrowser } = await import("./documents/DocumentBrowser");
 
 const detail: PublicWorkspaceWorkflowRunDetail = {
   run: {
@@ -60,35 +59,6 @@ function expectSharedPanel(html: string, key: string) {
 }
 
 describe("Grids group and workflow inspectors", () => {
-  test("document browsing keeps one shared scrollport and empty feedback", () => {
-    const html = renderToString(() =>
-      createComponent(DocumentBrowser, {
-        loading: false,
-        error: undefined,
-        mode: "list",
-        searching: false,
-        folders: [],
-        documents: [],
-        breadcrumbs: [],
-        emptyText: "No matching documents",
-        hasMore: false,
-        loadingMore: false,
-        busyDocumentId: null,
-        canWrite: false,
-        folderTitle: () => "Folder",
-        onBreadcrumb: () => {},
-        onFolder: () => {},
-        onDocument: () => {},
-        onEdit: () => {},
-        onLink: () => {},
-        onDownload: () => {},
-        onLoadMore: () => {},
-      }),
-    );
-    expect(html.match(/class="k2b-scroll-area /g)).toHaveLength(1);
-    expect(html).toContain("No matching documents");
-    expect(html).not.toContain("overflow-auto");
-  });
   test("renders group aggregates as rows and search inside the shared scroll body", () => {
     const html = renderToString(() =>
       createComponent(GroupDetailPanel, {

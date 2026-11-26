@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
-import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant, queryResultFixture } from "./frame.browser-fixture";
+import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant, queryResultFixture, templateFixture } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
 // rules of v2 hold at 1440, 1024 and 390 px, the worst-case data breaks nothing, and 1,000 bases or tables stay
@@ -139,6 +139,9 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
       seen.queries.push(cursor ?? null);
       return route.fulfill({ json: queryResultFixture(variant, cursor ? Number(cursor.replace("cursor-", "")) : 0) });
     }
+    // a template's documents answer from the same fixture as the page, for the address the screen asks for
+    if (url.pathname === "/api/grids/documents/by-template/TPL001/browse")
+      return route.fulfill({ json: templateFixture(variant, url.searchParams).initialBrowserPage });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
@@ -556,6 +559,73 @@ describe("the query of a base on v2", () => {
       const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
       console.info(`grids query huge: ${await elements(tab)} elements, ${sources} sources, ${rows} rows in the page, ready ${readyMs} ms`);
       expect(sources).toBeLessThanOrEqual(60);
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});
+
+describe("the documents of a template on v2", () => {
+  const template = "/app/grids/Bas001/document/table/TPL001";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const each of [wide, narrow, phone])
+        for (const [name, address] of [
+          ["template", template],
+          ["template-folders", `${template}?mode=folders&path=2026`],
+        ] as const) {
+          const { context, tab, errors } = await open(each, address, variant);
+          try {
+            await shoot(tab, `grids-${name}-${variant}-light-${each.name}`);
+            await expectClean(tab);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 120_000);
+
+  test("a year and a month open in the address; Back returns to the years", async () => {
+    const { context, tab, errors } = await open(wide, `${template}?mode=folders`);
+    try {
+      await tab.locator("[data-k2-part=List] [data-k2-part=Row]", { hasText: "2026" }).locator("a").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("path") === "2026");
+      await tab.locator("[data-k2-part=List] [data-k2-part=Row]", { hasText: "November" }).locator("a").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("path") === "2026/11");
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Path]").textContent()).toContain("November");
+      // the month's documents load after the step
+      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-spacer])").length > 0);
+      await tab.goBack();
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("path"));
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Tabs]").count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a search stands in the address and lists what matches", async () => {
+    const { context, tab, errors } = await open(wide, template);
+    try {
+      const search = tab.getByRole("searchbox", { name: "Dokumente durchsuchen" });
+      await search.fill("0003");
+      await search.press("Enter");
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "0003");
+      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-spacer])").length === 1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 documents keep only the rows in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, template, "huge");
+    try {
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(`grids template huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms`);
       expect(rows).toBeLessThanOrEqual(60);
       expect(errors).toEqual([]);
     } finally {
