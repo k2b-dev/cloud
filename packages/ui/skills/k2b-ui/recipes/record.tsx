@@ -136,7 +136,7 @@ const ottilie = (): Customer => ({
     { mark: category.silver, name: "Silberbesteck, 84 Teile", meta: "EL-2611-00009 · abholbereit", time: "verkauft 2.100 €" },
   ],
   itemCount: "8",
-  contact: { phone: "+49 30 5550 142", email: "o.brandner@example.de", address: "Lindenallee 14, 77933 Lahr", language: "Deutsch" },
+  contact: { phone: "+49 30 5550 142", email: "o.brandner@post.example", address: "Lindenallee 14, 77933 Lahr", language: "Deutsch" },
   team: [
     { person: people.ada, role: "Beratung und Verträge" },
     { person: people.lena, role: "Fotos und Katalog" },

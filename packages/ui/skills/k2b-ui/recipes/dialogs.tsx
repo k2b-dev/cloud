@@ -19,7 +19,6 @@ import {
   Row,
   Section,
   StatusRow,
-  Table,
   Text,
   useToast,
   Workspace,
@@ -39,7 +38,6 @@ const space = {
   fair: { icon: "confetti", color: "#db2777" },
   site: { icon: "building", color: "#0e7490" },
 };
-const invitationMark = { icon: "mail-forward", color: "#4f46e5" };
 
 const members: Member[] = [
   { id: "m1", name: "Jana Petersen", initials: "JP", color: "#2563eb", role: "Verwalten" },
@@ -49,6 +47,11 @@ const members: Member[] = [
   { id: "m5", name: "Felix Thal", initials: "FT", color: "#0e7490", role: "Bearbeiten" },
   { id: "m6", name: "Sami Yilmaz", initials: "SY", color: "#a16207", role: "Bearbeiten" },
   { id: "m7", name: "Lena Hartwig", initials: "LH", color: "#db2777", role: "Lesen" },
+  { id: "m8", name: "Ada Renz", initials: "AR", color: "#4f46e5", role: "Verwalten" },
+  { id: "m9", name: "Tom Oswald", initials: "TO", color: "#475569", role: "Bearbeiten" },
+  { id: "m10", name: "Jana Berger", initials: "JB", color: "#0891b2", role: "Lesen" },
+  { id: "m11", name: "Nils Aaltonen", initials: "NA", color: "#65a30d", role: "Bearbeiten" },
+  { id: "m12", name: "Petra Lindqvist", initials: "PL", color: "#be185d", role: "Lesen" },
 ];
 // what each member did here last, so the list says who is active
 const last: Record<string, string> = {
@@ -59,10 +62,17 @@ const last: Record<string, string> = {
   m5: "heute aktiv · 11 Aufgaben",
   m6: "Mo. · 4 Aufgaben",
   m7: "vor 2 Tagen",
+  m8: "heute aktiv · 3 Aufgaben",
+  m9: "letzte Woche",
+  m10: "gestern · 2 Aufgaben",
+  m11: "heute aktiv · 7 Aufgaben",
+  m12: "vor 5 Wochen · Gast",
 };
 const invitations: Invitation[] = [
   { email: "einkauf@stadtwerke-auental", sent: "Adresse ohne Domain · eingeladen am 18. Nov.", reachable: false },
-  { email: "lea.brandt@holzwerk-brandt.de", sent: "zugestellt · eingeladen am 21. Nov.", reachable: true },
+  { email: "lea.brandt@holzwerk.example", sent: "zugestellt · eingeladen am 21. Nov.", reachable: true },
+  { email: "k.winter@architektur.example", sent: "zugestellt · eingeladen am 23. Nov.", reachable: true },
+  { email: "montage@aaltonen.example", sent: "zugestellt · eingeladen gestern", reachable: true },
 ];
 const roles = ["Lesen", "Bearbeiten", "Verwalten"];
 
@@ -154,41 +164,26 @@ export default function SpaceMembers() {
       >
         <Section icon="users" title="Mitglieder" count={list().length}>
           {/* one line per member: the face and name, the role as a chip, when they were here, their deeds */}
-          <Table
-            label="Mitglieder"
-            rows={list()}
-            rowKey={(member) => member.id}
-            phone={(member) => ({
-              avatar: { name: member.name, initials: member.initials, color: member.color },
-              lines: [member.name, last[member.id] ?? ""],
-              marks: <Chip>{member.role}</Chip>,
-              // the deeds stay on the phone, at the end of each row
-              end: <Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />,
-            })}
-            columns={[
-              {
-                title: "Name",
-                width: { min: 160, default: 320 },
-                avatar: (member) => ({ name: member.name, initials: member.initials, color: member.color }),
-                cell: (member) => member.name,
-              },
-              { title: "Rolle", width: { min: 110, default: 170 }, cell: (member) => <Chip>{member.role}</Chip> },
-              { title: "Zuletzt", width: { min: 140, default: 290 }, drop: true, cell: (member) => last[member.id] ?? "" },
-              {
-                title: "Aktionen",
-                width: { min: 56, default: 80 },
-                align: "end",
-                cell: (member) => <Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />,
-              },
-            ]}
-          />
+          {/* one row per member: the face, the role and when they were here in the second line, their deeds at the end */}
+          <List label="Mitglieder">
+            <For each={list()}>
+              {(member) => (
+                <Row
+                  avatar={{ name: member.name, initials: member.initials, color: member.color }}
+                  lines={[member.name, `${member.role} · ${last[member.id] ?? ""}`]}
+                  end={<Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />}
+                />
+              )}
+            </For>
+          </List>
         </Section>
         <Section icon="mail" title="Offene Einladungen" count={invitations.length}>
           <List label="Offene Einladungen">
             <For each={invitations}>
               {(invitation) => (
                 <Row
-                  mark={invitationMark}
+                  // an invited person has no picture yet: the initials of the address stand in
+                  avatar={{ name: invitation.email }}
                   lines={[invitation.email, invitation.sent]}
                   action={{ label: "Erneut senden", icon: "send", onClick: () => resend(invitation) }}
                 />
@@ -212,7 +207,7 @@ export default function SpaceMembers() {
       >
         <Text>Die Person bekommt eine E-Mail mit einem Link, der sieben Tage gilt.</Text>
         <Field name="email" label="E-Mail-Adresse">
-          <Input type="email" value={email()} onInput={setEmail} placeholder="name@beispiel.de" />
+          <Input type="email" value={email()} onInput={setEmail} placeholder="name@beispiel.example" />
         </Field>
         <Field name="role" label="Rolle" hint="Verwalten darf auch Mitglieder einladen und entfernen.">
           <Choice name="role" options={roles} value={role()} onChange={setRole} />

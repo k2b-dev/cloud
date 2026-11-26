@@ -43,6 +43,12 @@ const appointments: Appointment[] = [
   { id: "t6", customer: "Stadtwerke Auental", work: "Pumpe P3 einbauen", kind: "fit", fitter: "Sami", day: "Do. 3. Dez." },
   { id: "t7", customer: "Weingut Hartwig", work: "Kelterpresse prüfen", kind: "check", fitter: "Jonas", day: "Fr. 4. Dez." },
   { id: "t8", customer: "Gemeinde Ohlsbach", work: "Aufsitzmäher abholen", kind: "pickup", fitter: "Wer frei ist", day: "Fr. 4. Dez." },
+  { id: "t9", customer: "Bäckerei Oswald", work: "Theke aufmessen", kind: "measure", fitter: "Mira", day: "Mo. 7. Dez." },
+  { id: "t10", customer: "Kanzlei Berger & Kern", work: "Bücherwand montieren", kind: "fit", fitter: "Sami", day: "Di. 8. Dez." },
+  { id: "t11", customer: "Autohaus Renz", work: "Hebebühne prüfen", kind: "check", fitter: "Jonas", day: "Di. 8. Dez." },
+  { id: "t12", customer: "Familie Hartwig", work: "Einbauschrank liefern", kind: "pickup", fitter: "Sami", day: "Mi. 9. Dez." },
+  { id: "t13", customer: "Physio Kern", work: "Garderobe montieren", kind: "fit", fitter: "Mira", day: "Do. 10. Dez." },
+  { id: "t14", customer: "Hotel Seeblick", work: "Brandschutztür prüfen", kind: "check", fitter: "Jonas", day: "Fr. 11. Dez." },
 ];
 const customers = ["Familie Oswald", "Praxis Dr. Lindner", "Stadtwerke Auental", "Tischlerei Aaltonen"];
 
@@ -158,6 +164,7 @@ export default function NewAppointment(props: Props) {
             <Field name="length" label="Dauer">
               <Select options={["1 Stunde", "2 Stunden", "Halber Tag", "Ganzer Tag"]} value={values.length} />
             </Field>
+            {/* k2b-ui gap: a choice of people shows each one's face (Choice options with an avatar); until then words */}
             <Field name="fitter" label="Monteur">
               <Choice name="fitter" options={["Jonas Wehrle", "Mira Solberg", "Sami Yilmaz", "Wer frei ist"]} value={values.fitter} />
             </Field>

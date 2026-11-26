@@ -309,7 +309,7 @@ export default function WorkshopOrders(props: Props) {
                       </Inline>
                     ),
                   },
-                  { label: "Gerät", value: "Honda HRX 476, Baujahr 2019" },
+                  { label: "Gerät", value: "Benzinmäher 47 cm, Baujahr 2019" },
                 ]}
               />
             </Section>

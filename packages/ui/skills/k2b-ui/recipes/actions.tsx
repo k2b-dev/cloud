@@ -336,7 +336,7 @@ export default function OfferActions(props: Props) {
               </Section>
               <Section icon="list" title="Positionen" count={3}>
                 <Row mark={{ icon: "wood", color: "#a16207" }} lines={["Fronten Eiche massiv, geölt", "14 Stück · 3.920,00 €"]} />
-                <Row mark={{ icon: "nut", color: "#475569" }} lines={["Beschläge Blum, Softclose", "28 Stück · 1.120,00 €"]} />
+                <Row mark={{ icon: "nut", color: "#475569" }} lines={["Topfscharniere, Softclose", "28 Stück · 1.120,00 €"]} />
                 <Row mark={{ icon: "truck", color: "#0e7490" }} lines={["Montage vor Ort", "2 Tage, 2 Personen · 2.200,00 €"]} />
               </Section>
             </Pane>

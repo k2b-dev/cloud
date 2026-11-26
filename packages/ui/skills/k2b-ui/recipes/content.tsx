@@ -37,7 +37,7 @@ und ein Foto.
 - Schmuck geht am selben Tag in den Tresor.
 - Was wir nicht verkaufen können, holt die Einlieferin binnen 14 Tagen ab.
 
-Fragen zur Annahme beantwortet [die Annahme](mailto:annahme@example.de).`;
+Fragen zur Annahme beantwortet [die Annahme](mailto:annahme@werkstatt.example).`;
 
 type Props = { text?: string; loading?: boolean; failed?: boolean };
 

@@ -133,8 +133,8 @@ export default function MailScreen() {
             {
               label: "Geteilt",
               items: [
-                { label: "info@werkstatt.de", icon: "building-store", color: "#0f766e", count: 4, href: "#info" },
-                { label: "rechnung@werkstatt.de", icon: "receipt", color: "#8e1b6f", href: "#rechnung" },
+                { label: "info@werkstatt.example", icon: "building-store", color: "#0f766e", count: 4, href: "#info" },
+                { label: "rechnung@werkstatt.example", icon: "receipt", color: "#8e1b6f", href: "#rechnung" },
               ],
             },
           ]}

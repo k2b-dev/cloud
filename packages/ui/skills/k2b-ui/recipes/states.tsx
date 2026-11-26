@@ -14,6 +14,7 @@ const goods = {
   hardware: { icon: "nut", color: "#475569" },
   pallet: { icon: "forklift", color: "#c2410c" },
   tiles: { icon: "layout-grid", color: "#0e7490" },
+  glass: { icon: "window", color: "#0284c7" },
 };
 
 type Delivery = {
@@ -127,6 +128,82 @@ const deliveries: Delivery[] = [
     time: "14:20",
     state: "ok",
   },
+  {
+    id: "WE-2611-090",
+    supplier: "Glaserei Lindenau",
+    goods: "glass",
+    gate: "Tor 2",
+    amount: "8 Scheiben",
+    value: "1.120,00 €",
+    checker: people.mira,
+    time: "14:35",
+    state: "ok",
+  },
+  {
+    id: "WE-2611-091",
+    supplier: "Fliesen Ortenau",
+    goods: "tiles",
+    gate: "Tor 2",
+    amount: "6 Kartons",
+    value: "512,40 €",
+    checker: people.jonas,
+    time: "14:50",
+    state: "ok",
+  },
+  {
+    id: "WE-2611-092",
+    supplier: "Schrauben Wiedemann",
+    goods: "hardware",
+    gate: "Tor 1",
+    amount: "12 Pakete",
+    value: "236,00 €",
+    checker: people.sami,
+    time: "15:05",
+    state: "ok",
+  },
+  {
+    id: "WE-2611-093",
+    supplier: "Holzwerk Brandt",
+    goods: "wood",
+    gate: "Tor 2",
+    amount: "6 Platten Eiche",
+    value: "1.680,00 €",
+    time: "15:20",
+    state: "warn",
+  },
+  {
+    id: "WE-2611-094",
+    supplier: "Glaserei Lindenau",
+    goods: "glass",
+    gate: "Tor 2",
+    amount: "2 Scheiben",
+    value: "310,00 €",
+    checker: people.mira,
+    time: "15:40",
+    state: "ok",
+  },
+  {
+    id: "WE-2611-095",
+    supplier: "Lackfabrik Nordhaus",
+    goods: "paint",
+    gate: "Tor 1",
+    amount: "4 Gebinde",
+    value: "866,00 €",
+    checker: people.jonas,
+    time: "16:05",
+    state: "ok",
+  },
+  {
+    id: "WE-2611-096",
+    supplier: "Spedition Kraus",
+    goods: "pallet",
+    gate: "Tor 2",
+    amount: "2 Paletten",
+    value: "3.480,00 €",
+    checker: people.sami,
+    time: "16:30",
+    state: "ok",
+  },
 ];
 const stateLabel = { ok: "Geprüft", warn: "Wartet", bad: "Beschädigt" } as const;
 
@@ -230,7 +307,7 @@ export default function IncomingGoods(props: Props) {
             onRetry={() => location.reload()}
           />
         ) : props.loading ? (
-          <Loading rows={8} lines={2} />
+          <Loading rows={14} />
         ) : rows().length === 0 ? (
           props.filtered ? (
             <Empty icon="filter-off" text="Keine Einlieferung an Tor 2." action={{ label: "Filter zurücksetzen", href: "#heute" }} />
@@ -268,7 +345,8 @@ export default function IncomingGoods(props: Props) {
               {
                 title: "Zustand",
                 width: { min: 110, default: 170 },
-                cell: (row) => <Chip status={row.state}>{stateLabel[row.state]}</Chip>,
+                // a chip only where something is off; "geprüft" is the plain rule
+                cell: (row) => (row.state === "ok" ? stateLabel.ok : <Chip status={row.state}>{stateLabel[row.state]}</Chip>),
               },
               { title: "Zeit", width: { min: 52, default: 80 }, align: "end", cell: (row) => row.time },
             ]}

@@ -136,9 +136,10 @@ reason in its words. Its footer `Bar` holds the page's one primary,
 ![pairing at 390 px](../images/pairing-390.png)
 
 The paired devices as a `Table`: the device with the mark of its kind,
-its person with an avatar, when it was last seen, a state chip and an
-icon button that removes the device after
-`Dialog.confirm({ …, danger: true })`. Beside them a `Pane side` with a
+its person with an avatar, when it was last seen, a chip only where a
+device is off, and an icon button that removes the device after
+`Dialog.confirm({ …, danger: true })`. "Gerät koppeln" opens a
+`Pane detail` beside them, only while the pairing runs, with a
 `Section` with `id` (a link target): the steps as `Text`, a `QrCode` (the
 app makes its SVG with `@k2b/stdlib/qr`) and the code to compare as
 `CodeDisplay`; the wait for the other device is a `Notice tone="warn"`,
@@ -147,7 +148,8 @@ as `Digest activity`.
 
 - Steps of a pairing in a dialog: `Dialog stepwise`, so a shorter step
   does not make it jump.
-- States: `paired` (the new device stands first in the list).
+- States: `closed` (no pairing runs: the table is the page), `paired`
+  (the new device stands first in the list).
 
 ## settings.tsx: settings with more than text
 
@@ -200,7 +202,7 @@ avatars, and `Digest activity`.
 ![record groups at 1440 px](../images/record-groups-1440.png)
 ![record groups at 390 px](../images/record-groups-390.png)
 
-A `Band tone="note"` with the one statement of the tab; one `Section` for
+A `Notice tone="note"` with its icon and the one statement of the tab; one `Section` for
 the area with a `summary`; one `Group` per delivery with
 `meta`, a `state` chip and actions. Inside a group: a strong sentence, its
 way as `Steps`, its articles as rows with their marks and a state chip, a
@@ -364,9 +366,9 @@ star and a "…" `Menu` with the same entries in its `end`. The offer the addres
 ![dialogs at 390 px](../images/dialogs-390.png)
 
 Members of a space (its `Mark` in the head, the spaces with theirs in the
-`Nav`) as a `Table`: face and name (`Column avatar`), the role as a chip,
-the last activity and a "…" menu per member; open invitations as rows
-with a mark. "Einladen" opens a `Dialog` with
+`Nav`) as rows with avatars, the role and the last activity in the
+second line and a "…" menu at the end (on the phone too); open
+invitations as rows with the initials of the address. "Einladen" opens a `Dialog` with
 `Field`s and its own primary in the foot (a sheet on the phone);
 `Workspace primary` opens the same dialog. Removing a member asks with
 `Dialog.confirm`, then a toast offers "Rückgängig"; "Erneut senden"
@@ -383,7 +385,8 @@ answers with a toast with `status` `ok` or `bad`.
 ![states at 390 px](../images/states-390.png)
 
 A table of deliveries (supplier with the mark of its goods, gate,
-amount, value, who checked it with an avatar, a state chip, the time),
+amount, value, who checked it with an avatar, its state as a word and a
+chip only where something is off, the time),
 with a `StatusRow` and its states in the place of the rows:
 `Empty` for nothing yet and another `Empty` for nothing behind a
 filter, `Loading` with the rows and lines that usually come, `Failed`

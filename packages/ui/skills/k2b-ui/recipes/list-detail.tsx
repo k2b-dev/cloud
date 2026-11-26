@@ -52,11 +52,11 @@ const sources: Source[] = [
   { id: "s1", name: "Lackfabrik Nordhaus", kind: "webhook", today: "1.240 Ereignisse heute", seen: "09:42", state: "ok" },
   { id: "s3", name: "Spedition Kraus", kind: "webhook", today: "386 Ereignisse heute", seen: "09:40", state: "ok" },
   { id: "s4", name: "Bestellungen Shop", kind: "webhook", today: "212 Ereignisse heute", seen: "09:38", state: "ok" },
-  { id: "s6", name: "rechnung@werkstatt.de", kind: "mail", today: "18 Mails heute", seen: "09:31", state: "ok" },
+  { id: "s6", name: "rechnung@werkstatt.example", kind: "mail", today: "18 Mails heute", seen: "09:31", state: "ok" },
   { id: "s7", name: "Wetterdienst Ortenau", kind: "poll", today: "96 Abrufe heute", seen: "09:30", state: "ok" },
   { id: "s8", name: "Zeiterfassung Montage", kind: "webhook", today: "74 Ereignisse heute", seen: "09:12", state: "ok" },
   { id: "s9", name: "Bank Geschäftskonto", kind: "poll", today: "4 Abrufe heute", seen: "08:00", state: "ok" },
-  { id: "s10", name: "anfrage@werkstatt.de", kind: "mail", today: "7 Mails heute", seen: "08:47", state: "ok" },
+  { id: "s10", name: "anfrage@werkstatt.example", kind: "mail", today: "7 Mails heute", seen: "08:47", state: "ok" },
   { id: "s11", name: "Maschinen Halle 2", kind: "webhook", today: "1.902 Ereignisse heute", seen: "09:42", state: "ok" },
 ];
 const stateLabel = { ok: "Läuft", warn: "Wartet", bad: "Gestört" } as const;
@@ -204,7 +204,7 @@ function SourceDetail(props: { source: Source }) {
                 </Inline>
               ),
             },
-            { label: "Adresse", value: "api.holzwerk-brandt.de/v2/lager", mono: true },
+            { label: "Adresse", value: "api.holzwerk.example/v2/lager", mono: true },
             { label: "Schlüssel", value: "pk_7f3a…c21", copy: "pk_7f3a9be0c21" },
           ]}
         />

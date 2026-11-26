@@ -2,7 +2,6 @@
 // one Group per thing that belongs together (here a delivery). A finished one is folded to its head. Inside a group: a
 // sentence, its way, its articles with their marks, a table, facts; no lines, no nesting.
 import {
-  Band,
   Bar,
   Button,
   Chip,
@@ -13,6 +12,7 @@ import {
   List,
   Loading,
   Nav,
+  Notice,
   Pane,
   Progress,
   RecordHead,
@@ -175,9 +175,12 @@ export default function CustomerDeliveries(props: Props) {
         <Bar
           start={<RecordHead name={data.name} avatar={{ name: data.name, color: data.color }} ids={data.ids} />}
           end={
-            <Button variant="primary" icon="plus">
-              Einlieferung
-            </Button>
+            <>
+              <Button icon="package-export">Herausgabe</Button>
+              <Button variant="primary" icon="plus">
+                Einlieferung
+              </Button>
+            </>
           }
         />
       }
@@ -196,21 +199,17 @@ export default function CustomerDeliveries(props: Props) {
           />
         }
       >
-        {/* One statement that stands out in the column: a band in a tone, not a message with a title and deeds. */}
+        {/* The one statement of the tab, with its sign: what comes next. */}
         {ready && (
-          <Band tone="note">
-            <Text type="body" weight="strong">
-              {data.next.title}
-            </Text>
-            <Text>{data.next.text}</Text>
-          </Band>
+          <Notice tone="note" icon="calendar-dollar" title={data.next.title}>
+            {data.next.text}
+          </Notice>
         )}
         <Section
           icon="package"
           color="#c2410c"
           title="Einlieferungen"
           count={ready ? data.counts.deliveries : undefined}
-          actions={[{ label: "Herausgabe", icon: "package-export" }]}
           summary={ready ? data.summary : undefined}
         >
           {props.failed ? (

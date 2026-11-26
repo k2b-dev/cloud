@@ -37,9 +37,9 @@ screen, recipe, test screen and documentation example:
    (`StatusRow` lead or `Cells`), plus chips with a tone for what lets a
    person act. A count such as "6 Einträge" is quiet meta text, never the
    biggest text.
-3. **A state is colour, sign and word:** a status `Chip`, a dot or symbol
-   with its word in the tone, never a bare word. A value with a limit gets
-   a `Progress` bar, a short history a `Spark`.
+3. **A state is colour, sign and word** where it needs a person (a chip
+   for the exception; the usual state stays a plain word, not a chip in
+   every row). A limit gets a `Progress` bar, a short history a `Spark`.
 4. **Space structures; lines only separate groups.** Group heads are text
    (title and count), not grey bands; no line under the last row.
 5. **No empty half.** A detail pane only while something is open; a side
