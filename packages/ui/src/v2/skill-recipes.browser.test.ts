@@ -15,7 +15,7 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-recipes-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 // after the plugin, so the frame compiles for Solid's server like the recipes
-const { ScreenFrame } = await import("./screen-frame");
+const { ScreenFrame } = await import("../../scripts/screen-frame");
 
 const recipesDir = resolve(import.meta.dir, "../../skills/k2b-ui/recipes");
 const recipes = readdirSync(recipesDir)
