@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { describeV2Page, measureV2Layout } from "./testing";
 
@@ -69,6 +69,37 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
           expect(layout.problems).toEqual([]);
           // a state such as empty or failed shows less than the full screen, but still its frame and its sentence
           expect(layout.measured.texts).toBeGreaterThan(name.includes(" · ") ? 2 : 5);
+          await settled(page);
+          // the last section of a column ends the column: no line under it
+          const closed = await page.evaluate(() =>
+            [...document.querySelectorAll(".k2-scroll > .k2-sec:last-child")]
+              .filter((section) => getComputedStyle(section).borderBottomWidth !== "0px")
+              .map((section) => section.querySelector("h2, h3")?.textContent ?? ""),
+          );
+          expect(closed).toEqual([]);
+          // scrolled to its end, the page shows its last line in the window, and clear of the floating main action
+          const end = await page.evaluate(() => {
+            // only what a person can scroll: a box that clips (overflow hidden) can be scrolled by a script, not by a hand
+            for (const element of document.querySelectorAll(".frame *"))
+              if (element.scrollHeight > element.clientHeight && ["auto", "scroll"].includes(getComputedStyle(element).overflowY))
+                element.scrollTop = element.scrollHeight;
+            const fab = document.querySelector(".k2-fab");
+            const floor = Math.min(window.innerHeight, fab && fab.getClientRects().length ? fab.getBoundingClientRect().top - 8 : Infinity);
+            const lines = [...document.querySelectorAll(".frame *")].filter(
+              (element) =>
+                !element.closest(".k2-fab, .k2-drawer, [hidden]") &&
+                [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) &&
+                element.getClientRects().length > 0,
+            );
+            const last = lines.reduce<Element | undefined>(
+              (lowest, element) =>
+                !lowest || element.getBoundingClientRect().bottom > lowest.getBoundingClientRect().bottom ? element : lowest,
+              undefined,
+            );
+            const bottom = Math.round(last?.getBoundingClientRect().bottom ?? 0);
+            return bottom > floor ? `${last?.textContent?.trim()} ends at ${bottom}, the page at ${Math.round(floor)}` : "";
+          });
+          expect(end).toBe("");
         } finally {
           await page.close();
         }

@@ -12,6 +12,7 @@ import {
   Disclosure,
   Facts,
   Field,
+  FileInput,
   Group,
   ImageInput,
   Input,
@@ -173,6 +174,9 @@ export function Fixture() {
             </Field>
             <Field name="logo" label="Logo">
               <ImageInput value={null} onChange={() => undefined} />
+            </Field>
+            <Field name="documents" label="Unterlagen">
+              <FileInput accept=".pdf" multiple />
             </Field>
             <Field name="code" label="Code">
               <CodeInput />

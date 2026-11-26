@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-/** The words of the v2 form controls (tags, image, colour), resolved from the inherited render locale. */
+/** The words of the v2 form controls (tags, image, files, colour), resolved from the inherited render locale. */
 const controlMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -21,6 +21,17 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Saturation ${saturation} %, brightness ${brightness} %`,
       imageChosen: "Image chosen",
+      dropFile: "Drop a file here or",
+      dropFiles: "Drop files here or",
+      chooseFile: "choose a file",
+      chooseFiles: "choose files",
+      filesChosen: ({ count }: { count: number }) => (count === 1 ? "1 file chosen." : `${count} files chosen.`),
+      fileRemoved: ({ name }: { name: string }) => `${name} removed.`,
+      fileType: ({ name }: { name: string }) => `${name} is not a type this field takes.`,
+      fileTooLarge: ({ name, max }: { name: string; max: string }) => `${name} is larger than ${max}.`,
+      tooManyFiles: "This field takes one file only.",
+      folder: "This field takes files, not folders. Choose the files in it.",
+      filesRemoved: ({ count }: { count: number }) => `${count} files removed.`,
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
@@ -38,6 +49,17 @@ const controlMessages = i18n.define({
       areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
         `Sättigung ${saturation} %, Helligkeit ${brightness} %`,
       imageChosen: "Bild gewählt",
+      dropFile: "Datei hierher ziehen oder",
+      dropFiles: "Dateien hierher ziehen oder",
+      chooseFile: "Datei wählen",
+      chooseFiles: "Dateien wählen",
+      filesChosen: ({ count }: { count: number }) => (count === 1 ? "1 Datei gewählt." : `${count} Dateien gewählt.`),
+      fileRemoved: ({ name }: { name: string }) => `${name} entfernt.`,
+      fileType: ({ name }: { name: string }) => `${name} hat keinen Dateityp, den dieses Feld nimmt.`,
+      fileTooLarge: ({ name, max }: { name: string; max: string }) => `${name} ist größer als ${max}.`,
+      tooManyFiles: "Dieses Feld nimmt nur eine Datei.",
+      folder: "Dieses Feld nimmt Dateien, keine Ordner. Wähle die Dateien darin.",
+      filesRemoved: ({ count }: { count: number }) => `${count} Dateien entfernt.`,
     },
   },
 });

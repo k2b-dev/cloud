@@ -1,10 +1,11 @@
-import { createSignal } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import {
   Band,
   CodeInput,
   ColorInput,
   Disclosure,
   Field,
+  FileInput,
   Group,
   ImageInput,
   Pane,
@@ -25,6 +26,8 @@ declare global {
     __deeds?: string[];
     /** While set, reading a picked image waits for this promise (a slow conversion). */
     __k2Gate?: Promise<void>;
+    /** Empties the page-held template field, as a page does after it sent the file. */
+    __k2ClearTemplate?: () => void;
   }
 }
 
@@ -40,6 +43,10 @@ export function Demo() {
   const [accent, setAccent] = createSignal("#b45309");
   const [banner, setBanner] = createSignal<string | null>(null);
   const [zoom, setZoom] = createSignal(30);
+  const [template, setTemplate] = createSignal<readonly File[]>([]);
+  onMount(() => {
+    window.__k2ClearTemplate = () => setTemplate([]);
+  });
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -103,6 +110,10 @@ export function Demo() {
               swatches={["#0f766e", "#1d4ed8"]}
             />
           </Field>
+          <Field name="template" label="Vorlage">
+            {/* the page keeps a copy of the list it is given a moment later, as a store does */}
+            <FileInput accept=".pdf" multiple value={template()} onChange={(next) => queueMicrotask(() => setTemplate([...next]))} />
+          </Field>
           <Field name="code" label="Code vom anderen Gerät">
             <CodeInput onComplete={(code) => did(`code:${code}`)} />
           </Field>
@@ -128,6 +139,12 @@ export function Demo() {
             </Field>
             <Field name="level" label="Stufe" hint="Wie stark abgedunkelt wird.">
               <Slider value={30} step={10} />
+            </Field>
+            <Field name="docs" label="Unterlagen" required>
+              <FileInput accept=".pdf,.docx" multiple maxSize={1024} />
+            </Field>
+            <Field name="source" label="Dokument">
+              <FileInput accept=".pdf,.docx,.md" maxSize={2048} />
             </Field>
             <Field name="zoom" label="Zoom">
               <Slider value={zoom()} onChange={setZoom} step={10} />

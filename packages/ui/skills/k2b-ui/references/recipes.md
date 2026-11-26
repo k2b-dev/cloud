@@ -150,6 +150,69 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
   holds "Senden" as a default button (the page's primary stays "Neue
   Nachricht").
 
+## overview.tsx: an overview of things with a face
+
+![overview at 1440 px](../images/overview-1440.png)
+![overview at 390 px](../images/overview-390.png)
+
+The bases of Grids. `Nav` entries with `color`, so each base leads with its
+`Mark`; a `StatusRow` whose lead says what counts today, with chips for
+what lets a person act; `Tiles variant="card"` with `stats`, `people`,
+`foot`, `trend` and the `create` card with templates as `choices`; a
+`List` of two-line `Row`s with `mark` in the colour of their kind; a
+`Pane side` with `Digest activity`, each sentence with the thing's
+`Mark` and name.
+
+- A base has one colour and symbol, the same in the sidebar, on its card
+  and in a sentence. A kind of thing (table, board, form) has one colour
+  across the app.
+- A form or a workflow that did something is a person with its name.
+- States: `empty` (a new installation; the card that makes a base stays).
+
+## home.tsx: the home of one place
+
+![home at 1440 px](../images/home-1440.png)
+![home at 390 px](../images/home-390.png)
+
+One base: `Cells` with a `trend` on the first, the things as `Section`s of
+`Row`s with `mark`, their figures in the second line and their state as a
+chip in `marks`; then `Digest activity` under "Zuletzt geändert".
+
+- A state that needs a person (a failed workflow, new form entries) stands
+  in its row and as a `dot` on its sidebar entry.
+- States: `quiet` (a day without anything that needs a person).
+
+## files.tsx: a folder with list, grid and selection
+
+![files at 1440 px](../images/files-1440.png)
+![files at 390 px](../images/files-390.png)
+
+Two full-width rows above list and detail: a head `Bar` with `Path`, a
+sharing `Chip`, the search, "Neuer Ordner" and the primary "Hochladen";
+then the `FilterBar` with `results` and `end` (`ListOrder`, a `Menu` for
+list or grid). The list is a `Table` with `select`, `group` (folders,
+files), a `mark` column with thumbnails and types, an `avatar` column; the
+open file is a `Pane detail` with `Preview`, a bar of deeds, `Facts` and
+sections for sharing and versions. `Nav` shows storages with `color` and
+the storage's `quota`.
+
+- While files are selected, `StatusRow selection` takes the bar's place at
+  the same height; on the phone its actions float at the bottom.
+- States: `grid` (`Tiles variant="media"`), `selecting` (three photos).
+
+## settings-page.tsx: a settings page
+
+![settings-page at 1440 px](../images/settings-page-1440.png)
+![settings-page at 390 px](../images/settings-page-390.png)
+
+The state first as `Cells` (a `trend`, chips with tone); a `Table` for the
+one setting with a value per kind (a switch per row); `Setting` rows for
+everything else, one `Section` per topic; a `Pane side` with the methods
+as rows with `mark` and state, and `Digest activity` of who changed what.
+The head says "1 Änderung" and saves the page as a whole.
+
+- States: `saved` (nothing to save: the deeds are disabled).
+
 ## table.tsx: a table with a status row
 
 ![table at 1440 px](../images/table-1440.png)
@@ -216,6 +279,24 @@ answers with a toast with `status` `ok` or `bad`.
   the menu closes while the question asks.
 - The open state of the dialog lives in the screen (`open`,
   `onOpenChange`).
+
+## upload.tsx: files to send
+
+![upload at 1440 px](../images/upload-1440.png)
+![upload at 390 px](../images/upload-390.png)
+
+A tool in its frame (`Nav` of tools, head with the one primary
+"Umwandeln", `StatusRow`): a `Section` with a `Field` holding a
+`FileInput` whose files a signal holds (`value` and `onChange`), so
+"Umwandeln" waits for a document; the last conversions as `Row`s led by the
+`mark` of each file's type (its colour and letters), its size, what came of it, when, and its state as a
+`Chip` with `status` and `icon` (colour, symbol and word); a `Pane side`
+with `Facts` on what the tool takes, how the week went and what it cannot
+read.
+
+- The field is the drop zone; never let the whole page take dropped files.
+- A refused file says why in one sentence at the field.
+- States: `empty`.
 
 ## states.tsx: the states of a list
 

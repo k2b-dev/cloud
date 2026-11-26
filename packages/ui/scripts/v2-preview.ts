@@ -30,7 +30,8 @@ Options:
   --help           this text
 
 Exit code: 0 when every step is clean, 1 when a step found a problem, 2 on a usage error, 3 when the tool itself
-failed (the browser did not start). A screen that throws while it renders is a finding (exit 1).
+failed (the browser did not start). A screen that throws while it renders is a finding (exit 1). The library's own words render in the language the
+file exports as \`locale\`, German by default (recipes are written in German).
 On the shared VM run it through the heavy wrapper; without --text it starts a browser.`;
 
 const args = process.argv.slice(2);
@@ -131,13 +132,24 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 const { createComponent } = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { describeV2 } = await import("../src/v2/describe");
+const { LocaleProvider } = await import("../src/intl/locale");
 
 let markup = "";
 try {
-  const screen = (await import(file)) as { default?: () => unknown };
+  const screen = (await import(file)) as { default?: () => unknown; locale?: unknown };
   if (typeof screen.default !== "function") throw new Error("the file has no default export that is a component");
   const component = screen.default as Parameters<typeof createComponent>[0];
-  markup = renderToString(() => createComponent(component, {}));
+  // the library's own words ("Datei wählen", "Erneut versuchen") in the screen's language: a recipe may export
+  // `locale`, else German, the language recipes are written in (see the skill)
+  const locale = typeof screen.locale === "string" ? screen.locale : "de";
+  markup = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(component, {});
+      },
+    }),
+  );
 } catch (error) {
   // A screen that does not render is a finding of the screen (exit 1), not a failure of the tool.
   section("render", [`- ${error instanceof Error ? error.message : String(error)}`]);

@@ -1,10 +1,14 @@
 import {
   createContext,
+  createEffect,
   createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
+  onCleanup,
+  onMount,
   children as resolveChildren,
   Show,
   useContext,
@@ -14,7 +18,7 @@ import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { useCode } from "./behavior/code";
-import { useFilePick } from "./behavior/files";
+import { fileSize, relativePathOf, useFilePick, useFiles } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
 import { useColor, useRange } from "./behavior/pickers";
 import { type ChoiceItem, useCombobox, useSelect } from "./behavior/select";
@@ -22,7 +26,8 @@ import { ActionButton, Button } from "./button";
 import { useControlMessages } from "./control-messages";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
-import { Icon } from "./marks";
+import { Chip, Icon } from "./marks";
+import { useSettingMessages } from "./setting-messages";
 import { textEdge } from "./tokens";
 import type { Action } from "./types";
 
@@ -75,7 +80,32 @@ export type FieldProps = {
  * A field: a label line of 20 px, the control of 36 px, a hint or the error under it. The label line has a fixed
  * height, so fields in a row stand on one line (rule K5).
  */
-export const Field = (props: FieldProps) => {
+export const Field = (props: FieldProps) => <FieldFrame field={props} />;
+
+export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
+  /**
+   * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." beside
+   * its control, so a page that saves as a whole shows what will change.
+   */
+  was?: string;
+  /**
+   * One quiet deed for this setting, such as "Auf Standard zurücksetzen" while the value differs from its default: a
+   * text button at the end of the name's line, as `Field action` has it. The value's column keeps its place, so the
+   * deed coming or going moves nothing.
+   */
+  action?: Action;
+};
+
+/**
+ * One setting of a settings page: its name and a quiet hint on the left, the control beside them in a column of
+ * 300 px, so the values stand in one line down the page and are read at a glance. On a narrow column the control
+ * goes under the name. The control is the same as in a `Field`: `Input`, `Select`, `DateInput`, `Check` or `Choice`.
+ */
+export const Setting = (props: SettingProps) => <FieldFrame field={props} setting />;
+
+const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action }; setting?: boolean }) => {
+  const props = frame.field;
+  const t = useSettingMessages();
   const control = createUniqueId();
   const label = createUniqueId();
   const message = createUniqueId();
@@ -128,8 +158,10 @@ export const Field = (props: FieldProps) => {
       )}
     </Show>
   );
-  // The deed stands beside the label line, never in it: a button inside a <label> would be pressed with it.
-  const actionLine = (
+  const part = frame.setting ? "Setting" : "Field";
+  const setting = frame.setting ? "" : undefined;
+  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it
+  const deed = (
     <Show when={props.action}>
       {(action) => (
         <span class="k2-field-action">
@@ -138,33 +170,66 @@ export const Field = (props: FieldProps) => {
       )}
     </Show>
   );
+  // a changed setting says what it was beside its control (inside the content, so the control keeps its place)
+  const was = (
+    <Show when={props.was}>
+      {(before) => (
+        <span class="k2-field-was">
+          <Chip yours>{t().changedFrom({ value: before() })}</Chip>
+        </span>
+      )}
+    </Show>
+  );
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
-    <div class="k2-field" data-k2-part="Field" data-action={props.action ? "" : undefined} role="group" aria-labelledby={label}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+      role="group"
+      aria-labelledby={label}
+    >
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
-      {actionLine}
       {content}
+      {deed}
+      {was}
       {messageLine}
     </div>
   ) : named ? (
-    <div class="k2-field" data-k2-part="Field" data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
-      {actionLine}
       {content}
+      {deed}
+      {was}
       {messageLine}
     </div>
   ) : (
-    <div class="k2-field" data-k2-part="Field" data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
-      {actionLine}
       {content}
+      {deed}
+      {was}
       {messageLine}
     </div>
   );
@@ -636,7 +701,8 @@ export const ImageInput = (props: ImageInputProps) => {
   field?.group();
   const t = useControlMessages();
   const [busy, setBusy] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
+  // counts the failures since the last good pick: each one puts a new alert in the page, so each one is heard
+  const [failed, setFailed] = createSignal(0);
   const value = () => props.value || null;
   // The last pick wins: a file picked while an earlier one is still read replaces it, and the earlier one's value is
   // dropped when it arrives, so the image shown, the value sent and "Bild gewählt" all name the same file.
@@ -645,12 +711,12 @@ export const ImageInput = (props: ImageInputProps) => {
     if (!file) return;
     const mine = ++picks;
     setBusy(true);
-    setFailed(false);
+    setFailed(0);
     try {
       const made = await (props.transform ?? squareImage)(file);
       if (mine === picks) props.onChange(made);
     } catch {
-      if (mine === picks) setFailed(true);
+      if (mine === picks) setFailed((count) => count + 1);
     } finally {
       if (mine === picks) setBusy(false);
     }
@@ -664,8 +730,9 @@ export const ImageInput = (props: ImageInputProps) => {
     disabled: props.disabled,
     required: (field?.required && !value()) || undefined,
     onValueChange: (files: File[]) => void take(files[0]),
-    onReject: () => setFailed(true),
-    announcement: (change) => (change.added.length ? t().imageChosen : change.rejected.length ? t().imageFailed : null),
+    onReject: () => setFailed((count) => count + 1),
+    // heard once: the refusal speaks through its alert at the field, a chosen image through the core
+    announcement: (change) => (change.added.length ? t().imageChosen : null),
   }));
   const name = () => props.name ?? field?.name;
   return (
@@ -704,10 +771,200 @@ export const ImageInput = (props: ImageInputProps) => {
       </span>
       <pick.Input />
       <Show when={name()}>{(sent) => <input type="hidden" name={sent()} value={value() ?? ""} disabled={props.disabled} />}</Show>
-      <Show when={failed()}>
-        <span class="k2-image-failed" role="alert">
-          {t().imageFailed}
+      {/* keyed on the count: each failure is a new alert */}
+      <Show when={failed()} keyed>
+        {(_failure: number) => (
+          <span class="k2-image-failed" role="alert">
+            {t().imageFailed}
+          </span>
+        )}
+      </Show>
+    </pick.Root>
+  );
+};
+
+export type FileInputProps = {
+  /**
+   * The chosen files. Given, the caller holds them and sets them from `onChange`; left out, the field keeps them itself
+   * (`onChange` still reports each change) and a form's reset empties it.
+   */
+  value?: readonly File[];
+  /** Called with all chosen files after a pick, a drop, a paste, a removal or a form's reset. */
+  onChange?: (files: File[]) => void;
+  /** The file types to take, like the `accept` attribute: `.pdf,.docx` or `image/*`. */
+  accept?: string;
+  /** Takes several files; one by default (a new one replaces it). */
+  multiple?: boolean;
+  /** The largest file in bytes; a larger one is refused with a sentence in the field. */
+  maxSize?: number;
+  /** The name the files are sent under in a form; the field's name by default. */
+  name?: string;
+  /** A name when the field stands without a Field. */
+  label?: string;
+  /** No file can be added or removed now: dimmed, the chosen files still listed. */
+  disabled?: boolean;
+};
+
+/** A type mark for a file: its kind from the extension or the media type. */
+const fileIcon = (file: File) => {
+  const name = file.name.toLowerCase();
+  if (file.type.startsWith("image/")) return "photo";
+  if (name.endsWith(".pdf")) return "file-type-pdf";
+  if (/\.(docx?|odt|rtf)$/.test(name)) return "file-type-doc";
+  if (/\.(xlsx?|ods|csv)$/.test(name)) return "file-type-xls";
+  if (/\.(pptx?|odp)$/.test(name)) return "file-type-ppt";
+  if (/\.(zip|gz|tar|7z)$/.test(name)) return "file-zip";
+  if (/\.(md|txt|html?)$/.test(name)) return "file-text";
+  return "file";
+};
+
+/** One key per chosen file object, the same while it stays chosen; two files of the same name and size stay two. */
+const fileKeys = new WeakMap<File, string>();
+let fileCount = 0;
+const fileKey = (file: File) => {
+  let key = fileKeys.get(file);
+  if (!key) {
+    fileCount += 1;
+    key = `file-${fileCount}`;
+    fileKeys.set(file, key);
+  }
+  return key;
+};
+
+/**
+ * Files to send, such as a document to convert or attachments: the field itself is where files are dropped (it shows
+ * when files are over it), with a button that opens the device's dialog; the chosen files stand under it as rows with
+ * their type, size and a remove button (arrows move between them, Delete removes). A file of the wrong type or size,
+ * or a folder, is refused with a sentence in the field, where its hint stood, so nothing moves. The behaviour layer on
+ * the ui-sdk core sends the files with the form, makes the field required and puts it back on a form's reset.
+ */
+export const FileInput = (props: FileInputProps) => {
+  const field = useField();
+  field?.group();
+  const t = useControlMessages();
+  const locale = useLocale();
+  const controlled = () => props.value !== undefined;
+  const [own, setOwn] = createSignal<File[]>([...(props.value ?? [])]);
+  const files = () => (controlled() ? [...(props.value ?? [])] : own());
+  const [refused, setRefused] = createSignal<string>();
+  const refusedId = createUniqueId();
+  // One sentence for a refusal, about what the person has to change first: a folder, then too many files, then a
+  // file too large, then a file of a type the field does not take.
+  const sentence = (rejected: readonly { file: File; reasons: string[] }[]) => {
+    const by = (reason: string) => rejected.find((entry) => entry.reasons.includes(reason));
+    if (!rejected.length) return undefined;
+    if (by("folder")) return t().folder;
+    if (by("too-many-files")) return t().tooManyFiles;
+    const large = by("file-too-large");
+    if (large) return t().fileTooLarge({ name: large.file.name, max: fileSize(props.maxSize ?? 0, locale()) });
+    return t().fileType({ name: rejected[0]?.file.name ?? "" });
+  };
+  // The sentence holds until the files change: a pick, a removal, the form's reset, or a value the page sets itself
+  // (such as an empty field after the page sent the file). The page handing back the files it was given is no change.
+  let given: readonly File[] | undefined;
+  // the same files in the same order, also in a copy the page made of the list it was given
+  const sameFiles = (a: readonly File[] | undefined, b: readonly File[] | undefined) =>
+    a === b || (a !== undefined && b !== undefined && a.length === b.length && a.every((file, index) => file === b[index]));
+  createEffect(
+    on(
+      () => props.value,
+      (value) => {
+        if (!sameFiles(value, given)) setRefused(undefined);
+      },
+      { defer: true },
+    ),
+  );
+  let hint: HTMLSpanElement | undefined;
+  const onReset = (event: Event) => {
+    if (event.target instanceof HTMLFormElement && hint && event.target.contains(hint)) setRefused(undefined);
+  };
+  onMount(() => {
+    document.addEventListener("reset", onReset);
+    onCleanup(() => document.removeEventListener("reset", onReset));
+  });
+  const pick = useFiles(() => ({
+    ...(controlled() ? { value: [...(props.value ?? [])] } : { defaultValue: [...(props.value ?? [])] }),
+    onValueChange: (next: File[]) => {
+      setOwn(next);
+      setRefused(undefined);
+      given = next;
+      props.onChange?.(next);
+    },
+    onReject: (rejected) => setRefused(sentence(rejected)),
+    // A folder is refused as a whole: its files would arrive one by one, read from all its folders.
+    validate: (file: File) => (relativePathOf(file).includes("/") ? "folder" : undefined),
+    // What assistive technology hears, once: the core's account of the change in the page's language, nothing on a
+    // form's reset (the field returns to where it started).
+    announcement: (change) => {
+      if (change.reason === "reset") return null;
+      const parts = [
+        change.added.length ? t().filesChosen({ count: change.added.length }) : "",
+        change.rejected.length ? (sentence(change.rejected) ?? "") : "",
+        change.removed.length && !change.added.length
+          ? change.removed.length === 1
+            ? t().fileRemoved({ name: change.removed[0]?.name ?? "" })
+            : t().filesRemoved({ count: change.removed.length })
+          : "",
+      ].filter(Boolean);
+      return parts.length ? parts.join(" ") : null;
+    },
+    accept: props.accept,
+    multiple: props.multiple ?? false,
+    maxSize: props.maxSize,
+    disabled: props.disabled,
+    required: field?.required,
+    name: props.name ?? field?.name,
+  }));
+  const described = () => [field?.described, refused() ? refusedId : undefined].filter(Boolean).join(" ") || undefined;
+  return (
+    <pick.Root
+      class="k2-files"
+      data-k2-part="FileInput"
+      data-disabled={props.disabled ? "" : undefined}
+      role={field ? undefined : "group"}
+      aria-label={field ? undefined : props.label}
+    >
+      <pick.Dropzone class="k2-files-drop" data-invalid={field?.invalid || refused() ? "" : undefined}>
+        <Icon name={refused() ? "alert-circle" : "upload"} />
+        {/* the hint, or in its place the sentence that says why a file was refused (heard once, through the core) */}
+        <span class="k2-files-hint" id={refusedId} ref={hint} data-refused={refused() ? "" : undefined}>
+          {refused() ?? (props.multiple ? t().dropFiles : t().dropFile)}
         </span>
+        <span class="k2-files-end">
+          <pick.Trigger
+            class="k2-btn"
+            data-k2-part="Button"
+            aria-describedby={described()}
+            aria-invalid={field?.invalid || refused() ? "true" : undefined}
+          >
+            <span class="k2-btn-label">{props.multiple ? t().chooseFiles : t().chooseFile}</span>
+          </pick.Trigger>
+        </span>
+      </pick.Dropzone>
+      <pick.Input />
+      <Show when={files().length}>
+        <pick.List class="k2-files-list" aria-label={field ? undefined : props.label}>
+          <For each={files()}>
+            {(file) => (
+              <pick.Item class="k2-files-row" file={file} value={fileKey(file)}>
+                <Icon name={fileIcon(file)} />
+                <span class="k2-files-name">{file.name}</span>
+                <span class="k2-files-size">{fileSize(file.size, locale())}</span>
+                <pick.ItemRemove
+                  class="k2-btn"
+                  data-variant="ghost"
+                  data-icon-only=""
+                  file={file}
+                  value={fileKey(file)}
+                  aria-label={t().removeValue({ label: file.name })}
+                  title={t().removeValue({ label: file.name })}
+                >
+                  <Icon name="x" />
+                </pick.ItemRemove>
+              </pick.Item>
+            )}
+          </For>
+        </pick.List>
       </Show>
     </pick.Root>
   );

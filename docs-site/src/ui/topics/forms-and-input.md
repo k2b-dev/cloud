@@ -24,6 +24,18 @@ The sign-in settings of an app: a field that goes back to its default through th
 
 <Example recipe="settings" height="760" />
 
+## Files to send
+
+A tool that turns a document into Markdown: the field is where the document is dropped or chosen, the chosen file stands under it with its type and size, and a file of another type, too large or a folder is refused with a sentence in the field. A signal holds the files (`value` and `onChange`), so the head's "Umwandeln" waits for a document. Switch the state to see the field before a file is chosen.
+
+<Example recipe="upload" height="640" />
+
+## A settings page
+
+Sign-in of an administration: the state first as key numbers with colour, symbol and word, then the settings by topic. A setting with a value per kind is a table; every other setting is a `Setting` row, with its name and hint on the left and its value in a column beside them, so the values stand in one line and read at a glance. The page saves as a whole: a changed setting says what it was. Switch the state: nothing changed yet.
+
+<Example recipe="settings-page" height="720" default="Changed" />
+
 ## Errors, conflicts and saving
 
 - **At the field:** a server error or "Pflichtfeld." goes into the `error` of its field. It replaces the hint and marks the control.
@@ -56,6 +68,12 @@ Names one control with a label, a hint or an error, and "optional" or a unit, or
 
 <Props of="Field Field.Row" />
 
+### Setting
+
+One setting of a settings page: name and hint on the left, the control in a column of 300 px beside them, "geändert · vorher …" under it; one column on the phone.
+
+<Props of="Setting" />
+
 ### Input
 
 A text field of one line or several (`multiline`), a number, an address or a search.
@@ -73,6 +91,12 @@ One choice from many options, in a list that opens.
 Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick.
 
 <Props of="TagsInput" />
+
+### FileInput
+
+Files to send, such as a document to convert or attachments: the field is the drop zone, the chosen files are rows with type, size and a remove button.
+
+<Props of="FileInput" />
 
 ### ImageInput
 
