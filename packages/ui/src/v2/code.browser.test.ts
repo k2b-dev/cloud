@@ -41,7 +41,7 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
   }
 };
 
-const block = (page: Page, label: string) => page.locator(`[data-k2-part="CodeBlock"]:has(.k2-code-label:text-is("${label}"))`);
+const block = (page: Page, label: string) => page.locator(`[data-k2-part="CodeBlock"]:has(.k2-codeblock-label:text-is("${label}"))`);
 
 for (const width of [1440, 390]) {
   test(`at ${width}: a line of 10,000 signs scrolls inside its block, never the page; the block takes the focus for it`, async () => {
@@ -78,23 +78,23 @@ for (const width of [1440, 390]) {
   test(`at ${width}: a log of 2,000 lines shows 200 and "Alles zeigen", then every line, numbered in one column`, async () => {
     await withPage(width, async (page) => {
       const log = block(page, "gateway.log");
-      expect(await log.locator(".k2-code-line").count()).toBe(200);
+      expect(await log.locator(".k2-codeblock-line").count()).toBe(200);
       const more = log.getByRole("button", { name: "Alles zeigen (2.000 Zeilen)" });
       const gutter = await log
-        .locator(".k2-code-number")
+        .locator(".k2-codeblock-number")
         .first()
         .evaluate((number) => number.getBoundingClientRect().width);
       await more.click();
       await settled(page);
-      expect(await log.locator(".k2-code-line").count()).toBe(2000);
+      expect(await log.locator(".k2-codeblock-line").count()).toBe(2000);
       // the button went; the focus stands on the lines that hold the rest, not on the page
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("gateway.log");
       expect(await more.count()).toBe(0);
-      expect(await log.locator(".k2-code-number").last().textContent()).toBe("2000");
+      expect(await log.locator(".k2-codeblock-number").last().textContent()).toBe("2000");
       // the number column had the width of four digits from the start, so the code did not move
       expect(
         await log
-          .locator(".k2-code-number")
+          .locator(".k2-codeblock-number")
           .first()
           .evaluate((number) => number.getBoundingClientRect().width),
       ).toBe(gutter);
@@ -112,7 +112,7 @@ for (const width of [1440, 390]) {
       await settled(page);
       expect(await toggle.getAttribute("aria-pressed")).toBe("true");
       expect(await body.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
-      expect(await config.locator(".k2-code-line").count()).toBe(2);
+      expect(await config.locator(".k2-codeblock-line").count()).toBe(2);
     });
   });
 
@@ -123,7 +123,7 @@ for (const width of [1440, 390]) {
       const before = await key.evaluate((element) => ({
         text: element.textContent ?? "",
         height: element.getBoundingClientRect().height,
-        width: element.querySelector(".k2-code-lines")!.getBoundingClientRect().width,
+        width: element.querySelector(".k2-codeblock-lines")!.getBoundingClientRect().width,
       }));
       expect(before.text).not.toContain("BEGIN");
       expect(before.text).not.toContain("b3BlbnNz");
@@ -145,7 +145,7 @@ for (const width of [1440, 390]) {
       const after = await key.evaluate((element) => ({
         text: element.textContent ?? "",
         height: element.getBoundingClientRect().height,
-        width: element.querySelector(".k2-code-lines")!.getBoundingClientRect().width,
+        width: element.querySelector(".k2-codeblock-lines")!.getBoundingClientRect().width,
       }));
       expect(after.text).toContain("-----BEGIN OPENSSH PRIVATE KEY-----");
       expect(after.height).toBe(before.height);

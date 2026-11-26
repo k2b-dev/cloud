@@ -398,14 +398,14 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "CodeBlock": {
-        const title = element.querySelector(".k2-code-label")?.textContent;
-        const language = element.querySelector(".k2-code-language")?.textContent;
-        const shown = element.querySelectorAll(".k2-code-line").length;
-        const deeds = [...element.querySelectorAll(".k2-code-deeds .k2-btn")].map(
+        const title = element.querySelector(".k2-codeblock-label")?.textContent;
+        const language = element.querySelector(".k2-codeblock-language")?.textContent;
+        const shown = element.querySelectorAll(".k2-codeblock-line").length;
+        const deeds = [...element.querySelectorAll(".k2-codeblock-deeds .k2-btn")].map(
           (button) => button.getAttribute("aria-label")?.split(":")[0] ?? button.textContent ?? "",
         );
-        const more = element.querySelector(".k2-code-more")?.textContent;
-        return `CodeBlock ${quote(title)}${language ? ` ${language}` : ""}: ${shown} line${shown === 1 ? "" : "s"}${element.querySelector(".k2-code-number") ? " numbered" : ""}${element.hasAttribute("data-masked") ? ", hidden" : ""}${more ? ` (${more})` : ""} | ${deeds.join(" · ")}`;
+        const more = element.querySelector(".k2-codeblock-more")?.textContent;
+        return `CodeBlock ${quote(title)}${language ? ` ${language}` : ""}: ${shown} line${shown === 1 ? "" : "s"}${element.querySelector(".k2-codeblock-number") ? " numbered" : ""}${element.hasAttribute("data-masked") ? ", hidden" : ""}${more ? ` (${more})` : ""} | ${deeds.join(" · ")}`;
       }
       case "Canvas": {
         const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");

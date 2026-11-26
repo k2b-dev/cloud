@@ -1975,14 +1975,14 @@
 }
 /* the place picks the control height, so the air above and below is equal and at least 6 px:
    head 56 → 36, status row 52 → 36, bar 40 → 28, a row → 28. A control never turns square in a band. */
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line, .k2-code-head) .k2-btn:not([data-variant="text"]) {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line, .k2-codeblock-head) .k2-btn:not([data-variant="text"]) {
   height: var(--k2-h-control-small);
   padding: 0 8px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line, .k2-code-head) .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line, .k2-codeblock-head) .k2-btn[data-icon-only] {
   width: var(--k2-h-control-small);
   padding: 0;
 }
@@ -2671,9 +2671,9 @@
    language) with the deeds on the right; the lines in monospace 12/16, as written. Long lines scroll sideways inside
    the body, never the page; with data-wrap they wrap at any sign. A hidden secret shows dots in the shape of its
    signs, so nothing moves when it shows. */
-.k2-ui .k2-code {
+.k2-ui .k2-codeblock {
   /* the digits of the widest line number (set by CodeBlock) */
-  --k2-code-digits: 1;
+  --k2-codeblock-digits: 1;
   margin: 0 var(--k2-edge) 12px;
   min-width: 0;
   border: var(--k2-hairline);
@@ -2681,7 +2681,7 @@
   background: var(--k2-n50);
   overflow: hidden;
 }
-.k2-ui .k2-code-head {
+.k2-ui .k2-codeblock-head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2690,11 +2690,11 @@
   border-bottom: var(--k2-hairline);
   min-width: 0;
 }
-.k2-ui .k2-code-head > .k2-icon {
+.k2-ui .k2-codeblock-head > .k2-icon {
   flex: none;
   color: var(--k2-subtle);
 }
-.k2-ui .k2-code-label {
+.k2-ui .k2-codeblock-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2702,67 +2702,67 @@
   font: var(--k2-t-row);
   font-weight: 500;
 }
-.k2-ui .k2-code-language {
+.k2-ui .k2-codeblock-language {
   flex: none;
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
-.k2-ui .k2-code-deeds {
+.k2-ui .k2-codeblock-deeds {
   display: flex;
   flex: none;
   align-items: center;
   margin-left: auto;
 }
-.k2-ui .k2-code-body {
+.k2-ui .k2-codeblock-body {
   overflow-x: auto;
   padding: 8px 0;
   font: 400 12px/16px var(--k2-font-mono);
   tab-size: 4;
 }
-.k2-ui .k2-code-body:focus-visible {
+.k2-ui .k2-codeblock-body:focus-visible {
   outline: 2px solid var(--k2-blue);
   outline-offset: -2px;
 }
-.k2-ui .k2-code-lines {
+.k2-ui .k2-codeblock-lines {
   display: grid;
   min-width: max-content;
 }
-.k2-ui .k2-code-line {
+.k2-ui .k2-codeblock-line {
   display: flex;
   padding: 0 12px;
 }
-.k2-ui .k2-code-line > code {
+.k2-ui .k2-codeblock-line > code {
   font: inherit;
   white-space: pre;
 }
-.k2-ui .k2-code-number {
+.k2-ui .k2-codeblock-number {
   flex: none;
-  width: calc(var(--k2-code-digits) * 1ch);
+  width: calc(var(--k2-codeblock-digits) * 1ch);
   margin-right: 16px;
   text-align: right;
   color: var(--k2-subtle);
   -webkit-user-select: none;
   user-select: none;
 }
-.k2-ui .k2-code[data-wrap] .k2-code-lines {
+.k2-ui .k2-codeblock[data-wrap] .k2-codeblock-lines {
   min-width: 0;
 }
-.k2-ui .k2-code[data-wrap] .k2-code-line > code {
+.k2-ui .k2-codeblock[data-wrap] .k2-codeblock-line > code {
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 /* a hidden run of signs: dots of one sign's width each, as wide as the signs it hides */
-.k2-ui .k2-code-mask {
+.k2-ui .k2-codeblock-mask {
   /* the signs of the run it hides (set by CodeBlock) */
-  --k2-code-signs: 0;
+  --k2-codeblock-signs: 0;
   display: inline-block;
-  width: calc(var(--k2-code-signs) * 1ch);
+  width: calc(var(--k2-codeblock-signs) * 1ch);
   height: 16px;
   vertical-align: top;
   background: radial-gradient(circle, var(--k2-subtle) 1.5px, transparent 2px) 0 50% / 1ch 100% repeat-x;
 }
-.k2-ui .k2-code-more {
+.k2-ui .k2-codeblock-more {
   display: flex;
   align-items: center;
   height: var(--k2-h-bar);
@@ -2772,27 +2772,27 @@
 /* highlighting, in few colours of meaning: quiet comments and marks of Markdown, strings in green, numbers and
    parameters in amber, keywords, links and references in the ink of blue, names of functions a little stronger;
    operators and plain names keep the text's ink. Scripts write `hl-*`, SQL and Markdown `cd-*` (with `k2-` before). */
-.k2-ui .k2-code-line :is(.k2-hl-comment, .k2-cd-c) {
+.k2-ui .k2-codeblock-line :is(.k2-hl-comment, .k2-cd-c) {
   color: var(--k2-subtle);
   font-style: italic;
 }
-.k2-ui .k2-code-line :is(.k2-cd-md-syntax, .k2-cd-md-checkbox, .k2-hl-operator) {
+.k2-ui .k2-codeblock-line :is(.k2-cd-md-syntax, .k2-cd-md-checkbox, .k2-hl-operator) {
   color: var(--k2-subtle);
 }
-.k2-ui .k2-code-line :is(.k2-hl-string, .k2-cd-s, .k2-cd-md-code, .k2-cd-md-tag) {
+.k2-ui .k2-codeblock-line :is(.k2-hl-string, .k2-cd-s, .k2-cd-md-code, .k2-cd-md-tag) {
   color: var(--k2-ok);
 }
-.k2-ui .k2-code-line :is(.k2-hl-number, .k2-cd-n, .k2-hl-parameter, .k2-cd-param, .k2-cd-md-formula) {
+.k2-ui .k2-codeblock-line :is(.k2-hl-number, .k2-cd-n, .k2-hl-parameter, .k2-cd-param, .k2-cd-md-formula) {
   color: var(--k2-warn-ink);
 }
-.k2-ui .k2-code-line :is(.k2-hl-keyword, .k2-cd-k, .k2-cd-md-link, .k2-cd-md-ref, .k2-cd-md-directive) {
+.k2-ui .k2-codeblock-line :is(.k2-hl-keyword, .k2-cd-k, .k2-cd-md-link, .k2-cd-md-ref, .k2-cd-md-directive) {
   color: var(--k2-blue-ink);
 }
-.k2-ui .k2-code-line :is(.k2-hl-function) {
+.k2-ui .k2-codeblock-line :is(.k2-hl-function) {
   color: var(--k2-text);
   font-weight: 500;
 }
-.k2-ui .k2-code-line :is(.k2-hl-identifier, .k2-hl-variable, .k2-cd-p) {
+.k2-ui .k2-codeblock-line :is(.k2-hl-identifier, .k2-hl-variable, .k2-cd-p) {
   color: var(--k2-text-2);
 }
 

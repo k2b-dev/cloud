@@ -84,13 +84,13 @@ test("a hidden secret leaves no sign of its code in the server's markup; highlig
   // its name says that it is hidden
   expect(hidden).toContain('aria-label="gateway_ed25519, hidden"');
   // each run of signs keeps its width: "-----BEGIN" is 10 signs, the second line 24
-  expect(hidden).toContain("--k2-code-signs:10");
-  expect(hidden).toContain("--k2-code-signs:24");
+  expect(hidden).toContain("--k2-codeblock-signs:10");
+  expect(hidden).toContain("--k2-codeblock-signs:24");
   const code = renderToString(() =>
     createComponent(CodeBlock, { label: "gateway.ts", code: "const gateway = 1;", language: "ts", lineNumbers: true }),
   );
   expect(code).toContain('<span class="k2-hl-keyword">const</span>');
-  expect(code).toContain('class="k2-code-number"');
+  expect(code).toContain('class="k2-codeblock-number"');
 });
 
 // A class written in the code is text: only the highlighter's own spans move into the namespace of v2.css.

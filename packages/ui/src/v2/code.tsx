@@ -103,7 +103,9 @@ const signs = (run: string) =>
 const Hidden = (props: { line: string }) => (
   <code>
     <For each={props.line.split(/(\s+)/u).filter((part) => part !== "")}>
-      {(part) => (/^\s+$/u.test(part) ? part : <span class="k2-code-mask" style={custom({ "--k2-code-signs": String(signs(part)) })} />)}
+      {(part) =>
+        /^\s+$/u.test(part) ? part : <span class="k2-codeblock-mask" style={custom({ "--k2-codeblock-signs": String(signs(part)) })} />
+      }
     </For>
     {props.line === "" ? " " : null}
   </code>
@@ -152,17 +154,17 @@ export const CodeBlock = (props: CodeBlockProps) => {
   };
   return (
     <div
-      class="k2-code"
+      class="k2-codeblock"
       data-k2-part="CodeBlock"
       data-wrap={wrapped() ? "" : undefined}
       data-masked={masked() ? "" : undefined}
-      style={custom({ "--k2-code-digits": digits() })}
+      style={custom({ "--k2-codeblock-digits": digits() })}
     >
-      <div class="k2-code-head">
+      <div class="k2-codeblock-head">
         <Icon name={props.secret ? "key" : "file-code"} />
-        <span class="k2-code-label">{props.label}</span>
-        <Show when={props.language && languageNames[props.language]}>{(name) => <span class="k2-code-language">{name()}</span>}</Show>
-        <span class="k2-code-deeds">
+        <span class="k2-codeblock-label">{props.label}</span>
+        <Show when={props.language && languageNames[props.language]}>{(name) => <span class="k2-codeblock-language">{name()}</span>}</Show>
+        <span class="k2-codeblock-deeds">
           <Show when={props.secret}>
             {/* one word in both states (a toggle), so the button keeps its width */}
             <Button variant="ghost" icon="eye" pressed={revealed()} onClick={() => setRevealed(!revealed())}>
@@ -188,17 +190,17 @@ export const CodeBlock = (props: CodeBlockProps) => {
       {/* the lines scroll sideways here, never the page; the keyboard reaches them through the focus */}
       <div
         ref={body}
-        class="k2-code-body"
+        class="k2-codeblock-body"
         role="region"
         aria-label={masked() ? t().hiddenName({ name: props.label }) : props.label}
         tabIndex={0}
       >
-        <div class="k2-code-lines">
+        <div class="k2-codeblock-lines">
           <For each={drawn()}>
             {(line, index) => (
-              <div class="k2-code-line">
+              <div class="k2-codeblock-line">
                 <Show when={props.lineNumbers}>
-                  <span class="k2-code-number" aria-hidden="true">
+                  <span class="k2-codeblock-number" aria-hidden="true">
                     {index() + 1}
                   </span>
                 </Show>
@@ -211,7 +213,7 @@ export const CodeBlock = (props: CodeBlockProps) => {
         </div>
       </div>
       <Show when={rest() > 0}>
-        <div class="k2-code-more">
+        <div class="k2-codeblock-more">
           <Button variant="text" onClick={showAll}>
             {t().showAll({ lines: new Intl.NumberFormat(locale()).format(lines().length) })}
           </Button>
