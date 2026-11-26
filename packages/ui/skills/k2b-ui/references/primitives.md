@@ -122,15 +122,23 @@ One Tab stop; arrows go to the nearest tile on screen, Enter opens.
 the table, the tiles and the folder tree of Files), `label(key)`,
 `draggable?(key)`, `target?(key)` (folders), `accepts?(keys, target)`,
 `onDrop?(keys, target)`, `onFiles?(files, target)` (files from the
-computer). A dragged entry that is selected takes the whole selection.
+computer). A dragged entry that is selected takes the whole selection;
+what a drag carries is fixed when it is lifted. A folder takes it only
+when every entry may be dragged (a selection with one that cannot moves
+nothing), none of them is the folder or a folder it lies in (a tree and a
+table tree know their levels; `accepts` must refuse levels no list
+shows), and `accepts` agrees; that is asked again at the drop. Only the
+folders of the same `scope` count, also when another list uses the same
+keys. A folder from the computer is refused and named so.
 Mouse and pen drag after a few pixels; a finger never drags (it scrolls,
 and a long press stays the context menu's). While a drag is under way a
 chip with the name follows the pointer, a folder that takes it is tinted,
 one that refuses it shows "not allowed", a closed folder the pointer
 rests on (700 ms) opens, and a place at the bottom says "Hier loslassen:
-nichts passiert". Escape cancels. Nothing changes before `onDrop`.
+nichts passiert" (it wins over a folder under it). Escape cancels. Nothing changes before `onDrop`.
 Dragging is a shortcut: give every entry a menu entry "Verschieben nach …"
-for keys and touch.
+for keys and touch (a picture tile takes `menu`: a "…" on the picture, a
+right-click, Shift+F10).
 
 ### Canvas
 

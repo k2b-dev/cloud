@@ -101,6 +101,7 @@ const uiMessages = i18n.define({
       loadMoreFailed: "Couldn't load more. Try again",
       entries: ({ count }: { count: number }) => `${count.toLocaleString("en")} entries`,
       dropNothing: "Drop here: nothing happens",
+      dropFoldersRefused: "Folders can't be dropped here, only files",
       yes: "Yes",
     },
     de: {
@@ -198,6 +199,7 @@ const uiMessages = i18n.define({
       loadMoreFailed: "Weitere konnten nicht geladen werden. Erneut versuchen",
       entries: ({ count }) => `${count.toLocaleString("de")} Einträge`,
       dropNothing: "Hier loslassen: nichts passiert",
+      dropFoldersRefused: "Ordner können hier nicht abgelegt werden, nur Dateien",
       yes: "Ja",
     },
   },

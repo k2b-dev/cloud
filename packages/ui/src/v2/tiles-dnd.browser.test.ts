@@ -203,3 +203,122 @@ test("files from the computer drop onto a folder row and a folder of the tree", 
     }
   });
 });
+
+// ── Review findings (Codex, 26.11.) ──────────────────────────────────────────────────────────────────────────────
+
+/** Moves the pressed pointer to the middle of `to` and waits for the drag to follow. */
+const moveTo = async (page: Page, to: { x: number; y: number; width: number; height: number }) => {
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+  await frames(page);
+};
+
+test("drag: the place that says 'nothing happens' wins over a folder under it", async () => {
+  await withPage(async (page) => {
+    // make the window end so that the folder row "Belege" lies under that place
+    const rowBox = await tableRow(page, "Belege").boundingBox();
+    if (!rowBox) throw new Error("no row");
+    await page.setViewportSize({ width: 1440, height: Math.round(rowBox.y + rowBox.height / 2 + 46) });
+    await settled(page);
+    await dragTo(page, tile(page, "Angebot.pdf"), tile(page, "Messestand.jpg"));
+    const zone = await page.getByText("Hier loslassen: nichts passiert").boundingBox();
+    if (!zone) throw new Error("no zone");
+    // the row lies under that place (the library finds targets by their boxes, as here)
+    const rowNow = await tableRow(page, "Belege").boundingBox();
+    if (!rowNow) throw new Error("no row");
+    const middle = { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 };
+    const under = middle.x >= rowNow.x && middle.x < rowNow.x + rowNow.width && middle.y >= rowNow.y && middle.y < rowNow.y + rowNow.height;
+    expect(under).toBe(true);
+    await moveTo(page, zone);
+    expect(await tableRow(page, "Belege").getAttribute("data-drop-over")).toBeNull();
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toBeUndefined();
+  });
+});
+
+test("drag: a selection with an entry that cannot move moves nothing, and every folder says so", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__select?.(["gesperrt", "angebot"]));
+    await dragTo(page, tile(page, "Angebot.pdf"), folder(page, "Projekte"));
+    expect(await folder(page, "Projekte").getAttribute("data-drop-refused")).toBe("");
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toBeUndefined();
+  });
+});
+
+test("drag: what is dragged is fixed when it is lifted, and the folder is asked again when it is let go", async () => {
+  await withPage(async (page) => {
+    await dragTo(page, tile(page, "Angebot.pdf"), folder(page, "Projekte"));
+    // the selection changes under the drag: the drag keeps what it lifted
+    await page.evaluate(() => window.__select?.(["angebot", "messe"]));
+    await moveTo(page, (await folder(page, "Archiv").boundingBox())!);
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toEqual(["angebot>archiv"]);
+    // the folder stops taking files while the pointer is down: letting go moves nothing
+    await dragTo(page, tile(page, "Werkstatt mit einem sehr langen Dateinamen, der nicht passt.jpg"), folder(page, "Projekte"));
+    expect(await folder(page, "Projekte").getAttribute("data-drop-over")).toBe("");
+    await page.evaluate(() => {
+      window.__refuseAll = true;
+    });
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toEqual(["angebot>archiv"]);
+  });
+});
+
+test("drag: a folder never goes into a folder that lies in it", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("treeitem", { name: "Projekte", exact: true }).focus();
+    await page.keyboard.press("ArrowRight");
+    await dragTo(page, folder(page, "Projekte"), folder(page, "Website"));
+    expect(await folder(page, "Website").getAttribute("data-drop-refused")).toBe("");
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toBeUndefined();
+  });
+});
+
+test("tiles: a tile's deeds open from its '…', a right-click and Shift+F10 - the way to move without dragging", async () => {
+  await withPage(async (page) => {
+    await tile(page, "Angebot.pdf").focus();
+    await page.keyboard.press("Shift+F10");
+    await page.getByRole("menuitem", { name: "Verschieben nach …" }).click();
+    expect(await page.evaluate(() => window.__deeds)).toEqual(["move:angebot"]);
+    await tile(page, "Messestand.jpg").click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Löschen" }).click();
+    expect(await page.evaluate(() => window.__deeds)).toEqual(["move:angebot", "delete:messe"]);
+    // the "…" is no Tab stop of its own: the grid stays one stop
+    expect(
+      await tiles(page)
+        .locator("button[aria-haspopup]")
+        .evaluateAll((buttons) => buttons.every((b) => b.tabIndex === -1)),
+    ).toBe(true);
+  });
+});
+
+test("drag: a folder of another scope with the same key never takes the entry", async () => {
+  await withPage(async (page) => {
+    const other = page.getByRole("list", { name: "Andere Ablage" }).getByRole("listitem").first();
+    await dragTo(page, tile(page, "Angebot.pdf"), other);
+    expect(await other.getAttribute("data-drop-over")).toBeNull();
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toBeUndefined();
+    expect(await page.evaluate(() => window.__deeds)).toBeUndefined();
+  });
+});
+
+test("files: a folder from the computer is refused visibly; nothing is handed on", async () => {
+  await withPage(async (page) => {
+    const result = await page.evaluate(() => {
+      const element = document.querySelector('.k2-table tbody tr[data-drop-target="belege"]');
+      if (!element) return "missing";
+      // a directory as the browser hands it over: an item whose entry is a directory
+      const proto = DataTransferItem.prototype as unknown as { webkitGetAsEntry: () => unknown };
+      proto.webkitGetAsEntry = () => ({ isDirectory: true, isFile: false, name: "Belege 2025" });
+      const data = new DataTransfer();
+      data.items.add(new File([""], "Belege 2025", { type: "" }));
+      element.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data }));
+      element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+      return element.hasAttribute("data-drop-refused") ? "refused" : "not refused";
+    });
+    expect(result).toBe("refused");
+    expect(await page.evaluate(() => window.__files)).toBeUndefined();
+  });
+});

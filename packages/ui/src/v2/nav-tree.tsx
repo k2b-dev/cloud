@@ -175,6 +175,8 @@ export const NavTreeView = (props: NavTree) => {
   }));
   const dragging = useDragMove(() => props.drag, {
     targets: () => [...nodes().keys()].filter((key) => props.drag?.target?.(key)),
+    // a place never goes into a place that lies in it
+    within: (target, key) => (treePath(props.items, target) ?? []).includes(key),
     open: (key) => {
       if (!parts.controller.isExpanded(key)) parts.controller.expand(key);
     },

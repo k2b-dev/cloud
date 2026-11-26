@@ -106,6 +106,12 @@ export default function FileGrid(props: Props) {
             image: file.thumb,
             color: color[file.kind],
             href: `/files/${file.id}`,
+            // the way to move without dragging: keys (Shift+F10), touch and a right-click
+            menu: [
+              { label: "Verschieben nach …", icon: "folder-symlink" },
+              { label: "Umbenennen", icon: "pencil" },
+              { label: "Löschen", icon: "trash", danger: true },
+            ],
           }))}
           select={{ selected: props.selected ?? [], onChange: () => {} }}
           drag={drag}

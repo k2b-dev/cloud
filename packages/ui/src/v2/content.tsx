@@ -882,6 +882,8 @@ export const Table = <T,>(props: TableProps<T>) => {
   const dragging = useDragMove(() => props.drag, {
     targets: () => shownRows().flatMap((entry, index) => (props.drag?.target?.(key(entry.row, index)) ? [key(entry.row, index)] : [])),
     selected: () => props.select?.selected ?? [],
+    // in a tree, a row never goes into a row that lies in it
+    within: (target, rowKey) => props.tree !== undefined && wayTo(target).includes(rowKey),
     // a closed folder row the pointer rests on opens, so a drag reaches the level below
     open: (target) => {
       if (props.tree && !expanded().includes(target)) expand(target, props.drag?.label(target) ?? "");

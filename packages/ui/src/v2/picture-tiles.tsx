@@ -1,10 +1,12 @@
-import { For, Show } from "solid-js";
+import { For, onMount, Show } from "solid-js";
 import { useTileGrid } from "./behavior/tiles";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { type DragMove, useDragMove } from "./drag";
 import { custom, Icon } from "./marks";
+import { Menu, type MenuEntry } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate } from "./types";
 
 /**
@@ -30,6 +32,41 @@ export type PictureTile = {
   onNavigate?: OnNavigate;
   /** A deed in place instead of a page, such as opening a preview. */
   onOpen?: () => void;
+  /**
+   * The deeds of this tile, such as "Verschieben nach …", "Umbenennen", "Löschen": a "…" on the picture under the
+   * pointer, a right-click, Shift+F10 or the menu key. It is also the way to move a tile without dragging.
+   */
+  menu?: readonly MenuEntry[];
+};
+
+/** Keys and presses on the "…" stay its own; they must not reach the tile (Enter would open it). */
+const stop = (event: Event) => event.stopPropagation();
+
+/** A Shift+F10 or the menu key on a tile opens its deeds, as a right-click does. */
+const asksForMenu = (event: KeyboardEvent) => event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
+
+const openMenuOf = (tile: Element) => tile.querySelector<HTMLElement>(":scope > .k2-tile-pic > .k2-tile-menu > button")?.click();
+
+/**
+ * The "…" of a tile: a shortcut for the pointer only, out of the tab order and hidden from assistive technology, which
+ * opens the same menu with Shift+F10 on the tile. The focus a closing menu gives back goes to the tile.
+ */
+const TileMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
+  let span: HTMLSpanElement | undefined;
+  onMount(() => {
+    const button = span?.querySelector("button");
+    button?.setAttribute("tabindex", "-1");
+    button?.setAttribute("aria-hidden", "true");
+  });
+  const back = (event: FocusEvent) => {
+    if (event.target instanceof HTMLElement && event.target.matches("button[aria-hidden]"))
+      event.target.closest<HTMLElement>(".k2-tile")?.focus();
+  };
+  return (
+    <span ref={span} class="k2-tile-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop} on:focusin={back}>
+      <Menu label={props.label} items={props.items} />
+    </span>
+  );
 };
 
 export type PictureTilesProps = {
@@ -56,6 +93,7 @@ export type PictureTilesProps = {
  * a tile, Space selects it. The behaviour is core's roving focus with its spatial move.
  */
 export const PictureTiles = (props: PictureTilesProps) => {
+  const overlay = useOverlayMessages();
   const grid = useTileGrid(() => ({ current: props.current ?? null }));
   const selected = (key: string) => props.select?.selected.includes(key) ?? false;
   const toggle = (key: string, on: boolean) => {
@@ -99,9 +137,17 @@ export const PictureTiles = (props: PictureTilesProps) => {
                 data-selected={selected(tile.key) ? "" : undefined}
                 data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}
                 onClick={open}
+                onContextMenu={(event: MouseEvent) => {
+                  if (!tile.menu || !(event.currentTarget instanceof Element)) return;
+                  event.preventDefault();
+                  openMenuOf(event.currentTarget);
+                }}
                 onKeyDown={(event: KeyboardEvent) => {
                   if (event.target !== event.currentTarget || !(event.currentTarget instanceof HTMLElement)) return;
-                  if (event.key === " " && props.select) {
+                  if (tile.menu && asksForMenu(event)) {
+                    event.preventDefault();
+                    openMenuOf(event.currentTarget);
+                  } else if (event.key === " " && props.select) {
                     event.preventDefault();
                     toggle(tile.key, !selected(tile.key));
                   } else if (event.key === "Enter") {
@@ -128,6 +174,7 @@ export const PictureTiles = (props: PictureTilesProps) => {
                       />
                     )}
                   </Show>
+                  <Show when={tile.menu}>{(menu) => <TileMenu label={overlay().actionsFor({ name: tile.title })} items={menu()} />}</Show>
                   <Show when={props.select}>
                     <span class="k2-tile-check">
                       <MarkCheck

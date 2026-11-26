@@ -346,6 +346,13 @@ export function createDragOnto(options: {
   preview?: (key: string, item: HTMLElement, point: { x: number; y: number }) => HTMLElement;
   /** A pointer that rests on a target for `HOVER_OPEN_MS`, such as a closed folder that should open. */
   onRest?: (target: string) => void;
+  /**
+   * The elements of the targets with their ids. Only these count, so a target of another drag with the same id is
+   * never taken. Left out: every element marked `data-drop-target`.
+   */
+  targetElements?: () => Iterable<readonly [HTMLElement, string]>;
+  /** The item was lifted (pointer or keys): what a drag carries is fixed now. */
+  onLift?: (key: string) => void;
 }) {
   const t = useBehaviorMessages();
   const [moving, setMoving] = createSignal<string | null>(null);
@@ -359,13 +366,16 @@ export function createDragOnto(options: {
   let stop: (() => void) | undefined;
   onCleanup(() => stop?.());
 
+  // A target still takes the item when it is let go: it is still one of the targets and still accepts it.
+  const stillTakes = (key: string, target: string) => options.targets().some((entry) => entry.id === target) && accepted(key, target);
+
   const finish = (key: string, target: string | null, by: "drop" | "cancel") => {
     stop = undefined;
     clearTimeout(rest);
     setMoving(null);
     setOver(null);
     setRefused(null);
-    if (by === "drop" && target) {
+    if (by === "drop" && target && stillTakes(key, target)) {
       options.onDrop(key, target);
       announce(t().ontoDrop({ label: options.itemLabel(key), target: label(target) }), { priority: "assertive" });
     } else {
@@ -373,17 +383,26 @@ export function createDragOnto(options: {
     }
   };
 
-  /** The target under the point, accepted or not. */
+  const inside = (element: Element, x: number, y: number) => {
+    const rect = element.getBoundingClientRect();
+    return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+  };
+  /** The target under the point, accepted or not; none over a place marked `data-drop-none` ("nothing happens"). */
   const targetAt = (x: number, y: number): string | null => {
     // Geometry, not hit-testing: WebKit's elementsFromPoint misses the target while the copy sits in the top layer.
+    // The place where letting go does nothing lies above everything, so it wins over a target under it.
+    if ([...document.querySelectorAll("[data-drop-none]")].some((none) => inside(none, x, y))) return null;
     // Only this drag's own targets count, so two boards on one page never take each other's items.
     const own = new Set(options.targets().map((target) => target.id));
-    const el = [...document.querySelectorAll<HTMLElement>("[data-drop-target]")].find((target) => {
-      if (target.closest("[data-drag-preview]") || !own.has(target.dataset.dropTarget ?? "")) return false;
-      const rect = target.getBoundingClientRect();
-      return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
-    });
-    return el?.dataset.dropTarget ?? null;
+    const elements = options.targetElements
+      ? [...options.targetElements()]
+      : [...document.querySelectorAll<HTMLElement>("[data-drop-target]")].map(
+          (element) => [element, element.dataset.dropTarget ?? ""] as const,
+        );
+    const found = elements.find(
+      ([element, id]) => own.has(id) && element.isConnected && !element.closest("[data-drag-preview]") && inside(element, x, y),
+    );
+    return found?.[1] ?? null;
   };
 
   const startPointerDrag = (el: HTMLElement, event: PointerEvent, key: string, threshold: number) => {
@@ -414,6 +433,7 @@ export function createDragOnto(options: {
       threshold,
       cancelOnEscape: true,
       onStart: () => {
+        options.onLift?.(key);
         setMoving(key);
         const source = options.preview?.(key, el, point) ?? el;
         preview = bindDragPreview(source, point);
@@ -438,8 +458,10 @@ export function createDragOnto(options: {
         end();
         // A press that never passed the threshold is a click, not a drag.
         if (!moving()) return;
-        const target = over();
-        finish(key, canceled ? null : target, canceled || !target ? "cancel" : "drop");
+        // what lies under the pointer now decides, not what lay there at the last move
+        const under = canceled ? null : targetAt(point.x, point.y);
+        const target = under && accepted(key, under) ? under : null;
+        finish(key, target, target ? "drop" : "cancel");
       },
     });
     const cleanup = stop;
@@ -460,6 +482,7 @@ export function createDragOnto(options: {
       // The grip must be this item's own, not one of an item around it.
       if (from !== el && !(handle && el instanceof Element && el.contains(handle))) return;
       event.preventDefault();
+      options.onLift?.(key);
       setMoving(key);
       setOver(choices[0]?.id ?? null);
       announce(t().ontoGrab({ label: options.itemLabel(key), target: label(choices[0]?.id ?? null), index: 1, total: choices.length }), {
