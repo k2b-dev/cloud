@@ -569,7 +569,8 @@ function SourceDetail(props: {
       mono: true,
       copy: source().kind === "metrics" ? (source().endpointUrl ?? undefined) : `${props.origin}/api/pulse/ingest`,
     },
-    { label: words().sourceStatusColumn, value: statusChip(source(), t()) },
+    // an error stands once, in its notice above the facts
+    ...(status().lastError ? [] : [{ label: words().sourceStatusColumn, value: statusChip(source(), t()) }]),
     { label: t().newestData, value: status().newestDataAt ? props.when(status().newestDataAt!) : t().noDataYet },
     { label: t().lastSeen, value: source().lastSeenAt ? props.when(source().lastSeenAt!) : t().waiting },
     ...(source().kind === "metrics"
