@@ -211,7 +211,7 @@ export default function FilesScreen(props: {
             .catch(() => null),
           loadStorageFacts(signal, b().loadFailed).catch((error: unknown) => {
             if (signal.aborted) throw error;
-            return { changes: null, usage: null, members: null };
+            return { changes: null, usage: null, usagePending: false, members: null };
           }),
         ]);
         return { ...base, favoritesPreview: favorites, recentByYou: recent, storageFacts: facts };
@@ -1126,7 +1126,9 @@ export default function FilesScreen(props: {
             issues={snapshot().bases.issues}
             favorites={snapshot().favoritesPreview ?? null}
             recent={snapshot().recentByYou ?? null}
-            facts={snapshot().storageFacts ?? { changes: null, usage: null, members: null }}
+            facts={snapshot().storageFacts ?? { changes: null, usage: null, usagePending: false, members: null }}
+            // counts the page did not have yet: the route may count them, once per visit
+            loadFacts={(signal) => loadStorageFacts(signal, b().loadFailed)}
             env={history().env}
             onNavigate={onNavigate}
             onRetry={() => void go(snapshot().source, true)}

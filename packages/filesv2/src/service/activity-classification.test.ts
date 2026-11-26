@@ -33,7 +33,6 @@ const files: Record<string, Classification> = {
   shareAccess: read,
   // the storage table: the newest change from Postgres, usage counted by Filegate below each path, member counts
   storageChanges: read,
-  storageUsage: read,
   storageMembers: read,
   storageFacts: read,
   machineStorage: read,

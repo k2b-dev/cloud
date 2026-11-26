@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { redis, sql } from "@k2b/cloud";
 import { type CloudResourceReaderView, DISCUSSION_PAGE_LIMIT } from "@k2b/cloud/contracts";
-import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
+import { hasPermission, type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import {
   AccountIdentityError,
   type AccountIdentityGroup,
@@ -140,8 +140,12 @@ const maintenanceLog = logger("filesv2:maintenance");
 const usageLog = logger("filesv2:usage");
 /** A storage's count walks at most as far as a search without an index does. */
 const USAGE_SCAN_LIMIT = 10_000;
-/** One page asks Filegate for at most this many counts at once. */
-const USAGE_CONCURRENCY = 4;
+/** One request walks at most this many storages, one after the other: each walk holds Filegate's root lock. */
+const USAGE_WALKS = 2;
+/** All walks of one request end within this time; a storage not counted by then stays "—" until a later visit. */
+const USAGE_BUDGET_MS = 2_000;
+/** A walk's Valkey lock outlives a stuck request by at most this long. */
+const USAGE_LOCK_SECONDS = 30;
 /** A count stays this long in Valkey, so the storage table reads fast again; changes show after it. */
 const USAGE_TTL_SECONDS = 300;
 /** The platform counts at most this many groups per call. */
@@ -1728,51 +1732,75 @@ export function createFilesService(
       if (config.unreadable) throw new FilesError("configuration_unreadable", 503);
       await recoverActivity({ activityId, config, connect: deps.connect, signal: call.requestAbort });
     },
-  }); /**
-   * What each of the reader's Cloud storages holds, for the storage table. Filegate counts below the storage's path
-   * (from its index where it has one) at most `USAGE_SCAN_LIMIT` entries, `USAGE_CONCURRENCY` storages at a time;
-   * Valkey keeps a count for `USAGE_TTL_SECONDS`. A storage that cannot be counted is left out, and its cell says
-   * "—". Linux storages are left out too: their count would include what the reader's Unix rights do not show.
+  });
+  /**
+   * The reader's storages the storage table may describe as a whole: Cloud storages with one active binding of the
+   * same identity, as the history reads them, and a machine storage only where the reader may read its root. A grant
+   * on a subfolder describes that folder, not the storage.
    */
-  async function storageUsage(call: UserFilesCall, signal?: AbortSignal): Promise<StorageUsage[]> {
+  async function wholeStorages(call: UserFilesCall) {
     const state = await context(call.actor);
-    if (state.config.unreadable || !state.config.cloud.enabled) return [];
-    const items = state.candidates.filter(
-      (item) => item.area === "cloud" && !(item.kind === "groups" && state.personalGroupIds.has(item.identity_id)),
-    );
-    const root = deps.connect(state.config, signal).root(state.config.cloud.root);
+    const storages: { item: Candidate; binding: Binding; baseId: string }[] = [];
+    if (state.config.unreadable) return { state, storages };
+    for (const item of state.candidates) {
+      if (item.area !== "cloud" || issueFor(state.config, item.area, state.self.availability)) continue;
+      if (item.kind === "groups" && state.personalGroupIds.has(item.identity_id)) continue;
+      const found = await deps.bindings.find(item);
+      const binding = found.length === 1 ? found[0]! : null;
+      if (!binding || binding.lifecycle !== "active" || !sameBinding(binding, item)) continue;
+      if (item.storage && !hasPermission(await storagePermission(call.actor, item.storage, ""), "read")) continue;
+      storages.push({ item, binding, baseId: `${item.area}:${item.kind}:${item.identity_id}` });
+    }
+    return { state, storages };
+  }
+  /**
+   * What each of those storages holds. Filegate walks the storage's path while it holds the root's lock, so a walk
+   * never runs while a page renders: the page shows the counts Valkey keeps (`USAGE_TTL_SECONDS`) and says which are
+   * missing. The route walks at most `USAGE_WALKS` storages, one at a time, within `USAGE_BUDGET_MS`, each at most
+   * `USAGE_SCAN_LIMIT` entries; a Valkey lock lets one request walk a storage at a time, and without Valkey none walks.
+   */
+  async function storageUsage(
+    call: UserFilesCall,
+    whole: Awaited<ReturnType<typeof wholeStorages>>,
+    options: { walk: boolean; signal?: AbortSignal },
+  ): Promise<{ items: StorageUsage[]; pending: boolean }> {
+    const { state, storages } = whole;
     const counted: StorageUsage[] = [];
-    let next = 0;
-    const count = async () => {
-      while (next < items.length) {
-        signal?.throwIfAborted();
-        const item = items[next++]!;
-        const baseId = `${item.area}:${item.kind}:${item.identity_id}`;
-        const key = `filesv2:usage:${createHash("sha256")
-          .update(JSON.stringify([state.config.url, item.root, item.path]))
-          .digest("hex")}`;
-        // the cache only saves a walk: when Valkey fails, Filegate counts
-        const cached = await redis
-          .get(key)
-          .then((value) => (value ? UsageCacheSchema.parse(JSON.parse(value)) : null))
-          .catch(() => null);
-        if (cached) {
-          counted.push({ baseId, ...cached });
-          continue;
-        }
-        try {
-          const stats = await root.recursiveStats(item.path, USAGE_SCAN_LIMIT, signal);
-          const value = { bytes: stats.bytes, complete: stats.complete };
-          counted.push({ baseId, ...value });
-          await redis.send("SET", [key, JSON.stringify(value), "EX", String(USAGE_TTL_SECONDS)]).catch(() => undefined);
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          usageLog.warn("Storage usage could not be counted", { baseId, error });
-        }
+    const missing: { key: string; path: string; baseId: string }[] = [];
+    for (const { item, baseId } of storages) {
+      const key = `filesv2:usage:${createHash("sha256")
+        .update(JSON.stringify([state.config.url, item.root, item.path]))
+        .digest("hex")}`;
+      const cached = await redis
+        .get(key)
+        .then((value) => (value ? UsageCacheSchema.parse(JSON.parse(value)) : null))
+        .catch(() => null);
+      if (cached) counted.push({ baseId, ...cached });
+      else missing.push({ key, path: item.path, baseId });
+    }
+    if (!options.walk || !missing.length) return { items: counted, pending: missing.length > 0 };
+    const budget = AbortSignal.any([AbortSignal.timeout(USAGE_BUDGET_MS), ...(options.signal ? [options.signal] : [])]);
+    const filegate = deps.connect(state.config, budget).root(state.config.cloud.root);
+    let walked = 0;
+    for (const storage of missing) {
+      if (walked >= USAGE_WALKS || budget.aborted) break;
+      const lock = `${storage.key}:walk`;
+      const claimed = await redis.send("SET", [lock, call.requestId ?? "walk", "NX", "EX", String(USAGE_LOCK_SECONDS)]).catch(() => null);
+      if (claimed !== "OK") continue;
+      walked++;
+      try {
+        const stats = await filegate.recursiveStats(storage.path, USAGE_SCAN_LIMIT, budget);
+        const value = { bytes: stats.bytes, complete: stats.complete };
+        counted.push({ baseId: storage.baseId, ...value });
+        await redis.send("SET", [storage.key, JSON.stringify(value), "EX", String(USAGE_TTL_SECONDS)]).catch(() => undefined);
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        usageLog.warn("Storage usage could not be counted", { baseId: storage.baseId, error });
+      } finally {
+        await redis.del(lock).catch(() => undefined);
       }
-    };
-    await Promise.all(Array.from({ length: Math.min(USAGE_CONCURRENCY, items.length) }, count));
-    return counted;
+    }
+    return { items: counted, pending: counted.length < storages.length };
   }
   /**
    * How many people belong to each of the reader's group storages, for the storage table: counts only, from the
@@ -1802,20 +1830,34 @@ export function createFilesService(
   }
 
   return {
-    storageUsage,
     storageMembers,
     /**
      * The storage table's facts: who changed each storage last, what it holds, how many belong to it. Each part is
      * read alone and is null when it failed, so one that fails leaves only its own cells empty.
      */
-    async storageFacts(call: UserFilesCall & { requestAbort?: AbortSignal }): Promise<StorageFacts> {
+    async storageFacts(call: UserFilesCall & { requestAbort?: AbortSignal }, options: { walk: boolean }): Promise<StorageFacts> {
+      // each part fails alone and leaves its cells empty; the log says which
+      const failed =
+        (part: string) =>
+        (error: unknown): null => {
+          if (!call.requestAbort?.aborted) usageLog.warn("A storage fact could not be read", { part, error });
+          return null;
+        };
+      const whole = await wholeStorages(call).catch(failed("storages"));
       const [changes, usage, members] = await Promise.all([
-        activityReader.storageChanges(call).catch(() => null),
-        storageUsage(call, call.requestAbort).catch(() => null),
-        storageMembers(call).catch(() => null),
+        whole
+          ? activityReader
+              .storageChanges(
+                call,
+                whole.storages.map((storage) => storage.binding.id),
+              )
+              .catch(failed("changes"))
+          : null,
+        whole ? storageUsage(call, whole, { walk: options.walk, signal: call.requestAbort }).catch(failed("usage")) : null,
+        storageMembers(call).catch(failed("members")),
       ]);
       call.requestAbort?.throwIfAborted();
-      return { changes, usage, members };
+      return { changes, usage: usage?.items ?? null, usagePending: usage?.pending ?? false, members };
     },
     ...lifecycle,
     /** Private history-reader hook: authorize the current item before comparing any stored endpoint. */

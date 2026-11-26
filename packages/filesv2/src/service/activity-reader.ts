@@ -591,15 +591,19 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
       });
     },
     /**
-     * Who changed each of the reader's storages last, and when: a column of the storage table. One statement for
-     * all of them (`latestChanges`), then one read of the people's names. Without history it is empty.
+     * Who changed each of the given storages last, and when: a column of the storage table. Only storages the reader
+     * may read as a whole are asked for (`only`, see the service's `wholeStorages`). One statement for all of them
+     * (`latestChanges`), then one read of the people's names. Without history it is empty.
      */
-    async storageChanges(call: ActivityReadCall): Promise<StorageLastChange[]> {
+    async storageChanges(call: ActivityReadCall, only: readonly string[]): Promise<StorageLastChange[]> {
       return withActivityReadBudget(call.requestAbort, async (budget) => {
         const current = await context(call, budget, { endpoint: "storageChanges" });
         if (!current.historyAvailable) return [];
         const rows = await budget.run(() =>
-          data.latestChanges({ serverUrl: current.scope.serverUrl, bindingIds: current.scope.bindingIds }, budget),
+          data.latestChanges(
+            { serverUrl: current.scope.serverUrl, bindingIds: current.scope.bindingIds.filter((id) => only.includes(id)) },
+            budget,
+          ),
         );
         const items = rows.map(
           (row): StorageLastChange => ({

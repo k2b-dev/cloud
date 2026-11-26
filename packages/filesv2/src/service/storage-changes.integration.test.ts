@@ -41,6 +41,8 @@ const foreign: Binding = {
   identity_name: "privat",
   path: "groups/privat",
 };
+/** Every storage of the fixture: the service passes the ones the reader may read as a whole. */
+const every = [baseId, groupId, foreignId];
 const at = (minute: number) => new Date(`2030-05-15T12:${String(minute).padStart(2, "0")}:00.000Z`);
 
 suite("Files storage table: who changed each storage last", () => {
@@ -102,7 +104,7 @@ suite("Files storage table: who changed each storage last", () => {
     // a storage the reader is no member of says nothing
     await seed({ base_id: foreignId, path_before: "groups/privat/x", path_after: "groups/privat/x", finished_at: at(7) });
 
-    const changes = await reader().storageChanges(call);
+    const changes = await reader().storageChanges(call, every);
     expect(changes.toSorted((a, b) => a.baseId.localeCompare(b.baseId))).toEqual([
       {
         baseId: `cloud:groups:${groupIdentity}`,
@@ -114,6 +116,12 @@ suite("Files storage table: who changed each storage last", () => {
     ]);
   });
 
+  test("a storage the service does not pass says nothing, also where the reader is a member", async () => {
+    await seed({ finished_at: at(1) });
+    await seed({ base_id: groupId, path_before: "groups/werkstatt/x", path_after: "groups/werkstatt/x", finished_at: at(2) });
+    expect((await reader().storageChanges(call, [groupId])).map((change) => change.baseId)).toEqual([`cloud:groups:${groupIdentity}`]);
+  });
+
   test("a move into the storage counts for it by its new side", async () => {
     await seed({
       action: "item.move",
@@ -123,7 +131,7 @@ suite("Files storage table: who changed each storage last", () => {
       path_after: "groups/werkstatt/Plan.pdf",
       finished_at: at(8),
     });
-    const changes = await reader([groupId]).storageChanges(call);
+    const changes = await reader([groupId]).storageChanges(call, every);
     expect(changes.map((change) => [change.baseId, change.time])).toEqual([[`cloud:groups:${groupIdentity}`, at(8).toISOString()]]);
   });
 
@@ -132,7 +140,7 @@ suite("Files storage table: who changed each storage last", () => {
     await seed({ base_id: groupId, path_before: "groups/werkstatt/x", path_after: "groups/werkstatt/x", finished_at: at(30) });
     const meter = await meterSql();
     try {
-      const statements = await meter.during(() => reader().storageChanges(call));
+      const statements = await meter.during(() => reader().storageChanges(call, every));
       // one read of the activity in the reader's budget frame (BEGIN, its timeout, the read, COMMIT), one of names
       expect(statements).toHaveLength(5);
       expect(
@@ -148,7 +156,7 @@ suite("Files storage table: who changed each storage last", () => {
     await seed({ finished_at: at(1) });
     const meter = await meterSql();
     try {
-      const statements = await meter.during(async () => expect(await reader([]).storageChanges(call)).toEqual([]));
+      const statements = await meter.during(async () => expect(await reader([]).storageChanges(call, every)).toEqual([]));
       expect(statements).toEqual([]);
     } finally {
       await meter.close();

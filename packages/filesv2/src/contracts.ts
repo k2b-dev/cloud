@@ -68,7 +68,13 @@ export type StorageMembers = { baseId: string; members: number };
  * What the storage table shows beside each storage's name. Each part is read alone and is null when it failed, so its
  * cells say "—" and the rest stands.
  */
-export type StorageFacts = { changes: StorageLastChange[] | null; usage: StorageUsage[] | null; members: StorageMembers[] | null };
+export type StorageFacts = {
+  changes: StorageLastChange[] | null;
+  usage: StorageUsage[] | null;
+  /** Some storage has no count yet: the page asks the route once more, which may count it. */
+  usagePending: boolean;
+  members: StorageMembers[] | null;
+};
 export type FileEntry = {
   revision?: string;
   /** Stable `filesv2.entry` ref (`n:<baseId>:<fileId>`) that survives rename and move; absent where only path refs exist. */

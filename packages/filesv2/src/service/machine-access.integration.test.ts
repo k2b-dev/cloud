@@ -3,7 +3,7 @@ import { type ProcessSync, redis, sql, startProcessSync } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { type AccessSubject, type AuthContext, auth, type RequestActor, type RequestAuthority, requireInvocation } from "@k2b/cloud/server";
 import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
-import { accounts, coreSettings, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { accounts, coreSettings, secrets, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { invocationAuthorityFromRequest } from "@k2b/cloud/services/identity/invocation-authority";
 import { issueInvocationToken } from "@k2b/cloud/services/identity/issue-invocation";
 import { Filegate } from "@k2b/filegate";
@@ -866,4 +866,70 @@ suite("Files machine storage through actual API tokens", () => {
       ).rejects.toMatchObject({ status: 403 });
     }, 60000);
   }
+
+  test("the storage table describes a machine storage only for a reader of its root, and only its route walks it", async () => {
+    // the history describes a storage only where the reader's area is available: local Linux on, as in production
+    const [kept] = await sql<{ value: string }[]>`SELECT value FROM settings.entries WHERE key='linux.identity_config'`;
+    const linux = { enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" };
+    await sql`INSERT INTO settings.entries(key,value) VALUES('linux.identity_config',${await secrets.encrypt(JSON.stringify(linux))})
+      ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`;
+    try {
+      const owner = await serviceAccounts.createStandalone({ name: "Storage table fixture", kind: "agent", createdBy: admin.user.id });
+      if (!owner.ok) throw new Error(owner.error.code);
+      const storage = await service.createMachineStorage(call(), { ownerId: owner.data.id, area: "cloud" });
+      const [binding] = await sql<
+        { id: string; root: string; path: string }[]
+      >`SELECT id,root,path FROM filesv2.bases WHERE id=${storage.id}::uuid`;
+      const files = client.root("cloud");
+      for (const folder of ["sub", "rest"]) await files.mkdir(`${binding!.path}/${folder}`).catch(() => undefined);
+      await files.put(`${binding!.path}/rest/Plan.xlsx`, new Blob(["x".repeat(500)]));
+      await files.put(`${binding!.path}/sub/Notiz.txt`, new Blob(["y".repeat(20)]));
+      await sql`INSERT INTO filesv2.activity ${sql({
+        id: crypto.randomUUID(),
+        state: "done",
+        action: "file.upload",
+        server_url: gateway!.url,
+        root: binding!.root,
+        base_id: binding!.id,
+        directory: false,
+        name: "Plan.xlsx",
+        path_before: null,
+        path_after: `${binding!.path}/rest/Plan.xlsx`,
+        actor_kind: "user",
+        actor_user_id: admin.user.id,
+        via: "web",
+        finished_at: new Date(),
+      })}`;
+      const reader = async (name: string, path: string) => {
+        const id = crypto.randomUUID();
+        await sql`INSERT INTO auth.users(id,uid,provider,profile,admin,display_name) VALUES(${id}::uuid,${`${name}-${id.slice(0, 8)}`},'local','user',false,${name})`;
+        await service.grantStorage(call(), storage.id, { path, principal: { type: "user", userId: id }, permission: "read" });
+        const user = await accounts.users.get({ id });
+        if (!user) throw new Error("the reader fixture was not stored");
+        return testCall({ kind: "user" as const, user });
+      };
+      const ofStorage = <T extends { baseId: string }>(items: readonly T[] | null) => items?.find((item) => item.baseId === storage.baseId);
+
+      // a grant on a subfolder describes that folder, not the storage: no size and no last change, also on the route
+      const folderOnly = await service.storageFacts(await reader("Folder reader", "sub"), { walk: true });
+      expect(ofStorage(folderOnly.usage)).toBeUndefined();
+      expect(ofStorage(folderOnly.changes)).toBeUndefined();
+
+      // a reader of the root: the page shows only kept counts and says one is missing; the route counts it
+      const whole = await reader("Root reader", "");
+      const page = await service.storageFacts(whole, { walk: false });
+      expect(ofStorage(page.usage)).toBeUndefined();
+      expect(page.usagePending).toBe(true);
+      expect(ofStorage(page.changes)?.time).toBeDefined();
+      const route = await service.storageFacts(whole, { walk: true });
+      expect(ofStorage(route.usage)?.bytes).toBeGreaterThanOrEqual(520);
+      // the next page shows the count the route kept, without a walk
+      const again = await service.storageFacts(whole, { walk: false });
+      expect(ofStorage(again.usage)).toEqual(ofStorage(route.usage));
+      expect(again.usagePending).toBe(false);
+    } finally {
+      if (kept) await sql`UPDATE settings.entries SET value=${kept.value} WHERE key='linux.identity_config'`;
+      else await sql`DELETE FROM settings.entries WHERE key='linux.identity_config'`;
+    }
+  }, 60000);
 });

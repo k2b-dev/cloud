@@ -1,6 +1,6 @@
 import { formatFileViewSize, useLocale } from "@k2b/ui";
 import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Table, Tiles } from "@k2b/ui/v2";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry, StorageFacts } from "../contracts";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
@@ -37,6 +37,8 @@ export default function OverviewPane(props: {
   recent: RecentByYou | null;
   /** Who changed each storage last, what it holds and how many belong to it; a part that failed is null. */
   facts: StorageFacts;
+  /** Reads the facts again, which may count a storage the first picture had no count for. */
+  loadFacts?: (signal: AbortSignal) => Promise<StorageFacts>;
   env: HistoryEnvironment;
   onNavigate: OnNavigate;
   onRetry: () => void;
@@ -46,11 +48,26 @@ export default function OverviewPane(props: {
   const h = useHistoryMessages();
   const locale = useLocale();
   const labels = createMemo(() => props.bases.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) })));
+  // The facts the page brought; where a storage had no count yet, the route is asked once after the first picture
+  // (the page itself never walks a storage). Only the cells of the new counts change, the rows keep their place.
+  const [facts, setFacts] = createSignal(props.facts);
+  createEffect(() => setFacts(props.facts));
+  onMount(() => {
+    if (!props.facts.usagePending || !props.loadFacts) return;
+    const abort = new AbortController();
+    onCleanup(() => abort.abort());
+    props
+      .loadFacts(abort.signal)
+      .then((next) => {
+        if (!abort.signal.aborted) setFacts(next);
+      })
+      .catch(() => undefined);
+  });
   // each fact by its storage; a storage without one shows "—" in that cell
   const byBase = <T extends { baseId: string }>(items: readonly T[] | null) => new Map((items ?? []).map((item) => [item.baseId, item]));
-  const changes = createMemo(() => byBase(props.facts.changes));
-  const usage = createMemo(() => byBase(props.facts.usage));
-  const members = createMemo(() => byBase(props.facts.members));
+  const changes = createMemo(() => byBase(facts().changes));
+  const usage = createMemo(() => byBase(facts().usage));
+  const members = createMemo(() => byBase(facts().members));
   const kind = (base: BaseSummary) => {
     if (base.kind === "users") return b().onlyYou;
     const count = members().get(base.id)?.members;
@@ -65,7 +82,7 @@ export default function OverviewPane(props: {
   };
   const lastBy = (base: BaseSummary) => {
     const change = changes().get(base.id);
-    // the table names who changed what the storage holds: any such change reads as a person's, never a visitor's link
+    // the table names who changed what the storage holds; its action is not shown, so it is read as an edit
     return change ? actorOf({ actor: change.actor, via: change.via, action: "file.edit" }, h(), props.env) : null;
   };
   const lastWhen = (base: BaseSummary) => {

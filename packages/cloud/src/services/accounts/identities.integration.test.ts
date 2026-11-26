@@ -148,6 +148,10 @@ suite("public account identity reads against isolated Postgres", () => {
     // the apprentices belong to the workshop; a cycle back must not count anyone twice
     await db`INSERT INTO auth.group_groups_v2 VALUES(${workshop}::uuid,${apprentices}::uuid),(${apprentices}::uuid,${workshop}::uuid)`;
     expect(await service.groupMemberCounts(actor, [workshop, foreign])).toEqual([{ groupId: workshop, members: 3 }]);
+    // an expired account no longer counts
+    await db`UPDATE auth.users SET account_expires=now() - interval '1 day' WHERE id=${helper.user.id}::uuid`;
+    expect(await service.groupMemberCounts(actor, [workshop])).toEqual([{ groupId: workshop, members: 2 }]);
+    await expect(service.groupMemberCounts(actor, ["not-a-group"])).rejects.toMatchObject({ code: "invalid_group_id" });
     // a group the reader is not in says nothing, not even that it is empty
     expect(await service.groupMemberCounts(await user("outsider"), [workshop, foreign])).toEqual([]);
     expect(await service.groupMemberCounts(actor, [])).toEqual([]);

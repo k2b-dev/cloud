@@ -467,6 +467,7 @@ export function fixtureStorageFacts(fixture: FixtureCase, storages: readonly Bas
         ? []
         : [{ baseId: base.id, bytes: 1_250_000 * (index + 1) ** 3, complete: !(fixture === "worst" && index === 1) }],
     ),
+    usagePending: false,
     members: shown.filter((base) => base.kind === "groups").map((base, index) => ({ baseId: base.id, members: ((index * 5) % 23) + 2 })),
   };
 }

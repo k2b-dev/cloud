@@ -250,6 +250,7 @@ describe("Filesv2 progressive navigation", () => {
             recentByYou: null,
             // the home has all three facts; the group only its people, so its other cells say "—"
             storageFacts: {
+              usagePending: false,
               changes: [
                 {
                   baseId: "home",
