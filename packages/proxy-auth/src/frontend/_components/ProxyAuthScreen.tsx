@@ -237,7 +237,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           sticky
           current={props.open ?? undefined}
           open={(client) => ({ href: `${LIST}?client=${encodeURIComponent(client.id)}` })}
-          empty={{ icon: "shield-half", text: t().empty, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }}
+          // "Neuer Client" stands in the head (on the phone it floats): the empty state does not repeat it
+          empty={{ icon: "shield-half", text: t().empty }}
           phone={(client) => ({
             lines: [client.name, client.description || client.clientId],
             time: client.created,
