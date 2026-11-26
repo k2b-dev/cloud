@@ -262,7 +262,7 @@ describe("Filesv2 server-rendered feedback", () => {
     ));
     for (const text of ["Drafts", "Budget 2027.xlsx", "Notes.md", "Projects", "3 entries ·"]) expect(html).toContain(text);
     // beside an open file the upload stays in "+", so nothing floats over the file on the phone
-    expect(html).not.toContain('>Upload<');
+    expect(html).not.toContain(">Upload<");
     expect(html).toContain('data-k2-part="Workspace"');
     expect(html).toContain('data-k2-part="Table"');
     expect(html).toContain('data-k2-part="Path"');

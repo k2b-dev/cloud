@@ -86,6 +86,23 @@ afterAll(async () => {
   await browser?.close();
 });
 
+/** Pins the page's Date to an instant from which it flows on; runs in the page before its scripts. */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 type View = { width: number; height: number; touch: boolean; name: string };
 const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
@@ -130,9 +147,10 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     reducedMotion: "reduce",
     colorScheme: "light",
   });
+  // The fixtures carry dates: the page's Date flows from the fixture's "now", also after a navigation in place. Only
+  // Date is pinned; timers and animation frames stay real (rule test-clock).
+  await context.addInitScript(pinPageClock, Date.parse(FIXTURE_NOW));
   const tab = await context.newPage();
-  // The fixtures carry dates: the page's clock stands at the fixture's "now", also after a navigation in place.
-  await tab.clock.setFixedTime(new Date(FIXTURE_NOW));
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
   const seen: Seen = { pages: [], api: [], posts: [] };
