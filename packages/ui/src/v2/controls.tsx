@@ -1274,8 +1274,11 @@ const ChoiceGroup = (props: ChoiceProps) => {
                   required={(field?.required && !props.multiple) || undefined}
                   ref={(input: HTMLInputElement) => {
                     input.defaultChecked = initial.includes(option.value);
-                    if (props.multiple && index() === 0)
-                      createRenderEffect(() => input.setCustomValidity(field?.required && chosen().length === 0 ? t().chooseOne : ""));
+                    // the box that is first now: options that change their order hand the sentence on
+                    if (props.multiple)
+                      createRenderEffect(() =>
+                        input.setCustomValidity(index() === 0 && field?.required && chosen().length === 0 ? t().chooseOne : ""),
+                      );
                   }}
                   disabled={props.disabled}
                   onChange={(event) => choose(option.value, event.currentTarget.checked)}

@@ -218,6 +218,14 @@ test("choice of several that is required: the form cannot be sent until one is c
     expect(
       await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>('input[name="crew"]')].every((box) => box.validity.valid)),
     ).toBe(true);
+    // with none chosen again the field asks again, in the language of the page
+    await page.evaluate(() => {
+      document.documentElement.lang = "en";
+    });
+    await crew.getByRole("checkbox", { name: "Jonas Wolf" }).click();
+    await page.waitForFunction(
+      () => document.querySelector<HTMLInputElement>('input[name="crew"]')?.validationMessage === "Choose at least one option.",
+    );
   });
 });
 
