@@ -121,6 +121,19 @@ export function measurePastInPage(options: SqueezedOptions): { past: string[] } 
     // its box, under what stands beside it (marks, a deed, the time) or past the row (U2 26.11.).
     const inner = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
     const beside = Array.from(row.querySelectorAll(":scope > :is(.k2-row-marks, .k2-row-end, .k2-row-time)"));
+    // The parts at the side of a row never lie on one another (W1b 26.11.: a row of one line put its time and its deeds
+    // in one place).
+    for (const [index, part] of beside.entries()) {
+      const own = part.getBoundingClientRect();
+      if (own.width <= 0) continue;
+      for (const other of beside.slice(index + 1)) {
+        const box2 = other.getBoundingClientRect();
+        const across = Math.min(own.right, box2.right) - Math.max(own.left, box2.left);
+        const down = Math.min(own.bottom, box2.bottom) - Math.max(own.top, box2.top);
+        if (box2.width > 0 && across > 0.5 && down > 4)
+          past.push(`${part.className} "${labelOf(part)}" lies on ${other.className} "${labelOf(other)}"; each takes a place of its own`);
+      }
+    }
     for (const line of Array.from(row.querySelectorAll<HTMLElement>(":scope > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3)"))) {
       const own = line.getBoundingClientRect();
       if (own.width <= 0) continue;

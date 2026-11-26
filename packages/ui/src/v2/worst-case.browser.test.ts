@@ -362,10 +362,32 @@ for (const width of [1440, 390])
           { lines: 2, cut: true, hint: "whole" },
           { lines: 2, cut: true, hint: "whole" },
           { lines: 1, cut: false, hint: "none" },
+          { lines: 1, cut: false, hint: "none" },
         ]);
         const layout = await measureV2Layout(page, { root: "#root" });
         expect(layout.past).toEqual([]);
         expect(layout.squeezed).toEqual([]);
+      },
+      "notes",
+    );
+  });
+
+// W1b (26.11.): a row of one line with a time and a deed put both in one place, so the deed lay on the time. The time
+// stands first, then the deed, each in a place of its own, and the measure reports parts that lie on one another.
+for (const width of [1440, 390])
+  test(`a row of one line keeps its time and its deed apart at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const parts = await page.locator(".k2-row", { hasText: "Mit Zeit und Aktion" }).evaluate((row) => {
+          const box = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
+          const time = box(":scope > .k2-row-time");
+          const end = box(":scope > .k2-row-end");
+          const edge = row.getBoundingClientRect();
+          return { apart: time.right <= end.left + 0.5, inside: end.right <= edge.right + 0.5, line: Math.abs(time.top - end.top) < 12 };
+        });
+        expect(parts).toEqual({ apart: true, inside: true, line: true });
+        expect((await measureV2Layout(page, { root: "#root" })).past).toEqual([]);
       },
       "notes",
     );

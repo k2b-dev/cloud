@@ -1171,6 +1171,12 @@
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
 }
+/* a row of one line with a time keeps its deeds in a place of their own after it (W1b 26.11.): a column after the
+   last one of the row, on its one line, so the time and the deeds never lie on one another */
+.k2-ui .k2-row[data-lines="1"][data-time] > .k2-row-end {
+  grid-row: 1;
+  grid-column: -1 / span 1;
+}
 /* Many marks never push the text out of the row (break-ui 25.11.): they take at most half of it. What does not fit
    gives way in a fixed order: a tag is cut to about 12 letters first, then lone symbols (a clip, a lock) leave, then
    the marks at the end; words of a state ("Wartet", "bis Mo") stay whole or leave whole, never stand one letter per
@@ -4223,6 +4229,21 @@
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
+  }
+  /* with a time as well, the time is a quiet line of its own under the text and the deed comes under it, so the two
+     never lie on one another (W1b 26.11.) */
+  .k2-ui .k2-row[data-action][data-time] {
+    grid-template-areas: "lead l1" "lead l2" "lead time" "lead end";
+  }
+  .k2-ui .k2-row[data-action][data-time]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+    grid-template-areas: "l1" "l2" "time" "end";
+  }
+  .k2-ui .k2-row[data-action][data-time] > .k2-row-end {
+    grid-area: end;
+  }
+  .k2-ui .k2-row[data-action][data-time] > .k2-row-time {
+    padding-left: 0;
+    text-align: left;
   }
   .k2-ui .k2-fact {
     display: none;

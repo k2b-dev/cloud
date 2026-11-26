@@ -54,6 +54,13 @@ if (scenario === "notes")
             <Row icon="brain" lines={[memory]} />
             <Row icon="brain" lines={[memory, "gemerkt am 26. Nov."]} time="heute" />
             <Row icon="brain" lines={["Kurz gemerkt"]} />
+            {/* a row of one line with a time and a deed: each takes a place of its own (W1b) */}
+            <Row
+              icon="brain"
+              lines={["Mit Zeit und Aktion"]}
+              time="heute, 11:20"
+              end={<Button variant="ghost" icon="dots" label="Mehr zu Mit Zeit und Aktion" />}
+            />
           </List>
         </Pane>
       </Workspace>

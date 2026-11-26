@@ -771,6 +771,39 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // W1b 26.11.: a row of one line put its time and its deed in one place; parts at a row's side never lie on one another.
+  test(
+    "red: a row's time and deed on one another; green: side by side",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="k2-row" data-k2-part="Row" style="display:grid; grid-template-columns:1fr auto; grid-template-areas:\'l1 time\'">' +
+            '<span class="k2-row-l1">Mit Zeit</span><span class="k2-row-time" style="grid-area:time">heute, 11:20</span>' +
+            '<span class="k2-row-end" style="grid-area:time"><button>Mehr</button></span></div>',
+        ),
+        { width: 900 },
+      );
+      const fine = await open(
+        columns(
+          '<div class="k2-row" data-k2-part="Row" style="display:grid; grid-template-columns:1fr auto auto">' +
+            '<span class="k2-row-l1">Mit Zeit</span><span class="k2-row-time" style="grid-area:auto">heute, 11:20</span>' +
+            '<span class="k2-row-end" style="grid-area:auto"><button>Mehr</button></span></div>',
+        ),
+        { width: 900 },
+      );
+      try {
+        expect((await measureV2Layout(page)).past).toContainEqual(
+          expect.stringMatching(/k2-row-time "heute, 11:20" lies on k2-row-end "Mehr"/),
+        );
+        expect((await measureV2Layout(fine)).past).toEqual([]);
+      } finally {
+        await page.close();
+        await fine.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   // Files 26.11.: a column of min 440 px on a 390 px phone carried its rows (and their dates) past the screen.
   test(
     "red: a row past its column and a row's date past the row; green: a row that fits",
