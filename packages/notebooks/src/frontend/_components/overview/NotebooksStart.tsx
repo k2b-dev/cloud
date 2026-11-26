@@ -5,9 +5,6 @@ import { notebooksPageMessages } from "../../messages";
 import { createNoteCommands } from "../../note-commands";
 import NewNotebookDialog, { type NewNotebookSource, type TemplateSummary } from "./NewNotebookDialog";
 
-/** The signs stand in the app's ink, so the rows read as Notebooks' own ways to start. */
-const appInk = "var(--k2-app-text)";
-
 /** A template's sign as the v2 icon name. */
 const sign = (icon: string) => icon.replace(/^ti ti-/, "");
 
@@ -19,10 +16,9 @@ const sign = (icon: string) => icon.replace(/^ti ti-/, "");
  * No head: the rows are the ways to start, so a "+" there would only repeat them, and v2 has no head that leaves the
  * phone. On the phone the main action floats, as everywhere in v2.
  *
- * k2b-ui gap (with DP): a `Row` has no tinted sign tile (the `k2-stile` of `Section` and `Group`), so the ways to
- * start carry a line icon in the app's ink; `Tiles` cannot open an action and have no colour, so they cannot be the
- * start cards yet; and no primitive holds rows to a readable measure in a wide pane, so at 1440 they stand on the
- * left of a wide page. Once DP's Tiles take a colour and an action, the ways to start become those cards.
+ * k2b-ui gap (with MW, #4320): no primitive holds rows to a readable measure in a wide pane yet, so at 1440 they
+ * stand on the left of a wide page; `Section measure` does that once it lands. Tiles with colour and an action stay
+ * with DP.
  */
 export default function NotebooksStart(props: { templates: TemplateSummary[] }) {
   createNoteCommands();
@@ -37,16 +33,15 @@ export default function NotebooksStart(props: { templates: TemplateSummary[] }) 
             <List label={t().firstNotebook}>
               <Row
                 lines={[t().blankNotebook, t().blankNotebookHint]}
-                icon="notebook"
-                color={appInk}
+                // a neutral mark: a template has no data colour, and colour is for state and the one main action
+                mark={{ icon: "notebook" }}
                 onOpen={() => setCreating({ kind: "blank" })}
               />
               <For each={props.templates}>
                 {(template) => (
                   <Row
                     lines={[template.name, template.description]}
-                    icon={sign(template.icon)}
-                    color={appInk}
+                    mark={{ icon: sign(template.icon) }}
                     onOpen={() => setCreating({ kind: "template", templateId: template.id })}
                   />
                 )}
