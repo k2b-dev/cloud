@@ -5816,37 +5816,24 @@
     flex: none;
     padding-right: 24px;
   }
-  /* the one menu of how the list shows stays at the end of the strip, also while the statements scroll under it */
+  /* the one menu of how the list shows stands at the end, beside the statements, never over them */
   .k2-ui .k2-fbar-view {
     display: inline-flex;
     flex: none;
-    position: sticky;
-    right: 0;
     margin-left: auto;
-    padding-left: 8px;
-    background: var(--k2-surface);
   }
-  /* with it the strip fades before the menu, not under it: the menu stays whole and the statements run out beside it */
+  /* with it the bar itself does not fade: the statements fade at the end of their own strip (below) */
   .k2-ui .k2-fbar[data-view] {
     -webkit-mask-image: none;
     mask-image: none;
-  }
-  .k2-ui .k2-fbar-view::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 100%;
-    width: 24px;
-    background: linear-gradient(90deg, transparent, var(--k2-surface));
-    pointer-events: none;
   }
   .k2-ui .k2-fbar-flow {
     flex-wrap: nowrap;
     flex: none;
   }
-  /* with that menu only the statements scroll, between the filter button and the menu: a statement longer than its
-     room runs out at the menu's fade, never under its words. The strip keeps room for a focus ring (3 px) around. */
+  /* with that menu only the statements scroll, between the filter button and the menu: at rest a statement longer
+     than its room fades out at the end of its own strip, before the menu, and scrolling shows the rest. The strip keeps
+     room for a focus ring (3 px) around. */
   .k2-ui .k2-fbar[data-view] > .k2-fbar-flow {
     flex: 1 1 auto;
     min-width: 0;
@@ -5855,6 +5842,8 @@
     scrollbar-width: none;
     padding: 4px;
     margin: -4px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
   }
   .k2-ui .k2-fbar[data-view] > .k2-fbar-flow::-webkit-scrollbar {
     display: none;
