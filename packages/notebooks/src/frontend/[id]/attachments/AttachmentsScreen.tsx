@@ -98,8 +98,11 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
     if (!agreed) return;
     const deleted = await apiClient[":id"].attachments[":attId"].$delete({ param: { id: notebookId(), attId: attachment.id } });
     if (!deleted.ok) {
-      // k2b-ui gap: a v2 toast has no description, so the server's reason cannot stand under the short outcome.
-      return void toast(t().deleteAttachmentFailed, { status: "bad" });
+      const body = (await deleted.json().catch(() => null)) as { message?: string } | null;
+      // one sentence: the outcome and, when the server gives one, its reason
+      return void toast(body?.message ? t().deleteAttachmentFailedBecause({ reason: body.message }) : t().deleteAttachmentFailed, {
+        status: "bad",
+      });
     }
     setItems((current) => current.filter((entry) => entry.id !== attachment.id));
   };

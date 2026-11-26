@@ -285,6 +285,8 @@ packages/notebooks/src/frontend/[id]/_components/detail/duplicate-note.ts | unti
 packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateReplaced({ name: saved.name })
 packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateSaved({ name: saved.name })
 packages/notebooks/src/frontend/[id]/_components/editor/page-templates.ts | untitled | error instanceof Error ? error.message : messages(locale).failedApplyTemplate
+packages/notebooks/src/frontend/[id]/_components/editor/sync-ended.tsx | untitled | t().contentCopied
+packages/notebooks/src/frontend/[id]/_components/editor/sync-ended.tsx | untitled | t().contentCopyFailed
 packages/notebooks/src/frontend/[id]/_components/settings/DangerZone.tsx | untitled | t().nameMismatch
 packages/notebooks/src/frontend/[id]/_components/settings/TemplatesSection.tsx | untitled | error.message
 packages/notebooks/src/frontend/[id]/_components/settings/TemplatesSection.tsx | untitled | error.message
