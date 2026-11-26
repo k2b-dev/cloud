@@ -272,7 +272,8 @@ domTest("a document downloads once while its download runs, from the row and fro
   const dispose = await renderPanel(dom, () => "RUN001", undefined, withDocument);
   try {
     await Bun.sleep(30);
-    const row = dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid__open");
+    // the document's row opens (downloads) it; its download button does the same
+    const row = dom.root.querySelector<HTMLButtonElement>("[data-k2-part=Row] .k2-row-open");
     expect(row).not.toBeNull();
     row!.click();
     row!.click();

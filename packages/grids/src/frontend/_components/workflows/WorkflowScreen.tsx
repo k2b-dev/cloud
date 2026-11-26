@@ -4,7 +4,6 @@ import { dialogCore, PanelDialog, Placeholder, panelDialogWorkspaceOptions, prom
 import {
   Bar,
   Button,
-  Canvas,
   Cells,
   Chip,
   Empty,
@@ -576,13 +575,15 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
   const failing = () => (activeStats()?.failed ?? 0) + (activeStats()?.needsAttention ?? 0) > 0;
   const runTone = (status: PublicWorkflowRun["status"]): Status | undefined => {
     const tone = workflowRunStatusTone(status);
-    return tone === "ok" ? "ok" : tone === "error" ? "bad" : tone === "running" ? "warn" : undefined;
+    // direction B: a run that went well or runs is a quiet word; colour only where it went wrong
+    return tone === "error" ? (status === "needs_attention" ? "warn" : "bad") : undefined;
   };
-  const runChip = (run: PublicWorkflowRun) => {
-    const status = runTone(run.status);
-    const label = workflowRunStatusLabel(run.status, locale());
+  const runChipOf = (value: PublicWorkflowRun["status"]) => {
+    const status = runTone(value);
+    const label = workflowRunStatusLabel(value, locale());
     return status ? <Chip status={status}>{label}</Chip> : label;
   };
+  const runChip = (run: PublicWorkflowRun) => runChipOf(run.status);
   /** The workflow's address with its filters, and the run it opens. */
   const runHref = (runId: string | null) => {
     const filtered = workflowUrlStateHref(new URL(props.workflowHref, "https://grids.invalid"), currentUrlState());
@@ -694,6 +695,9 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                   </Notice>
                 )}
               </Show>
+              {/* The hero of the screen: how the workflow runs. Direction B wants one figure (--t-figure) with its real
+                  trend and the exceptions under it; until DP's hero band lands, it is this band of three cells. The
+                  runs have no series per day yet (stats are totals, the run list is paged), so no trend is drawn. */}
               <Bar
                 start={t().healthOver({ window: statsWindowLabel(statsWindow(), locale()) })}
                 end={<Menu icon="clock" label={t().metricsWindow} items={windowChoice()} />}
@@ -703,15 +707,7 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                   <Cells.Cell
                     icon="activity"
                     label={t().lastRun}
-                    value={
-                      activeStats()?.latestStatus ? (
-                        <Chip status={runTone(activeStats()!.latestStatus!) ?? "ok"}>
-                          {workflowRunStatusLabel(activeStats()!.latestStatus!, locale())}
-                        </Chip>
-                      ) : (
-                        t().noRuns
-                      )
-                    }
+                    value={activeStats()?.latestStatus ? runChipOf(activeStats()!.latestStatus!) : t().noRuns}
                     meta={activeStats()?.lastRunAt ? formatDate(activeStats()!.lastRunAt!, locale()) : undefined}
                   />
                   <Cells.Cell
@@ -798,22 +794,18 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
             </Pane>
             <Show keyed when={selectedRunId()}>
               {(runId) => (
-                <Pane label={t().runDetails} detail back={{ label: t().runs, href: runHref(null) }}>
-                  {/* k2b-ui gap: the run's detail (steps, inputs, documents, provenance) stays its v1 panel until it is rebuilt */}
-                  <Canvas label={t().runDetails} height="fill">
-                    <WorkflowRunDetailPanel
-                      runId={runId}
-                      initialDetail={props.initialSelectedRun?.run.id === runId ? props.initialSelectedRun : null}
-                      workflows={props.workflows}
-                      workflowLevels={props.workflowLevels}
-                      tables={props.tables}
-                      liveCursor={props.liveCursor}
-                      onRunUpdated={setRunUpdate}
-                      onSelectRun={selectRun}
-                      onClose={() => selectRun(null)}
-                    />
-                  </Canvas>
-                </Pane>
+                <WorkflowRunDetailPanel
+                  runId={runId}
+                  initialDetail={props.initialSelectedRun?.run.id === runId ? props.initialSelectedRun : null}
+                  workflows={props.workflows}
+                  workflowLevels={props.workflowLevels}
+                  tables={props.tables}
+                  liveCursor={props.liveCursor}
+                  onRunUpdated={setRunUpdate}
+                  onSelectRun={selectRun}
+                  onClose={() => selectRun(null)}
+                  back={{ label: t().runs, href: runHref(null) }}
+                />
               )}
             </Show>
           </Pane.Split>

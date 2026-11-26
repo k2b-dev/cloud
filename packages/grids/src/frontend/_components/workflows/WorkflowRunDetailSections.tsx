@@ -1,25 +1,14 @@
-import {
-  Button,
-  DescriptionList,
-  FileGrid,
-  FileTypeIcon,
-  fileKindLabel,
-  IconButton,
-  NoticeCard,
-  Placeholder,
-  Section,
-  StatusBadge,
-  Tooltip,
-  useLocale,
-} from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Button, Chip, Facts, Loading, Row, Section } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
+import { documentFormatLabel } from "../documents/document-workspace-utils";
 import type { PublicDocument } from "../documents/public-document-types";
+import { kindMark } from "../frame/kind-marks";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
 import { financialExportMessages } from "./financial-export-messages";
 import { workflowMessages } from "./messages";
 import {
   formatWorkflowRunDate as formatDate,
-  formatWorkflowRunDuration as formatDuration,
   workflowChannelLabel,
   workflowStepErrorMessage,
   workflowStepIssueReason,
@@ -36,6 +25,21 @@ type WorkflowRunInputRow = {
   display: string;
 };
 
+/** Who or what started the run, in words. */
+export const runStartedBy = (
+  run: PublicWorkflowRun,
+  provenance: PublicWorkspaceWorkflowRunDetail["provenance"] | null,
+  locale: string,
+): string => {
+  const { t } = workflowMessages.resolve([locale]);
+  return (
+    provenance?.actorLabel ??
+    provenance?.serviceAccountLabel ??
+    (run.actorUserId ? t.user : run.serviceAccountId ? t.serviceAccount : t.system)
+  );
+};
+
+/** How the run went: its option, its times and what it waits for (who started it and how long it took stand in its head). */
 export function WorkflowRunExecutionSection(props: {
   run: PublicWorkflowRun;
   provenance: PublicWorkspaceWorkflowRunDetail["provenance"] | null;
@@ -44,53 +48,36 @@ export function WorkflowRunExecutionSection(props: {
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
-  const startedBy = () =>
-    props.provenance?.actorLabel ??
-    props.provenance?.serviceAccountLabel ??
-    (props.run.actorUserId ? t().user : props.run.serviceAccountId ? t().serviceAccount : t().system);
   return (
-    <>
-      <Show when={props.run.error}>{(error) => <NoticeCard tone="danger">{error().message}</NoticeCard>}</Show>
-      <Show when={props.run.resultMessage}>{(message) => <NoticeCard tone="success">{message()}</NoticeCard>}</Show>
-      <Section title={t().execution}>
-        <DescriptionList
-          layout="rows"
-          size="sm"
-          items={[
-            { term: t().startedBy, description: startedBy() },
-            { term: t().runOption, description: props.provenance?.launcherName ?? t().directRun },
-            { term: t().started, description: formatDate(props.run.startedAt, locale()) },
-            { term: t().finished, description: formatDate(props.run.finishedAt, locale()) },
-            { term: t().duration, description: <span class="tabular-nums">{formatDuration(props.run, locale())}</span> },
-            { term: t().lastProgress, description: formatDate(props.latestProgressAt, locale()) },
-            ...(props.waitingFor
-              ? [{ term: t().waitingFor, description: props.waitingFor.replace(/^(Waiting for|Wartet auf)\s*/i, "") }]
-              : []),
-          ]}
-        />
-      </Section>
-    </>
+    <Section title={t().execution}>
+      <Facts
+        items={[
+          ...(props.run.resultMessage ? [{ label: t().result, value: props.run.resultMessage }] : []),
+          { label: t().runOption, value: props.provenance?.launcherName ?? t().directRun },
+          { label: t().lastProgress, value: formatDate(props.latestProgressAt, locale()) },
+          ...(props.waitingFor ? [{ label: t().waitingFor, value: props.waitingFor.replace(/^(Waiting for|Wartet auf)\s*/i, "") }] : []),
+        ]}
+      />
+    </Section>
   );
 }
 
-/** ID, channel, mode, and revision: what support and audits ask for, collapsed under "More about this run". */
+/** ID, channel, mode and revision: what support and audits ask for, with the ID to copy. */
 export function WorkflowRunTechnicalSection(props: { run: PublicWorkflowRun; canInspectRevision: boolean; onInspectRevision: () => void }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <Section title={t().technicalDetails} collapsible summary={t().runTechnicalSummary}>
-      <DescriptionList
-        layout="rows"
-        size="sm"
+    <Section title={t().technicalDetails}>
+      <Facts
         items={[
-          { term: t().runId, description: <span class="block truncate">{props.run.id}</span> },
-          { term: t().channel, description: workflowChannelLabel(props.run.channel, locale()) },
-          { term: t().mode, description: props.run.mode === "dryRun" ? t().dryRun : t().execute },
+          { label: t().runId, value: props.run.id, mono: true, copy: props.run.id },
+          { label: t().channel, value: workflowChannelLabel(props.run.channel, locale()) },
+          { label: t().mode, value: props.run.mode === "dryRun" ? t().dryRun : t().execute },
           {
-            term: t().revision,
-            description: (
-              <Show when={props.canInspectRevision} fallback={<span class="tabular-nums">{props.run.workflowRevision}</span>}>
-                <Button variant="text" size="xs" type="button" class="tabular-nums" onClick={props.onInspectRevision}>
+            label: t().revision,
+            value: (
+              <Show when={props.canInspectRevision} fallback={String(props.run.workflowRevision)}>
+                <Button variant="text" onClick={props.onInspectRevision}>
                   {t().revisionNumber({ revision: props.run.workflowRevision })}
                 </Button>
               </Show>
@@ -106,24 +93,18 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <Section title={t().input}>
-      <Show when={props.inputs.length > 0} fallback={<p class="grids-details-none">{t().noInputs}</p>}>
-        <DescriptionList
-          layout="rows"
-          size="sm"
-          items={props.inputs.map((input) => ({
-            term: input.label,
-            description: (
-              <span class="break-words" title={input.name}>
-                {input.display}
-              </span>
-            ),
-          }))}
-        />
+    // an empty section says so in one quiet line under its title
+    <Section title={t().input} summary={props.inputs.length === 0 ? t().noInputs : undefined}>
+      <Show when={props.inputs.length > 0}>
+        <Facts items={props.inputs.map((input) => ({ label: input.label, value: input.display }))} />
       </Show>
     </Section>
   );
 }
+
+/** A step's state as colour only where it went wrong; a step that ran stays a quiet word. */
+const stepStatus = (tone: ReturnType<typeof workflowStepStatusTone>) =>
+  tone === "error" ? ("bad" as const) : tone === "running" ? ("warn" as const) : undefined;
 
 export function WorkflowRunStepsSection(props: {
   steps: PublicWorkflowStepRun[];
@@ -134,69 +115,52 @@ export function WorkflowRunStepsSection(props: {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <Section title={t().steps}>
-      <div class="flex flex-col gap-2">
-        <For
-          each={props.steps}
-          fallback={
-            <Show when={props.loading} fallback={<p class="grids-details-none">{t().noStepDetails}</p>}>
-              <Placeholder state="loading" variant="compact" align="left" title={t().loadingSteps} />
-            </Show>
-          }
-        >
-          {(step) => {
-            const stepError = () => workflowStepErrorMessage(step.outcome, locale());
-            const outcomeSummary = () => workflowStepOutcomeSummary(step.outcome, locale());
-            const unresolved = () => workflowStepIssueReason(step.outcome) !== null;
-            return (
-              <div class="grid grid-cols-[auto_1fr_auto] items-start gap-2 py-1 text-xs">
-                <StatusBadge tone={workflowStepStatusTone(step.status)} label={workflowStepStatusLabel(step.status, locale())} />
-                <span class="min-w-0 truncate text-primary">
-                  {step.sourcePath.length > 0 ? step.sourcePath.join(".") : step.key} · {step.action ?? step.kind}
-                </span>
-                <span class="text-dimmed tabular-nums">
-                  {step.startedAt && step.finishedAt
-                    ? `${Math.max(0, new Date(step.finishedAt).getTime() - new Date(step.startedAt).getTime())}ms`
-                    : "-"}
-                </span>
-                <Show when={stepError()}>{(message) => <p class="col-span-3 text-red-600 dark:text-red-400">{message()}</p>}</Show>
-                <Show when={outcomeSummary()}>
-                  {(message) => (
-                    <p class={`col-span-3 ${unresolved() ? "text-amber-600 dark:text-amber-400" : "text-dimmed"}`}>{message()}</p>
-                  )}
-                </Show>
-                <Show when={step.documentConfirmation && props.onInspectExport}>
-                  <div class="col-span-3">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
+    <Section
+      title={t().steps}
+      count={props.steps.length || undefined}
+      summary={props.truncated ? t().stepsTruncated : props.steps.length === 0 && !props.loading ? t().noStepDetails : undefined}
+    >
+      <For each={props.steps} fallback={<Show when={props.loading}>{<Loading rows={3} lines={2} />}</Show>}>
+        {(step) => {
+          const error = () => workflowStepErrorMessage(step.outcome, locale());
+          const summary = () => workflowStepOutcomeSummary(step.outcome, locale());
+          const effects = () =>
+            (step.action ? workflowStepPlannedEffects(step.outcome, locale()) : [])
+              .map((effect) => (effect.detail ? `${effect.title} · ${effect.detail}` : effect.title))
+              .join(" · ");
+          const status = () => stepStatus(workflowStepStatusTone(step.status));
+          const unresolved = () => workflowStepIssueReason(step.outcome) !== null;
+          const ms = () =>
+            step.startedAt && step.finishedAt
+              ? `${Math.max(0, new Date(step.finishedAt).getTime() - new Date(step.startedAt).getTime()).toLocaleString(locale())} ms`
+              : "–";
+          return (
+            <Row
+              lines={[
+                `${step.sourcePath.length > 0 ? step.sourcePath.join(".") : step.key} · ${step.action ?? step.kind}`,
+                error() ?? summary() ?? (effects() || workflowStepStatusLabel(step.status, locale())),
+              ]}
+              time={ms()}
+              states={
+                status() || unresolved() ? (
+                  <Chip status={status() ?? "warn"}>{workflowStepStatusLabel(step.status, locale())}</Chip>
+                ) : undefined
+              }
+              action={
+                step.documentConfirmation && props.onInspectExport
+                  ? {
+                      label: financialExportMessages.resolve([locale()]).t.title,
+                      icon: "file-check",
+                      onClick: () => {
                         if (step.documentConfirmation) props.onInspectExport?.(step.documentConfirmation.receiptId);
-                      }}
-                    >
-                      <i class="ti ti-file-check" aria-hidden="true" /> {financialExportMessages.resolve([locale()]).t.title}
-                    </Button>
-                  </div>
-                </Show>
-                <For each={step.action ? workflowStepPlannedEffects(step.outcome, locale()) : []}>
-                  {(effect) => (
-                    <p class="col-span-3 pl-2 text-primary">
-                      <span class="font-medium capitalize">{effect.title}</span>
-                      <Show when={effect.detail}>
-                        {" "}
-                        · <span class="text-dimmed">{effect.detail}</span>
-                      </Show>
-                    </p>
-                  )}
-                </For>
-              </div>
-            );
-          }}
-        </For>
-        <Show when={props.truncated}>
-          <p class="text-xs text-dimmed">{t().stepsTruncated}</p>
-        </Show>
-      </div>
+                      },
+                    }
+                  : undefined
+              }
+            />
+          );
+        }}
+      </For>
     </Section>
   );
 }
@@ -215,73 +179,49 @@ export function WorkflowRunDocumentsSection(props: {
   const t = () => workflowMessages.resolve([locale()]).t;
   const downloadAll = () => {
     const format = workflowRunDownloadFormat(props.documents);
-    if (format === "pdf") return { label: t().downloadAllPdf, hint: t().downloadAllPdfHint };
-    if (format === "zip") return { label: t().downloadAllZip, hint: t().downloadAllZipHint };
-    return { label: t().downloadAll, hint: t().downloadAllMixedHint };
+    return format === "pdf" ? t().downloadAllPdf : format === "zip" ? t().downloadAllZip : t().downloadAll;
   };
+  const formatOf = (document: PublicDocument) =>
+    documentFormatLabel(document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey)?.mimeType);
+  const next = () => (props.documents.hasMore && props.documents.nextOffset !== null ? props.documents.nextOffset : null);
   return (
     <Section
       title={t().generatedDocuments}
       count={props.documents.total || undefined}
       actions={
-        <Show when={props.documents.total > 0}>
-          <Tooltip.Anchor content={downloadAll().hint}>
-            <Button variant="ghost" size="xs" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
-              <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} aria-hidden="true" /> {downloadAll().label}
-            </Button>
-          </Tooltip.Anchor>
-        </Show>
+        props.documents.total > 0
+          ? [{ label: downloadAll(), icon: "download", disabled: props.downloadingAll, onClick: props.onDownloadAll }]
+          : undefined
+      }
+      summary={props.loadMoreError ?? (props.documents.items.length === 0 ? t().noGeneratedDocuments : undefined)}
+      more={
+        next() !== null
+          ? { label: t().loadMoreDocuments, disabled: props.loadingMore, onClick: () => props.onLoadMore(next()!) }
+          : undefined
       }
     >
-      <div class="flex flex-col gap-2">
-        <Show when={props.documents.items.length > 0} fallback={<p class="grids-details-none">{t().noGeneratedDocuments}</p>}>
-          <FileGrid
-            rows={props.documents.items}
-            getRowId={(document) => document.id}
-            label={t().generatedDocuments}
-            layout="list"
-            limit={5}
-            actionVisibility="progressive"
-            renderPreview={(document) => <FileTypeIcon name={document.filename} />}
-            renderLabel={(document) => document.filename}
-            renderMeta={(document) => `${fileKindLabel({ name: document.filename }, locale())} · ${document.number}`}
-            renderActions={(document) => (
-              <Tooltip.Anchor content={t().downloadDocument}>
-                <IconButton
+      <Show when={props.documents.items.length > 0}>
+        <For each={props.documents.items}>
+          {(document) => (
+            <Row
+              mark={{ ...kindMark("documentTemplate"), kind: formatOf(document) }}
+              lines={[document.filename, `${formatOf(document)} · ${document.number}`]}
+              onOpen={() => {
+                if (props.downloadingDocumentId !== document.id) props.onDownload(document);
+              }}
+              end={
+                <Button
+                  icon="download"
                   variant="ghost"
-                  size="sm"
-                  type="button"
                   label={t().downloadNamed({ name: document.filename })}
+                  busy={props.downloadingDocumentId === document.id}
                   onClick={() => props.onDownload(document)}
-                  disabled={props.downloadingDocumentId === document.id}
-                >
-                  <i
-                    class={props.downloadingDocumentId === document.id ? "ti ti-loader-2 animate-spin" : "ti ti-download"}
-                    aria-hidden="true"
-                  />
-                </IconButton>
-              </Tooltip.Anchor>
-            )}
-            onOpen={props.onDownload}
-          />
-        </Show>
-        <Show when={props.documents.hasMore && props.documents.nextOffset !== null ? props.documents.nextOffset : null}>
-          {(offset) => (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              class="w-fit"
-              disabled={props.loadingMore}
-              onClick={() => props.onLoadMore(offset())}
-            >
-              <i class={props.loadingMore ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} aria-hidden="true" />
-              {t().loadMoreDocuments}
-            </Button>
+                />
+              }
+            />
           )}
-        </Show>
-        <Show when={props.loadMoreError}>{(error) => <p class="text-xs text-red-600 dark:text-red-400">{error()}</p>}</Show>
-      </div>
+        </For>
+      </Show>
     </Section>
   );
 }

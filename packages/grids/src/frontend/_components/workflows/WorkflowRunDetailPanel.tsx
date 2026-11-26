@@ -1,21 +1,8 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import {
-  Button,
-  DetailPanel,
-  Dropdown,
-  type DropdownItem,
-  dialogCore,
-  IconButton,
-  Placeholder,
-  panelDialogWorkspaceOptions,
-  prompts,
-  StatusBadge,
-  Tooltip,
-  toast,
-  useLocale,
-} from "@k2b/ui";
+import { dialogCore, panelDialogWorkspaceOptions, prompts, toast, useLocale } from "@k2b/ui";
+import { type Action, Bar, Button, Facts, Failed, Loading, Menu, type MenuEntry, Notice, Pane, RecordHead } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
@@ -34,6 +21,7 @@ import { openFinancialExportDialog } from "./FinancialExportDialog";
 import { workflowMessages } from "./messages";
 import { WorkflowRevisionHistory } from "./WorkflowRevisionHistory";
 import {
+  runStartedBy,
   WorkflowRunDocumentsSection,
   WorkflowRunExecutionSection,
   WorkflowRunInputsSection,
@@ -43,9 +31,9 @@ import {
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import {
   formatWorkflowRunDate as formatDate,
+  formatWorkflowRunDuration as formatDuration,
   isTerminalWorkflowRunStatus,
   workflowRunStatusLabel,
-  workflowRunStatusTone,
   workflowStepOutcomeSummary,
 } from "./workflow-display";
 import { mergeRefreshedWorkflowRunDocuments, type WorkflowRunDocumentsState } from "./workflow-run-documents";
@@ -104,6 +92,8 @@ export function WorkflowRunDetailPanel(props: {
   onRunUpdated: (run: PublicWorkflowRun) => void;
   onSelectRun: (runId: string) => void;
   onClose: () => void;
+  /** The way back to the runs on the phone, where the run is a page of its own. */
+  back?: Action;
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
@@ -468,154 +458,140 @@ export function WorkflowRunDetailPanel(props: {
     return Boolean(current && !isTerminalWorkflowRunStatus(current.status));
   };
   /** Rarer commands on the run; the main action stands beside them. */
-  const runMenu = (): DropdownItem[] => [
+  const runMenu = (): MenuEntry[] => [
     ...(run() && canWrite() && running()
-      ? [{ label: t().rerunWithInputs, icon: "ti ti-repeat", action: () => void runAgain(), disabled: rerunMut.loading() }]
+      ? [{ label: t().rerunWithInputs, icon: "repeat", onClick: () => void runAgain(), disabled: rerunMut.loading() }]
       : []),
-    { label: t().refreshRunDetails, icon: "ti ti-refresh", action: () => refresh() },
+    { label: t().refreshRunDetails, icon: "refresh", onClick: () => refresh() },
   ];
+  const statusLabel = () => (run() ? workflowRunStatusLabel(run()!.status, locale()) : t().loading);
 
   return (
-    <DetailPanel>
-      <DetailPanel.Header
-        kind={
-          <>
-            <span>{t().workflowRun}</span>
-            <span aria-live="polite" aria-atomic="true">
-              <Show when={run()}>
-                {(current) => (
-                  <StatusBadge tone={workflowRunStatusTone(current().status)} label={workflowRunStatusLabel(current().status, locale())} />
-                )}
-              </Show>
-            </span>
-          </>
-        }
-        title={provenance()?.workflowName ?? activeWorkflow()?.name ?? t().workflowRun}
-        subtitle={run() ? formatDate(run()!.createdAt, locale()) : t().loading}
-        primaryActions={
-          <>
-            <Show when={run() && canWrite()}>
-              <Show
-                when={running()}
-                fallback={
-                  <Button
-                    variant="subtle"
-                    size="sm"
-                    type="button"
-                    class="grids-details-main"
-                    onClick={() => void runAgain()}
-                    disabled={rerunMut.loading()}
-                    aria-label={t().rerunWithInputs}
-                  >
-                    <i class={rerunMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-repeat"} aria-hidden="true" />
-                    {t().runAgain}
-                  </Button>
-                }
-              >
-                <Button variant="secondary" size="sm" type="button" onClick={() => void cancelRun()} disabled={cancelMut.loading()}>
-                  <i class={cancelMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-stop"} aria-hidden="true" />
-                  {t().cancelRun}
-                </Button>
-              </Show>
-            </Show>
-            <Dropdown.Root items={runMenu()} align="end" label={t().moreRunActions}>
-              <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreRunActions} aria-busy={loadMut.loading() || undefined}>
-                <i class={loadMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-dots"} aria-hidden="true" />
-              </Dropdown.Trigger>
-            </Dropdown.Root>
-          </>
-        }
-        actions={
-          <Tooltip.Anchor content={t().closeRunDetails}>
-            <IconButton variant="ghost" size="sm" type="button" onClick={props.onClose} label={t().closeRunDetails}>
-              <i class="ti ti-x" aria-hidden="true" />
-            </IconButton>
-          </Tooltip.Anchor>
-        }
-      />
-
-      <DetailPanel.Body scrollPreserveKey={`grids-workflow-run-detail-${props.runId}`}>
-        <Show when={!run()}>
-          <Show when={loadMut.error()} fallback={<Placeholder state="loading" title={t().loadingRun} />}>
-            {(error) => (
-              <Placeholder
-                state="error"
-                title={t().couldNotLoadRun}
-                description={error().message}
-                action={
-                  <Button variant="secondary" size="sm" type="button" onClick={() => refresh()}>
-                    <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                  </Button>
-                }
-              />
-            )}
-          </Show>
-        </Show>
-        <Show when={run() && loadMut.error()}>
-          {(error) => (
-            <Placeholder
-              state="error"
-              align="left"
-              title={t().couldNotRefreshRun}
-              description={error().message}
-              class="shrink-0 py-2"
-              action={
-                <Button variant="secondary" size="sm" type="button" onClick={() => refresh()}>
-                  <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                </Button>
-              }
+    <Pane
+      label={t().workflowRun}
+      detail
+      back={props.back}
+      scrollKey={`grids-workflow-run-detail-${props.runId}`}
+      head={
+        <Bar
+          start={
+            <RecordHead
+              name={run() ? t().runAt({ value: runName(run()!.createdAt, locale()) }) : t().workflowRun}
+              kinds={[statusLabel()]}
             />
-          )}
-        </Show>
-
-        <Show when={run()}>
-          {(current) => (
+          }
+          end={
             <>
-              <WorkflowRunExecutionSection
-                run={current()}
-                provenance={provenance()}
-                latestProgressAt={latestProgressAt()}
-                waitingFor={waitingFor()}
-              />
-              <WorkflowRunInputsSection inputs={inputRows()} />
-              <WorkflowRunStepsSection
-                steps={steps()}
-                truncated={stepsTruncated()}
-                loading={loadMut.loading()}
-                onInspectExport={async (receiptId) => {
-                  const runId = props.runId;
-                  exportReviewController?.abort();
-                  const controller = new AbortController();
-                  exportReviewController = controller;
-                  try {
-                    const confirmed = await openFinancialExportDialog({ runId, receiptId }, controller.signal);
-                    if (confirmed && !controller.signal.aborted && props.runId === runId) refresh(runId);
-                  } finally {
-                    if (exportReviewController === controller) exportReviewController = undefined;
+              <Show when={run() && canWrite()}>
+                <Show
+                  when={running()}
+                  fallback={
+                    <Button icon="repeat" busy={rerunMut.loading()} onClick={() => void runAgain()}>
+                      {t().runAgain}
+                    </Button>
                   }
-                }}
-              />
-              <WorkflowRunDocumentsSection
-                documents={documents()}
-                downloadingDocumentId={downloadingDocumentId()}
-                downloadingAll={downloadingAll()}
-                loadingMore={loadMoreDocumentsMut.loading()}
-                loadMoreError={loadMoreDocumentsMut.error()?.message}
-                onDownload={(document) => void downloadDocument(document)}
-                onDownloadAll={() => void downloadAllDocuments()}
-                onLoadMore={(offset) => loadMoreDocumentsMut.mutate({ runId: props.runId, offset })}
-              />
-              <DetailPanel.Group title={t().moreAboutRun}>
-                <WorkflowRunTechnicalSection
-                  run={current()}
-                  canInspectRevision={revisionWorkflow() !== null}
-                  onInspectRevision={() => void inspectRevision()}
-                />
-              </DetailPanel.Group>
+                >
+                  <Button icon="player-stop" busy={cancelMut.loading()} onClick={() => void cancelRun()}>
+                    {t().cancelRun}
+                  </Button>
+                </Show>
+              </Show>
+              <Menu label={t().moreRunActions} items={runMenu()} />
+              <Button icon="x" variant="ghost" label={t().closeRunDetails} onClick={props.onClose} />
             </>
-          )}
+          }
+        />
+      }
+    >
+      {/* k2b-ui gap: v1 announced a change of the run's state (aria-live); v2 has no primitive for a polite announcement */}
+      <Show when={!run()}>
+        <Show when={loadMut.error()} fallback={<Loading rows={6} lines={2} />}>
+          {(error) => <Failed text={`${t().couldNotLoadRun} ${error().message}`} onRetry={() => refresh()} />}
         </Show>
-      </DetailPanel.Body>
-    </DetailPanel>
+      </Show>
+      <Show when={run() && loadMut.error()}>
+        {(error) => (
+          <Notice tone="bad" title={t().couldNotRefreshRun} actions={[{ label: t().retry, icon: "refresh", onClick: () => refresh() }]}>
+            {error().message}
+          </Notice>
+        )}
+      </Show>
+
+      <Show when={run()}>
+        {(current) => (
+          <>
+            <WorkflowRunHead run={current()} provenance={provenance()} />
+            <WorkflowRunExecutionSection
+              run={current()}
+              provenance={provenance()}
+              latestProgressAt={latestProgressAt()}
+              waitingFor={waitingFor()}
+            />
+            <WorkflowRunInputsSection inputs={inputRows()} />
+            <WorkflowRunStepsSection
+              steps={steps()}
+              truncated={stepsTruncated()}
+              loading={loadMut.loading()}
+              onInspectExport={async (receiptId) => {
+                const runId = props.runId;
+                exportReviewController?.abort();
+                const controller = new AbortController();
+                exportReviewController = controller;
+                try {
+                  const confirmed = await openFinancialExportDialog({ runId, receiptId }, controller.signal);
+                  if (confirmed && !controller.signal.aborted && props.runId === runId) refresh(runId);
+                } finally {
+                  if (exportReviewController === controller) exportReviewController = undefined;
+                }
+              }}
+            />
+            <WorkflowRunDocumentsSection
+              documents={documents()}
+              downloadingDocumentId={downloadingDocumentId()}
+              downloadingAll={downloadingAll()}
+              loadingMore={loadMoreDocumentsMut.loading()}
+              loadMoreError={loadMoreDocumentsMut.error()?.message}
+              onDownload={(document) => void downloadDocument(document)}
+              onDownloadAll={() => void downloadAllDocuments()}
+              onLoadMore={(offset) => loadMoreDocumentsMut.mutate({ runId: props.runId, offset })}
+            />
+            <WorkflowRunTechnicalSection
+              run={current()}
+              canInspectRevision={revisionWorkflow() !== null}
+              onInspectRevision={() => void inspectRevision()}
+            />
+          </>
+        )}
+      </Show>
+    </Pane>
+  );
+}
+
+/** A run is named by when it started, short: "25.11., 07:43". */
+const runName = (value: string, locale: string) =>
+  new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+
+/**
+ * The head of an open run under its name: what went wrong, in red, and its three key facts (who started it, when, how
+ * long it took). It is the slot of the tinted object head of direction B: DP's part replaces it in one place.
+ */
+function WorkflowRunHead(props: { run: PublicWorkflowRun; provenance: PublicWorkspaceWorkflowRunDetail["provenance"] | null }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
+  return (
+    <>
+      <Show when={props.run.error}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+      <Facts
+        inline
+        items={[
+          { label: t().startedBy, value: runStartedBy(props.run, props.provenance, locale()) },
+          { label: t().duration, value: formatDuration(props.run, locale()) },
+          {
+            label: t().finished,
+            value: props.run.finishedAt ? formatDate(props.run.finishedAt, locale()) : workflowRunStatusLabel(props.run.status, locale()),
+          },
+        ]}
+      />
+    </>
   );
 }
