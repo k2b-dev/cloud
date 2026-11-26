@@ -374,10 +374,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       async () => {
         const page = await open("headActions", { width });
         try {
+          // a label kept for its name is visually hidden at 1 px; words that stand are wider
           const found = await page.evaluate(() =>
             [...document.querySelectorAll('[data-k2-part="Section"] .k2-sh-end .k2-btn')].map((button) => {
               const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
-              return { words: label.textContent, shown: label.getBoundingClientRect().width > 0, title: button.getAttribute("title") };
+              return { words: label.textContent, shown: label.getBoundingClientRect().width > 1, title: button.getAttribute("title") };
             }),
           );
           const phone = width === 390;
