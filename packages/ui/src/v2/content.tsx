@@ -14,7 +14,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
-import { HeadPlaceContext, inBarStart, markBarPlace } from "./bar-place";
+import { HeadPlaceContext, inBarStart, markBarPlace, markBarRepeats } from "./bar-place";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
@@ -63,9 +63,11 @@ export const Text = (props: TextProps) => {
   const words = place ? resolveChildren(() => props.children) : undefined;
   const repeats = () => {
     const text = words?.();
-    const name = place?.();
+    const name = place?.place();
     return typeof text === "string" && name !== undefined && text.trim() === name.trim();
   };
+  // a bar that holds nothing but this title gives way whole while the sidebar names the page
+  if (place) markBarRepeats(repeats);
   return (
     <Dynamic
       component={props.href ? "a" : "span"}

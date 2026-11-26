@@ -385,8 +385,9 @@ const MenuRoot = (props: MenuProps) => {
   // it; a main action there joins the bar's one "+"
   const dots = () => iconOnly() && props.icon === undefined;
   if (dots()) markBarPlace("end", "more");
-  else if (!iconOnly() && props.variant === "primary")
+  else
     markBarCreate(() => {
+      if (iconOnly() || props.variant !== "primary") return undefined;
       const label = words();
       return {
         label: props.label ?? (typeof label === "string" ? label : (trigger?.querySelector(".k2-btn-label")?.textContent?.trim() ?? "")),

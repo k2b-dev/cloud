@@ -20,9 +20,8 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: FilteredOrders } = await import("../../skills/k2b-ui/recipes/filtered-table");
-const { LongPath, longPhoto, NamedPlace, OpenItem, SearchAndAction, SearchWithWords, ToolbarInHead, TwoCreates } = await import(
-  "../../test/v2-head-block.fixture"
-);
+const { LongPath, longPhoto, NamedPlace, OpenItem, PaneWithTwoActions, SearchAndAction, SearchWithWords, ToolbarInHead, TwoCreates } =
+  await import("../../test/v2-head-block.fixture");
 type Head =
   | "list"
   | "toolbar"
@@ -34,7 +33,9 @@ type Head =
   | "item"
   | "item-alone"
   | "hollow"
-  | "hollow-words";
+  | "hollow-words"
+  | "named-bare"
+  | "pane-actions";
 const screens = {
   list: () => createComponent(FilteredOrders, {}),
   toolbar: () => createComponent(ToolbarInHead, {}),
@@ -47,6 +48,8 @@ const screens = {
   "item-alone": () => createComponent(OpenItem, { path: false }),
   hollow: () => createComponent(SearchAndAction, {}),
   "hollow-words": () => createComponent(SearchAndAction, { words: "Kunden" }),
+  "named-bare": () => createComponent(NamedPlace, { bare: true }),
+  "pane-actions": () => createComponent(PaneWithTwoActions, {}),
 };
 const markup = (head: Head) => renderToString(screens[head]);
 const bundle = await demoBundle("head-block");
@@ -355,7 +358,8 @@ test("a step of the path to the page itself is no link, so a press there never l
     );
     expect(steps).toEqual([
       { name: "Ablage", href: "#ablage", current: null },
-      { name: "Fotos 2026", href: null, current: "page" },
+      // no link, and no "page" either: the open item is the page; this step is where it stands
+      { name: "Fotos 2026", href: null, current: null },
     ]);
   } finally {
     await page.close();
@@ -466,3 +470,59 @@ test("390 px without a host: the head keeps its search's symbol", async () => {
     await page.close();
   }
 }, 30_000);
+
+test('390 px: several main actions are the round button\'s "+", and each of them runs from it', async () => {
+  const page = await open(390, "creates");
+  try {
+    const fab = page.locator(".k2-fab-menu > .k2-btn");
+    expect(await fab.isVisible()).toBe(true);
+    expect(await page.locator(".k2-fab").count()).toBe(0);
+    for (const action of ["Hochladen", "Neuer Ordner"]) {
+      await fab.click();
+      const menu = page.locator('[data-k2-part="Menu"]:visible');
+      await menu.waitFor();
+      expect(await menu.getByRole("menuitem").allTextContents()).toEqual(["Hochladen", "Neuer Ordner"]);
+      await menu.getByRole("menuitem", { name: action }).click();
+      await settled(page);
+    }
+    expect(await page.evaluate(() => window.__created)).toEqual({ Hochladen: 1, "Neuer Ordner": 1 });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a pane's own head keeps its two main actions: only the workspace's head makes them one \"+\"", async () => {
+  expect(markup("pane-actions")).not.toContain("data-creates");
+  const page = await open(1440, "pane-actions");
+  try {
+    const shown = await page.evaluate(() =>
+      [...document.querySelectorAll('.k2-pane > [data-slot="head"] .k2-bar-end .k2-btn')]
+        .filter((button) => button.getBoundingClientRect().width > 2)
+        .map((button) => button.textContent?.trim()),
+    );
+    expect(shown).toEqual(["Speichern", "Veröffentlichen"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("1440 px: a head that holds nothing but the repeated title gives way whole; on the phone it names the page", async () => {
+  expect(markup("named-bare")).toMatch(/class="k2-bar"[^>]*data-names-place=""/);
+  const wide = await open(1440, "named-bare");
+  try {
+    const height = await wide.evaluate(
+      () => document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!.getBoundingClientRect().height,
+    );
+    expect(height).toBeLessThanOrEqual(1);
+    // still read: the page keeps its name for assistive technology
+    expect(await wide.getByText("Einstellungen", { exact: true }).first().count()).toBe(1);
+  } finally {
+    await wide.close();
+  }
+  const phone = await open(390, "named-bare");
+  try {
+    expect((await named(phone)).title).toBe(true);
+  } finally {
+    await phone.close();
+  }
+}, 60_000);

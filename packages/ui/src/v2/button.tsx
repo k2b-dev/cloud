@@ -79,17 +79,18 @@ export const Button = (props: ButtonProps) => {
   // stops a form being sent twice.
   const off = () => props.disabled || props.busy;
   let element: HTMLElement | undefined;
-  // a main action at the end of a bar: several there become one "+" menu, whose entry runs this button's own click
-  if (props.variant === "primary")
-    markBarCreate(() => {
-      const words = label();
-      return {
-        label: props.label ?? (typeof words === "string" ? words : (element?.textContent?.trim() ?? "")),
-        icon: props.icon,
-        disabled: off(),
-        ...(props.href !== undefined ? { href: props.href } : { onClick: () => element?.click() }),
-      };
-    });
+  // A main action at the end of a workspace's head: several there become one "+" menu, whose entry runs this button's
+  // own click, or opens its address as the button does. It follows the button's variant.
+  markBarCreate(() => {
+    if (props.variant !== "primary") return undefined;
+    const words = label();
+    return {
+      label: props.label ?? (typeof words === "string" ? words : (element?.querySelector(".k2-btn-label")?.textContent?.trim() ?? "")),
+      icon: props.icon,
+      disabled: off(),
+      ...(props.href !== undefined ? { href: props.href, onNavigate: props.onNavigate } : { onClick: () => element?.click() }),
+    };
+  });
   return (
     // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic

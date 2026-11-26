@@ -84,7 +84,7 @@ export function TwoCreates() {
  * A page the sidebar's current entry names ("Einstellungen"): the head repeats it as its title, beside an action.
  * `detail` declares a wide detail, so the sidebar is a drawer from 1024 px of window on.
  */
-export function NamedPlace(props: { detail?: number }) {
+export function NamedPlace(props: { detail?: number; bare?: boolean }) {
   return (
     <Workspace
       detail={props.detail}
@@ -102,7 +102,12 @@ export function NamedPlace(props: { detail?: number }) {
           ]}
         />
       }
-      head={<Bar start={<Text weight="strong">Einstellungen</Text>} end={<Button icon="device-floppy">Speichern</Button>} />}
+      head={
+        <Bar
+          start={<Text weight="strong">Einstellungen</Text>}
+          end={props.bare ? undefined : <Button icon="device-floppy">Speichern</Button>}
+        />
+      }
     >
       <Pane label="Einstellungen">
         <List label="Einstellungen">
@@ -234,6 +239,32 @@ export function SearchAndAction(props: { words?: string }) {
         <List label="Basen">
           <Row icon="database" lines={["Kundenkartei"]} />
           <Row icon="database" lines={["Inventar"]} />
+        </List>
+      </Pane>
+    </Workspace>
+  );
+}
+
+/** A form beside its list whose own head holds two main actions ("Speichern", "Veröffentlichen"): a pane keeps both. */
+export function PaneWithTwoActions() {
+  return (
+    <Workspace head={<Bar start={<Text weight="strong">Seiten</Text>} />}>
+      <Pane
+        label="Seite"
+        head={
+          <Bar
+            start={<Text type="lead">Startseite</Text>}
+            end={
+              <>
+                <Button variant="primary">Speichern</Button>
+                <Button variant="primary">Veröffentlichen</Button>
+              </>
+            }
+          />
+        }
+      >
+        <List label="Abschnitte">
+          <Row icon="file" lines={["Begrüßung"]} />
         </List>
       </Pane>
     </Workspace>

@@ -404,7 +404,11 @@ export const Tabs = (props: TabsProps) => {
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
 /** The end of a long name that stays when the name is cut in its middle: its extension or number, up to 12 letters. */
-const nameEnd = (name: string) => (name.length > 16 ? name.slice(-Math.min(12, Math.floor(name.length / 2))) : "");
+const nameEnd = (name: string) => {
+  // letters, not code units: an emoji or an accent stays whole
+  const letters = Array.from(name);
+  return letters.length > 16 ? letters.slice(-Math.min(12, Math.floor(letters.length / 2))).join("") : "";
+};
 
 /**
  * Whether an address is the page itself: a step there leads nowhere new, and following it would load the page again
@@ -440,7 +444,6 @@ export const Path = (props: PathProps) => {
                   <a
                     class="k2-path-step"
                     href={itself(item.href) ? undefined : item.href}
-                    aria-current={itself(item.href) ? "page" : undefined}
                     title={item.label}
                   >
                     {item.label}
@@ -449,7 +452,7 @@ export const Path = (props: PathProps) => {
               }
             >
               {/* the open item: cut in its middle where it has no room, its end kept, its whole name its hint */}
-              <b aria-current="page" title={item.label}>
+              <b aria-current="page" title={item.label} dir="auto">
                 <span class="k2-path-name">{nameEnd(item.label) ? item.label.slice(0, -nameEnd(item.label).length) : item.label}</span>
                 <Show when={nameEnd(item.label)}>
                   <span class="k2-path-name-end">{nameEnd(item.label)}</span>

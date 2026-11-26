@@ -8,8 +8,15 @@ export type BarMark = "title" | "toolbar" | "path" | "more" | "search";
 type BarPlace = {
   place: "start" | "end";
   mark: (what: BarMark) => () => void;
-  /** At the end: a main action (`variant="primary"`) as an entry of the one "+" its bar makes of several. */
-  create?: (entry: () => MenuEntry) => () => void;
+  /**
+   * At the end of a workspace's head: a main action (`variant="primary"`; `undefined` while it is none) as an entry of
+   * the one "+" its bar makes of several.
+   */
+  create?: (entry: () => MenuEntry | undefined) => () => void;
+  /** At the end: whether a search there holds words (it then shows them, so its head shows). */
+  filled?: (holds: () => boolean) => () => void;
+  /** In the start: whether a title there only repeats the page the sidebar names. */
+  repeats?: (repeats: () => boolean) => () => void;
 };
 
 export const BarPlaceContext = createContext<BarPlace>();
@@ -27,13 +34,26 @@ export const markBarPlace = (place: "start" | "end", what: BarMark) => {
 };
 
 /**
- * A main action at the end of a bar: where the bar holds more than one, it shows them as one "+" menu, each an entry
- * with its name and deed, and the actions themselves give way (Valentin 26.11.: one create action at the head's end).
+ * A main action at the end of a workspace's head: where the head holds more than one, it shows them as one "+" menu,
+ * each an entry with its name and deed, and the actions themselves give way (Valentin 26.11.: one create action at the
+ * head's end). The entry is `undefined` while the action is no main action.
  */
-export const markBarCreate = (entry: () => MenuEntry) => {
+export const markBarCreate = (entry: () => MenuEntry | undefined) => {
   const bar = useContext(BarPlaceContext);
   if (bar?.place !== "end" || !bar.create) return;
   onCleanup(bar.create(entry));
+};
+
+/** A search at the end of a bar tells it whether it holds words. */
+export const markBarFilled = (holds: () => boolean) => {
+  const bar = useContext(BarPlaceContext);
+  if (bar?.place === "end" && bar.filled) onCleanup(bar.filled(holds));
+};
+
+/** A title in the start of a bar tells it whether it only repeats the page the sidebar names. */
+export const markBarRepeats = (repeats: () => boolean) => {
+  const bar = useContext(BarPlaceContext);
+  if (bar?.place === "start" && bar.repeats) onCleanup(bar.repeats(repeats));
 };
 
 /** A toolbar row in the status place of a pane: its filter bar or its status row. */
@@ -54,8 +74,13 @@ export const markStatusRow = (row: StatusRowKind) => {
 /** The sidebar tells its workspace the words of its current entry: the page the sidebar already names. */
 export const SidebarPlaceContext = createContext<(name: () => string | undefined) => void>();
 
-/** In the workspace's head: the words of the sidebar's current entry, which a title of the same words repeats. */
-export const HeadPlaceContext = createContext<() => string | undefined>();
+/**
+ * The head of a workspace: the words of the sidebar's current entry, which a title of the same words repeats, and
+ * where the head's bar tells its main actions, so the round button of the phone offers them all.
+ */
+export type HeadPlace = { place: () => string | undefined; creates: (entries: () => readonly MenuEntry[]) => void };
+
+export const HeadPlaceContext = createContext<HeadPlace>();
 
 /** Whether a part stands in the start of a bar (where a `Text` is the bar's title). */
 export const inBarStart = () => useContext(BarPlaceContext)?.place === "start";

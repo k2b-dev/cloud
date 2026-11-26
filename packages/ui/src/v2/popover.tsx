@@ -1,4 +1,5 @@
 import { createEffect, createSignal, type JSX, onCleanup, children as resolveChildren, Show } from "solid-js";
+import { BarPlaceContext, StatusPlaceContext } from "./bar-place";
 import { usePopover } from "./behavior/overlays";
 import { useTip } from "./behavior/tip";
 import { alignTo, TriggerFace, type TriggerProps } from "./menu";
@@ -62,7 +63,12 @@ const Panel = (props: PopoverPanelProps) => {
       </popover.Trigger>
       <popover.Popup class="k2-pop" data-k2-part="Popover" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
         <Show when={props.title}>{(title) => <popover.Title class="k2-pop-title">{title()}</popover.Title>}</Show>
-        <div class="k2-pop-body">{props.content}</div>
+        {/* the panel's parts belong to the panel, not to the bar or the pane its button stands in */}
+        <div class="k2-pop-body">
+          <BarPlaceContext.Provider value={undefined}>
+            <StatusPlaceContext.Provider value={undefined}>{props.content}</StatusPlaceContext.Provider>
+          </BarPlaceContext.Provider>
+        </div>
       </popover.Popup>
     </>
   );

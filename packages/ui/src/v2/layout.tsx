@@ -167,6 +167,8 @@ type Columns = {
   empty: () => { icon: string; text: string } | undefined;
   /** The workspace has a head: a column under it with toolbar rows makes one block with it. */
   head: () => boolean;
+  /** A column makes one block with the head: the columns beside it stand as low, so their lines meet. */
+  blocked: () => boolean;
 };
 const ColumnsContext = createContext<Columns | undefined>();
 
@@ -184,6 +186,7 @@ const ColumnsContext = createContext<Columns | undefined>();
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
+  const overlay = useOverlayMessages();
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
@@ -192,7 +195,11 @@ export const Workspace = (props: WorkspaceProps) => {
   const sidebar = resolveChildren(() => (
     <SidebarPlaceContext.Provider value={(name) => setPlaceName(() => name)}>{props.sidebar}</SidebarPlaceContext.Provider>
   ));
-  const head = resolveChildren(() => <HeadPlaceContext.Provider value={() => placeName()?.()}>{props.head}</HeadPlaceContext.Provider>);
+  // the head's main actions: where they are several, the phone's round button offers them all as one "+"
+  const [headCreates, setHeadCreates] = createSignal<() => readonly MenuEntry[]>();
+  const headPlace = { place: () => placeName()?.(), creates: (entries: () => readonly MenuEntry[]) => setHeadCreates(() => entries) };
+  const head = resolveChildren(() => <HeadPlaceContext.Provider value={headPlace}>{props.head}</HeadPlaceContext.Provider>);
+  const fabCreates = () => headCreates()?.() ?? [];
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -222,7 +229,7 @@ export const Workspace = (props: WorkspaceProps) => {
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
     `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } ` +
     // the sidebar is a drawer now: the head names the page again
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] .k2-bar-start > .k2-text[data-names-place] { display: revert; } } }`;
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-names-place: static; --k2-names-place-size: auto; --k2-names-place-clip: none; } } }`;
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
@@ -289,7 +296,11 @@ export const Workspace = (props: WorkspaceProps) => {
             {head()}
           </div>
         </Show>
-        <ColumnsContext.Provider value={{ register, empty, head: () => head() !== undefined }}>{props.children}</ColumnsContext.Provider>
+        <ColumnsContext.Provider
+          value={{ register, empty, head: () => head() !== undefined, blocked: () => columns().some((column) => column.block) }}
+        >
+          {props.children}
+        </ColumnsContext.Provider>
       </div>
       {/* the head and the toolbar rows of the column under it are one block: the head draws no line of its own (made
           after the columns, which tell it, so the server's page has it too) */}
@@ -310,10 +321,18 @@ export const Workspace = (props: WorkspaceProps) => {
           backdrop={{ class: "k2-backdrop" }}
           onClick={pick}
         >
-          {props.sidebar}
+          <BarPlaceContext.Provider value={undefined}>{props.sidebar}</BarPlaceContext.Provider>
         </drawer.Popup>
       </Show>
-      <Show when={props.primary}>
+      <Show when={fabCreates().length > 1}>
+        {/* several main actions in the head: the round button is their one "+" (its own words, or "Neu") */}
+        <span class="k2-fab-menu">
+          <Menu variant="primary" icon={props.primary?.icon ?? "plus"} items={fabCreates()}>
+            {props.primary?.label ?? overlay().create}
+          </Menu>
+        </span>
+      </Show>
+      <Show when={fabCreates().length < 2 && props.primary}>
         {(action) => (
           // a disabled link is an anchor without an address, as in `Button`
           <Dynamic
@@ -397,6 +416,7 @@ export const Pane = (props: PaneProps) => {
     },
   };
   useContext(SplitContext)?.(entry);
+  const head = resolveChildren(() => props.head);
   // the toolbar rows in its status place, in their order: a filter bar, a status row
   const [rows, setRows] = createSignal<readonly StatusRowKind[]>([]);
   const hear = (row: StatusRowKind) => {
@@ -422,7 +442,9 @@ export const Pane = (props: PaneProps) => {
       return block();
     },
   });
-  const head = resolveChildren(() => props.head);
+  // a column beside the one that makes the block (a reader beside its list) stands as low as that block's rows, so the
+  // line under its head meets the line under their last row (K1)
+  const besideBlock = () => columns !== undefined && !block() && columns.blocked();
   const status = resolveChildren(() => <StatusPlaceContext.Provider value={hear}>{props.status}</StatusPlaceContext.Provider>);
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
@@ -453,6 +475,7 @@ export const Pane = (props: PaneProps) => {
       data-detail={props.detail ? "" : undefined}
       // a detail with its way back: on the phone its `Back` closes it, so the × of its head leaves
       data-back={props.detail && props.back ? (head() !== undefined ? "head" : "") : undefined}
+      data-beside-block={besideBlock() ? "" : undefined}
       data-side={props.side ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${props.width.default}px` : undefined,
@@ -591,33 +614,52 @@ export const Bar = (props: BarProps) => {
     more: counter(setMore),
     search: counter(setSearch),
   };
-  // the main actions at its end; more than one become one "+" menu (one create action at a head's end)
-  const [creates, setCreates] = createSignal<readonly (() => MenuEntry)[]>([]);
-  const create = (entry: () => MenuEntry) => {
-    setCreates((list) => [...list, entry]);
-    return () => setCreates((list) => list.filter((other) => other !== entry));
+  /** A list of what parts of the bar tell it, each gone with its part. */
+  const heard = <T,>() => {
+    const [list, setList] = createSignal<readonly T[]>([]);
+    const add = (item: T) => {
+      setList((items) => [...items, item]);
+      return () => setList((items) => items.filter((other) => other !== item));
+    };
+    return [list, add] as const;
   };
-  const many = () => creates().length > 1;
+  // In a workspace's head, the main actions at its end: more than one become one "+" menu (one create action at a
+  // head's end), which the phone's round button offers too. A bar elsewhere (a pane's, a section's) keeps its actions.
+  const head = useContext(HeadPlaceContext);
+  const [creates, create] = heard<() => MenuEntry | undefined>();
+  const entries = () => creates().flatMap((entry) => entry() ?? []);
+  const many = () => entries().length > 1;
+  head?.creates(entries);
+  const [searches, filled] = heard<() => boolean>();
+  const [titles, repeats] = heard<() => boolean>();
   const t = useOverlayMessages();
   const start = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "start", mark: (what) => marks[what]() }}>{props.start}</BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "start", mark: (what) => marks[what](), repeats }}>{props.start}</BarPlaceContext.Provider>
   ));
   const end = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "end", mark: (what) => marks[what](), create }}>{props.end}</BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "end", mark: (what) => marks[what](), filled, ...(head ? { create } : {}) }}>
+      {props.end}
+    </BarPlaceContext.Provider>
   ));
-  // A bar whose start is empty and whose end holds only its search and its main actions: on the phone the main action
-  // floats as the round button and a host's bar opens the search, so such a head may show nothing (`data-hollow`).
+  const parts = (resolved: typeof start) =>
+    resolved.toArray().filter((part) => part !== undefined && part !== null && typeof part !== "boolean").length;
+  // A bar whose start is empty and whose end holds only its empty search and its main actions: on the phone the main
+  // action floats as the round button and a host's bar opens the search, so such a head may show nothing
+  // (`data-hollow`). A search with words shows them, and its head with them.
   const hollow = () => {
-    if (start() !== undefined) return undefined;
-    const parts = end.toArray().filter((part) => part !== undefined && part !== null && typeof part !== "boolean").length;
-    if (parts === 0 || parts !== search() + creates().length) return undefined;
+    if (start() !== undefined || searches().some((holds) => holds())) return undefined;
+    const count = parts(end);
+    if (count === 0 || count !== search() + entries().length) return undefined;
     return search() > 0 ? "search" : "";
   };
+  // a bar that holds nothing but a title that repeats the sidebar's page gives way whole while the sidebar shows
+  const onlyRepeats = () => end() === undefined && parts(start) === 1 && titles().some((repeat) => repeat());
   return (
     <div
       class="k2-bar"
       data-k2-part="Bar"
       data-hollow={hollow()}
+      data-names-place={onlyRepeats() ? "" : undefined}
       data-title={title() > 0 ? "" : undefined}
       data-toolbar={toolbar() > 0 ? "" : undefined}
       data-path={path() > 0 ? "" : undefined}
@@ -631,7 +673,7 @@ export const Bar = (props: BarProps) => {
           <Show when={many()}>
             {/* the bar's own "+": outside its end's place, so it joins no "+" itself */}
             <span class="k2-creates">
-              <Menu variant="primary" icon="plus" items={creates().map((entry) => entry())}>
+              <Menu variant="primary" icon="plus" items={entries()}>
                 {t().create}
               </Menu>
             </span>

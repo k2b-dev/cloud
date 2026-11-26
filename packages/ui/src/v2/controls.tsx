@@ -1,4 +1,5 @@
 import {
+  createComputed,
   createContext,
   createRenderEffect,
   createSignal,
@@ -15,7 +16,7 @@ import { isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
-import { BarPlaceContext, markBarPlace } from "./bar-place";
+import { BarPlaceContext, markBarFilled, markBarPlace } from "./bar-place";
 import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
@@ -321,8 +322,15 @@ export const Input = (props: InputProps) => {
     () => input,
     () => props.type === "search",
   );
-  // a search at the end of a bar: where it and the main action are all a head holds, the phone's head may take no room
-  if (props.type === "search") markBarPlace("end", "search");
+  // A search knows whether it holds words (`data-filled`, already from the server's value): a head's folded search with
+  // words stays open with them. It tells its bar, so a head of a search and the main action alone may take no room on
+  // the phone while the search is empty.
+  const [filled, setFilled] = createSignal(Boolean(props.value));
+  createComputed(() => setFilled(Boolean(props.value)));
+  if (props.type === "search") {
+    markBarPlace("end", "search");
+    markBarFilled(filled);
+  }
   let box: HTMLElement | undefined;
   useHeldOpen(
     () => box,
@@ -334,8 +342,7 @@ export const Input = (props: InputProps) => {
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
-    // a search without words of its own shows its name while empty, so its folded symbol knows when it holds words
-    placeholder: props.placeholder ?? (props.type === "search" ? props.label : undefined),
+    placeholder: props.placeholder,
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
@@ -360,6 +367,7 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
+      data-filled={props.type === "search" && filled() ? "" : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       <Show
@@ -375,7 +383,10 @@ export const Input = (props: InputProps) => {
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
-            onInput={(event) => props.onInput?.(event.currentTarget.value)}
+            onInput={(event) => {
+              setFilled(event.currentTarget.value !== "");
+              props.onInput?.(event.currentTarget.value);
+            }}
             onKeyDown={(event) => {
               props.onKeyDown?.(event);
               if (props.type === "search") foldHeadSearch(event);

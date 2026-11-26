@@ -17,8 +17,9 @@ const mockup: Record<number, Record<string, [selector: string, box: string]>> = 
     // the head and the list's status row are one block (Valentin 26.11.): no line between them, 4 px apart
     status: ['[data-k2-part="StatusRow"]', "250,61 432x52"],
     row: ['[data-k2-part="List"] > [data-k2-part="Row"]', "250,113 432x73"],
-    readerHead: ['[data-k2-part="Pane"][data-detail] > [data-slot="head"] > .k2-bar', "683,57 692x52"],
-    notice: ['[data-k2-part="Notice"][data-tone="ai"]', "683,149 692x85"],
+    // the reader stands as low as the list's block, so its head's line meets the status row's (K1)
+    readerHead: ['[data-k2-part="Pane"][data-detail] > [data-slot="head"] > .k2-bar', "683,61 692x52"],
+    notice: ['[data-k2-part="Notice"][data-tone="ai"]', "683,153 692x85"],
     listGrip: ['[data-k2-part="Pane.Split"] .k2-grip', "677,460 11x20"],
   },
   390: {
@@ -91,6 +92,14 @@ describe("Mail on the v2 pilot", () => {
             }),
           );
         }, mockup[width]!);
+        // the list's status row and the reader's head end on one line (K1), also with the head as one block
+        if (width === 1440) {
+          const bottom = (box: string) => {
+            const [, y = 0, height = 0] = /,(\d+) \d+x(\d+)/.exec(box)!.map(Number);
+            return y + height;
+          };
+          expect(bottom(boxes.status!)).toBe(bottom(boxes.readerHead!));
+        }
         expect(boxes).toEqual(Object.fromEntries(Object.entries(mockup[width]!).map(([part, [, box]]) => [part, box])));
         expect(errorsOf.get(page)).toEqual([]);
       } finally {
@@ -222,10 +231,8 @@ describe("Mail on the v2 pilot", () => {
       await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
       await page.getByRole("menuitem", { name: "Einstellungen" }).waitFor();
       await page.keyboard.press("Escape");
-      // The head's filter menu at the search field, v1's (F9): the search is its symbol, so it opens first.
-      const field = page.locator('[data-k2-workspace] .k2-ws-main > [data-slot="head"] [data-k2-part="Input"]');
-      await field.locator("input").focus();
-      await field.getByRole("button", { name: "Filter" }).click();
+      // The head's filter menu at the search field, v1's (F9): it stays in reach beside the folded search's symbol.
+      await page.locator('[data-k2-workspace] [data-slot="head"] [data-k2-part="Input"]').getByRole("button", { name: "Filter" }).click();
       await page.getByRole("menuitem", { name: "Weitere Filter …" }).waitFor();
       expect(await page.locator("[data-k2-workspace] button[disabled]").count()).toBe(0);
       expect(errorsOf.get(page)).toEqual([]);
