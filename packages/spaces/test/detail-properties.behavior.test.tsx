@@ -40,14 +40,14 @@ const _flush = async () => {
   await Bun.sleep(20);
 };
 
-const mount = async (dom: DomTestHarness, overrides: { canWrite?: boolean } = {}) => {
+const mount = async (dom: DomTestHarness, overrides: { canWrite?: boolean; activeBlockerCount?: number } = {}) => {
   const { DetailPaneFixture } = await import("./detail-pane");
   const blocker = (index: number) => ({
     blocker: { id: `Blk00${index}`, spaceId: item.spaceId, title: `Step ${index}`, completedAt: index === 0 ? now : null },
     createdAt: now,
   });
   const detail = {
-    item,
+    item: { ...item, activeBlockerCount: overrides.activeBlockerCount ?? item.activeBlockerCount },
     comments: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
     commentTarget: { itemId: item.id, recurrenceId: null },
     recurringContext: null,
@@ -91,6 +91,29 @@ describe("Spaces detail planning rows", () => {
 
     toggle.click();
     expect(titles()).toEqual(["Step 1", "Step 2", "Step 3"]);
+    dispose();
+    dom.cleanup();
+  });
+
+  test("counts blockers as the list row does, and names the ones the reader cannot open", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    // Four of the five listed blockers are open; the server counts six, two of them in a Space this reader cannot open.
+    const dispose = await mount(dom, { canWrite: false, activeBlockerCount: 6 });
+    const text = dom.root.textContent ?? "";
+    expect(text).toContain("Blocked by 6");
+    expect(text).not.toContain("Blocked by 4");
+    expect(text).toContain("2 more blocking tasks you cannot open");
+    dispose();
+    dom.cleanup();
+  });
+
+  test("shows no hidden blockers when the reader can open every one", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const dispose = await mount(dom, { canWrite: false });
+    expect(dom.root.textContent).toContain("Blocked by 4");
+    expect(dom.root.textContent).not.toContain("cannot open");
     dispose();
     dom.cleanup();
   });

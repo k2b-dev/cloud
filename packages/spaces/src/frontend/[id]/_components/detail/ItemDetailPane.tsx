@@ -164,7 +164,11 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
   const isCompleted = () => !!item().completedAt;
   const isGeneratedOccurrence = () => Boolean(recurring() && !recurring()!.isOverride);
   const canEditItem = createMemo(() => props.canWrite && !isGeneratedOccurrence());
-  const activeBlockerCount = () => props.detail.blockedBy.filter((dependency) => !dependency.blocker.completedAt).length;
+  // One count everywhere: the server's, as the list row reads it; it also counts blockers this reader cannot open.
+  const activeBlockerCount = () => item().activeBlockerCount;
+  /** Active blockers the reader cannot see here (in Spaces they have no access to). */
+  const hiddenBlockers = () =>
+    Math.max(0, activeBlockerCount() - props.detail.blockedBy.filter((dependency) => !dependency.blocker.completedAt).length);
   const completionBlocked = () => !isCompleted() && activeBlockerCount() > 0;
   const scheduleStart = () => recurring()?.startsAt ?? item().startsAt;
   const scheduleEnd = () => recurring()?.endsAt ?? item().endsAt;
@@ -939,8 +943,13 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
         <Facts items={facts()} />
       </Section>
 
-      <Show when={!isEvent() && (canEditItem() || props.detail.blockedBy.length > 0 || props.detail.blocks.length > 0)}>
-        <Section icon="lock" title={t.blockedBy} count={props.detail.blockedBy.length}>
+      <Show
+        when={!isEvent() && (canEditItem() || props.detail.blockedBy.length > 0 || props.detail.blocks.length > 0 || hiddenBlockers() > 0)}
+      >
+        <Section icon="lock" title={t.blockedBy} count={props.detail.blockedBy.length + hiddenBlockers()}>
+          <Show when={hiddenBlockers() > 0}>
+            <Text type="meta">{t.hiddenBlockers({ count: hiddenBlockers() })}</Text>
+          </Show>
           <For each={visibleBlockers()}>
             {(dependency) => (
               <Row

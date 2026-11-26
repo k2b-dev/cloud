@@ -465,6 +465,8 @@ export const spaceMessages = i18n.define({
       closeItemDetails: "Close item details",
       reopen: "Reopen",
       blockedByCount: ({ count }: { count: number }) => `Blocked by ${count}`,
+      hiddenBlockers: ({ count }: { count: number }) =>
+        count === 1 ? "1 more blocking task you cannot open" : `${count} more blocking tasks you cannot open`,
       due: "Due",
       estimate: "Estimate",
       duration: "Duration",
@@ -1346,6 +1348,10 @@ export const spaceMessages = i18n.define({
       closeItemDetails: "Eintragsdetails schließen",
       reopen: "Wieder öffnen",
       blockedByCount: ({ count }) => `Blockiert durch ${count}`,
+      hiddenBlockers: ({ count }) =>
+        count === 1
+          ? "1 weitere blockierende Aufgabe, die du nicht öffnen kannst"
+          : `${count} weitere blockierende Aufgaben, die du nicht öffnen kannst`,
       due: "Fällig",
       estimate: "Schätzung",
       duration: "Dauer",
