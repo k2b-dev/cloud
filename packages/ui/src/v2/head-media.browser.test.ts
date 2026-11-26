@@ -158,7 +158,7 @@ test("on the phone the actions of a selection float at the bottom, symbol over w
       expect(labels).toEqual([
         { text: "Teilen", visible: true },
         { text: "Verschieben", visible: true },
-        { text: "Als ZIP laden", visible: true },
+        { text: "Laden", visible: true },
         { text: "Löschen", visible: true },
       ]);
       expect(await page.locator(".k2-fab").evaluate((element) => getComputedStyle(element).display)).toBe("none");
