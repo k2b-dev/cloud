@@ -1,9 +1,10 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Field, Input, Notice } from "@k2b/ui/v2";
+import { Band, Button, Field, Input, Notice } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { signInAgainHref } from "../../sign-out-others";
+import { FormActions } from "../FormActions";
 import { authMessages } from "../messages";
 
 type PasswordResetRequestFormProps = {
@@ -53,7 +54,7 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
         </Field>
       </Band>
       <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
-      <Bar
+      <FormActions
         start={
           <Button variant="ghost" icon="arrow-left" href={signInAgainHref(props.redirectTo)}>
             {t().backToSignIn}

@@ -1,9 +1,10 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Notice } from "@k2b/ui/v2";
+import { Band, Button, Notice } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
+import { FormActions } from "../FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "../login-redirect";
 import { authMessages } from "../messages";
 import { PasswordChangedSignInAgain } from "../PasswordChangedSignInAgain";
@@ -98,7 +99,7 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
               </Notice>
             )}
           </Show>
-          <Bar
+          <FormActions
             start={
               <Button variant="ghost" icon="arrow-left" href={signInAgainHref(props.redirectTo)}>
                 {t().backToSignIn}

@@ -48,11 +48,7 @@ export const makeLegalPage = (kind: LegalKind) =>
             <Prose markdown={trimmedContent} />
           </Band>
         ) : (
-          <Empty
-            icon="file-off"
-            text={`${t.legalNotConfigured({ title })} /admin/base/legal.`}
-            action={{ label: t.legalOpenAdmin, icon: "settings", href: "/admin/base/legal" }}
-          />
+          <Empty icon="file-off" text={`${t.legalNotConfigured({ title })} /admin/base/legal.`} />
         )}
       </MinimalLayout>
     );

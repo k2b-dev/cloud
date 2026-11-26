@@ -3,10 +3,11 @@ import { accountCategory } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import { LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { signInAgainHref } from "../sign-out-others";
+import { FormActions } from "./FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
@@ -107,7 +108,7 @@ export default function GuestLoginForm(props: {
               </Notice>
             )}
           </Show>
-          <Bar
+          <FormActions
             end={
               <Button variant="primary" type="submit" busy={loading()}>
                 {loading() ? t().verifying : t().verify}
@@ -144,7 +145,7 @@ export default function GuestLoginForm(props: {
           </Text>
         </Band>
         <Show when={emailMutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
-        <Bar
+        <FormActions
           start={
             props.alternative && (
               <Button variant="ghost" icon="device-mobile" href={props.alternative.href}>

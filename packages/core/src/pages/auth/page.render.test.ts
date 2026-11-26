@@ -79,7 +79,6 @@ test("FreeIPA opens with the password and the name from the link, one link away 
 
   const app = await page(new URL(password.alternative![0]!, "https://cloud.example.test").search);
   expect([app.form, app.category]).toEqual(["AppLoginForm", "freeipa"]);
-  expect(app.html).toContain("No paired app? Use your password.");
   expect(app.alternative).toEqual([
     "/auth/login?method=ipa&ipa-uid=mira&redirectTo=%2Fapp%2Ffiles&credential=legacy",
     "Use your FreeIPA password instead",

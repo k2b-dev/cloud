@@ -142,7 +142,6 @@ export default ssr(async (c) => {
           category={activeMethod}
           redirectTo={redirectTo}
           fallback={{ href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead }}
-          setupHint={activeMethod === "freeipa" ? t.appSetupPassword : t.appSetupEmail}
           forget={sharedWorkstation}
         />
       ) : isEmailLogin ? (
@@ -174,21 +173,17 @@ export default ssr(async (c) => {
         </Band>
       )}
       {!isAdminLogin && !token && (
-        // A line in the flow of the column: on a narrow phone, help and the admin token wrap below the passkey.
+        // One line from the text edge that wraps on a narrow phone, never a staircase.
         <Band>
-          <Bar
-            start={<Inline>{showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}</Inline>}
-            end={
-              <>
-                <Button variant="ghost" icon="lifebuoy" href={supportHref}>
-                  {t.contactSupport}
-                </Button>
-                <Button variant="ghost" icon="shield" href={adminHref}>
-                  {t.adminToken}
-                </Button>
-              </>
-            }
-          />
+          <Inline>
+            {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}
+            <Button variant="ghost" icon="lifebuoy" href={supportHref}>
+              {t.contactSupport}
+            </Button>
+            <Button variant="ghost" icon="shield" href={adminHref}>
+              {t.adminToken}
+            </Button>
+          </Inline>
         </Band>
       )}
     </MinimalLayout>

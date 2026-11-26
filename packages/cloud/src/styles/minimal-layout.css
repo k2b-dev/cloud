@@ -30,16 +30,17 @@
   color: var(--k2-text);
 }
 
-/* A visitor page in one column (`column`): a sign-in, a consent, a legal text. A card of at most 560 px in the middle of
-   the page's background; on the phone the column is the page. */
+/* A visitor page in one column (`column`): a sign-in, a consent, a legal text. A card of at most 560 px, centred on the
+   page's background at one height from the top, so a page whose content grows or a switched account type never moves
+   the head; on the phone the column is the page. */
 .minimal-layout-main[data-column] {
   box-sizing: border-box;
   height: auto;
   min-height: 100vh;
   min-height: 100dvh;
   justify-content: center;
-  align-items: center;
-  padding: 48px 24px;
+  align-items: flex-start;
+  padding: 96px 24px 48px;
   background: var(--k2-canvas);
 }
 

@@ -169,6 +169,16 @@ const measure = async (view: View, query: string, options: Options = {}) => {
             })
             .map((element) => element.textContent?.trim() || element.tagName.toLowerCase());
         })(),
+        // Buttons keep the column's 16 px gutter on both sides: a full line wraps instead of squeezing to the edge.
+        gutter: (() => {
+          const column = document.querySelector(".minimal-layout-column")!.getBoundingClientRect();
+          return Array.from(document.querySelectorAll(".minimal-layout-column [data-k2-part=Button]"))
+            .filter((element) => {
+              const box = element.getBoundingClientRect();
+              return box.width > 0 && (box.left < column.left + 15.5 || box.right > column.right - 15.5);
+            })
+            .map((element) => element.textContent?.trim() || element.getAttribute("aria-label"));
+        })(),
       };
     });
     return { outline, problems: layout.problems, ...page };
@@ -270,6 +280,8 @@ const forms = {
 
 describe("sign-in page in a browser", () => {
   test("is one centred column on the page at 1440 and the whole width on a phone, clean in v2, for every form and language", async () => {
+    // Where the column starts at 1440, by form: switching the account type never moves the head.
+    const tops = new Set<number>();
     for (const locale of ["en", "de"] as const) {
       const t = authMessages.resolve([locale]).t;
       for (const [name, query] of Object.entries(forms)) {
@@ -281,6 +293,7 @@ describe("sign-in page in a browser", () => {
           expect(page.v1, context).toEqual([]);
           expect(page.scrollWidth, context).toBeLessThanOrEqual(view.width);
           expect(page.cut, context).toEqual([]);
+          expect(page.gutter, context).toEqual([]);
           const column = page.column!;
           if (view === desktop) {
             // A measure on the page background, in the middle of the window.
@@ -288,6 +301,7 @@ describe("sign-in page in a browser", () => {
             expect(column.width, context).toBeGreaterThan(480);
             expect(Math.abs(column.left - (view.width - column.right)), context).toBeLessThanOrEqual(1);
             expect(column.top, context).toBeGreaterThanOrEqual(24);
+            tops.add(column.top);
           } else {
             expect([column.left, column.width], context).toEqual([0, view.width]);
           }
@@ -304,6 +318,7 @@ describe("sign-in page in a browser", () => {
         }
       }
     }
+    expect([...tops]).toHaveLength(1);
   }, 120_000);
 
   test("names a remembered account and focuses its password instead", async () => {

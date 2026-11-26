@@ -1,8 +1,9 @@
 import { signOutBrowserSession } from "@k2b/cloud/browser/session";
 import { apiClient } from "@k2b/cloud/clients/core";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Check, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, Check, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
+import { FormActions } from "./FormActions";
 import { authMessages } from "./messages";
 
 export default function ConsentForm(props: { userId: string; version: string; redirectTo: string }) {
@@ -60,13 +61,13 @@ export default function ConsentForm(props: { userId: string; version: string; re
           label={
             <Text>
               {t().termsPrefix}{" "}
-              <a href="/legal/terms" target="_blank" rel="noopener">
+              <Text href="/legal/terms" newTab>
                 {t().terms}
-              </a>{" "}
+              </Text>{" "}
               {t().consentPrivacyJoin}{" "}
-              <a href="/legal/privacy" target="_blank" rel="noopener">
+              <Text href="/legal/privacy" newTab>
                 {t().privacy}
-              </a>
+              </Text>
               {t().consentPrivacyEnd}
             </Text>
           }
@@ -82,7 +83,7 @@ export default function ConsentForm(props: { userId: string; version: string; re
           </Notice>
         )}
       </Show>
-      <Bar
+      <FormActions
         end={
           <>
             <Button type="button" disabled={busy()} onClick={() => void submit(false)}>

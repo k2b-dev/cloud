@@ -1,20 +1,20 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, CodeFigure, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, CodeFigure, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
 import ApprovalFeedbackV2 from "../app-approval/FeedbackV2";
 import { appApprovalMessages } from "../app-approval/messages";
+import { FormActions } from "./FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 
 export default function AppLoginForm(props: {
   category: AccountCategory;
   redirectTo?: string;
   fallback?: { href: string; label: string };
-  setupHint?: string;
   /** A shared workstation: the page remembers neither the account nor the method. */
   forget?: boolean;
 }) {
@@ -180,6 +180,7 @@ export default function AppLoginForm(props: {
               <Band>
                 <Field label={t().identifier} required>
                   <Input
+                    icon="user"
                     value={identifier()}
                     onInput={setIdentifier}
                     placeholder={t().identifierPlaceholder}
@@ -191,7 +192,7 @@ export default function AppLoginForm(props: {
                   />
                 </Field>
               </Band>
-              <Bar
+              <FormActions
                 start={fallbackButton()}
                 end={
                   <Button variant="primary" type="submit" busy={busy()} disabled={!identifier().trim()}>
@@ -211,7 +212,7 @@ export default function AppLoginForm(props: {
                   <CodeFigure value={request().comparison} label={t().comparison} />
                 </div>
               </Band>
-              <Bar
+              <FormActions
                 start={fallbackButton()}
                 end={
                   <Button
@@ -228,13 +229,6 @@ export default function AppLoginForm(props: {
             </>
           )}
         </Show>
-      </Show>
-      <Show when={!pending() && props.setupHint}>
-        <Band>
-          <Text type="meta" muted>
-            {props.setupHint}
-          </Text>
-        </Band>
       </Show>
     </>
   );

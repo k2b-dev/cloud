@@ -2,9 +2,10 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
+import { FormActions } from "./FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
@@ -99,7 +100,7 @@ export default function LoginForm(props: {
         <Text href={resetPasswordHref()}>{t().resetPassword}</Text>
       </Band>
       <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
-      <Bar
+      <FormActions
         start={
           props.alternative && (
             <Button variant="ghost" icon="device-mobile" href={props.alternative.href}>

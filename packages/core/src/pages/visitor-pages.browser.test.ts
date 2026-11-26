@@ -225,6 +225,16 @@ const measure = async (name: Name, width: number, locale: Locale) => {
             })
             .map((element) => element.textContent?.trim() || element.tagName.toLowerCase());
         })(),
+        // Buttons keep the column's 16 px gutter on both sides: a full line wraps instead of squeezing to the edge.
+        gutter: (() => {
+          const column = document.querySelector(".minimal-layout-column")!.getBoundingClientRect();
+          return Array.from(document.querySelectorAll(".minimal-layout-column [data-k2-part=Button]"))
+            .filter((element) => {
+              const box = element.getBoundingClientRect();
+              return box.width > 0 && (box.left < column.left + 15.5 || box.right > column.right - 15.5);
+            })
+            .map((element) => element.textContent?.trim() || element.getAttribute("aria-label"));
+        })(),
         legalVersion: document.querySelector("[data-legal-version]")?.getAttribute("data-legal-version"),
       };
     });
@@ -247,6 +257,7 @@ describe("Core visitor pages on v2", () => {
           expect(page.v1, context).toEqual([]);
           expect(page.scrollWidth, context).toBeLessThanOrEqual(width);
           expect(page.cut, context).toEqual([]);
+          expect(page.gutter, context).toEqual([]);
           const column = page.column!;
           if (width === 1440) {
             expect(column.width, context).toBeLessThanOrEqual(560);

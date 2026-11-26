@@ -58,7 +58,7 @@ export function PasswordSetupFieldsV2(props: {
           placeholder={t().newPassword}
           autocomplete="new-password"
           autofocus={props.autofocus}
-          end={<Button variant="ghost" icon="sparkles" label={t().generate} onClick={generate} />}
+          end={<Button variant="ghost" icon="dice" label={t().generate} onClick={generate} />}
         />
       </Field>
       <Facts
