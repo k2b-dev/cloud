@@ -1814,12 +1814,15 @@
   --k2-pill-edge: transparent;
   --k2-dot: var(--k2-n300);
   position: absolute;
-  left: -5px;
+  /* on the line before its column, also right to left */
+  inset-inline-start: -5px;
   top: 9px;
   width: 9px;
   height: 18px;
   z-index: 4;
   cursor: col-resize;
+  /* a touch drag is the grip's, never a pan of the table */
+  touch-action: none;
   outline: none;
 }
 .k2-ui .k2-cgrip::before {
