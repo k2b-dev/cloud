@@ -51,4 +51,16 @@ describe("observability overview triage", () => {
       description: "1 signal source could not be read.",
     });
   });
+
+  test("each signal leads to the v2 page that looks at it, in the overview's window", () => {
+    const signals = buildOverviewSignals(
+      healthyInput({ range: "6h", jobsWindow: "12h", serverErrors: 1, stuckRuns: 1, failedRuns: 1, unavailable: { runs: "down" } }),
+    );
+    expect(Object.fromEntries(signals.map((signal) => [signal.id, signal.href]))).toEqual({
+      "server-errors": "/admin/observability/telemetry?range=6h&only=errors",
+      "stuck-runs": "/admin/observability/runs?kind=job&status=running&time=last-12h",
+      "unavailable-runs": "/admin/observability/runs?kind=job&time=last-12h",
+      "failed-runs": "/admin/observability/runs?kind=job&status=failed&time=last-12h",
+    });
+  });
 });

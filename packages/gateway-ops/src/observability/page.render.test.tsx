@@ -48,7 +48,16 @@ const server = () => {
   return app;
 };
 
-test("overview range navigation preserves the default and explicit range URLs when sources are unavailable", async () => {
+/** The text a person reads in the first HTML; drawings are no text (and their inline style stops the test parser). */
+const read = (html: string) =>
+  html
+    .replace(/<svg[\s\S]*?<\/svg>/g, "")
+    .replace(/<script[\s\S]*?<\/script>/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ");
+
+test("sources that cannot be read are named as signals and their figures say so, never zero; the window holds in every link", async () => {
   const unavailable = new Error("Fixture source unavailable");
   const spies = [
     stubRailSnapshot(),
@@ -62,24 +71,50 @@ test("overview range navigation preserves the default and explicit range URLs wh
   ];
   try {
     const app = server();
-    for (const [query, current] of [
-      ["", "24h"],
-      ["?range=7d", "7d"],
-    ]) {
-      const response = await app.request(`/admin/observability${query}`, { headers: { "Accept-Language": "en" } });
-      const html = await response.text();
-      expect(response.status, html).toBe(200);
-      const nav = html.match(/<nav[^>]*class="k2b-view-tabs[^>]*>[\s\S]*?<\/nav>/)?.[0];
-      expect(nav).toBeDefined();
-      const links = [...nav!.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)];
-      expect(links).toHaveLength(5);
-      for (const [index, range] of ["1h", "6h", "24h", "7d", "30d"].entries()) {
-        const attrs = links[index]![1]!;
-        expect(attrs).toContain(`href="/admin/observability${range === "24h" ? "" : `?range=${range}`}"`);
-        expect(attrs.includes('aria-current="page"')).toBe(range === current);
-      }
-      expect(nav).not.toContain('data-variant="primary"');
-    }
+    const response = await app.request("/admin/observability?range=7d", { headers: { "Accept-Language": "de" } });
+    const html = await response.text();
+    expect(response.status, html).toBe(200);
+    const text = read(html);
+    expect(text).toContain("Eingeschränkte Sichtbarkeit");
+    expect(text).toContain("Zeitraum Letzte 7 Tage");
+    expect(text).toContain("Apps online — nicht verfügbar");
+    expect(text).not.toContain("Apps online 0/0");
+    // every signal leads to the v2 page that looks at it, in the same window
+    expect(html).toContain('href="/admin/observability/runs?kind=job&amp;time=last-7d"');
+    expect(html).toContain('href="/admin/observability/logs?time=last-7d"');
+    expect(html).not.toContain("/admin/observability/jobs");
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("a quiet window says so; failing routes stand with their app and lead to their requests", async () => {
+  const spies = [
+    stubRailSnapshot(),
+    spyOn(health, "buildGatewayHealth").mockResolvedValue({ apps: [{ id: "mail", status: "ok" }] } as never),
+    spyOn(telemetry, "getTelemetryOverview").mockResolvedValue({
+      requests: 1200,
+      slowRequests: 4,
+      serverErrors: 0,
+      rateLimited: 0,
+    } as never),
+    spyOn(telemetry, "getTelemetryTimeseries").mockResolvedValue([]),
+    spyOn(telemetry, "listTelemetryRoutes").mockResolvedValue([
+      { appId: "mail", route: "/api/mail/send", requests: 40, errors: 2, slowRequests: 0, avgDurationMs: 80, maxDurationMs: 900 },
+    ]),
+    spyOn(logging, "summary").mockResolvedValue({ errors24h: 0, warnings24h: 0 } as never),
+    spyOn(logging, "timeseries").mockResolvedValue([]),
+    spyOn(trace, "stats").mockResolvedValue({ failed: 0, stuck: 0 } as never),
+  ];
+  try {
+    const html = await (await server().request("/admin/observability", { headers: { "Accept-Language": "de" } })).text();
+    const text = read(html);
+    expect(text).toContain("Keine aktiven Störungen");
+    expect(text).toContain("keine aktiven Signale");
+    expect(text).toContain("Apps online 1/1");
+    expect(text).toContain("/api/mail/send");
+    expect(text).toContain("5 %");
+    expect(html).toContain('href="/admin/observability/telemetry?range=24h&amp;app=mail&amp;route=%2Fapi%2Fmail%2Fsend"');
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
