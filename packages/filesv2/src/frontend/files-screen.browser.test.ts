@@ -739,6 +739,12 @@ describe("the views beside the folders on v2", () => {
       expect(await recent.locator("[data-k2-part=Row] [data-k2-part=Avatar]").count()).toBe(0);
       await shoot(tab, "14-overview-1440");
       await expectClean(tab);
+      // the storage table at 1024: the sidebar is a drawer, the table keeps its columns beside the recent changes
+      await tab.setViewportSize({ width: 1024, height: 768 });
+      await tab.locator("table[aria-label='Alle Ablagen'] tbody tr:not([data-spacer])").first().waitFor();
+      await shoot(tab, "14b-overview-1024");
+      await expectClean(tab);
+      await tab.setViewportSize({ width: 1440, height: 900 });
 
       await tab.goBack();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "shares");
