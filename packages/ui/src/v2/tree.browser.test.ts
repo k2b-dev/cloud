@@ -175,6 +175,9 @@ test("nav tree, worst case: twelve levels and long names stay in the sidebar, cu
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("ArrowRight");
     }
+    // the twelfth level stands open, and the page has drawn it
+    await page.waitForFunction(() => document.querySelector('.k2-nt-item[aria-level="12"]') !== null);
+    await settled(page);
     const nav = await page.locator(".k2-nav").evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }));
     expect(nav.scroll).toBeLessThanOrEqual(nav.client);
     const indents = await page.evaluate(() =>
@@ -189,6 +192,24 @@ test("nav tree, worst case: twelve levels and long names stay in the sidebar, cu
   });
 });
 
+/** Waits until the focused table row is the one named `name` (a key's effect lands within a frame or two). */
+const rowFocused = (page: Page, name: string) =>
+  page.waitForFunction(
+    (wanted) =>
+      document.activeElement?.matches("tr[data-tree-row]") && document.activeElement.querySelector(".k2-cell-line")?.textContent === wanted,
+    name,
+  );
+
+/** Waits until the table row named `name` has `attribute` set to `value` (`null`: not set). */
+const rowState = (page: Page, name: string, attribute: string, value: string | null) =>
+  page.waitForFunction(
+    ([wanted, attr, expected]) =>
+      [...document.querySelectorAll("tr[data-tree-row]")].some(
+        (tr) => tr.querySelector(".k2-cell-line")?.textContent === wanted && tr.getAttribute(attr) === expected,
+      ),
+    [name, attribute, value] as const,
+  );
+
 test("table tree: rows say level, place and state; Right loads and opens, Left goes back, Enter opens the row", async () => {
   await withPage(async (page) => {
     const projects = row(page, "Projekte");
@@ -199,28 +220,30 @@ test("table tree: rows say level, place and state; Right loads and opens, Left g
     expect(await grid(page).locator('tr[tabindex="0"]').count()).toBe(1);
     await projects.focus();
     await page.keyboard.press("ArrowRight");
-    expect(await projects.getAttribute("aria-expanded")).toBe("true");
+    // open, with its first child one level further in
+    await rowState(page, "Projekte", "aria-expanded", "true");
+    await rowState(page, "Website", "aria-level", "2");
+    await rowFocused(page, "Projekte");
     await page.keyboard.press("ArrowRight");
-    expect(await focusedName(page)).toBe("Website");
-    expect(await row(page, "Website").getAttribute("aria-level")).toBe("2");
+    await rowFocused(page, "Website");
     await page.keyboard.press("ArrowLeft");
-    expect(await focusedName(page)).toBe("Projekte");
+    await rowFocused(page, "Projekte");
     await page.keyboard.press("End");
-    expect(await focusedName(page)).toBe("Notiz.txt");
+    await rowFocused(page, "Notiz.txt");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.querySelector('tr[aria-current="true"]')?.textContent?.includes("Notiz.txt"));
 
     // a lazy row: the arrow turns while it loads, the children come one level further in
     const archive = row(page, "Archiv");
     await archive.locator(".k2-tree-chev").click();
-    expect(await archive.getAttribute("aria-busy")).toBe("true");
+    await rowState(page, "Archiv", "aria-busy", "true");
     await page.evaluate(() => window.__release?.());
-    await page.waitForFunction(() => [...document.querySelectorAll("tr[aria-level='2']")].some((tr) => tr.textContent?.includes("2025")));
-    expect(await archive.getAttribute("aria-expanded")).toBe("true");
+    await rowState(page, "2025", "aria-level", "2");
+    await rowState(page, "Archiv", "aria-expanded", "true");
     // Left on an open row closes it
     await archive.focus();
     await page.keyboard.press("ArrowLeft");
-    expect(await archive.getAttribute("aria-expanded")).toBe("false");
+    await rowState(page, "Archiv", "aria-expanded", "false");
   });
 });
 
