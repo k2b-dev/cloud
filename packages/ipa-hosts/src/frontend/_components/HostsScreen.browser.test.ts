@@ -248,10 +248,12 @@ describe("Hosts on v2", () => {
     }
     const deleting = await open(desktop, host, "normal", [{ request: "DELETE /api/ipa-hosts/db1.werkstatt.example", times: 1 }]);
     try {
-      await deleting.tab.getByRole("button", { name: "Löschen" }).click();
+      await deleting.tab.getByRole("button", { name: /^Weitere Aktionen für / }).click();
+      await deleting.tab.getByRole("menuitem", { name: "Löschen" }).click();
       await deleting.tab.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
       expect(deleting.calls).toEqual([]);
-      await deleting.tab.getByRole("button", { name: "Löschen" }).click();
+      await deleting.tab.getByRole("button", { name: /^Weitere Aktionen für / }).click();
+      await deleting.tab.getByRole("menuitem", { name: "Löschen" }).click();
       await deleting.tab.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
       // the store refused once: the toast offers the deed again
       await deleting.tab.getByRole("button", { name: "Erneut versuchen" }).click();
@@ -284,11 +286,13 @@ describe("Hosts on v2", () => {
       await group.tab.getByRole("dialog").getByRole("textbox", { name: "Beschreibung" }).fill("Rechenraum, Keller");
       await group.tab.getByRole("dialog").getByRole("button", { name: "Speichern" }).click();
       await closed(group.tab);
-      await group.tab.getByRole("button", { name: "Löschen" }).click();
+      await group.tab.getByRole("button", { name: /^Weitere Aktionen für / }).click();
+      await group.tab.getByRole("menuitem", { name: "Löschen" }).click();
       await group.tab.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
       expect(group.calls).toEqual(["PATCH /api/ipa-hosts/hostgroups/server"]);
       expect(group.bodies[0]).toEqual({ description: "Rechenraum, Keller" });
-      await group.tab.getByRole("button", { name: "Löschen" }).click();
+      await group.tab.getByRole("button", { name: /^Weitere Aktionen für / }).click();
+      await group.tab.getByRole("menuitem", { name: "Löschen" }).click();
       await group.tab.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
       await group.tab.waitForURL((url) => !url.search.includes("group="));
       expect(group.calls.slice(1)).toEqual(["DELETE /api/ipa-hosts/hostgroups/server"]);
@@ -302,7 +306,7 @@ describe("Hosts on v2", () => {
     const { context, tab, errors, calls } = await open(desktop, "/admin/ipa-hosts");
     try {
       // syncing waits in the head's "…"
-      await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await tab.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
       await tab.getByRole("menuitem", { name: "Jetzt synchronisieren" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Synchronisierung starten" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Protokolle anzeigen" }).click();
@@ -313,7 +317,7 @@ describe("Hosts on v2", () => {
     }
     const schedule = await open(desktop, "/admin/ipa-hosts");
     try {
-      await schedule.tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await schedule.tab.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
       await schedule.tab.getByRole("menuitem", { name: "Host-Synchronisierung" }).click();
       const dialog = schedule.tab.getByRole("dialog");
       await dialog.getByRole("textbox", { name: "Zeitplan (Cron)" }).fill("0 * * * *");
@@ -326,7 +330,7 @@ describe("Hosts on v2", () => {
     }
     const unread = await open(desktop, "/admin/ipa-hosts", "normal", [{ request: "GET /api/ipa-hosts/settings/sync-cron", times: 1 }]);
     try {
-      await unread.tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await unread.tab.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
       await unread.tab.getByRole("menuitem", { name: "Host-Synchronisierung" }).click();
       expect(await unread.tab.getByRole("dialog").getByRole("button", { name: "Speichern" }).isDisabled()).toBe(true);
       expect([...errors, ...unread.errors]).toEqual([]);

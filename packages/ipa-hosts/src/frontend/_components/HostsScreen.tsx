@@ -3,7 +3,6 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
-  Cells,
   Chip,
   confirm,
   Dialog,
@@ -29,6 +28,7 @@ import { createSignal, For, Index, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type IpaHost, type IpaHostgroup, normalizeMacAddress } from "@/contracts";
 import { hostMessages } from "../messages";
+import { readFingerprint } from "./ssh-fingerprint";
 
 export type HostsTab = "groups" | "ungrouped";
 
@@ -274,6 +274,8 @@ export default function HostsScreen(props: HostsScreenProps) {
       <Chip icon="folders">{t().nestedCount({ count: group.hostgroups.length })}</Chip>
     );
 
+  // a mirror that holds nothing yet: its one way on is a sync
+  const emptyMirror = () => props.figures.hostsTotal === 0 && props.figures.groups === 0 && !props.search;
   const list = () => (
     <Pane
       label={t().hosts}
@@ -281,27 +283,24 @@ export default function HostsScreen(props: HostsScreenProps) {
       status={
         <StatusRow
           lead={
-            props.figures.hostsTotal === 0 && props.figures.groups === 0
+            emptyMirror()
               ? t().emptyLead
-              : props.figures.ungrouped > 0
-                ? t().unassignedLead({ count: props.figures.ungrouped })
-                : t().assignedLead
+              : props.tab === "groups"
+                ? t().groupCount({ count: props.groups.length })
+                : t().ungroupedCount({ count: props.ungrouped.length })
           }
           facts={props.search ? [{ before: t().search, value: props.search }] : []}
         />
       }
     >
-      {/* the figures say what the lead does not; an empty mirror has nothing to count */}
-      <Show when={props.figures.hostsTotal > 0 || props.figures.groups > 0}>
-        <Cells>
-          <Cells.Cell
-            icon="folders"
-            label={t().hostgroups}
-            value={number(props.figures.groups)}
-            meta={props.search ? t().filtered : undefined}
-          />
-          <Cells.Cell icon="server" label={t().hosts} value={number(props.figures.hostsTotal)} />
-        </Cells>
+      <Show when={props.tab === "groups" && props.figures.ungrouped > 0 && !props.search}>
+        <Notice
+          tone="warn"
+          icon="server-off"
+          actions={[{ label: t().showUngrouped, href: href({ tab: "ungrouped", group: null, host: null }) }]}
+        >
+          {t().unassignedLead({ count: props.figures.ungrouped })}
+        </Notice>
       </Show>
       <Show
         when={props.tab === "groups"}
@@ -329,8 +328,8 @@ export default function HostsScreen(props: HostsScreenProps) {
               text={
                 props.search ? t().noGroupMatch({ query: props.search }) : props.figures.hostsTotal === 0 ? t().syncToFill : t().noGroups
               }
-              // an empty mirror is filled by the first sync
-              action={props.search ? undefined : { label: t().syncNow, icon: "refresh", onClick: () => void sync() }}
+              // an empty mirror is filled by the first sync, the page's main action; groups without hosts are made in the head
+              action={undefined}
             />
           }
         >
@@ -382,12 +381,13 @@ export default function HostsScreen(props: HostsScreenProps) {
       back={{ label: t().hostgroups, href: href({ group: null }) }}
       head={
         <Bar
-          start={<Text type="lead">{group.cn}</Text>}
+          start={<Text weight="strong">{group.cn}</Text>}
           end={
             <>
-              <Button icon="trash" onClick={() => void deleteGroup(group.cn)}>
-                {t().delete}
-              </Button>
+              <Menu
+                label={t().moreActionsFor({ name: group.cn })}
+                items={[{ label: t().delete, icon: "trash", danger: true, onClick: () => void deleteGroup(group.cn) }]}
+              />
               <Button
                 icon="pencil"
                 keep
@@ -452,12 +452,13 @@ export default function HostsScreen(props: HostsScreenProps) {
         back={{ label: openGroup() ?? t().ungroupedHosts, href: back }}
         head={
           <Bar
-            start={<Text type="lead">{host.fqdn}</Text>}
+            start={<Text weight="strong">{host.fqdn}</Text>}
             end={
               <>
-                <Button icon="trash" onClick={() => void deleteHost(host.fqdn)}>
-                  {t().delete}
-                </Button>
+                <Menu
+                  label={t().moreActionsFor({ name: host.fqdn })}
+                  items={[{ label: t().delete, icon: "trash", danger: true, onClick: () => void deleteHost(host.fqdn) }]}
+                />
                 <Button
                   icon="pencil"
                   keep
@@ -525,9 +526,19 @@ export default function HostsScreen(props: HostsScreenProps) {
             {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
             <Facts
               items={host.sshFingerprints.map((fingerprint) => {
-                // FreeIPA writes "SHA256:… (ED25519)": the key type is the label, the hash the value
-                const [, hash = fingerprint, type] = /^(.*?)(?: \(([^)]+)\))?$/.exec(fingerprint) ?? [];
-                return { label: type ?? t().sshKey, value: hash, mono: true, copy: hash };
+                const key = readFingerprint(fingerprint);
+                return {
+                  label: key.type ?? t().sshKey,
+                  value: key.comment ? (
+                    <>
+                      {key.hash} <Text muted>{key.comment}</Text>
+                    </>
+                  ) : (
+                    key.hash
+                  ),
+                  mono: true,
+                  copy: key.hash,
+                };
               })}
             />
           </Section>
@@ -636,10 +647,12 @@ export default function HostsScreen(props: HostsScreenProps) {
       nav={props.nav}
       detail={props.group || props.host ? 460 : undefined}
       // the main action follows what is open: a host takes groups, the groups view takes a new group, the rest none
+      // the main action follows what is open: an empty mirror is filled by a sync, the groups view takes a new group;
+      // an open host takes groups in its own section, so the phone shows one way to add, not two
       primary={
-        props.host?.found
-          ? { label: t().addToGroup, icon: "folder-plus", onClick: () => (setFailure(null), setAdding([])) }
-          : props.tab === "groups" && !props.group
+        emptyMirror()
+          ? { label: t().syncNow, icon: "refresh", onClick: () => void sync() }
+          : props.tab === "groups" && !props.group && !props.host
             ? {
                 label: t().newGroup,
                 icon: "folder-plus",
@@ -691,13 +704,22 @@ export default function HostsScreen(props: HostsScreenProps) {
                   { label: t().syncSettings, icon: "settings", onClick: () => void openSchedule() },
                 ]}
               />
-              <Show when={props.tab === "groups" && !props.group && !props.host}>
-                <Button
-                  variant="primary"
-                  icon="folder-plus"
-                  onClick={() => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" }))}
-                >
-                  {t().newGroup}
+              <Show
+                when={emptyMirror()}
+                fallback={
+                  <Show when={props.tab === "groups" && !props.group && !props.host}>
+                    <Button
+                      variant="primary"
+                      icon="folder-plus"
+                      onClick={() => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" }))}
+                    >
+                      {t().newGroup}
+                    </Button>
+                  </Show>
+                }
+              >
+                <Button variant="primary" icon="refresh" onClick={() => void sync()}>
+                  {t().syncNow}
                 </Button>
               </Show>
             </>

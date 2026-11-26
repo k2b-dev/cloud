@@ -67,12 +67,17 @@ const firstHtml = async (search: string, data: Data) => {
   const hosts = [...groups.flatMap((group) => group.hostDetails), ...ungrouped];
   const spies = [
     stubRailSnapshot(),
-    spyOn(ipaHostsService.hostgroup, "listWithHosts").mockResolvedValue({
-      items: groups.slice(0, 100),
-      page: 1,
-      perPage: 100,
-      total: data === "worst" ? 12_345 : groups.length,
-      hasNext: data === "worst",
+    // a search finds groups by name or description, as the mirror's query does
+    spyOn(ipaHostsService.hostgroup, "listWithHosts").mockImplementation(async ({ filter }) => {
+      const query = filter?.query?.toLowerCase();
+      const found = query ? groups.filter((group) => `${group.cn} ${group.description ?? ""}`.toLowerCase().includes(query)) : groups;
+      return {
+        items: found.slice(0, 100),
+        page: 1,
+        perPage: 100,
+        total: data === "worst" ? 12_345 : found.length,
+        hasNext: data === "worst",
+      };
     }),
     spyOn(ipaHostsService.host, "listUngrouped").mockResolvedValue({
       items: ungrouped,
@@ -163,6 +168,7 @@ describe("Hosts in the Cloud shell", () => {
       ["gruppe-offen", "?group=server", "normal"],
       ["host-offen", "?group=server&host=db1.werkstatt.example", "normal"],
       ["ohne-gruppe", "?tab=ungrouped", "normal"],
+      ["suche", "?search=a", "normal"],
       ["leer", "", "empty"],
       ["worst-case", "", "worst"],
       ["worst-case-gruppe", `?group=${LONG_GROUP}`, "worst"],
@@ -219,7 +225,8 @@ describe("Hosts in the Cloud shell", () => {
             await tab.getByRole("button", { name: "Neue Hostgruppe" }).first().click();
             await tab.getByRole("dialog").getByRole("textbox", { name: "Name" }).fill("werkstatt-sued");
           } else {
-            await tab.getByRole("button", { name: "Zu Hostgruppe hinzufügen" }).first().click();
+            // k2b-ui gap: on the phone a section action keeps only its symbol and loses its name (DP); found by its section
+            await tab.getByRole("region", { name: "Hostgruppen" }).getByRole("button").first().click();
             const dialog = tab.getByRole("dialog");
             await dialog.getByRole("searchbox").fill("a");
             await dialog.getByRole("option", { name: /drucker/ }).click();

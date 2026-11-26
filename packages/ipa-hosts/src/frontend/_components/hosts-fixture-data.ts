@@ -54,7 +54,10 @@ const detail = (name: string, index: number, groups: string[]): IpaHost =>
           ],
     platform: "x86_64",
     osVersion: OS[index % OS.length]!,
-    sshFingerprints: index % 6 === 5 ? [] : [`SHA256:${index.toString(16).padStart(4, "0")}7f3a9c2e1b4d4e8a9c0d2b6f1e3a5d7c (ED25519)`],
+    sshFingerprints:
+      index % 6 === 5
+        ? []
+        : [`SHA256:${index.toString(16).padStart(4, "0")}Kx9eM0vXr1q3Q2s1u8u0b3Jt2r4Wl0oYc root@${name}.werkstatt.example (ssh-ed25519)`],
   });
 
 /** The 18 groups with their hosts, each host knowing every group it is in. */
@@ -71,7 +74,7 @@ export const denseGroups = (): (IpaHostgroup & { hostDetails: IpaHost[] })[] => 
 };
 
 /** An invented ED25519 fingerprint as FreeIPA writes it. */
-const key = (seed: string) => `SHA256:${seed}7f3a9c2e1b4d4e8a9c0d2b6f1e3a5d7c (ED25519)`;
+const key = (seed: string) => `SHA256:${seed}Kx9eM0vXr1q3Q2s1u8u0b3Jt2r4Wl0oYcQ7Z (ssh-ed25519)`;
 
 /** Hosts the mirror holds without a group: newly enrolled, half described; one still has no key. */
 export const denseUngrouped = (): IpaHost[] => [
@@ -101,7 +104,10 @@ export const worstGroups = (): (IpaHostgroup & { hostDetails: IpaHost[] })[] => 
     memberofHostgroup: [LONG_GROUP, ...Array.from({ length: 7 }, (_, index) => `gruppe-${index + 1}`)],
     macAddress: Array.from({ length: 6 }, (_, index) => `AA:BB:CC:DD:EE:0${index}`),
     osVersion: "Debian 13",
-    sshFingerprints: Array.from({ length: 3 }, (_, index) => `SHA256:${"x".repeat(43)}${index} (RSA)`),
+    sshFingerprints: Array.from(
+      { length: 3 },
+      (_, index) => `SHA256:${"x".repeat(43)}${index} schichtleitung-werkstatt-nord@kunden-und-auftraege.example (ssh-rsa)`,
+    ),
   });
   return [
     {
