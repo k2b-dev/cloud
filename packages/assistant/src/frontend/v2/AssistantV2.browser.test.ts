@@ -6,6 +6,7 @@ import { appAccentStyle, appV2InkStyle } from "@k2b/cloud/ssr/app-appearance";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page, Route } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
+import { FIXTURE_NOW as APPS_NOW, myAppsFixture } from "../code-overview.fixture";
 import {
   type AssistantV2FixtureState,
   FIXTURE_APPROVAL,
@@ -37,6 +38,7 @@ type View = { name: string; width: number; height: number; touch: boolean };
 const wide: View = { name: "1440", width: 1440, height: 900, touch: false };
 const narrow: View = { name: "1024", width: 1024, height: 768, touch: false };
 const phone: View = { name: "390", width: 390, height: 844, touch: true };
+const large: View = { name: "1920", width: 1920, height: 1080, touch: false };
 
 const pinPageClock = (instant: number) => {
   const RealDate = Date;
@@ -91,7 +93,15 @@ const contextOf = (chatId: string) => ({
   runs: [],
 });
 
-type Scene = { state?: AssistantV2FixtureState; open?: boolean; waiting?: boolean; tabs?: boolean; archived?: boolean };
+type Scene = {
+  state?: AssistantV2FixtureState;
+  open?: boolean;
+  waiting?: boolean;
+  tabs?: boolean;
+  archived?: boolean;
+  /** The page's clock, when the scene's data has its own day (My apps & automations). */
+  now?: string;
+};
 /** A web page the person left open beside the chat, as the server stores the chat's tabs. */
 const storedTabs = (chatId: string) => ({
   chatId,
@@ -169,7 +179,10 @@ const propsOf = (scene: Scene, url: URL) => {
           }
         : { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
     ...(url.searchParams.get("approvals") === "1" ? { initialAutomations: scene.waiting ? FIXTURE_AUTOMATIONS : [] } : {}),
-    code: { has: true, open: false },
+    code:
+      url.pathname === "/app/assistant/code"
+        ? { has: true, open: true, page: myAppsFixture("normal").initial }
+        : { has: true, open: false },
     initialCodeBlock: null,
   };
 };
@@ -240,7 +253,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
     locale: "de",
     timezoneId: "Europe/Berlin",
   });
-  await context.addInitScript(pinPageClock, Date.parse(FIXTURE_NOW));
+  await context.addInitScript(pinPageClock, Date.parse(scene.now ?? FIXTURE_NOW));
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   const errors = pageErrors(page);
@@ -252,7 +265,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
   await page.route(`${ORIGIN}/**`, async (route: Route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
-    if (url.pathname === "/app/assistant") {
+    if (url.pathname === "/app/assistant" || url.pathname === "/app/assistant/code") {
       const harness = { locale: "de", props: propsOf(scene, url) };
       const colors = [appAccentStyle(plum), appV2InkStyle(plum)].filter(Boolean).join(";");
       return route.fulfill({
@@ -432,6 +445,34 @@ describe("Assistant on v2", () => {
           await context.close();
         }
       }, 60_000);
+
+  for (const view of [phone, narrow, wide, large])
+    test(`${view.name}: My apps & automations states today's runs, shows the day and one row per app that opens its Code`, async () => {
+      const { context, page, errors, unanswered } = await open(view, "/app/assistant/code", { open: false, now: APPS_NOW });
+      try {
+        const pane = page.locator('[data-k2-part="Pane"][aria-label="Meine Apps & Automationen"]');
+        // The phone shows the table as rows of two lines; every width has the links to the Code.
+        await pane.locator('a[href^="/app/assistant/code/c_"]').first().waitFor();
+        await settled(page);
+        await shoot(page, `${view.name}-apps`);
+        expect(await pane.locator('[data-k2-part="StatusRow"]').textContent()).toContain("Läufe heute");
+        // One row per app, in the server's order, each a link to its Code (the day line's marks are links too).
+        const rows = await pane.evaluate((root) =>
+          [...root.querySelectorAll<HTMLAnchorElement>('a[href^="/app/assistant/code/c_"]')]
+            .filter((link) => !link.closest(".assistant-apps__today") && link.getClientRects().length > 0)
+            // On the phone the link lies over its row of two lines; the row carries the words.
+            .map((link) => (link.textContent?.trim() || link.parentElement?.textContent?.trim()) ?? ""),
+        );
+        const titles = ["Wochenbericht Vertrieb", "Rückfragen sammeln", "Stoffpreise prüfen", "Angebote nachfassen"];
+        expect(rows).toHaveLength(titles.length);
+        for (const [index, title] of titles.entries()) expect(rows[index]).toContain(title);
+        expect(await layoutProblems(page)).toEqual([]);
+        expect(errors).toEqual([]);
+        expect(unanswered).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
 
   test("on the phone the chat fills the screen and its composer stands in view", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant");

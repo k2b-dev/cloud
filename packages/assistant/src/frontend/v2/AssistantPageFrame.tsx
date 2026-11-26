@@ -1,6 +1,9 @@
 import { navigateTo } from "@k2b/ssr/nav";
+import { Failed, Loading, Pane } from "@k2b/ui/v2";
+import { Show } from "solid-js";
 import { assistantProjectHref } from "../assistant-navigation";
 import type { AssistantWorkspaceParts } from "../assistant-workspace";
+import { AssistantAppsV2 } from "../code-deferred-views";
 import { lazyAction } from "../lazy-action";
 import { openAssistantPrefsModal } from "../rare-dialogs";
 import AssistantFrameV2 from "./AssistantFrameV2";
@@ -117,7 +120,24 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
                 total={() => w.waiting().total}
               />
             )
-          : null
+          : w.mainView() === "code" && !w.codeDetailShown()
+            ? () => (
+                <AssistantAppsV2
+                  userId={w.props.userId}
+                  timeZone={w.props.timeZone}
+                  initial={w.codeRendered() ? w.props.code?.page : undefined}
+                  onCreateInChat={w.createFromCodeView}
+                  // The pane stands while the view's code loads, so nothing moves when it comes.
+                  waiting={(state) => (
+                    <Pane label={w.t().myCode}>
+                      <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
+                        <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
+                      </Show>
+                    </Pane>
+                  )}
+                />
+              )
+            : null
       }
       tabs={{
         open: () => w.artifactWorkspace.state().tabs.length > 0,
