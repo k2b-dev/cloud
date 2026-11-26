@@ -76,7 +76,9 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
+| files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
+| a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
@@ -169,15 +171,13 @@ and appealing. Dense is not busy: show more, never the same thing twice.
    count such as "6 Einträge" is never the biggest text.
 3. **A state is colour, symbol and word.** A value with a limit gets a bar,
    a short history a `Spark`.
-4. **Space structures, lines separate groups.** Group heads are text;
-   no box inside a card.
-5. **No empty half.** A detail only while something is open, a side column
-   only when it is full.
-6. **People stand beside what they did:** avatars, stacks, `Digest
-   activity` with the thing's mark.
-7. **Four type sizes** (12, 13, 14, 18), set by the primitives.
-8. **Sample data is dense and real**: colours, people, states; never
-   "Tabelle 1".
+4. **Space structures, lines separate groups**; no box inside a card.
+5. **No empty half**: a detail only while open, a side column only if full.
+6. **People beside what they did:** avatars, stacks, `Digest activity`.
+7. **Four type sizes** (12, 13, 14, 18); sample data dense and real.
+8. **At most two head rows** over list and detail: path and deeds, then
+   `FilterBar` with count, order and display at its `end`.
+9. **Settings are `Setting` rows**: value beside the name, never a form.
 
 ## Primitives in one line each
 
@@ -188,8 +188,8 @@ and appealing. Dense is not busy: show more, never the same thing twice.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `Check`, `Choice`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
+  `Select`, `DateInput`, `Check`, `Choice`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

@@ -85,6 +85,7 @@ const catalogs = {
   Video: (await import("../content/video-messages")).checkVideoMessages,
   RangePicker: (await import("../content/range-picker-messages")).checkRangePickerMessages,
   Refresh: (await import("../layout/refresh-messages")).checkRefreshMessages,
+  Setting: (await import("../v2/setting-messages")).checkSettingMessages,
 };
 
 describe("@k2b/ui message catalogs", () => {

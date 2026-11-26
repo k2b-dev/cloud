@@ -107,6 +107,14 @@ the home of a place.
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+
+`variant="media"`: photos, pages and videos in a grid of at least 160 px.
+A tile adds `image` (its picture, 4:3), `kind` (`PDF`, a video's length),
+`people` (the first is the owner, 16 px), `sign` (`{ icon, label }` at the
+end of its quiet line, such as the sharing state) and `key`. `select: {
+selected, onChange(key, on) }` puts a box on each picture; it shows under
+the pointer, with the focus, on touch, and on all tiles while one is
+selected; a selected tile is blue with a line inside its edge.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
@@ -202,7 +210,10 @@ lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `href` stays in the address there; offer another order on the phone in the
 page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
-onOpen }` makes each row open its entry.
+onOpen }` makes each row open its entry. A column's `mark(row)` leads its
+cell with the thing's `Mark` (a file's thumbnail or type, 24 px), its
+`avatar(row)` with a person (the name in the cell names it); `phone(row)`
+takes a `mark` as well.
 
 A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
@@ -280,6 +291,9 @@ lines instead of cutting a thing.
 - `Spark`: `values` (oldest first), `label` (what the bars show). A few bars
   of a short history, the last in full colour; beside a number, never
   instead of it.
+- `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
+  the open thing at the top of its detail, 4:3 from text edge to text edge;
+  the symbol stands while it loads, fails or is missing.
 
 ## Controls
 
@@ -295,6 +309,12 @@ lines instead of cutting a thing.
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
+- `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
+  change says "geändert · vorher 12 Std." under its control), one control
+  as child. One setting of a settings page: the name (13, 500) and its hint
+  on the left, the control in a column of 300 px beside them, no line
+  between settings; one column on the phone. Never stack `Field`s as a
+  settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), one control as child. `Field.Row`
@@ -329,7 +349,9 @@ lines instead of cutting a thing.
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
   problem there), `color` (the place's data colour: its symbol becomes its
-  `Mark`, the same as in its rows and on its card). An item with `items` instead of `icon` and a link folds
+  `Mark`, the same as in its rows and on its card). `quota: { label, value,
+  of, text }` shows what the open place uses above the foot ("Werkstatt ·
+  38,2 von 100 GB" over a bar; amber from 75 %, red from 90 %). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
@@ -378,7 +400,12 @@ lines instead of cutting a thing.
   `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
   current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
   for the phone sheet). It writes the address itself. See
-  [list queries](list-queries.md).
+  [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
+  display such as list or grid) makes the bar the one status row of its
+  list (52 px) with `results` in quiet words before it: the page head then
+  has two rows, path and deeds, then this bar. While entries are selected a
+  `StatusRow selection` takes its place at the same height; on the phone the
+  selection's actions float at the bottom, symbol over word.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,

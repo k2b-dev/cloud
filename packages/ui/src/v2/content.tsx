@@ -295,7 +295,8 @@ export type RowProps = {
   /**
    * The row stands in a selection, such as "10 ausgewählt" (pair it with `StatusRow selection`): a box in the lead,
    * named by the title, and the blue tint while `selected`, as `Table select` draws it. The box takes the place of the
-   * lead's symbol, person or dot. Open and selected combine: a selected row stays blue, and stays the open one.
+   * lead's symbol, person or dot; a `mark` stays beside it, so a file keeps its thumbnail. Open and selected combine: a
+   * selected row stays blue, and stays the open one.
    */
   select?: { selected: boolean; onChange: (selected: boolean) => void };
   /** "You are next", in the blue tint. */
@@ -363,7 +364,7 @@ export const Row = (props: RowProps) => {
       data-yours={props.yours ? "" : undefined}
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
-      data-mark={props.mark && !props.avatar && !props.select ? "" : undefined}
+      data-mark={props.mark && !props.avatar ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
     >
@@ -415,7 +416,13 @@ export const Row = (props: RowProps) => {
             </Show>
           }
         >
-          {(select) => <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />}
+          {(select) => (
+            <>
+              <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />
+              {/* a thing's mark stays beside the box (a file keeps its thumbnail); a symbol, person or dot gives way */}
+              <Show when={props.mark}>{(mark) => <Mark {...mark()} />}</Show>
+            </>
+          )}
         </Show>
       </span>
       <span class="k2-row-l1">
@@ -463,6 +470,10 @@ export type Column<T> = {
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
+  /** The cell leads with the thing's mark: a file's thumbnail or type, a base's symbol (24 px, rule: each thing its mark). */
+  mark?: (row: T) => MarkProps;
+  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. */
+  avatar?: (row: T) => Person;
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.
@@ -630,7 +641,20 @@ export const Table = <T,>(props: TableProps<T>) => {
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
 
-  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
+  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget, row?: T) => {
+    const lines = cellLines(column, value, target);
+    // a cell that leads with the thing's mark or a person: the lead beside its lines, the lines cut as before
+    const mark = row !== undefined ? column.mark?.(row) : undefined;
+    const person = row !== undefined ? column.avatar?.(row) : undefined;
+    if (!mark && !person) return lines;
+    return (
+      <span class="k2-cell-lead">
+        {mark ? <Mark {...mark} /> : person ? <Avatar {...person} decorative /> : null}
+        <span class="k2-cell-lines">{lines}</span>
+      </span>
+    );
+  };
+  const cellLines = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
@@ -824,7 +848,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                               data-sticky={firstSticky(columnIndex())}
                               style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                             >
-                              {cell(column, values()[item.index]![columnIndex()]!, columnIndex() === 0 ? target : undefined)}
+                              {cell(column, values()[item.index]![columnIndex()]!, columnIndex() === 0 ? target : undefined, item.row)}
                             </td>
                           )}
                         </For>
