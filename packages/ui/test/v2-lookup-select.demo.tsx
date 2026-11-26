@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Band, Bar, Field, Input, Lookup, LookupSelect, Pane, Text, Workspace } from "../src/v2";
+import { Band, Bar, Field, Input, Lookup, LookupSelect, Nav, Pane, Text, Workspace } from "../src/v2";
 import type { LookupItem } from "../src/v2/list-query";
 
 // A form that picks a customer (one, named on the server), contact people (several) and a required consignor from values that
@@ -97,7 +97,25 @@ export function Demo() {
   const picks = hooks();
   if (picks) picks.setQuantity = setQuantity;
   return (
-    <Workspace head={<Bar start={<Text type="body">Neuer Auftrag</Text>} />}>
+    <Workspace
+      // the app's own navigation, as a screen of a Cloud app has it
+      sidebar={
+        <Nav
+          title="Werkstatt"
+          icon="tools"
+          groups={[
+            {
+              items: [
+                { label: "Aufträge", icon: "clipboard-list", current: true, count: 12 },
+                { label: "Kunden", icon: "users" },
+                { label: "Lager", icon: "building-warehouse" },
+              ],
+            },
+          ]}
+        />
+      }
+      head={<Bar start={<Text type="body">Neuer Auftrag</Text>} />}
+    >
       <Pane label="Neuer Auftrag">
         <Band>
           <Field.Row>
