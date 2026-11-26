@@ -11,11 +11,18 @@ export const MOVED_PAGES: [old: string, moved: string][] = [
   ["/admin/observability/alerts?webhook=hw_1", "/admin/observability/settings?webhook=hw_1"],
   ["/admin/observability/health-check", "/admin/observability/settings/health-check"],
   ["/admin/observability/retention", "/admin/observability/settings/retention"],
-  // A fan-out's children are listed in Läufe; the workflow's own runs too (`?workflow=` looks up its app first).
-  ["/admin/observability/workflows?parent=6f1c2d3e-0000-4000-8000-000000000001", "/admin/observability/runs?kind=workflow"],
+  // The runs of one workflow and a run's children are listed in Läufe, with the same filters.
   [
-    "/admin/observability/workflows?parent=6f1c2d3e-0000-4000-8000-000000000001&state=failed",
-    "/admin/observability/runs?kind=workflow&status=failed",
+    "/admin/observability/workflows?workflow=6f1c2d3e-0000-4000-8000-000000000002&app=mail&state=needs_attention&window=7d",
+    "/admin/observability/runs?kind=workflow&workflow=6f1c2d3e-0000-4000-8000-000000000002&app=mail&status=failed&time=last-7d",
+  ],
+  [
+    "/admin/observability/workflows?parent=6f1c2d3e-0000-4000-8000-000000000001",
+    "/admin/observability/runs?kind=workflow&parent=6f1c2d3e-0000-4000-8000-000000000001",
+  ],
+  [
+    "/admin/observability/workflows?parent=6f1c2d3e-0000-4000-8000-000000000001&state=queued&window=1h",
+    "/admin/observability/runs?kind=workflow&parent=6f1c2d3e-0000-4000-8000-000000000001&status=waiting&time=last-1h",
   ],
 ];
 

@@ -11,7 +11,6 @@ import { formatDateTime, formatDurationMs, formatNumber, formatPercent, formatRe
 import { AdminLayout } from "@k2b/cloud/ssr";
 import type { WorkflowRunState } from "@k2b/cloud/workflows";
 import {
-  getWorkflow,
   getWorkflowRun,
   listStrandedWorkflowEffects,
   listUndispatchedWorkflowEvents,
@@ -119,11 +118,17 @@ export default ssr<AuthContext>(async (c) => {
   const since = windowStart(window);
   const pageSize = view === "runs" ? RUNS_PER_PAGE : FINDINGS_PER_PAGE;
   const offset = (page - 1) * pageSize;
-  // The runs of one workflow and a fan-out's children are listed in Läufe; the workflow's app narrows it there.
-  if (view === "runs" && !run && (workflow || parent)) {
-    const owner = workflow ? await getWorkflow(workflow) : null;
-    return c.redirect(workflowRunsHref({ app: owner?.appId, state: filters.state as WorkflowRunState | undefined }));
-  }
+  // The runs of one workflow and a run's children are listed in Läufe, with the same filters.
+  if (view === "runs" && !run && (workflow || parent))
+    return c.redirect(
+      workflowRunsHref({
+        workflow: workflow || undefined,
+        parent: parent || undefined,
+        app: filters.app,
+        state: filters.state as WorkflowRunState | undefined,
+        window,
+      }),
+    );
   const showFamilies = view === "runs";
   const runFilter = {
     appId: filters.app || undefined,
@@ -216,7 +221,7 @@ export default ssr<AuthContext>(async (c) => {
               : null,
           rows: buildWorkflowTimelineRows(timelineResult.runs, timelineWindow).map((row) => ({
             label: row.label,
-            href: workflowRunsHref({ app: row.appId }),
+            href: workflowRunsHref({ workflow: row.workflowId, window }),
             tooltip: `${row.label} · ${row.appId}`,
             intervals: row.intervals.map(({ run: item, ...interval }) => {
               const timing =
@@ -280,7 +285,12 @@ export default ssr<AuthContext>(async (c) => {
           title: t.workflowFamilies,
           count: countLabel(familyRows.length),
           summary: t.matchingDefinitions({ count: countLabel(familyRows.length), window }),
-          actions: [{ label: t.allWorkflowRuns, href: workflowRunsHref({ app: filters.app }) }],
+          actions: [
+            {
+              label: t.allWorkflowRuns,
+              href: workflowRunsHref({ app: filters.app, state: filters.state as WorkflowRunState | undefined, window }),
+            },
+          ],
           empty: t.noWorkflowsWindow,
           filtered,
           families: familyRows.slice(0, RUNS_PER_PAGE).map((row) => {
@@ -297,7 +307,7 @@ export default ssr<AuthContext>(async (c) => {
               backlog: `${number(row.active)} / ${queuedAge === null ? "—" : duration(queuedAge)}`,
               backlogWarn: row.needsAttention > 0 || (queuedAge ?? 0) > LAG_WARN_MS,
               activity: relative(row.latestRunAt),
-              href: workflowRunsHref({ app: row.appId }),
+              href: workflowRunsHref({ workflow: row.workflowId, window }),
             };
           }),
         }
@@ -382,7 +392,7 @@ export default ssr<AuthContext>(async (c) => {
           return {
             label: `${number(count)} ${stateLabel(state, t).toLocaleLowerCase(locale)}`,
             status: STATUS[state] ?? null,
-            href: workflowRunsHref({ app: value.appId, state }),
+            href: workflowRunsHref({ parent: value.id, state }),
           };
         }),
       steps: value.steps.map((step) => ({
