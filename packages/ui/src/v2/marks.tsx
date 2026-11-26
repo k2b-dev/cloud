@@ -1,6 +1,7 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
+import { Icon } from "./icon";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
@@ -12,26 +13,7 @@ export const custom = (values: Record<string, string | undefined>): JSX.CSSPrope
 
 // ── Marks ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type IconProps = {
-  /** A Tabler icon name without the `ti-` prefix, such as `package`. */
-  name: string;
-  /** A name for assistive technology; without one the icon is decoration. */
-  label?: string;
-  tone?: Status | "ai" | "app" | "muted" | "subtle";
-};
-
-/** A Tabler icon. Its size comes from its place: 16 px in rows and bars, 20 px on a tile, 14 px among marks. */
-export const Icon = (props: IconProps) => (
-  <i
-    class={`ti ti-${props.name} k2-icon`}
-    data-k2-part="Icon"
-    data-name={props.name}
-    data-tone={props.tone}
-    role="img"
-    aria-label={props.label}
-    aria-hidden={props.label ? undefined : "true"}
-  />
-);
+export { Icon, type IconProps } from "./icon";
 
 export type AvatarProps = Person & {
   /**
