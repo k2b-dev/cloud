@@ -42,6 +42,16 @@ export const showsOverview = (params: URLSearchParams, storageCount: number) =>
   !searchState(params) &&
   !["trash", "shares", "recent", "favorites", "activity"].includes(params.get("view") ?? "");
 
+/**
+ * The views the v2 Files screen shows in place: a folder or a search, the trash of a storage, and the favorites; null for
+ * the views that are still their own v1 page (overview, Activity, shares, editors).
+ */
+export const screenViewOf = (params: URLSearchParams, storageCount: number): "folder" | "trash" | "favorites" | null => {
+  const view = params.get("view");
+  if (view === "trash" || view === "favorites") return view;
+  return view === null && !showsOverview(params, storageCount) ? "folder" : null;
+};
+
 const WHEN: readonly ActivityWhen[] = ["today", "7", "30", "365"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

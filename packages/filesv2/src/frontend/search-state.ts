@@ -40,6 +40,8 @@ export type SearchState = {
   kind?: SearchKind;
   size?: SearchSize;
   modified?: SearchModified;
+  /** Only folders or only files. */
+  type?: "directories" | "files";
 };
 
 const pick = <T extends string>(value: string | null, values: readonly T[]) => values.find((item) => item === value);
@@ -92,7 +94,7 @@ export function searchRequest(state: SearchState, now = Date.now()) {
     in: state.exact ? ("name" as const) : ("path" as const),
     sort: effectiveSort(state),
     order: state.order,
-    type: state.kind === "folder" ? ("directories" as const) : ("all" as const),
+    type: state.kind === "folder" ? ("directories" as const) : (state.type ?? ("all" as const)),
     groupFolders: "false" as const,
     ...(extensions ? { ext: extensions } : {}),
     ...("minSize" in size ? { minSize: String(size.minSize) } : {}),

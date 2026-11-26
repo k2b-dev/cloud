@@ -3,7 +3,6 @@ import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult, EditorLaunch } from "../src/contracts";
-import { browserWithUploads } from "./browser-with-uploads";
 
 const requests: Array<{ kind: string; input: unknown; resolve: (response: Response) => void }> = [];
 if (!isServer) {
@@ -63,88 +62,6 @@ describe("Filesv2 office editing", () => {
   afterEach(() => {
     cleanup();
     requests.length = 0;
-  });
-
-  test("office files open in the editor and the plus menu creates documents only when Collabora is configured", async () => {
-    const dom = createDomTestHarness();
-    const Browser = await browserWithUploads();
-    const { dialogCore } = await import("@k2b/ui");
-    const edited: string[] = [];
-    const props = {
-      directory,
-      bases: [directory.base],
-      onNavigate: async () => {},
-      onEdit: (entry: { path: string }) => edited.push(entry.path),
-    };
-    let dispose = render(() => createComponent(Browser, { ...props, editor: null }), dom.root);
-    cleanup = () => {
-      dialogCore.close();
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
-    await flush();
-    expect(dom.document.body.textContent).not.toContain("New text document");
-    dispose();
-    dispose = render(() => createComponent(Browser, { ...props, editor: { documentFormat: "odf" } }), dom.root);
-    await flush();
-    const rows = dom.root.querySelectorAll('[role="row"].filesv2-list__row');
-    expect(rows).toHaveLength(2);
-    rows[1]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    await flush();
-    expect(edited).toEqual([]);
-    // A file the editor cannot open shows large in the Lightbox; closing it returns to the list.
-    const lightbox = dom.document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox")!;
-    expect(lightbox.getAttribute("aria-label")).toBe("notes.txt");
-    lightbox.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click();
-    await flush();
-    expect(dom.document.querySelector("dialog.k2b-lightbox")).toBeNull();
-    rows[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    await flush();
-    expect(edited).toEqual(["Minutes.odt"]);
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
-    await flush();
-    const item = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) =>
-      node.textContent?.includes("New spreadsheet"),
-    )!;
-    item.click();
-    await flush();
-    const dialog = dom.document.querySelector("dialog")!;
-    expect(dialog.textContent).toContain("Name (.ods is added)");
-    const name = dialog.querySelector<HTMLInputElement>("input")!;
-    name.value = "Budget";
-    name.dispatchEvent(new Event("input", { bubbles: true }));
-    dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await flush();
-    expect(requests.map((request) => request.kind)).toEqual(["documents"]);
-    expect(requests[0]!.input).toEqual({ param: { baseId: directory.base.id }, json: { path: "Budget", kind: "spreadsheet" } });
-    requests[0]!.resolve(
-      Response.json({
-        base: directory.base,
-        entry: { name: "Budget.ods", path: "Budget.ods", directory: false, size: 808, modified: "2026-09-19T11:00:00Z" },
-      }),
-    );
-    await flush();
-    expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
-    await flush();
-    [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-      .find((node) => node.textContent?.includes("New spreadsheet"))!
-      .click();
-    await flush();
-    const delayedDialog = dom.document.querySelector("dialog")!;
-    const delayedName = delayedDialog.querySelector<HTMLInputElement>("input")!;
-    delayedName.value = "Delayed";
-    delayedName.dispatchEvent(new Event("input", { bubbles: true }));
-    delayedDialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await flush();
-    dispose(); // Leaving the browser must not let a late response navigate the new location.
-    requests[1]!.resolve(
-      Response.json({ base: directory.base, entry: { ...directory.items[0]!, name: "Delayed.ods", path: "Delayed.ods" } }),
-    );
-    await flush();
-    expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
   });
 
   test("office and PDF thumbnails remain icons without network requests", async () => {

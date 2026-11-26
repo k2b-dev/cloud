@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
 import type { ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
-import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry, MarkedEntry, SharePage } from "../contracts";
+import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry, MarkedEntry, SharePage, TrashEntry } from "../contracts";
 import type { ActivityFilters } from "./history-requests";
 
 /** An old folder address whose item the reader saw move away; shown instead of "not found". */
@@ -42,6 +42,8 @@ export type WorkspaceSnapshot = {
   /** Authorized first history page of the selected entry in `detail`. */
   history?: { source: string; page: ActivityPage } | null;
   moved?: MovedSnapshot | null;
+  /** The first page of a storage's trash for its view; null when it could not be read. */
+  trash?: { entries: TrashEntry[]; next: string | null } | null;
 };
 
 type Transition = {

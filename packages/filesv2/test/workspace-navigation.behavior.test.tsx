@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -82,88 +82,6 @@ describe("Filesv2 progressive navigation", () => {
     };
     return { controller, requests, dispose };
   };
-
-  for (const path of ["", "A", "A/B", "A/B/C", "A/B/C/D"]) {
-    test(`folder depth ${path ? path.split("/").length : 0} has no shell way up before or after in-place navigation`, async () => {
-      const dom = createDomTestHarness();
-      const { Workspace, ui, derivePageTrail, snapshotTitle } = modules!;
-      const base = {
-        id: "home",
-        name: "Alice",
-        area: "cloud" as const,
-        kind: "users" as const,
-        status: "existing" as const,
-        reason: null,
-        indexEnabled: false,
-        versioningEnabled: false,
-      };
-      const bases = { items: [base], issues: [], editor: null };
-      const directory = (path: string) => ({ base, path, items: [], next: null });
-      const source = `/app/filesv2?base=home${path ? `&path=${encodeURIComponent(path)}` : ""}`;
-      const snapshot = { ...initial, source, bases, selectedId: base.id, directory: directory(path) };
-      dom.window.history.replaceState(null, "", source);
-      // Seed the real SSR trail; layout.update must publish subsequent trails, without a fixed provider masking them.
-      dom.root.classList.add("cloud-app-canvas");
-      dom.root.setAttribute("data-app-base", "/app/filesv2");
-      ui.setPageTrail(
-        derivePageTrail(
-          snapshotTitle(snapshot, "Files", { personal: "Personal", allStorage: "All storage" }, "en"),
-          "/app/filesv2",
-          "Files",
-        ),
-      );
-      const dispose = render(() => createComponent(Workspace, { initial: snapshot }), dom.root);
-      cleanup = () => {
-        dispose();
-        dom.cleanup();
-      };
-      const assertTitle = (current: string) => {
-        expect(ui.readPageTrail()).toEqual({ title: current.split("/").at(-1) || "Personal", ancestors: [] });
-        for (const selector of [
-          "[data-k2b-page-trail-up]",
-          "[data-k2b-page-trail-link]",
-          ".k2b-page-title__back",
-          ".k2b-page-title__trail",
-        ]) {
-          expect(dom.document.querySelector(selector)).toBeNull();
-        }
-        // The shared head also carries a CSS-hidden fallback h1; the app has exactly one content heading.
-        const headings = dom.document.querySelectorAll("h1:not(.k2b-app-workspace__head-heading)");
-        expect(headings).toHaveLength(1);
-        expect(headings[0]!.textContent).toBe(current.split("/").at(-1) || "Personal");
-      };
-      const assertSidebarStates = async (current: string) => {
-        const root = dom.root.querySelector<HTMLElement>("[data-k2b-app-workspace]")!;
-        const handle = root.querySelector<HTMLButtonElement>('[data-app-workspace-resize="sidebar"]')!;
-        const key = (key: string) =>
-          handle.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
-        key("Home");
-        key("ArrowRight");
-        await flush();
-        expect(root.dataset.sidebarCollapsed).not.toBe("true");
-        assertTitle(current);
-        key("Home");
-        key("ArrowLeft");
-        await flush();
-        expect(root.dataset.sidebarCollapsed).toBe("true");
-        assertTitle(current);
-      };
-      await flush();
-      await assertSidebarStates(path);
-      const destination = path ? path.split("/").slice(0, -1).join("/") : "A";
-      dom.window.history.replaceState(null, "", `/app/filesv2?base=home${destination ? `&path=${encodeURIComponent(destination)}` : ""}`);
-      dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-      for (let round = 0; round < 5; round++) {
-        await flush();
-        for (const request of apiRequests.splice(0)) {
-          const requestedPath = (request.input as { query?: { path?: string } } | undefined)?.query?.path ?? "";
-          request.resolve(Response.json(request.kind === "bases" ? bases : directory(requestedPath)));
-        }
-      }
-      await flush();
-      await assertSidebarStates(destination);
-    });
-  }
 
   test("SSR snapshot suppresses initial fetch; history commits only after its matching snapshot", async () => {
     const { controller, requests } = setup();
@@ -294,138 +212,6 @@ describe("Filesv2 progressive navigation", () => {
     await pending;
     expect(requests[0]!.signal.aborted).toBe(true);
   });
-  test("the plain Files address opens the single storage listing before and after workspace navigation", async () => {
-    const dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", "/app/filesv2");
-    const { Workspace } = modules!;
-    const base = {
-      id: "home",
-      name: "Alice",
-      area: "cloud" as const,
-      kind: "users" as const,
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const bases = { items: [base], issues: [], editor: null };
-    const directory = { base, path: "", items: [], next: null };
-    const dispose = render(
-      () =>
-        createComponent(Workspace, {
-          initial: { ...initial, source: "/app/filesv2", bases, selectedId: base.id, directory },
-        }),
-      dom.root,
-    );
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    const assertListing = () => {
-      expect(dom.root.querySelectorAll('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]').length).toBe(0);
-      expect(dom.root.querySelectorAll(".filesv2-list__row--up").length).toBe(0);
-      expect(dom.root.querySelectorAll(".k2b-link-card").length).toBe(0);
-      expect(dom.root.querySelectorAll(".filesv2-browser__header").length).toBe(1);
-      expect(dom.root.textContent).not.toContain("All storage");
-    };
-    await flush();
-    for (const request of apiRequests) {
-      expect(request.kind).toBe("entries");
-      request.resolve(Response.json(directory));
-    }
-    await flush();
-    apiRequests.length = 0;
-    assertListing();
-    dom.root.querySelector<HTMLAnchorElement>('[role="tree"] a[href="/app/filesv2?base=home"]')!.click();
-    await flush();
-    expect(apiRequests[0]!.kind).toBe("bases");
-    apiRequests[0]!.resolve(Response.json(bases));
-    await flush();
-    expect(apiRequests[1]!.kind).toBe("entries");
-    apiRequests[1]!.resolve(Response.json(directory));
-    await flush();
-    assertListing();
-    dom.window.history.replaceState(null, "", "/app/filesv2");
-    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-    await flush();
-    expect(apiRequests[2]!.kind).toBe("bases");
-    apiRequests[2]!.resolve(Response.json(bases));
-    await flush();
-    expect(apiRequests[3]!.kind).toBe("entries");
-    apiRequests[3]!.resolve(Response.json(directory));
-    await flush();
-    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "entries", "bases", "entries"]);
-    assertListing();
-  });
-
-  test("overview navigation loads no directory, its sections load themselves, and failed tile navigation offers retry", async () => {
-    const dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", initial.source);
-    const { Workspace } = modules!;
-    const base = {
-      id: "home",
-      name: "Alice",
-      area: "cloud" as const,
-      kind: "users" as const,
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const missing = { ...base, id: "missing", name: "Missing group", kind: "groups" as const, status: "missing" as const };
-    const bases = { items: [base, missing], issues: [], editor: null };
-    const directory = { base, path: "", items: [], next: null };
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory } }), dom.root);
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    for (const request of apiRequests) request.resolve(Response.json(directory));
-    await flush();
-    apiRequests.length = 0;
-    dom.root.querySelector<HTMLAnchorElement>('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]')!.click();
-    await flush();
-    expect(apiRequests[0]!.kind).toBe("bases");
-    apiRequests[0]!.resolve(Response.json(bases));
-    await flush();
-    // Favorites, then the person's own changes and opened files for "Recently by you"; no directory.
-    expect(apiRequests.slice(1).map((request) => request.kind)).toEqual(["favorites", "activity", "recent"]);
-    apiRequests[1]!.resolve(Response.json([]));
-    apiRequests[2]!.resolve(Response.json({ items: [], next: null, visibleCount: 0, batches: [], exhausted: true }));
-    apiRequests[3]!.resolve(Response.json([]));
-    await flush();
-    expect(apiRequests).toHaveLength(4);
-    expect(apiRequests[2]!.input).toEqual({ query: { actor: "me", limit: "5" } });
-    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/filesv2");
-    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-    expect(dom.root.querySelector(".filesv2-browser__header")).toBeNull();
-    // The overview has no search button of its own any more; the sidebar's Search is the one way.
-    expect([...dom.root.querySelectorAll(".filesv2-overview button")].some((button) => button.textContent?.includes("Search"))).toBe(false);
-    expect(dom.root.textContent).toContain("No favorites yet.");
-    expect(dom.root.textContent).toContain("No activity of yours yet.");
-    const pending = (kind: string, after: number) => apiRequests.find((request, index) => index > after && request.kind === kind)!;
-    dom.root.querySelector<HTMLAnchorElement>('.k2b-link-card[href="/app/filesv2?base=home"]')!.click();
-    await flush();
-    pending("bases", 3).resolve(Response.json(bases));
-    await flush();
-    pending("entries", 3).resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
-    await flush();
-    expect(dom.window.location.search).toBe("");
-    expect(dom.root.querySelector(".k2b-link-card")).toBeNull();
-    const error = dom.root.querySelector(".k2b-app-workspace__main .k2b-placeholder")!;
-    expect(error.textContent).toContain("Storage unavailable");
-    expect(error.querySelector("a")!.getAttribute("href")).toBe("/app/filesv2?base=home");
-    const before = apiRequests.length - 1;
-    error.querySelector<HTMLAnchorElement>("a")!.click();
-    await flush();
-    pending("bases", before).resolve(Response.json(bases));
-    await flush();
-    pending("entries", before).resolve(Response.json(directory));
-    await flush();
-    expect(dom.window.location.search).toBe("?base=home");
-    expect(dom.root.querySelector(".filesv2-list__row--up")!.textContent).toContain("All storage");
-  });
 
   test("a failing section stays inside the overview and retries; tiles and the way into storage keep working", async () => {
     const dom = createDomTestHarness();
@@ -475,278 +261,21 @@ describe("Filesv2 progressive navigation", () => {
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
   });
 
-  test("workspace sidebar and folders enhance real hrefs; popstate reloads the matching view", async () => {
+  test("the favorites pane loads, links each favorite, removes at once and brings a favorite back when removing fails", async () => {
     const dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", initial.source);
-    const { Workspace } = modules!;
-    const base = {
-      id: "home",
-      area: "cloud" as const,
-      kind: "users" as const,
-      name: "Alice",
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const missing = { ...base, id: "missing", kind: "groups" as const, name: "Missing group", status: "missing" as const };
-    const bases = { items: [base, missing], issues: [], editor: null };
-    const directory = {
-      base,
-      path: "",
-      items: [{ name: "Documents", path: "Documents", directory: true, size: 0, modified: "2026-09-17T00:00:00Z" }],
-      next: null,
-    };
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory } }), dom.root);
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    expect(apiRequests).toHaveLength(0);
-    const link = (text: string) =>
-      [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find(
-        (entry) => entry.textContent?.includes(text) || entry.getAttribute("aria-label")?.includes(text),
-      )!;
-    // The personal base reads "Personal" and keeps its technical name as meta and tooltip; groups keep their name.
-    const home = link("Personal");
-    expect(home.getAttribute("href")).toBe("/app/filesv2?base=home");
-    expect(
-      home.closest(".k2b-app-workspace__sidebar-item, [role=treeitem]")?.querySelector(".k2b-app-workspace__sidebar-item-meta")
-        ?.textContent,
-    ).toBe("Alice");
-    expect(home.closest("[title]")?.getAttribute("title")).toBe("Personal · Alice (Cloud)");
-    expect(link("Alice")).toBe(home);
-    // Search is an ordinary footer item with a visible label; the icon grid is gone. Places across all storage, Activity
-    // among them, sit above the storage section, as approved for the history.
-    expect(dom.root.querySelector(".k2b-app-workspace__sidebar-icon-grid")).toBeNull();
-    const footer = dom.root.querySelector(".k2b-app-workspace__sidebar-footer")!;
-    const footerLabels = [...footer.querySelectorAll<HTMLElement>("button, a")].map((item) => item.textContent?.trim());
-    expect(footerLabels).toEqual(["Search"]);
-    const places = dom.root.querySelector(".k2b-app-workspace__sidebar-section")!;
-    expect(
-      [...places.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-item-label")].map((item) => item.textContent?.trim()),
-    ).toEqual(["All storage", "Activity", "Favorites", "Shares"]);
-    // Activity took Recent's place and always opens "Me" across all storage, even from inside one.
-    expect(link("Activity").getAttribute("href")).toBe("/app/filesv2?view=activity&who=me");
-    expect(link("Favorites").getAttribute("href")).toBe("/app/filesv2?view=favorites");
-    const search = footer.querySelector<HTMLButtonElement>("button")!;
-    expect(search.getAttribute("title")).toBe("Search files");
-    search.click();
-    expect(searches).toEqual([{ query: "", scope: { appId: "filesv2", tag: "file", label: "Files", icon: "ti ti-folders" } }]);
-    const missingLink = link("Missing group");
-    expect(missingLink.getAttribute("href")).toBe("/app/filesv2?base=missing");
-    expect(missingLink.closest("[title]")?.getAttribute("title")).toBe("Missing group (Cloud)");
-    expect(
-      missingLink.closest(".k2b-app-workspace__sidebar-item, [role=treeitem]")?.querySelector(".k2b-app-workspace__sidebar-item-meta"),
-    ).toBeNull();
-    missingLink.click();
-    await flush();
-    expect(dom.window.location.search).toBe("?base=home");
-    apiRequests[0]!.resolve(Response.json(bases));
-    await flush();
-    expect(dom.window.location.search).toBe("?base=missing");
-    const placeholder = dom.root.querySelector(".k2b-app-workspace__main .k2b-placeholder")!;
-    expect(placeholder.textContent).toContain("Missing");
-    expect(placeholder.getAttribute("data-variant")).toBe("panel");
-    expect(placeholder.parentElement!.className).toContain("items-center justify-center");
-    dom.window.history.replaceState(null, "", initial.source);
-    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-    await flush();
-    apiRequests[1]!.resolve(Response.json(bases));
-    await flush();
-    apiRequests[2]!.resolve(Response.json(directory));
-    await flush();
-    expect(link("Documents").getAttribute("href")).toBe("/app/filesv2?base=home&path=Documents");
-    link("Documents").click();
-    await flush();
-    expect(dom.window.location.search).toBe("?base=home");
-    apiRequests[3]!.resolve(Response.json(bases));
-    await flush();
-    apiRequests[4]!.resolve(Response.json({ ...directory, path: "Documents", items: [] }));
-    await flush();
-    expect(dom.window.location.search).toBe("?base=home&path=Documents");
-    expect(dom.root.querySelector(".k2b-app-workspace__main")!.textContent).toContain("This folder is empty");
-    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "bases", "entries", "bases", "entries"]);
-  });
-  test("the sidebar tree holds only storage and folders; each storage root's listing opens its trash", async () => {
-    const dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", initial.source);
-    const { Workspace } = modules!;
-    const home = {
-      id: "home",
-      area: "cloud" as const,
-      kind: "users" as const,
-      name: "Alice",
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const group = { ...home, id: "accounting", kind: "groups" as const, name: "Accounting" };
-    const bases = { items: [home, group], issues: [], editor: null };
-    const directory = {
-      base: home,
-      path: "",
-      items: [{ name: "Documents", path: "Documents", directory: true, size: 0, modified: "2026-09-17T00:00:00Z" }],
-      next: null,
-    };
-    const dispose = render(
-      () =>
-        createComponent(Workspace, {
-          initial: { ...initial, bases, selectedId: home.id, directory },
-        }),
-      dom.root,
-    );
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    const tree = () => dom.root.querySelector<HTMLElement>('[role="tree"]')!;
-    const selectedNode = () => tree().querySelector('[role="treeitem"][aria-selected="true"]')?.getAttribute("data-k2b-nav-tree-id");
-    const expectNoTrashInTree = () => {
-      expect(tree().textContent).not.toContain("Trash");
-      expect(tree().querySelector(".ti-trash")).toBeNull();
-      expect(tree().querySelector('a[href*="view=trash"]')).toBeNull();
-    };
-    const openTrash = async (baseId: string) => {
-      const entry = dom.root.querySelector<HTMLElement>(".filesv2-list__row--trash")!;
-      expect(entry.textContent).toBe("Trash");
-      entry.click();
-      await flush();
-      // The entry itself shows the pending navigation.
-      expect(entry.querySelector(".ti-loader-2")).not.toBeNull();
-      apiRequests.at(-1)!.resolve(Response.json(bases));
-      await flush();
-      expect(dom.window.location.search).toBe(`?base=${baseId}&view=trash`);
-      expect(apiRequests.at(-1)!.kind).toBe("trash");
-      expect(apiRequests.at(-1)!.input).toEqual({ param: { baseId }, query: { after: undefined } });
-      apiRequests.at(-1)!.resolve(Response.json({ entries: [], next: null }));
-      await flush();
-      expect(dom.root.querySelector("h1:not(.k2b-app-workspace__head-heading)")?.textContent).toBe("Trash");
-      expect(dom.root.textContent).toContain("The trash is empty.");
-      // The trash belongs to its storage root, which stays the highlighted tree node.
-      expect(selectedNode()).toBe(JSON.stringify([baseId, null, ""]));
-      expectNoTrashInTree();
-    };
-
-    expect(tree().textContent).toContain("Documents");
-    expectNoTrashInTree();
-    await openTrash(home.id);
-
-    tree().querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=accounting"]')!.click();
-    await flush();
-    apiRequests.at(-1)!.resolve(Response.json(bases));
-    await flush();
-    expect(apiRequests.at(-1)!.kind).toBe("entries");
-    apiRequests.at(-1)!.resolve(Response.json({ base: group, path: "", items: [], next: null }));
-    await flush();
-    expect(dom.window.location.search).toBe("?base=accounting");
-    expect(selectedNode()).toBe(JSON.stringify([group.id, null, ""]));
-    expectNoTrashInTree();
-    await openTrash(group.id);
-    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "trash", "bases", "entries", "bases", "trash"]);
-  });
-  test("a listing row stops spinning when a navigation back to the same folder replaces its pending open", async () => {
-    const dom = createDomTestHarness();
-    dom.window.history.replaceState(null, "", initial.source);
-    const { Workspace } = modules!;
-    const base = {
-      id: "home",
-      area: "cloud" as const,
-      kind: "users" as const,
-      name: "Alice",
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const bases = { items: [base], issues: [], editor: null };
-    const directory = {
-      base,
-      path: "",
-      items: [{ name: "Documents", path: "Documents", directory: true, size: 0, modified: "2026-09-17T00:00:00Z" }],
-      next: null,
-    };
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory } }), dom.root);
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    const trash = () => dom.root.querySelector<HTMLElement>(".filesv2-list__row--trash")!;
-    trash().click();
-    await flush();
-    expect(trash().querySelector(".ti-loader-2")).not.toBeNull();
-    // Before the trash loads, the sidebar root reloads the folder that is already shown.
-    dom.root.querySelector<HTMLAnchorElement>('[role="tree"] a[href="/app/filesv2?base=home"]')!.click();
-    await flush();
-    apiRequests.at(-1)!.resolve(Response.json(bases));
-    await flush();
-    apiRequests.at(-1)!.resolve(Response.json(directory));
-    await flush();
-    expect(dom.window.location.search).toBe("?base=home");
-    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "bases", "entries"]);
-    expect(trash().querySelector(".ti-loader-2")).toBeNull();
-    expect(trash().querySelector(".ti-trash")).not.toBeNull();
-  });
-  test("failures of enabled areas show a notice next to working storage; no issues and no storage stay quiet", async () => {
-    const dom = createDomTestHarness();
-    const { Workspace } = modules!;
-    const base = {
-      id: "ipa",
-      area: "freeipa" as const,
-      kind: "users" as const,
-      name: "Alice",
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const directory = { base, path: "", items: [], next: null };
-    const notices = () => [...dom.root.querySelectorAll(".k2b-inline-guidance")].map((node) => node.textContent);
-    const mount = async (snapshot: Partial<WorkspaceSnapshot>) => {
-      dom.window.history.replaceState(null, "", snapshot.source ?? initial.source);
-      const dispose = render(() => createComponent(Workspace, { initial: { ...initial, ...snapshot } }), dom.root);
-      cleanup = () => {
-        dispose();
-        dom.cleanup();
-      };
-      await flush();
-      return dispose;
-    };
-    const source = "/app/filesv2?base=ipa";
-    const failing = { items: [base], issues: [{ area: "cloud" as const, code: "local_linux_disabled" }], editor: null };
-    let dispose = await mount({ source, bases: failing, selectedId: base.id, directory });
-    expect(notices()).toEqual(["Cloud: Personal and group Cloud storage requires local Linux identities to be enabled."]);
-    expect(dom.root.textContent).toContain("This folder is empty");
-    dispose();
-    dispose = await mount({ source, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory });
-    expect(notices()).toEqual([]);
-    expect(dom.root.textContent).toContain("This folder is empty");
-    dispose();
-    await mount({ source: "/app/filesv2" });
-    expect(notices()).toEqual([]);
-    expect(dom.root.textContent).toContain("No storage available");
-    expect(dom.root.textContent).not.toContain("disabled");
-  });
-  test("the favorites page loads, opens, removes at once and brings a favorite back when removing fails", async () => {
-    const dom = createDomTestHarness();
-    const { default: FavoritesPage } = await import("../src/frontend/FavoritesPage");
+    const { default: FavoritesPane } = await import("../src/frontend/FavoritesPane");
     const { LocaleProvider } = modules!.ui;
-    const opened: string[] = [];
     const dispose = render(
       () =>
         createComponent(LocaleProvider, {
           locale: "de",
           get children() {
-            return createComponent(FavoritesPage, {
+            return createComponent(FavoritesPane, {
               initial: null,
               bases: [{ id: "home", label: "Persönlich" }],
               timeZone: "Europe/Berlin",
               now: "2026-10-20T12:30:00.000Z",
-              onOpen: (entry) => opened.push(entry.entry.path),
+              onNavigate: () => {},
             });
           },
         }),
@@ -758,7 +287,8 @@ describe("Filesv2 progressive navigation", () => {
     };
     await flush();
     expect(apiRequests.map((request) => request.kind)).toEqual(["favorites"]);
-    expect(dom.root.querySelectorAll(".filesv2-favorites__skeleton-row")).toHaveLength(6);
+    // The table holds the place of six two-line rows while the list loads.
+    expect(dom.root.querySelectorAll('[data-k2-part="Table"] tbody tr')).toHaveLength(6);
     const make = (path: string) => ({
       base: { id: "home", name: "Home", kind: "users", area: "cloud" },
       entry: { path, name: path.split("/").at(-1), directory: false, size: 1, modified: "2026-10-20T10:00:00.000Z" },
@@ -767,12 +297,12 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[0]!.resolve(Response.json([make("Planung/Budget.xlsx"), make("Notizen.md")]));
     await flush();
     expect(dom.root.textContent).toContain("Budget.xlsx");
-    expect(dom.root.textContent).toContain("Persönlich / Planung · heute, 12:00");
-    [...dom.root.querySelectorAll<HTMLElement>(".k2b-file-grid__row")]
-      .find((row) => row.textContent?.includes("Budget.xlsx"))!
-      .querySelector<HTMLButtonElement>(".k2b-file-grid__open")!
-      .click();
-    expect(opened).toEqual(["Planung/Budget.xlsx"]);
+    expect(dom.root.textContent).toContain("Persönlich / Planung");
+    expect(dom.root.textContent).toContain("heute, 12:00");
+    // A file opens beside its folder's listing, by a real link.
+    expect(dom.root.querySelector("a.k2-row-open")?.getAttribute("href")).toBe(
+      "/app/filesv2?base=home&path=Planung&file=Planung%2FBudget.xlsx",
+    );
     const star = () => [...dom.root.querySelectorAll<HTMLButtonElement>('button[aria-label="Aus Favoriten entfernen"]')];
     star()[0]!.click();
     await flush();
@@ -783,87 +313,14 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[1]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
     await flush();
     expect(dom.root.textContent).toContain("Budget.xlsx");
-    for (const button of star()) button.click();
-    await flush();
+    // The rows are made anew when one leaves, so each star is found again before its press.
+    while (star().length) {
+      star()[0]!.click();
+      await flush();
+    }
     for (const request of apiRequests.slice(2)) request.resolve(Response.json({ favorite: false }));
     await flush();
-    expect(dom.root.textContent).toContain("Noch keine Favoriten");
-  });
-
-  test("an unchanged current page still refreshes a visible expanded browser branch without navigation", async () => {
-    const dom = createDomTestHarness();
-    Object.defineProperty(dom.document, "visibilityState", { configurable: true, value: "visible" });
-    const interval = globalThis.setInterval;
-    let poll: (() => void) | undefined;
-    const timerSpy = spyOn(globalThis, "setInterval").mockImplementation((handler, delay, ...args) => {
-      if (delay === 20_000 && typeof handler === "function") poll = handler;
-      return interval(handler, delay, ...args);
-    });
-    const base = {
-      id: "home",
-      name: "Home",
-      area: "cloud" as const,
-      kind: "users" as const,
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
-    const directory = { base, path: "", items: [folder], next: null };
-    const { Workspace } = modules!;
-    const dispose = render(
-      () =>
-        createComponent(Workspace, {
-          initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory },
-        }),
-      dom.root,
-    );
-    cleanup = () => {
-      dispose();
-      timerSpy.mockRestore();
-      dom.cleanup();
-    };
-    await flush();
-    [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
-    await flush();
-    dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
-    await flush();
-    expect(apiRequests).toHaveLength(1);
-    apiRequests[0]!.resolve(
-      Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old.txt", path: "Docs/Old.txt", directory: false }] }),
-    );
-    await flush();
-    expect(dom.root.textContent).toContain("Old.txt");
-    poll!();
-    await flush();
-    expect(apiRequests[1]!.input).toEqual({
-      param: { baseId: "home" },
-      query: { path: "", after: undefined, sort: "name", order: "asc", type: "all", groupFolders: "true" },
-    });
-    apiRequests[1]!.resolve(Response.json(directory));
-    await flush();
-    expect(apiRequests[2]!.input).toEqual({
-      param: { baseId: "home" },
-      query: { path: "Docs", after: undefined, sort: "name", order: "asc", type: "all", groupFolders: "true" },
-    });
-    apiRequests[2]!.resolve(
-      Response.json({
-        ...directory,
-        path: "Docs",
-        items: [{ ...folder, name: "External.txt", path: "Docs/External.txt", directory: false }],
-      }),
-    );
-    await flush();
-    expect(dom.root.textContent).toContain("External.txt");
-    expect(dom.root.textContent).not.toContain("Old.txt");
-    expect(apiRequests.map((item) => item.kind)).toEqual(["entries", "entries", "entries"]);
-    expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.getAttribute("aria-expanded")).toBe("true");
-    poll!();
-    await flush();
-    const pending = apiRequests.at(-1)!;
-    dispose();
-    expect(pending.signal?.aborted).toBe(true);
+    expect(dom.root.textContent).toContain("Markiere Dateien oder Ordner in ihren Details mit dem Stern.");
   });
 
   test("a shares deep link remains account-scoped after its requested group disappears", async () => {
@@ -885,84 +342,6 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     expect(dom.root.querySelector("h1:not(.k2b-app-workspace__head-heading)")?.textContent).toBe("Shares");
     expect(dom.root.textContent).not.toContain("This directory is missing");
-  });
-
-  test("unchanged root polling refreshes an expanded sidebar's children without fetching collapsed descendants", async () => {
-    const dom = createDomTestHarness();
-    Object.defineProperty(dom.document, "visibilityState", { configurable: true, value: "visible" });
-    const interval = globalThis.setInterval;
-    let poll: (() => void) | undefined;
-    const timerSpy = spyOn(globalThis, "setInterval").mockImplementation((handler, delay, ...args) => {
-      if (delay === 20_000 && typeof handler === "function") poll = handler;
-      return interval(handler, delay, ...args);
-    });
-    const base = {
-      id: "home",
-      name: "Home",
-      area: "cloud" as const,
-      kind: "users" as const,
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
-    const bases = { items: [base], issues: [], editor: null };
-    const directory = { base, path: "", items: [folder], next: null };
-    const { Workspace } = modules!;
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory } }), dom.root);
-    cleanup = () => {
-      dispose();
-      timerSpy.mockRestore();
-      dom.cleanup();
-    };
-    await flush();
-    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=home&path=Docs"]')!.click();
-    await flush();
-    apiRequests[0]!.resolve(Response.json(bases));
-    await flush();
-    apiRequests[1]!.resolve(
-      Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old nested folder", path: "Docs/Old" }] }),
-    );
-    await flush();
-    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=home"]')!.click();
-    await flush();
-    apiRequests[2]!.resolve(Response.json(bases));
-    await flush();
-    apiRequests[3]!.resolve(Response.json(directory));
-    await flush();
-    const docs = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(
-      (node) => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, "Docs"]),
-    )!;
-    docs.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-    await flush();
-    expect(docs.getAttribute("aria-expanded")).toBe("true");
-    const before = apiRequests.length;
-    poll!();
-    await flush();
-    apiRequests[before]!.resolve(Response.json(directory));
-    await flush();
-    expect(apiRequests[before + 1]!.input).toEqual({
-      param: { baseId: "home" },
-      query: { path: "Docs", after: undefined, type: "directories" },
-    });
-    apiRequests[before + 1]!.resolve(
-      Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "External nested folder", path: "Docs/External" }] }),
-    );
-    await flush();
-    expect(dom.root.querySelector('[role="tree"]')!.textContent).toContain("External nested folder");
-    expect(dom.root.querySelector('[role="tree"]')!.textContent).not.toContain("Old nested folder");
-    expect(apiRequests).toHaveLength(before + 2);
-    const root = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(
-      (node) => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, ""]),
-    )!;
-    root.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
-    await flush();
-    poll!();
-    await flush();
-    apiRequests[before + 2]!.resolve(Response.json(directory));
-    await flush();
-    expect(apiRequests).toHaveLength(before + 3);
   });
 
   test("the way up moves between folders in place, so uploads and the editor guard keep working", async () => {
@@ -1014,64 +393,5 @@ describe("Filesv2 progressive navigation", () => {
     expect(up("/app/filesv2?base=home&path=Documents").defaultPrevented).toBe(true);
     await serve();
     expect(dom.window.location.search).toBe("?base=home&path=Documents");
-  });
-
-  test("expired listing cursors restart once with the exact global query and visible feedback", async () => {
-    const dom = createDomTestHarness();
-    const base = {
-      id: "home",
-      name: "Home",
-      area: "cloud" as const,
-      kind: "users" as const,
-      status: "existing" as const,
-      reason: null,
-      indexEnabled: false,
-      versioningEnabled: false,
-    };
-    const directory = { base, path: "", items: [], next: null };
-    const { Workspace } = modules!;
-    const dispose = render(
-      () =>
-        createComponent(Workspace, {
-          initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory },
-        }),
-      dom.root,
-    );
-    cleanup = () => {
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    for (const request of apiRequests) request.resolve(Response.json(directory));
-    await flush();
-    apiRequests.length = 0;
-    dom.window.history.replaceState({}, "", "/app/filesv2?base=home&after=expired&sort=size&order=desc&type=files&groupFolders=false");
-    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-    await flush();
-    apiRequests[0]!.resolve(Response.json({ items: [base], issues: [], editor: null }));
-    await flush();
-    expect(apiRequests[1]!.input).toEqual({
-      param: { baseId: "home" },
-      query: { path: "", after: "expired", sort: "size", order: "desc", type: "files", groupFolders: "false" },
-    });
-    apiRequests[1]!.resolve(Response.json({ code: "cursor_invalid", message: "Listing changed" }, { status: 409 }));
-    await flush();
-    expect(apiRequests[2]!.kind).toBe("bases");
-    apiRequests[2]!.resolve(Response.json({ items: [base], issues: [], editor: null }));
-    await flush();
-    expect(apiRequests[3]!.input).toEqual({
-      param: { baseId: "home" },
-      query: { path: "", after: undefined, sort: "size", order: "desc", type: "files", groupFolders: "false" },
-    });
-    apiRequests[3]!.resolve(Response.json(directory));
-    await flush();
-    expect(dom.window.location.search).not.toContain("after=");
-    expect(dom.window.location.search).toContain("groupFolders=false");
-    expect(dom.root.textContent).toContain("This folder changed. Showing the first page again.");
-    // A separate directory-only read supplies the sidebar; it cannot reuse the file-filtered page.
-    expect(apiRequests[4]!.input).toEqual({ param: { baseId: "home" }, query: { path: "", after: undefined, type: "directories" } });
-    apiRequests[4]!.resolve(Response.json(directory));
-    await flush();
-    expect(apiRequests).toHaveLength(5);
   });
 });
