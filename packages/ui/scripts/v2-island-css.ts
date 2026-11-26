@@ -10,18 +10,19 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 // - `A > B`   also matches `A > W > B`;
 // - `A ~ B`   also matches A in a wrapper before B, B in a wrapper after A, or both; it passes any number of empty
 //   wrappers (islands that render nothing);
-// - `A + B`   the same, with A last and B first in its wrapper; it does not pass an empty wrapper, so it is only for
-//   two parts of one primitive, which no island stands between: a rule with `+` is marked
-//   `/* one primitive: … */`, and a relation between primitives (`.k2-group ~ .k2-group`) uses `~`;
-// - `:first-child`, `:last-child`, `:only-child` of an element in a wrapper also need the wrapper in that place;
-// - `:first-child`, `:last-child` and `:only-child` skip any number of empty wrappers;
+// - `A + B`   the same, with A last and B first in its wrapper, and it steps over up to `MAX_EMPTY` empty wrappers in
+//   a row, never over real content. (No selector can say "only empty wrappers between" for any number of them.) Two
+//   parts of one primitive, which no island stands between, mark their rule `/* one primitive: … */` and step over
+//   none, which keeps the sheet small;
+// - `:first-child`, `:last-child`, `:only-child` of an element in a wrapper also need the wrapper in that place, and
+//   skip any number of empty wrappers;
 // - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper, and an anchor in a wrapper looks past it;
 // - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself;
 // - a run of compounds holds at most one sibling relation.
 // Every added part sits in `:where()`, so specificity, and with it the cascade, stays exactly as written; without a
 // wrapper on the page every rule matches exactly what it matched before. A form this cannot make transparent
 // (`:nth-*`, `:*-of-type`, `:empty`, a sibling relation inside `:has()` after its first step, also inside `:is()`,
-// a `:has()` before a sibling relation, two sibling relations in a row, an unmarked `+`, an escaped pseudo-class)
+// a `:has()` before a sibling relation, two sibling relations in a row, an escaped pseudo-class)
 // fails the build;
 // `:nth-*` is allowed on placeholders (`.k2-skel`), which never sit in an island.
 
@@ -44,8 +45,10 @@ type Context = { inHas: boolean; placeholder: boolean; internal: boolean; rule: 
 type Compound = { body: string; pseudoElement: string; hasHas: boolean };
 type Relation = ">" | "+" | "~";
 type Variant = "direct" | "wrapped" | "left" | "both";
-/** How one relation crosses wrappers. */
-type Step = { variant: Variant };
+/** How one relation crosses wrappers; `gap`: the empty wrappers a `+` steps over. */
+type Step = { variant: Variant; gap: number };
+/** The most empty wrappers in a row that `+` between two primitives steps over. */
+export const MAX_EMPTY = 3;
 
 const fail = (context: Context, reason: string): never => {
   throw new Error(`v2.css: ${reason} cannot see through an island wrapper in \`${context.rule}\``);
@@ -141,20 +144,19 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
   // Two sibling relations in a row would need the middle compound in or out of a wrapper on both sides at once.
   if (relations.filter((relation) => relation !== ">").length > 1) fail(context, "two sibling relations in a row");
   const choices = all.map((relation, index): Step[] => {
-    if (relation === ">") return [{ variant: "direct" }, { variant: "wrapped" }];
+    if (relation === ">")
+      return [
+        { variant: "direct", gap: 0 },
+        { variant: "wrapped", gap: 0 },
+      ];
     // Inside `:has()` only its lead may be a sibling relation; the anchor's side is handled by the `:has()` itself.
     if (context.inHas && !(lead && index === 0)) fail(context, "a sibling relation inside :has() after its first step");
     const left = compounds[index + offset - 1];
     // The left side in a wrapper needs `:has()` around it, and `:has()` does not nest.
     if (left?.hasHas && !context.inHas) fail(context, ":has() before a sibling relation");
-    if (relation === "+" && !context.internal)
-      fail(
-        context,
-        "`+` between primitives (an empty island between them breaks it: use `~`, or mark two parts of one primitive `/* one primitive: … */`)",
-      );
     const variants: Variant[] = left && !context.inHas ? ["direct", "wrapped", "left", "both"] : ["direct", "wrapped"];
-    // `+` also steps over one empty wrapper.
-    return variants.map((variant) => ({ variant }));
+    const gaps = relation === "+" && !context.internal ? Array.from({ length: MAX_EMPTY + 1 }, (_, gap) => gap) : [0];
+    return variants.flatMap((variant) => gaps.map((gap) => ({ variant, gap })));
   });
   const combos: Step[][] = [[]];
   for (const options of choices) combos.splice(0, combos.length, ...combos.flatMap((combo) => options.map((option) => [...combo, option])));
@@ -174,7 +176,9 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
   const kept = combos.filter((combo) => {
     let wrappers = combo.reduce((sum, step) => sum + (step.variant === "direct" ? 0 : step.variant === "both" ? 2 : 1), 0);
     for (let k = 0; k < compounds.length; k++) {
-      const { before, entered, leaves } = place(combo, k);
+      const { before, after, entered, leaves } = place(combo, k);
+      // Siblings inside one wrapper have no wrapper between them, empty or not.
+      if (entered && !leaves && after === "+" && (combo[k - offset + 1]?.gap ?? 0) > 0) return false;
       if (!leaves || !before) continue;
       // Under `>` the wrapper takes the element's place (`P > W:has(> B)`), so `>` itself stays direct.
       if (before === ">" && entered) return false;
@@ -191,7 +195,8 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
       const { before, after, entered, leaves } = place(combo, k);
       const step = combo[k - offset];
       if (before && step) {
-        chain += entered && !leaves ? `${before}${WRAPPER}>` : before;
+        const relation = before === "+" ? `+${`${EMPTY}+`.repeat(step.gap)}` : before;
+        chain += entered && !leaves ? `${relation}${WRAPPER}>` : relation;
       }
       const first = before === "+" && entered ? ":where(:first-child)" : "";
       const last = after === "+" && leaves ? ":where(:last-child)" : "";
