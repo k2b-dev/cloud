@@ -830,6 +830,8 @@
   align-items: stretch;
   gap: 10px;
   padding: 12px;
+  /* a card fills its track of the grid: no cap of a small tile holds it narrower */
+  max-width: none;
 }
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-open]:hover {
   background: var(--k2-n50);

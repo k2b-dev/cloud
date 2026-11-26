@@ -213,6 +213,34 @@ test("an activity is a sentence beside its person that may wrap, with place and 
   }, 390);
 });
 
+test("an activity opens its thing in place: a plain click reaches onNavigate and the page stays", async () => {
+  await withPage(async (page) => {
+    const before = await page.evaluate(() => location.href);
+    await page.locator(".k2-row[data-activity] .k2-row-l1 a").first().click();
+    await settled(page);
+    expect(await page.evaluate(() => window.__k2Pressed)).toEqual(["open #auftraege"]);
+    expect(await page.evaluate(() => location.href)).toBe(before);
+  });
+});
+
+test("cards fill the tracks of their grid, however wide: no cap of a small tile holds them narrower", async () => {
+  // the cap of a plain tile (a long file name is cut, never as wide as the row) must not reach a card
+  for (const width of [1440, 1024])
+    await withPage(async (page) => {
+      const found = await page.locator(".k2-tiles[data-variant='card']").evaluate((grid) => {
+        const tracks = getComputedStyle(grid)
+          .gridTemplateColumns.split(" ")
+          .map((track) => Number.parseFloat(track));
+        const cards = [...grid.querySelectorAll(":scope > .k2-tile")].map((card) => card.getBoundingClientRect().width);
+        return {
+          maxWidth: getComputedStyle(grid.querySelector(":scope > .k2-tile")!).maxWidth,
+          fill: cards.every((card) => Math.abs(card - tracks[0]!) < 1),
+        };
+      });
+      expect(found).toEqual({ maxWidth: "none", fill: true });
+    }, width);
+});
+
 test("a key number shows its trend at the end of its value", async () => {
   await withPage(async (page) => {
     const found = await page
