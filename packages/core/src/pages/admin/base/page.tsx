@@ -5,6 +5,7 @@ import { geoAdmin } from "@k2b/cloud/services/geo/admin";
 import { formatDateTime } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
+import { recentChanges } from "../_area/RecentChanges";
 import type { RegistryFormSection } from "../_area/RegistryForm";
 import PlacesAndMaps from "../places-and-maps/PlacesAndMaps.island";
 import { settingsDocumentationHref } from "../settings/documentation";
@@ -34,6 +35,7 @@ const formSection = (section: Exclude<BaseSection, "places">, groups: string[], 
           groups={groups}
           sections={sections(locale)}
           entries={entries}
+          recent={recentChanges(entries, (iso) => formatDateTime(iso, dates))}
           legacy={legacy?.map((item) => ({ ...item, updated: formatDateTime(item.updatedAt, dates) }))}
         />
       </AdminLayout>

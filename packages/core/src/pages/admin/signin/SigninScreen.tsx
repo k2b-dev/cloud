@@ -6,7 +6,8 @@ import { Button, type NavProps, Notice, Popover, useToast } from "@k2b/ui/v2";
 import { createSignal, type JSX, Show } from "solid-js";
 import type { ApprovalAvailability } from "../../app-approval/availability";
 import { appApprovalMessages } from "../../app-approval/messages";
-import AreaFrame from "../_area/AreaFrame";
+import AreaFrame, { type AreaFrameProps } from "../_area/AreaFrame";
+import { type RecentChange, recentSide } from "../_area/RecentChanges";
 import RegistryForm, { type RegistryFormSection } from "../_area/RegistryForm";
 import { adminToasts } from "../_area/toasts";
 import { settingsMessages } from "../settings/_components/messages";
@@ -82,7 +83,16 @@ const ApprovalState = (props: { state: ApprovalAvailability }) => {
 };
 
 /** The frame of every section of the Sign-in & security area. */
-function SigninFrame(props: Frame & { section: SigninSectionId; actions?: JSX.Element; status?: JSX.Element; children: JSX.Element }) {
+function SigninFrame(
+  props: Frame & {
+    section: SigninSectionId;
+    actions?: JSX.Element;
+    status?: JSX.Element;
+    side?: AreaFrameProps["side"];
+    saves?: boolean;
+    children: JSX.Element;
+  },
+) {
   const locale = useLocale();
   const t = () => signinAreaMessages.resolve([locale()]).t;
   return (
@@ -94,6 +104,8 @@ function SigninFrame(props: Frame & { section: SigninSectionId; actions?: JSX.El
       documentationHref={props.documentationHref}
       actions={props.actions}
       status={props.status}
+      side={props.side}
+      saves={props.saves}
     >
       {props.children}
     </AreaFrame>
@@ -108,6 +120,8 @@ export type SigninFormScreenProps = Frame & {
   /** Sign-in only: the app sign-in state and where sign-ins come from. */
   approvalState?: ApprovalAvailability;
   signInLocations?: { status: GeoIpAdminStatus | null; actorId: string };
+  /** The section's latest stored changes by a person, worded by the server; the column beside shows them. */
+  recent?: RecentChange[];
 };
 
 /** A registry section of the Sign-in & security area; Sign-in adds the app sign-in state and the sign-in locations. */
@@ -122,6 +136,8 @@ export function SigninFormScreen(props: SigninFormScreenProps) {
       section={props.section}
       documentationHref={props.documentationHref}
       actions={props.section === "freeipa" ? <TestFreeIpa onFailure={setFailure} /> : undefined}
+      side={recentSide(props.recent)}
+      saves
     >
       <Show when={failure()}>
         {(reason) => (

@@ -19,7 +19,7 @@ const goto = async (path: string, width = 1440) => {
 };
 const button = (name: string) => page.getByRole("button", { name, exact: true }).filter({ visible: true });
 const nameField = () => page.getByRole("textbox", { name: /^Name( |$)/ });
-const footer = () => page.locator('main [data-k2-part="Bar"]').filter({ has: page.getByRole("button", { name: "Save", exact: true }) });
+const head = () => page.locator('main [data-k2-part="Bar"]').filter({ has: page.getByRole("button", { name: "Save", exact: true }) });
 
 beforeAll(async () => {
   fixture = await baseAreaBrowserFixture();
@@ -52,11 +52,11 @@ test("the sections stand under their entry in the admin bar, and the page keeps 
   expect(errors).toEqual([]);
 }, 60_000);
 
-test("general settings save with the footer's Save and continue from the stored versions", async () => {
+test("general settings save with Save in the head, which counts the changes, and continue from the stored versions", async () => {
   await goto("/admin/base");
   expect(await button("Save").isDisabled()).toBe(true);
   await nameField().fill("Neue Cloud");
-  expect(await footer().innerText()).toContain("Unsaved changes");
+  expect(await head().innerText()).toContain("1 change");
   const request = page.waitForRequest((candidate) => candidate.method() === "PUT");
   await button("Save").click();
   expect((await request).postDataJSON()).toEqual({
@@ -65,9 +65,8 @@ test("general settings save with the footer's Save and continue from the stored 
     replaceUnreadable: [],
     expectedUpdatedAt: { "app.name": "2026-10-27T08:00:00.000Z" },
   });
-  await footer()
-    .getByText(/^Saved at \d/)
-    .waitFor();
+  await head().getByText("1 change").waitFor({ state: "detached" });
+  expect(await button("Save").isDisabled()).toBe(true);
   // A second save sends the version the server stored after the first one.
   await nameField().fill("Neue Cloud 2");
   const second = page.waitForRequest((candidate) => candidate.method() === "PUT");
@@ -84,9 +83,7 @@ test("a value someone else changed is a notice with both ways out", async () => 
   await notice.waitFor();
   expect(await notice.innerText()).toContain('Name: now "Andere Cloud" applies.');
   await notice.getByRole("button", { name: "Save my value", exact: true }).click();
-  await footer()
-    .getByText(/^Saved at /)
-    .waitFor();
+  await button("Save").and(page.locator("[disabled]")).waitFor();
   expect(fixture.saves()).toBe(2);
   expect(errors).toEqual([]);
 }, 30_000);
@@ -103,7 +100,7 @@ test("a reset goes back to the default only on save, Discard drops it, and a rem
   const before = await thirdTop();
   // the reset is the setting's own deed, at the end of its name's line
   const name = page.locator('main [data-k2-part="Setting"]').first();
-  await name.getByRole("button", { name: "Reset", exact: true }).click();
+  await name.getByRole("button", { name: "Reset to default", exact: true }).click();
   expect(await nameField().isDisabled()).toBe(true);
   expect(await page.getByText("Goes back to the default when you save.").isVisible()).toBe(true);
   // A staged reset keeps every field where it was.

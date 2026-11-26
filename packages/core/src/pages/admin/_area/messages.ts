@@ -27,6 +27,7 @@ export const areaFormMessages = i18n.define({
       atMost: ({ max }: { max: number }) => `At most ${max}.`,
       sourceCustom: "Own value",
       resetStaged: "Goes back to the default when you save.",
+      resetToDefault: "Reset to default",
       leaveSecretEmpty: "Leave empty to keep the current value",
       conflictAt: ({ label, value }: { label: string; value: string }) => `${label}: now "${value}" applies. Your value is not saved yet.`,
       notSaved: "Not saved.",
@@ -40,6 +41,8 @@ export const areaFormMessages = i18n.define({
       invalid: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "1 field needs a fix", other: `${count} fields need a fix` }),
       discard: "Discard",
+      recentChanges: "Recently changed",
+      changes: ({ count }: { count: number }) => (count === 1 ? "1 change" : `${count} changes`),
       save: "Save",
     },
     de: {
@@ -65,6 +68,7 @@ export const areaFormMessages = i18n.define({
       atMost: ({ max }) => `Höchstens ${max}.`,
       sourceCustom: "Eigener Wert",
       resetStaged: "Geht beim Speichern auf den Standard zurück.",
+      resetToDefault: "Auf Standard zurücksetzen",
       leaveSecretEmpty: "Leer lassen, um den aktuellen Wert beizubehalten",
       conflictAt: ({ label, value }) => `${label}: Jetzt gilt „${value}“. Dein Wert ist noch nicht gespeichert.`,
       notSaved: "Nicht gespeichert.",
@@ -78,6 +82,8 @@ export const areaFormMessages = i18n.define({
       invalid: ({ count }) =>
         i18n.plural(count, "de", { one: "1 Feld braucht eine Korrektur", other: `${count} Felder brauchen eine Korrektur` }),
       discard: "Verwerfen",
+      recentChanges: "Zuletzt geändert",
+      changes: ({ count }) => (count === 1 ? "1 Änderung" : `${count} Änderungen`),
       save: "Speichern",
     },
   },

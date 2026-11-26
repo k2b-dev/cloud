@@ -1,7 +1,7 @@
 import { coreClient } from "@k2b/cloud/clients/core";
-import { createSettingsDraft, SaveRejected, saveFailure, settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
+import { createSettingsDraft, SaveRejected, saveFailure } from "@k2b/cloud/ssr/settings-draft";
 import { readSettingsError, useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Notice, Section, Setting, Text } from "@k2b/ui/v2";
+import { Check, Notice, Section, Setting } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { localizeSettingField } from "../settings/_components/setting-copy";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
@@ -100,6 +100,13 @@ export default function RegistryForm(props: {
     initial: initialValues(props.entries),
     locale,
     pending: () => resets().length > 0 || replace().some(confirmed),
+    // each changed value, staged reset and confirmed replacement once, for the count beside Save in the head
+    changes: (draft, stored) =>
+      new Set([
+        ...Object.keys(draft).filter((key) => JSON.stringify(draft[key] ?? null) !== JSON.stringify(stored[key] ?? null)),
+        ...resets(),
+        ...replace().filter(confirmed),
+      ]).size,
     // Only client rules block Save. Errors the server reported stay at their fields until changed, and Save retries.
     validate: (value) => {
       const errors: Record<string, string> = {};
@@ -179,7 +186,6 @@ export default function RegistryForm(props: {
     iso && iso !== new Date(0).toISOString()
       ? new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit" }).format(new Date(iso))
       : "";
-  const status = () => settingsSaveControls()?.state ?? "saved";
 
   const takeTheirs = async () => {
     const current = conflict();
@@ -197,21 +203,17 @@ export default function RegistryForm(props: {
   };
   const toggle = (list: string[], key: string) => (list.includes(key) ? list.filter((item) => item !== key) : [...list, key]);
 
-  /** The quiet word on the label line: where the value comes from now. */
-  const source = (item: SettingFieldDef) =>
-    resets().includes(item.key)
-      ? t().sourceDefault
-      : item.isCustom
-        ? t().sourceCustom
-        : item.valueSource === "env"
-          ? t().sourceEnv
-          : t().sourceDefault;
+  // the reset deed marks a value of its own; only a value from the environment names where it comes from
   const hint = (item: SettingFieldDef) =>
     resets().includes(item.key)
       ? t().resetStaged
-      : item.kind === "secret"
-        ? `${item.description} ${item.isCustom || item.valueSource === "env" ? t().secretSet : t().secretEmpty}`
-        : item.description;
+      : [
+          !item.isCustom && item.valueSource === "env" ? `${t().sourceEnv} ·` : "",
+          item.description,
+          item.kind === "secret" ? (item.isCustom || item.valueSource === "env" ? t().secretSet : t().secretEmpty) : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
   const shown = (section: RegistryFormSection, key: string) => {
     const condition = section.shownWhen?.[key];
     return !condition || form.draft()[condition.key] === condition.value;
@@ -230,14 +232,24 @@ export default function RegistryForm(props: {
       <Setting
         name={fieldProps.key}
         label={item().label}
-        hint={`${source(item())} · ${hint(item())}`}
+        hint={hint(item())}
         error={form.errors()[fieldProps.key] ?? fieldErrors()[fieldProps.key]}
         was={changed() ? preview(item(), item().value, t()) : undefined}
         action={
           isReset()
-            ? { label: t().undoReset, disabled: form.saving(), onClick: () => setResets(toggle(resets(), fieldProps.key)) }
+            ? {
+                label: t().undoReset,
+                icon: "arrow-forward-up",
+                disabled: form.saving(),
+                onClick: () => setResets(toggle(resets(), fieldProps.key)),
+              }
             : item().isCustom
-              ? { label: t().reset, disabled: form.saving(), onClick: () => setResets(toggle(resets(), fieldProps.key)) }
+              ? {
+                  label: t().resetToDefault,
+                  icon: "arrow-back-up",
+                  disabled: form.saving(),
+                  onClick: () => setResets(toggle(resets(), fieldProps.key)),
+                }
               : undefined
         }
       >
@@ -316,34 +328,6 @@ export default function RegistryForm(props: {
           </Section>
         )}
       </For>
-      <Bar
-        start={
-          <Text type="meta" muted>
-            {status() === "saved" && settingsSaveControls()?.savedAt
-              ? t().savedAt({ time: settingsSaveControls()!.savedAt! })
-              : status() === "draft"
-                ? t().unsaved
-                : status() === "invalid"
-                  ? t().invalid({ count: settingsSaveControls()?.invalidCount ?? 0 })
-                  : ""}
-          </Text>
-        }
-        end={
-          <>
-            <Button disabled={form.saving() || status() === "saved"} onClick={form.discard}>
-              {t().discard}
-            </Button>
-            <Button
-              variant="primary"
-              busy={form.saving()}
-              disabled={status() === "saved" || status() === "invalid" || status() === "unknown"}
-              onClick={() => void form.save()}
-            >
-              {t().save}
-            </Button>
-          </>
-        }
-      />
     </>
   );
 }

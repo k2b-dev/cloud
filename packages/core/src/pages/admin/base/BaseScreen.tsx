@@ -4,9 +4,10 @@ import { settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
 import { useLocale } from "@k2b/ui";
 import { Button, type NavProps, Notice, Popover, useToast } from "@k2b/ui/v2";
 import { createSignal, type JSX, Show } from "solid-js";
-import AreaFrame from "../_area/AreaFrame";
+import AreaFrame, { type AreaFrameProps } from "../_area/AreaFrame";
 import CacheSection from "../_area/CacheSection";
 import LegacySection, { type LegacyRow } from "../_area/LegacySection";
+import { type RecentChange, recentSide } from "../_area/RecentChanges";
 import RegistryForm, { type RegistryFormSection } from "../_area/RegistryForm";
 import { adminToasts } from "../_area/toasts";
 import { settingsMessages } from "../settings/_components/messages";
@@ -57,7 +58,7 @@ const TestPdf = (props: { onFailure: (reason: string | null) => void }) => {
 };
 
 /** The frame of every section of the Base settings area: the admin bar with the sections, the path, the guide link. */
-export function BaseFrame(props: Frame & { children: JSX.Element }) {
+export function BaseFrame(props: Frame & { side?: AreaFrameProps["side"]; saves?: boolean; children: JSX.Element }) {
   const locale = useLocale();
   const t = () => baseAreaMessages.resolve([locale()]).t;
   const n = () => adminToasts.resolve([locale()]).t;
@@ -70,6 +71,8 @@ export function BaseFrame(props: Frame & { children: JSX.Element }) {
       description={t()[`${props.section}Description`]}
       documentationHref={props.documentationHref}
       actions={props.section === "pdf" ? <TestPdf onFailure={setFailure} /> : undefined}
+      side={props.side}
+      saves={props.saves}
     >
       <Show when={failure()}>
         {(reason) => (
@@ -89,12 +92,14 @@ export type BaseScreenProps = Frame & {
   entries: SettingFieldDef[];
   /** General only: stored settings no app declares any more. */
   legacy?: LegacyRow[];
+  /** The section's latest stored changes by a person, worded by the server; the column beside shows them. */
+  recent?: RecentChange[];
 };
 
 /** A registry section of the Base settings area on v2; General adds the cache and the settings no app declares. */
 export default function BaseScreen(props: BaseScreenProps) {
   return (
-    <BaseFrame nav={props.nav} section={props.section} documentationHref={props.documentationHref}>
+    <BaseFrame nav={props.nav} section={props.section} documentationHref={props.documentationHref} side={recentSide(props.recent)} saves>
       <RegistryForm groups={props.groups} sections={props.sections} entries={props.entries} />
       <Show when={props.legacy}>
         {(legacy) => (

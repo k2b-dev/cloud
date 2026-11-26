@@ -69,25 +69,39 @@ export const fixtureEntries = (state: BaseFixtureState): SettingFieldDef[] => [
   entry("app", "app.name", "string", "Beispiel Cloud", {
     label: "Name",
     description: "Shown in the browser tab, in mails and on the sign-in page.",
+    updatedBy: { id: "u-ada", name: "Ada Renz" },
   }),
-  entry("app", "app.logo", "image", ""),
-  entry("app", "app.favicon", "image", ""),
+  // the defaults of a fresh installation: no reset, no change by a person
+  entry("app", "app.logo", "image", "", { isCustom: false, valueSource: "default" }),
+  entry("app", "app.favicon", "image", "", { isCustom: false, valueSource: "default" }),
   entry("app", "app.locale", "enum", "de", {
     label: "Language for new people",
     options: [
       { value: "de", label: "Deutsch" },
       { value: "en", label: "English" },
     ],
+    isCustom: false,
+    valueSource: "default",
   }),
   entry("app", "app.timezone", "timezone", "Europe/Berlin", {
     label: "Time zone",
     unreadable: state === "unreadable",
     valueSource: state === "unreadable" ? "default" : "custom",
+    updatedAt: "2026-10-20T07:45:00.000Z",
+    updatedBy: { id: "u-tom", name: "Tom Oswald" },
   }),
-  entry("app", "app.url", "url", "https://cloud.example.org", { label: "Address" }),
-  entry("app", "app.home_path", "string", "/", { label: "Start page" }),
+  entry("app", "app.url", "url", "https://cloud.example.org", {
+    label: "Address",
+    updatedAt: "2026-10-26T16:05:00.000Z",
+    updatedBy: { id: "u-mira", name: "Mira Solberg" },
+  }),
+  entry("app", "app.home_path", "string", "/", { label: "Start page", isCustom: false, valueSource: "default" }),
   entry("app", "app.contact_email", "email", "it@example.org", { label: "Contact address" }),
-  entry("app", "app.copyright", "string", "© 2026 Beispiel GmbH", { label: "Copyright" }),
+  entry("app", "app.copyright", "string", "© 2026 Beispiel GmbH", {
+    label: "Copyright",
+    updatedAt: "2026-11-18T14:47:00.000Z",
+    updatedBy: { id: "u-ada", name: "Ada Renz" },
+  }),
   entry("app", "app.documentation_url", "url", "https://docs.example.org", { label: "Documentation website" }),
   entry("app", "app.cleanup_schedule", "cron", "0 3 * * *", { label: "Cleanup schedule", isCustom: false, valueSource: "default" }),
   entry("cli", "cli.plugins.access", "enum", "full_users", {
@@ -141,6 +155,9 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   const { SigninFormScreen, LinuxScreen } = await import("../signin/SigninScreen");
   const { linuxQuery } = await import("../signin/linux-query");
   const { freeipaSections, signinSections } = await import("../signin/sections");
+  const { recentChanges } = await import("../_area/RecentChanges");
+  const { formatDateTime } = await import("@k2b/cloud/shared");
+  const worded = (locale: string) => (iso: string) => formatDateTime(iso, { locale, timeZone: "Europe/Berlin" });
 
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
@@ -232,7 +249,8 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       { label: "CLI", icon: "terminal-2", href: "/admin/base/cli", nested: true, current: section === "cli" },
     ]);
     const legacy = section === "general" ? (state === "legacy" ? legacyRows : []) : undefined;
-    const screen = { nav, section, groups, sections, entries, legacy, documentationHref: "https://docs.example.org/en/docs/x" };
+    const recent = recentChanges(entries, worded(locale));
+    const screen = { nav, section, groups, sections, entries, legacy, recent, documentationHref: "https://docs.example.org/en/docs/x" };
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,
@@ -258,7 +276,14 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     const sections = section === "signin" ? signinSections(locale) : freeipaSections(locale);
     const keys = new Set(sections.flatMap((item) => item.keys));
     const entries = stored.filter((item) => item.group === group && keys.has(item.key));
-    const screen = { nav: adminNavFixture("/admin/signin"), section, groups: [group], sections, entries };
+    const screen = {
+      nav: adminNavFixture("/admin/signin"),
+      section,
+      groups: [group],
+      sections,
+      entries,
+      recent: recentChanges(entries, worded(locale)),
+    };
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,

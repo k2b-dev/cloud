@@ -1,9 +1,11 @@
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, geoip, linuxIdentities } from "@k2b/cloud/services";
+import { formatDateTime } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { z } from "zod";
 import { ssr } from "../../../config";
 import { approvalAvailability } from "../../app-approval/availability";
+import { recentChanges } from "../_area/RecentChanges";
 import type { RegistryFormSection } from "../_area/RegistryForm";
 import { settingsDocumentationHref } from "../settings/documentation";
 import { buildEntries } from "../settings/entries";
@@ -43,6 +45,7 @@ const formSection = (section: FormSection, group: string, sections: (locale: str
     ]);
     const shown = sections(locale, documentationBase);
     const keys = new Set(shown.flatMap((item) => item.keys));
+    const dates = { ...getDateConfig(c), locale };
     return () => (
       <AdminLayout c={c} ui="v2" title={signinText(locale)[section]}>
         <SigninFormScreen
@@ -52,6 +55,10 @@ const formSection = (section: FormSection, group: string, sections: (locale: str
           groups={[group]}
           sections={shown}
           entries={entries.filter((entry) => keys.has(entry.key))}
+          recent={recentChanges(
+            entries.filter((entry) => keys.has(entry.key)),
+            (iso) => formatDateTime(iso, dates),
+          )}
           approvalState={section === "signin" ? approvalAvailability(approval ?? null) : undefined}
           signInLocations={section === "signin" ? { status: locations ?? null, actorId: user.id } : undefined}
         />

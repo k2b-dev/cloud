@@ -114,8 +114,9 @@ describe("v2 admin screens on the server", () => {
     expect(text).toContain("Grundeinstellungen");
     expect(text).toContain("Name und Zeichen");
     expect(body.querySelector('input[value="Beispiel Cloud"]')).not.toBeNull();
-    expect(text).toContain("Eigener Wert");
+    // Save stands in the head from the server's first picture, off until the form has changes
     expect(text).toContain("Speichern");
+    expect(text).toContain("Auf Standard zurücksetzen");
     expect(text).toContain("mail.old_relay_host");
     expect(text).toContain("Einstellungen-Cache");
     expect(body.querySelector('[data-k2-part="Nav.Item"][aria-current="page"]')?.textContent).toContain("Allgemein");

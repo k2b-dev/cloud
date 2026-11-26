@@ -22,6 +22,7 @@ export default function TemplatesScreen(props: {
       title={t().templates}
       description={t().templatesDescription}
       documentationHref={props.documentationHref}
+      saves
     >
       <RegistryForm groups={["mail"]} sections={props.sections} entries={props.entries} />
     </AreaFrame>

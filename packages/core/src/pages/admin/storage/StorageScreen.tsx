@@ -26,6 +26,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { FormSave } from "../_area/AreaFrame";
 import RegistryForm from "../_area/RegistryForm";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { readBucket, readStorageAdmin, StorageAdminError, storageAdminApi } from "./client";
@@ -672,7 +673,15 @@ export default function StorageScreen(props: StorageScreenProps) {
             head={
               <Bar
                 start={<Text type="body">{detailTitle()}</Text>}
-                end={<Button variant="ghost" icon="x" label={t().cancel} href={STORAGE_AREA_HREF} />}
+                end={
+                  <>
+                    {/* the default bucket's settings save as one form, with Save in this head */}
+                    <Show when={open()?.isDefault}>
+                      <FormSave />
+                    </Show>
+                    <Button variant="ghost" icon="x" label={t().cancel} href={STORAGE_AREA_HREF} />
+                  </>
+                }
               />
             }
           >
