@@ -24,14 +24,28 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+/** `fallback`: the browser sizes no text field to its words (`field-sizing` off, as in Firefox), so the field does. */
+type PageOptions = { fallback?: boolean; height?: number };
+
+const withPage = async (width: number, run: (page: Page) => Promise<void>, options: PageOptions = {}) => {
+  const page = await browser.newPage({ viewport: { width, height: options.height ?? 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style>${options.fallback ? "<style>.k2-ui textarea { field-sizing: fixed !important; }</style>" : ""}</head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
+    // without field-sizing the page asks the browser and hears no, before the client starts
+    if (options.fallback)
+      await page.evaluate(() => {
+        const supports = CSS.supports.bind(CSS);
+        CSS.supports = ((...query: [string, string?]) =>
+          query[0] === "field-sizing"
+            ? false
+            : query.length === 2
+              ? supports(query[0], query[1]!)
+              : supports(query[0])) as typeof CSS.supports;
+      });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -117,3 +131,37 @@ for (const width of [1440, 390])
       expect((await measureV2Layout(page)).problems).toEqual([]);
     });
   });
+
+// Without field-sizing the field measures its words from its least height; the panes above it must not move for that.
+// A long field at the end of a pane scrolled to its end, the caret in its first line: typing and a value set by code
+// leave every scroll where it was.
+test("without field-sizing, a long field at the end of a pane keeps the pane where it is as you type and as code sets it", async () => {
+  await withPage(
+    1440,
+    async (page) => {
+      const field = page.getByRole("textbox", { name: "Ausführliche Erklärung" });
+      expect(await field.evaluate((area) => Math.round(area.getBoundingClientRect().height))).toBe(9 * 20);
+      const pane = () => field.evaluate((area) => area.closest(".k2-scroll")!.scrollTop);
+      await field.evaluate((area) => {
+        const scroll = area.closest(".k2-scroll")!;
+        scroll.scrollTop = scroll.scrollHeight;
+      });
+      await settled(page);
+      const end = await pane();
+      expect(end).toBeGreaterThan(0);
+      await field.evaluate((area) => {
+        (area as HTMLTextAreaElement).focus({ preventScroll: true });
+        (area as HTMLTextAreaElement).setSelectionRange(0, 0);
+      });
+      for (const key of ["N", "e", "u"]) {
+        await page.keyboard.press(key);
+        expect(await pane()).toBe(end);
+      }
+      await page.evaluate(() => window.__k2SetAnswer!(Array.from({ length: 9 }, (_, line) => `Zeile ${line + 1}, neu geladen`).join("\n")));
+      await settled(page);
+      expect(await pane()).toBe(end);
+      expect(await field.evaluate((area) => Math.round(area.getBoundingClientRect().height))).toBe(9 * 20);
+    },
+    { fallback: true, height: 600 },
+  );
+});

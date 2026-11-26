@@ -235,10 +235,17 @@ const sizesToText = () => typeof CSS !== "undefined" && CSS.supports("field-sizi
  */
 const followText = (area: HTMLTextAreaElement, value: () => string | undefined) => {
   const fit = () => {
+    // For the moment of measuring, the field is at its least height, and a browser would pull every scroll above it
+    // back to fit; each keeps where it was (the page too).
+    const scrolls: [Element, number][] = [];
+    for (let node = area.parentElement; node; node = node.parentElement) if (node.scrollTop > 0) scrolls.push([node, node.scrollTop]);
+    const page = document.scrollingElement;
+    if (page && page.scrollTop > 0 && !scrolls.some(([node]) => node === page)) scrolls.push([page, page.scrollTop]);
     // measured from its minimum (v2.css: `rows` lines), not from its height now: `auto` would keep the rows the
     // server asked for its first value, and a field emptied later would stay that high
     area.style.height = "0px";
     area.style.height = `${area.scrollHeight}px`;
+    for (const [node, top] of scrolls) node.scrollTop = top;
   };
   createEffect(on(value, () => queueMicrotask(fit)));
   area.addEventListener("input", fit);
