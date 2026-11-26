@@ -1,11 +1,23 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { type Action, Bar, Nav, type NavGroup, Path, Text, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Nav, type NavGroup, Path, Workspace } from "@k2b/ui/v2";
 import { createEffect, createMemo, type JSX, onCleanup } from "solid-js";
 import { createToolSearch, toolSearchMessages } from "./tool-search";
-import { categoryOrder, resolveRegistry, type ToolId } from "./tools/registry";
+import { categoryOrder, resolveRegistry, type ToolCategory, type ToolId } from "./tools/registry";
 import { toolsWorkspaceMessages } from "./tools-messages";
+
+/**
+ * The data colour of each category: a tool carries the sign of its category in the catalog, so the five areas read
+ * apart at a glance. Colours from the shared data palette, none of them a state colour.
+ */
+export const categoryColor: Record<ToolCategory, string> = {
+  images: "#c2410c",
+  documents: "#1d4ed8",
+  text: "#7c3aed",
+  security: "#be123c",
+  network: "#0f766e",
+};
 
 /** v2 names Tabler icons without the `ti ti-` classes the registry keeps for v1 surfaces (search, commands). */
 export const toolIcon = (icon: string) => icon.replace(/^ti ti-/, "");
@@ -62,11 +74,8 @@ export default function ToolsScreen(props: {
         head={
           <Bar
             start={
-              open() ? (
-                <Path label={t().appName} items={[{ label: t().appName, href: "/tools" }, { label: open()!.name }]} />
-              ) : (
-                <Text type="body">{t().appName}</Text>
-              )
+              // the overview is named by the sidebar's current entry; a tool says where it stands
+              open() ? <Path label={t().appName} items={[{ label: t().appName, href: "/tools" }, { label: open()!.name }]} /> : undefined
             }
             end={props.end}
           />

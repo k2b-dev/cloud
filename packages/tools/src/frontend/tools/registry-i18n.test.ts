@@ -134,7 +134,9 @@ describe("Tools i18n catalogs", () => {
         }),
     );
     expect(html).toContain(toolCatalogMessages.resolve(["de"]).t.quickTools);
-    expect(html).toContain(toolCatalogMessages.resolve(["de"]).t.allTools({ count: 15 }));
+    // the whole catalog has no count as its lead; each category says its own count
+    expect(html).not.toContain('data-k2-part="StatusRow"');
+    expect(html).toContain(resolveRegistry("de").categories.security.label);
     expect(html).toContain(mustTool(resolveRegistry("de"), "password").name);
     expect(html).not.toContain("Used often");
   });

@@ -3,7 +3,7 @@ import { fuzzy, i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Empty, Input, List, Pane, Row, Section, StatusRow, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import ToolsScreen, { toolIcon } from "./ToolsScreen";
+import ToolsScreen, { categoryColor, toolIcon } from "./ToolsScreen";
 import { categoryOrder, resolveRegistry } from "./tools/registry";
 import { toolsQuery } from "./tools-query";
 
@@ -14,7 +14,6 @@ export const toolCatalogMessages = i18n.define({
       searchLabel: "Search tools",
       searchPlaceholder: "Search by task or tool",
       quickTools: "Used often",
-      allTools: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} tool`, other: `${count} tools` }),
       matchingTools: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: `${count} matching tool`, other: `${count} matching tools` }),
       emptyTitle: "No tool matches this task. Try a tool name, format, or action.",
@@ -24,7 +23,6 @@ export const toolCatalogMessages = i18n.define({
       searchLabel: "Werkzeuge suchen",
       searchPlaceholder: "Aufgabe oder Werkzeug suchen",
       quickTools: "Oft gebraucht",
-      allTools: ({ count }) => i18n.plural(count, "de", { one: `${count} Werkzeug`, other: `${count} Werkzeuge` }),
       matchingTools: ({ count }) => i18n.plural(count, "de", { one: `${count} passendes Werkzeug`, other: `${count} passende Werkzeuge` }),
       emptyTitle: "Kein Werkzeug passt zu dieser Aufgabe. Suche nach einem Werkzeug, Format oder Arbeitsschritt.",
       clearSearch: "Suche zurücksetzen",
@@ -80,7 +78,8 @@ export default function ToolCatalog(props: { search?: string }) {
       <Pane
         label={t().searchLabel}
         scrollKey="tools-catalog"
-        status={<StatusRow lead={needle() ? t().matchingTools({ count: matches().length }) : t().allTools({ count: matches().length })} />}
+        // a count is no statement worth the lead: the row speaks only while a search narrows the catalog
+        status={needle() ? <StatusRow lead={t().matchingTools({ count: matches().length })} /> : undefined}
       >
         <Show when={!needle()}>
           <Section icon="star" title={t().quickTools}>
@@ -120,12 +119,23 @@ export default function ToolCatalog(props: { search?: string }) {
                 <Show when={inCategory().length > 0}>
                   <Section
                     icon={toolIcon(registry().categories[category].icon)}
+                    color={categoryColor[category]}
                     title={registry().categories[category].label}
                     count={inCategory().length}
                   >
                     <List label={registry().categories[category].label}>
                       <For each={inCategory()}>
-                        {(tool) => <Row icon={toolIcon(tool.icon)} lines={[tool.name, tool.description]} href={`/tools/${tool.id}`} />}
+                        {(tool) => (
+                          // its sign in the category colour, its name, and what it does under it.
+                          // k2b-ui gap: a row of one line on the desktop (the note after the name) and two on the phone;
+                          // a one-line row with a note stays one tall, cut line on the phone, so the rows keep two lines.
+                          <Row
+                            icon={toolIcon(tool.icon)}
+                            color={categoryColor[category]}
+                            lines={[tool.name, tool.description]}
+                            href={`/tools/${tool.id}`}
+                          />
+                        )}
                       </For>
                     </List>
                   </Section>
