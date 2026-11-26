@@ -165,6 +165,37 @@ chip in `marks`; then `Digest activity` under "Zuletzt geändert".
   in its row and as a `dot` on its sidebar entry.
 - States: `quiet` (a day without anything that needs a person).
 
+## files.tsx: a folder with list, grid and selection
+
+![files at 1440 px](../images/files-1440.png)
+![files at 390 px](../images/files-390.png)
+
+Two full-width rows above list and detail: a head `Bar` with `Path`, a
+sharing `Chip`, the search, "Neuer Ordner" and the primary "Hochladen";
+then the `FilterBar` with `results` and `end` (`ListOrder`, a `Menu` for
+list or grid). The list is a `Table` with `select`, `group` (folders,
+files), a `mark` column with thumbnails and types, an `avatar` column; the
+open file is a `Pane detail` with `Preview`, a bar of deeds, `Facts` and
+sections for sharing and versions. `Nav` shows storages with `color` and
+the storage's `quota`.
+
+- While files are selected, `StatusRow selection` takes the bar's place at
+  the same height; on the phone its actions float at the bottom.
+- States: `grid` (`Tiles variant="media"`), `selecting` (three photos).
+
+## settings-page.tsx: a settings page
+
+![settings-page at 1440 px](../images/settings-page-1440.png)
+![settings-page at 390 px](../images/settings-page-390.png)
+
+The state first as `Cells` (a `trend`, chips with tone); a `Table` for the
+one setting with a value per kind (a switch per row); `Setting` rows for
+everything else, one `Section` per topic; a `Pane side` with the methods
+as rows with `mark` and state, and `Digest activity` of who changed what.
+The head says "1 Änderung" and saves the page as a whole.
+
+- States: `saved` (nothing to save: the deeds are disabled).
+
 ## table.tsx: a table with a status row
 
 ![table at 1440 px](../images/table-1440.png)

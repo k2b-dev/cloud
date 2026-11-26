@@ -7,7 +7,7 @@ import { IdentityScreen } from "./v2-identity.fixture";
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    /** What was pressed on the card that makes a new thing: its name, then each quick choice. */
+    /** What was pressed: the card that makes a new thing, its quick choices, and things opened in place ("open #…"). */
     __k2Pressed?: string[];
   }
 }
@@ -16,5 +16,14 @@ const pressed: string[] = [];
 window.__k2Pressed = pressed;
 const root = document.getElementById("root");
 if (!root) throw new Error("identity: #root is missing");
-render(() => <IdentityScreen onCreate={() => pressed.push("Neue Base")} onChoice={(name) => pressed.push(name)} />, root);
+render(
+  () => (
+    <IdentityScreen
+      onCreate={() => pressed.push("Neue Base")}
+      onChoice={(name) => pressed.push(name)}
+      onOpen={(hash) => pressed.push(`open ${hash}`)}
+    />
+  ),
+  root,
+);
 window.__k2Mounted = true;

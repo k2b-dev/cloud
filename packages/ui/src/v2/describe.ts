@@ -38,11 +38,13 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Row",
     "Table",
     "Facts",
+    "Preview",
     "Notice",
     "Prose",
     "Canvas",
     "Field.Row",
     "Field",
+    "Setting",
     "Toast",
     "Empty",
     "Loading",
@@ -125,6 +127,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `[${element.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${kind ? ` ${kind}` : ""}${element.hasAttribute("data-image") ? " picture" : ""}]`;
     }
     if (name === "Spark") return `spark ${quote(element.getAttribute("aria-label"))}`;
+    if (name === "Preview")
+      return `Preview ${quote(element.getAttribute("aria-label"))}${element.hasAttribute("data-image") ? " picture" : ""}`;
+    if (name === "Nav.Quota") return `quota ${quote(element.getAttribute("aria-label"))}: ${element.getAttribute("aria-valuetext") ?? ""}`;
     if (name === "Icon") return element.getAttribute("aria-label") ? `icon ${quote(element.getAttribute("aria-label"))}` : "";
     if (name === "Text") {
       const type = element.getAttribute("data-type");
@@ -312,7 +317,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
               : "";
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
-        const tail = [...element.querySelectorAll(":scope > .k2-row-end, :scope > .k2-row-marks")].flatMap(words);
+        const tail = [...element.querySelectorAll(":scope > .k2-row-end, :scope > .k2-row-marks, :scope > .k2-row-states")].flatMap(words);
         return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
       }
       case "Table": {
@@ -362,14 +367,18 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "Canvas": {
-        const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
+        const height = element.hasAttribute("data-fill")
+          ? "fills its pane"
+          : (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
       }
-      case "Field": {
+      case "Field":
+      case "Setting": {
         const fieldLabel = element.querySelector(":scope > .k2-field-label")?.childNodes[0]?.textContent;
         const message = element.querySelector(":scope > .k2-field-message");
+        const was = element.querySelector(":scope > .k2-field-was")?.textContent;
         const control = words(element).join(" ");
-        return `Field ${quote(fieldLabel)}: ${control || "no control"}${message ? ` — ${message.hasAttribute("data-error") ? "error" : "hint"} ${quote(message.textContent)}` : ""}`;
+        return `${name} ${quote(fieldLabel)}: ${control || "no control"}${message ? ` — ${message.hasAttribute("data-error") ? "error" : "hint"} ${quote(message.textContent)}` : ""}${was ? ` (${was})` : ""}`;
       }
       case "Field.Row":
         return "Field.Row";
@@ -503,8 +512,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const surface = surfaceOf(button);
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
+  // While entries are selected the floating main action gives way to the selection's actions on purpose.
   if (
     options.layout &&
+    !root.querySelector(".k2-bar[data-selecting]") &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
@@ -520,6 +531,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
+      // a label the place hides on purpose (the button keeps only its symbol, the words stay its name) is not cut
+      if (label !== control && getComputedStyle(label).clipPath.startsWith("inset")) continue;
       if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
