@@ -8,17 +8,19 @@ import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } fro
 import { cookies } from "@k2b/stdlib/browser";
 import { formatFileViewSize, toast, useLocale } from "@k2b/ui";
 import {
+  Avatar,
   Bar,
   Button,
+  Chip,
   Empty,
   Failed,
   FilterBar,
-  Icon,
   Inline,
   Input,
   List,
   ListOrder,
   Loading,
+  Mark,
   Menu,
   type MenuEntry,
   Nav,
@@ -50,7 +52,7 @@ import { preferencesCookie, type ViewPreference, viewFor, withView } from "./bro
 import { directoryContext, directoryPageCount, directoryPages } from "./directory-pages";
 import EntryDetail from "./EntryDetail";
 import { entryIcon } from "./entry-icon";
-import { storageMark } from "./entry-mark";
+import { entryMark, storageMark } from "./entry-mark";
 import { historyExecutionHref } from "./execution-url";
 import FavoritesPane from "./FavoritesPane";
 import { issueText } from "./feedback";
@@ -683,6 +685,9 @@ export default function FilesScreen(props: {
   // A phone row has room for the day alone.
   const day = createMemo(() => new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeZone: timeZone() }));
   const sizeText = (entry: FileEntry) => (entry.directory ? "" : formatFileViewSize(entry.size, locale()));
+  /** Who reaches an entry: its own active download links, else the team of a group storage, or only this person. */
+  const sharing = (entry: FileEntry) =>
+    entry.facts?.links ? b().v2Links({ count: entry.facts.links }) : selected()?.kind === "groups" ? b().v2Team : b().onlyYou;
   const fresh = () => actions.fresh();
   const rows = createMemo((): FolderRow[] => entries().map((entry) => ({ key: entry.path, entry, fresh: fresh().has(entry.path) })));
   const placeOf = (entry: FileEntry) => {
@@ -1336,19 +1341,25 @@ export default function FilesScreen(props: {
                       phone={(row) => ({
                         lines: [
                           row.entry.name,
-                          searching() ? placeOf(row.entry) : row.entry.directory ? b().kindFolder : sizeText(row.entry),
+                          [
+                            searching() ? placeOf(row.entry) : row.entry.directory ? b().kindFolder : sizeText(row.entry),
+                            sharing(row.entry),
+                          ]
+                            .filter(Boolean)
+                            .join(" · "),
                         ],
+                        mark: entryMark(row.entry),
                         time: row.fresh ? b().justCreated : day().format(new Date(row.entry.modified)),
                       })}
                       columns={[
                         {
                           title: t().name,
-                          width: { min: 160, default: 260 },
+                          width: { min: 140, default: 200 },
                           sort: sortTarget("name"),
                           cell: (row) => {
                             const name = (
                               <Inline>
-                                <Icon name={entryIcon(row.entry)} />
+                                <Mark {...entryMark(row.entry)} />
                                 <Text>{row.entry.name}</Text>
                               </Inline>
                             );
@@ -1356,8 +1367,22 @@ export default function FilesScreen(props: {
                           },
                         },
                         {
+                          // Who changed it last, as far as this person may see the history; the name is its hint.
+                          title: b().v2From,
+                          width: { min: 48, default: 48 },
+                          drop: true,
+                          cell: (row) => (row.entry.facts?.author ? <Avatar name={row.entry.facts.author.name} /> : ""),
+                        },
+                        {
+                          // Who reaches it: its own download links, else the team of a group storage or only you.
+                          title: b().v2Sharing,
+                          width: { min: 80, default: 88 },
+                          drop: true,
+                          cell: (row) => <Chip icon={row.entry.facts?.links ? "link" : undefined}>{sharing(row.entry)}</Chip>,
+                        },
+                        {
                           title: t().size,
-                          width: { min: 90, default: 110 },
+                          width: { min: 80, default: 88 },
                           align: "end",
                           drop: true,
                           sort: sortTarget("size"),
@@ -1365,7 +1390,7 @@ export default function FilesScreen(props: {
                         },
                         {
                           title: t().modified,
-                          width: { min: 130, default: 150 },
+                          width: { min: 110, default: 120 },
                           drop: true,
                           sort: sortTarget("modified"),
                           cell: (row) => (row.fresh ? b().justCreated : date().format(new Date(row.entry.modified))),
@@ -1385,6 +1410,7 @@ export default function FilesScreen(props: {
                       label={t().files}
                       items={rows().map((row) => ({
                         icon: entryIcon(row.entry),
+                        color: entryMark(row.entry).color,
                         title: row.entry.name,
                         meta: row.entry.directory ? b().kindFolder : sizeText(row.entry),
                         href: openTarget(row.entry).href,

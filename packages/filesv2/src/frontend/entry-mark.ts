@@ -29,7 +29,7 @@ export function entryMark(entry: { name: string; directory: boolean }): MarkProp
   const dot = entry.name.lastIndexOf(".");
   const extension = !entry.directory && dot > 0 ? entry.name.slice(dot + 1) : "";
   return {
-    icon: entry.directory ? "folder-filled" : entryIcon(entry),
+    icon: entry.directory ? "folder" : entryIcon(entry),
     color: TYPE_COLORS[type],
     ...(/^[a-z0-9]{2,4}$/i.test(extension) ? { kind: extension.toUpperCase() } : {}),
   };

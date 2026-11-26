@@ -463,6 +463,10 @@ export const browserMessages = i18n.define({
       v2Place: "Location",
       v2Understood: "Understood",
       v2Close: "Close",
+      v2From: "By",
+      v2Sharing: "Sharing",
+      v2Team: "Team",
+      v2Links: (values: { count: number }) => (values.count === 1 ? "Link" : `${values.count} links`),
       v2RecentMovedTitle: "“Recent” moved to Activity.",
       v2RevokeTitle: (values: { name: string }) => `Revoke “${values.name}”?`,
       v2ActiveShares: (values: { count: number; more: string }) =>
@@ -933,6 +937,10 @@ export const browserMessages = i18n.define({
       v2Place: "Ort",
       v2Understood: "Verstanden",
       v2Close: "Schließen",
+      v2From: "Von",
+      v2Sharing: "Freigabe",
+      v2Team: "Team",
+      v2Links: (values: { count: number }) => (values.count === 1 ? "Link" : `${values.count} Links`),
       v2RecentMovedTitle: "„Zuletzt“ ist jetzt in der Aktivität.",
       v2RevokeTitle: (values: { name: string }) => `„${values.name}“ widerrufen?`,
       v2ActiveShares: (values: { count: number; more: string }) =>

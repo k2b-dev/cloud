@@ -20,6 +20,16 @@ export const fixtureBase: BaseSummary = {
   versioningEnabled: false,
 };
 const hoursAgo = (hours: number) => new Date(Date.parse(FIXTURE_NOW) - hours * 3_600_000).toISOString();
+/** Who changed an entry last and how many links lead to it, as the listing reads them; steady per path. */
+const AUTHORS = ["Felix Thal", "Mira Sommer", "Jana Krüger", "Sven Yilmaz"];
+const factsOf = (path: string) => {
+  const seed = [...path].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const name = AUTHORS[seed % AUTHORS.length]!;
+  return {
+    author: seed % 7 === 0 ? null : { userId: `user-${seed % AUTHORS.length}`, name },
+    links: seed % 5 === 0 ? 1 : seed % 11 === 0 ? 3 : 0,
+  };
+};
 const entry = (path: string, directory: boolean, size: number, hours: number): FileEntry => ({
   name: path.split("/").at(-1)!,
   path,
@@ -27,6 +37,7 @@ const entry = (path: string, directory: boolean, size: number, hours: number): F
   size: directory ? 0 : size,
   modified: hoursAgo(hours),
   actions: { write: true, move: true, share: true },
+  facts: factsOf(path),
 });
 
 const plain: FileEntry[] = [
