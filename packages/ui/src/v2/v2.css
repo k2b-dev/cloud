@@ -881,6 +881,7 @@
 }
 /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells
    (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
+/* one primitive: a Table puts its phone form right after the large one */
 .k2-ui .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
   --k2-table-end: 0;
 }
