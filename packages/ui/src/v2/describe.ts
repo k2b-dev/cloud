@@ -317,7 +317,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
               : "";
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
-        const tail = [...element.querySelectorAll(":scope > .k2-row-end, :scope > .k2-row-marks")].flatMap(words);
+        const tail = [...element.querySelectorAll(":scope > .k2-row-end, :scope > .k2-row-marks, :scope > .k2-row-states")].flatMap(words);
         return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
       }
       case "Table": {
@@ -367,7 +367,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "Canvas": {
-        const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
+        const height = element.hasAttribute("data-fill")
+          ? "fills its pane"
+          : (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
       }
       case "Field":

@@ -942,6 +942,8 @@
   gap: 6px;
   padding: 6px 6px 8px;
   border: 0;
+  /* a media tile fills its track of the grid, as a card does */
+  max-width: none;
 }
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-open]:hover {
   background: var(--k2-n100);
@@ -1336,6 +1338,26 @@
 }
 .k2-ui .k2-row-marks > * {
   margin-block: -4px;
+}
+/* The states of an entry under its lines, on the text edge of the title: chips that wrap instead of being cut. They
+   take a row of the grid of their own, so a row without them keeps its 40, 52 or 72 px. */
+.k2-ui .k2-row-states {
+  grid-column: l1-start / -1;
+  grid-row: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding-top: 6px;
+  min-width: 0;
+}
+/* a chip longer than the row breaks its own words onto a second line rather than leaving the row */
+.k2-ui .k2-row-states > .k2-chip {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-row-marks .k2-icon {
   font-size: 14px;
@@ -2707,6 +2729,13 @@
 }
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
+}
+/* A drawing that is the whole pane takes what the pane's column has left, by layout alone: nothing is measured, so the
+   first render already has its final height. Below 240 px the pane scrolls instead of squeezing the drawing. */
+.k2-ui .k2-canvas[data-fill] {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 240px;
 }
 /* A state stands in the drawing's place: `Empty`, `Loading` or `Failed` inside a Canvas with a height keep the height
    of the Canvas, so nothing moves when the drawing comes, stays empty or fails. Empty and Failed stand in its middle;

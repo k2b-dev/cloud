@@ -135,7 +135,10 @@ component's root and never in a plain element. A `Chart` of `@k2b/ui`
 fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
 drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
-moves.
+moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
+of another page). Directly in its `Pane`, it takes the height left under
+head and status by layout alone, from the first render (never measure it
+in a script); below 240 px the pane scrolls.
 
 ## Structure
 
@@ -178,6 +181,10 @@ inside it.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
+- `states` (chips that must be read whole, such as the checks of a domain:
+  colour, symbol, word): under the lines on the title's text edge; they
+  wrap to more lines instead of being cut, on the phone too, and the row
+  grows only when they are there.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
