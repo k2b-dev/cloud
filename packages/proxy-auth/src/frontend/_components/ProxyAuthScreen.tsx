@@ -107,29 +107,26 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     if (target === "new" && !values.name.trim()) return setFailure(t().nameRequired);
     if (values.groups.length === 0) return setFailure(t().groupRequired);
     setBusy(true);
-    try {
-      if (target === "new") {
-        const response = await apiClient.index.$post({
+    // a store that refuses names it; a lost connection is "not saved", never a browser's own error text
+    const response = await (target === "new"
+      ? apiClient.index.$post({
           json: { name: values.name.trim(), description: values.description.trim() || undefined, allowedGroupIds: values.groups },
-        });
-        if (!response.ok) throw new Error(t().failedCreate);
-        const client = (await response.json()) as { clientId: string };
-        setEditing(null);
-        setCreated(client.clientId);
-      } else {
-        const response = await apiClient[":id"].$put({
+        })
+      : apiClient[":id"].$put({
           param: { id: target.id },
           json: { description: values.description.trim() || null, allowedGroupIds: values.groups },
-        });
-        if (!response.ok) throw new Error(t().failedUpdate);
-        setEditing(null);
-        toast(t().saved, { status: "ok" });
-        location.reload();
-      }
-    } catch (error) {
-      setFailure(error instanceof Error ? error.message : t().notSaved);
-    } finally {
-      setBusy(false);
+        })
+    ).catch(() => null);
+    setBusy(false);
+    if (!response) return setFailure(t().notSaved);
+    if (!response.ok) return setFailure(target === "new" ? t().failedCreate : t().failedUpdate);
+    setEditing(null);
+    if (target === "new") {
+      const body = await response.json();
+      if ("clientId" in body) setCreated(body.clientId);
+    } else {
+      // the next picture shows the change; a toast before the page is replaced would never be seen
+      location.reload();
     }
   };
   const remove = async (client: ClientRow) => {
@@ -140,16 +137,22 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       toast(t().notDeleted, { status: "bad", retry: () => void remove(client) });
       return;
     }
-    toast(t().removed, { status: "ok" });
     location.assign(LIST);
   };
+
+  /** A client without groups lets nobody through until it has one: state in colour, symbol and word. */
+  const blocked = () => (
+    <Chip status="warn" icon="lock">
+      {t().noGroups}
+    </Chip>
+  );
 
   /**
    * The groups as chips; in a row only as many as its column holds whole (two short ones, else one) and "+n" for the
    * rest, which the open client lists.
    */
   const groupChips = (client: ClientRow, row = false) => {
-    if (client.groups.length === 0) return <Chip status="warn">{t().noGroups}</Chip>;
+    if (client.groups.length === 0) return blocked();
     const fit = row ? (client.groups.slice(0, 2).reduce((sum, group) => sum + group.label.length, 0) <= 24 ? 2 : 1) : client.groups.length;
     const shown = client.groups.slice(0, fit);
     return (
@@ -202,7 +205,18 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       <Pane
         label={t().appName}
         scrollKey="proxy-auth-clients"
-        status={<StatusRow lead={t().clientsCount({ count: props.clients.length })} />}
+        status={
+          <StatusRow
+            lead={props.figures.withoutGroups > 0 ? t().blockedLead({ count: props.figures.withoutGroups }) : t().allGatedLead}
+            filters={
+              props.figures.withoutGroups > 0 ? (
+                <Chip status="warn" icon="lock">
+                  {t().blockedUntilConfigured}
+                </Chip>
+              ) : undefined
+            }
+          />
+        }
       >
         <Cells>
           <Cells.Cell icon="shield-half" label={t().clients} value={number(props.clients.length)} meta={t().registered} />
@@ -281,6 +295,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             "```",
           ].join("\n")}
         />
+        <Text weight="strong">{t().responseHeaders}</Text>
         <Facts
           items={[
             { label: "X-Forwarded-User", value: t().username },

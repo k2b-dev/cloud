@@ -83,7 +83,7 @@ test("the clients render on v2 with their figures, one open beside the list, and
     expect(response.status, html).toBe(200);
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
-    expect(text).toContain("2 Clients");
+    expect(text).toContain("1 Client ist bis zur Konfiguration gesperrt");
     expect(text).toContain("Uptime Kuma");
     // the client without a group is blocked until it has one, and the figures say so
     expect(text).toContain("bis zur Konfiguration gesperrt");

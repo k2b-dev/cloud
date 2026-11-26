@@ -79,7 +79,8 @@ const desktop: View = { width: 1440, height: 900, touch: false };
 const tablet: View = { width: 1024, height: 800, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
 
-const open = async (view: View, address: string, state = "normal") => {
+/** `failEntities`: the directory search fails this many times before it answers. */
+const open = async (view: View, address: string, state = "normal", failEntities = 0) => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -92,9 +93,15 @@ const open = async (view: View, address: string, state = "normal") => {
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
   const calls: string[] = [];
+  const bodies: unknown[] = [];
+  let entityFailures = failEntities;
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/admin/proxy-auth") return route.fulfill({ contentType: "text/html; charset=utf-8", body: document(state) });
+    if (url.pathname === "/api/accounts/entities" && entityFailures > 0) {
+      entityFailures -= 1;
+      return route.fulfill({ status: 503, json: { message: "Unavailable" } });
+    }
     if (url.pathname === "/api/accounts/entities")
       return route.fulfill({
         json: {
@@ -106,6 +113,7 @@ const open = async (view: View, address: string, state = "normal") => {
       });
     if (url.pathname.startsWith("/api/proxy-auth")) {
       calls.push(`${route.request().method()} ${url.pathname}`);
+      bodies.push(route.request().postDataJSON());
       return route.fulfill({ json: route.request().method() === "POST" ? { clientId: "pa_new" } : { message: "ok" } });
     }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
@@ -117,7 +125,7 @@ const open = async (view: View, address: string, state = "normal") => {
   await tab.waitForSelector('body[data-ready="true"]');
   await tab.evaluate(() => window.document.fonts.ready);
   await settled(tab);
-  return { context, tab, errors, calls };
+  return { context, tab, errors, calls, bodies };
 };
 
 const shoot = async (tab: Page, name: string) => {
@@ -165,8 +173,10 @@ describe("Proxy Auth on v2", () => {
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       expect(await dialog.innerText()).toContain("Wähle mindestens eine Gruppe");
       await dialog.getByRole("option", { name: "Betrieb" }).click();
+      await shoot(tab, "neuer-client-dialog-1440");
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_new").waitFor();
+      await shoot(tab, "client-angelegt-1440");
       expect(calls).toEqual(["POST /api/proxy-auth"]);
       expect(errors).toEqual([]);
     } finally {
@@ -174,16 +184,64 @@ describe("Proxy Auth on v2", () => {
     }
   }, 60_000);
 
-  test("a client opens beside the list; deleting asks first", async () => {
-    const { context, tab, errors } = await open(desktop, "/admin/proxy-auth");
+  test("a client opens beside the list; deleting asks first and sends only when agreed", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/admin/proxy-auth");
     try {
       await tab.getByRole("link", { name: /Grafana/ }).click();
       await tab.waitForURL(/client=/);
       await tab.waitForSelector('body[data-ready="true"]');
       expect(await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_grafana").isVisible()).toBe(true);
+      // answering no sends nothing
       await tab.getByRole("button", { name: "Löschen" }).click();
-      await tab.getByRole("alertdialog").waitFor();
+      await tab.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
+      expect(calls).toEqual([]);
+      // answering yes sends the one delete
+      await tab.getByRole("button", { name: "Löschen" }).click();
+      await tab.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
+      await tab.waitForURL((url) => !url.search.includes("client="));
+      expect(calls).toEqual(["DELETE /api/proxy-auth/00000000-0000-4000-8000-000000000000"]);
       expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("editing sends the description and the groups, the name stays", async () => {
+    const { context, tab, errors, calls, bodies } = await open(desktop, "/admin/proxy-auth?client=00000000-0000-4000-8000-000000000001");
+    try {
+      await tab.getByRole("button", { name: "Bearbeiten" }).click();
+      const dialog = tab.getByRole("dialog");
+      expect(await dialog.getByRole("textbox", { name: "Clientname" }).count()).toBe(0);
+      await dialog.getByRole("textbox", { name: "Beschreibung" }).fill("Belege und Rechnungen");
+      await dialog.getByRole("option", { name: "Betrieb" }).click();
+      await dialog.getByRole("button", { name: "Speichern" }).click();
+      await tab.waitForFunction(() => !window.document.querySelector('[role="dialog"]'));
+      expect(calls).toEqual(["PUT /api/proxy-auth/00000000-0000-4000-8000-000000000001"]);
+      expect(bodies[0]).toEqual({ description: "Belege und Rechnungen", allowedGroupIds: ["group-1-0", "g-ops"] });
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a client that is gone says so beside the list", async () => {
+    const { context, tab, errors } = await open(desktop, "/admin/proxy-auth?client=00000000-0000-4000-8000-00000000dead");
+    try {
+      expect(await tab.getByText("Diesen Client gibt es nicht mehr.").isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a directory search that fails says so and loads again on retry", async () => {
+    const { context, tab, errors } = await open(desktop, "/admin/proxy-auth", "normal", 1);
+    try {
+      await tab.getByRole("button", { name: "Neuer Client" }).first().click();
+      const dialog = tab.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Erneut versuchen" }).click();
+      await dialog.getByRole("option", { name: "Betrieb" }).waitFor();
+      expect(errors.filter((error) => !String(error).includes("503"))).toEqual([]);
     } finally {
       await context.close();
     }
