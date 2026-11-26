@@ -409,8 +409,10 @@ describe(`Spaces task tray in ${browserName}`, () => {
     try {
       viewRequests.splice(0);
       // Only urgent tasks: the row's tasks no longer answer the filter, so it waits for the ones that do.
-      await page.getByRole("button", { name: "Priorität" }).click();
-      await page.getByRole("menuitemcheckbox", { name: "Dringend" }).click();
+      // The filter bar under the head: "+ Filter", the field, then its value.
+      await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
+      await page.getByRole("menuitem", { name: "Priorität" }).click();
+      await page.getByRole("option", { name: "Dringend", exact: true }).click();
       await page.keyboard.press("Escape");
       await requested((href) => href.includes("cpriority=urgent"));
       await page.locator(`${TRAY}[aria-busy="true"]`).waitFor({ timeout: 5000 });
@@ -574,7 +576,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
     expect(await opened).toContain("cv=day&cd=2026-10-08&item=Late02");
     // The reader has three undated tasks and sees two, so the tray links to the list with all of them.
     expect(await page.getByRole("link", { name: "Alle anzeigen: 3 deiner Aufgaben ohne Datum" }).getAttribute("href")).toBe(
-      "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority",
+      "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority.asc",
     );
     await page.context().close();
   }, 60_000);
@@ -669,7 +671,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
     await page.context().close();
   }, 60_000);
 
-  test("fits Today, the four views, and New event in one header row on tablets, and in two rows on a phone", async () => {
+  test("fits Today and the four views in one header row on tablets and in two rows on a phone, with New event in the page head", async () => {
     for (const view of [phone, tablet, { width: 1366, height: 1024, touch: true }, desktop]) {
       const page = await open(view);
       const rows = await page.locator(".k2b-calendar-header__actions a, .k2b-calendar-header__actions button").evaluateAll((elements) => {
@@ -680,8 +682,14 @@ describe(`Spaces task tray in ${browserName}`, () => {
         const others = boxes(elements.filter((element) => element.getAttribute("role") !== "radio"));
         return { count: views.length + others.length, all: oneRow([...views, ...others]), views: oneRow(views), others: oneRow(others) };
       });
-      // A phone keeps Today and New event beside the title and puts the views in the row below.
-      expect(rows).toEqual({ count: view === desktop ? 7 : 6, all: view !== phone, views: true, others: true });
+      // A phone keeps Today beside the title and puts the views in the row below.
+      expect(rows).toEqual({ count: view === desktop ? 6 : 5, all: view !== phone, views: true, others: true });
+      // New event left the calendar's header: it is the head's main menu, on a phone the page's main button.
+      const create =
+        view === phone
+          ? page.locator(".k2-fab").getByText("Neuer Termin")
+          : page.locator('[data-k2-workspace] > .k2-ws-main > [data-slot="head"]').getByRole("button", { name: "Neuer Termin" });
+      expect(await create.isVisible()).toBe(true);
       await page.context().close();
     }
   }, 90_000);

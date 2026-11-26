@@ -19,6 +19,7 @@ import {
   mergeCalendarItems,
 } from "../calendar/range";
 import type { CalendarProps, CalendarView, DayWeather } from "../calendar/types";
+import type { CreateMenuChoice } from "../shared/create-menu";
 import { calendarViewSource, useSpacesCalendarQuery } from "./calendar-query";
 import { loadSpacesViewSnapshot } from "./view-query";
 import type { CalendarTray } from "./workspace-types";
@@ -59,6 +60,8 @@ type Props = {
   dateConfig?: DateContext;
   canWrite: boolean;
   currentUserId: string;
+  /** Hands the page the calendar's create, which knows the selected days, for the head's create menu. */
+  onCreateReady?: (choose: (choice: CreateMenuChoice) => void) => void;
 };
 
 export default function SpacesCalendarRoute(props: Props) {
@@ -299,7 +302,10 @@ export default function SpacesCalendarRoute(props: Props) {
             onLoadEarlier={stream() ? () => loadBlock("earlier") : undefined}
             onLoadLater={stream() ? () => loadBlock("later") : undefined}
             tray={state().tray}
-            onControls={setControls}
+            onControls={(next) => {
+              setControls(next);
+              props.onCreateReady?.(next.choose);
+            }}
             onShownCount={setShownCount}
           />
         </div>

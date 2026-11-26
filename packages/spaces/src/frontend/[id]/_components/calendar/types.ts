@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import type { CreateMenuChoice } from "../shared/create-menu";
 import type { CalendarTray } from "../workspace/workspace-types";
 import type { CalendarColorBy, CalendarFilter } from "./filter";
 import type { CalendarRange } from "./range";
@@ -48,7 +49,12 @@ export type CalendarProps = {
    */
   onFollowHref?: (href: string) => void;
   /** Hands the page the calendar's filter and colour changes, which keep the day the reader scrolled to. */
-  onControls?: (controls: { setFilter: (patch: Partial<CalendarFilter>) => void; setColorBy: (colorBy: CalendarColorBy) => void }) => void;
+  /** The page drives the calendar: its filter bar, its colour choice, and the head's create menu (on the selected days). */
+  onControls?: (controls: {
+    setFilter: (patch: Partial<CalendarFilter>) => void;
+    setColorBy: (colorBy: CalendarColorBy) => void;
+    choose: (choice: CreateMenuChoice) => void;
+  }) => void;
   /** The number of entries in view, for the page's status row. */
   onShownCount?: (count: number) => void;
 };

@@ -395,8 +395,9 @@ export default function Calendar(props: CalendarProps) {
       { replace: true },
     );
   };
-  // The page's filter bar and colour menu change the calendar through its own route, which keeps the scrolled day.
-  props.onControls?.({ setFilter, setColorBy });
+  // The page's filter bar and colour menu change the calendar through its own route, which keeps the scrolled day;
+  // the head's create menu creates on the selected days, or on the day the calendar shows, as its toolbar did.
+  props.onControls?.({ setFilter, setColorBy, choose: (choice) => chooseFromToolbar(choice) });
   createEffect(() => props.onShownCount?.(shownCount()));
   // The day and week views keep the URL on the day the reader scrolled to, so an item opens on the URL as it stands.
   const selectEvent = (event: CalendarEvent) => {

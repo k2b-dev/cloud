@@ -14,7 +14,7 @@ import ItemDetailPane from "../detail/ItemDetailPane";
 import { useItemDetailRoute } from "../detail/item-detail-route";
 import { boardFilter, defaultFilter, parseFilterFromUrl } from "../filter/types";
 import { createSpaceSearch } from "../search/SearchButton";
-import { createMenuEntries } from "../shared/create-menu";
+import { type CreateMenuChoice, createMenuEntries } from "../shared/create-menu";
 import { createIcalCopy } from "../sidebar/CopyICalButton";
 import { createItemController } from "../sidebar/create-item";
 import { spacePrimaryHref } from "../sidebar/space-primary";
@@ -111,6 +111,8 @@ export default function SpaceScreen(props: SpaceScreenProps) {
     dateConfig: props.dateConfig,
     defaultType: view === "calendar" ? "event" : "task",
   });
+  // On the calendar the head creates through the calendar, which knows the selected days and the day it shows.
+  const [calendarChoose, setCalendarChoose] = createSignal<(choice: CreateMenuChoice) => void>();
   const createEntries = createMemo(() =>
     createMenuEntries({
       kind: view === "calendar" ? "calendar" : "task",
@@ -118,7 +120,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
       shortcuts: true,
       t,
       locale: locale(),
-      choose: create.choose,
+      choose: (choice) => (calendarChoose() ?? create.choose)(choice),
     }),
   );
   const primaryLabel = view === "calendar" ? t.newEvent : t.newTask;
@@ -291,7 +293,11 @@ export default function SpaceScreen(props: SpaceScreenProps) {
               // A command link (the view's address with `?command=`), so the phone's main action also works before the
               // page is live and opens in a new tab; a plain click opens the form in place.
               href: spacePrimaryHref({ space: state.space, query: committedQuery(), currentView: view }),
-              onNavigate: () => void create.createItem({ type: view === "calendar" ? "event" : "task" }),
+              onNavigate: () => {
+                const viaCalendar = calendarChoose();
+                if (viaCalendar) viaCalendar({ type: "blank", kind: "event" });
+                else void create.createItem({ type: view === "calendar" ? "event" : "task" });
+              },
             }
           : undefined
       }
@@ -303,6 +309,8 @@ export default function SpaceScreen(props: SpaceScreenProps) {
         snapshotDay={state.snapshotDay}
         dateConfig={props.dateConfig}
       />
+      {/* k2b-ui gap: below 768 px a split gives its panes no height (flex: none), so a drawing that fills its pane
+          (board, calendar) falls back to 240 px on the phone; reported to the coordinator, the fix belongs to the split. */}
       <Pane.Split>
         <Show when={view === "list" || view === "table"}>
           <ItemsPane
@@ -336,6 +344,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
         </Show>
         <Show when={view === "calendar"}>
           <SpacesCalendarRoute
+            onCreateReady={(choose) => setCalendarChoose(() => choose)}
             spaceId={state.space.id}
             baseUrl={route.itemLinkBaseUrl}
             columns={state.space.columns}
