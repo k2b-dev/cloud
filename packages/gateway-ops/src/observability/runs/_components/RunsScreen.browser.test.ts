@@ -6,7 +6,7 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
-import { fixtureParts } from "./runs-fixture-data";
+import { fixtureList, fixtureMinutes } from "./runs-fixture-data";
 
 // An operator narrows the runs list, the address keeps the state, and a reload shows the same runs. The test answers the
 // runs API from invented runs; the screen renders the address as the page does.
@@ -77,13 +77,13 @@ const document = (locale: string, state: string) =>
 /** The runs API as the server answers it: the invented runs for the address's filters. */
 const answerList = (url: URL, state = "normal") => ({
   status: 200,
-  json: {
-    parts: fixtureParts(
-      url.search.slice(1),
-      Number(url.searchParams.get("page") ?? 1),
-      state === "worst" || state === "huge" ? state : "normal",
-    ),
-  },
+  json: (() => {
+    const data = state === "worst" || state === "huge" ? state : "normal";
+    const page = Number(url.searchParams.get("page") ?? 1);
+    return url.pathname.replace(/\/$/, "").endsWith("/minutes")
+      ? { minutes: fixtureMinutes(page, data) }
+      : fixtureList(url.search.slice(1), page, data);
+  })(),
 });
 
 type View = { width: number; height: number; touch: boolean };
@@ -113,7 +113,7 @@ const open = async (view: View, address: string, options: { locale?: string; sta
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
-    if (url.pathname === "/api/gateway/runs" || url.pathname === "/api/gateway/runs/") {
+    if (/^\/api\/gateway\/runs(\/minutes)?\/?$/.test(url.pathname)) {
       calls.push(url.search);
       times.push(performance.now());
       const how = options.answer?.(calls.length) ?? {};
@@ -195,7 +195,13 @@ describe("the runs list on v2", () => {
       ["runs-all-1440", "", desktop],
       ["runs-all-1024", "", { width: 1024, height: 800, touch: false }],
       ["runs-all-390", "", { width: 390, height: 844, touch: true }],
+      ["runs-jobs-1440", "kind=job", desktop],
+      ["runs-jobs-1024", "kind=job", { width: 1024, height: 800, touch: false }],
+      ["runs-jobs-390", "kind=job", { width: 390, height: 844, touch: true }],
+      ["runs-deliveries-1440", "kind=delivery", desktop],
       ["runs-jobs-failed-1440", "kind=job&status=failed", desktop],
+      ["runs-minutes-1440", "tab=minutes", desktop],
+      ["runs-minutes-390", "tab=minutes", { width: 390, height: 844, touch: true }],
       ["runs-job-record-1440", `kind=job&run=job:${"0".repeat(32)}:${"3".repeat(16)}`, desktop],
       ["runs-job-record-390", `kind=job&run=job:${"0".repeat(32)}:${"3".repeat(16)}`, { width: 390, height: 844, touch: true }],
       ["runs-empty-1440", "q=gibtesnicht", desktop],
@@ -217,6 +223,31 @@ describe("the runs list on v2", () => {
     }
   }, 180_000);
 
+  test("per minute: a filter loads the counts in place and keeps the view; a reload shows the same counts", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/admin/observability/runs?tab=minutes", { locale: "de" });
+    try {
+      expect(await tab.getByText("Seite 1 von 3").isVisible()).toBe(true);
+      await tab.getByRole("link", { name: "Weiter" }).click();
+      await tab.waitForURL(/page=2/);
+      await tab.waitForSelector('body[data-ready="true"]');
+      expect(await tab.getByText("Seite 2 von 3").isVisible()).toBe(true);
+      expect(new URL(tab.url()).searchParams.get("tab")).toBe("minutes");
+      const searchbox = tab.getByRole("searchbox", { name: "Läufe durchsuchen" });
+      await searchbox.fill("Postfach");
+      await searchbox.press("Enter");
+      await tab.waitForURL(/q=Postfach/);
+      await tab.waitForFunction(
+        () => window.document.body.innerText.includes("Seite 1 von 3") || !window.document.body.innerText.includes("Seite 2"),
+      );
+      const url = new URL(tab.url());
+      expect([url.searchParams.get("tab"), url.searchParams.get("page")]).toEqual(["minutes", null]);
+      expect(calls.some((call) => new URLSearchParams(call).get("q") === "Postfach")).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("the worst real data keeps the v2 rules and reads right at 1440 and 390 px", async () => {
     for (const view of [desktop, { width: 390, height: 844, touch: true }]) {
       const { context, tab, errors } = await open(view, "/admin/observability/runs", { locale: "de", state: "worst" });
@@ -236,8 +267,22 @@ describe("the runs list on v2", () => {
       } finally {
         await context.close();
       }
+      for (const [name, search] of [
+        ["jobs", "kind=job"],
+        ["minutes", "tab=minutes"],
+      ] as const) {
+        const other = await open(view, `/admin/observability/runs?${search}`, { locale: "de", state: "worst" });
+        try {
+          const layout = await measureV2Layout(other.tab, { root: "[data-k2-workspace]" });
+          expect({ name, width: view.width, problems: layout.problems }).toEqual({ name, width: view.width, problems: [] });
+          await shoot(other.tab, `runs-worst-${name}-${view.width}`);
+          expect(other.errors).toEqual([]);
+        } finally {
+          await other.context.close();
+        }
+      }
     }
-  }, 60_000);
+  }, 120_000);
 
   test("1,000 job runs: the page holds one page of 100 rows, pages through all, and is ready fast", async () => {
     const started = performance.now();

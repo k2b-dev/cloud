@@ -9,7 +9,7 @@ import { syncOpsCredentials } from "../sync/service";
 import RunsScreen from "./_components/RunsScreen.island";
 import { runsMessages } from "./messages";
 import { kindsOf, parseRunsAddress, RUNS_PER_PAGE, RUNS_PREVIEW, runsQuery } from "./query";
-import { listRuns, readRunRecord, workflowFilterNames } from "./service";
+import { readRunRecord, readRunsList, readSuccessMinutes, workflowFilterNames } from "./service";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -31,10 +31,15 @@ export default ssr<AuthContext>(async (c) => {
   const kinds = kindsOf(address.state);
   const now = new Date();
 
-  const [parts, record, schedules, attention, names] = await Promise.all([
+  const [list, minutes, record, schedules, attention, names] = await Promise.all([
     address.tab === "runs"
-      ? listRuns(address.state, kinds, { page: address.page, perPage: RUNS_PER_PAGE, preview: RUNS_PREVIEW, credentials, now })
-      : Promise.resolve([]),
+      ? readRunsList(address.state, kinds, { page: address.page, perPage: RUNS_PER_PAGE, preview: RUNS_PREVIEW, credentials, now })
+      : Promise.resolve(null),
+    address.tab === "minutes"
+      ? readSuccessMinutes(address.state, address.page, RUNS_PER_PAGE)
+          .then((value) => ({ minutes: value, error: null }))
+          .catch((error: unknown) => ({ minutes: null, error: message(error) }))
+      : Promise.resolve(null),
     address.run
       ? readRunRecord(address.run)
           .then((value) => ({ record: value, error: null }))
@@ -68,7 +73,8 @@ export default ssr<AuthContext>(async (c) => {
         run={address.run}
         tab={address.tab}
         ignored={ignored}
-        parts={parts}
+        list={list}
+        minutes={minutes}
         names={names}
         record={record}
         schedules={schedules}

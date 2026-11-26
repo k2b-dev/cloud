@@ -156,11 +156,15 @@ export const parseRunRef = (raw: string | null): RunRef | null => {
 };
 export const runRefText = (ref: RunRef) => `${ref.kind}:${ref.id}`;
 
+/** The views of the page: the runs, the successful job runs counted per minute, and the schedules. */
+export const RUN_TABS = ["runs", "minutes", "schedules"] as const;
+export type RunsTab = (typeof RUN_TABS)[number];
+
 export type RunsAddress = {
   state: RunsState;
   page: number;
   run: RunRef | null;
-  tab: "runs" | "schedules";
+  tab: RunsTab;
   issues: readonly ListQueryIssue[];
 };
 
@@ -187,13 +191,17 @@ export const parseRunsAddress = (query: RunsQuery, params: URLSearchParams): Run
     state,
     page: Number.isSafeInteger(page) && page >= 1 && page <= RUNS_PAGE_MAX ? page : 1,
     run: parseRunRef(params.get("run")),
-    tab: params.get("tab") === "schedules" ? "schedules" : "runs",
+    tab: RUN_TABS.find((tab) => tab === params.get("tab")) ?? "runs",
     issues,
   };
 };
 
 /** The address of a state plus the page parameters the list keeps. */
-export const runsHref = (query: RunsQuery, state: RunsState, extra: { page?: number; run?: RunRef | null; tab?: "schedules" } = {}) => {
+export const runsHref = (
+  query: RunsQuery,
+  state: RunsState,
+  extra: { page?: number; run?: RunRef | null; tab?: Exclude<RunsTab, "runs"> } = {},
+) => {
   const params = query.serialize(state);
   if (extra.page && extra.page > 1) params.set("page", String(extra.page));
   if (extra.run) params.set("run", runRefText(extra.run));

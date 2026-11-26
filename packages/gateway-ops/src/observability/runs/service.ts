@@ -2,10 +2,11 @@
  * The runs list's readers: each kind asks its own store with the filters it understands, and the rows meet in one shape.
  * Kinds never sort or page together; each pages on its own (`RUNS_PER_PAGE` alone, `RUNS_PREVIEW` beside others).
  */
-import { notifications, type TraceEvent, type TraceListFilter, type TraceSpan, trace } from "@k2b/cloud/services";
+import { notifications, type TraceEvent, type TraceListFilter, type TraceSpan, type TraceSuccessMinutes, trace } from "@k2b/cloud/services";
 import type { WorkflowRunState } from "@k2b/cloud/workflows";
 import { getWorkflow, getWorkflowRun, listWorkflowFamilies, listWorkflowRuns, type WorkflowRunSummary } from "@k2b/cloud/workflows/store";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
+import { buildJobTimelineRows, type JobTimelineRow } from "../jobs/service";
 import { syncOpsService } from "../sync/runtime";
 import type { SyncDeadLetterRow, SyncOpsCredentials } from "../sync/service";
 import { RUN_WINDOW_HOURS, RUN_WINDOWS, type RunKind, type RunRef, type RunStatus, type RunsState } from "./query";
@@ -181,19 +182,24 @@ const workflowOnly = (state: RunsState) => Boolean(state.filters.workflow || sta
 const deliveriesMatch = (state: RunsState) =>
   !state.filters.category && !state.filters.duration && !state.filters.source && !workflowOnly(state);
 
+/** The deliveries store's filter for a state: its window, status, app, channel and search. */
+const deliveryFilter = (state: RunsState, now: Date) => {
+  const status = state.filters.status;
+  return {
+    since: sinceOf(state, now),
+    ...(status ? { statuses: DELIVERY_STATUSES[status] } : {}),
+    ...(state.filters.app ? { appIds: [state.filters.app] } : {}),
+    ...(state.filters.channel ? { channels: [state.filters.channel] } : {}),
+    ...(state.search ? { search: state.search } : {}),
+  };
+};
+
 const deliveries = async (state: RunsState, paging: Paging, now: Date): Promise<RunsPart> => {
   if (!deliveriesMatch(state)) return { kind: "delivery", rows: [], total: 0, more: false, error: null };
-  const status = state.filters.status;
   const result = await notifications.observability.deliveries.list({
     page: Math.floor(paging.offset / paging.limit) + 1,
     perPage: paging.limit,
-    filter: {
-      since: sinceOf(state, now),
-      ...(status ? { statuses: DELIVERY_STATUSES[status] } : {}),
-      ...(state.filters.app ? { appIds: [state.filters.app] } : {}),
-      ...(state.filters.channel ? { channels: [state.filters.channel] } : {}),
-      ...(state.search ? { search: state.search } : {}),
-    },
+    filter: deliveryFilter(state, now),
   });
   return {
     kind: "delivery",
@@ -291,6 +297,93 @@ export const listRuns = async (
     deadLetter: () => deadLetters(state, paging, options.credentials),
   };
   return Promise.all(kinds.map((kind) => read(kind, readers[kind])));
+};
+
+// ── Key figures ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Jobs in the window. A short successful run keeps no trace of its own: it is only counted per minute, so `succeeded`
+ * comes from those counts; failures, retries and long runs keep traces and give the rest.
+ */
+export type JobFigures = { succeeded: number; failed: number; running: number; stuck: number; p95DurationMs: number | null };
+export type DeliveryFigures = { total: number; delivered: number; failed: number; active: number; suppressed: number };
+/** A kind's figures, `null` when its store did not answer; absent when the view does not show that kind. */
+export type RunFigures = { job?: JobFigures | null; delivery?: DeliveryFigures | null };
+
+/** The job and delivery figures of a state's window and filters: two reads per kind, only for kinds it shows. */
+export const readRunFigures = async (state: RunsState, kinds: readonly RunKind[], now: Date = new Date()): Promise<RunFigures> => {
+  const filter = jobFilter(state);
+  const [job, delivery] = await Promise.all([
+    !kinds.includes("job")
+      ? undefined
+      : !filter
+        ? { succeeded: 0, failed: 0, running: 0, stuck: 0, p95DurationMs: null }
+        : Promise.all([trace.stats({ filter }), trace.successMinutes({ page: 1, perPage: 1, offset: 0 }, { filter })])
+            .then(([stats, minutes]) => ({
+              succeeded: minutes.count,
+              failed: stats.failed,
+              running: stats.running,
+              stuck: stats.stuck,
+              p95DurationMs: stats.p95DurationMs,
+            }))
+            .catch(() => null),
+    !kinds.includes("delivery")
+      ? undefined
+      : !deliveriesMatch(state)
+        ? { total: 0, delivered: 0, failed: 0, active: 0, suppressed: 0 }
+        : notifications.observability.deliveries
+            .summary({ days: Math.ceil((now.getTime() - sinceOf(state, now).getTime()) / 86_400_000), filter: deliveryFilter(state, now) })
+            .catch(() => null),
+  ]);
+  return { ...(job !== undefined ? { job } : {}), ...(delivery !== undefined ? { delivery } : {}) };
+};
+
+// ── Job timeline ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The job traces the timeline draws at most; beyond it the timeline says it shows a sample. */
+export const JOB_TIMELINE_SPANS = 2000;
+
+export type JobTimeline = { rows: JobTimelineRow[]; fromMs: number; toMs: number; shown: number; total: number };
+
+/** The job lanes of a state's window: its newest traces, by source, as the old Jobs page drew them. Two reads. */
+export const readJobTimeline = async (state: RunsState, now: Date = new Date()): Promise<JobTimeline> => {
+  const window = { fromMs: sinceOf(state, now).getTime(), toMs: now.getTime() };
+  const filter = jobFilter(state);
+  if (!filter) return { rows: [], ...window, shown: 0, total: 0 };
+  const { spans, total } = await trace.list({ page: 1, perPage: JOB_TIMELINE_SPANS, offset: 0 }, { filter });
+  return { rows: buildJobTimelineRows(spans, window), ...window, shown: spans.length, total };
+};
+
+// ── Successful runs per minute ───────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The successful job runs counted per minute and job, newest first, `perPage` a page. The kind and status filters do
+ * not apply (they are always successful jobs); the other job filters do.
+ */
+export const readSuccessMinutes = async (state: RunsState, page: number, perPage: number): Promise<TraceSuccessMinutes> => {
+  const filter = jobFilter({ ...state, filters: { ...state.filters, status: undefined, kind: undefined } });
+  if (!filter) return { minutes: [], total: 0, count: 0, avgDurationMs: null, maxDurationMs: null, p95DurationMs: null };
+  return trace.successMinutes({ page, perPage, offset: (page - 1) * perPage }, { filter });
+};
+
+// ── The list with its figures ────────────────────────────────────────────────────────────────────────────────────
+
+/** What the runs view shows for a state: its parts, the key figures of its kinds, and the job lanes when only jobs show. */
+export type RunsList = { parts: RunsPart[]; figures: RunFigures; timeline: JobTimeline | null };
+
+export const readRunsList = async (
+  state: RunsState,
+  kinds: readonly RunKind[],
+  options: { page: number; perPage: number; preview: number; credentials: SyncOpsCredentials; now?: Date },
+): Promise<RunsList> => {
+  const now = options.now ?? new Date();
+  const [parts, figures, timeline] = await Promise.all([
+    listRuns(state, kinds, { ...options, now }),
+    readRunFigures(state, kinds, now),
+    // the jobs' part says when their store fails; the timeline then stays away
+    kinds.length === 1 && kinds[0] === "job" ? readJobTimeline(state, now).catch(() => null) : null,
+  ]);
+  return { parts, figures, timeline };
 };
 
 // ── Records ──────────────────────────────────────────────────────────────────────────────────────────────────────

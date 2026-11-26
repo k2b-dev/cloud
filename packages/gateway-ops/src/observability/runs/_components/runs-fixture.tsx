@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import { parseRunsAddress, runsQuery } from "../query";
 import RunsScreen from "./RunsScreen";
-import { FIXTURE_APPS, type FixtureData, fixtureJobRecord, fixtureParts, fixtureSchedules } from "./runs-fixture-data";
+import { FIXTURE_APPS, type FixtureData, fixtureJobRecord, fixtureList, fixtureMinutes, fixtureSchedules } from "./runs-fixture-data";
 
 const nav: NavProps = {
   title: "Administration",
@@ -26,7 +26,8 @@ export const RunsScreenFixture = (props: { search: string; locale?: string; data
         run={address.run}
         tab={address.tab}
         ignored={address.issues.length ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null}
-        parts={address.tab === "runs" ? fixtureParts(props.search, address.page, props.data) : []}
+        list={address.tab === "runs" ? fixtureList(props.search, address.page, props.data) : null}
+        minutes={address.tab === "minutes" ? { minutes: fixtureMinutes(address.page, props.data), error: null } : null}
         record={address.run ? { record: address.run.kind === "job" ? fixtureJobRecord : null, error: null } : null}
         names={
           address.state.filters.workflow

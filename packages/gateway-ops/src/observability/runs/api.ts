@@ -12,7 +12,7 @@ import {
   type RunWindowPreset,
   runsQuery,
 } from "./query";
-import { listRuns, searchWorkflowDefinitions } from "./service";
+import { readRunsList, readSuccessMinutes, searchWorkflowDefinitions } from "./service";
 
 /**
  * Mounted at `/api/gateway/runs`: the runs list for an address, as the page reads it. The query names the same
@@ -34,13 +34,25 @@ const app = new Hono<AuthContext>()
         fail(err.badInput(`Invalid runs filter: ${issues.map((issue) => `${issue.param || "query"}=${issue.value}`).join(", ")}`)),
       );
     }
-    const parts = await listRuns(address.state, kindsOf(address.state), {
+    const list = await readRunsList(address.state, kindsOf(address.state), {
       page: address.page,
       perPage: RUNS_PER_PAGE,
       preview: RUNS_PREVIEW,
       credentials: syncOpsCredentials(c.req.raw),
     });
-    return respond(c, ok({ parts }));
+    return respond(c, ok(list));
+  })
+  // The successful job runs per minute for an address, as the page's "minutes" view reads them.
+  .get("/minutes", async (c) => {
+    const params = new URL(c.req.url).searchParams;
+    const address = parseRunsAddress(runsQuery("en", [], params.get("app") ?? undefined), params);
+    if (address.issues.length > 0) {
+      return respond(
+        c,
+        fail(err.badInput(`Invalid runs filter: ${address.issues.map((issue) => `${issue.param || "query"}=${issue.value}`).join(", ")}`)),
+      );
+    }
+    return respond(c, ok({ minutes: await readSuccessMinutes(address.state, address.page, RUNS_PER_PAGE) }));
   })
   // The workflow filter's search: definitions that ran in the address's window, by name.
   .get("/workflows", async (c) => {

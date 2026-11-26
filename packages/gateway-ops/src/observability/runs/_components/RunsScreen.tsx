@@ -1,9 +1,11 @@
 import { api } from "@k2b/cloud/browser";
+import type { TraceSuccessMinutes } from "@k2b/cloud/services";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
-import { useLocale } from "@k2b/ui";
+import { Chart, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Canvas,
   Chip,
   Empty,
   Failed,
@@ -15,6 +17,7 @@ import {
   type NavProps,
   Notice,
   Pane,
+  Section,
   StatusRow,
   Table,
   Tabs,
@@ -23,6 +26,7 @@ import {
 import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
+import { type KeyCell, KeyCells } from "../../_components/KeyCells";
 import RunNow from "../../sync/_components/RunNow";
 import type { SyncScheduleRow } from "../../sync/service";
 import type { RunsApi } from "../api";
@@ -36,10 +40,11 @@ import {
   type RunRef,
   type RunStatus,
   type RunsState,
+  type RunsTab,
   runsHref,
   runsQuery,
 } from "../query";
-import type { RunRecord, RunRow, RunsPart } from "../service";
+import type { JobTimeline, RunFigures, RunRecord, RunRow, RunsList, RunsPart } from "../service";
 import { runDurationFormatter } from "./duration";
 import RunRecordPane from "./RunRecordPane";
 
@@ -52,11 +57,14 @@ export type RunsScreenProps = {
   state: RunsState;
   page: number;
   run: RunRef | null;
-  tab: "runs" | "schedules";
+  tab: RunsTab;
   ignored: string | null;
   /** Names of the workflow definition and parent run the address names, read by the server for the first picture. */
   names?: { workflow?: LookupItem[]; parent?: LookupItem[] };
-  parts: RunsPart[];
+  /** The runs view: its parts, key figures and job lanes; null in the other views. */
+  list: RunsList | null;
+  /** The successful job runs per minute, in the minutes view. */
+  minutes: { minutes: TraceSuccessMinutes | null; error: string | null } | null;
   record: { record: RunRecord | null; error: string | null } | null;
   schedules: { schedules: SyncScheduleRow[]; warnings: string[]; error: string | null } | null;
 };
@@ -96,7 +104,12 @@ export default function RunsScreen(props: RunsScreenProps) {
     }),
   );
   const [state, setState] = createSignal<RunsState>(props.state);
-  const [parts, setParts] = createSignal<RunsPart[]>(props.parts);
+  const [parts, setParts] = createSignal<RunsPart[]>(props.list?.parts ?? []);
+  const [figures, setFigures] = createSignal<RunFigures>(props.list?.figures ?? {});
+  const [timeline, setTimeline] = createSignal<JobTimeline | null>(props.list?.timeline ?? null);
+  const [minutes, setMinutes] = createSignal(props.minutes);
+  // a new filter starts the list at its first page; the pager follows what was loaded, not the first address
+  const [page, setPage] = createSignal(props.page);
   const [loading, setLoading] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const [ignored, setIgnored] = createSignal(props.ignored);
@@ -137,15 +150,22 @@ export default function RunsScreen(props: RunsScreenProps) {
     controller = current;
     setLoading(true);
     try {
-      const params = query().serialize(next);
-      const response = await client.index.$get(
-        { query: Object.fromEntries(params) as Record<string, string> },
-        { init: { signal: current.signal } },
-      );
-      if (!response.ok) throw new Error(response.statusText);
-      const body = await response.json();
-      if (current.signal.aborted) return;
-      setParts(body.parts);
+      const params = Object.fromEntries(query().serialize(next)) as Record<string, string>;
+      if (props.tab === "minutes") {
+        const response = await client.minutes.$get({ query: params }, { init: { signal: current.signal } });
+        if (!response.ok) throw new Error(response.statusText);
+        const body = await response.json();
+        if (current.signal.aborted) return;
+        setMinutes({ minutes: body.minutes, error: null });
+      } else {
+        const response = await client.index.$get({ query: params }, { init: { signal: current.signal } });
+        if (!response.ok) throw new Error(response.statusText);
+        const body = await response.json();
+        if (current.signal.aborted) return;
+        setParts(body.parts);
+        setFigures(body.figures);
+        setTimeline(body.timeline);
+      }
       setFailed(false);
     } catch {
       if (!current.signal.aborted) setFailed(true);
@@ -157,6 +177,7 @@ export default function RunsScreen(props: RunsScreenProps) {
   /** A new state from the bar, the search or the order: the list starts at its first page again. */
   const change = (next: RunsState) => {
     setState(next);
+    setPage(1);
     if (!isServer) {
       const params = new URLSearchParams(location.search);
       if (params.has("page")) {
@@ -179,7 +200,11 @@ export default function RunsScreen(props: RunsScreenProps) {
   const onlyKind = (kind: RunKind): RunsState => ({ ...state(), filters: { ...state().filters, kind: [kind] } });
   const failedView = (): RunsState => ({ ...query().reset(), filters: { ...query().reset().filters, status: "failed" } });
   const href = (extra: { page?: number; run?: RunRef | null } = {}) =>
-    runsHref(query(), state(), { page: extra.page ?? props.page, run: extra.run === undefined ? props.run : extra.run });
+    runsHref(query(), state(), {
+      page: extra.page ?? page(),
+      run: extra.run === undefined ? props.run : extra.run,
+      tab: props.tab === "runs" ? undefined : props.tab,
+    });
   const openOf = (row: RunRow) => ({ href: row.recordHref ?? href({ run: row.ref }) });
 
   // What the filters do not apply to, said once above the list.
@@ -215,7 +240,7 @@ export default function RunsScreen(props: RunsScreenProps) {
     const part = singlePart();
     if (!part) return 1;
     if (part.total !== null) return Math.min(RUNS_PAGE_MAX, Math.max(1, Math.ceil(part.total / RUNS_PER_PAGE)));
-    return part.more ? props.page + 1 : props.page;
+    return part.more ? page() + 1 : page();
   };
 
   const appLabel = (appId: string | null) => (appId ? (props.apps.find((app) => app.id === appId)?.label ?? appId) : "");
@@ -235,6 +260,108 @@ export default function RunsScreen(props: RunsScreenProps) {
     const tone = STATUS_CHIP[status];
     // a toned state's dot is its sign; a state without a tone (running, waiting, canceled) carries its symbol
     return tone ? <Chip status={tone}>{statusLabel(status)}</Chip> : <Chip icon={STATUS_ICON[status]}>{statusLabel(status)}</Chip>;
+  };
+
+  const percent = (value: number) => new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 1 }).format(value);
+  /**
+   * What matters in the window, before the list: beside other kinds two figures each for jobs and deliveries, alone
+   * four for the one kind. Workflow runs and dead letters have their own pages' figures.
+   */
+  const cells = createMemo((): KeyCell[] => {
+    const { job, delivery } = figures();
+    const jobCells = (all: boolean): KeyCell[] =>
+      job
+        ? [
+            { icon: "check", label: t().jobsSucceeded, value: number(job.succeeded), meta: t().countedPerMinute },
+            {
+              icon: "alert-circle",
+              label: t().jobsFailed,
+              value: number(job.failed),
+              tone: job.failed > 0 ? "bad" : undefined,
+              meta: job.stuck > 0 ? t().stuckCount({ count: number(job.stuck) }) : t().noneStuck,
+            },
+            ...(all
+              ? [
+                  { icon: "player-play", label: t().jobsRunning, value: number(job.running) },
+                  {
+                    icon: "hourglass",
+                    label: t().jobsDuration,
+                    value: job.p95DurationMs === null ? "—" : (duration()(job.p95DurationMs) ?? "—"),
+                    meta: t().withoutOutliers,
+                  },
+                ]
+              : []),
+          ]
+        : [];
+    const deliveryCells = (all: boolean): KeyCell[] =>
+      delivery
+        ? [
+            {
+              icon: "send",
+              label: t().deliveredShare,
+              value: delivery.total ? percent(delivery.delivered / delivery.total) : "—",
+              meta: t().deliveredOf({ count: number(delivery.total) }),
+            },
+            {
+              icon: "alert-circle",
+              label: t().deliveriesFailed,
+              value: number(delivery.failed),
+              tone: delivery.failed > 0 ? "bad" : undefined,
+              meta: all ? undefined : t().openCount({ count: number(delivery.active) }),
+            },
+            ...(all
+              ? [
+                  { icon: "clock", label: t().deliveriesOpen, value: number(delivery.active), meta: t().waitingToSend },
+                  { icon: "ban", label: t().deliveriesSuppressed, value: number(delivery.suppressed), meta: t().suppressedHint },
+                ]
+              : []),
+          ]
+        : [];
+    const both = job && delivery;
+    return [...jobCells(!both), ...deliveryCells(!both)];
+  });
+  const unreadFigures = () => figures().job === null || figures().delivery === null;
+
+  // k2b-ui gap: the state timeline ignores a state's colour under the v2 palette (the series class wins over the fill), so
+  // "failed" is not red; and below about 400 px its lane names and legend run past the canvas.
+  const TIMELINE_STATES = () => [
+    { state: "ok", label: t().succeeded, color: "#10b981" },
+    { state: "error", label: t().failed, color: "#ef4444" },
+    { state: "running", label: t().running, color: "#3b82f6" },
+    { state: "stuck", label: t().neverFinished, color: "#f59e0b" },
+  ];
+  /** The job lanes as the chart draws them: a lane opens its source's runs, a mark its run. */
+  const timelineRows = createMemo(() =>
+    (timeline()?.rows ?? []).map((row) => ({
+      label: row.label,
+      tooltip: row.source,
+      href: runsHref(query(), { ...state(), filters: { ...state().filters, source: row.source } }),
+      intervals: row.intervals.map((interval) => ({
+        from: interval.from,
+        to: interval.to,
+        state: interval.state,
+        href: href({ run: { kind: "job", id: `${interval.traceId}:${interval.spanId}` } }),
+        tooltip: [
+          interval.name,
+          TIMELINE_STATES().find((entry) => entry.state === interval.state)?.label,
+          at(interval.startedAt),
+          interval.durationMs === null ? null : duration()(interval.durationMs),
+          interval.statusMessage?.trim().slice(0, 160) || null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+    })),
+  );
+  /** Times on the timeline's axis: days only when the window is longer than one. */
+  const timelineFormat = (value: number) => {
+    const shown = timeline();
+    return new Intl.DateTimeFormat(locale(), {
+      timeZone: props.timeZone,
+      ...(shown && shown.toMs - shown.fromMs > 86_400_000 ? { day: "2-digit", month: "short" } : {}),
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(value);
   };
 
   const runsPane = () => (
@@ -276,6 +403,41 @@ export default function RunsScreen(props: RunsScreenProps) {
       <For each={parts().filter((part) => part.error)}>
         {(part) => <Notice tone="bad">{t().unavailable({ kind: kindLabel(part.kind) })}</Notice>}
       </For>
+      <Show when={cells().length > 0}>
+        <KeyCells cells={cells()} />
+      </Show>
+      <Show when={unreadFigures()}>
+        <Notice tone="bad">{t().figuresUnavailable}</Notice>
+      </Show>
+      {/* the job lanes while only jobs show and no run is open beside them */}
+      <Show when={!props.run && timeline()}>
+        {(shown) => (
+          <Section
+            icon="timeline"
+            title={t().runTimeline}
+            summary={
+              shown().total > shown().shown
+                ? t().timelineSample({ count: number(shown().shown), total: number(shown().total) })
+                : t().timelineSummary
+            }
+          >
+            <Canvas label={t().runTimeline} height={Math.max(160, 96 + shown().rows.length * 24)}>
+              <Show when={shown().rows.length > 0} fallback={<Empty icon="timeline" text={t().noTimeline} />}>
+                <Chart
+                  kind="stateTimeline"
+                  rows={timelineRows()}
+                  states={TIMELINE_STATES()}
+                  domain={[shown().fromMs, shown().toMs]}
+                  xAxis={{ format: timelineFormat }}
+                  legend
+                  interactive
+                  style={{ height: "100%" }}
+                />
+              </Show>
+            </Canvas>
+          </Section>
+        )}
+      </Show>
       <Show when={!failed()} fallback={<Failed text={t().unavailable({ kind: t().runs })} onRetry={() => void load(state())} />}>
         <Table
           label={t().runs}
@@ -346,13 +508,13 @@ export default function RunsScreen(props: RunsScreenProps) {
         </Show>
         <Show when={single() && pages() > 1}>
           <Bar
-            start={<Text type="meta">{t().pageOf({ page: props.page, pages: pages() })}</Text>}
+            start={<Text type="meta">{t().pageOf({ page: page(), pages: pages() })}</Text>}
             end={
               <>
-                <Button icon="chevron-left" href={href({ page: props.page - 1, run: null })} disabled={props.page <= 1}>
+                <Button icon="chevron-left" href={href({ page: page() - 1, run: null })} disabled={page() <= 1}>
                   {t().previous}
                 </Button>
-                <Button href={href({ page: props.page + 1, run: null })} disabled={props.page >= pages()} forward>
+                <Button href={href({ page: page() + 1, run: null })} disabled={page() >= pages()} forward>
                   {t().next}
                 </Button>
               </>
@@ -362,6 +524,113 @@ export default function RunsScreen(props: RunsScreenProps) {
       </Show>
     </Pane>
   );
+
+  /** Successful job runs counted per minute and job: what the runs list cannot show one by one. */
+  const minutesPane = () => {
+    const data = () => minutes()?.minutes ?? null;
+    const minutePages = () => Math.min(RUNS_PAGE_MAX, Math.max(1, Math.ceil((data()?.total ?? 0) / RUNS_PER_PAGE)));
+    const minuteClock = createMemo(
+      () =>
+        new Intl.DateTimeFormat(locale(), {
+          timeZone: props.timeZone,
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+    );
+    const minuteAt = (iso: string) => {
+      const date = new Date(iso);
+      return Number.isNaN(date.getTime()) ? iso : minuteClock().format(date);
+    };
+    const ms = (value: number | null) => (value === null ? "—" : (duration()(value) ?? "—"));
+    return (
+      <Pane
+        label={t().minutesTab}
+        scrollKey="gateway-ops-run-minutes"
+        status={
+          <>
+            <FilterBar
+              query={query()}
+              state={state()}
+              onChange={change}
+              base={base()}
+              icons={{
+                kind: "list",
+                status: "circle-dashed",
+                app: "apps",
+                time: "clock",
+                category: "tag",
+                duration: "hourglass",
+                source: "code",
+              }}
+              names={props.names}
+            />
+            <StatusRow
+              lead={t().minutesLead({ count: number(data()?.count ?? 0), n: data()?.count ?? 0 })}
+              loading={loading()}
+              facts={
+                data()?.p95DurationMs != null
+                  ? [
+                      { before: "P95", value: ms(data()?.p95DurationMs ?? null) },
+                      { before: t().longest, value: ms(data()?.maxDurationMs ?? null) },
+                    ]
+                  : []
+              }
+            />
+          </>
+        }
+      >
+        <Notice tone="note">{t().minutesNote}</Notice>
+        <Show when={!failed() && !minutes()?.error} fallback={<Failed text={t().minutesUnavailable} onRetry={() => void load(state())} />}>
+          <Table
+            label={t().minutesTab}
+            rows={data()?.minutes ?? []}
+            rowKey={(row) => `${row.at}:${row.appId}:${row.source}:${row.category}:${row.name}`}
+            sticky
+            empty={
+              changed()
+                ? {
+                    icon: "filter-off",
+                    text: t().noMatches,
+                    action: { label: t().resetFilters, icon: "filter-off", href: runsHref(query(), base(), { tab: "minutes" }) },
+                  }
+                : { icon: "check", text: t().noMinutes }
+            }
+            phone={(row) => ({
+              lines: [row.name, [appLabel(row.appId), row.source].filter(Boolean).join(" · ")],
+              time: minuteAt(row.at),
+              marks: <Chip status="ok">{number(row.count)}</Chip>,
+            })}
+            columns={[
+              { title: t().minute, width: { min: 110, default: 120 }, cell: (row) => minuteAt(row.at) },
+              { title: t().name, width: { min: 220, default: 340 }, cell: (row) => ({ lines: [row.name, row.source] }) },
+              { title: t().app, width: { min: 100, default: 130 }, cell: (row) => appChip(row.appId), drop: true },
+              { title: t().count, width: { min: 80, default: 90 }, align: "end", cell: (row) => number(row.count) },
+              { title: t().average, width: { min: 100, default: 110 }, align: "end", cell: (row) => ms(row.avgDurationMs), drop: true },
+              { title: "P95", width: { min: 90, default: 100 }, align: "end", cell: (row) => ms(row.p95DurationMs), drop: true },
+              { title: t().longest, width: { min: 100, default: 110 }, align: "end", cell: (row) => ms(row.maxDurationMs), drop: true },
+            ]}
+          />
+          <Show when={minutePages() > 1}>
+            <Bar
+              start={<Text type="meta">{t().pageOf({ page: page(), pages: minutePages() })}</Text>}
+              end={
+                <>
+                  <Button icon="chevron-left" href={href({ page: page() - 1, run: null })} disabled={page() <= 1}>
+                    {t().previous}
+                  </Button>
+                  <Button href={href({ page: page() + 1, run: null })} disabled={page() >= minutePages()} forward>
+                    {t().next}
+                  </Button>
+                </>
+              }
+            />
+          </Show>
+        </Show>
+      </Pane>
+    );
+  };
 
   const schedulesPane = () => {
     const data = props.schedules;
@@ -436,13 +705,19 @@ export default function RunsScreen(props: RunsScreenProps) {
                   href: runsHref(query(), failedView()),
                   current: props.tab === "runs" && state().filters.status === "failed",
                 },
+                {
+                  label: t().minutesTab,
+                  icon: "chart-bar",
+                  href: runsHref(query(), state(), { tab: "minutes" }),
+                  current: props.tab === "minutes",
+                },
                 { label: t().schedules, icon: "calendar-time", href: `${RUNS_PATH}?tab=schedules`, current: props.tab === "schedules" },
               ]}
             />
           }
           end={
             <>
-              <Show when={props.tab === "runs"}>
+              <Show when={props.tab !== "schedules"}>
                 <Input
                   type="search"
                   icon="search"
@@ -473,7 +748,7 @@ export default function RunsScreen(props: RunsScreenProps) {
         />
       }
     >
-      <Show when={props.tab === "runs"} fallback={schedulesPane()}>
+      <Show when={props.tab === "runs"} fallback={props.tab === "minutes" ? minutesPane() : schedulesPane()}>
         <Pane.Split>
           {runsPane()}
           <Show when={props.run}>

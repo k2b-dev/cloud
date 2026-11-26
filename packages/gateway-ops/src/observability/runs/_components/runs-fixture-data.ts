@@ -1,6 +1,8 @@
+import type { TraceSuccessMinutes } from "@k2b/cloud/services";
+import type { JobTimelineRow } from "../../jobs/service";
 import type { SyncScheduleRow } from "../../sync/service";
 import { kindsOf, parseRunsAddress, RUNS_PER_PAGE, RUNS_PREVIEW, type RunKind, runsQuery } from "../query";
-import type { RunRecord, RunRow, RunsPart } from "../service";
+import type { RunFigures, RunRecord, RunRow, RunsList, RunsPart } from "../service";
 
 // Invented runs for render and browser tests: fixed times, no production data.
 
@@ -181,6 +183,108 @@ export const fixtureParts = (search: string, page = 1, data: FixtureData = "norm
       error: null,
     };
   });
+};
+
+const NOW = Date.parse("2026-11-24T09:44:10.000Z");
+
+/** Key figures of the window, as the stores would count them. */
+const fixtureFigures = (search: string, data: FixtureData): RunFigures => {
+  const kinds = kindsOf(parseRunsAddress(runsQuery("de", FIXTURE_APPS), new URLSearchParams(search)).state);
+  const worst = data === "worst";
+  return {
+    ...(kinds.includes("job")
+      ? {
+          job: worst
+            ? { succeeded: 9_876_543, failed: 12_345, running: 0, stuck: 321, p95DurationMs: 2 * 86_400_000 }
+            : { succeeded: 1_284, failed: 7, running: 1, stuck: 1, p95DurationMs: 12_400 },
+        }
+      : {}),
+    ...(kinds.includes("delivery")
+      ? {
+          delivery: worst
+            ? { total: 0, delivered: 0, failed: 0, active: 0, suppressed: 0 }
+            : { total: 1_502, delivered: 1_468, failed: 3, active: 2, suppressed: 29 },
+        }
+      : {}),
+  };
+};
+
+/** The job lanes of the window, drawn from the job rows: one lane per source, spread over the day as real traces are. */
+const fixtureTimeline = (rows: RunRow[]) => {
+  const fromMs = NOW - 24 * 3_600_000;
+  const lanes = new Map<string, JobTimelineRow>();
+  for (const [index, row] of rows.entries()) {
+    const lane = lanes.get(row.detail) ?? { source: row.detail, label: row.detail, intervals: [] };
+    const from = Math.max(fromMs, NOW - index * 29 * 60_000 - 60_000);
+    const [traceId = "", spanId = ""] = row.ref.id.split(":");
+    lane.intervals.push({
+      from,
+      to: row.durationMs === null ? NOW : Math.min(NOW, from + Math.max(row.durationMs, 216_000)),
+      state: row.status === "running" ? "running" : row.status === "failed" ? "error" : "ok",
+      traceId,
+      spanId,
+      name: row.name,
+      startedAt: row.at,
+      durationMs: row.durationMs,
+      statusMessage: row.status === "failed" ? "Zeitüberschreitung nach 30 s" : null,
+    });
+    lanes.set(row.detail, lane);
+  }
+  return { rows: [...lanes.values()].slice(0, 12), fromMs, toMs: NOW, shown: rows.length, total: rows.length };
+};
+
+/** The runs view for an address: its parts, the figures of its kinds, and the job lanes when only jobs show. */
+export const fixtureList = (search: string, page = 1, data: FixtureData = "normal"): RunsList => {
+  const parts = fixtureParts(search, page, data);
+  const kinds = kindsOf(parseRunsAddress(runsQuery("de", FIXTURE_APPS), new URLSearchParams(search)).state);
+  const onlyJobs = kinds.length === 1 && kinds[0] === "job";
+  return { parts, figures: fixtureFigures(search, data), timeline: onlyJobs ? fixtureTimeline(parts[0]?.rows ?? []) : null };
+};
+
+const MINUTE_JOBS = [
+  { name: "Postfach abgleichen", source: "mail:imap-sync", appId: "mail" },
+  { name: "Vorschaubilder erzeugen", source: "files:thumbnails", appId: "files" },
+  { name: "Suchindex nachziehen", source: "notebooks:reindex", appId: "notebooks" },
+];
+
+/** Successful job runs counted per minute: three jobs over 80 minutes, newest first. */
+export const fixtureMinutes = (page = 1, data: FixtureData = "normal"): TraceSuccessMinutes => {
+  const all =
+    data === "worst"
+      ? [
+          {
+            at: new Date(NOW - 10_000).toISOString(),
+            source: "files:thumbnails:workspace-7f3a9c2e-1b4d-4e8a-9c0d-2b6f1e3a5d7c:regenerate-all",
+            name: "Vorschaubilder für alle Dateien im Ordner „Angebote 2026 / Kunden mit Rahmenvertrag / Nachträge“ neu erzeugen",
+            appId: "werkstatt",
+            category: "job" as const,
+            count: 1_234_567,
+            avgDurationMs: 0,
+            maxDurationMs: 86_400_000 * 3,
+            p95DurationMs: null,
+          },
+        ]
+      : Array.from({ length: 240 }, (_, index) => {
+          const job = MINUTE_JOBS[index % 3]!;
+          return {
+            at: new Date(Math.floor((NOW - Math.floor(index / 3) * 60_000) / 60_000) * 60_000).toISOString(),
+            ...job,
+            category: "job" as const,
+            count: [42, 3, 118][index % 3]! + (index % 5),
+            avgDurationMs: [380, 1_620, 52][index % 3]!,
+            maxDurationMs: [910, 4_100, 140][index % 3]!,
+            p95DurationMs: [800, 3_200, 100][index % 3]!,
+          };
+        });
+  const count = all.reduce((sum, row) => sum + row.count, 0);
+  return {
+    minutes: all.slice((page - 1) * RUNS_PER_PAGE, page * RUNS_PER_PAGE),
+    total: all.length,
+    count,
+    avgDurationMs: data === "worst" ? 0 : 520,
+    maxDurationMs: data === "worst" ? 86_400_000 * 3 : 4_100,
+    p95DurationMs: data === "worst" ? null : 3_200,
+  };
 };
 
 export const fixtureJobRecord: RunRecord = {
