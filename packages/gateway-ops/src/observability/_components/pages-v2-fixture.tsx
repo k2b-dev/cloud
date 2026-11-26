@@ -69,7 +69,6 @@ const earlier = (worst: boolean): LegacyRow[] =>
       worst && index === 1
         ? "Ihre Zugangsdaten für das Kundenportal der Werkstatt Nord – bitte innerhalb von 48 Stunden bestätigen"
         : `Willkommen ${index}`,
-    content: "<p>Hallo</p>",
     sentBy: index % 2 ? "Ada Admin" : null,
     created: "24.11., 09:44",
     error: index % 5 === 0 ? "SMTP 550 mailbox unavailable" : null,
@@ -186,6 +185,10 @@ export const PagesFixture = (props: { screen: PagesFixtureScreen; search: string
         nav={nav}
         view={props.screen === "legacy" ? "legacy" : "registry"}
         open={params.get("notification")}
+        opened={(() => {
+          const row = earlier(worst).find((candidate) => candidate.id === params.get("notification"));
+          return row ? { ...row, content: "<p>Hallo</p>" } : null;
+        })()}
         apps={APPS.map((app) => ({ id: app.id, label: app.label }))}
         page={page}
         registry={
@@ -206,6 +209,7 @@ export const PagesFixture = (props: { screen: PagesFixtureScreen; search: string
                 total: worst ? 3 : 14,
                 cells: cells(worst).slice(0, 3),
                 pendingSystem: worst ? 1_234 : 2,
+                searchFacts: params.get("q") ? ["12.345 Treffer", "1.234 Fehler", "56 ausstehend"] : [],
               }
             : null
         }

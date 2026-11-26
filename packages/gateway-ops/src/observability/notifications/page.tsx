@@ -1,4 +1,5 @@
 import { listApps } from "@k2b/cloud";
+import { hasRole } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
@@ -10,6 +11,8 @@ import { areaText, readAttention } from "../_components/ObservabilityArea";
 import NotificationsScreen from "./_components/NotificationsScreen.island";
 import { legacyQuery, NOTIFICATIONS_PAGE_MAX, NOTIFICATIONS_PER_PAGE, NOTIFICATIONS_SEARCH_MAX, registryQuery } from "./query";
 import { notificationsService } from "./service";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Notifications on v2: the definitions apps register (`tab=registry`) and the notifications sent before the delivery
@@ -81,14 +84,18 @@ export default ssr<AuthContext>(async (c) => {
     view === "legacy"
       ? await (async () => {
           const state = bounded(legacyQuery(locale).parse(params).state);
-          const access = { isAdmin: true, sentBy: user.id };
-          const [result, summary, pendingSystem] = await Promise.all([
+          const access = { isAdmin: hasRole(user, "admin"), sentBy: user.id };
+          // the open notification is read on its own, so it stays open when it no longer matches the list's filter or page
+          const id = params.get("notification");
+          const [result, summary, pendingSystem, searchSummary, opened] = await Promise.all([
             notificationsService.notification.list({
               pagination: paging,
               access: { ...access, search: state.search, status: state.filters.status },
             }),
             notificationsService.notification.summary({ access, days: 7 }),
             notificationsService.system.pendingCount(),
+            state.search ? notificationsService.notification.searchSummary({ access, search: state.search }) : null,
+            id && UUID.test(id) ? notificationsService.notification.get({ id }) : null,
           ]);
           const cells: KeyCell[] = [
             {
@@ -112,16 +119,36 @@ export default ssr<AuthContext>(async (c) => {
             total: result.total,
             cells,
             pendingSystem,
+            // what the search found, beside the list: its hits, and how many of them failed or wait
+            searchFacts: searchSummary
+              ? [
+                  t.matches({ count: number(searchSummary.total) }),
+                  t.errorCountLabel({ count: number(searchSummary.error) }),
+                  t.pendingCountLabel({ count: number(searchSummary.pending) }),
+                ]
+              : [],
             rows: result.items.map((item) => ({
               id: item.id,
               status: item.status,
               recipient: item.recipient,
               subject: item.subject,
-              content: item.content,
               sentBy: item.sentByName ?? null,
               created: formatDateTime(item.createdAt, dateConfig),
               error: item.error ?? null,
             })),
+            opened:
+              opened && (access.isAdmin || opened.sentBy === user.id)
+                ? {
+                    id: opened.id,
+                    status: opened.status,
+                    recipient: opened.recipient,
+                    subject: opened.subject,
+                    content: opened.content,
+                    sentBy: opened.sentByName ?? null,
+                    created: formatDateTime(opened.createdAt, dateConfig),
+                    error: opened.error ?? null,
+                  }
+                : null,
           };
         })()
       : null;
@@ -136,6 +163,7 @@ export default ssr<AuthContext>(async (c) => {
         registry={registry}
         legacy={legacy}
         open={view === "legacy" ? params.get("notification")?.slice(0, 100) || null : null}
+        opened={legacy?.opened ?? null}
       />
     </AdminLayout>
   );

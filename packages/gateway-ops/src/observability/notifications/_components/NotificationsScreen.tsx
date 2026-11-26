@@ -58,11 +58,13 @@ export type LegacyRow = {
   status: "sent" | "pending" | "error";
   recipient: string;
   subject: string;
-  content: string;
   sentBy: string | null;
   created: string;
   error: string | null;
 };
+
+/** The open earlier notification, read on its own: its content too, for editing. */
+export type OpenedNotification = LegacyRow & { content: string };
 
 export type NotificationsScreenProps = {
   nav: NavProps;
@@ -70,9 +72,19 @@ export type NotificationsScreenProps = {
   apps: { id: string; label: string }[];
   page: number;
   registry: { state: RegistryState; rows: DefinitionRow[]; total: number; cells: KeyCell[] } | null;
-  legacy: { state: LegacyState; rows: LegacyRow[]; total: number; cells: KeyCell[]; pendingSystem: number } | null;
-  /** The earlier notification open beside the list (`notification=<id>`). */
+  legacy: {
+    state: LegacyState;
+    rows: LegacyRow[];
+    total: number;
+    cells: KeyCell[];
+    pendingSystem: number;
+    /** With a search: its hits and how many of them failed or wait. */
+    searchFacts: string[];
+  } | null;
+  /** The earlier notification open beside the list (`notification=<id>`) … */
   open: string | null;
+  /** … as the server read it; null when there is none with that id. */
+  opened: OpenedNotification | null;
 };
 
 const CHANNEL_ICON: Record<string, string> = { email: "mail", browser: "browser", push: "device-mobile", chat: "message" };
@@ -108,7 +120,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
     const href = notificationsHref("legacy", earlier().serialize(props.legacy?.state ?? earlier().reset()), props.page);
     return extra.open ? `${href}&notification=${encodeURIComponent(extra.open)}` : href;
   };
-  const opened = () => props.legacy?.rows.find((row) => row.id === props.open) ?? null;
+  const opened = () => props.opened;
 
   const channel = (name: string, required: boolean) => (
     <Chip icon={required ? "lock" : (CHANNEL_ICON[name] ?? "send")}>
@@ -117,9 +129,10 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
   );
 
   // ── Earlier notifications: send again, edit, read the error ────────────────────────────────────────────────────
-  const [editing, setEditing] = createSignal<LegacyRow | null>(null);
+  const [editing, setEditing] = createSignal<OpenedNotification | null>(null);
   const [draft, setDraft] = createSignal({ recipient: "", subject: "", content: "" });
   const [busy, setBusy] = createSignal(false);
+  const [sending, setSending] = createSignal(false);
   const [failure, setFailure] = createSignal<string | null>(null);
   const send = async (row: LegacyRow) => {
     const pending = row.status === "pending";
@@ -129,15 +142,17 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
       confirm: pending ? t().send : t().resend,
     });
     if (!agreed) return;
+    setSending(true);
     const response = await apiClient[":id"].resend.$post({ param: { id: row.id } }).catch(() => null);
     if (!response?.ok) {
+      setSending(false);
       toast(t().notSent, { status: "bad", retry: () => void send(row) });
       return;
     }
     toast(t().notificationResent, { status: "ok" });
     location.reload();
   };
-  const edit = (row: LegacyRow) => {
+  const edit = (row: OpenedNotification) => {
     setDraft({ recipient: row.recipient, subject: row.subject, content: row.content });
     setFailure(null);
     setEditing(row);
@@ -272,6 +287,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
                     ? t().definitionsCount({ count: number(props.registry.rows.length), total: number(props.registry.total) })
                     : t().entriesCount({ count: number(props.legacy?.rows.length ?? 0), total: number(props.legacy?.total ?? 0) })
                 }
+                facts={(props.legacy?.searchFacts ?? []).map((fact) => ({ after: fact }))}
               />
             </>
           }
@@ -405,7 +421,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
             <Show
               when={opened()}
               fallback={
-                <Empty icon="mail-off" text={t().noLegacyNotifications} action={{ label: t().legacyEmailEntries, href: legacyHref() }} />
+                <Empty icon="mail-off" text={t().notificationNotFound} action={{ label: t().legacyEmailEntries, href: legacyHref() }} />
               }
             >
               {(row) => (
@@ -432,7 +448,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
                         <Button icon="pencil" onClick={() => edit(row())}>
                           {t().edit}
                         </Button>
-                        <Button icon="send" onClick={() => void send(row())}>
+                        <Button icon="send" busy={sending()} onClick={() => void send(row())}>
                           {row().status === "pending" ? t().send : t().resend}
                         </Button>
                       </>

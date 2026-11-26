@@ -49,6 +49,7 @@ const definition = (id: string, overrides: Record<string, unknown> = {}) => ({
   active: true,
   ...overrides,
 });
+const OPEN = "6f1c0d2e-0000-4000-8000-000000000009";
 const earlier = (id: string, status: "sent" | "pending" | "error") => ({
   id,
   status,
@@ -103,6 +104,17 @@ test("definitions and earlier notifications render on v2 from the address, with 
     legacyList,
     spyOn(notificationsService.notification, "summary").mockResolvedValue({ sent: 4, pending: 1, error: 1 }),
     spyOn(notificationsService.system, "pendingCount").mockResolvedValue(2),
+    spyOn(notificationsService.notification, "searchSummary").mockResolvedValue({
+      total: 12_345,
+      sent: 0,
+      pending: 56,
+      error: 1_234,
+      system: 0,
+      latestCreatedAt: null,
+    }),
+    spyOn(notificationsService.notification, "get").mockImplementation(async ({ id }) =>
+      id === OPEN ? ({ ...earlier("9", "sent"), id: OPEN, sentBy: null, sentAt: new Date(), type: "email" } as never) : null,
+    ),
   ];
   try {
     const app = server();
@@ -127,6 +139,32 @@ test("definitions and earlier notifications render on v2 from the address, with 
       pagination: { page: 2, perPage: 100, offset: 100 },
       access: { status: "error" },
     });
+
+    // an open notification that no longer matches the list (sent, while the list shows errors) stays open, read on its own
+    const open = await app.request(`/admin/observability/deliveries?tab=legacy&status=error&notification=${OPEN}`, {
+      headers: { "Accept-Language": "de" },
+    });
+    const openHtml = await open.text();
+    expect(read(openHtml)).toContain("Willkommen 9");
+    expect(read(openHtml)).not.toContain("Benachrichtigung nicht gefunden");
+    // the list rows carry no HTML content to the browser; only the open one does, for editing
+    expect((openHtml.match(/Hallo/g) ?? []).length).toBeLessThanOrEqual(1);
+    const gone = read(
+      await (
+        await app.request("/admin/observability/deliveries?tab=legacy&notification=00000000-0000-4000-8000-00000000dead", {
+          headers: { "Accept-Language": "de" },
+        })
+      ).text(),
+    );
+    expect(gone).toContain("Benachrichtigung nicht gefunden");
+
+    // a search says what it found: its hits, and how many failed or wait
+    const searched = read(
+      await (await app.request("/admin/observability/deliveries?tab=legacy&q=willkommen", { headers: { "Accept-Language": "de" } })).text(),
+    );
+    expect(searched).toContain("12.345 Treffer");
+    expect(searched).toContain("1.234 Fehler");
+    expect(searched).toContain("56 ausstehend");
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
