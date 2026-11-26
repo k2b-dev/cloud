@@ -22,7 +22,8 @@ if (root)
     const actions = markdownActions(editor, "de");
     return (
       <LocaleProvider locale="de">
-        <div class="k2-ui" style={{ position: "fixed", inset: "0", display: "flex" }}>
+        {/* `?v1` renders the same page without the v2 scope: the editors as a v1 page shows them */}
+        <div class={location.search.includes("v1") ? undefined : "k2-ui"} style={{ position: "fixed", inset: "0", display: "flex" }}>
           <Workspace head={<Bar start={<Text type="body">Angebot Einbauschrank Flur.md</Text>} />}>
             <Pane.Split>
               <Pane label="Datei" width={{ min: 320, default: 640 }}>

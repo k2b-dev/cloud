@@ -171,8 +171,9 @@ a `Notice` that names the deed.
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
-a code block with highlighting, an image or video viewer, and an assistant
+the mail and chat composer (comes from `@k2b/editor`), the menus of the
+Markdown editor (the editor itself goes into a `Canvas`, where its toolbar
+follows v2), a code block with highlighting, an image or video viewer, and an assistant
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with

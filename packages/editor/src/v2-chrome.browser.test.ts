@@ -71,9 +71,9 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const open = async (width: number) => {
+const open = async (width: number, search = "") => {
   const page = await browser.newPage({ viewport: { width, height: 720 } });
-  await page.goto(server.url.href);
+  await page.goto(`${server.url.href}${search}`);
   await page.waitForFunction(() => document.querySelectorAll(".cm-content").length > 0 && document.querySelector(".k2b-markdown-editor"));
   await settled(page);
   return page;
@@ -128,3 +128,71 @@ for (const width of [1440, 390])
       await page.close();
     }
   }, 30_000);
+
+/** The toolbars' buttons in the order Tab reaches them from the page's start, by their names. */
+const tabOrder = async (page: Page) => {
+  const names: string[] = [];
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  });
+  // one round through the page: Tab until it reaches an element it reached before
+  await page.evaluate(() => Reflect.set(window, "__seen", new WeakSet()));
+  for (let step = 0; step < 80; step++) {
+    await page.keyboard.press("Tab");
+    const stop = await page.evaluate(() => {
+      const element = document.activeElement;
+      const seen: unknown = Reflect.get(window, "__seen");
+      if (!element || !(seen instanceof WeakSet)) return { again: true, name: "" };
+      if (seen.has(element)) return { again: true, name: "" };
+      seen.add(element);
+      if (!element.closest(".k2b-markdown-editor__toolbar, [data-k2b-editor-toolbar]")) return { again: false, name: "" };
+      return { again: false, name: element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "" };
+    });
+    if (stop.again) break;
+    if (stop.name) names.push(stop.name);
+  }
+  return names;
+};
+/** Every toolbar button by its accessible name, in the order of the page. */
+const toolbarNames = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll(".k2b-markdown-editor__toolbar button, [data-k2b-editor-toolbar] button")].map(
+      (button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "",
+    ),
+  );
+
+test("inside v2 the toolbars keep every name and the focus order they have in a v1 page", async () => {
+  const [v1, v2] = [await open(1440, "?v1"), await open(1440)];
+  try {
+    const names = await toolbarNames(v2);
+    expect(names.length).toBeGreaterThan(15);
+    expect(names.every((name) => name.length > 0)).toBe(true);
+    expect(names).toEqual(await toolbarNames(v1));
+    expect(await tabOrder(v2)).toEqual(await tabOrder(v1));
+  } finally {
+    await v1.close();
+    await v2.close();
+  }
+}, 30_000);
+
+test("nothing in the toolbars moves once the page stands: a hover and a press keep every button in place", async () => {
+  const page = await open(1440);
+  try {
+    const boxes = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".k2b-markdown-editor__toolbar button, [data-k2b-editor-toolbar] button")].map((button) => {
+          const { left, top, width, height } = button.getBoundingClientRect();
+          return [left, top, width, height].map(Math.round).join(",");
+        }),
+      );
+    const before = await boxes();
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 300)));
+    const button = page.locator("[data-k2b-editor-toolbar] button").first();
+    await button.hover();
+    await button.click();
+    await settled(page);
+    expect(await boxes()).toEqual(before);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
