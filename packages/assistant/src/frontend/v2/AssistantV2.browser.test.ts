@@ -115,14 +115,20 @@ const storedTabs = (chatId: string) => ({
   },
 });
 /** A Project the person opened: its chats and what Gustav knows there, as the server reads them. */
-const projectOf = (projectId: string, conversations: AiConversationLike[]) => {
-  const project = fixtureProjects("usual").find((entry) => entry.id === projectId);
+const projectOf = (projectId: string, conversations: AiConversationLike[], state: AssistantV2FixtureState = "usual") => {
+  const project = fixtureProjects(state === "empty" ? "usual" : state).find((entry) => entry.id === projectId);
   if (!project) return null;
   const items = conversations.filter((conversation) => conversation.projectId === projectId);
   const stamp = "2026-11-20T08:00:00.000Z";
   return {
     project,
-    chats: { items, total: items.length, page: 1, perPage: 20, hasNext: false },
+    // The worst Project has the 500 chats a busy year brings; the empty one has none yet.
+    chats:
+      state === "worst"
+        ? { items: conversations.slice(0, 20).map((chat) => ({ ...chat, projectId })), total: 500, page: 1, perPage: 20, hasNext: true }
+        : state === "empty"
+          ? { items: [], total: 0, page: 1, perPage: 20, hasNext: false }
+          : { items, total: items.length, page: 1, perPage: 20, hasNext: false },
     context: {
       projectId,
       skills: { items: [], page: 1, hasNext: false },
@@ -151,6 +157,35 @@ const projectOf = (projectId: string, conversations: AiConversationLike[]) => {
         },
       ],
       references: [],
+      ...(state === "worst"
+        ? {
+            knowledge: [
+              {
+                id: "kn9",
+                shortId: "kn9",
+                projectId,
+                title: "Auflagen der unteren Denkmalschutzbehörde für Fenster, Dachgauben und Fassadenfarbe (Bescheid vom 3. März)",
+                content: "# Auflagen",
+                createdAt: stamp,
+                updatedAt: stamp,
+              },
+              { id: "kn8", shortId: "kn8", projectId, title: "🏛️ Förderung KfW 261", content: "# KfW", createdAt: stamp, updatedAt: stamp },
+              { id: "kn7", shortId: "kn7", projectId, title: "見積もり条件", content: "# 条件", createdAt: stamp, updatedAt: stamp },
+              { id: "kn6", shortId: "kn6", projectId, title: "Ö", content: "# Ö", createdAt: stamp, updatedAt: stamp },
+            ],
+            files: [
+              {
+                id: "fi9",
+                shortId: "fi9",
+                projectId,
+                path: "Pläne/Bestand/Grundriss_Erdgeschoss_Hauptstrasse_12_Stand_2026-11-03_final_v7_freigegeben.pdf",
+                mediaType: "application/pdf",
+                size: 48_000_000,
+                updatedAt: stamp,
+              },
+            ],
+          }
+        : {}),
     },
   };
 };
@@ -212,13 +247,16 @@ const propsOf = (scene: Scene, url: URL) => {
     projects: fixtureProjects(state),
     ...(() => {
       const opened = url.searchParams.get("project");
-      const project = opened ? projectOf(opened, conversations) : null;
+      const project = opened ? projectOf(opened, conversations, state) : null;
       return {
         initialProject: project?.project ?? null,
         initialProjectChats: project?.chats ?? null,
         initialProjectContext: project?.context ?? null,
       };
     })(),
+    // The settings pages, as the server reads them from the address.
+    initialPrefsTab: url.searchParams.get("prefs") ? (url.searchParams.get("prefs") as "personalization") : null,
+    initialProjectSettings: url.searchParams.get("settings") === "1",
     approvals:
       url.searchParams.get("approvals") === "1"
         ? {
@@ -229,7 +267,7 @@ const propsOf = (scene: Scene, url: URL) => {
     ...(url.searchParams.get("approvals") === "1" ? { initialAutomations: scene.waiting ? FIXTURE_AUTOMATIONS : [] } : {}),
     code:
       url.pathname === "/app/assistant/code"
-        ? { has: true, open: true, page: myAppsFixture("normal").initial }
+        ? { has: true, open: true, page: myAppsFixture(state === "worst" ? "schlimm" : state === "empty" ? "leer" : "normal").initial }
         : { has: true, open: false },
     initialCodeBlock: null,
   };
@@ -344,7 +382,31 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
           updatedAt: FIXTURE_NOW,
         },
       });
-    if (url.pathname === "/api/ai/memories" && method === "GET") return route.fulfill({ json: [] });
+    if (url.pathname === "/api/ai/memories" && method === "GET")
+      return route.fulfill({
+        json:
+          scene.state === "worst"
+            ? [
+                "Rechnungen von Steinwerk Nord immer gegen das Angebot prüfen, zuerst die Montagestunden, dann die Anfahrt und zuletzt die Materialpreise, und nie ohne Rücksprache einen Abzug ankündigen.",
+                "🪚 Werkstatt schließt freitags um 14 Uhr",
+                "日本の取引先には丁寧語で書く",
+                "Ö",
+              ].map((content, index) => ({
+                id: `mem${index}`,
+                shortId: `mem${index}`,
+                userId: "user-mira",
+                kind: index === 1 ? "fact" : "preference",
+                content,
+                priority: index === 0 ? "pinned" : "normal",
+                source: "user",
+                sourceConversationId: null,
+                sourceMessageId: null,
+                resourceRef: null,
+                createdAt: FIXTURE_NOW,
+                updatedAt: FIXTURE_NOW,
+              }))
+            : [],
+      });
     if (url.pathname === "/api/ai/prefs/system-prompt" && method === "GET")
       return route.fulfill({ json: { prompt: "Du bist Gustav, der Assistent von Mira.", renderedAt: FIXTURE_NOW } });
     if (url.pathname === "/api/ai/approval-preferences" && method === "GET") return route.fulfill({ json: { approvals: [] } });
@@ -375,7 +437,8 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
       const items = (archivedView ? conversations.slice(0, 2).map((chat) => ({ ...chat, archivedAt: FIXTURE_NOW })) : conversations).filter(
         (chat) => !q || chat.title.toLocaleLowerCase().includes(q),
       );
-      return route.fulfill({ json: { items: items.slice(0, 20), total: items.length, page: 1, perPage: 20, hasNext: items.length > 20 } });
+      const total = scene.state === "worst" && !q ? 500 : items.length;
+      return route.fulfill({ json: { items: items.slice(0, 20), total, page: 1, perPage: 20, hasNext: total > 20 } });
     }
     if (url.pathname.endsWith("/restore") && method === "POST") {
       const id = url.pathname.split("/").at(-2);
@@ -595,6 +658,58 @@ describe("Assistant on v2", () => {
         await context.close();
       }
     }, 60_000);
+
+  /** break-ui: every screen with the worst realistic data and with none; each break is named, by screen and width. */
+  const SCREENS = [
+    { name: "apps", address: "/app/assistant/code", pane: "Meine Apps & Automationen", states: ["worst", "empty"] },
+    {
+      name: "project",
+      address: "/app/assistant?project=Prj09",
+      pane: "Sanierung Altbau Hauptstraße 12 mit Denkmalschutzauflagen und Fördermitteln",
+      states: ["worst"],
+    },
+    { name: "project-empty", address: "/app/assistant?project=Prj01", pane: "Werkstatt Angebote", states: ["empty"] },
+    { name: "prefs", address: "/app/assistant?prefs=personalization", pane: "Personalisieren", states: ["worst", "empty"] },
+    { name: "project-settings", address: "/app/assistant?project=Prj09&settings=1", pane: "Projekt-Einstellungen", states: ["worst"] },
+  ] as const;
+  for (const view of [phone, wide])
+    test(`${view.name} break-ui: every Assistant screen holds its worst and its empty data`, async () => {
+      const breaks: Record<string, string[]> = {};
+      for (const screen of SCREENS)
+        for (const state of screen.states) {
+          const { context, page, errors, unanswered } = await open(view, screen.address, { state, open: false });
+          try {
+            const pane = page.locator(`[data-k2-part="Pane"][aria-label="${screen.pane}"]`).first();
+            await pane.waitFor({ timeout: 10_000 }).catch(() => undefined);
+            await settled(page);
+            await shoot(page, `${view.name}-break-${screen.name}-${state}`);
+            const found = [
+              ...((await pane.count()) === 0 ? [`no pane "${screen.pane}"`] : []),
+              ...(await layoutProblems(page)),
+              ...errors,
+              ...unanswered.map((entry) => `unanswered ${entry}`),
+            ];
+            if (found.length) breaks[`${screen.name} ${state}`] = found;
+          } finally {
+            await context.close();
+          }
+        }
+      if (view === wide) {
+        // All chats: the worst history of 500 chats, opened from the sidebar.
+        const { context, page, errors, unanswered } = await open(view, "/app/assistant", { state: "worst" });
+        try {
+          await page.locator('[data-k2-part="Nav"]').getByText("Alle Chats", { exact: true }).click();
+          await page.getByRole("dialog", { name: "Alle Chats" }).locator('[data-k2-part="Row"]').first().waitFor();
+          await settled(page);
+          await shoot(page, `${view.name}-break-all-chats-worst`);
+          const found = [...(await layoutProblems(page)), ...errors, ...unanswered.map((entry) => `unanswered ${entry}`)];
+          if (found.length) breaks["all-chats worst"] = found;
+        } finally {
+          await context.close();
+        }
+      }
+      expect(breaks).toEqual({});
+    }, 240_000);
 
   test("on the phone the chat fills the screen and its composer stands in view", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant");
