@@ -1,11 +1,11 @@
 import { password } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Button, Chip, Dialog, Facts, Field, Input, Progress, Text } from "@k2b/ui/v2";
-import { type Accessor, createMemo, createSignal, Show } from "solid-js";
+import { Button, Dialog, Facts, Field, Input, Progress, Text } from "@k2b/ui/v2";
+import { type Accessor, createMemo, createSignal } from "solid-js";
 import { passwordSetupMessages } from "./password-setup-messages";
 
-/** How strong a password is, in colour, sign and word: never a colour alone. */
-const strengthStatus = (score: number) => (score <= 1 ? "bad" : score === 2 ? "warn" : "ok");
+/** How strong a password is, in the meter's tone beside its word: never a colour alone. */
+const strengthStatus = (score: number) => (score <= 1 ? ("bad" as const) : score === 2 ? ("warn" as const) : undefined);
 
 /**
  * The new-password fields on a v2 page (reset and expired password): a new password with "Generate" at its end, its
@@ -58,7 +58,6 @@ export function PasswordSetupFieldsV2(props: {
             props.onNewPasswordChange(value);
             setFilled(false);
           }}
-          placeholder={t().newPassword}
           autocomplete="new-password"
           autofocus={props.autofocus}
           end={<Button variant="ghost" icon="dice" label={t().generate} onClick={generate} />}
@@ -69,10 +68,13 @@ export function PasswordSetupFieldsV2(props: {
           {
             label: t().strength,
             value: (
-              <Show when={props.newPassword().length > 0} fallback={<Text muted>{t().noPassword}</Text>}>
-                <Progress value={strength().score + 1} of={5} />
-                <Chip status={strengthStatus(strength().score)}>{words()[strength().score]}</Chip>
-              </Show>
+              // one meter from the start, so nothing moves when typing begins: its fill, its tone and its word say the same
+              <Progress
+                value={props.newPassword().length > 0 ? strength().score + 1 : 0}
+                of={5}
+                label={props.newPassword().length > 0 ? words()[strength().score] : t().noPassword}
+                status={props.newPassword().length > 0 ? strengthStatus(strength().score) : undefined}
+              />
             ),
             hint: advice(),
           },
@@ -85,7 +87,6 @@ export function PasswordSetupFieldsV2(props: {
           type="password"
           value={props.confirmPassword()}
           onInput={props.onConfirmPasswordChange}
-          placeholder={t().confirmPassword}
           autocomplete="new-password"
         />
       </Field>

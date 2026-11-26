@@ -5,11 +5,11 @@ import { join, resolve } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { auth } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
+import { serveCoreV2Sheet } from "@k2b/cloud/testing";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { serveCoreV2Sheet } from "../../../../tests/fixtures/core-v2-sheet";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { authMessages } from "./auth/messages";
@@ -31,14 +31,15 @@ const { buildTablerIconAssets } = await import("../../scripts/tabler-assets");
 const origin = "https://cloud.example.test";
 
 // An invented privacy text: headings, a list, a link and a paragraph long enough to wrap.
+// The operator wrote it in German, as a venue in Germany does; the page shows it as written in every language.
 const privacyText = [
-  "## Who is responsible",
-  "Kulturhaus Beispiel e.V., Musterweg 1, 12345 Beispielstadt.",
-  "## What this Cloud stores",
-  "- your name and email address, to sign you in",
-  "- the files and notes you add, until you delete them",
-  "- sign-in times, for 30 days, to protect your account",
-  "This Cloud runs on the association's own servers. Nothing is shared with advertisers or sold, and every person can ask for a copy or the deletion of their data at [privacy@example.test](mailto:privacy@example.test).",
+  "## Wer verantwortlich ist",
+  "Kulturhaus Beispiel e. V., Musterweg 1, 12345 Beispielstadt.",
+  "## Was diese Cloud speichert",
+  "- deinen Namen und deine E-Mail-Adresse, um dich anzumelden",
+  "- die Dateien und Notizen, die du anlegst, bis du sie löschst",
+  "- Anmeldezeiten für 30 Tage, zum Schutz deines Kontos",
+  "Diese Cloud läuft auf den eigenen Servern des Vereins. Nichts wird an Werbende weitergegeben oder verkauft, und jede Person kann unter [datenschutz@example.org](mailto:datenschutz@example.org) eine Kopie oder die Löschung ihrer Daten verlangen.",
 ].join("\n\n");
 
 const pendingUser: User = {
@@ -62,12 +63,12 @@ const pendingUser: User = {
 };
 
 let legalContent = privacyText;
+// Core serves v2.css, so the pages link it alone (restored after this file).
+serveCoreV2Sheet();
 const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
   legalContent = privacyText;
   spies.push(
-    // Core serves v2.css, so the pages link it alone.
-    serveCoreV2Sheet(),
     spyOn(services.coreSettings, "get").mockImplementation(
       async (key) =>
         (key === "app.name"

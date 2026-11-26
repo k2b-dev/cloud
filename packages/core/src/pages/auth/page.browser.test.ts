@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import * as services from "@k2b/cloud/services";
+import { serveCoreV2Sheet } from "@k2b/cloud/testing";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { serveCoreV2Sheet } from "../../../../../tests/fixtures/core-v2-sheet";
 import { launchBrowser, pageErrors, settled, storedCookie } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { authMessages } from "./messages";
@@ -27,15 +27,24 @@ const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets")
 const publicDir = join(root, "public");
 const origin = "https://cloud.example.test";
 
+// Core serves v2.css, so the pages link it alone (restored after this file).
+serveCoreV2Sheet();
 const spies: Array<{ mockRestore(): void }> = [];
+/** The account types the page offers; the layout checks use a venue's, the flows every type. */
+let policy = DEFAULT_ACCOUNT_CATEGORY_POLICY;
 beforeEach(() => {
   spies.push(
     spyOn(services.coreSettings, "get").mockImplementation(
-      async (key) => (key === "freeipa.enable" ? true : key === "app.contact_email" ? "help@cloud.example.test" : undefined) as never,
+      async (key) =>
+        (key === "freeipa.enable"
+          ? true
+          : key === "app.contact_email"
+            ? "help@cloud.example.test"
+            : key === "app.name"
+              ? "Kulturhaus Cloud"
+              : undefined) as never,
     ),
-    spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
-    // Core serves v2.css, so the page links it alone.
-    serveCoreV2Sheet(),
+    spyOn(services, "readAccountCategoryPolicy").mockImplementation(async () => policy),
     spyOn(services.appApproval, "config").mockResolvedValue({
       issuer: "https://cloud.example.test",
       appOrigin: "https://auth.example.test",
@@ -285,13 +294,19 @@ const desktop = { width: 1440, height: 900, touch: false };
 const forms = {
   password: "?method=ipa",
   app: "?method=ipa&credential=app",
-  guest: "?method=guest",
   login: "?method=login&credential=legacy",
   admin: "?method=admin",
+};
+/** What an operator of a venue offers: its own accounts under its own name and FreeIPA, no guest accounts. */
+const venuePolicy = {
+  ...DEFAULT_ACCOUNT_CATEGORY_POLICY,
+  guest: { enabled: false, visible: false },
+  login: { ...DEFAULT_ACCOUNT_CATEGORY_POLICY.login, label: "Cloud-Konto" },
 };
 
 describe("sign-in page in a browser", () => {
   test("is one centred column on the page at 1440 and the whole width on a phone, clean in v2, for every form and language", async () => {
+    policy = venuePolicy;
     // Where the column starts at 1440, by form: switching the account type never moves the head.
     const tops = new Set<number>();
     for (const locale of ["en", "de"] as const) {
@@ -334,6 +349,7 @@ describe("sign-in page in a browser", () => {
       }
     }
     expect([...tops]).toHaveLength(1);
+    policy = DEFAULT_ACCOUNT_CATEGORY_POLICY;
   }, 120_000);
 
   test("names a remembered account and focuses its password instead", async () => {

@@ -73,7 +73,7 @@ export default ssr(async (c) => {
     activeMethod &&
     activeMethod !== "email";
   const categoryLabel = (category: AccountCategory) =>
-    category === "login" ? policy.login.label : category === "guest" ? "Guest" : "FreeIPA";
+    category === "login" ? policy.login.label : category === "guest" ? t.guest : "FreeIPA";
 
   const buildMethodUrl = (nextMethod: AccountCategory | "admin") => {
     const methodParams = new URLSearchParams();

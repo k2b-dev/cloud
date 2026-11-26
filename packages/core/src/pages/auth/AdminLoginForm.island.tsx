@@ -47,7 +47,7 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
         }}
       />
       <Band>
-        <Field label={t().adminToken}>
+        <Field label={t().token}>
           <Input
             form={formId}
             icon="shield"
@@ -81,7 +81,7 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
             disabled={requiresRecovery() && !restoreLocalLogin()}
             busy={mutation.loading()}
           >
-            {mutation.loading() ? t().signingIn : t().signInWithAdminToken}
+            {mutation.loading() ? t().signingIn : t().signIn}
           </Button>
         }
       />

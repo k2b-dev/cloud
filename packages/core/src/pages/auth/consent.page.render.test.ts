@@ -6,8 +6,8 @@ import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { auth } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
+import { serveCoreV2Sheet } from "@k2b/cloud/testing";
 import { Hono } from "hono";
-import { serveCoreV2Sheet } from "../../../../../tests/fixtures/core-v2-sheet";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "core-consent-page-tests-"));
@@ -40,11 +40,11 @@ const pendingUser: User = {
   manages: [],
   managesGroupIds: [],
 };
+// Core serves v2.css, so the pages link it alone (restored after this file).
+serveCoreV2Sheet();
 const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
   spies.push(
-    // Core serves v2.css, so the page links it alone.
-    serveCoreV2Sheet(),
     spyOn(auth.session, "getToken").mockReturnValue(null),
     spyOn(services.legalConsent, "pending").mockResolvedValue({ user: pendingUser, sid: "consent-session", authEpoch: 0 }),
     spyOn(services.legalConsent, "documents").mockResolvedValue({ documents: [...documents], version }),

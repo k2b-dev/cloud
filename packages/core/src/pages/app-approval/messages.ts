@@ -24,7 +24,7 @@ export const appApprovalMessages = i18n.define({
       devices: "Paired devices",
       pair: "Pair a device",
       identifier: "Email or username",
-      identifierPlaceholder: "Email or username",
+      identifierPlaceholder: "e.g. eva or eva@example.org",
       signIn: "Sign in with app",
       accountMismatch:
         "Sign in with the account already open in this browser. If your session expired, open the sign-in page and start again.",
@@ -150,7 +150,7 @@ export const appApprovalMessages = i18n.define({
       devices: "Gekoppelte Geräte",
       pair: "Gerät koppeln",
       identifier: "E-Mail oder Kürzel",
-      identifierPlaceholder: "E-Mail oder Kürzel",
+      identifierPlaceholder: "z. B. eva oder eva@example.org",
       signIn: "Mit App anmelden",
       accountMismatch:
         "Melde dich mit dem Konto an, das in diesem Browser geöffnet ist. Falls deine Sitzung abgelaufen ist, öffne die Anmeldeseite und beginne erneut.",

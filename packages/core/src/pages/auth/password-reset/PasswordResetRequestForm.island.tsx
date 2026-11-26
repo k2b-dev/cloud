@@ -61,7 +61,7 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
             type="email"
             value={email()}
             onInput={setEmail}
-            placeholder="you@example.org"
+            placeholder={t().emailExample}
             autocomplete="email"
             autofocus
           />

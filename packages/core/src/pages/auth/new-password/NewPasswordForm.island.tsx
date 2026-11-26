@@ -105,7 +105,6 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
                 type="password"
                 value={currentPassword()}
                 onInput={setCurrentPassword}
-                placeholder={t().currentPassword}
                 autocomplete="current-password"
                 autofocus={!!props.defaultUsername}
               />

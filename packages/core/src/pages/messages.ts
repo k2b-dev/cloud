@@ -14,7 +14,8 @@ export const corePageMessages = i18n.define({
       terms: "Terms of Service",
       privacy: "Privacy Policy",
       imprint: "Imprint",
-      legalNotConfigured: ({ title }: { title: string }) => `${title} is not configured. An administrator can add it in`,
+      legalNotConfigured: ({ title }: { title: string }) =>
+        `${title} has not been published yet. The operators of this Cloud can tell you more.`,
     },
     de: {
       pageNotFound: "Seite nicht gefunden",
@@ -27,7 +28,8 @@ export const corePageMessages = i18n.define({
       terms: "Nutzungsbedingungen",
       privacy: "Datenschutzerklärung",
       imprint: "Impressum",
-      legalNotConfigured: ({ title }) => `${title} ist nicht eingerichtet. Die Administration kann den Inhalt hier hinterlegen:`,
+      legalNotConfigured: ({ title }) =>
+        `Die Seite „${title}“ ist noch nicht veröffentlicht. Die Betreiber dieser Cloud geben dir Auskunft.`,
     },
   },
 });
