@@ -13,9 +13,13 @@ import LoremIpsumGenerator from "./tools/LoremIpsumGenerator.island";
 import MailtoGenerator from "./tools/MailtoGenerator.island";
 import PasswordGenerator from "./tools/PasswordGenerator.island";
 import QrCodeGenerator from "./tools/QrCodeGenerator.island";
+import SpeedTest from "./tools/SpeedTest.island";
 import UuidGenerator from "./tools/UuidGenerator.island";
+import WebhookTester from "./tools/WebhookTester.island";
+import { webhookHarness } from "./tools/webhook-tester.harness";
 
-// One Tools screen on v2 per address: `?screen=catalog` (with `q`), or a tool id.
+// One Tools screen on v2 per address: `?screen=catalog` (with `q`), or a tool id. The webhook tester stands at its own
+// address (`/tools/webhooks`, with `?fixture=`), because its links lead there.
 export const v2Screens: Record<string, () => JSX.Element> = {
   catalog: () => <ToolCatalog search={new URL(location.href).searchParams.get("q") ?? ""} />,
   password: () => <PasswordGenerator />,
@@ -29,6 +33,12 @@ export const v2Screens: Record<string, () => JSX.Element> = {
   qr: () => <QrCodeGenerator />,
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
+  speedtest: () => <SpeedTest server="https://speedtest.example.test" enabled />,
+  // once per page: a prop getter would build a fresh fixture store (and fetch stand-in) on every read of `data`
+  webhooks: () => {
+    const data = webhookHarness();
+    return <WebhookTester data={data} />;
+  },
 };
 
 // The photo editor with photos open: they are opened in the browser first, as a drop opens them.
@@ -40,7 +50,7 @@ const photoScreens: Record<string, { count: number; mode?: "markup"; reverse?: b
 };
 
 const params = new URL(location.href).searchParams;
-const screen = params.get("screen") ?? "catalog";
+const screen = location.pathname === "/tools/webhooks" ? "webhooks" : (params.get("screen") ?? "catalog");
 const photos = photoScreens[screen];
 // an IIFE bundle has no top-level await
 void (async () => {

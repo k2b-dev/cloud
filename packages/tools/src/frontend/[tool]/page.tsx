@@ -19,26 +19,25 @@ import QrCodeGenerator from "../tools/QrCodeGenerator.island";
 import { registryMessages, resolveRegistry } from "../tools/registry";
 import SpeedTest from "../tools/SpeedTest.island";
 import UuidGenerator from "../tools/UuidGenerator.island";
-import WebhookTester, { parseWebhookTesterState, type WebhookTesterInitialState } from "../tools/WebhookTester.island";
+import WebhookTester from "../tools/WebhookTester.island";
+import { loadWebhookTester, type WebhookTesterData } from "../tools/webhook-page-data";
 
-const toolComponents: Record<
-  string,
-  (props: {
-    speedtestConfig?: { server: string; enabled: boolean };
-    webhookState?: WebhookTesterInitialState;
-    baseHref?: string;
-  }) => JSX.Element
-> = {
+type ToolProps = {
+  speedtestConfig?: { server: string; enabled: boolean };
+  webhookData?: WebhookTesterData;
+};
+
+const toolComponents: Record<string, (props: ToolProps) => JSX.Element> = {
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
-  speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
-  webhooks: (props) => <WebhookTester initialState={props.webhookState} baseHref={props.baseHref} />,
 };
 
 /** The tools on v2; each island renders the whole Tools screen with its own panes. */
-const v2Tools: Partial<Record<string, () => JSX.Element>> = {
+const v2Tools: Partial<Record<string, (props: ToolProps) => JSX.Element>> = {
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
+  speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
+  webhooks: (props) => (props.webhookData ? <WebhookTester data={props.webhookData} /> : null),
   password: () => <PasswordGenerator />,
   uuid: () => <UuidGenerator />,
   lorem: () => <LoremIpsumGenerator />,
@@ -61,16 +60,16 @@ export default ssr<AuthContext>(async (c) => {
 
   const renderTool = toolComponents[tool.id];
   const speedtestConfig = tool.id === "speedtest" ? await readSpeedtestConfig() : undefined;
-  const webhookState = tool.id === "webhooks" ? parseWebhookTesterState(new URL(c.req.url)) : undefined;
+  const webhookData = tool.id === "webhooks" ? await loadWebhookTester(c, new URL(c.req.url)) : undefined;
   const breadcrumbs = [{ title: labels.home, href: "/" }, { title: labels.appName, href: "/tools" }, { title: tool.name }];
-  const regionLayout = tool.id === "webhooks";
+  const regionLayout = false;
   // A tool rebuilt on v2 is its own whole screen (the Tools frame comes with it); the others keep the v1 frame until
   // they move too.
   const v2 = v2Tools[tool.id];
   if (v2)
     return () => (
       <Layout c={c} fullWidth ui="v2" title={breadcrumbs}>
-        {v2()}
+        {v2({ speedtestConfig, webhookData })}
       </Layout>
     );
 
@@ -78,11 +77,11 @@ export default ssr<AuthContext>(async (c) => {
     <Layout c={c} fullPage workspaceSidebarCollapsible title={breadcrumbs}>
       <ToolsWorkspace activeToolId={tool.id} layout={regionLayout ? "regions" : "main"}>
         {regionLayout ? (
-          renderTool?.({ speedtestConfig, webhookState, baseHref: `/tools/${tool.id}` })
+          renderTool?.({})
         ) : (
           <div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">
             <ShowToolHeader icon={tool.icon} name={tool.name} description={tool.description} />
-            {renderTool?.({ speedtestConfig, baseHref: `/tools/${tool.id}` })}
+            {renderTool?.({})}
           </div>
         )}
       </ToolsWorkspace>

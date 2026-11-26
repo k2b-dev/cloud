@@ -9,6 +9,7 @@ import {
   resolvePublicNetworkAddresses,
 } from "@k2b/cloud/services/network-security";
 import { networkAddressFamily, normalizeNetworkHostname } from "@k2b/cloud/shared";
+import { WEBHOOK_LOG_LIMIT } from "../api/webhook-limit";
 
 export type WebhookEndpoint = {
   id: string;
@@ -392,7 +393,7 @@ export const webhookTesterService = {
           OR COALESCE(error, '') ILIKE '%' || ${clean.query} || '%'
         )
       ORDER BY created_at DESC
-      LIMIT 100
+      LIMIT ${WEBHOOK_LOG_LIMIT}
     `;
     return rows.map(mapLog);
   },
@@ -424,7 +425,7 @@ export const webhookTesterService = {
           OR COALESCE(error, '') ILIKE '%' || ${clean.query} || '%'
         )
       ORDER BY created_at DESC
-      LIMIT 100
+      LIMIT ${WEBHOOK_LOG_LIMIT}
     `;
     return rows.map(mapLog);
   },
