@@ -164,7 +164,7 @@ inside it.
 when more exist than are loaded. Use it by default for every list whose
 length you do not control: only the rows in view and a margin around them
 are in the page, the server renders the first rows (no shift on hydration),
-the focused row stays while it scrolls away, and each row says where it
+a list of at most 40 entries stays whole as the server sent it, the focused row stays while it scrolls away, and each row says where it
 stands (`aria-posinset`, `aria-setsize`). "Weitere laden" stays a `Band`
 with a text `Button` after the list. Write rows out only for a few fixed
 ones. A row that is not in the page now (the row to give the focus back
