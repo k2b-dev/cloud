@@ -214,24 +214,26 @@ for (const width of [1440, 390])
         "Cloud fragt in einem Takt nach.",
       );
       expect(await kinds.locator(".k2-icon:not([aria-hidden='true'])").count()).toBe(0);
-      // the cards touch: one frame around them, a hairline between them, no gap
+      // the cards touch: one frame around them and a hairline between them; four stand two by two, a column on the phone
       const boxes = await kinds.locator(".k2-choice").evaluateAll((cards) =>
         cards.map((card) => {
           const box = card.getBoundingClientRect();
           return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
         }),
       );
-      expect(boxes).toHaveLength(3);
-      for (let index = 1; index < boxes.length; index++) {
-        const [before, after] = [boxes[index - 1]!, boxes[index]!];
-        if (width >= 768) {
-          expect(Math.abs(after.left - before.right)).toBeLessThan(1);
-          expect(Math.abs(after.top - before.top)).toBeLessThan(1);
-          expect(Math.abs(after.width - before.width)).toBeLessThan(1);
-        } else {
-          expect(Math.abs(after.top - before.bottom)).toBeLessThan(1);
-          expect(Math.abs(after.left - before.left)).toBeLessThan(1);
-        }
+      expect(boxes).toHaveLength(4);
+      const near = (a: number, b: number) => Math.abs(a - b) <= 1.5;
+      const [first, second, third, fourth] = boxes as [(typeof boxes)[0], (typeof boxes)[0], (typeof boxes)[0], (typeof boxes)[0]];
+      if (width >= 768) {
+        expect([near(second.left, first.right), near(second.top, first.top), near(second.width, first.width)]).toEqual([true, true, true]);
+        expect([near(third.top, first.bottom), near(third.left, first.left), near(fourth.left, second.left)]).toEqual([true, true, true]);
+      } else {
+        for (const [before, after] of [
+          [first, second],
+          [second, third],
+          [third, fourth],
+        ] as const)
+          expect([near(after.top, before.bottom), near(after.left, before.left)]).toEqual([true, true]);
       }
       const frame = await kinds.evaluate((group) => {
         const style = getComputedStyle(group);
@@ -258,6 +260,17 @@ for (const width of [1440, 390])
           .nth(2)
           .evaluate((card) => getComputedStyle(card).boxShadow),
       ).toContain("2px");
+      // an option that cannot be chosen now is dimmed and never chosen: the arrows pass it (where they go on from the
+      // end is the browser's: Chromium wraps to the first, WebKit stays), and a press does nothing
+      const mail = kinds.getByRole("radio", { name: "E-Mail", exact: true });
+      expect(await mail.isDisabled()).toBe(true);
+      await page.keyboard.press("ArrowRight");
+      await settled(page);
+      expect(await mail.isChecked()).toBe(false);
+      await kinds.getByText("E-Mail", { exact: true }).click({ force: true });
+      await settled(page);
+      expect(await mail.isChecked()).toBe(false);
+      expect(await kinds.locator(".k2-choice").nth(3).getAttribute("data-disabled")).toBe("");
     }, width);
   });
 

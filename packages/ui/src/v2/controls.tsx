@@ -1204,6 +1204,8 @@ export type ChoiceOption =
       icon?: string;
       /** One line under the words that says what the option means; it describes the option, the words name it. */
       hint?: string;
+      /** This option cannot be chosen now, the others can: dimmed and skipped by the arrows; say why in its `hint`. */
+      disabled?: boolean;
     };
 
 export type ChoiceProps = {
@@ -1304,7 +1306,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
       ref={group}
       class="k2-choices"
       data-k2-part="Choice"
-      data-cards={props.cards ? "" : undefined}
+      // the number of cards sets their rows: up to three in one, four as two by two
+      data-cards={props.cards ? String(props.options.length) : undefined}
       data-keyed={keyed() ? "" : undefined}
       onFocusIn={() => setKeyed(focusFromKeyboard())}
       role={props.multiple ? "group" : "radiogroup"}
@@ -1321,8 +1324,9 @@ const ChoiceGroup = (props: ChoiceProps) => {
           const line = createUniqueId();
           const hint = "hint" in option ? option.hint : undefined;
           const icon = "icon" in option ? option.icon : undefined;
+          const off = () => props.disabled || ("disabled" in option && option.disabled === true);
           return (
-            <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
+            <label class="k2-choice" data-disabled={off() ? "" : undefined}>
               <span class="k2-mark">
                 <input
                   class="k2-mark-input"
@@ -1343,7 +1347,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
                         input.setCustomValidity(index() === 0 && field?.required && chosen().length === 0 ? t().chooseOne : ""),
                       );
                   }}
-                  disabled={props.disabled}
+                  disabled={off()}
                   onChange={(event) => choose(option.value, event.currentTarget.checked)}
                 />
                 <Show when={props.multiple} fallback={<span class="k2-radio" data-checked={on() ? "" : undefined} data-k2-mark="" />}>

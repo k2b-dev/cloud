@@ -195,6 +195,7 @@ export function Demo() {
                   { value: "hook", label: "Webhook", icon: "webhook", hint: "Die Quelle meldet jede Änderung." },
                   { value: "poll", label: "Abruf", icon: "refresh", hint: "Cloud fragt in einem Takt nach." },
                   { value: "file", label: "Datei", icon: "file-upload", hint: "Einmal hochladen, von Hand." },
+                  { value: "mail", label: "E-Mail", icon: "mail", hint: "Im Tarif nicht enthalten.", disabled: true },
                 ]}
               />
             </Field>
