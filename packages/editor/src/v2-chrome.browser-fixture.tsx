@@ -59,6 +59,17 @@ if (root)
                       variant="embedded"
                       onSave={() => undefined}
                       onClose={() => undefined}
+                      toolbarTrailing={
+                        // controls of the host before save and close, as Files puts its history and download there
+                        <>
+                          <button type="button" class="k2b-markdown-editor__tool" aria-label="Verlauf" tabIndex={-1}>
+                            <i class="ti ti-history" aria-hidden="true" />
+                          </button>
+                          <button type="button" class="k2b-markdown-editor__tool" aria-label="Herunterladen" tabIndex={-1}>
+                            <i class="ti ti-download" aria-hidden="true" />
+                          </button>
+                        </>
+                      }
                     />
                   </div>
                 </Canvas>

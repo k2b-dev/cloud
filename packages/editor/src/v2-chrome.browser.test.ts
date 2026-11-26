@@ -270,9 +270,26 @@ const ringsCut = async (page: Page, bar: string) => {
         )
           return { name, cut: `cut by ${clip.className || clip.tagName}` };
       }
-      // nothing stands over it, such as the controls that stay at the end of a scrolled bar
-      const over = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2);
-      if (!over || !button.contains(over)) return { name, cut: "covered" };
+      // nothing that paints stands over it or its ring, such as the controls that stay at the end of a scrolled bar: at
+      // the centre and at a point in the ring on each side, no box between the point and the bar has a fill of its own
+      // (a neighbour without a fill lets the ring show)
+      const middle = { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
+      const points = [
+        middle,
+        { x: ring.left + 1, y: middle.y },
+        { x: ring.right - 1, y: middle.y },
+        { x: middle.x, y: ring.top + 1 },
+        { x: middle.x, y: ring.bottom - 1 },
+      ];
+      for (const point of points) {
+        const over = document.elementFromPoint(point.x, point.y);
+        if (!over) return { name, cut: "outside the window" };
+        for (let box = over; box && !box.contains(button); box = box.parentElement) {
+          const style = getComputedStyle(box);
+          if (style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.backgroundImage !== "none")
+            return { name, cut: `covered by ${box.getAttribute("aria-label") ?? box.className}` };
+        }
+      }
       return { name, cut: "" };
     });
     if (seen.has(found.name)) break;
@@ -287,10 +304,7 @@ for (const width of [1440, 390])
   test(`at ${width} px the focus ring of every toolbar button shows whole, nothing cuts or covers it`, async () => {
     const page = await open(width);
     try {
-      const bars =
-        width < 768
-          ? ['[data-editor="ui"] [role="toolbar"]']
-          : ['[data-editor="ui"] [role="toolbar"]', "[data-k2b-editor-toolbar] [role=toolbar]"];
+      const bars = ['[data-editor="ui"] [role="toolbar"]', "[data-k2b-editor-toolbar] [role=toolbar]"];
       for (const bar of bars) {
         const walk = await ringsCut(page, bar);
         expect(walk.walked).toBeGreaterThan(7);

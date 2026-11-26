@@ -80,6 +80,8 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
     for (const button of buttons) button.tabIndex = -1;
     buttons[next]!.tabIndex = 0;
     buttons[next]!.focus();
+    // a row that scrolls (a v2 screen on a phone) shows the whole tool with its ring: focus alone stops at the tool's edge
+    buttons[next]!.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
   return (
@@ -90,30 +92,34 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
       aria-label={markdownToolbarMessages().markdownFormatting}
       onKeyDown={moveFocus}
     >
-      <For each={TOOLS}>
-        {(tool, index) =>
-          tool.kind === "separator" ? (
-            <span class="k2b-markdown-editor__separator" aria-hidden="true" />
-          ) : (
-            <Tooltip.Trigger
-              type="button"
-              class="k2b-markdown-editor__tool"
-              content={title(tool.id, tool.title)}
-              aria-label={title(tool.id, tool.title)}
-              aria-pressed={props.activeFormats?.().has(tool.id) ? "true" : undefined}
-              disabled={props.disabled}
-              tabIndex={index() === 0 ? 0 : -1}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                const textarea = props.textarea();
-                if (textarea) tool.run(textarea);
-              }}
-            >
-              <i class={tool.icon} aria-hidden="true" />
-            </Tooltip.Trigger>
-          )
-        }
-      </For>
+      {/* the tools in a row of their own: a v2 screen scrolls it sideways where the line is short, and the controls at
+          the end stand beside it, never over a tool (in a v1 page the row is no box) */}
+      <span class="k2b-markdown-editor__tools">
+        <For each={TOOLS}>
+          {(tool, index) =>
+            tool.kind === "separator" ? (
+              <span class="k2b-markdown-editor__separator" aria-hidden="true" />
+            ) : (
+              <Tooltip.Trigger
+                type="button"
+                class="k2b-markdown-editor__tool"
+                content={title(tool.id, tool.title)}
+                aria-label={title(tool.id, tool.title)}
+                aria-pressed={props.activeFormats?.().has(tool.id) ? "true" : undefined}
+                disabled={props.disabled}
+                tabIndex={index() === 0 ? 0 : -1}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const textarea = props.textarea();
+                  if (textarea) tool.run(textarea);
+                }}
+              >
+                <i class={tool.icon} aria-hidden="true" />
+              </Tooltip.Trigger>
+            )
+          }
+        </For>
+      </span>
       <Show when={props.trailing}>
         <span class="k2b-markdown-editor__trailing">{props.trailing}</span>
       </Show>

@@ -423,6 +423,11 @@
   padding: 0.25rem 0.375rem;
 }
 
+/* the row of tools is no box of its own here; inside a v2 screen it scrolls (below) */
+.k2b-ui .k2b-markdown-editor__tools {
+  display: contents;
+}
+
 .k2b-ui .k2b-markdown-editor__tool {
   display: inline-flex;
   width: 1.75rem;
@@ -768,27 +773,34 @@
    Below `.k2-ui` the editor's chrome speaks v2, its behaviour unchanged: a toolbar of the v2 bar height (40 px) with
    icon buttons of the v2 hit area (28 px) and icon size (16 px), the first glyph on the v2 text edge (the button's
    6 px inset pulled out), the text on the same edge, and the count line in the meta role. A v1 page renders as before. */
-/* One line at every width: the tools scroll sideways where the line is too short (a phone), the save and close at its
-   end stay in place over them. Its padding is the room of the focus ring, and a focused tool scrolls clear of that end. */
+/* One line at every width: the row of tools scrolls sideways where the line is too short (a phone), and save and close
+   stand beside it at the end, never over a tool. The row's box grows by the room of the focus ring on every side, its
+   place stays, so a focused tool shows its whole ring. */
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__toolbar {
   min-height: var(--k2-h-bar);
   flex-wrap: nowrap;
   gap: 2px;
   padding: 6px calc(var(--k2-edge) - 6px);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tools {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin: -4px;
+  padding: 4px;
   overflow-x: auto;
   scrollbar-width: none;
-  scroll-padding-inline: 6px calc(2 * var(--k2-h-control-small) + 2px + 12px);
+  scroll-padding-inline: 4px;
 }
-.k2-ui .k2b-markdown-editor .k2b-markdown-editor__toolbar::-webkit-scrollbar {
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tools::-webkit-scrollbar {
   display: none;
 }
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__trailing {
-  position: sticky;
-  right: 0;
   flex: none;
   gap: 2px;
-  padding-left: 4px;
-  background: var(--k2-surface);
+  margin-inline-start: 4px;
 }
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool {
   flex: none;
