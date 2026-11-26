@@ -57,6 +57,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 - A screen is a component that returns one `Workspace`.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
+- A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
+  page's language: the `@k2b/ui` entry belongs to v1.
 
 ## What to use for what
 
@@ -183,8 +185,7 @@ and appealing. Dense is not busy: show more, never the same thing twice.
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Steps`.
@@ -193,8 +194,7 @@ and appealing. Dense is not busy: show more, never the same thing twice.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
-  `Popover` (panel or `tip`), `useToast`.
-- **States:** `Empty`, `Loading`, `Failed`.
+  `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
