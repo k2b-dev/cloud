@@ -47,6 +47,8 @@ const DELIVERIES: RunRow[] = Array.from({ length: 30 }, (_, index) => ({
   state: index === 4 ? "failed" : index === 1 ? "deferred" : "delivered",
   at: at(index * 5 + 1),
   durationMs: index === 1 ? null : 900 + index * 30,
+  // delivered, but the mail bounced afterwards
+  ...(index === 2 ? { mail: "bounced" as const } : {}),
 }));
 
 const DEAD_LETTERS: RunRow[] = [

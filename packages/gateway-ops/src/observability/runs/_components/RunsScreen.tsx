@@ -269,6 +269,8 @@ export default function RunsScreen(props: RunsScreenProps) {
     return part.more ? page() + 1 : page();
   };
 
+  /** A delivery's mail, when its state says more than the delivery's own (a delivered notification can bounce later). */
+  const mailLine = (row: RunRow) => (row.mail ? t().mailStatus({ status: row.mail }) : "");
   const appLabel = (appId: string | null) => (appId ? (props.apps.find((app) => app.id === appId)?.label ?? appId) : "");
   /** The app a run belongs to, with the app's own symbol. */
   const appChip = (appId: string | null) => {
@@ -498,13 +500,17 @@ export default function RunsScreen(props: RunsScreenProps) {
           phone={(row) => ({
             lines: [
               row.name,
-              [single() ? "" : kindLabel(row.ref.kind, false), appLabel(row.appId), row.detail].filter(Boolean).join(" · "),
+              [single() ? "" : kindLabel(row.ref.kind, false), appLabel(row.appId), row.detail, mailLine(row)].filter(Boolean).join(" · "),
             ],
             time: at(row.at),
             marks: statusChip(row.status),
           })}
           columns={[
-            { title: t().name, width: { min: 220, default: 360 }, cell: (row) => ({ lines: [row.name, row.detail || "—"] }) },
+            {
+              title: t().name,
+              width: { min: 220, default: 360 },
+              cell: (row) => ({ lines: [row.name, [row.detail, mailLine(row)].filter(Boolean).join(" · ") || "—"] }),
+            },
             { title: t().status, width: { min: 150, default: 160 }, cell: (row) => statusChip(row.status) },
             { title: t().app, width: { min: 100, default: 130 }, cell: (row) => appChip(row.appId), drop: true },
             { title: t().started, width: { min: 120, default: 140 }, cell: (row) => at(row.at) },

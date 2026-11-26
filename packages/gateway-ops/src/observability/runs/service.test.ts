@@ -167,3 +167,26 @@ test("waiting workflow runs include queued ones; the definition search asks the 
   expect(families.mock.calls[0]![0]).toEqual({ appId: "mail", search: "Rechnung", since: now, limit: 20 });
   expect(items).toEqual([{ value: definition, label: "Rechnung ablegen", meta: "mail" }]);
 });
+
+test("a delivery keeps the state of its mail when that says more than the delivery's own", async () => {
+  const item = (id: string, outgoingMailStatus: string | null) => ({
+    id,
+    appId: "mail",
+    title: "Neue Nachricht",
+    label: "Nachricht",
+    recipientLabel: "Mia Muster",
+    channel: "email",
+    status: "delivered",
+    outgoingMailStatus,
+    createdAt: new Date("2026-11-26T07:00:00.000Z"),
+    deliveredAt: new Date("2026-11-26T07:00:01.000Z"),
+  });
+  const list = spyOn(notifications.observability.deliveries, "list").mockResolvedValue({
+    items: [item("a", "bounced"), item("b", "sent"), item("c", null)],
+    total: 3,
+  } as never);
+  spies.push(list);
+  const { state } = parseRunsAddress(runsQuery("de"), new URLSearchParams("kind=delivery"));
+  const [part] = await listRuns(state, ["delivery"], { page: 1, perPage: 100, preview: 20, credentials: {} as never, now });
+  expect(part!.rows.map((row) => row.mail ?? null)).toEqual(["bounced", null, null]);
+});
