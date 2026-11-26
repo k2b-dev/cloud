@@ -1,4 +1,4 @@
-import { createSignal, type JSX, Show } from "solid-js";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
 import { linkOr } from "./link";
@@ -46,30 +46,54 @@ export type AvatarProps = Person & {
  * of two or three lines and in a record head (soft there), 20 px among the marks of a row and in a button. A picture
  * lies over the initials in the same place: while it loads, and when it fails, the initials show.
  */
-export const Avatar = (props: AvatarProps) => {
-  // What became of which picture: shown (the initials under it then leave, as a picture may be transparent) or
-  // failed. It belongs to its address, so a new picture (one just changed) is tried afresh.
+/**
+ * A picture that lies over a fallback in the same place (the initials of a person, the symbol of a thing): what became
+ * of which picture, shown or failed. It belongs to its address, so a new picture (one just changed) is tried afresh.
+ */
+const createPicture = (src: () => string | undefined) => {
   const [outcome, setOutcome] = createSignal<{ src: string; state: "shown" | "failed" }>();
-  const picture = () => {
+  const state = () => {
     const seen = outcome();
-    return seen && seen.src === props.image ? seen.state : undefined;
+    return seen && seen.src === src() ? seen.state : undefined;
   };
   const settle = (image: HTMLImageElement, state: "shown" | "failed") => setOutcome({ src: image.getAttribute("src") ?? "", state });
   // A picture the browser had before the page came alive fired its events before anyone listened: `decode` answers
   // for it either way (also for a drawing without a size of its own, whose natural width may be 0).
   const settled = (image: HTMLImageElement) => {
-    const src = image.getAttribute("src") ?? "";
+    const address = image.getAttribute("src") ?? "";
     image.decode().then(
-      () => setOutcome({ src, state: "shown" }),
-      () => setOutcome({ src, state: "failed" }),
+      () => setOutcome({ src: address, state: "shown" }),
+      () => setOutcome({ src: address, state: "failed" }),
     );
   };
+  // the picture adds no name: the place that holds it carries one (a failed picture then draws nothing over it)
+  const Picture = () => (
+    <Show when={state() !== "failed" && src()}>
+      {(image) => (
+        <img
+          src={image()}
+          alt=""
+          decoding="async"
+          // after its address is set (the attributes follow the element)
+          ref={(element) => queueMicrotask(() => settled(element))}
+          onLoad={(event) => settle(event.currentTarget, "shown")}
+          onError={(event) => settle(event.currentTarget, "failed")}
+        />
+      )}
+    </Show>
+  );
+  return { state, Picture };
+};
+
+export const Avatar = (props: AvatarProps) => {
+  // Shown, the initials under the picture leave, as a picture may be transparent.
+  const picture = createPicture(() => props.image);
   return (
     <span
       class="k2-av"
       data-k2-part="Avatar"
       data-k2-avatar=""
-      data-image={props.image ? (picture() ?? "") : undefined}
+      data-image={props.image ? (picture.state() ?? "") : undefined}
       role="img"
       aria-label={props.name}
       aria-hidden={props.decorative ? "true" : undefined}
@@ -77,20 +101,111 @@ export const Avatar = (props: AvatarProps) => {
       style={custom({ "--k2-c": props.color ?? personColor(props.name) })}
     >
       {initialsOf(props)}
-      {/* the avatar itself carries the name; the picture adds none (a failed one then draws nothing over the initials) */}
-      <Show when={picture() !== "failed" && props.image}>
-        {(image) => (
-          <img
-            src={image()}
-            alt=""
-            decoding="async"
-            // after its address is set (the attributes follow the element)
-            ref={(element) => queueMicrotask(() => settled(element))}
-            onLoad={(event) => settle(event.currentTarget, "shown")}
-            onError={(event) => settle(event.currentTarget, "failed")}
-          />
-        )}
+      <picture.Picture />
+    </span>
+  );
+};
+
+export type AvatarStackProps = {
+  /** The people, in order: who changed last, who has access. */
+  people: readonly Person[];
+  /** How many show before "+n" takes the rest: 3 when not set. */
+  max?: number;
+  /** A name for the whole stack, for assistive technology; without one the names of all the people. */
+  label?: string;
+};
+
+/**
+ * People side by side, each over the one before it with a ring of the surface, and "+n" for the rest. The stack is
+ * one picture with one name; the avatars in it are decoration. 20 px in a row, a tile and a cell, 24 px elsewhere.
+ */
+Avatar.Stack = (props: AvatarStackProps) => {
+  const shown = () => props.people.slice(0, Math.max(1, props.max ?? 3));
+  const rest = () => props.people.length - shown().length;
+  return (
+    <span
+      class="k2-avs"
+      data-k2-part="Avatar.Stack"
+      role="img"
+      aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
+    >
+      <For each={shown()}>{(person) => <Avatar {...person} decorative />}</For>
+      <Show when={rest() > 0}>
+        <span class="k2-avs-rest" aria-hidden="true">
+          +{rest()}
+        </span>
       </Show>
+    </span>
+  );
+};
+
+export type MarkProps = {
+  /** A Tabler icon for the kind of thing, such as `table`, `folder-filled` or `tool`. */
+  icon: string;
+  /**
+   * The data colour of the thing: a base, a storage, a mailbox, or the colour of its type (a table, a form, a PDF).
+   * Without one the mark stays neutral; give one wherever the data has it.
+   */
+  color?: string;
+  /**
+   * A small picture of the thing, such as the thumbnail of a photo or the first page of a PDF. It lies over the tinted
+   * symbol in the same place: while it loads and when it fails the symbol shows, and nothing moves.
+   */
+  image?: string;
+  /** The type in two to four letters on the corner of the picture or symbol, such as `PDF` or `XLS`. */
+  kind?: string;
+  /** A name for assistive technology; without one the mark is decoration, because the name stands beside it. */
+  label?: string;
+};
+
+/**
+ * What a thing looks like: its symbol on a tint of its colour, or its picture, in one square place. Every row, tile
+ * and sidebar entry that stands for a thing leads with it (rule: each thing carries its mark). The place sets the
+ * size: 20 px in the sidebar and in a sentence, 24 px leading a row of one line, 32 px leading a row of two or three
+ * lines, 36 px on a tile.
+ */
+export const Mark = (props: MarkProps) => {
+  const picture = createPicture(() => props.image);
+  return (
+    <span
+      class="k2-mk"
+      data-k2-part="Mark"
+      data-image={props.image ? (picture.state() ?? "") : undefined}
+      role="img"
+      aria-label={props.label}
+      aria-hidden={props.label ? undefined : "true"}
+      style={custom({ "--k2-c": props.color })}
+    >
+      <Icon name={props.icon} />
+      <picture.Picture />
+      <Show when={props.kind}>
+        {/* a glyph like an avatar's initials: it has no type role of the text around it */}
+        <span class="k2-mk-kind" data-k2-glyph="">
+          {props.kind}
+        </span>
+      </Show>
+    </span>
+  );
+};
+
+export type SparkProps = {
+  /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. */
+  values: readonly number[];
+  /** What the bars show, such as "Änderungen der letzten 7 Tage". It names the drawing; the values are not read out. */
+  label: string;
+};
+
+/**
+ * A few small bars of a short history, such as changes per day: in the colour of the thing it stands beside (its
+ * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number.
+ */
+export const Spark = (props: SparkProps) => {
+  const top = () => Math.max(...props.values, 0);
+  return (
+    <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label}>
+      <For each={props.values}>
+        {(value) => <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((value / top()) * 100)) : 8}%` })} />}
+      </For>
     </span>
   );
 };
