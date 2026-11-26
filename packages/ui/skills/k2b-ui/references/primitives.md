@@ -84,7 +84,8 @@ pane; `Workspace primary` never confirms a dialog.
 
 A bar of fixed height with one line below: `start`, `end`. Height comes
 from the place: 56 as a head, 52 as a status row, 40 inside a pane. Put
-`Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. Text in
+`Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. The `end`
+keeps its room and the `start` gives way, so no action runs over the edge. Text in
 a bar is cut to one line. Inside a pane a bar stands at the top (a line of
 state under the head, as in `mail.tsx`) or directly after the fields it
 serves (the buttons of a form or of a reply), never between entries. A line
@@ -252,7 +253,9 @@ safe links only) or children.
 
 One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
-lines instead of cutting a thing.
+lines instead of cutting a thing. In a table cell its `Text` gives way to
+the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
+name wraps in a small table and ends with "…" in one with column widths.
 
 ### Icon, Avatar, Chip, Progress
 
