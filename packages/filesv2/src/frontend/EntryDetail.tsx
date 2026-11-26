@@ -27,7 +27,8 @@ import type { BaseSummary, EntryResult, FileEntry } from "../contracts";
 import { ENTRY_TYPE, entryRefId, FOLDER_TYPE } from "../resource-ref";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { createVersions, EntryHistory, type InspectorHistory } from "./entry-history";
+import { createEntryLinks, createVersions, EntryHistory, type InspectorHistory } from "./entry-history";
+import { EntryLinksSection } from "./entry-links";
 import { entryMark } from "./entry-mark";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
@@ -239,6 +240,13 @@ function Loaded(
     () => props.item,
     async () => void (await props.onStale()),
   );
+  // the item's public links: their rows here, their access in the history's lines
+  const links = createEntryLinks({
+    base: () => props.base,
+    entry: () => props.item,
+    resourceId: () => props.result.resourceId,
+    history: () => props.history,
+  });
   const readOnly = () => props.item.actions?.write === false;
   const busy = () => props.actions.busy();
   const editable = () => props.actions.editable(props.item);
@@ -352,8 +360,8 @@ function Loaded(
           env={props.history?.env}
         />
       </Show>
-      {/* k2b-ui gap: public links, versions and the item's history are still the v1 parts of the detail; their v2
-          rebuild comes with the history views (Files PR 2). Their behaviour stays the same meanwhile. */}
+      <Show when={props.history}>{(history) => <EntryLinksSection links={links} env={history().env} />}</Show>
+      {/* the versions and the item's history are still the v1 parts of the detail; their v2 rebuild follows */}
       <Band>
         <Canvas label={h().publicLink}>
           {/* The v1 parts bring no text edge of their own; until PR 2 they stand on the column's edge. */}
@@ -371,6 +379,7 @@ function Loaded(
               currentAuthor={currentAuthor()}
               versionsId={`filesv2-versions-${props.item.path}`}
               versionsOpen
+              links={links}
               onShowVersions={() => document.getElementById(`filesv2-versions-${props.item.path}`)?.scrollIntoView({ block: "nearest" })}
             />
           </div>

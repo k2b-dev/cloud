@@ -367,6 +367,8 @@ export const historyCatalog = i18n.define({
       networks: "Networks",
       periodNote: "Last {days} days. Networks are shortened and are not people.",
       periodOnly: "Last {days} days.",
+      v2LinkUse: (values: { pages: number; downloads: number; days: number }) =>
+        `${values.pages === 1 ? "1 view" : `${values.pages} views`}, ${values.downloads === 1 ? "1 download" : `${values.downloads} downloads`} in ${values.days} days`,
       wrongPasswords: "Wrong password entered {count} times.",
       netSince: "since {date} · {count} times",
       netCount: "{count} times",
@@ -732,6 +734,8 @@ export const historyCatalog = i18n.define({
       networks: "Netze",
       periodNote: "Letzte {days} Tage. Netze sind gekürzt und keine Personen.",
       periodOnly: "Letzte {days} Tage.",
+      v2LinkUse: (values: { pages: number; downloads: number; days: number }) =>
+        `${values.pages === 1 ? "1 Aufruf" : `${values.pages} Aufrufe`}, ${values.downloads === 1 ? "1 Download" : `${values.downloads} Downloads`} in ${values.days} Tagen`,
       wrongPasswords: "{count}-mal falsches Passwort.",
       netSince: "seit {date} · {count}-mal",
       netCount: "{count}-mal",

@@ -13,7 +13,7 @@ import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
 import ItemHistory from "./ItemHistory";
 import { useFilesMessages } from "./messages";
-import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
+import { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 import type { WorkspaceSnapshot } from "./workspace-state";
 
 /** History in the detail: request context, the server's first page and the actions; absent hides it. */
@@ -101,46 +101,33 @@ export type Versions = ReturnType<typeof createVersions>;
  * Order of the detail as approved: public links, versions of a file, then the item's history. Versions and history
  * share one version list, so history rows can name "Version 2" with the number the list shows.
  */
-export function EntryHistory(props: {
-  base: BaseSummary;
-  entry: FileEntry;
-  resourceId?: string;
-  busy?: boolean;
-  onChanged: (selectPath?: string | null) => void;
-  onOpen: (entry: FileEntry) => void;
-  locale: string;
-  history?: InspectorHistory;
-  versions: Versions;
-  currentAuthor?: string | null;
-  versionsId: string;
-  versionsOpen: boolean;
-  onShowVersions: () => void;
+/**
+ * The item's public links, as the detail shows them and its history counts their access: the server's pages of the
+ * person's own links for this item, one access query per link over the counted window, and their revocation.
+ */
+export function createEntryLinks(props: {
+  base: () => BaseSummary;
+  entry: () => FileEntry;
+  resourceId: () => string | undefined;
+  history: () => InspectorHistory | undefined;
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
-  // Numbers count the saved versions, oldest first; the current content comes after them.
-  const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
-  const versionNumbers = createMemo(() => new Map(ordered().map((version, index) => [version.id, index + 1])));
-  const versionOf = (entry: ActivityEntry) => (props.versions.state() === "ready" ? activityVersion(entry, props.entry, ordered()) : null);
-  const restorePrevious = async (entry: ActivityEntry) => {
-    const previous = ordered().at(-1);
-    if (!previous || !versionOf(entry)?.restorable) throw new Error(h().actionFailed);
-    await restoreVersion(props.base.id, props.entry, previous.id, h().actionFailed);
-    toast.success(t().versionRestored);
-    props.onChanged(props.entry.path);
-  };
-  const request = () => itemHistoryRequest(props.base, { ...props.entry, resourceId: props.entry.resourceId ?? props.resourceId });
-  const source = () => JSON.stringify([props.base.locationKey ?? null, itemHistorySource(request())]);
-  const now = () => props.history?.env.now ?? new Date().toISOString();
+  const now = () => props.history()?.env.now ?? new Date().toISOString();
   const period = createMemo(() => sharePeriod(now()));
   const shareSource = () =>
-    JSON.stringify([props.base.id, props.base.locationKey ?? null, props.entry.path, props.entry.resourceId ?? props.resourceId ?? null]);
+    JSON.stringify([
+      props.base().id,
+      props.base().locationKey ?? null,
+      props.entry().path,
+      props.entry().resourceId ?? props.resourceId() ?? null,
+    ]);
   // Server-side item matching precedes pagination. Never filter a user's global first page in the browser.
   const shares = query.createInfinite({
     source: shareSource,
-    enabled: () => !!props.history,
+    enabled: () => !!props.history(),
     loadPage: (_key, { cursor, abortSignal }) =>
-      loadItemShares({ baseId: props.base.id, path: props.entry.path }, cursor ?? null, abortSignal, h().accessFailed),
+      loadItemShares({ baseId: props.base().id, path: props.entry().path }, cursor ?? null, abortSignal, h().accessFailed),
     getNextCursor: (page: SharePage) => page.next,
   });
   // The query clears its error as soon as a retry starts; keep this action's label and alert in place until it settles.
@@ -185,38 +172,59 @@ export function EntryHistory(props: {
     items.set(share.id, { ...share, state: result.state });
     setRevoked({ source, items });
   };
+  return {
+    items: links,
+    state: linksState,
+    period,
+    loadAccess,
+    revoke,
+    /** The list itself: loading its first page, a failed page, or more pages to read. */
+    list: () => ({
+      loading: shares.loading() && !shareRetrying() && itemShares().length === 0,
+      failed: shareFailed(),
+      more: shares.hasMore() || shareFailed(),
+      busy: shares.loadingMore() || shares.loading() || shareRetrying(),
+      label: shareFailed() ? h().retry : t().moreShares,
+    }),
+    loadMore: loadMoreShares,
+  };
+}
+export type EntryLinks = ReturnType<typeof createEntryLinks>;
+
+export function EntryHistory(props: {
+  base: BaseSummary;
+  entry: FileEntry;
+  resourceId?: string;
+  busy?: boolean;
+  onChanged: (selectPath?: string | null) => void;
+  onOpen: (entry: FileEntry) => void;
+  locale: string;
+  history?: InspectorHistory;
+  versions: Versions;
+  currentAuthor?: string | null;
+  versionsId: string;
+  versionsOpen: boolean;
+  onShowVersions: () => void;
+  /** The item's public links (see `createEntryLinks`): their access feeds the history's lines too. */
+  links: EntryLinks;
+}) {
+  const h = useHistoryMessages();
+  const t = useBrowserMessages();
+  // Numbers count the saved versions, oldest first; the current content comes after them.
+  const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
+  const versionNumbers = createMemo(() => new Map(ordered().map((version, index) => [version.id, index + 1])));
+  const versionOf = (entry: ActivityEntry) => (props.versions.state() === "ready" ? activityVersion(entry, props.entry, ordered()) : null);
+  const restorePrevious = async (entry: ActivityEntry) => {
+    const previous = ordered().at(-1);
+    if (!previous || !versionOf(entry)?.restorable) throw new Error(h().actionFailed);
+    await restoreVersion(props.base.id, props.entry, previous.id, h().actionFailed);
+    toast.success(t().versionRestored);
+    props.onChanged(props.entry.path);
+  };
+  const request = () => itemHistoryRequest(props.base, { ...props.entry, resourceId: props.entry.resourceId ?? props.resourceId });
+  const source = () => JSON.stringify([props.base.locationKey ?? null, itemHistorySource(request())]);
   return (
     <>
-      <Show when={props.history}>
-        {(history) => (
-          <>
-            <ShareHistory env={history().env} shares={links()} period={period()} load={loadAccess} onRevoke={revoke} networks={false} />
-            <Show when={shares.loading() || shareFailed() || shares.hasMore()}>
-              <div role="group" aria-label={h().publicLink}>
-                <Show when={shares.loading() && !shareRetrying() && itemShares().length === 0}>
-                  <p role="status">{t().loadingDetails}</p>
-                </Show>
-                <Show when={shareFailed()}>
-                  <p class="filesv2-item-history__line" role="alert">
-                    {h().accessFailed}
-                  </p>
-                </Show>
-                <Show when={shares.hasMore() || shareFailed()}>
-                  <Button
-                    size="xs"
-                    variant="link"
-                    loading={shares.loadingMore() || shares.loading() || shareRetrying()}
-                    onClick={() => void loadMoreShares()}
-                  >
-                    {shareFailed() ? h().retry : t().moreShares}
-                    <i class={shareFailed() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
-                  </Button>
-                </Show>
-              </div>
-            </Show>
-          </>
-        )}
-      </Show>
       <Show when={!props.entry.directory}>
         {/* Phones open this list from the version count in Info; wider panels always show it. */}
         <div id={props.versionsId} class="filesv2-inspector-versions" data-open={props.versionsOpen ? "true" : undefined}>
@@ -251,7 +259,7 @@ export function EntryHistory(props: {
               history().initial?.source === itemHistorySource(request()) ? { source: source(), page: history().initial!.page } : null
             }
             load={(cursor, signal) => loadItemHistory(request(), cursor, signal, h().historyFailed)}
-            links={{ items: links(), state: linksState() }}
+            links={{ items: props.links.items(), state: props.links.state() }}
             activityHref={history().activityHref(props.base.id, props.entry.path, props.entry.directory ? "folder" : "item")}
             onChanged={() => props.onChanged(props.entry.path)}
           />
