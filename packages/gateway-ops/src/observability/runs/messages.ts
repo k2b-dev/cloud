@@ -105,6 +105,8 @@ export const runsMessages = i18n.define({
       mail: "Mail",
       mailStatus: ({ status }: { status: "queued" | "sending" | "sent" | "failed" | "bounced" | "cancelled" }) =>
         `Mail: ${{ queued: "queued", sending: "sending", sent: "sent", failed: "failed", bounced: "bounced", cancelled: "cancelled" }[status]}`,
+      mailState: ({ status }: { status: "queued" | "sending" | "sent" | "failed" | "bounced" | "cancelled" }) =>
+        ({ queued: "Queued", sending: "Sending", sent: "Sent", failed: "Failed", bounced: "Bounced", cancelled: "Cancelled" })[status],
       jobsSucceeded: "Successful jobs",
       jobsFailed: "Failed jobs",
       jobsRunning: "Running jobs",
@@ -238,6 +240,15 @@ export const runsMessages = i18n.define({
       mail: "E-Mail",
       mailStatus: ({ status }) =>
         `E-Mail: ${{ queued: "in Warteschlange", sending: "wird gesendet", sent: "gesendet", failed: "fehlgeschlagen", bounced: "unzustellbar", cancelled: "abgebrochen" }[status]}`,
+      mailState: ({ status }) =>
+        ({
+          queued: "In Warteschlange",
+          sending: "Wird gesendet",
+          sent: "Gesendet",
+          failed: "Fehlgeschlagen",
+          bounced: "Unzustellbar",
+          cancelled: "Abgebrochen",
+        })[status],
       jobsSucceeded: "Erfolgreiche Jobs",
       jobsFailed: "Fehlgeschlagene Jobs",
       jobsRunning: "Laufende Jobs",
