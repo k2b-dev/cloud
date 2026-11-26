@@ -169,7 +169,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
             columns={[
               {
                 title: t().title,
-                width: { min: 200, default: 280 },
+                // four columns fit beside an open entry; the kind is in the entry's form
+                width: { min: 180, default: 220 },
                 // one line per row (identity rule 4); the kind has its own column
                 cell: (row) => row.title,
               },
@@ -179,14 +180,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
                 // no state of an announcement is a problem: live in words, scheduled and expired quieter
                 cell: (row) => <Text muted={row.state !== "active"}>{t()[row.state]}</Text>,
               },
-              { title: t().published, width: { min: 140, default: 160 }, drop: true, cell: (row) => row.published },
-              { title: t().expires, width: { min: 140, default: 160 }, drop: true, cell: (row) => row.expires },
-              {
-                title: t().kind,
-                width: { min: 110, default: 120 },
-                drop: true,
-                cell: (row) => (row.kind === "banner" ? t().banner : t().announcement),
-              },
+              { title: t().published, width: { min: 140, default: 140 }, drop: true, cell: (row) => row.published },
+              { title: t().expires, width: { min: 140, default: 140 }, drop: true, cell: (row) => row.expires },
             ]}
           />
           <CacheSection area="announcements" />

@@ -156,17 +156,8 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
                 // a plain value, so a long name is cut with "…" and says itself on hover
                 cell: (row) => (row.isDefault ? `${row.name} · ${t().defaultBadge}` : row.name),
               },
-              { title: t().sender, width: { min: 180, default: 240 }, cell: (row) => row.fromAddress },
-              {
-                title: t().limits,
-                width: { min: 150, default: 170 },
-                drop: true,
-                cell: (row) =>
-                  [
-                    t().perMinute({ count: row.pacePerMinute }),
-                    row.dailyRecipientLimit ? t().perDay({ count: row.dailyRecipientLimit }) : t().unlimited,
-                  ].join(" · "),
-              },
+              // three columns fit beside an open profile; the server, pace and daily limit are in the profile
+              { title: t().sender, width: { min: 160, default: 220 }, drop: true, cell: (row) => row.fromAddress },
               {
                 title: t().state,
                 width: { min: 180, default: 200 },
