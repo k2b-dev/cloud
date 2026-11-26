@@ -1,51 +1,57 @@
-import { Bar, Canvas, Empty, Pane, Text, Workspace } from "@k2b/ui/v2";
+import { Button, ErrorScreen, Pane, Workspace } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
+import ErrorPageSearch from "./ErrorPageSearch.island";
 
 export type PageErrorScreenProps = {
   status: number;
   title: string;
   description: string;
+  /** The page's way out, home by default. */
   action: { label: string; href: string; icon?: string };
-  /** The status in words for the head, such as "Fehler 404". */
-  code: string;
-  /** The waiting game below the way out, for the generic "not found" and server failures. */
+  /** The address that failed, so "Erneut versuchen" loads it again without a script. */
+  retryHref: string;
+  labels: { retry: string; search: string };
+  /** The waiting game's invitation, where a generic page offers it. */
   game?: JSX.Element;
-  /** The name of the game's drawing, for assistive technology. */
-  gameLabel?: string;
 };
 
-/** The sign of a status: a lock for what is not allowed, a compass for what is not there, a warning for a failure. */
-const signOf = (status: number) => (status === 403 || status === 401 ? "lock" : status === 404 ? "compass-off" : "alert-triangle");
-
 /**
- * An error page on UI v2, inside the Cloud shell: the title in the head with the status as a quiet note, then one sign,
- * the one sentence that says what is the matter, and the one way out. The waiting game stands below it, where a
- * generic page offers it; the server draws its box at its final size, so nothing moves when the game arrives.
+ * An error page on UI v2 in the Cloud shell (approved direction A "Zeichen"): the code large, the title, one sentence
+ * and two ways out, in the middle of the page, without a head of its own. A failure of the server offers to load the
+ * same address again first and home second; a missing or closed page offers its way out first and the search second.
  */
 export default function PageErrorScreen(props: PageErrorScreenProps) {
+  const failure = () => props.status >= 500;
+  const way = (variant: "primary" | "secondary") => (
+    <Button variant={variant} icon={props.action.icon ?? "home"} href={props.action.href}>
+      {props.action.label}
+    </Button>
+  );
   return (
-    <Workspace
-      head={
-        <Bar
-          start={
-            <>
-              <Text weight="strong">{props.title}</Text>
-              <Text type="meta" muted>
-                {props.code}
-              </Text>
-            </>
-          }
-        />
-      }
-    >
+    <Workspace>
       {/* named by its status, so a page's own title never stands in an attribute */}
-      <Pane label={props.code}>
-        <Empty
-          icon={signOf(props.status)}
+      <Pane label={String(props.status)}>
+        <ErrorScreen
+          code={String(props.status)}
+          title={props.title}
           text={props.description}
-          action={{ label: props.action.label, icon: props.action.icon ?? "home", href: props.action.href }}
+          actions={
+            failure() ? (
+              <>
+                <Button variant="primary" icon="refresh" href={props.retryHref}>
+                  {props.labels.retry}
+                </Button>
+                {way("secondary")}
+              </>
+            ) : (
+              <>
+                {way("primary")}
+                <ErrorPageSearch label={props.labels.search} />
+              </>
+            )
+          }
+          foot={props.game}
         />
-        {props.game ? <Canvas label={props.gameLabel ?? props.code}>{props.game}</Canvas> : null}
       </Pane>
     </Workspace>
   );

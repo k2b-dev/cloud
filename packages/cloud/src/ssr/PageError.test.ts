@@ -153,9 +153,9 @@ describe("shared page access and error responses", () => {
         expect(response.headers.get("location")).toBeNull();
         expect(response.headers.get("cache-control")).toBe("private, no-store");
         expect(body).toContain(`lang="${locale}" class="${theme}"`);
-        expect(body).toContain(locale === "en" ? "Access denied" : "Zugriff verweigert");
-        // the Cloud shell's error page is a v2 screen: its state, in the page's words
-        expect(body).toContain('data-k2-part="Empty"');
+        expect(body).toContain(locale === "en" ? "have access to this" : "Dafür fehlt dir der Zugriff");
+        // the Cloud shell's error page is a v2 screen (approved direction A): the code large, title, sentence, ways out
+        expect(body).toContain('data-k2-part="ErrorScreen"');
         expect(body).not.toContain("authorized handler");
         expect(body).not.toContain("admin-sidebar");
       });
@@ -234,7 +234,7 @@ describe("shared page access and error responses", () => {
     const response = await server.request("/nested/missing");
     expect(response.status).toBe(404);
     expect(response.headers.get("location")).toBeNull();
-    expect(await response.text()).toContain("Page not found");
+    expect(await response.text()).toContain("This page does not exist");
     const minimal = await server.request("/minimal");
     const body = await minimal.text();
     expect(minimal.status).toBe(404);
@@ -263,8 +263,11 @@ describe("shared page access and error responses", () => {
   test("only the generic not-found and server-failure pages show the waiting game", async () => {
     const offered = async (path: string, init?: RequestInit) => {
       const body = await (await server.request(path, init)).text();
-      // The scene's box is part of the first paint, so nothing moves when the game code arrives.
-      return body.includes("data-waiting-game>") && body.includes("h-[clamp(20rem,52vh,32rem)]");
+      // On a v2 page the game is an invitation at the foot of the error screen and opens over it when asked; on the
+      // minimal page (v1 until #4227) the scene's box is part of the first paint, so nothing moves when its code arrives.
+      const invited = body.includes('class="k2-es-foot"');
+      const boxed = body.includes("data-waiting-game>") && body.includes("h-[clamp(20rem,52vh,32rem)]");
+      return invited || boxed;
     };
     expect(await offered("/nested/missing")).toBe(true);
     expect(await offered("/minimal")).toBe(true);

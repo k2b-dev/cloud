@@ -102,7 +102,7 @@ const views: View[] = [
 ];
 
 /** The whole page as the server sends it, with the template's stylesheets and fonts and no island scripts. */
-const open = async (view: View, path: string): Promise<{ tab: Page; status: number }> => {
+const open = async (view: View, path: string, theme: "light" | "dark" = "light"): Promise<{ tab: Page; status: number }> => {
   const response = await app.request(`${origin}${path}`, { headers: { Cookie: "cloud.locale=de" } });
   const html = (await response.text()).replace("</head>", `<style>${pageCss.v2}</style></head>`);
   const tab = await browser.newPage({
@@ -110,6 +110,8 @@ const open = async (view: View, path: string): Promise<{ tab: Page; status: numb
     deviceScaleFactor: 1,
     isMobile: view.touch,
     hasTouch: view.touch,
+    // the page's own script follows the system's scheme while the person chose "automatic"
+    colorScheme: theme,
   });
   await tab.route(`${origin}/**`, (route) => {
     const requested = new URL(route.request().url()).pathname;
@@ -130,29 +132,40 @@ const open = async (view: View, path: string): Promise<{ tab: Page; status: numb
 };
 
 const pages = [
-  { path: "/forbidden", name: "403", status: 403, text: "Dein Konto hat keine Berechtigung, diese Seite zu öffnen.", game: false },
-  { path: "/gone", name: "404-generic", status: 404, text: "Diese Seite ist nicht verfügbar", game: true },
-  { path: "/broken", name: "503", status: 503, text: "Bitte versuche es später erneut.", game: true },
-  { path: "/nicht/da", name: "404-core", status: 404, text: "Die Seite ist nicht vorhanden", game: false },
+  { path: "/forbidden", name: "403", status: 403, title: "Dafür fehlt dir der Zugriff", primary: "/", game: false },
+  { path: "/gone", name: "404", status: 404, title: "Diese Seite gibt es nicht", primary: "/", game: true },
+  { path: "/broken", name: "503", status: 503, title: "Die Seite konnte nicht geöffnet werden", primary: "/broken", game: true },
+  { path: "/nicht/da", name: "404-core", status: 404, title: "Diese Seite gibt es nicht", primary: "/", game: true },
 ];
 
 describe("error pages on v2", () => {
-  test("each error page is a v2 screen in the shell: one sign, one sentence, one way home, the game only where offered", async () => {
+  test("each error page is the approved direction A in the shell: the code alone, title, sentence, two ways out, no head", async () => {
     const findings: string[] = [];
     for (const page of pages)
       for (const view of views) {
         const { tab, status } = await open(view, page.path);
         try {
           expect(status).toBe(page.status);
-          const empty = tab.locator('[data-k2-part="Empty"]');
-          expect(await empty.count()).toBe(1);
-          expect(await empty.textContent()).toContain(page.text);
-          expect(await empty.locator('a[href="/"]').count()).toBe(1);
-          expect(await tab.locator("[data-waiting-game]").count()).toBe(page.game ? 1 : 0);
-          // the game's box stands at its size before its code arrives, so nothing moves then
-          if (page.game) expect((await tab.locator("[data-waiting-game]").boundingBox())?.height ?? 0).toBeGreaterThan(300);
-          // the title stands once: in the head, not again in the phone bar above it
-          expect(await tab.getByText(await tab.title(), { exact: true }).count()).toBe(1);
+          const screen = tab.locator('[data-k2-part="ErrorScreen"]');
+          expect(await screen.count()).toBe(1);
+          // the code alone as the sign: no icon in or on it
+          expect(await screen.locator(".k2-es-code").textContent()).toBe(String(page.status));
+          expect(await screen.locator(".k2-es-code .k2-icon").count()).toBe(0);
+          expect(await screen.getByRole("heading", { level: 1 }).textContent()).toBe(page.title);
+          // the title stands once on the page: no head row, and the phone bar names the app
+          expect(await tab.getByText(page.title, { exact: true }).count()).toBe(1);
+          expect(await tab.locator('[data-k2-workspace] [data-slot="head"]').count()).toBe(0);
+          // two ways out, the first is the primary one; a failure loads the same address again first
+          const actions = screen.locator(".k2-es-actions .k2-btn");
+          expect(await actions.count()).toBe(2);
+          expect(await actions.first().getAttribute("data-variant")).toBe("primary");
+          expect(await actions.first().getAttribute("href")).toBe(page.primary);
+          // the waiting game only as an invitation, where it is offered
+          expect(await screen.locator(".k2-es-foot").count()).toBe(page.game ? 1 : 0);
+          // the words stand in the middle of the page
+          const box = await screen.locator(".k2-es-stack").boundingBox();
+          const pane = await screen.boundingBox();
+          if (box && pane) expect(Math.abs(box.x + box.width / 2 - (pane.x + pane.width / 2))).toBeLessThan(2);
           const outline = await describeV2Page(tab, ".layout-content-main");
           if (outline.includes("Problems (")) findings.push(`${page.name} ${view.name}:\n${outline.slice(outline.indexOf("Problems ("))}`);
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
@@ -164,4 +177,18 @@ describe("error pages on v2", () => {
       }
     expect(findings).toEqual([]);
   }, 180_000);
+
+  test.if(Boolean(shots))(
+    "the dark theme takes the dark tokens, the outline too",
+    async () => {
+      const { tab } = await open(views[0]!, "/gone", "dark");
+      try {
+        expect(await tab.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(true);
+        await tab.screenshot({ path: join(shots!, "404-1440-dark.png") });
+      } finally {
+        await tab.close();
+      }
+    },
+    60_000,
+  );
 });

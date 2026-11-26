@@ -5,6 +5,7 @@ import { PWA_SCOPE } from "../contracts/pwa";
 import { maintenanceGameMessages, offersMaintenanceGame } from "../maintenance-game";
 import { getLocale } from "../server/locale";
 import { resolveAppPresentation } from "../shared/app-presentation";
+import ErrorPageGame from "./ErrorPageGame.island";
 import Layout from "./Layout";
 import MinimalLayout from "./MinimalLayout";
 import PageErrorScreen from "./PageErrorScreen";
@@ -79,18 +80,17 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
       </MinimalLayout>
     ) : (
       // The Cloud shell's error page is a v2 screen; the minimal and the mobile app's pages follow with their v2 frames
-      // (#4227, #4248).
-      // No title for the shell: the head names the page, and the phone bar above it would say it a second time (the
-      // document keeps it through `page.title`).
+      // (#4227, #4248). The shell gets no title: the phone bar shows the app, and the document keeps the page's title
+      // through `page.title`.
       <Layout c={c} fullWidth ui="v2">
         <PageErrorScreen
           status={status}
           title={title}
           description={description}
           action={action}
-          code={t.code({ status })}
-          game={offered ? <WaitingGame t={game()} /> : undefined}
-          gameLabel={game().name}
+          retryHref={`${c.req.path}${new URL(c.req.url).search}`}
+          labels={{ retry: t.retry, search: t.search }}
+          game={offered ? <ErrorPageGame t={game()} /> : undefined}
         />
       </Layout>
     );
