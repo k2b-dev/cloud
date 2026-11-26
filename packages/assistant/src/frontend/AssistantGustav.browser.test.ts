@@ -790,11 +790,11 @@ describe("Gustav", () => {
       try {
         const list = appsPane(h.page);
         await list.locator("text=Wochenbericht Vertrieb >> visible=true").first().waitFor();
-        // The statement of today's runs leads; the purpose stands under the apps' head.
-        expect(await list.locator('[data-k2-part="StatusRow"]').textContent()).toContain("Läufe heute");
         expect(await list.getByText("Dein Code läuft als du, mit deinen Rechten und nicht mehr.").count()).toBe(1);
         // The day line reads every Code's day; its sentence counts the runs.
         await list.getByText("1 Lauf erfolgreich, 1 fehlgeschlagen, 1 geplanter Start").waitFor();
+        // Once the day is read, the statement of today's runs leads; the purpose stands under the apps' head.
+        expect(await list.locator('[data-k2-part="StatusRow"]').textContent()).toContain("Läufe heute");
         expect(await list.getByRole("img", { name: /^Läufe heute: / }).count()).toBe(1);
         // The schedule is the second line of the name; the phone shows when the app runs next instead.
         if (view !== phone) await list.locator("text=Montags um 07:00 >> visible=true").first().waitFor();

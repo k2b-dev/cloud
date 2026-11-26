@@ -20,6 +20,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
+import { Band, Bar, Button as ButtonV2, Canvas, Cells, Empty, Failed, List, Pane, RecordHead, Row, Section, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantProjectContextSnapshot } from "../project-context";
@@ -55,6 +56,8 @@ type Props = {
   initialContext?: AssistantProjectContextSnapshot | null;
   composer: JSX.Element;
   onOpenConversation: (conversationId: string) => Promise<boolean>;
+  /** v2's page draws the Project as its own panes (screen brief 2, recipe "record-groups"). */
+  frame?: "v2";
 };
 
 const CONTEXT_PREVIEW_LIMIT = 3;
@@ -359,6 +362,315 @@ export default function AssistantProjectView(props: Props) {
     onCleanup(() => observer.disconnect());
   });
 
+  /** The Project's context: its instructions, skills, knowledge, images, files and references (v1's aside, v2's side pane). */
+  const contextSections = () => (
+    <div class="flex flex-col gap-5">
+      {/* On v2 the head names the Project and holds its settings; the column says each fact once. */}
+      <AssistantContextSection
+        title={props.frame === "v2" ? text("Project instructions") : props.project.name}
+        identity={props.frame !== "v2"}
+        action={
+          <Show when={props.frame !== "v2" && props.project.permission === "admin"}>
+            <IconButton
+              size="xs"
+              label={text("Project settings")}
+              onClick={() => {
+                const project = props.project;
+                void projectSettings(locale(), ({ openAssistantProjectSettingsDialog }) =>
+                  openAssistantProjectSettingsDialog(project, live),
+                );
+              }}
+            >
+              <i class="ti ti-settings" aria-hidden="true" />
+            </IconButton>
+          </Show>
+        }
+      >
+        <AssistantContextRow
+          icon="ti ti-eye"
+          title={text("View project")}
+          onClick={() =>
+            void openAssistantMarkdown(
+              text("Project instructions"),
+              props.project.instructions || text("No Project instructions yet."),
+              "ti ti-adjustments-horizontal",
+            )
+          }
+        />
+      </AssistantContextSection>
+
+      <Show
+        when={context.data()}
+        fallback={
+          <Placeholder
+            state={context.error() ? "error" : "loading"}
+            title={text(context.error() ? "Could not load Project context" : "Loading Project context")}
+            action={
+              context.error() ? (
+                <Button size="sm" variant="secondary" onClick={() => void context.refresh()}>
+                  {text("Retry")}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
+      >
+        {(value) => (
+          <>
+            <AssistantProjectSkills project={props.project} initialPage={value().skills} />
+            <AssistantContextSection
+              title={text("Project knowledge")}
+              action={
+                <Show when={props.project.permission !== "read"}>
+                  <IconButton size="xs" label={text("Add Project knowledge")} onClick={() => void editKnowledge()}>
+                    <i class="ti ti-plus" aria-hidden="true" />
+                  </IconButton>
+                </Show>
+              }
+            >
+              <Show
+                when={value().knowledge.length > 0}
+                fallback={<AssistantContextEmpty>{text("No Project knowledge yet.")}</AssistantContextEmpty>}
+              >
+                <AssistantContextRows>
+                  <For each={value().knowledge.slice(0, CONTEXT_PREVIEW_LIMIT)}>
+                    {(item) => (
+                      <AssistantContextRow
+                        icon="ti ti-bulb"
+                        title={item.title}
+                        onClick={() => void openAssistantMarkdown(item.title, item.content, "ti ti-bulb")}
+                        menuItems={knowledgeMenu(item)}
+                        menuLabel={`${text("Actions for")} ${item.title}`}
+                      />
+                    )}
+                  </For>
+                  <Show when={value().knowledge.length > CONTEXT_PREVIEW_LIMIT}>
+                    <AssistantContextViewAll onClick={() => void openAssistantKnowledgeSearch(value().knowledge)} />
+                  </Show>
+                </AssistantContextRows>
+              </Show>
+            </AssistantContextSection>
+
+            <AssistantContextSection
+              title={assistantContextCountTitle(imageFiles().length, text("Image"), text("Images"))}
+              action={
+                <Show when={props.project.permission !== "read"}>
+                  <IconButton size="xs" label={text("Add images")} onClick={() => void addFiles(true)}>
+                    <i class="ti ti-plus" aria-hidden="true" />
+                  </IconButton>
+                </Show>
+              }
+            >
+              <Show when={imageFiles()[0]} fallback={<AssistantContextEmpty>{text("No Project images yet.")}</AssistantContextEmpty>}>
+                {(file) => (
+                  <AssistantContextRows>
+                    <AssistantContextRow
+                      icon="ti ti-photo"
+                      title={file().path.replace(/^.*\//u, "")}
+                      onClick={() => void openImages(file())}
+                      menuItems={fileMenu(file())}
+                      menuLabel={`${text("Actions for")} ${file().path.replace(/^.*\//u, "")}`}
+                    />
+                    <Show when={imageFiles().length > 1}>
+                      <AssistantContextViewAll onClick={() => void openImages()} />
+                    </Show>
+                  </AssistantContextRows>
+                )}
+              </Show>
+            </AssistantContextSection>
+
+            <AssistantContextSection
+              title={assistantContextCountTitle(regularFiles().length, text("File"), text("Files"))}
+              action={
+                <Show when={props.project.permission !== "read"}>
+                  <IconButton size="xs" label={text("Add files")} onClick={() => void addFiles()}>
+                    <i class="ti ti-plus" aria-hidden="true" />
+                  </IconButton>
+                </Show>
+              }
+            >
+              <Show
+                when={regularFiles().length > 0}
+                fallback={<AssistantContextEmpty>{text("No Project files yet.")}</AssistantContextEmpty>}
+              >
+                <AssistantContextRows>
+                  <For each={regularFiles().slice(0, CONTEXT_PREVIEW_LIMIT)}>
+                    {(file) => (
+                      <AssistantContextRow
+                        icon="ti ti-file"
+                        title={file.path.replace(/^.*\//u, "")}
+                        onClick={() => void openAssistantContextFiles(regularFiles(), file)}
+                        menuItems={fileMenu(file)}
+                        menuLabel={`${text("Actions for")} ${file.path.replace(/^.*\//u, "")}`}
+                      />
+                    )}
+                  </For>
+                  <Show when={regularFiles().length > CONTEXT_PREVIEW_LIMIT}>
+                    <AssistantContextViewAll onClick={() => void openAssistantContextFiles(regularFiles())} />
+                  </Show>
+                </AssistantContextRows>
+              </Show>
+            </AssistantContextSection>
+
+            <AssistantContextSection
+              title={assistantContextCountTitle(value().references.length, text("Reference"), text("References"))}
+              action={
+                <Show when={props.project.permission !== "read"}>
+                  <IconButton size="xs" label={text("Add reference")} onClick={() => void addReference()}>
+                    <i class="ti ti-plus" aria-hidden="true" />
+                  </IconButton>
+                </Show>
+              }
+            >
+              <Show
+                when={value().references.length > 0}
+                fallback={<AssistantContextEmpty>{text("No Project references yet.")}</AssistantContextEmpty>}
+              >
+                <AssistantContextRows>
+                  <For each={value().references.slice(0, CONTEXT_PREVIEW_LIMIT)}>
+                    {(reference) => {
+                      const label = () => reference.label || `${reference.ref.type} · ${reference.ref.id}`;
+                      return (
+                        <AssistantContextRow
+                          icon="ti ti-link"
+                          title={label()}
+                          onClick={() => void openAssistantCloudReference(label(), reference.ref)}
+                          menuItems={referenceMenu(reference)}
+                          menuLabel={`${text("Actions for")} ${label()}`}
+                        />
+                      );
+                    }}
+                  </For>
+                  <Show when={value().references.length > CONTEXT_PREVIEW_LIMIT}>
+                    <AssistantContextViewAll onClick={() => void openReferences(value().references)} />
+                  </Show>
+                </AssistantContextRows>
+              </Show>
+            </AssistantContextSection>
+          </>
+        )}
+      </Show>
+    </div>
+  );
+
+  const lightboxView = () => (
+    <Show when={lightbox()}>
+      {(state) => (
+        <Lightbox
+          items={state().items}
+          index={state().index}
+          onIndexChange={(index) => setLightbox({ ...state(), index })}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+    </Show>
+  );
+  const chatTotal = () => chats.pages()[0]?.total ?? chatItems().length;
+  const settings = () => {
+    const project = props.project;
+    void projectSettings(locale(), ({ openAssistantProjectSettingsDialog }) => openAssistantProjectSettingsDialog(project, live));
+  };
+  /**
+   * v2 (screen brief 2, recipe "record-groups"): the Project's head with its name and deeds, one strip of what it holds,
+   * its chats as rows of one shape with the composer after them, and its context as the side column.
+   */
+  const v2 = () => (
+    <>
+      <Pane.Split>
+        <Pane
+          label={props.project.name}
+          head={
+            <Bar
+              start={<RecordHead name={props.project.name} kinds={[text("Project")]} />}
+              end={
+                <Show when={props.project.permission === "admin"}>
+                  <ButtonV2 icon="settings" onClick={settings}>
+                    {text("Project settings")}
+                  </ButtonV2>
+                </Show>
+              }
+            />
+          }
+        >
+          <Show when={props.project.description}>
+            <Band>
+              <Text muted>{props.project.description}</Text>
+            </Band>
+          </Show>
+          <Cells>
+            <Cells.Cell icon="messages" label={text("Chats")} value={chatTotal()} />
+            <Cells.Cell
+              icon="bulb"
+              label={text("Project knowledge")}
+              value={context.data()?.knowledge.length ?? 0}
+              loading={!context.data()}
+            />
+            <Cells.Cell icon="files" label={text("Files")} value={contextFiles().length} loading={!context.data()} />
+            <Cells.Cell icon="link" label={text("References")} value={context.data()?.references.length ?? 0} loading={!context.data()} />
+          </Cells>
+          <Section
+            title={text("Recent chats")}
+            count={chatTotal()}
+            actions={[{ label: copy().searchChatsIn({ project: props.project.name }), icon: "search", onClick: () => void searchChats() }]}
+          >
+            <Show when={chats.error()}>{(error) => <Failed text={error().message} onRetry={() => void chats.refresh()} />}</Show>
+            <Show
+              when={chatItems().length > 0}
+              fallback={
+                <Show when={!chats.error() && !chats.loading()}>
+                  <Empty icon="messages" text={text("No Project chats yet.")} />
+                </Show>
+              }
+            >
+              <List label={text("Recent chats")}>
+                <For each={chatItems()}>
+                  {(chat: AiConversation) => (
+                    <Row
+                      icon="message-circle"
+                      lines={[chat.title]}
+                      time={<Format.RelativeTime value={chat.updatedAt} />}
+                      href={assistantConversationHref("/app/assistant", chat.id)}
+                      onNavigate={(nav) => openConversation(chat.id, nav)}
+                    />
+                  )}
+                </For>
+              </List>
+            </Show>
+            <Show when={chats.hasMore()}>
+              <Band>
+                <ButtonV2 variant="text" icon="chevron-down" busy={chats.loadingMore()} onClick={() => void loadMore()}>
+                  {text("Load more chats")}
+                </ButtonV2>
+              </Band>
+            </Show>
+          </Section>
+          {/* k2b-ui gap: a pane has no foot for a composer; it follows the chats until the design study places it. */}
+          <Canvas label={text("Project")}>
+            <div class="assistant-project-composer-v2">{props.composer}</div>
+          </Canvas>
+        </Pane>
+        <Pane side label={text("Project context")} width={{ min: 300, default: 352 }}>
+          {/* k2b-ui gap: the context's sections (rows with menus, drop to add files) have no v2 parts yet; v1's
+              sections draw themselves here, the same as in the chat's context column. */}
+          <Canvas label={text("Project context")}>
+            <div ref={setContextPanel} class="assistant-project-context-v2">
+              <Show when={props.project.permission !== "read"}>
+                <FileDropTarget
+                  for={contextPanel()}
+                  label={text("Drop to add to the Project")}
+                  onDrop={(files) => void uploadFiles(files)}
+                />
+              </Show>
+              {contextSections()}
+            </div>
+          </Canvas>
+        </Pane>
+      </Pane.Split>
+      {lightboxView()}
+    </>
+  );
+  if (props.frame === "v2") return v2();
+
   return (
     <ScrollArea class="min-h-0 flex-1 p-[var(--ui-space-section)]">
       <div class="mx-auto grid min-h-full w-full max-w-[88rem] gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
@@ -455,204 +767,10 @@ export default function AssistantProjectView(props: Props) {
             {/* Files dropped on the Project context become Project files; elsewhere on the page they attach to the message. */}
             <FileDropTarget for={contextPanel()} label={text("Drop to add to the Project")} onDrop={(files) => void uploadFiles(files)} />
           </Show>
-          <div class="flex flex-col gap-5">
-            <AssistantContextSection
-              title={props.project.name}
-              identity
-              action={
-                <Show when={props.project.permission === "admin"}>
-                  <IconButton
-                    size="xs"
-                    label={text("Project settings")}
-                    onClick={() => {
-                      const project = props.project;
-                      void projectSettings(locale(), ({ openAssistantProjectSettingsDialog }) =>
-                        openAssistantProjectSettingsDialog(project, live),
-                      );
-                    }}
-                  >
-                    <i class="ti ti-settings" aria-hidden="true" />
-                  </IconButton>
-                </Show>
-              }
-            >
-              <AssistantContextRow
-                icon="ti ti-eye"
-                title={text("View project")}
-                onClick={() =>
-                  void openAssistantMarkdown(
-                    text("Project instructions"),
-                    props.project.instructions || text("No Project instructions yet."),
-                    "ti ti-adjustments-horizontal",
-                  )
-                }
-              />
-            </AssistantContextSection>
-
-            <Show
-              when={context.data()}
-              fallback={
-                <Placeholder
-                  state={context.error() ? "error" : "loading"}
-                  title={text(context.error() ? "Could not load Project context" : "Loading Project context")}
-                  action={
-                    context.error() ? (
-                      <Button size="sm" variant="secondary" onClick={() => void context.refresh()}>
-                        {text("Retry")}
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              }
-            >
-              {(value) => (
-                <>
-                  <AssistantProjectSkills project={props.project} initialPage={value().skills} />
-                  <AssistantContextSection
-                    title={text("Project knowledge")}
-                    action={
-                      <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add Project knowledge")} onClick={() => void editKnowledge()}>
-                          <i class="ti ti-plus" aria-hidden="true" />
-                        </IconButton>
-                      </Show>
-                    }
-                  >
-                    <Show
-                      when={value().knowledge.length > 0}
-                      fallback={<AssistantContextEmpty>{text("No Project knowledge yet.")}</AssistantContextEmpty>}
-                    >
-                      <AssistantContextRows>
-                        <For each={value().knowledge.slice(0, CONTEXT_PREVIEW_LIMIT)}>
-                          {(item) => (
-                            <AssistantContextRow
-                              icon="ti ti-bulb"
-                              title={item.title}
-                              onClick={() => void openAssistantMarkdown(item.title, item.content, "ti ti-bulb")}
-                              menuItems={knowledgeMenu(item)}
-                              menuLabel={`${text("Actions for")} ${item.title}`}
-                            />
-                          )}
-                        </For>
-                        <Show when={value().knowledge.length > CONTEXT_PREVIEW_LIMIT}>
-                          <AssistantContextViewAll onClick={() => void openAssistantKnowledgeSearch(value().knowledge)} />
-                        </Show>
-                      </AssistantContextRows>
-                    </Show>
-                  </AssistantContextSection>
-
-                  <AssistantContextSection
-                    title={assistantContextCountTitle(imageFiles().length, text("Image"), text("Images"))}
-                    action={
-                      <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add images")} onClick={() => void addFiles(true)}>
-                          <i class="ti ti-plus" aria-hidden="true" />
-                        </IconButton>
-                      </Show>
-                    }
-                  >
-                    <Show when={imageFiles()[0]} fallback={<AssistantContextEmpty>{text("No Project images yet.")}</AssistantContextEmpty>}>
-                      {(file) => (
-                        <AssistantContextRows>
-                          <AssistantContextRow
-                            icon="ti ti-photo"
-                            title={file().path.replace(/^.*\//u, "")}
-                            onClick={() => void openImages(file())}
-                            menuItems={fileMenu(file())}
-                            menuLabel={`${text("Actions for")} ${file().path.replace(/^.*\//u, "")}`}
-                          />
-                          <Show when={imageFiles().length > 1}>
-                            <AssistantContextViewAll onClick={() => void openImages()} />
-                          </Show>
-                        </AssistantContextRows>
-                      )}
-                    </Show>
-                  </AssistantContextSection>
-
-                  <AssistantContextSection
-                    title={assistantContextCountTitle(regularFiles().length, text("File"), text("Files"))}
-                    action={
-                      <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add files")} onClick={() => void addFiles()}>
-                          <i class="ti ti-plus" aria-hidden="true" />
-                        </IconButton>
-                      </Show>
-                    }
-                  >
-                    <Show
-                      when={regularFiles().length > 0}
-                      fallback={<AssistantContextEmpty>{text("No Project files yet.")}</AssistantContextEmpty>}
-                    >
-                      <AssistantContextRows>
-                        <For each={regularFiles().slice(0, CONTEXT_PREVIEW_LIMIT)}>
-                          {(file) => (
-                            <AssistantContextRow
-                              icon="ti ti-file"
-                              title={file.path.replace(/^.*\//u, "")}
-                              onClick={() => void openAssistantContextFiles(regularFiles(), file)}
-                              menuItems={fileMenu(file)}
-                              menuLabel={`${text("Actions for")} ${file.path.replace(/^.*\//u, "")}`}
-                            />
-                          )}
-                        </For>
-                        <Show when={regularFiles().length > CONTEXT_PREVIEW_LIMIT}>
-                          <AssistantContextViewAll onClick={() => void openAssistantContextFiles(regularFiles())} />
-                        </Show>
-                      </AssistantContextRows>
-                    </Show>
-                  </AssistantContextSection>
-
-                  <AssistantContextSection
-                    title={assistantContextCountTitle(value().references.length, text("Reference"), text("References"))}
-                    action={
-                      <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add reference")} onClick={() => void addReference()}>
-                          <i class="ti ti-plus" aria-hidden="true" />
-                        </IconButton>
-                      </Show>
-                    }
-                  >
-                    <Show
-                      when={value().references.length > 0}
-                      fallback={<AssistantContextEmpty>{text("No Project references yet.")}</AssistantContextEmpty>}
-                    >
-                      <AssistantContextRows>
-                        <For each={value().references.slice(0, CONTEXT_PREVIEW_LIMIT)}>
-                          {(reference) => {
-                            const label = () => reference.label || `${reference.ref.type} · ${reference.ref.id}`;
-                            return (
-                              <AssistantContextRow
-                                icon="ti ti-link"
-                                title={label()}
-                                onClick={() => void openAssistantCloudReference(label(), reference.ref)}
-                                menuItems={referenceMenu(reference)}
-                                menuLabel={`${text("Actions for")} ${label()}`}
-                              />
-                            );
-                          }}
-                        </For>
-                        <Show when={value().references.length > CONTEXT_PREVIEW_LIMIT}>
-                          <AssistantContextViewAll onClick={() => void openReferences(value().references)} />
-                        </Show>
-                      </AssistantContextRows>
-                    </Show>
-                  </AssistantContextSection>
-                </>
-              )}
-            </Show>
-          </div>
+          {contextSections()}
         </aside>
       </div>
-      <Show when={lightbox()}>
-        {(state) => (
-          <Lightbox
-            items={state().items}
-            index={state().index}
-            onIndexChange={(index) => setLightbox({ ...state(), index })}
-            onClose={() => setLightbox(null)}
-          />
-        )}
-      </Show>
+      {lightboxView()}
     </ScrollArea>
   );
 }

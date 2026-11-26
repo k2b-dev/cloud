@@ -435,6 +435,8 @@ const germanText: Record<string, string> = {
   Project: "Projekt",
   "Recent chats": "Aktuelle Chats",
   "No Project chats yet.": "Noch keine Chats in diesem Projekt.",
+  Chats: "Chats",
+  "Load more chats": "Weitere Chats laden",
   "Project context": "Projektkontext",
   "Project settings": "Projekt-Einstellungen",
   "View project": "Projekt anzeigen",
