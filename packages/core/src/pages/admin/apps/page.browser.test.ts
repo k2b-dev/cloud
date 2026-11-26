@@ -94,8 +94,8 @@ test("only an app that is not running can leave the list; a failure keeps it and
   const dialog = page.getByRole("alertdialog");
   expect(await dialog.innerText()).toContain("Zugriff, Schlüssel und Abos bleiben.");
   await dialog.getByRole("button", { name: "Entfernen" }).click();
-  await dialog.getByRole("alert").waitFor();
-  expect(await dialog.innerText()).toContain("Nicht entfernt. Pulse steht weiter in der Liste.");
+  await notice("Nicht entfernt.").waitFor();
+  expect(await notice("Nicht entfernt.").innerText()).toContain("Nicht entfernt. Pulse steht weiter in der Liste.");
 }, 20_000);
 
 test("a provider that does not answer says so, and its values say they are unavailable", async () => {
@@ -192,6 +192,19 @@ test("a row opens its app beside the list; search, filter and tab stay in the ad
   await page.waitForURL(/view=keys/);
   expect(new URL(page.url()).search).toBe("?app=grids&view=keys&q=dat&filter=problems");
 }, 30_000);
+
+test("add app asks for the ID, refuses a wrong one in place, and opens the keys of a new app", async () => {
+  await open("");
+  await page.getByRole("button", { name: "App hinzufügen" }).click();
+  const dialog = page.getByRole("dialog", { name: /hinzufügen/ });
+  const id = dialog.getByRole("textbox");
+  await id.fill("Core");
+  expect(await dialog.getByRole("button", { name: "Weiter" }).isDisabled()).toBe(true);
+  await id.fill("inventar-neu");
+  await dialog.getByRole("button", { name: "Weiter" }).click();
+  await page.waitForURL(/app=inventar-neu/);
+  expect(new URL(page.url()).search).toBe("?app=inventar-neu&view=keys");
+}, 20_000);
 
 test("a search that finds nothing says so in place and leads back to every app", async () => {
   await open("?q=zzz");

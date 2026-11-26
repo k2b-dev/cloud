@@ -1,5 +1,7 @@
-import { Bar, Button, Chip, Facts, Notice, Row, Section, Table, Tabs, Text } from "@k2b/ui/v2";
-import { For, type JSX, Show } from "solid-js";
+import { navigateTo } from "@k2b/ssr/nav";
+import { Bar, Button, Chip, Dialog, Facts, Notice, Row, Section, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
+import { createSignal, For, type JSX, Show } from "solid-js";
+import { adminToasts } from "../_area/toasts";
 import { domainHealthy, primaries } from "./domains-model";
 import { type AppsFormat, providerValues } from "./format";
 import { hintWords, noteTone } from "./hints";
@@ -15,7 +17,7 @@ import {
   WINDOWS,
 } from "./model";
 import type { AppsPageMessages } from "./page-messages";
-import { openRemoveDialog } from "./remove-dialog";
+import { removeAppListing } from "./remove-app";
 import type { AppPageData, DetailData } from "./view-data";
 
 type Ctx = { t: AppsPageMessages; f: AppsFormat; locale: string; list: AppsListState };
@@ -34,12 +36,12 @@ export const StatusChip = (props: { t: AppsPageMessages; status: AppStatusKind }
 const NOTICE_TONE = { neutral: "note", warning: "warn", danger: "bad" } as const;
 
 /** One hint: its cause in words and exactly one way out. */
-const Hint = (props: Ctx & { app: AppPageData; hint: AppHint }) => {
+const Hint = (props: Ctx & { app: AppPageData; hint: AppHint; onRemove: () => void }) => {
   const words = () => hintWords(props.t, props.f, props.app, props.hint);
   const entry = props.app.entry;
   const way = () =>
     words().target === "remove"
-      ? { label: words().action, icon: "trash", onClick: () => void openRemoveDialog({ id: entry.id, name: entry.name }, props.locale) }
+      ? { label: words().action, icon: "trash", onClick: props.onRemove }
       : {
           label: words().action,
           icon: words().create ? "plus" : undefined,
@@ -140,9 +142,34 @@ export function AppOverview(props: Ctx & { app: AppPageData }) {
   };
   // Routes and capabilities have their place in the views; the rest of the providers' links sit under "More".
   const links = entry.numbers.flatMap((item) => item.links).filter((link) => link.kind !== "routes" && link.kind !== "capabilities");
+  const toast = useToast();
+  const [removing, setRemoving] = createSignal(false);
+  const [removeProblem, setRemoveProblem] = createSignal<string | null>(null);
+  /** Asks, then hides the app from the list; a refusal keeps the app listed and says why above its facts. */
+  const remove = async () => {
+    if (removing()) return;
+    const asked = await Dialog.confirm({
+      title: t.removeTitle({ name: entry.name }),
+      description: t.removeText({ name: entry.name }),
+      confirm: t.removeConfirm,
+    });
+    if (!asked) return;
+    setRemoving(true);
+    setRemoveProblem(null);
+    const outcome = await removeAppListing(entry.id);
+    setRemoving(false);
+    if (outcome === "removed") {
+      toast(adminToasts.resolve([props.locale]).t.removed, { status: "ok" });
+      return navigateTo(appsHref({ list: props.list }));
+    }
+    setRemoveProblem(outcome === "running" ? t.removeRunning : t.removeFailed({ name: entry.name }));
+  };
   return (
     <>
-      <For each={entry.hints.filter((hint) => hint.kind !== "rotation")}>{(hint) => <Hint {...props} hint={hint} />}</For>
+      <Show when={removeProblem()}>{(problem) => <Notice tone="bad">{problem()}</Notice>}</Show>
+      <For each={entry.hints.filter((hint) => hint.kind !== "rotation")}>
+        {(hint) => <Hint {...props} hint={hint} onRemove={() => void remove()} />}
+      </For>
       <For each={props.app.providerFailures}>
         {(provider) => (
           <Notice
@@ -210,7 +237,8 @@ export function AppOverview(props: Ctx & { app: AppPageData }) {
                 {
                   label: t.removeTerm,
                   icon: "trash",
-                  onClick: () => void openRemoveDialog({ id: entry.id, name: entry.name }, props.locale),
+                  disabled: removing(),
+                  onClick: () => void remove(),
                 },
               ]
             : undefined

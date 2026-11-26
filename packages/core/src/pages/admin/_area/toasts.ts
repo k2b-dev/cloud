@@ -31,6 +31,7 @@ export const adminToasts = i18n.define({
       addedReachable: "Added and reachable",
       addedTestFailed: "Added, test failed",
       testFailed: "Test failed",
+      removed: "Removed",
     },
     de: {
       cacheCleared: "Cache geleert",
@@ -56,6 +57,7 @@ export const adminToasts = i18n.define({
       addedReachable: "Angelegt und erreichbar",
       addedTestFailed: "Angelegt, Test fehlgeschlagen",
       testFailed: "Test fehlgeschlagen",
+      removed: "Entfernt",
     },
   },
 });
