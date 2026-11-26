@@ -463,6 +463,10 @@ export const browserMessages = i18n.define({
       v2Place: "Location",
       v2Understood: "Understood",
       v2Close: "Close",
+      v2TodayByYou: (values: { count: number; more: string }) =>
+        values.count === 0
+          ? "Nothing changed by you today"
+          : `Today ${values.count}${values.more} ${values.count === 1 ? "change" : "changes"} by you`,
       v2From: "By",
       v2Sharing: "Sharing",
       v2Team: "Team",
@@ -937,6 +941,10 @@ export const browserMessages = i18n.define({
       v2Place: "Ort",
       v2Understood: "Verstanden",
       v2Close: "Schließen",
+      v2TodayByYou: (values: { count: number; more: string }) =>
+        values.count === 0
+          ? "Heute noch nichts von dir geändert"
+          : `Heute ${values.count}${values.more} ${values.count === 1 ? "Änderung" : "Änderungen"} von dir`,
       v2From: "Von",
       v2Sharing: "Freigabe",
       v2Team: "Team",

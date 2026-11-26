@@ -18,6 +18,7 @@ import {
   fixtureSearch,
   fixtureShares,
   fixtureSnapshot,
+  fixtureStorages,
   fixtureTrash,
 } from "./files-screen.fixture";
 import { browseOf, folderQueries, readFolderAddress, searchOf } from "./folder-query";
@@ -30,7 +31,7 @@ import { parseActivityFilters, screenViewOf } from "./urls";
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const requested = document.documentElement.dataset.fixture;
-const fixture: FixtureCase = requested === "worst" || requested === "huge" ? requested : "plain";
+const fixture: FixtureCase = requested === "worst" || requested === "huge" || requested === "empty" ? requested : "plain";
 const params = new URLSearchParams(location.search);
 const queries = folderQueries(browserMessages.resolve(["de"]).t);
 const address = readFolderAddress(queries, params, defaultView);
@@ -56,15 +57,22 @@ if (view === "trash") snapshot.trash = fixtureTrash;
 if (view === "favorites") snapshot.marks = fixtureFavorites;
 if (view === "shares") snapshot.shares = fixtureShares(fixture);
 if (view === "overview") {
-  snapshot.favoritesPreview = { items: fixtureFavorites, more: false };
-  snapshot.recentByYou = fixtureRecent();
+  snapshot.bases = { ...snapshot.bases, items: fixtureStorages(fixture) };
+  if (fixture === "worst") snapshot.bases.issues = [{ area: "freeipa", code: "unavailable" }];
+  snapshot.favoritesPreview = fixture === "empty" ? { items: [], more: false } : { items: fixtureFavorites, more: false };
+  snapshot.recentByYou =
+    fixture === "empty"
+      ? { page: fixtureActivity("empty"), opened: [] }
+      : fixture === "worst"
+        ? { page: { ...fixtureActivity("worst"), items: fixtureActivity("worst").items.slice(0, 5) }, opened: [] }
+        : fixtureRecent();
 }
 if (view === "activity") {
   const filters = parseActivityFilters(params) ?? {};
   snapshot.activity = { filters, page: fixtureActivity(fixture) };
   snapshot.marks = filters.actor === "me" ? [] : undefined;
 }
-if (view === "edit") snapshot.editor = fixtureMarkdown(location.origin);
+if (view === "edit") snapshot.editor = fixtureMarkdown(location.origin, fixture);
 // An old folder address: the server found where its folder went.
 if (view === "folder" && path === "Alte Angebote") {
   snapshot.directory = null;

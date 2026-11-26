@@ -38,7 +38,7 @@ export default function SharesPane(props: {
   const [busy, setBusy] = createSignal<string | null>(null);
   const lifetime = new AbortController();
   onCleanup(() => lifetime.abort());
-  const date = () => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeZone: props.timeZone });
+  const date = () => new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeZone: props.timeZone });
 
   /** Reads a page; `after` adds it to the loaded links, without it the list starts again. */
   const load = async (after?: string) => {
@@ -90,6 +90,8 @@ export default function SharesPane(props: {
   const by = (share: ShareView) =>
     [share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy, b().shareAccess(share.accessCount)].join(" · ");
   const expires = (share: ShareView) => (share.expiresAt ? date().format(new Date(share.expiresAt)) : b().noExpiry);
+  // In the column a link without an end is a dash: its head says what the column holds, and the row on the phone says it in words.
+  const expiresCell = (share: ShareView) => (share.expiresAt ? expires(share) : "—");
   const state = (share: ShareView) => (
     <Chip status={STATE[share.state]}>
       {share.state === "active" ? b().stateActive : share.state === "expired" ? b().stateExpired : b().stateRevoked}
@@ -122,7 +124,7 @@ export default function SharesPane(props: {
               columns={[
                 {
                   title: b().shareName,
-                  width: { min: 200, default: 260 },
+                  width: { min: 180, default: 210 },
                   cell: (share) => ({
                     lines: [
                       <Inline>
@@ -136,9 +138,9 @@ export default function SharesPane(props: {
                     ],
                   }),
                 },
-                { title: b().v2Place, width: { min: 140, default: 180 }, drop: true, cell: place },
-                { title: b().shareExpires, width: { min: 100, default: 110 }, drop: true, cell: expires },
-                { title: b().shareState, width: { min: 100, default: 120 }, drop: true, cell: state },
+                { title: b().v2Place, width: { min: 120, default: 150 }, drop: true, cell: place },
+                { title: b().shareExpires, width: { min: 80, default: 90 }, drop: true, cell: expiresCell },
+                { title: b().shareState, width: { min: 120, default: 130 }, drop: true, cell: state },
                 {
                   title: b().v2Deeds,
                   cell: (share) => (

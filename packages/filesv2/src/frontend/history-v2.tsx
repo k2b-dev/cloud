@@ -76,13 +76,6 @@ export function SentenceText(props: { parts: readonly Part[]; mark?: { name: str
   );
 }
 
-/** The innermost folder of the last place a sentence names, when the reader resolved it as current. */
-const folderOf = (parts: readonly Part[]) =>
-  parts
-    .filter((part): part is Extract<Part, { kind: "place" }> => part.kind === "place")
-    .map((part) => part.hrefs?.at(-1) ?? undefined)
-    .at(-1) ?? undefined;
-
 /** Where the first current thing of a sentence is now; the row opens it. */
 const hrefOf = (parts: readonly Part[]) =>
   parts.find((part): part is Extract<Part, { kind: "name" }> => part.kind === "name" && !!part.href)?.href;
@@ -166,13 +159,10 @@ function moreDeeds(
   h: HistoryMessages,
   env: HistoryEnvironment,
   actions?: HistoryActions,
-  folder?: string,
 ): MenuEntry[] {
   const run = entry.execution ? env.executionHref?.(entry) : null;
   const person = actor.person;
   return [
-    // The folder of a current thing, as the sentence's place led there on v1; the row itself opens the thing.
-    ...(folder ? [{ label: h.v2OpenFolder, icon: "folder", href: folder, onNavigate: env.onNavigate }] : []),
     ...(run ? [{ label: h.viewExecution, icon: "player-play", href: run }] : []),
     ...(actions?.onContact && person?.userId && entry.actor.name
       ? [
@@ -266,17 +256,20 @@ export function ActivityRow(props: ActivityRowProps) {
           ? { label: h().retry, icon: "refresh", onClick: () => void versions.refresh() }
           : deedOf(rowAction(props.row, h(), actions() ?? {}, { links: true }), h(), props.actions?.onRestoreTrash, props.onChanged)),
   );
-  const more = createMemo(() => moreDeeds(entry(), actor(), h(), props.env, props.actions, folderOf(linked())));
+  const more = createMemo(() => moreDeeds(entry(), actor(), h(), props.env, props.actions));
   const time = () => (props.dated ? formatWhen(entry().time, locale(), h(), props.env) : formatTime(entry().time, locale(), props.env));
   // Version evidence is extra: when it cannot be read the row says so and offers to read it again.
   const versionFailure = () => {
     const error = versions.error();
     return error ? (error instanceof Error && error.message ? error.message : h().historyFailed) : "";
   };
+  const sentenceLine = () => <SentenceText parts={linked()} mark={props.mode === "me" ? null : mark()} />;
+  // The web is how most changes come; only another channel (the API, an app, the Assistant) is worth a word.
+  const channel = () => meta().filter((part) => !(part.kind === "via" && entry().via === "web"));
   const facts = () =>
     [
       state()?.label,
-      factsText(meta()),
+      factsText(channel()),
       versionFailure(),
       props.note,
       props.toggle ? h().itemsCount.replace("{count}", String(props.toggle.count)) : "",
@@ -285,7 +278,7 @@ export function ActivityRow(props: ActivityRowProps) {
       .join(" · ");
   return (
     <Row
-      lines={[<SentenceText parts={linked()} mark={props.mode === "me" ? null : mark()} />, facts() || placeLine(linked())]}
+      lines={facts() ? [sentenceLine(), facts()] : [sentenceLine()]}
       avatar={props.mode === "all" && !props.member ? personOf(actor()) : undefined}
       mark={props.mode === "me" && !props.member ? (mark()?.mark ?? { icon: "history" }) : undefined}
       time={time()}
@@ -293,35 +286,15 @@ export function ActivityRow(props: ActivityRowProps) {
       onNavigate={props.env.onNavigate}
       onOpen={props.toggle?.onToggle}
       action={deed()}
+      // The row opens the thing in its folder, or a batch's members below it; only deeds beyond that need a "…".
       end={
-        <Show when={more().length || props.toggle}>
-          <Show when={props.toggle} fallback={<Menu label={h().activityActions} items={more()} />}>
-            {(toggle) => (
-              <Menu
-                label={h().activityActions}
-                items={[
-                  {
-                    label: toggle().open ? h().fewerItems : h().showItems,
-                    icon: toggle().open ? "chevron-up" : "chevron-down",
-                    onClick: toggle().onToggle,
-                  },
-                  ...more(),
-                ]}
-              />
-            )}
-          </Show>
+        <Show when={more().length}>
+          <Menu label={h().activityActions} items={more()} />
         </Show>
       }
     />
   );
 }
-
-/** A quiet second line when a change has no facts: where it happened. */
-const placeLine = (parts: readonly Part[]) =>
-  parts
-    .filter((part): part is Extract<Part, { kind: "place" }> => part.kind === "place")
-    .map((part) => part.segments.join(" › "))
-    .at(-1) ?? "";
 
 /**
  * Many changes of one person at one time as one line that opens them in place, below it, so nothing above moves.
@@ -353,18 +326,6 @@ export function RunRow(props: {
       mark={props.mode === "me" ? { icon: "stack-2" } : undefined}
       time={span()}
       onOpen={props.onToggle}
-      end={
-        <Menu
-          label={h().activityActions}
-          items={[
-            {
-              label: props.open ? h().fewerItems : h().showItems,
-              icon: props.open ? "chevron-up" : "chevron-down",
-              onClick: props.onToggle,
-            },
-          ]}
-        />
-      }
     />
   );
 }

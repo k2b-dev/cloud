@@ -178,7 +178,6 @@ export const historyCatalog = i18n.define({
       v2ItemHistory: "History of {name}",
       v2RemoveItem: "All of Activity",
       v2Opened: "Opened {object}",
-      v2OpenFolder: "Open folder",
       showAll: "Show all",
       noLongerAvailable: "no longer available",
 
@@ -528,7 +527,6 @@ export const historyCatalog = i18n.define({
       v2ItemHistory: "Verlauf von {name}",
       v2RemoveItem: "Ganze Aktivität",
       v2Opened: "{object} geöffnet",
-      v2OpenFolder: "Ordner öffnen",
       showAll: "Alle anzeigen",
       noLongerAvailable: "nicht mehr verfügbar",
 

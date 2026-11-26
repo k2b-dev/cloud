@@ -11,10 +11,10 @@ import {
   Avatar,
   Bar,
   Button,
-  Chip,
   Empty,
   Failed,
   FilterBar,
+  Icon,
   Inline,
   Input,
   List,
@@ -69,7 +69,7 @@ import {
   searchOf,
 } from "./folder-query";
 import { RECENT_MOVED_HINT } from "./hints";
-import { type HistoryActions, type HistoryTarget, isCurrent } from "./history-actions";
+import { formatWhen, type HistoryActions, type HistoryTarget, isCurrent } from "./history-actions";
 import {
   entryHref,
   loadActivity,
@@ -108,6 +108,11 @@ const ancestors = (path: string) => {
   return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
 };
 const paramsOf = (source: string) => new URL(source, ORIGIN).searchParams;
+/** A name for a place where it cannot wrap: at most 48 signs, its start and its last 16 (extension, version) kept. */
+const shortName = (name: string) => {
+  const signs = Array.from(name);
+  return signs.length <= 48 ? name : `${signs.slice(0, 31).join("")}…${signs.slice(-16).join("")}`;
+};
 /** The list parameters a folder keeps while moving between folders: its order, grouping and what it shows. */
 const KEPT = ["sort", "group", "type"] as const;
 const FILTER_ICONS = { type: "files", kind: "file-search", size: "ruler-2", modified: "calendar", match: "equal" } as const;
@@ -681,9 +686,11 @@ export default function FilesScreen(props: {
 
   // ── Words and rows ──────────────────────────────────────────────────────────────────────────────────────────────
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
-  const date = createMemo(() => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: timeZone() }));
   // A phone row has room for the day alone.
-  const day = createMemo(() => new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeZone: timeZone() }));
+  const day = createMemo(() => new Intl.DateTimeFormat(locale(), { day: "2-digit", month: "2-digit", timeZone: timeZone() }));
+  // "heute, 08:10", "gestern, 15:22" or the date: the words of Activity, short enough for a column.
+  const when = (iso: string) =>
+    formatWhen(iso, locale(), h(), { now: snapshot().now ?? props.initial.now ?? new Date().toISOString(), timeZone: timeZone() });
   const sizeText = (entry: FileEntry) => (entry.directory ? "" : formatFileViewSize(entry.size, locale()));
   /** Who reaches an entry: its own active download links, else the team of a group storage, or only this person. */
   const sharing = (entry: FileEntry) =>
@@ -956,10 +963,14 @@ export default function FilesScreen(props: {
     if (screen() === "edit") {
       const launch = snapshot().editor;
       const folders = launch ? ancestors(parentPath(launch.entry.path)) : [];
+      // k2b-ui gap: Path never gives way in the middle, so a deep folder pushed the head's "Close" out. The storage, the
+      // file's own folder and the file stand; the folders between are one "…" that leads to the folder above.
       return [
         ...(base ? [{ label: label(base), href: filesUrl(base.id) }] : []),
-        ...folders.map((path) => ({ label: path.split("/").at(-1) ?? path, href: filesUrl(base?.id, path) })),
-        { label: launch?.entry.name ?? params().get("file")?.split("/").at(-1) ?? "" },
+        ...(folders.length > 1 ? [{ label: "…", href: filesUrl(base?.id, folders.at(-2)!) }] : []),
+        ...folders.slice(-1).map((path) => ({ label: path.split("/").at(-1) ?? path, href: filesUrl(base?.id, path) })),
+        // k2b-ui gap: the last Path item is not cut either; a long name keeps its start and its extension here.
+        { label: shortName(launch?.entry.name ?? params().get("file")?.split("/").at(-1) ?? "") },
       ];
     }
     const moved = snapshot().moved;
@@ -990,8 +1001,8 @@ export default function FilesScreen(props: {
       <Workspace
         sidebarLabel={b().v2SidebarWidth}
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
-        detail={screen() === "folder" && !snapshot().moved ? true : undefined}
-        detailEmpty={screen() === "folder" && !snapshot().moved ? { icon: "file", text: b().v2NothingOpen } : undefined}
+        // No empty half (look rule 5): the detail stands only while an entry is open.
+        detail={screen() === "folder" && !snapshot().moved && openPath() ? true : undefined}
         primary={screen() === "folder" && !snapshot().moved ? uploadAction() : undefined}
         head={
           <Bar
@@ -1016,11 +1027,7 @@ export default function FilesScreen(props: {
                     }}
                   />
                 </Show>
-                <Show when={screen() === "edit" && snapshot().editor}>
-                  <Button icon="x" onClick={editorBack}>
-                    {b().v2Close}
-                  </Button>
-                </Show>
+
                 <Show when={screen() === "folder" && !snapshot().moved}>
                   <Input
                     type="search"
@@ -1151,7 +1158,7 @@ export default function FilesScreen(props: {
           <Pane.Split>
             <Pane
               label={t().files}
-              width={{ min: 440, default: 640 }}
+              width={{ min: 440, default: 720 }}
               scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}
               status={
                 <Show when={directory()}>
@@ -1354,7 +1361,7 @@ export default function FilesScreen(props: {
                       columns={[
                         {
                           title: t().name,
-                          width: { min: 140, default: 200 },
+                          width: { min: 160, default: 240 },
                           sort: sortTarget("name"),
                           cell: (row) => {
                             const name = (
@@ -1376,9 +1383,14 @@ export default function FilesScreen(props: {
                         {
                           // Who reaches it: its own download links, else the team of a group storage or only you.
                           title: b().v2Sharing,
-                          width: { min: 80, default: 88 },
+                          width: { min: 96, default: 112 },
                           drop: true,
-                          cell: (row) => <Chip icon={row.entry.facts?.links ? "link" : undefined}>{sharing(row.entry)}</Chip>,
+                          cell: (row) => (
+                            <Inline>
+                              <Icon name={row.entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock"} />
+                              <Text>{sharing(row.entry)}</Text>
+                            </Inline>
+                          ),
                         },
                         {
                           title: t().size,
@@ -1390,10 +1402,10 @@ export default function FilesScreen(props: {
                         },
                         {
                           title: t().modified,
-                          width: { min: 110, default: 120 },
+                          width: { min: 110, default: 130 },
                           drop: true,
                           sort: sortTarget("modified"),
-                          cell: (row) => (row.fresh ? b().justCreated : date().format(new Date(row.entry.modified))),
+                          cell: (row) => (row.fresh ? b().justCreated : when(row.entry.modified)),
                         },
                         {
                           title: b().v2Deeds,

@@ -89,11 +89,30 @@ const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
+// The Cloud shell around the screen, as the approved mockup draws it: the tinted page of Files, the icon rail with
+// its apps, the screen as one white card; on the phone the shell's bar on top. Test frame only, never product CSS.
+const SHELL_APPS = ["home", "mail", "layout-kanban", "folders", "table", "notebook", "messages", "address-book"];
+const shell =
+  `<style>html,body{height:100%;margin:0}` +
+  `body{background:linear-gradient(135deg,color-mix(in srgb,#2563eb 11%,#fafafa),color-mix(in srgb,#60a5fa 7%,#fafafa))}` +
+  `#root{position:fixed;inset:8px 8px 8px 64px;display:flex;border-radius:14px;overflow:hidden;background:#fff;` +
+  `box-shadow:0 0 0 1px rgb(9 9 11/.07),0 1px 3px rgb(9 9 11/.05)}` +
+  `.shell-rail{position:fixed;left:0;top:8px;bottom:8px;width:56px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0}` +
+  `.shell-rail b{width:32px;height:32px;border-radius:8px;background:#09090b;color:#fff;display:grid;place-items:center;font:600 13px system-ui;margin-bottom:14px}` +
+  `.shell-rail i{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:#52525b;font-size:19px}` +
+  `.shell-rail i.on{background:#fff;color:#1d4ed8;box-shadow:0 0 0 1px rgb(9 9 11/.07)}.shell-rail span{flex:1}` +
+  `.shell-rail em{width:28px;height:28px;border-radius:50%;background:#0f766e;color:#fff;display:grid;place-items:center;font:600 11px system-ui;font-style:normal}` +
+  `.shell-bar{display:none}` +
+  `@media (max-width:767px){#root{inset:52px 0 0 0;border-radius:0;box-shadow:none}.shell-rail{display:none}` +
+  `.shell-bar{position:fixed;inset:0 0 auto 0;height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;font:600 15px system-ui;color:#09090b}` +
+  `.shell-bar i{font-size:20px;color:#52525b}}</style>` +
+  `<nav class="shell-rail" aria-hidden="true"><b>C</b>${SHELL_APPS.map((app) => `<i class="ti ti-${app}${app === "folders" ? " on" : ""}"></i>`).join("")}<span></span><i class="ti ti-help-circle"></i><em>MS</em></nav>` +
+  `<div class="shell-bar" aria-hidden="true"><i class="ti ti-menu-2"></i>Dateien</div>`;
 const page = (fixture: FixtureCase) =>
   `<!doctype html><html lang="de" class="light" data-fixture="${fixture}"><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+  `<style>${css}</style></head>` +
+  `<body class="k2b-ui k2-ui">${shell}<div id="root"></div><script src="/harness.js"></script></body></html>`;
 
 const emptyHistory = { items: [], next: null, visibleCount: 0, batches: [], exhausted: true, scanLimitReached: false };
 type Seen = { pages: string[]; api: string[]; posts: { path: string; body: unknown }[] };
@@ -108,6 +127,8 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     colorScheme: "light",
   });
   const tab = await context.newPage();
+  // The fixtures carry dates: the page's clock stands at the fixture's "now", also after a navigation in place.
+  await tab.clock.setFixedTime(new Date(FIXTURE_NOW));
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
   const seen: Seen = { pages: [], api: [], posts: [] };
@@ -162,6 +183,9 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     }
     if (url.pathname === `${api}/bases/demo/entry`) {
       const path = url.searchParams.get("path") ?? "";
+      // The file the editor shows exists in every fixture.
+      const edited = fixtureMarkdown(origin).entry;
+      if (path === edited.path) return route.fulfill({ json: { base: fixtureBase, entry: edited, favorite: false } });
       const all = [
         ...fixtureListing(fixture, path.split("/").slice(0, -1).join("/"), { sort: "name", order: "asc", type: "all", groupFolders: true }),
       ];
@@ -561,17 +585,52 @@ describe("the views beside the folders on v2", () => {
     });
 
   for (const view of [wide, narrow, phone])
-    for (const address of ["/app/filesv2?view=activity", "/app/filesv2?view=shares"])
-      test(`worst-case ${new URL(address, origin).searchParams.get("view")} keeps the layout whole at ${view.name}px`, async () => {
+    for (const address of [
+      "/app/filesv2?view=activity",
+      "/app/filesv2?view=shares",
+      "/app/filesv2",
+      "/app/filesv2?base=demo&file=Notizen.md&view=edit",
+    ])
+      test(`worst-case ${new URL(address, origin).searchParams.get("view") ?? "overview"} keeps the layout whole at ${view.name}px`, async () => {
         const { context, tab, errors } = await open(view, address, "worst");
         try {
-          await shoot(tab, `19-worst-${new URL(address, origin).searchParams.get("view")}-${view.name}`);
+          await shoot(tab, `19-worst-${new URL(address, origin).searchParams.get("view") ?? "overview"}-${view.name}`);
           await expectClean(tab);
           expect(errors).toEqual([]);
         } finally {
           await context.close();
         }
       });
+
+  // Nothing yet: each view says so in its place, with its way on, and nothing breaks.
+  for (const view of [wide, phone])
+    for (const address of ["/app/filesv2?view=activity&who=me", "/app/filesv2?view=shares", "/app/filesv2"])
+      test(`an empty ${new URL(address, origin).searchParams.get("view") ?? "overview"} says so at ${view.name}px`, async () => {
+        const { context, tab, errors } = await open(view, address, "empty");
+        try {
+          expect(await tab.locator("[data-k2-part=Empty]").count()).toBeGreaterThan(0);
+          await shoot(tab, `21-empty-${new URL(address, origin).searchParams.get("view") ?? "overview"}-${view.name}`);
+          await expectClean(tab);
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      });
+
+  test("all storage of 200 storages opens at once and stays whole", async () => {
+    const started = performance.now();
+    const { context, tab, errors } = await open(wide, "/app/filesv2", "huge");
+    try {
+      const ready = performance.now() - started;
+      expect(await tab.locator("[data-k2-part=Tiles][data-variant=card] [role=listitem]").count()).toBe(201);
+      console.info(`overview of 200 storages ready in ${Math.round(ready)} ms`);
+      await expectClean(tab);
+      expect(ready).toBeLessThan(5000);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
 
   for (const address of ["/app/filesv2?view=activity", "/app/filesv2?view=shares"])
     test(`${address} of 1,000 entries keeps only the rows in view and scrolls to its end`, async () => {

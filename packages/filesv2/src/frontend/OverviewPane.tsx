@@ -23,6 +23,7 @@ import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
 import {
   actorOf,
+  daysAgo,
   fill,
   formatWhen,
   type HistoryEnvironment,
@@ -66,6 +67,13 @@ export default function OverviewPane(props: {
   const h = useHistoryMessages();
   const locale = useLocale();
   const labels = createMemo(() => props.bases.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) })));
+  // The first row says what matters today: what this person changed today; the storages count in their section.
+  const today = () => {
+    const page = props.recent?.page;
+    if (!page) return b().allStorage;
+    const count = page.items.filter((entry) => daysAgo(entry.time, props.env) === 0).length;
+    return b().v2TodayByYou({ count, more: page.next && count === page.items.length ? "+" : "" });
+  };
   const unreachable = () => props.bases.filter((base) => base.status !== "existing").length;
   // The opened files are this person's own; their name comes from their own changes, else "Me".
   const me = () => props.recent?.page.items.find((entry) => entry.actor.kind === "user" && entry.actor.name)?.actor.name ?? h().whoMe;
@@ -128,12 +136,7 @@ export default function OverviewPane(props: {
     <Pane
       label={b().allStorage}
       scrollKey="filesv2-overview"
-      status={
-        <StatusRow
-          lead={b().v2StorageCount({ count: props.bases.length })}
-          facts={unreachable() ? [{ value: unreachable(), after: b().v2Unreachable }] : undefined}
-        />
-      }
+      status={<StatusRow lead={today()} facts={unreachable() ? [{ value: unreachable(), after: b().v2Unreachable }] : undefined} />}
     >
       {props.issues.map((issue) => (
         <Notice tone="warn" title={t()[issue.area]}>

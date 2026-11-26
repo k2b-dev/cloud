@@ -157,7 +157,7 @@ describe("Activity on UI v2", () => {
     );
   const text = () => dom.root.textContent ?? "";
 
-  test("a current file opens in its folder, its folder opens from the row's menu, and a vanished one is plain with a hint", async () => {
+  test("a current file opens in its folder, and a vanished one is plain with a hint", async () => {
     await pane([
       entry({
         action: "item.move",
@@ -177,14 +177,11 @@ describe("Activity on UI v2", () => {
     const vanished = rowWith("Alt.pdf")!;
     expect(vanished.textContent).toContain("Alt.pdf (nicht mehr verfügbar)");
     expect(vanished.querySelector("a")).toBeNull();
-    // Time and day stand at the end; the channel is a quiet fact.
+    // Time and day stand at the end; the web, the usual channel, is not named.
     expect(moved.textContent).toContain("heute, 14:12");
-    expect(vanished.textContent).toContain("Web");
-    // The folder the sentence names opens from the row's menu, never from a link inside the opening row.
-    buttonNamed(moved, "Aktionen zum Verlauf")!.click();
-    await flush();
-    const folder = [...dom.document.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.textContent?.includes("Ordner öffnen"));
-    expect(folder?.getAttribute("href")).toBe("/app/filesv2?base=cloud%3Agroups%3Avertrieb&path=Buchhaltung");
+    expect(vanished.textContent).not.toContain("Web");
+    // The row opens the file in its folder; there is no second way to the same place behind a "…".
+    expect(buttonNamed(moved, "Aktionen zum Verlauf")).toBeUndefined();
   });
 
   test("only sides the reader returned as current lead anywhere; a hidden side adds no name, folder or address", async () => {
@@ -652,6 +649,9 @@ describe("Activity on UI v2", () => {
     await flush();
     const run = [...dom.document.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.textContent?.includes("Ausführung ansehen"));
     expect(run?.getAttribute("href")).toBe(`/app/filesv2/executions/${moved.id}`);
+    // The menu closes before the page goes, so its focus check never runs on a document that is gone.
+    dom.document.activeElement?.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   });
 
   test("the batch context of a vanished item's step retries a failed read, marks a lower bound, and aborts on disposal", async () => {

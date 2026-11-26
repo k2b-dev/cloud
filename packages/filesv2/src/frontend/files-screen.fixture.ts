@@ -7,7 +7,7 @@ import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 export const FIXTURE_NOW = "2026-11-25T12:00:00.000Z";
 export const FIXTURE_TIME_ZONE = "Europe/Berlin";
 /** The states a test can ask the harness for: the ordinary folder, the worst case, and a folder of 1,000 entries. */
-export type FixtureCase = "plain" | "worst" | "huge";
+export type FixtureCase = "plain" | "worst" | "huge" | "empty";
 
 export const fixtureBase: BaseSummary = {
   id: "demo",
@@ -70,7 +70,7 @@ const huge: FileEntry[] = Array.from({ length: 1000 }, (_, index) => {
   return index < 40 ? entry(`Ordner ${number}`, true, 0, index) : entry(`Beleg ${number}.pdf`, false, 10_000 + index * 37, index);
 });
 
-const entries = (fixture: FixtureCase) => (fixture === "worst" ? worst : fixture === "huge" ? huge : plain);
+const entries = (fixture: FixtureCase) => (fixture === "worst" ? worst : fixture === "huge" ? huge : fixture === "empty" ? [] : plain);
 
 /** The direct children of a folder, ordered as the server orders them: folders first when grouped, then by the sort. */
 export function fixtureListing(
@@ -231,8 +231,29 @@ const plainActivity = (): ActivityEntry[] => [
   change("item.copy", 4_400, 1, { after: side("Vorlagen/Angebot Vorlage.docx") }),
 ];
 
+/** People break-ui feeds a list of changes: long and compound names, one letter, RTL, emoji, CJK. */
+const WORST_PEOPLE = [
+  "Aleksandra Wiśniewska-Kowalczyk",
+  "J",
+  "نور الهدى عبد الرحمن",
+  "👩🏽‍💻 Priya",
+  "王秀英",
+  "Christopher Alexander Montgomery III",
+];
+const worstPerson = (index: number) => ({ kind: "user" as const, userId: `w-${index}`, name: WORST_PEOPLE[index % WORST_PEOPLE.length]! });
+
 /** What break-ui feeds a history: endless names, one-letter ones, other scripts, emoji, unknown accounts and states. */
 const worstActivity = (): ActivityEntry[] => [
+  ...WORST_PEOPLE.map((_, index) =>
+    change(
+      "file.upload",
+      2 + index,
+      index,
+      { after: side(`Eingang/Q3 Board Deck — FINAL (revised) v12 [approved by legal] ${index}.pdf`) },
+      { actor: worstPerson(index) },
+    ),
+  ),
+  change("file.upload", 3, 0, { after: side("<script>alert(1)</script> &amp; **bold**.md") }),
   change("file.upload", 5, 0, { after: side(`${"Sehr-langer-Ordnername-ohne-Leerzeichen-".repeat(3)}/${"x".repeat(160)}.pdf`) }),
   change("file.edit", 9, 1, { after: side("b") }, { actor: { kind: "user", userId: null, name: null } }),
   change("item.move", 20, 2, { before: side("文件夹/长文件名示例文档.docx"), after: side("مستند/مستند طويل جدا للاختبار.pdf") }),
@@ -252,7 +273,7 @@ const hugeActivity = (): ActivityEntry[] =>
   );
 
 export function fixtureActivity(fixture: FixtureCase): ActivityPage {
-  const items = fixture === "worst" ? worstActivity() : fixture === "huge" ? hugeActivity() : plainActivity();
+  const items = fixture === "worst" ? worstActivity() : fixture === "huge" ? hugeActivity() : fixture === "empty" ? [] : plainActivity();
   return {
     items,
     next: null,
@@ -289,6 +310,7 @@ const link = (index: number, patch: Partial<ShareView> = {}): ShareView => ({
 });
 
 export function fixtureShares(fixture: FixtureCase): SharePage {
+  if (fixture === "empty") return { items: [], next: null };
   if (fixture === "huge") return { items: Array.from({ length: 1000 }, (_, index) => link(index)), next: null };
   if (fixture === "worst")
     return {
@@ -304,18 +326,47 @@ export function fixtureShares(fixture: FixtureCase): SharePage {
   return { items: Array.from({ length: 8 }, (_, index) => link(index)), next: null };
 }
 
-/** A Markdown file in its editor; the test answers its content from `/content`. */
-export const fixtureMarkdown = (origin: string): MarkdownLaunch => ({
+/** A Markdown file in its editor; the test answers its content from `/content`. The worst case is read only, deep and long. */
+export const fixtureMarkdown = (origin: string, fixture: FixtureCase = "plain"): MarkdownLaunch => ({
   kind: "markdown",
   managed: false,
-  canWrite: true,
+  canWrite: fixture !== "worst",
   url: `${origin}/content`,
   base: fixtureBase,
-  entry: plain[7]!,
+  entry:
+    fixture === "worst"
+      ? {
+          ...plain[7]!,
+          name: `${"Benachrichtigungseinstellungen-".repeat(4)}Protokoll.md`,
+          path: `${"Sehr-langer-Ordnername-ohne-Leerzeichen/".repeat(3)}${"Benachrichtigungseinstellungen-".repeat(4)}Protokoll.md`,
+        }
+      : plain[7]!,
 });
+
+/** The storages all storage shows: the two of the workshop, every break-ui name, a missing one, or 200 groups. */
+export function fixtureStorages(fixture: FixtureCase): BaseSummary[] {
+  if (fixture === "huge")
+    return [fixtureHome, ...Array.from({ length: 200 }, (_, index) => ({ ...fixtureBase, id: `g-${index}`, name: `Gruppe ${index + 1}` }))];
+  if (fixture !== "worst") return fixtureBases;
+  return [
+    fixtureHome,
+    ...[...WORST_PEOPLE, "Benachrichtigungseinstellungen-Benachrichtigungseinstellungen", "A", "🎉 Fest 2026 📸"].map((name, index) => ({
+      ...fixtureBase,
+      id: `w-${index}`,
+      name,
+    })),
+    { ...fixtureBase, id: "gone", name: "Archiv 2019", status: "missing" as const, reason: "missing" },
+  ];
+}
 
 /** All storage: the favorites, and what this person did last. */
 export const fixtureRecent = () => ({
-  page: { ...fixtureActivity("plain"), items: fixtureActivity("plain").items.slice(0, 5) },
+  // "Recently by you" holds this person's own changes only: Mira's.
+  page: {
+    ...fixtureActivity("plain"),
+    items: fixtureActivity("plain")
+      .items.slice(0, 5)
+      .map((item) => ({ ...item, actor: { kind: "user" as const, ...PEOPLE[0]! } })),
+  },
   opened: [],
 });

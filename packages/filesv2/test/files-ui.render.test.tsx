@@ -96,7 +96,7 @@ describe("Filesv2 server-rendered feedback", () => {
       favoritesPreview: { items: [favorite], more: false },
       recentByYou: { page: page([upload]), opened: [] },
     });
-    for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf", "2 storage locations"])
+    for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf", "Today 1 change by you"])
       expect(overview).toContain(text);
     expect(overview).toContain('data-variant="card"');
     expect(overview).toContain('data-k2-part="Digest"');

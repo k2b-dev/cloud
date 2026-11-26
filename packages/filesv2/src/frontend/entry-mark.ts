@@ -7,7 +7,8 @@ export const FILES_COLOR = "#1d4ed8";
 
 /** The data colour of each kind of file, so a PDF looks the same in every list, card and sentence. */
 const TYPE_COLORS: Record<FileType, string | undefined> = {
-  folder: FILES_COLOR,
+  // folders wear the warm colour of the approved mockup, so they part from the blue of Files' own places
+  folder: "#ea580c",
   pdf: "#dc2626",
   image: "#0891b2",
   sheet: "#15803d",
