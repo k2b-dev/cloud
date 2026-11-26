@@ -447,7 +447,7 @@ solid-island {
     top: env(safe-area-inset-top, 0px);
     right: env(safe-area-inset-right, 0px);
     z-index: 1;
-    & :is(.layout-header-up, .layout-header-title, .layout-header-title-menu) {
+    & :is(.layout-header-title, .layout-header-title-menu) {
       display: none;
     }
   }
@@ -556,9 +556,8 @@ solid-island {
 }
 
 @media not all and (min-width: 48rem) {
-  /* Layout marks a page with workspace navigation on its shell. A page below another (an admin page) keeps its
-     title: its way up leads to that page, and it has no title menu. */
-  .layout-shell-content[data-workspace-navigation] .layout-header-title:not(.layout-header-up ~ *) {
+  /* Layout marks a page with workspace navigation on its shell. */
+  .layout-shell-content[data-workspace-navigation] .layout-header-title {
     display: none;
   }
   .layout-shell-content[data-workspace-navigation] .layout-header-title-menu {

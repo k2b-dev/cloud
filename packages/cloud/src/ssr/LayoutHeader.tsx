@@ -9,8 +9,6 @@ type LayoutHeaderProps = {
   title?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
-  /** The page above this one: a way back to it leads the title (see Layout's `up`). */
-  up?: LayoutBreadcrumb;
   /** Where Sign in leads on signed-out pages; it returns the person to this page afterwards. */
   loginHref?: string;
 };
@@ -52,8 +50,6 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
         title={props.title}
         launchpad={props.launchpad}
         breadcrumbs={props.breadcrumbs}
-        // only a page below another sends its way up, so every other page's island props stay as they were
-        {...(props.up ? { up: props.up } : {})}
       />
       {!props.authenticated && (
         <div class="ml-2 flex shrink-0">
