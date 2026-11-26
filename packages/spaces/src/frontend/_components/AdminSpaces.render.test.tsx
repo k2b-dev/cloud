@@ -57,6 +57,10 @@ describe("Spaces in the administration", () => {
     const band = html.slice(html.indexOf('data-k2-part="Cells"'), html.indexOf('data-k2-part="Table"'));
     expect(band).toContain("31 access entries");
     expect(band).toMatch(/data-status="bad"[^>]*>.*1 Space/s);
+    // The exception names the Space, and its row says "no access" rather than a red zero.
+    expect(band).toContain("Planning");
+    expect(html).toContain("no access");
+    expect(html).not.toContain("0 access entries");
     expect(html).not.toContain('data-k2-part="StatusRow"');
     // Every Space shows its mark in its colour; a missing description is left empty, never a grey filler.
     expect(html.match(/data-k2-part="Mark"/g)?.length).toBeGreaterThanOrEqual(2);

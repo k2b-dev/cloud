@@ -82,7 +82,8 @@ describe("calendar of all Spaces on the server", () => {
 
   test("an empty choice says so and offers the default", () => {
     const html = render("/app/spaces/calendar?view=week&date=2026-10-27&cal=");
-    expect(html).toContain("Kein Kalender gewählt");
+    // Title and sentence read as two sentences, never run into each other.
+    expect(html).toContain("Kein Kalender gewählt. Wähle");
     expect(html).toContain("Standard-Kalender laden");
   });
 });

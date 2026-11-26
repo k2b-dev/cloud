@@ -432,13 +432,13 @@ export default function CloudCalendar(props: CloudCalendarProps) {
           </Show>
           <Show when={empty()}>
             {(kind) => (
-              <Show when={kind() !== "sources"} fallback={<Empty icon="calendar" text={`${t.noSources} ${t.noSourcesBody}`} />}>
+              <Show when={kind() !== "sources"} fallback={<Empty icon="calendar" text={`${t.noSources}. ${t.noSourcesBody}`} />}>
                 <Show
                   when={kind() === "events"}
                   fallback={
                     <Empty
                       icon="calendar-off"
-                      text={`${t.noCalendarChosen} ${t.noCalendarChosenBody}`}
+                      text={`${t.noCalendarChosen}. ${t.noCalendarChosenBody}`}
                       action={
                         defaults().length > 0 ? { label: t.restoreDefault, icon: "restore", onClick: () => choose(defaults()) } : undefined
                       }
@@ -447,7 +447,7 @@ export default function CloudCalendar(props: CloudCalendarProps) {
                 >
                   <Empty
                     icon="calendar"
-                    text={`${noEventsTitle()} ${t.noEventsBody({ count: selection().length })}`}
+                    text={`${noEventsTitle()}. ${t.noEventsBody({ count: selection().length })}`}
                     action={
                       todayKey() < shownDays().first || todayKey() > shownDays().last
                         ? { label: t.goToday, icon: "calendar-due", href: viewHref(view(), todayKey()) }

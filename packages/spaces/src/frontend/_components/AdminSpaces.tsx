@@ -147,6 +147,14 @@ export default function AdminSpaces(props: AdminSpacesProps) {
                 t().allReachable
               )
             }
+            // The exception names which Spaces these are: the first ones of this page.
+            meta={
+              props.rows
+                .filter((space) => space.permissionCount === 0)
+                .slice(0, 2)
+                .map((space) => space.name)
+                .join(", ") || undefined
+            }
           />
         </Cells>
         <Table
@@ -156,7 +164,11 @@ export default function AdminSpaces(props: AdminSpacesProps) {
           empty={{ icon: "layout-kanban", text: props.search ? t().noMatch({ query: props.search }) : t().noneFound }}
           phone={(space) => ({
             mark: { icon: SPACE_MARK_ICON, color: space.color },
-            lines: [space.name, t().accessCount({ count: space.permissionCount, shown: number(space.permissionCount) })],
+            // A Space nobody can open says so once, in its red mark, not again as "0 access entries".
+            lines:
+              space.permissionCount === 0
+                ? [space.name]
+                : [space.name, t().accessCount({ count: space.permissionCount, shown: number(space.permissionCount) })],
             marks: space.permissionCount === 0 ? <Chip status="bad">{t().noAccess}</Chip> : undefined,
           })}
           columns={[
@@ -179,7 +191,7 @@ export default function AdminSpaces(props: AdminSpacesProps) {
               width: { min: 140, default: 170 },
               cell: (space) =>
                 space.permissionCount === 0 ? (
-                  <Chip status="bad">{t().accessCount({ count: 0, shown: number(0) })}</Chip>
+                  <Chip status="bad">{t().noAccess}</Chip>
                 ) : (
                   t().accessCount({ count: space.permissionCount, shown: number(space.permissionCount) })
                 ),

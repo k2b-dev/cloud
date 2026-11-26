@@ -230,6 +230,11 @@ export default function SpacesOverview(props: Props) {
   /** What counts today comes with every view from the server, so the first row and the agenda stand from the first paint. */
   const day = () => work.data()?.day ?? props.initialWork.day;
   const agenda = () => day()?.agenda ?? [];
+  /** Each thing once per screen: what the list below already shows leaves the agenda. */
+  const agendaOnly = () =>
+    agenda().filter(
+      (entry) => !activeWork()?.items.some((row) => row.shortId === entry.shortId && row.spaceShortId === entry.spaceShortId),
+    );
   const overdueCount = () => day()?.overdue ?? 0;
   const nextUp = () => day()?.next ?? undefined;
   /** Tasks this person finished per day over the last 14 days, today last: the hero figure and its trend. */
@@ -341,12 +346,12 @@ export default function SpacesOverview(props: Props) {
               />
             </Cells>
           </Show>
-          <Show when={view() === "mine" && agenda().length > 0}>
+          <Show when={view() === "mine" && agendaOnly().length > 0}>
             <Band label={t().agenda}>
               {/* k2b-ui gap: on the phone Tiles stand one per row; the rules want two compact tiles side by side. */}
               <Tiles
                 label={t().agenda}
-                items={agenda().map((item) => ({
+                items={agendaOnly().map((item) => ({
                   icon: item.startsAt ? "calendar-event" : "checkbox",
                   color: item.spaceColor ?? undefined,
                   title: item.title,
@@ -393,7 +398,7 @@ export default function SpacesOverview(props: Props) {
           </Show>
         </Pane>
         <Pane side label={t().activity} width={{ min: 300, default: 380 }} scrollKey="spaces-overview-activity">
-          <Section icon="history" title={t().activity}>
+          <Section title={t().activity}>
             <Show
               when={activityItems().length > 0}
               fallback={
