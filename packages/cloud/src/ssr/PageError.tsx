@@ -49,7 +49,13 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
   const game = () => maintenanceGameMessages.resolve([getLocale(c)]).t;
   const page = () => (
     <>
-      <NotFoundState code={String(status)} title={title} description={description} action={action} />
+      {/* the v1 state takes the icon as its class */}
+      <NotFoundState
+        code={String(status)}
+        title={title}
+        description={description}
+        action={{ ...action, icon: action.icon && `ti ti-${action.icon}` }}
+      />
       {offered ? <WaitingGame t={game()} /> : null}
     </>
   );
@@ -88,8 +94,9 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
           title={title}
           description={description}
           action={action}
-          retryHref={`${c.req.path}${new URL(c.req.url).search}`}
-          labels={{ retry: t.retry, search: t.search }}
+          // never a protocol-relative address: `//elsewhere.example/a` stays on this Cloud
+          retryHref={`${c.req.path.replace(/^\/+/, "/")}${new URL(c.req.url).search}`}
+          labels={{ retry: t.retry, search: t.search, home: t.home }}
           game={offered ? <ErrorPageGame t={game()} keys={t.inviteKeys} touch={t.inviteTouch} /> : undefined}
         />
       </Layout>

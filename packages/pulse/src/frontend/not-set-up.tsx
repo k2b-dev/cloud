@@ -33,6 +33,6 @@ export const pulseNotSetUpGate = (): MiddlewareHandler<AuthContext> => async (c,
   return ssr.error(c, 503, {
     title: t.title,
     description: cloudAdmin ? t.admin : t.member,
-    ...(cloudAdmin ? { action: { label: t.adminAction, href: "/admin/pulse", icon: "ti ti-settings" } } : {}),
+    ...(cloudAdmin ? { action: { label: t.adminAction, href: "/admin/pulse", icon: "settings" } } : {}),
   });
 };

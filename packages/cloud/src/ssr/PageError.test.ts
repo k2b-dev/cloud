@@ -76,6 +76,10 @@ const server = new Hono<AuthContext & { Variables: { runtime: RuntimeContext } }
   .get("/nested/missing", auth.requireRole("*"), (c) => ssr.error(c, 404))
   .get("/minimal", (c) => ssr.error(c, 404, { layout: "minimal" }))
   .get("/service-error", (c) => ssr.error(c, 503))
+  .get("/busy", (c) =>
+    ssr.error(c, 503, { title: "Busy", description: "Later.", action: { label: "Try again", href: "/busy?again=1", icon: "refresh" } }),
+  )
+  .get("/minimal-busy", (c) => ssr.error(c, 503, { layout: "minimal", action: { label: "Again", href: "/minimal-busy", icon: "refresh" } }))
   .get("/admin/missing", (c) => ssr.error(c, 404))
   .get("/app/test/item", (c) => ssr.error(c, 404, { action: { label: "Back to items", href: "/app/test" } }))
   .get("/unsafe", (c) => ssr.error(c, 404, { title: "</title><script>bad()</script>", description: "<img src=x onerror=bad()>" }))
@@ -88,7 +92,8 @@ const server = new Hono<AuthContext & { Variables: { runtime: RuntimeContext } }
   )
   .get("/resource", auth.requireRole("authenticated", ssr.access), (c) => ssr.error(c, 403))
   .get("/self", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), (c) => c.text("authorized handler"))
-  .post("/action", auth.requireRole("admin", ssr.access), (c) => c.text("action executed"));
+  .post("/action", auth.requireRole("admin", ssr.access), (c) => c.text("action executed"))
+  .get("*", (c) => ssr.error(c, 503));
 
 describe("shared page access and error responses", () => {
   test("signed-in error pages retain shared announcements", async () => {
@@ -279,6 +284,25 @@ describe("shared page access and error responses", () => {
     expect(await offered("/unsafe")).toBe(false);
     expect(await offered("/app/test/item")).toBe(false);
     expect(await offered("/admin/missing")).toBe(false);
+  });
+  test("a failed page whose own way out only loads it again offers it once and home second", async () => {
+    const body = await (await server.request("/busy")).text();
+    expect(body.split("Try again").length - 1).toBe(1);
+    expect(body).toContain(`href="/busy"`);
+    expect(body).toContain(`href="/"`);
+  });
+  test("the action's icon is a Tabler name without the prefix, on the v2 and the minimal page", async () => {
+    const v2 = await (await server.request("/busy")).text();
+    const minimal = await (await server.request("/minimal-busy")).text();
+    for (const body of [v2, minimal]) {
+      expect(body).toContain("ti ti-refresh");
+      expect(body).not.toContain("ti-ti-");
+    }
+  });
+  test("the retry link never becomes a protocol-relative address", async () => {
+    const body = await (await server.request("http://localhost//elsewhere.example/a?b=1")).text();
+    expect(body).not.toContain(`href="//`);
+    expect(body).toContain(`href="/elsewhere.example/a?b=1"`);
   });
   test("denied POST actions never execute or replay effects", async () => {
     expect((await server.request("/action", { method: "POST" })).status).toBe(302);

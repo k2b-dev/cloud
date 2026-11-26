@@ -6,11 +6,11 @@ export type PageErrorScreenProps = {
   status: number;
   title: string;
   description: string;
-  /** The page's way out, home by default. */
+  /** The page's way out, home by default; `icon` is a Tabler name without the `ti-` prefix. */
   action: { label: string; href: string; icon?: string };
   /** The address that failed, so "Erneut versuchen" loads it again without a script. */
   retryHref: string;
-  labels: { retry: string; search: string };
+  labels: { retry: string; search: string; home: string };
   /** The waiting game's invitation, where a generic page offers it. */
   game?: JSX.Element;
 };
@@ -18,10 +18,14 @@ export type PageErrorScreenProps = {
 /**
  * An error page on UI v2 in the Cloud shell (approved direction A "Zeichen"): the code large, the title, one sentence
  * and two ways out, in the middle of the page, without a head of its own. A failure of the server offers to load the
- * same address again first and home second; a missing or closed page offers its way out first and the search second.
+ * same address again first and the page's way out second (home, when its own way out only loads it again); a missing or
+ * closed page offers its way out first and the search second.
  */
 export default function PageErrorScreen(props: PageErrorScreenProps) {
   const failure = () => props.status >= 500;
+  // a failed page whose own way out loads the same address again needs no second "try again", but a way home
+  const path = (href: string) => new URL(href, "http://page.invalid").pathname;
+  const retriesOnly = () => path(props.action.href) === path(props.retryHref);
   const way = (variant: "primary" | "secondary") => (
     <Button variant={variant} icon={props.action.icon ?? "home"} href={props.action.href}>
       {props.action.label}
@@ -41,7 +45,13 @@ export default function PageErrorScreen(props: PageErrorScreenProps) {
                 <Button variant="primary" icon="refresh" href={props.retryHref}>
                   {props.labels.retry}
                 </Button>
-                {way("secondary")}
+                {retriesOnly() ? (
+                  <Button icon="home" href="/">
+                    {props.labels.home}
+                  </Button>
+                ) : (
+                  way("secondary")
+                )}
               </>
             ) : (
               <>

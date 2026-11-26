@@ -18,6 +18,7 @@ import type { PageOptions } from "./define-app";
 export type PageErrorOptions = {
   title?: string;
   description?: string;
+  /** The way out; `icon` is a Tabler name without the `ti-` prefix, such as `refresh`. */
   action?: { label: string; href: string; icon?: string };
   /** Keep standalone/public pages outside the Cloud navigation shell; `pwa` renders a page of the mobile app. */
   layout?: "cloud" | "minimal" | "pwa";
