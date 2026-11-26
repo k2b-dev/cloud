@@ -62,6 +62,17 @@ island. An island that renders nothing changes no layout either:
 steps over one. Your own CSS must allow for the wrapper in the same way, or select by
 descendant.
 
+A v2 `Workspace` renders on the server as plain markup: its frame, columns,
+heads and bars load no script. On a `Layout ui="v2"` page, Cloud adds one
+frame entry that attaches every Workspace outside an island: the sidebar's
+drawer and its collapse, the grips, the folds of the `Nav`, `Dialog.confirm`
+and `useToast`. The drawer, the alert dialog and the toaster load on their
+first use. A Workspace with `collapsible` keeps a hidden sidebar in the app's
+workspace cookie, so the next page renders it hidden from the server. Make
+only the parts with browser behavior islands, such as a table whose rows open
+on a press or a sidebar entry with `onClick`; a Workspace inside an island
+still attaches itself, but its frame then loads with the island.
+
 Text a person typed into a text field (`<textarea>`, or `<input>` of type
 text, search, email, url, or tel) before the island mounted moves to the same
 field of the new markup. The field is found by tag, type, `name`,
