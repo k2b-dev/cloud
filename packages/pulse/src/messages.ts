@@ -458,7 +458,7 @@ export const pulseMessages = i18n.define({
         "Dieser lange Entwurf bleibt beim Neuladen in diesem Tab. Zum Teilen SQL und Werte kopieren oder die Abfrage speichern.",
       settingsTimezoneHint: "IANA-Zeitzone für Kalenderintervalle und lokale Datumswerte.",
       settingsIdentifierHint: "Diese Kennung gilt in Links und in der CLI.",
-      settingsOnlyCloudAdmin: "Diese Grenzen ändert nur eine Cloud-Admin unter Verwaltung → Pulse → Bases.",
+      settingsOnlyCloudAdmin: "Diese Grenzen ändert nur eine Cloud-Admin unter Verwaltung → Pulse → Basen.",
       settingsAppearance: "Symbol und Farbe",
       settingsValuesPerMinute: "Werte pro Minute",
       settingsRateLimitOnly: "Obergrenze, die Rate wird nicht gemessen",
@@ -469,7 +469,7 @@ export const pulseMessages = i18n.define({
       settingsIdentifier: "Kennung",
       settingsSqlLimits: "SQL-Grenzen",
       settingsSqlInput: "SQL-Eingabe",
-      settingsSqlConcurrency: "Gleichzeitige Abfragen (Base / Cloud)",
+      settingsSqlConcurrency: "Gleichzeitige Abfragen (Basis / Cloud)",
       settingsQueriesPerHour: "Abfragen diese Stunde",
       sqlPrevious: "Zurück",
       sqlNext: "Weiter",
@@ -531,7 +531,7 @@ export const pulseMessages = i18n.define({
       sqlQuotaHelp: "Konsole, CLI und Agenten teilen dieses Kontingent; ein Cloud-Admin legt es fest.",
       settingsSqlLoading: "SQL-Nutzung und Grenzen werden geladen …",
       settingsSqlFailed: "SQL-Nutzung und Grenzen konnten nicht geladen werden",
-      settingsSqlRetryHelp: "Versuch es erneut. Die bereits angezeigten Base-Daten bleiben verfügbar.",
+      settingsSqlRetryHelp: "Versuch es erneut. Die bereits angezeigten Basis-Daten bleiben verfügbar.",
       sqlProfileTime: ({ profile, seconds }: { profile: string; seconds: string }) => `Profil ${profile}: ${seconds} s je Abfrage`,
       sqlProfileMemory: ({ profile, memory }: { profile: string; memory: string }) => `Profil ${profile}: ${memory} GB je Abfrage`,
       sqlMissingHelp: ({ name }: { name: string }) =>
@@ -554,7 +554,7 @@ export const pulseMessages = i18n.define({
       sqlQueueFull: "Pulse ist ausgelastet · 20 Abfragen warten schon",
       sqlQuota: "Stundenkontingent erreicht",
       sqlStoreUnavailable: "Pulse erreicht den Datenspeicher nicht",
-      sqlNoReadAccess: "SQL braucht das Recht Lesen in dieser Base. Bitte eine Admin der Base um Zugriff.",
+      sqlNoReadAccess: "SQL braucht das Recht Lesen in dieser Basis. Bitte eine Admin der Basis um Zugriff.",
       sqlRequestFailed: "Die Anfrage ist fehlgeschlagen. Bitte versuche es erneut.",
       sqlUsageRefreshFailed: "Die aktuellen Nutzungszahlen ließen sich nicht laden. Bitte versuche es erneut.",
       sqlRetry: "Erneut versuchen",
@@ -583,7 +583,7 @@ export const pulseMessages = i18n.define({
       sourceExpectationSeconds: "Erwarteter Abstand in Sekunden",
       sourceExpectationTime: "Erwartet bis",
       sourceExpectationTimezone: ({ timezone }: { timezone: string }) =>
-        `In der Base-Zeitzone: ${timezone}. Pulse prüft den neuesten Datenzeitpunkt, nicht den letzten Kontakt.`,
+        `In der Basis-Zeitzone: ${timezone}. Pulse prüft den neuesten Datenzeitpunkt, nicht den letzten Kontakt.`,
       sourceExpectationInvalid: "Gib eine positive ganze Sekundenzahl oder eine tägliche Uhrzeit als HH:MM ein.",
       sourceEditConflict:
         "Die Quelle wurde geändert. Deine Eingaben bleiben hier erhalten. Schließe und öffne sie erneut, um den aktuellen Stand zu prüfen.",
@@ -597,7 +597,7 @@ export const pulseMessages = i18n.define({
       sqlNoNumericColumn: "Kein Chart: das Ergebnis hat keine Zahlen-Spalte.",
       sqlNoRows: "Kein Chart: das Ergebnis hat keine Zeilen.",
       sqlChartCutHint: "Höchstens 8 Reihen und 480 Punkte. Für alle Punkte ein gröberes Raster, für alle Reihen weniger Zahlen-Spalten.",
-      sqlSavedEmptyHint: "Gespeicherte Abfragen gehören zu einer Base. Speichere eine Abfrage in der Konsole, dann erscheint sie hier.",
+      sqlSavedEmptyHint: "Gespeicherte Abfragen gehören zu einer Basis. Speichere eine Abfrage in der Konsole, dann erscheint sie hier.",
       sqlBackToConsole: "Zur Konsole",
       sqlSavedLoading: "Gespeicherte Abfragen werden geladen …",
       sqlSavedUpdatedLabel: "Geändert",
@@ -611,11 +611,11 @@ export const pulseMessages = i18n.define({
       settingsUsage: "Nutzung und Grenzen",
       settingsDanger: "Leeren und löschen",
 
-      settingsNotAdmin: "Nur Admins der Base können diese Einstellungen ändern.",
+      settingsNotAdmin: "Nur Admins der Basis können diese Einstellungen ändern.",
       sqlAssistantEmptyPrompt: ({ base }: { base: string }) => `Hilf mir, eine Abfrage für ${base} zu schreiben.`,
       sqlSavedEmpty: ({ base }: { base: string }) => `Noch keine Abfrage in ${base}`,
       sqlSavedListHint: ({ base }: { base: string }) =>
-        `Nur Abfragen aus ${base}. Jede Base hat ihre eigenen; Mitglieder mit Lesen sehen sie.`,
+        `Nur Abfragen aus ${base}. Jede Basis hat ihre eigenen; Mitglieder mit Lesen sehen sie.`,
       sqlErrorPosition: ({ line, column }: { line: string; column?: string }) =>
         `Fehler in Zeile ${line}${column ? `, Spalte ${column}` : ""}`,
       sqlMissingParameter: ({ name }: { name: string }) => `:${name} ohne Wert · nichts gerechnet`,
@@ -641,12 +641,12 @@ export const pulseMessages = i18n.define({
       sqlLimitResult: ({ rows, result }: { rows: string; result: string }) => `${rows} Zeilen oder ${result} MiB`,
       sqlLimitQuota: ({ used, quota }: { used: string; quota: string }) => `${used} von ${quota} Abfragen diese Stunde`,
       sqlLimitQueue: ({ baseSlots, cloudSlots, waiting, wait }: { baseSlots: string; cloudSlots: string; waiting: string; wait: string }) =>
-        `Warteschlange ${baseSlots} pro Base, ${cloudSlots} pro Cloud, ${waiting} wartend, ${wait} s`,
-      selectBase: "Base wechseln",
+        `Warteschlange ${baseSlots} pro Basis, ${cloudSlots} pro Cloud, ${waiting} wartend, ${wait} s`,
+      selectBase: "Basis wechseln",
       copySetupFailed: "Der Befehl konnte nicht kopiert werden. Bitte versuche es erneut.",
       appName: "Pulse",
       scrapeTargetBlocked:
-        "ist ein interner Server und für diese Base nicht freigegeben. Ein Cloud-Admin kann ihn unter Verwaltung -> Pulse -> Interne Ziele freigeben.",
+        "ist ein interner Server und für diese Basis nicht freigegeben. Ein Cloud-Admin kann ihn unter Verwaltung -> Pulse -> Interne Ziele freigeben.",
       start: "Start",
       backToPulse: "Zurück zu Pulse",
       publicLinkRemovedTitle: "Dieser Link gilt nicht mehr",
@@ -671,7 +671,7 @@ export const pulseMessages = i18n.define({
       noDataYet: "Noch keine Daten",
       throttled: "Gedrosselt",
       throttledDetail:
-        "Diese Base hat mehr Werte oder Bytes pro Minute gesendet, als ihre Grenze erlaubt. Pulse lehnt neue Werte ab, bis die Grenze wieder frei ist, und Absender bekommen 429 mit Retry-After.",
+        "Diese Basis hat mehr Werte oder Bytes pro Minute gesendet, als ihre Grenze erlaubt. Pulse lehnt neue Werte ab, bis die Grenze wieder frei ist, und Absender bekommen 429 mit Retry-After.",
       refusedHistograms: "Abgelehnte Histogramme",
       refusedHistogramReason: ({ reason }) =>
         ({
@@ -713,7 +713,7 @@ export const pulseMessages = i18n.define({
       noMatchingBases: "Keine passenden Basen",
       differentSearch: "Versuche es mit einem anderen Suchbegriff.",
       firstBaseDescription: "Erstelle eine Basis für Server, Websites, Geschäftskennzahlen oder Automatisierungstelemetrie.",
-      baseMembers: ({ count }) => `Base · ${count} ${i18n.plural(count, "de", { one: "Mitglied", other: "Mitglieder" })}`,
+      baseMembers: ({ count }) => `Basis · ${count} ${i18n.plural(count, "de", { one: "Mitglied", other: "Mitglieder" })}`,
       baseCount: ({ count }) => `${count} ${i18n.plural(count, "de", { one: "Basis", other: "Basen" })} verfügbar`,
       rawRetention: ({ days }) => `${days} Tage Aufbewahrung für Rohdaten`,
       pulseDataRefreshFailed: "Die Pulse-Daten konnten nicht aktualisiert werden",

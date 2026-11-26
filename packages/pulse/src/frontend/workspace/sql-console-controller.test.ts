@@ -336,7 +336,7 @@ test("assistant failure/retry uses the current SQL and values without ever chang
 test.each([
   [
     "de",
-    "Profil normal: 2 GB, 10 s · 10.000 Zeilen oder 4 MiB · 12 von 600 Abfragen diese Stunde · Warteschlange 1 pro Base, 3 pro Cloud, 20 wartend, 5 s",
+    "Profil normal: 2 GB, 10 s · 10.000 Zeilen oder 4 MiB · 12 von 600 Abfragen diese Stunde · Warteschlange 1 pro Basis, 3 pro Cloud, 20 wartend, 5 s",
   ],
   [
     "en",

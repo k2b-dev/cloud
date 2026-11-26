@@ -1,6 +1,7 @@
 import { text } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import {
+  Avatar,
   Band,
   Bar,
   Button,
@@ -17,9 +18,11 @@ import {
   Menu,
   Notice,
   Pane,
+  Progress,
   Row,
   Section,
   Select,
+  Setting,
   StatusRow,
   Table,
   Text,
@@ -577,20 +580,17 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
         when={!loadFailed() && policy()}
         fallback={<Failed text={`${t().basesLoadFailed} ${t().basesLoadFailedDescription}`} onRetry={() => void reload()} />}
       >
-        <Band>
-          <Text>{t().basesIntro}</Text>
-          <Field name="creation" label={t().creationTitle} hint={t().creationDescription}>
-            <Select
-              options={[
-                { value: "everyone", label: t().creationEveryone },
-                { value: "people", label: t().creationPeople },
-                { value: "admins", label: t().creationAdmins },
-              ]}
-              value={policy()?.baseCreation ?? "everyone"}
-              onChange={(value) => void setCreation(value === "people" || value === "admins" ? value : "everyone")}
-            />
-          </Field>
-        </Band>
+        <Setting name="creation" label={t().creationTitle} hint={t().creationDescription}>
+          <Select
+            options={[
+              { value: "everyone", label: t().creationEveryone },
+              { value: "people", label: t().creationPeople },
+              { value: "admins", label: t().creationAdmins },
+            ]}
+            value={policy()?.baseCreation ?? "everyone"}
+            onChange={(value) => void setCreation(value === "people" || value === "admins" ? value : "everyone")}
+          />
+        </Setting>
         <Section
           icon="adjustments"
           title={t().defaultsTitle}
@@ -648,7 +648,14 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
               title: t().colBase,
               width: { min: 180, default: 240 },
               mark: (row) => ({ icon: iconName(row.icon ?? ""), color: baseColor(row.color ?? "") }),
-              cell: (row) => ({ lines: [row.name, admins(row)] }),
+              cell: (row) => row.name,
+            },
+            {
+              title: t().colAdmins,
+              width: { min: 130, default: 160 },
+              drop: true,
+              // the admins as faces; the stack counts the ones it does not show
+              cell: (row) => <Avatar.Stack people={row.admins.map((name) => ({ name }))} max={3} label={admins(row)} />,
             },
             { title: t().colState, width: { min: 150, default: 170 }, cell: stateCell },
             { title: t().colProfile, width: { min: 90, default: 100 }, drop: true, cell: (row) => profileLabel(t(), row.store.profile) },
@@ -657,9 +664,18 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
               align: "end",
               width: { min: 140, default: 160 },
               cell: (row) =>
-                row.store.usage
-                  ? t().storageOf({ used: bytes(row.store.usage.bytes, locale()), limit: bytes(row.store.limits.storageBytes, locale()) })
-                  : t().notMeasured,
+                row.store.usage ? (
+                  <Progress
+                    value={row.store.usage.bytes}
+                    of={row.store.limits.storageBytes}
+                    label={t().storageOf({
+                      used: bytes(row.store.usage.bytes, locale()),
+                      limit: bytes(row.store.limits.storageBytes, locale()),
+                    })}
+                  />
+                ) : (
+                  t().notMeasured
+                ),
             },
             {
               title: t().colValues,

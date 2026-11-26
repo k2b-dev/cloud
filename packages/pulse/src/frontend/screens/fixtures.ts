@@ -1,3 +1,4 @@
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
 import type { SavedQuery } from "../../service/saved-queries";
@@ -26,6 +27,9 @@ const store = (patch: Partial<BaseStoreStatus> = {}): BaseStoreStatus => ({
   usage: { bytes: 3.2 * 1024 ** 3, rows: 48_000_000, measuredAt: FIXTURE_NOW },
   ...patch,
 });
+
+/** The words the metrics scraper writes when an endpoint does not answer in time. */
+const TIMEOUT = "Metrics scrape timed out after 15 seconds";
 
 /** Invented people who work in the bases, admins first. */
 const PEOPLE = ["Jana Petersen", "Jonas Wolf", "Mira Aydın", "Ole Brandt", "Lea Sommer"];
@@ -66,6 +70,7 @@ export const fixtureBases: PulseBase[] = [
   }),
   fixtureBase({
     id: "c3Lw8pR1",
+    store: store({ usage: { bytes: 13.6 * 1024 ** 3, rows: 12_000_000, measuredAt: FIXTURE_NOW } }),
     name: "Webshop",
     description: "Bestellungen, Zahlungen und Antwortzeiten",
     rawRetentionDays: 90,
@@ -83,6 +88,7 @@ export const fixtureBases: PulseBase[] = [
   }),
   fixtureBase({
     id: "h1Wm5xN2",
+    store: store({ usage: { bytes: 2.1 * 1024 ** 3, rows: 12_000_000, measuredAt: FIXTURE_NOW } }),
     name: "Fuhrpark",
     description: "Standorte und Ladestand der Lieferwagen",
     memberCount: 3,
@@ -91,6 +97,7 @@ export const fixtureBases: PulseBase[] = [
   }),
   fixtureBase({
     id: "j4Yb9zP7",
+    store: store({ usage: { bytes: 8.9 * 1024 ** 3, rows: 12_000_000, measuredAt: FIXTURE_NOW } }),
     name: "WLAN Campus",
     description: "Zugangspunkte, Clients und Auslastung",
     memberCount: 5,
@@ -98,6 +105,7 @@ export const fixtureBases: PulseBase[] = [
   }),
   fixtureBase({
     id: "k8Cd2eQ5",
+    store: store({ usage: { bytes: 0.7 * 1024 ** 3, rows: 12_000_000, measuredAt: FIXTURE_NOW } }),
     name: "Druckerflotte",
     description: "Toner, Seiten und Störungen",
     memberCount: 2,
@@ -179,6 +187,7 @@ export const fixtureSource = (patch: Partial<PulseSource> & Pick<PulseSource, "i
   staleSince: null,
   status: status(),
   seriesCount: 1_284,
+  todayCount: 712_480,
   lastSeenAt: "2026-11-25T09:41:00.000Z",
   lastError: null,
   lastErrorAt: null,
@@ -202,10 +211,43 @@ export const fixtureSources: PulseSource[] = [
     id: "s7Ee8Ff9",
     name: "Drucker Halle 2",
     endpointUrl: "http://10.0.0.12:9100/metrics",
-    status: status({ newestDataAt: "2026-11-24T17:20:00.000Z", lastError: "SCRAPE_TIMEOUT", lastErrorAt: "2026-11-25T09:40:00.000Z" }),
-    lastError: "SCRAPE_TIMEOUT",
+    status: status({ newestDataAt: "2026-11-24T17:20:00.000Z", lastError: TIMEOUT, lastErrorAt: "2026-11-25T09:40:00.000Z" }),
+    lastError: TIMEOUT,
   }),
-  fixtureSource({ id: "s0Gg1Hh2", name: "Wechselrichter", enabled: false, seriesCount: 42 }),
+  fixtureSource({ id: "s0Gg1Hh2", name: "Wechselrichter", enabled: false, seriesCount: 42, todayCount: 0 }),
+  fixtureSource({
+    id: "s3Jj4Kk5",
+    name: "Switch Halle 1",
+    endpointUrl: "https://switch-h1.werkstatt.example:9116/snmp",
+    seriesCount: 3_906,
+    todayCount: 1_402_560,
+  }),
+  fixtureSource({
+    id: "s6Ll7Mm8",
+    name: "Zugangsportal",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    seriesCount: undefined,
+    todayCount: 318,
+  }),
+  fixtureSource({
+    id: "s9Nn0Pp1",
+    name: "Kühlraum Sensoren",
+    endpointUrl: "http://10.0.0.31:9100/metrics",
+    scrapeIntervalSeconds: 30,
+    seriesCount: 96,
+    todayCount: 9_216,
+  }),
+  fixtureSource({
+    id: "s2Qq3Rr4",
+    name: "Lagerverwaltung",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    seriesCount: undefined,
+    todayCount: 2_904,
+  }),
 ];
 
 /** A source's last fetches, matching its state: the failing printer times out since yesterday evening, the others answer. */
@@ -222,7 +264,7 @@ export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
     metrics: failing ? 0 : 1_284 - index * 2,
     events: 0,
     states: 0,
-    errorMessage: failing ? "SCRAPE_TIMEOUT" : null,
+    errorMessage: failing ? TIMEOUT : null,
   }));
   return failing ? fetches.slice(1) : fetches.slice(0, 4);
 };
@@ -289,7 +331,7 @@ export const fixtureQueries: SavedQuery[] = [
     baseId: "b7Kq2mX9",
     name: "CPU pro Host, letzte Stunde",
     sql: "-- Last of every host\nSELECT toStartOfMinute(ts) AS time, host, avg(value) AS cpu\nFROM samples\nWHERE name = :metric\nGROUP BY time, host",
-    params: {},
+    params: { metric: "node_cpu" },
     revision: 3,
     createdBy: "00000000-0000-4000-8000-0000000000a1",
     updatedBy: "00000000-0000-4000-8000-0000000000a1",
@@ -423,3 +465,49 @@ export const manySources = (count: number): PulseSource[] =>
   Array.from({ length: count }, (_, index) =>
     fixtureSource({ id: `n${String(index).padStart(7, "0")}`, name: `Quelle ${index + 1}`, seriesCount: index * 7 }),
   );
+
+/** Who works in the first base: two admins, three who write, one group that reads. */
+export const fixtureAccess: AccessEntry[] = [
+  {
+    id: "00000000-0000-4000-8000-0000000000b1",
+    principal: { type: "user", userId: "00000000-0000-4000-9000-0000000000b1" },
+    permission: "admin",
+    createdAt: "2026-09-01T08:00:00.000Z",
+    displayName: "Jana Petersen",
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000b2",
+    principal: { type: "user", userId: "00000000-0000-4000-9000-0000000000b2" },
+    permission: "admin",
+    createdAt: "2026-09-02T08:00:00.000Z",
+    displayName: "Jonas Wolf",
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000b3",
+    principal: { type: "user", userId: "00000000-0000-4000-9000-0000000000b3" },
+    permission: "write",
+    createdAt: "2026-09-03T08:00:00.000Z",
+    displayName: "Mira Aydın",
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000b4",
+    principal: { type: "user", userId: "00000000-0000-4000-9000-0000000000b4" },
+    permission: "write",
+    createdAt: "2026-09-04T08:00:00.000Z",
+    displayName: "Ole Brandt",
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000b5",
+    principal: { type: "user", userId: "00000000-0000-4000-9000-0000000000b5" },
+    permission: "write",
+    createdAt: "2026-09-05T08:00:00.000Z",
+    displayName: "Lea Sommer",
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000b6",
+    principal: { type: "group", groupId: "00000000-0000-4000-9000-0000000000b6" },
+    permission: "read",
+    createdAt: "2026-09-06T08:00:00.000Z",
+    displayName: "Werkstatt-Team",
+  },
+];

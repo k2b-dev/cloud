@@ -159,7 +159,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   title: words().baseColumn,
                   width: { min: 220, default: 360 },
                   mark: (base) => ({ icon: iconName(base.icon), color: baseColor(base.color) }),
-                  cell: (base) => ({ lines: [base.name, base.description ?? "—"] }),
+                  cell: (base) => (base.description ? { lines: [base.name, base.description] } : base.name),
                 },
                 {
                   title: words().membersColumn,
@@ -176,7 +176,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                 },
                 {
                   title: words().storageColumn,
-                  width: { min: 170, default: 220 },
+                  width: { min: 200, default: 280 },
                   // a store that does not take data says why; a working one shows how full it is
                   cell: (base) =>
                     troubled(base) ? (
@@ -284,7 +284,8 @@ function DeletingBase(props: { base: PulseBase }) {
     <Row
       icon={failed() ? "alert-circle" : deleted() ? "check" : "trash"}
       lines={[base().name, text()]}
-      meta={state()}
+      // under "Wird gelöscht" a running deletion needs no word of its own; a failed or finished one does
+      meta={failed() || deleted() ? state() : undefined}
       // The action keeps its place after a retry, so the row does not change height.
       action={{ label: t().retry, icon: "refresh", disabled: retrying() || (!failed() && !followed.failed()), onClick: () => void retry() }}
     />

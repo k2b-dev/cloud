@@ -3,11 +3,13 @@ import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import V2WorkspaceNavigation from "@k2b/cloud/ssr/V2WorkspaceNavigation";
 import { navigateTo } from "@k2b/ssr/nav";
 import { text } from "@k2b/stdlib";
+import { clipboard } from "@k2b/stdlib/browser";
 import { DEFAULT_ICON_OPTIONS, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
   Cells,
+  Chip,
   Dialog,
   Empty,
   Facts,
@@ -26,7 +28,7 @@ import {
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { BASE_COLORS } from "../../base-settings";
 import type { PulseBase } from "../../contracts";
 import type { SqlLimits } from "../../service/sql-service";
@@ -38,7 +40,7 @@ import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import type { PulseSettingsTab } from "../workspace/routes";
 import { baseHref, baseNavGroups, iconName } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
-import { storeState } from "./store-state";
+import { baseColor, storeState } from "./store-state";
 
 export type SettingsScreenProps = {
   bases: PulseBase[];
@@ -61,6 +63,7 @@ const settingsHref = (baseId: string, tab: PulseSettingsTab) => `${baseHref(base
  * change anything; everyone else reads and sees who administers the base.
  */
 export default function SettingsScreen(props: SettingsScreenProps) {
+  const [formHead, setFormHead] = createSignal<JSX.Element>();
   const t = usePulseMessages();
   const words = useScreenMessages();
   const locale = useLocale();
@@ -112,7 +115,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
         sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={groups()} />}
         sidebarLabel={words().bases}
         // The sidebar shows the base as the open entry; the head holds the areas of its settings.
-        head={<Bar start={<Tabs label={words().settingsTabs} items={tabs()} />} />}
+        head={<Bar start={<Tabs label={words().settingsTabs} items={tabs()} />} end={formHead()} />}
       >
         <Pane label={words().settingsTitle({ base: base().name })} scrollKey="pulse-settings">
           <Show when={!props.canAdmin}>
@@ -138,6 +141,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
               maxRawRetentionDays={props.maxRawRetentionDays}
               loading={loading()}
               save={(input) => controller.updateSettings(base(), input)}
+              head={setFormHead}
             />
           </Show>
           <Show when={props.tab === "members"}>
@@ -196,6 +200,8 @@ function BaseForm(props: {
   maxRawRetentionDays: number;
   loading: boolean;
   save: (input: BaseSettingsInput) => Promise<"failed" | "persisted">;
+  /** Hands the form's deeds (changes, discard, save) to the page's head. */
+  head: (deeds: JSX.Element | undefined) => void;
 }) {
   const t = usePulseMessages();
   const words = useScreenMessages();
@@ -216,7 +222,26 @@ function BaseForm(props: {
   const set = <K extends keyof BaseSettingsInput>(key: K, value: BaseSettingsInput[K]) => {
     if (props.canAdmin) setDraft({ ...draft(), [key]: value });
   };
-  const changed = createMemo(() => (Object.keys(draft()) as (keyof BaseSettingsInput)[]).some((key) => draft()[key] !== saved()[key]));
+  const changes = createMemo(
+    () => (Object.keys(draft()) as (keyof BaseSettingsInput)[]).filter((key) => draft()[key] !== saved()[key]).length,
+  );
+  const changed = () => changes() > 0;
+  const toast = useToast();
+  // the page's head carries the form's deeds while the form stands
+  props.head(
+    <Show when={props.canAdmin}>
+      <Show when={changed()}>
+        <Chip yours>{words().changeCount({ count: changes() })}</Chip>
+      </Show>
+      <Button disabled={!changed() || props.loading} onClick={() => setDraft(saved())}>
+        {words().discard}
+      </Button>
+      <Button variant="primary" icon="check" busy={props.loading} disabled={!changed()} onClick={() => void save()}>
+        {words().save}
+      </Button>
+    </Show>,
+  );
+  onCleanup(() => props.head(undefined));
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const colorLabel = (value: string) => {
     const labels: Record<string, string> = {
@@ -249,40 +274,44 @@ function BaseForm(props: {
     // "Genauer Wert" stays chosen once picked, also when the typed number happens to be a preset
     const [exact, setExact] = createSignal(!presets().includes(value()));
     const amount = (count: number) => `${number(count)} ${options.unit}`;
+    const range = `1 – ${amount(options.max)}`;
     return (
-      <>
-        <Setting name={options.name} label={options.label} hint={options.hint} was={was(options.name, amount)}>
-          <Select
-            options={[
-              ...presets().map((preset) => ({ value: String(preset), label: amount(preset) })),
-              { value: "exact", label: words().exactValue },
-            ]}
-            value={exact() ? "exact" : String(value())}
-            onChange={(next) => {
-              setExact(next === "exact");
-              if (next !== "exact") set(options.name, Number(next));
-            }}
-          />
-        </Setting>
-        <Show when={exact()}>
-          <Setting
-            name={`${options.name}-exact`}
-            label={words().exactValue}
-            hint={`1 – ${amount(options.max)}`}
-            error={value() >= 1 && value() <= options.max ? undefined : `1 – ${amount(options.max)}`}
-          >
-            <Input
-              type="number"
-              min={1}
-              max={options.max}
+      <Setting
+        name={options.name}
+        label={options.label}
+        hint={exact() ? `${options.hint} ${range}.` : options.hint}
+        was={was(options.name, amount)}
+        error={exact() && !(value() >= 1 && value() <= options.max) ? range : undefined}
+        // back from a value of one's own to the usual ones
+        action={exact() && props.canAdmin ? { label: words().usualValues, onClick: () => setExact(false) } : undefined}
+      >
+        <Show
+          when={exact()}
+          fallback={
+            <Select
+              options={[
+                ...presets().map((preset) => ({ value: String(preset), label: amount(preset) })),
+                { value: "exact", label: words().exactValue },
+              ]}
               value={String(value())}
-              disabled={!props.canAdmin}
-              end={<Text type="meta">{options.unit}</Text>}
-              onInput={(next) => set(options.name, Number(next))}
+              onChange={(next) => {
+                setExact(next === "exact");
+                if (next !== "exact") set(options.name, Number(next));
+              }}
             />
-          </Setting>
+          }
+        >
+          <Input
+            type="number"
+            min={1}
+            max={options.max}
+            value={String(value())}
+            disabled={!props.canAdmin}
+            end={<Text type="meta">{options.unit}</Text>}
+            onInput={(next) => set(options.name, Number(next))}
+          />
         </Show>
-      </>
+      </Setting>
     );
   };
   return (
@@ -318,7 +347,8 @@ function BaseForm(props: {
           </Section>
         }
       >
-        <Section icon={iconName(draft().icon)} title={words().identity}>
+        {/* the section head is the preview: the base's symbol in its colour, as lists and the sidebar show it */}
+        <Section icon={iconName(draft().icon)} color={baseColor(draft().color)} title={words().identity}>
           <Setting
             name="name"
             label={t().name}
@@ -351,22 +381,21 @@ function BaseForm(props: {
           <Setting name="timezone" label={t().settingsTimezone} hint={t().settingsTimezoneHint} was={was("timezone", (value) => value)}>
             <Input value={draft().timezone} disabled={!props.canAdmin} onInput={(value) => set("timezone", value)} />
           </Setting>
-          <Facts items={[{ label: t().settingsIdentifier, value: props.base.shortId, mono: true, copy: props.base.shortId }]} />
+          <Setting name="identifier" label={t().settingsIdentifier} hint={t().settingsIdentifierHint}>
+            <Input
+              value={props.base.shortId}
+              disabled
+              end={
+                <Button
+                  variant="ghost"
+                  icon="copy"
+                  label={words().copyIdentifier}
+                  onClick={() => void clipboard.copy(props.base.shortId).then(() => toast(words().identifierCopied, { status: "ok" }))}
+                />
+              }
+            />
+          </Setting>
         </Section>
-      </Show>
-      <Show when={props.canAdmin}>
-        <Bar
-          end={
-            <>
-              <Button disabled={!changed() || props.loading} onClick={() => setDraft(saved())}>
-                {words().discard}
-              </Button>
-              <Button variant="primary" icon="check" busy={props.loading} disabled={!changed()} onClick={() => void save()}>
-                {words().save}
-              </Button>
-            </>
-          }
-        />
       </Show>
     </>
   );
@@ -446,7 +475,10 @@ function Members(props: { base: PulseBase; canAdmin: boolean; initial: AccessEnt
               <For each={list()}>
                 {(entry) => (
                   <Row
-                    avatar={{ name: principalLabel(entry, locale()) }}
+                    // a person shows a face, a group the group's symbol (never the initial of its name)
+                    {...(entry.principal.type === "group"
+                      ? { mark: { icon: "users-group", color: "#475569" } }
+                      : { avatar: { name: principalLabel(entry, locale()) } })}
                     lines={[principalLabel(entry, locale()), levelWord(entry.permission)]}
                   />
                 )}

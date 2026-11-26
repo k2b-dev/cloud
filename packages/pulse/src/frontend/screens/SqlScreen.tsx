@@ -128,7 +128,8 @@ export default function SqlScreen(props: SqlScreenProps) {
         read: decimal(value.stats.readBytes / 1024 ** 2),
       })}`;
     if (running()) return `${band().title ?? band().message} · ${c.runningElapsedText()}`;
-    if (c.state().kind === "empty" && band().kind === "neutral") return `${t().sqlReady} · ${t().sqlEmptyDetail}`;
+    // before the first run the empty state below says what to do; the summary stays silent
+    if (c.state().kind === "empty" && band().kind === "neutral") return undefined;
     return band().title && band().message !== band().title ? `${band().title} · ${band().message}` : (band().title ?? band().message);
   };
   const columns = createMemo(() =>

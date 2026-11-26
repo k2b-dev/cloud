@@ -71,6 +71,9 @@ const statusChip = (source: PulseSource, t: Words) => {
   return kind ? <Chip status={kind}>{status.label}</Chip> : <Chip>{status.label}</Chip>;
 };
 
+/** An address that may break after each of its slashes, so it wraps at its segments and never inside a word. */
+const atSegments = (address: string) => address.split(/(?<=\/)/).map((part) => [part, <wbr />]);
+
 /** The mark of a source's kind: a scraped metrics endpoint and pushed events look different in every list. */
 export const sourceMark = (source: PulseSource) =>
   source.kind === "metrics" ? { icon: "chart-dots", color: "#7c3aed" } : { icon: "webhook", color: "#0891b2" };
@@ -81,13 +84,6 @@ const sourceLine = (source: PulseSource, t: Words) =>
         " · ",
       )
     : `${t.httpIngest} · ${t.tokenIngestEndpoint}`;
-
-const dataCount = (source: PulseSource, t: Words) =>
-  source.kind === "metrics"
-    ? t.sqlSeriesCount({ count: source.seriesCount ?? 0 })
-    : source.todayCount == null
-      ? "—"
-      : t.sqlTodayCount({ count: source.todayCount });
 
 const PAGE = SOURCES_PAGE;
 
@@ -433,7 +429,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 align: "end",
                 width: { min: 110, default: 130 },
                 drop: true,
-                cell: (source) => dataCount(source, t()),
+                // one figure for every kind of source, so the column compares like with like
+                cell: (source) => (source.todayCount == null ? "—" : number(source.todayCount)),
               },
             ]}
           />
@@ -612,7 +609,7 @@ function SourceDetail(props: {
     {
       label: t().target,
       // an address breaks at its slashes like words, not sign by sign as a token would
-      value: source().kind === "metrics" ? (source().endpointUrl ?? t().noEndpoint) : `POST ${props.origin}/api/pulse/ingest`,
+      value: atSegments(source().kind === "metrics" ? (source().endpointUrl ?? t().noEndpoint) : `POST ${props.origin}/api/pulse/ingest`),
       copy: source().kind === "metrics" ? (source().endpointUrl ?? undefined) : `${props.origin}/api/pulse/ingest`,
     },
     // an error stands once, in its notice above the facts
@@ -672,16 +669,18 @@ function SourceDetail(props: {
         />
       }
     >
+      {/* the failure is the first thing the open source says: a row with its colour, symbol and word, the detail under it */}
       <Show when={status().lastError}>
         {(error) => (
-          <Notice
-            tone="bad"
-            icon="alert-circle"
-            title={t().error}
-            meta={status().lastErrorAt ? props.when(status().lastErrorAt!) : undefined}
-          >
-            {localizedSourceError(error(), t())}
-          </Notice>
+          <List label={t().error}>
+            <Row
+              mark={{ icon: "alert-circle", color: "#dc2626" }}
+              lines={[
+                status().lastErrorAt ? words().fetchFailingSince({ time: props.when(status().lastErrorAt!) }) : words().fetchFailing,
+                localizedSourceError(error(), t()) ?? "",
+              ]}
+            />
+          </List>
         )}
       </Show>
       <Show when={status().throttled}>

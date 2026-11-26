@@ -6,6 +6,7 @@ import { fixtureAdminBases, fixtureAdminNav, fixturePolicy, fixtureTargets } fro
 import { PULSE_SETTINGS_TABS, readWorkspacePathState } from "../workspace/routes";
 import { sqlTestLimits } from "../workspace/sql-test-fixtures";
 import {
+  fixtureAccess,
   fixtureAuthors,
   fixtureBases,
   fixtureDeletingBases,
@@ -80,7 +81,7 @@ const screen = (): JSX.Element => {
         canAdmin={variant !== "member"}
         admins={["Jana Petersen"]}
         maxRawRetentionDays={365}
-        access={[]}
+        access={fixtureAccess}
         limits={sqlTestLimits}
       />
     );
