@@ -52,6 +52,8 @@ export type MailAdminSecurityProps = {
   view: SecurityView;
   searches: SecuritySearches;
   figures: { open: number; blocking: number; trusted: number; identities: number };
+  /** Reports received per day over the last 30 days, oldest first (`countReportsPerDay`); `null` when it could not load. */
+  reportsPerDay: number[] | null;
   reports: { rows: SecurityReportRow[]; total: number } | { failed: string };
   rules: { rows: SecurityRuleRow[]; total: number } | { failed: string };
   identities: { rows: MailProtectedIdentity[]; total: number } | { failed: string };
@@ -284,6 +286,11 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
             label={t().openReports}
             value={props.figures.open ? <Chip status="warn">{number(props.figures.open)}</Chip> : "0"}
             meta={t().reportsOpenSub}
+            trend={
+              props.reportsPerDay
+                ? { values: props.reportsPerDay, label: t().reportsPerDay({ days: props.reportsPerDay.length }) }
+                : undefined
+            }
           />
           <Cells.Cell icon="ban" label={t().blockingRules} value={number(props.figures.blocking)} meta={t().exactMatches} />
           <Cells.Cell

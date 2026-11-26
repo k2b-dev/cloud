@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { err, fail } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
@@ -62,6 +62,10 @@ afterEach(() => {
 const app = () => {
   spies.push(
     stubRailSnapshot(),
+    // the trend is one bounded count (its own integration test); here it answers with a quiet month
+    spyOn(kept, "countKeptPerDay").mockResolvedValue(
+      ok(Array.from({ length: 30 }, (_, index) => ({ day: `2026-11-${index}`, count: index % 7 === 0 ? 1 : 0 }))),
+    ),
     // "mailbox-1" and "conversation-1" both become "Pub001": each table numbers its own ids
     spyOn(publicResources, "publicIds").mockImplementation(
       async (_table, ids) => new Map(ids.flatMap((id) => (id ? [[id, `Pub${id.slice(-1).padStart(3, "0")}`] as const] : []))),

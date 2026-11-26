@@ -4,7 +4,7 @@ import { dates } from "@k2b/stdlib";
 import { ssr } from "../config";
 import type { MailRequestContext } from "../service";
 import { localizeMailError } from "../service/error-messages";
-import { listKeptConversations } from "../service/kept-conversations";
+import { countKeptPerDay, listKeptConversations } from "../service/kept-conversations";
 import { publicIds } from "../service/public-resources";
 import MailAdminKeptList, { type MailAdminKeptRow } from "./_components/v2/MailAdminKeptList.island";
 import { mailAdminSections } from "./admin-sections";
@@ -24,7 +24,10 @@ export default ssr<AuthContext>(async (c) => {
   };
   const query = (c.req.query("q") ?? "").trim();
   const cursor = c.req.query("cursor") || null;
-  const result = await listKeptConversations(context, { q: query || undefined, cursor: cursor ?? undefined, limit: PAGE_SIZE });
+  const [result, perDay] = await Promise.all([
+    listKeptConversations(context, { q: query || undefined, cursor: cursor ?? undefined, limit: PAGE_SIZE }),
+    countKeptPerDay(context, { timeZone: dateConfig.timeZone }),
+  ]);
   if (!result.ok && result.error.code === "FORBIDDEN") return ssr.error(c, 403);
   const page = result.ok ? result.data : null;
   const [mailboxIds, conversationIds] = page
@@ -75,6 +78,8 @@ export default ssr<AuthContext>(async (c) => {
         nav={adminNavigation(c, mailAdminSections(locale, "kept"))}
         rows={rows}
         total={page?.total ?? null}
+        // the keeps per day of the last 30 days, oldest first; `null` when the count could not load
+        perDay={perDay.ok ? perDay.data.map((day) => day.count) : null}
         failure={result.ok ? null : `${t.loadFailed}: ${localizeMailError(result.error, locale).message}`}
         query={query}
         cursor={cursor}

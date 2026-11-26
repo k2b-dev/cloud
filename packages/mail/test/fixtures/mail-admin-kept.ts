@@ -7,6 +7,9 @@ import type { KeepHistoryEntry } from "../../src/service/kept-conversations";
 // Invented data for Cloud administration › Mail › Kept: a firm that keeps conversations as evidence (leases, claims,
 // staff matters). Names and domains are made up (example.org); the clock is fixed so every date reads the same.
 
+/** Keeps per day over the 30 days before `KEPT_NOW`, oldest first, as `countKeptPerDay` returns them. */
+export const keptPerDay = (): number[] => Array.from({ length: 30 }, (_, index) => [0, 1, 0, 2, 0, 0, 3, 1][index % 8] ?? 0);
+
 export const KEPT_NOW = "2026-11-26T09:30:00.000Z";
 export const keptDateConfig = { locale: "de", timeZone: "Europe/Berlin" } as const;
 

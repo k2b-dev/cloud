@@ -2,7 +2,15 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
-import { KEPT_NOW, keptAdminNav, keptDateConfig, keptRecord, keptRows, keptWorstRows } from "../../../../test/fixtures/mail-admin-kept";
+import {
+  KEPT_NOW,
+  keptAdminNav,
+  keptDateConfig,
+  keptPerDay,
+  keptRecord,
+  keptRows,
+  keptWorstRows,
+} from "../../../../test/fixtures/mail-admin-kept";
 import { mailboxesProps } from "../../../../test/fixtures/mail-admin-mailboxes";
 import { securityProps } from "../../../../test/fixtures/mail-admin-security";
 import type { KeptHarnessOptions } from "./mail-admin.browser-harness";
@@ -147,7 +155,17 @@ const open = async (context: BrowserContextOptions, options: KeptHarnessOptions,
 
 const list = (overrides: Partial<NonNullable<KeptHarnessOptions["list"]>> = {}): KeptHarnessOptions => ({
   locale: "de",
-  list: { nav: keptAdminNav(), rows: keptRows(), total: 214, failure: null, query: "", cursor: null, nextCursor: "c2", ...overrides },
+  list: {
+    nav: keptAdminNav(),
+    rows: keptRows(),
+    total: 214,
+    perDay: keptPerDay(),
+    failure: null,
+    query: "",
+    cursor: null,
+    nextCursor: "c2",
+    ...overrides,
+  },
 });
 const record = (overrides: Partial<NonNullable<KeptHarnessOptions["record"]>> = {}): KeptHarnessOptions => ({
   locale: "de",

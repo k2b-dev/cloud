@@ -14,6 +14,7 @@ import type {
 import { isCurrentPlatformAdmin, requireMailboxPermission } from "./access";
 import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normalization";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
+import { countingTimeZone, type DayCount, fillDays, windowStart } from "./per-day";
 import { assessMailSecurityEvidence } from "./security-evidence";
 
 type DbPolicy = {
@@ -322,6 +323,26 @@ export const listReports = async (
     LIMIT ${query.limit}
   `;
   return ok(rows.map(mapReport));
+};
+
+/**
+ * Reports received per day over the last `PER_DAY_WINDOW` days, in the request's time zone: the trend of the open
+ * reports. One statement over at most `PER_DAY_WINDOW` groups, counted from when each report came in.
+ */
+export const countReportsPerDay = async (
+  context: MailRequestContext,
+  options: { timeZone?: string; now?: Date } = {},
+): Promise<Result<DayCount[]>> => {
+  const allowed = await requirePlatformAdmin(context);
+  if (!allowed.ok) return allowed;
+  const timeZone = countingTimeZone(options.timeZone);
+  const now = options.now ?? new Date();
+  const rows = await sql<DayCount[]>`
+    SELECT to_char(created_at AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day, count(*)::int AS count
+    FROM mail.security_reports
+    WHERE created_at >= ${windowStart(now, timeZone)} AND created_at <= ${now.toISOString()}::timestamptz
+    GROUP BY 1`;
+  return ok(fillDays(rows, now, timeZone));
 };
 
 export const resolveReport = async (params: {

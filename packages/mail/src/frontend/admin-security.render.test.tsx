@@ -47,6 +47,9 @@ afterEach(() => {
 const server = (policiesOk = true) => {
   spies.push(
     stubRailSnapshot(),
+    spyOn(security, "countReportsPerDay").mockResolvedValue(
+      ok(Array.from({ length: 30 }, (_, index) => ({ day: `2026-11-${index}`, count: index % 5 === 0 ? 2 : 0 }))),
+    ),
     spyOn(security, "listReports").mockResolvedValue(ok(securityReports)),
     spyOn(security, "listPolicies").mockResolvedValue(policiesOk ? ok(securityPolicies) : fail(err.internal("offline"))),
     spyOn(security, "listProtectedIdentities").mockResolvedValue(ok(securityIdentities)),
@@ -75,6 +78,8 @@ const html = async (hono: Hono<AuthContext & { Variables: { runtime: CloudRuntim
 test("the reports tab renders with the figures, filtered by its own search, and nothing loading", async () => {
   const page = await html(server(), "/admin/mail/security?reports=paypal&rules=kern");
   expect(page).toContain('data-k2-part="Cells"');
+  // the open reports carry their real trend: reports received per day
+  expect(page).toContain('data-k2-part="Spark"');
   expect(page).toContain("rechnung@paypal-konto-sicherheit.example.org");
   expect(page).not.toContain("lieferung@dhl-zustellung.example.org");
   expect(page).toContain('href="/admin/mail/security?view=rules&amp;reports=paypal&amp;rules=kern"');

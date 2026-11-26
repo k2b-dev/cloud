@@ -38,11 +38,12 @@ export default ssr<AuthContext>(async (c) => {
     requestId: c.req.header("x-request-id") ?? null,
   };
   const dateConfig = getDateConfig(c);
-  const [reportsResult, policiesResult, identitiesResult, settingsResult] = await Promise.all([
+  const [reportsResult, policiesResult, identitiesResult, settingsResult, perDayResult] = await Promise.all([
     security.listReports(context, { limit: 100 }),
     security.listPolicies(context),
     security.listProtectedIdentities(context),
     security.getSettings(context),
+    security.countReportsPerDay(context, { timeZone: dateConfig.timeZone }),
   ]);
   const reports = reportsResult.ok ? reportsResult.data : [];
   const policies = policiesResult.ok ? policiesResult.data : [];
@@ -104,6 +105,7 @@ export default ssr<AuthContext>(async (c) => {
         nav={adminNavigation(c, mailAdminSections(locale, "security"))}
         view={view}
         searches={searches}
+        reportsPerDay={perDayResult.ok ? perDayResult.data.map((day) => day.count) : null}
         figures={{
           open: reports.filter((report) => report.status === "new" || report.status === "in_review").length,
           blocking: policies.filter((policy) => policy.disposition === "deny" && policy.enabled).length,

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { KeptConversationExportSchema, MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -9,7 +10,7 @@ import type { MailRequestContext } from "./auth";
 import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { canLiftConversationKeeps, getConversationKeep, keepConversation, releaseConversationKeep } from "./conversation-keeps";
 import { mergeConversations, reassignConversationMessage, splitConversation } from "./conversations";
-import { exportKeptConversations, getKeptConversation, listKeptConversations } from "./kept-conversations";
+import { countKeptPerDay, exportKeptConversations, getKeptConversation, listKeptConversations } from "./kept-conversations";
 import { createMailbox } from "./mailboxes";
 import { createBlobReadable } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
@@ -321,6 +322,46 @@ suite("Mail conversation keeps", () => {
       ok: false,
       error: { code: "NOT_FOUND" },
     });
+  });
+
+  test("keeps per day: one bounded statement, days in the request's time zone, empty days zero", async () => {
+    const ids = [await conversation(), await conversation(), await conversation()];
+    for (const id of ids) await keepConversation(scope(id, writer));
+    // a span no other test writes: 00:30 in Berlin is still the day before in UTC, and one keep lies before the window
+    const at = ["2031-03-28T23:30:00Z", "2031-03-29T10:00:00Z", "2031-02-01T10:00:00Z"];
+    for (const [index, id] of ids.entries())
+      await sql`UPDATE mail.conversation_keeps SET kept_at = ${at[index]!}::timestamptz WHERE conversation_id = ${id}::uuid`;
+    const now = new Date("2031-03-29T12:00:00Z");
+
+    expect(await countKeptPerDay(writer, { now })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    // the first call of a process loads what the admin check caches; the meter counts a page load after that
+    await countKeptPerDay(cloudAdmin, { now, timeZone: "Europe/Berlin" });
+    const meter = await meterSql();
+    let berlin: Awaited<ReturnType<typeof countKeptPerDay>> | undefined;
+    try {
+      const statements = await meter.during(async () => {
+        berlin = await countKeptPerDay(cloudAdmin, { now, timeZone: "Europe/Berlin" });
+      });
+      // the admin check and the one grouped count; never a statement per keep or per day
+      expect(statements.filter((statement) => statement.includes("mail.conversation_keeps"))).toHaveLength(1);
+      expect(statements).toHaveLength(2);
+    } finally {
+      await meter.close();
+    }
+    if (!berlin?.ok) throw new Error("Keeps per day failed");
+    expect(berlin.data).toHaveLength(30);
+    expect(berlin.data[0]).toEqual({ day: "2031-02-28", count: 0 });
+    expect(berlin.data.at(-1)).toEqual({ day: "2031-03-29", count: 2 });
+    expect(berlin.data.reduce((sum, day) => sum + day.count, 0)).toBe(2);
+
+    const utc = await countKeptPerDay(cloudAdmin, { now });
+    if (!utc.ok) throw new Error(utc.error.message);
+    expect(utc.data.slice(-2)).toEqual([
+      { day: "2031-03-28", count: 1 },
+      { day: "2031-03-29", count: 1 },
+    ]);
+    // the later list tests count the keeps of this mailbox: these leave again
+    for (const id of ids) await sql`DELETE FROM mail.conversation_keeps WHERE conversation_id = ${id}::uuid`;
   });
 
   test("admin list paginates ties, escapes search, rejects non-admins and includes soft-deleted mailboxes", async () => {

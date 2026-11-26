@@ -2,7 +2,23 @@ import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { swapPage } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Avatar, Bar, Button, Chip, Failed, Inline, Input, Mark, type NavProps, Pane, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
+import {
+  Avatar,
+  Bar,
+  Button,
+  Cells,
+  Chip,
+  Failed,
+  Inline,
+  Input,
+  Mark,
+  type NavProps,
+  Pane,
+  StatusRow,
+  Table,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import { keptListHref } from "../../admin-sections";
 import { mailKeptAdminMessages } from "../../kept-admin-messages";
@@ -31,6 +47,8 @@ export type MailAdminKeptListProps = {
   rows: MailAdminKeptRow[];
   /** All kept conversations that match; `null` when the list could not be loaded. */
   total: number | null;
+  /** Conversations kept per day over the last 30 days, oldest first (`countKeptPerDay`); `null` when it could not load. */
+  perDay: number[] | null;
   /** Why the list could not be loaded, worded for the page. */
   failure: string | null;
   query: string;
@@ -59,7 +77,8 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
   });
   const lead = () => {
     if (props.total === null) return t().title;
-    return props.query ? t().filteredCount({ count: props.rows.length, total: props.total }) : t().count({ count: props.total });
+    // the figure above says how many: the row says in which order, or how many the search shows
+    return props.query ? t().filteredCount({ count: props.rows.length, total: props.total }) : t().newestFirst;
   };
   // only what is not fine speaks up: conversations whose mailbox is gone live on as Cloud's kept copy alone
   const orphaned = () => props.rows.filter((row) => row.mailboxDeleted).length;
@@ -126,6 +145,24 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
           />
         }
       >
+        {/* the hero's place: DP's hero band takes these figures when it lands */}
+        <Show when={props.total !== null && !props.query && !props.cursor}>
+          <Cells>
+            <Cells.Cell
+              icon="lock"
+              color={keptMark(false).color}
+              label={t().keptFigure}
+              value={t().count({ count: props.total ?? 0 })}
+              meta={
+                props.perDay
+                  ? t().newInWindow({ count: props.perDay.reduce((sum, day) => sum + day, 0), days: props.perDay.length })
+                  : undefined
+              }
+              trend={props.perDay ? { values: props.perDay, label: t().keptPerDay({ days: props.perDay.length }) } : undefined}
+            />
+            <Cells.Cell icon="clock" label={t().lastKept} value={props.rows[0]?.keptSince.text ?? "–"} meta={props.rows[0]?.keptBy} />
+          </Cells>
+        </Show>
         <Show
           when={props.failure === null}
           fallback={<Failed text={props.failure ?? t().loadFailed} onRetry={() => void swapPage(location.href)} />}

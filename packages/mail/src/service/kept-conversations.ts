@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { KeptConversationExport } from "../kept-conversation-export";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { type ConversationKeep, canReadKeptConversations, recordConversationKeepAudit } from "./conversation-keeps";
+import { countingTimeZone, type DayCount, fillDays, windowStart } from "./per-day";
 
 export type KeptConversationSummary = {
   mailboxId: string;
@@ -128,6 +129,25 @@ export const listKeptConversations = async (
         ? Buffer.from(JSON.stringify({ at: last.kept_at, id: last.conversation_id })).toString("base64url")
         : null,
   });
+};
+
+/**
+ * Conversations kept per day over the last `PER_DAY_WINDOW` days, in the request's time zone: the trend of the kept
+ * list. One statement over at most `PER_DAY_WINDOW` groups; it names no conversation, so it is not logged.
+ */
+export const countKeptPerDay = async (
+  context: MailRequestContext,
+  options: { timeZone?: string; now?: Date } = {},
+): Promise<Result<DayCount[]>> => {
+  if (!(await canReadKeptConversations(context))) return forbidden();
+  const timeZone = countingTimeZone(options.timeZone);
+  const now = options.now ?? new Date();
+  const rows = await sql<DayCount[]>`
+    SELECT to_char(keep.kept_at AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day, count(*)::int AS count
+    FROM mail.conversation_keeps keep
+    WHERE keep.kept_at >= ${windowStart(now, timeZone)} AND keep.kept_at <= ${now.toISOString()}::timestamptz
+    GROUP BY 1`;
+  return ok(fillDays(rows, now, timeZone));
 };
 
 const loadKept = async (ref: KeptConversationRef): Promise<SummaryRow | null> => {
