@@ -452,7 +452,8 @@ describe("PwaLayout ui v2", () => {
       const head = frame?.querySelector('[data-k2-part="Workspace"] [data-slot="head"]');
       expect(head?.querySelector(".pwa-v2-title")?.textContent).toBe("Shelf");
       expect(head?.querySelector('.pwa-v2-back a[href="/pwa/inventory"]')?.getAttribute("aria-label")).toBe("Items");
-      expect(head?.querySelector(".k2-bar-end")?.textContent).toBe("[[actions]]");
+      // Kept on the phone, where a v2 head's end would otherwise give way to a shell bar the app does not have.
+      expect(head?.querySelector(".k2-bar-end > .pwa-v2-actions[data-keep]")?.textContent).toBe("[[actions]]");
       expect(frame?.querySelector('main [data-k2-part="Pane"]')?.textContent).toContain("[[locale:en]]");
       expect([response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
         "no-referrer",

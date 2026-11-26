@@ -244,7 +244,8 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
 - From 48 rem a v2 `Nav` with Start, every part with its count, and Settings
   at its foot stands beside the page.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
-  `back`, the title (`sidebarTitle` from 48 rem), and `actions`, with one
+  `back`, the title (`sidebarTitle` from 48 rem), and `actions` (kept on the
+  phone, where the app has no shell bar to take them), with one
   scrolling `Pane`. Write the content from v2 bands, sections, and rows.
 - With `bare`, the page's island returns its own `Workspace` without a
   sidebar, with its panes and heads. Only the panes scroll; the document

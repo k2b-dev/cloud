@@ -27,7 +27,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");
-const { Bar, Pane, Row, Section, Text, Workspace } = await import("@k2b/ui/v2");
+const { Bar, Button, Pane, Row, Section, Text, Workspace } = await import("@k2b/ui/v2");
 
 const { ssr } = defineApp({
   id: "inventory",
@@ -112,6 +112,9 @@ const pageOf = (variant: Variant) =>
         back: variant === "screen" ? { href: "/pwa/inventory", label: "Inventory" } : undefined,
         bare: variant !== "framed",
         screen: variant === "screen",
+        get actions() {
+          return createComponent(Button, { variant: "ghost", icon: "settings", label: "Settings", href: "/pwa/settings" });
+        },
         get children() {
           if (variant === "framed") return rows();
           // A bare page brings its own Workspace from its island, here with the pane's own head.
@@ -213,6 +216,7 @@ describe("PwaLayout ui v2 in a browser", () => {
                 main: box(".pwa-v2-main"),
                 nav: box(".pwa-v2-nav"),
                 tabs: box(".pwa-v2-tabs"),
+                actions: box(".pwa-v2-actions a"),
                 // a slot shows its contents only; the bar is the head's box
                 head: box(".pwa-v2-main .k2-bar"),
                 scrollWidth: document.documentElement.scrollWidth,
@@ -224,6 +228,8 @@ describe("PwaLayout ui v2 in a browser", () => {
             expect(result.scrollWidth).toBeLessThanOrEqual(width);
             expect(result.documentScrolls).toBe(false);
             expect(result.paneScrolls).toBe(true);
+            // The page's actions stay in the frame's head at every width; a bare page has its own head.
+            if (variant === "framed") expect(result.actions?.width).toBeGreaterThan(0);
             expect(Math.round(result.frame!.height)).toBe(width < 768 ? 844 : 900);
             // The page's head starts below the status bar and the notch.
             expect(result.head!.top).toBeGreaterThanOrEqual(insets.top);

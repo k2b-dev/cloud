@@ -49,6 +49,7 @@ export default function PwaNavigationV2(props: PwaNavigationV2Props) {
     icon: entry.icon,
     href: entry.href,
     current: entry.current,
+    // k2b-ui gap: `Nav` has no count that calls for attention (v1's unread badge); a badge shows as the quiet count.
     get count() {
       return count(entry.badge ?? entry.summary);
     },
@@ -58,12 +59,14 @@ export default function PwaNavigationV2(props: PwaNavigationV2Props) {
       <div class="pwa-v2-nav">
         <Nav
           title={props.title}
+          // k2b-ui gap: `Nav`'s title takes a Tabler icon only, no brand logo (v1 showed `/branding/logo`).
           icon="cloud"
           groups={[{ items: [item(props.start)] }, { label: props.appsLabel, items: props.parts.map(item) }]}
           foot={[item(props.settings)]}
         />
       </div>
       <Show when={props.tabs.length > 0}>
+        {/* k2b-ui gap: v2 has no bottom tab bar; this one is Cloud markup on v2 tokens (styles/pwa-layout.css). */}
         <nav class="pwa-v2-tabs" aria-label={props.tabsLabel}>
           <For each={props.tabs}>
             {(tab) => (

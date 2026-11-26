@@ -132,6 +132,13 @@ html[data-pwa-v2] body {
   display: none;
 }
 
+/* The page's actions in the head, kept on the phone (`data-keep`): the app has no shell bar to take them. */
+.pwa-v2-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* The runtime's notices float above the tab bar, so nothing on the page moves when one comes or goes. */
 .pwa-v2-notices {
   position: fixed;
@@ -205,8 +212,10 @@ html[data-pwa-v2] body {
 
   .pwa-v2 .pwa-v2-notices,
   .pwa-v2[data-tabs] .pwa-v2-notices {
+    /* inside the page's card, clear of its edge */
+    right: max(24px, calc(env(safe-area-inset-right) + 24px));
     left: auto;
-    bottom: calc(env(safe-area-inset-bottom) + 16px);
+    bottom: calc(env(safe-area-inset-bottom) + 24px);
     width: min(400px, calc(100vw - 32px));
   }
 }

@@ -68,7 +68,14 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
           </Show>
         </span>
       }
-      end={props.actions}
+      // The app has no phone bar of the shell, where a v2 head's end goes below 768 px: the page's actions stay.
+      end={
+        props.actions === undefined ? undefined : (
+          <span class="pwa-v2-actions" data-keep="">
+            {props.actions}
+          </span>
+        )
+      }
     />
   );
 

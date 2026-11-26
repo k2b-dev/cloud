@@ -36,6 +36,8 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
   });
 
   return (
+    // k2b-ui gap: v2 has no toast that stays until its state ends and carries an action (`ToastOptions` has `undo`,
+    // `status` and `retry` only), so the runtime's states are floating `Notice`s of the frame.
     <div class="pwa-v2-notices" aria-live="polite">
       <Show when={offline()}>
         <Notice tone="warn" icon="wifi-off">
