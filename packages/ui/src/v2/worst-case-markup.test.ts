@@ -82,6 +82,32 @@ test("drop columns leave one by one from the last, by a container query on the t
   expect(markup).toMatch(/<col data-drop="" data-drop-step="1"/);
 });
 
+test("a large table drops its columns by their defaults, since it never shrinks them (Users at 1024 px)", () => {
+  const markup = renderToString(() =>
+    createComponent(Table<Invoice>, {
+      label: "Rechnungen",
+      rows,
+      sticky: true,
+      columns: [
+        { title: "Nummer", width: { min: 120, default: 140 }, cell: (row) => row.number, drop: true },
+        { title: "Kunde", width: { min: 160, default: 240 }, cell: (row) => row.customer },
+        { title: "Fällig", width: { min: 100, default: 120 }, cell: () => "31.12.2026", numeric: true, drop: true },
+        { title: "Betrag", width: { min: 100, default: 120 }, align: "end", cell: (row) => row.amount },
+        { title: "Notiz", cell: () => "–" },
+      ],
+    }),
+  );
+  const id = markup.match(/data-k2-table="([^"]+)"/)?.[1];
+  // 140 + 240 + 132 + 182 + 160 px at their defaults (the date and the amount at 10 px a figure): below that the date
+  // leaves whole, below what the rest need at their defaults the number as well
+  expect(markup).toContain(
+    `@container k2-table (width < 854px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="1"] { display: none; } }`,
+  );
+  expect(markup).toContain(
+    `@container k2-table (width < 722px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="2"] { display: none; } }`,
+  );
+});
+
 test("a person in a cell is a picture beside lines, the picture without a name of its own", () => {
   const markup = table();
   expect(markup).toContain('class="k2-cell-person"');

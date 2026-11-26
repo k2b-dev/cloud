@@ -82,7 +82,7 @@ Reorder by dragging, and a tree. Until they ship, use the nearest part and write
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
 - Give every wide table a `phone(row)`, and put the count and key figures in the `StatusRow`.
-- Keep row text short (it is cut with "…"); mark numbers, amounts and times with `align: "end"` or `numeric`, which are never cut.
+- Keep row text short (it is cut with "…"); mark numbers, amounts and times with `align: "end"` or `numeric`: they are never cut, and their column grows to the longest value.
 - Show a person in a cell as `{ avatar, lines: [name] }`, not as an `Inline` of `Avatar` and `Text`.
 
 ### Don't
