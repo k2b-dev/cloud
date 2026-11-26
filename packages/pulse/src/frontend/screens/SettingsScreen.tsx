@@ -401,7 +401,7 @@ function Members(props: { base: PulseBase; canAdmin: boolean; initial: AccessEnt
     setEditing(true);
     let wrote = false;
     try {
-      // k2b-ui gap: the access dialog of the platform is not on v2 yet; it keeps its behaviour over this page.
+      // k2b-ui gap (#4207, openAccessDialog from @k2b/cloud/access/v2): the access dialog of the platform is not on v2 yet; it keeps its behaviour over this page.
       await openAccessDialog({
         target: { type: "pulse.base", id: props.base.id },
         resourceName: props.base.name,
