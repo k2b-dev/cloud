@@ -17,11 +17,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
       "Option: a card that is an option of a capability view's Choice is a radio or checkbox label, the same control state as ChoiceList and CheckboxCard, not a selected object row.",
   },
   {
-    file: "packages/core/src/pages/admin/apps/view.tsx",
-    subject: 'variant={text().primary ? "primary" : "secondary"}',
-    reason: "Action: a notice's way out is the app page's one filled action when the app has no valid key.",
-  },
-  {
     file: "packages/core/src/pages/admin/apps/KeysCreate.island.tsx",
     subject: 'variant={props.neverStarted ? "primary" : "secondary"}',
     reason: "Action: before an app's first start, creating its key is the page's one main action.",
@@ -155,11 +150,7 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"',
     reason: "Status: custom value-source badge.",
   },
-  {
-    file: "packages/core/src/pages/admin/announcements/page.tsx",
-    subject: 'scheduled: { label: t.scheduled, class: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },',
-    reason: "Status: scheduled announcement badge.",
-  },
+
   {
     file: "packages/core/src/pages/me/notification-ui.ts",
     subject: 'return { label: t.sending, class: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" };',

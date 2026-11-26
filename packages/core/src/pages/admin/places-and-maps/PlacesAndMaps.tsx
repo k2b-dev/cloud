@@ -30,6 +30,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createSignal, type JSX, Match, Show, Switch } from "solid-js";
+import { adminToasts } from "../_area/toasts";
 import { BaseFrame } from "../base/BaseScreen";
 import { placesAndMapsMessages } from "./messages";
 
@@ -80,6 +81,7 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
   const locale = useLocale();
   const t = () => placesAndMapsMessages.resolve([locale()]).t;
   const toast = useToast();
+  const n = () => adminToasts.resolve([locale()]).t;
   const [status, setStatus] = createSignal<GeoAdminStatus | null>(props.initial.status);
   const [statusLoad, setStatusLoad] = createSignal<Load>(props.initial.status ? "ready" : "error");
   const [usage, setUsage] = createSignal<GeoAdminUsage | null>(props.initial.usage);
@@ -246,7 +248,7 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
   const keySaved = (next: GeoAdminStatus) => {
     setStatus(next);
     backToView();
-    toast(t().keySaved, { status: "ok" });
+    toast(n().keySaved, { status: "ok" });
     void loadUsage();
   };
   const removeKey = async () => {
@@ -265,7 +267,7 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
       if (after?.key.state === "none") next = after;
     }
     setKeyPhase({ kind: "idle" });
-    if (!next) return void toast(t().removeFailed, { status: "bad" });
+    if (!next) return void toast(n().notRemoved, { status: "bad" });
     setStatus(next);
     backToView();
     toast(t().keyRemoved, { status: "ok" });

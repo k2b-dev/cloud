@@ -4,6 +4,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Dialog, Field, Input, Menu, type NavProps, Notice, Pane, Path, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
+import { adminToasts } from "../_area/toasts";
 import { outgoingMailMessages } from "./messages";
 import ProfileForm from "./ProfileForm";
 import { OUTGOING_MAIL_HREF } from "./paths";
@@ -19,6 +20,7 @@ const TestDialog = (props: { profile: AdminMailProfile | null; onClose: () => vo
   const locale = useLocale();
   const t = () => outgoingMailMessages.resolve([locale()]).t;
   const toast = useToast();
+  const n = () => adminToasts.resolve([locale()]).t;
   const [recipient, setRecipient] = createSignal("");
   const [sending, setSending] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -30,7 +32,7 @@ const TestDialog = (props: { profile: AdminMailProfile | null; onClose: () => vo
     try {
       const response = await api.profiles[":key"].test.$post({ param: { key: profile.key }, json: { recipient: recipient().trim() } });
       if (!response.ok) throw await failure(response, t().testFailed, t());
-      toast(t().testSent({ recipient: recipient().trim() }), { status: "ok" });
+      toast(n().testEmailSent, { status: "ok" });
       props.onClose();
     } catch (failed) {
       setError(failed instanceof Error ? failed.message : t().testFailed);

@@ -1,8 +1,10 @@
 // Platform lifecycle backfill endpoints are owned by cloud-lib (not by an app), so the typed client is a cloud-lib
 // export and is identical regardless of which container loads it.
 import { coreClient } from "@k2b/cloud/clients/core";
+import { useLocale } from "@k2b/ui";
 import { Dialog, Notice, Row, Section, useToast } from "@k2b/ui/v2";
 import { createSignal, For } from "solid-js";
+import { adminToasts } from "../_area/toasts";
 import { useOperationMessages } from "../settings/_components/account-operations-messages";
 
 type OperationKey = "ipa-backfill" | "local-user-backfill" | "guest-backfill";
@@ -29,6 +31,8 @@ const ACCOUNT_LOGS_HREF = `/admin/observability/logs?${new URLSearchParams([
 export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
   const m = useOperationMessages();
   const toast = useToast();
+  const locale = useLocale();
+  const n = () => adminToasts.resolve([locale()]).t;
   const [running, setRunning] = createSignal<OperationKey | null>(null);
   const operations = () =>
     [
@@ -37,7 +41,6 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceIpaBackfill,
         logs: "/admin/observability/logs?source=auth:ipa:backfill",
         confirm: m().startIpaBackfill,
-        done: m().ipaBackfillStarted,
         description: m().ipaBackfillDescription,
       },
       {
@@ -45,7 +48,6 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceLocalUserBackfill,
         logs: "/admin/observability/logs?source=auth:local-user:backfill",
         confirm: m().startLocalUserBackfill,
-        done: m().localUserBackfillStarted,
         description: m().localUserBackfillDescription,
       },
       {
@@ -53,7 +55,6 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceLocalGuestBackfill,
         logs: "/admin/observability/logs?source=auth:guest:backfill",
         confirm: m().startLocalGuestBackfill,
-        done: m().localGuestBackfillStarted,
         description: m().localGuestBackfillDescription,
       },
     ].filter((operation) => props.freeIpaEnabled || operation.key !== "ipa-backfill");
@@ -72,12 +73,11 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
     try {
       const response = await coreClient.admin.lifecycle.jobs.$post({ json: { kind: operation.key } });
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(data?.message ?? m().jobStartFailed);
+        throw new Error(m().jobStartFailed);
       }
-      toast(operation.done, { status: "ok" });
-    } catch (error) {
-      toast(error instanceof Error ? error.message : m().jobStartFailed, { status: "bad" });
+      toast(n().jobStarted, { status: "ok" });
+    } catch {
+      toast(n().jobNotStarted, { status: "bad" });
     } finally {
       setRunning(null);
     }

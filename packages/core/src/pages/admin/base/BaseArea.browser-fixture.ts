@@ -13,7 +13,7 @@ import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 
 /** States the captures and tests switch with `?state=`. */
-export type BaseFixtureState = "normal" | "conflict" | "conflictgone" | "unreadable" | "savefail" | "legacy";
+export type BaseFixtureState = "normal" | "conflict" | "conflictgone" | "unreadable" | "savefail" | "legacy" | "testfail";
 
 /** Stored settings no app declares any more, worded as the server sends them. */
 const legacyRows = [
@@ -403,6 +403,8 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       };
       return Response.json({ ok: true });
     }
+    if (state === "testfail" && url.pathname.startsWith("/api/admin/core/settings/test-"))
+      return Response.json({ message: "Gotenberg did not answer within 10 s (http://gotenberg:3000)." }, { status: 502 });
     if (url.pathname === "/api/admin/core/settings/test-freeipa") return Response.json({ ok: true });
     if (url.pathname === "/api/admin/core/settings/test-pdf") return Response.json({ bytes: 18234, contentType: "application/pdf" });
     return Response.json({ message: "Synthetic fixture: not available" }, { status: 503 });

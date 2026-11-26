@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { baseAreaBrowserFixture } from "./BaseArea.browser-fixture";
 
 // The Base settings area on v2: a registry form saves with "Save" in its footer through Core's settings API, reports
@@ -99,12 +99,14 @@ test("a reset goes back to the default only on save, Discard drops it, and a rem
       const fields = document.querySelectorAll('main [data-k2-part="Field"]');
       return Math.round(fields[2]!.getBoundingClientRect().top - fields[0]!.getBoundingClientRect().top);
     });
+  await settled(page);
   const before = await thirdTop();
   await footer().getByRole("button", { name: "Reset to default" }).click();
   await page.getByRole("menuitemcheckbox", { name: "Name" }).click();
   expect(await nameField().isDisabled()).toBe(true);
   expect(await page.getByText("Goes back to the default when you save.").isVisible()).toBe(true);
   // A staged reset keeps every field where it was.
+  await settled(page);
   expect(await thirdTop()).toBe(before);
   // A ticked entry keeps the menu open for more; Escape closes it.
   await page.keyboard.press("Escape");
@@ -159,10 +161,17 @@ test("a refused save keeps the draft and names the field; secrets stay empty unt
   expect(errors).toEqual([]);
 }, 30_000);
 
-test("the PDF test reports in a toast; the legacy settings go after one question, and the cache clears", async () => {
+test("the PDF test reports in a toast and a failure in place; the legacy settings go after one question, and the cache clears", async () => {
   await goto("/admin/base/pdf");
   await button("Test renderer").click();
-  await page.getByText("Gotenberg returned a", { exact: false }).waitFor();
+  await page.getByText("PDF rendered (", { exact: false }).waitFor();
+  // a failed test names the reason above the form, where it stays until the next test
+  await goto("/admin/base/pdf?state=testfail");
+  await button("Test renderer").click();
+  const failed = page.locator('main [data-k2-part="Notice"][data-tone="bad"]');
+  await failed.waitFor();
+  expect(await failed.innerText()).toContain("Test failed");
+  expect(await failed.innerText()).toContain("Gotenberg did not answer within 10 s");
 
   await goto("/admin/base?state=legacy");
   expect(await page.getByRole("table", { name: "Legacy settings" }).getByText("mail.old_relay_host").isVisible()).toBe(true);
@@ -172,11 +181,11 @@ test("the PDF test reports in a toast; the legacy settings go after one question
   expect(fixture.legacyDeletes()).toBe(0);
   await button("Clean up").click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Clean up", exact: true }).click();
-  await page.getByText("2 legacy settings deleted.").waitFor();
+  await page.getByText("Cleaned up", { exact: true }).waitFor();
   expect(fixture.legacyDeletes()).toBe(1);
   expect(await page.getByText("No legacy settings found.").isVisible()).toBe(true);
 
   await button("Clear cache").click();
-  await page.getByText("Cache invalidated.", { exact: false }).waitFor();
+  await page.getByText("Cache cleared", { exact: true }).waitFor();
   expect(errors).toEqual([]);
 }, 30_000);

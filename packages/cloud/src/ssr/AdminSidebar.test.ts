@@ -141,10 +141,7 @@ describe("buildAdminGroups", () => {
     expect(activeAdminLink("/admin/ai", links)?.href).toBe("/admin/ai");
     expect(buildAdminGroups([], "de").map((group) => [group.label, group.links.map((link) => link.label)])).toEqual([
       [undefined, ["Übersicht"]],
-      [
-        "Einrichten",
-        ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "Ankündigungen", "KI"],
-      ],
+      ["Einrichten", ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "Ankündigungen", "KI"]],
       ["Betrieb", ["Apps", "Code", "Wartungsmodus"]],
     ]);
   });

@@ -3,6 +3,7 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Section, useToast } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
+import { adminToasts } from "./toasts";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -15,8 +16,6 @@ const messages = i18n.define({
       announcementsHint:
         "Announcements are cached for five minutes across applications. Saving and deleting invalidate this cache automatically. Scheduled publication and expiry are checked on every page request. Already open pages need to be reloaded.",
       clear: "Clear cache",
-      cleared: "Cache invalidated. Data will reload on the next request.",
-      error: "Could not invalidate the cache.",
     },
     de: {
       settings: "Einstellungen-Cache",
@@ -26,8 +25,6 @@ const messages = i18n.define({
       announcementsHint:
         "Ankündigungen werden anwendungsübergreifend für fünf Minuten zwischengespeichert. Speichern und Löschen setzen den Cache automatisch zurück. Geplante Veröffentlichung und Ablauf werden bei jedem Seitenaufruf geprüft. Bereits geöffnete Seiten müssen neu geladen werden.",
       clear: "Cache leeren",
-      cleared: "Cache zurückgesetzt. Die Daten werden beim nächsten Aufruf neu geladen.",
-      error: "Der Cache konnte nicht zurückgesetzt werden.",
     },
   },
 });
@@ -38,6 +35,7 @@ export const checkCacheSectionMessages = () => messages.check();
 export default function CacheSection(props: { area: "settings" | "announcements" }) {
   const locale = useLocale();
   const t = () => messages.resolve([locale()]).t;
+  const n = () => adminToasts.resolve([locale()]).t;
   const toast = useToast();
   const [busy, setBusy] = createSignal(false);
   const clear = async () => {
@@ -45,9 +43,9 @@ export default function CacheSection(props: { area: "settings" | "announcements"
     try {
       const client = coreClient.admin.core;
       const response = props.area === "settings" ? await client.settings.cache.$delete({}) : await client.announcements.cache.$delete({});
-      toast(response.ok ? t().cleared : t().error, { status: response.ok ? "ok" : "bad" });
+      toast(response.ok ? n().cacheCleared : n().cacheNotCleared, { status: response.ok ? "ok" : "bad" });
     } catch {
-      toast(t().error, { status: "bad" });
+      toast(n().cacheNotCleared, { status: "bad" });
     } finally {
       setBusy(false);
     }

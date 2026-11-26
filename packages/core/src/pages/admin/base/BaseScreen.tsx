@@ -2,12 +2,13 @@ import { coreClient } from "@k2b/cloud/clients/core";
 import { formatBytes } from "@k2b/cloud/shared";
 import { settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
 import { useLocale } from "@k2b/ui";
-import { Button, type NavProps, Popover, useToast } from "@k2b/ui/v2";
+import { Button, type NavProps, Notice, Popover, useToast } from "@k2b/ui/v2";
 import { createSignal, type JSX, Show } from "solid-js";
 import AreaFrame from "../_area/AreaFrame";
 import CacheSection from "../_area/CacheSection";
 import LegacySection, { type LegacyRow } from "../_area/LegacySection";
 import RegistryForm, { type RegistryFormSection } from "../_area/RegistryForm";
+import { adminToasts } from "../_area/toasts";
 import { settingsMessages } from "../settings/_components/messages";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { baseAreaMessages } from "./messages";
@@ -21,24 +22,27 @@ type Frame = {
   documentationHref?: string;
 };
 
-/** Renders a test PDF with the saved settings; while the form has unsaved changes, it waits for Save. */
-const TestPdf = () => {
+/**
+ * Renders a test PDF with the saved settings; while the form has unsaved changes, it waits for Save. A rendered PDF is
+ * a toast; a failure names Gotenberg's reason through `onFailure`, which the frame shows above the form.
+ */
+const TestPdf = (props: { onFailure: (reason: string | null) => void }) => {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
+  const n = () => adminToasts.resolve([locale()]).t;
   const toast = useToast();
   const [busy, setBusy] = createSignal(false);
   const pending = () => (settingsSaveControls()?.state ?? "saved") !== "saved";
   const run = async () => {
     setBusy(true);
+    props.onFailure(null);
     try {
       const response = await coreClient.admin.core.settings["test-pdf"].$post();
-      const body = (await response.json().catch(() => null)) as { message?: string; bytes?: number; contentType?: string } | null;
+      const body = (await response.json().catch(() => null)) as { message?: string; bytes?: number } | null;
       if (!response.ok) throw new Error(body?.message ?? t().pdfTestFailed({ status: response.status }));
-      toast(t().pdfResponse({ size: formatBytes(body?.bytes ?? 0, { locale: locale() }), type: body?.contentType ?? "" }), {
-        status: "ok",
-      });
+      toast(n().pdfRendered({ size: formatBytes(body?.bytes ?? 0, { locale: locale() }) }), { status: "ok" });
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), { status: "bad" });
+      props.onFailure(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -56,6 +60,8 @@ const TestPdf = () => {
 export function BaseFrame(props: Frame & { children: JSX.Element }) {
   const locale = useLocale();
   const t = () => baseAreaMessages.resolve([locale()]).t;
+  const n = () => adminToasts.resolve([locale()]).t;
+  const [failure, setFailure] = createSignal<string | null>(null);
   return (
     <AreaFrame
       nav={props.nav}
@@ -63,8 +69,15 @@ export function BaseFrame(props: Frame & { children: JSX.Element }) {
       title={t()[props.section]}
       description={t()[`${props.section}Description`]}
       documentationHref={props.documentationHref}
-      actions={props.section === "pdf" ? <TestPdf /> : undefined}
+      actions={props.section === "pdf" ? <TestPdf onFailure={setFailure} /> : undefined}
     >
+      <Show when={failure()}>
+        {(reason) => (
+          <Notice tone="bad" title={n().testFailed}>
+            {reason()}
+          </Notice>
+        )}
+      </Show>
       {props.children}
     </AreaFrame>
   );

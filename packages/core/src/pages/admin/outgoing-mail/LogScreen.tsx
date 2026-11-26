@@ -22,6 +22,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { adminToasts } from "../_area/toasts";
 import { type LogState, logFilter, logHref, logQuery, statusLabel } from "./log-query";
 import { outgoingMailMessages } from "./messages";
 import { OUTGOING_MAIL_HREF } from "./paths";
@@ -76,6 +77,7 @@ export default function LogScreen(props: LogScreenProps) {
   const locale = useLocale();
   const t = () => outgoingMailMessages.resolve([locale()]).t;
   const toast = useToast();
+  const n = () => adminToasts.resolve([locale()]).t;
   const query = createMemo(() => logQuery(locale(), props.apps));
   const [state, setState] = createSignal(props.state);
   const [page, setPage] = createSignal(props.page);
@@ -134,8 +136,8 @@ export default function LogScreen(props: LogScreenProps) {
       const next = await fetchPage(state(), cursor);
       if (asked !== generation) return;
       setPage((current) => ({ ...next, items: [...current.items, ...next.items] }));
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t().logFailed, { status: "bad" });
+    } catch {
+      toast(n().logNotLoaded, { status: "bad" });
     } finally {
       setLoadingMore(false);
     }
@@ -147,10 +149,10 @@ export default function LogScreen(props: LogScreenProps) {
     setBusy(true);
     try {
       const response = await api.messages[":id"].content.$get({ param: { id: current.id } });
-      if (!response.ok) throw new Error(await errorText(response, t().contentFailed));
+      if (!response.ok) throw new Error(t().contentFailed);
       setContent((await response.json()) as Content);
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t().contentFailed, { status: "bad" });
+    } catch {
+      toast(n().contentNotLoaded, { status: "bad" });
     } finally {
       setBusy(false);
     }
@@ -161,12 +163,12 @@ export default function LogScreen(props: LogScreenProps) {
     setBusy(true);
     try {
       const response = await api.messages[":id"].cancel.$post({ param: { id: current.id } });
-      if (!response.ok) throw new Error(await errorText(response, t().cancelFailed));
+      if (!response.ok) throw new Error(t().cancelFailed);
       setRecord((await response.json()) as AdminMailRecord);
       toast(t().cancelDone, { status: "ok" });
       void load(state());
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t().cancelFailed, { status: "bad" });
+    } catch {
+      toast(n().notCancelled, { status: "bad" });
     } finally {
       setBusy(false);
     }
@@ -177,16 +179,16 @@ export default function LogScreen(props: LogScreenProps) {
     setBusy(true);
     try {
       const response = await api.batches[":batchId"].cancel.$post({ param: { batchId } });
-      if (!response.ok) throw new Error(await errorText(response, t().cancelBatchFailed));
+      if (!response.ok) throw new Error(t().cancelBatchFailed);
       const { cancelled } = (await response.json()) as { cancelled: number };
       setBatchCancelled(true);
-      toast(cancelled === 0 ? t().cancelBatchEmpty : t().cancelBatchDone({ count: cancelled }), { status: "ok" });
+      toast(cancelled === 0 ? n().nothingWaiting : n().cancelled, { status: "ok" });
       const current = record();
       const fresh = current ? await api.messages[":id"].$get({ param: { id: current.id } }).catch(() => undefined) : undefined;
       if (fresh?.ok) setRecord((await fresh.json()) as AdminMailRecord);
       void load(state());
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t().cancelBatchFailed, { status: "bad" });
+    } catch {
+      toast(n().notCancelled, { status: "bad" });
     } finally {
       setBusy(false);
     }

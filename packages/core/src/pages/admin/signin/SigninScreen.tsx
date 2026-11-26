@@ -8,6 +8,7 @@ import type { ApprovalAvailability } from "../../app-approval/availability";
 import { appApprovalMessages } from "../../app-approval/messages";
 import AreaFrame from "../_area/AreaFrame";
 import RegistryForm, { type RegistryFormSection } from "../_area/RegistryForm";
+import { adminToasts } from "../_area/toasts";
 import { settingsMessages } from "../settings/_components/messages";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import AccountOperations from "./AccountOperations";
@@ -20,22 +21,27 @@ export type SigninSectionId = "signin" | "registration" | "security" | "linux" |
 
 type Frame = { nav: NavProps; documentationHref?: string };
 
-/** Tests the saved FreeIPA connection; while the form has unsaved changes, it waits for Save. */
-const TestFreeIpa = () => {
+/**
+ * Tests the saved FreeIPA connection; while the form has unsaved changes, it waits for Save. A reachable FreeIPA is a
+ * toast; a failure names FreeIPA's reason through `onFailure`, which the section shows above the form.
+ */
+const TestFreeIpa = (props: { onFailure: (reason: string | null) => void }) => {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
+  const n = () => adminToasts.resolve([locale()]).t;
   const toast = useToast();
   const [busy, setBusy] = createSignal(false);
   const pending = () => (settingsSaveControls()?.state ?? "saved") !== "saved";
   const run = async () => {
     setBusy(true);
+    props.onFailure(null);
     try {
       const response = await coreClient.admin.core.settings["test-freeipa"].$post();
       const body = (await response.json().catch(() => null)) as { message?: string } | null;
       if (!response.ok) throw new Error(body?.message ?? t().freeIpaTestFailed({ status: response.status }));
-      toast(t().freeIpaReachable, { status: "ok" });
+      toast(n().freeIpaReachable, { status: "ok" });
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), { status: "bad" });
+      props.onFailure(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
@@ -108,13 +114,22 @@ export type SigninFormScreenProps = Frame & {
 export function SigninFormScreen(props: SigninFormScreenProps) {
   const locale = useLocale();
   const s = () => settingsMessages.resolve([locale()]).t;
+  const n = () => adminToasts.resolve([locale()]).t;
+  const [failure, setFailure] = createSignal<string | null>(null);
   return (
     <SigninFrame
       nav={props.nav}
       section={props.section}
       documentationHref={props.documentationHref}
-      actions={props.section === "freeipa" ? <TestFreeIpa /> : undefined}
+      actions={props.section === "freeipa" ? <TestFreeIpa onFailure={setFailure} /> : undefined}
     >
+      <Show when={failure()}>
+        {(reason) => (
+          <Notice tone="bad" title={n().testFailed}>
+            {reason()}
+          </Notice>
+        )}
+      </Show>
       <Show when={props.section === "freeipa"}>
         <Notice tone="note" title={s().testsUseSaved}>
           {s().testsUseSavedDescription}

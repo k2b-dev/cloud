@@ -12,7 +12,7 @@ import type { Finding, Rule } from "./rule";
 const sharedAccess = "packages/cloud/src/access/";
 
 /** Editable inline editors with their reason next to the call; each picks an audience, not a share of a resource. */
-const allowed = new Set(["packages/core/src/pages/admin/rail/RailAdmin.island.tsx"]);
+const allowed = new Set(["packages/core/src/pages/admin/rail/NavigationScreen.tsx"]);
 
 export const checkSource = (file: string, source: string): Finding[] => {
   if (file.startsWith(sharedAccess) || allowed.has(file) || isTestFile(file) || /\.browser-(?:harness|fixture|frame)\.tsx$/.test(file))

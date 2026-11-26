@@ -4,6 +4,7 @@ import { useLocale } from "@k2b/ui";
 import { Chip, Dialog, Section, Table, useToast } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 import { settingsMessages } from "../settings/_components/messages";
+import { adminToasts } from "./toasts";
 
 /** A stored setting no app declares any more, as the server lists it. */
 export type LegacySetting = { key: string; updatedAt: string | null; decryptable: boolean };
@@ -17,11 +18,10 @@ export type LegacyRow = LegacySetting & { updated: string };
 export default function LegacySection(props: { items: LegacyRow[] }) {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
+  const n = () => adminToasts.resolve([locale()]).t;
   const toast = useToast();
   const [items, setItems] = createSignal(props.items);
   const [busy, setBusy] = createSignal(false);
-  const message = async (response: { json(): Promise<unknown> }, fallback: string) =>
-    ((await response.json().catch(() => null)) as { message?: string } | null)?.message ?? fallback;
 
   const cleanUp = async () => {
     const count = items().length;
@@ -29,14 +29,14 @@ export default function LegacySection(props: { items: LegacyRow[] }) {
     setBusy(true);
     try {
       const response = await coreClient.admin.core.settings.legacy.$delete();
-      if (!response.ok) throw new Error(await message(response, t().cleanUpFailed));
+      if (!response.ok) throw new Error(t().cleanUpFailed);
       const { deleted } = (await response.json()) as { deleted: string[] };
-      toast(t().legacyDeleted({ count: deleted.length }), { status: "ok" });
+      toast(n().cleanedUp, { status: "ok" });
       const next = await coreClient.admin.core.settings.legacy.$get();
       const listed = next.ok ? ((await next.json()) as LegacySetting[]) : items().filter((item) => !deleted.includes(item.key));
       setItems(listed.map((item) => ({ ...item, updated: formatDateTime(item.updatedAt, { locale: locale() }) })));
-    } catch (error) {
-      toast(error instanceof Error ? error.message : t().cleanUpFailed, { status: "bad" });
+    } catch {
+      toast(n().notCleanedUp, { status: "bad" });
     } finally {
       setBusy(false);
     }

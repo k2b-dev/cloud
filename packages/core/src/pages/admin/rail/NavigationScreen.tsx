@@ -25,6 +25,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
+import { adminToasts } from "../_area/toasts";
 import { railAdminMessages } from "./messages";
 
 export const NAVIGATION_PATH = "/admin/apps/navigation";
@@ -44,7 +45,6 @@ const everyoneAccess = () =>
     permission: "read",
     createdAt: new Date().toISOString(),
   });
-const v2Icon = (icon: string) => icon.replace(/^ti\s+/, "").replace(/^ti-/, "");
 
 export type NavigationScreenProps = {
   nav: NavProps;
@@ -62,6 +62,7 @@ export default function NavigationScreen(props: NavigationScreenProps) {
   const locale = useLocale();
   const t = () => railAdminMessages.resolve([locale()]).t;
   const toast = useToast();
+  const n = () => adminToasts.resolve([locale()]).t;
   const [state, setState] = createSignal(props.initial);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -82,8 +83,6 @@ export default function NavigationScreen(props: NavigationScreenProps) {
 
   const label = (shortcut: RailShortcut) =>
     shortcut.kind === "app" ? (props.apps.find((app) => app.id === shortcut.appId)?.label ?? t().unavailable) : shortcut.title;
-  const icon = (shortcut: RailShortcut) =>
-    v2Icon(shortcut.kind === "app" ? (props.apps.find((app) => app.id === shortcut.appId)?.icon ?? "apps") : shortcut.icon);
   const audience = (row: RailAdminEntry) =>
     row.access.some((access) => access.principal.type === "authenticated")
       ? t().everyone
@@ -141,9 +140,9 @@ export default function NavigationScreen(props: NavigationScreenProps) {
     setCacheBusy(true);
     try {
       const response = await coreClient.admin.core.rail.cache.$delete({});
-      toast(response.ok ? t().cacheCleared : t().cacheError, { status: response.ok ? "ok" : "bad" });
+      toast(response.ok ? n().cacheCleared : n().cacheNotCleared, { status: response.ok ? "ok" : "bad" });
     } catch {
-      toast(t().cacheError, { status: "bad" });
+      toast(n().cacheNotCleared, { status: "bad" });
     } finally {
       setCacheBusy(false);
     }

@@ -13,7 +13,6 @@ packages/cloud/src/ssr/theme-cycle.browser.test.ts | 1
 packages/cloud/test/island-errors/island-errors.browser-suite.ts | 1
 packages/cloud/test/island-props-csp/island-props-csp.browser-suite.ts | 1
 packages/core/src/pages/admin/ai/AiReview.browser.test.ts | 1
-packages/core/src/pages/admin/outgoing-mail/LogAccessDialog.browser.test.ts | 1
 packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailAdminKept.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailComposeSettings.browser.test.ts | 1

@@ -4,6 +4,7 @@ import type { linuxIdentities, PosixCandidate } from "@k2b/cloud/services";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Check, Dialog, Field, FilterBar, Input, Notice, Section, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { adminToasts } from "../_area/toasts";
 import { linuxErrorText, linuxMessages } from "../settings/_components/linux-messages";
 import { type LinuxState, linuxHref, linuxQuery } from "./linux-query";
 
@@ -25,6 +26,7 @@ export function useLinuxIdentities(props: { initial: LinuxOverview; state: Linux
   const locale = useLocale();
   const t = () => linuxMessages.resolve([locale()]).t;
   const toast = useToast();
+  const n = () => adminToasts.resolve([locale()]).t;
   const query = createMemo(() => linuxQuery(locale()));
   const [state, setState] = createSignal(props.state);
   const [after, setAfter] = createSignal(props.after);
@@ -103,7 +105,7 @@ export function useLinuxIdentities(props: { initial: LinuxOverview; state: Linux
       setEditing(saved.enabled);
       setReserved(false);
       setSelected([]);
-      toast(t().saved, { status: "ok" });
+      toast(n().saved, { status: "ok" });
     } catch (error) {
       setSaveError(error instanceof Error ? error : new Error("error"));
     } finally {
@@ -128,7 +130,7 @@ export function useLinuxIdentities(props: { initial: LinuxOverview; state: Linux
         setSelected((current) => current.filter((value) => value !== id));
       }
       if (progress().total > 0 && progress().done === progress().total) {
-        toast(t().preparedSuccess({ count: progress().done }), { status: "ok" });
+        toast(n().attributesAssigned, { status: "ok" });
         setProgress({ done: 0, total: 0 });
       }
     } catch (error) {
