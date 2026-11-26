@@ -154,10 +154,13 @@ const NavLink = (props: { item: NavItem; level: number }) => (
   </Dynamic>
 );
 
+/** Whether an entry is the current page, or a fold that holds it at any depth. */
+const isOrHoldsCurrent = (item: NavItem): boolean => !!item.current || !!item.items?.some(isOrHoldsCurrent);
+
 /** A folding entry: a button that shows or hides its entries below it, one level further in. */
 const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: number }) => {
   const id = createUniqueId();
-  const holdsCurrent = () => props.items.some((item) => item.current);
+  const holdsCurrent = () => props.items.some(isOrHoldsCurrent);
   const [open, setOpen] = createSignal(untrack(holdsCurrent));
   // an entry inside that becomes the open one shows itself
   createComputed(() => {
@@ -216,7 +219,7 @@ const NavWindow = (props: { items: readonly NavItem[] }) => {
   });
   // the current page (or the fold that holds it) always stays in the page, and the sidebar shows it on load
   const current = () => {
-    const index = props.items.findIndex((item) => item.current || item.items?.some((inner) => inner.current));
+    const index = props.items.findIndex(isOrHoldsCurrent);
     return index < 0 ? undefined : String(index);
   };
   const view = createVirtualWindow({ items: at, key: (place) => String(place.index), pinned: current });

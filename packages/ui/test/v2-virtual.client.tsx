@@ -43,8 +43,11 @@ const navItems = (): NavItem[] => {
       current: index === current,
     }));
   if (navCase === "navshort") return plain(40, 37);
-  if (navCase !== "navfold") return plain(1000, 699);
-  const fold: NavItem = { label: "Archiv", items: plain(30, 29).map((item) => ({ ...item, label: `Archiv ${item.label}` })) };
+  if (navCase !== "navfold" && navCase !== "navdeep") return plain(1000, 699);
+  const inner = plain(30, 29).map((item) => ({ ...item, label: `Archiv ${item.label}` }));
+  const year: NavItem = { label: "Archiv 2025", items: plain(30, 29).map((item) => ({ ...item, label: `Archiv 2025 ${item.label}` })) };
+  // `navdeep`: the fold holds a fold of its own, which holds the current page as its last
+  const fold: NavItem = navCase === "navdeep" ? { label: "Archiv", items: [...plain(5, -1), year] } : { label: "Archiv", items: inner };
   const items = plain(500, -1);
   items[300] = fold;
   return items;
