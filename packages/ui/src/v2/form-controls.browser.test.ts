@@ -111,6 +111,45 @@ test("select: a long sender address keeps its start and its domain readable, the
   }, 390);
 });
 
+for (const width of [1440, 390])
+  test(`choice with faces at ${width} px: each option leads with its person, named by its words alone; one or several, by keys, sent with the form`, async () => {
+    await withPage(async (page) => {
+      const owner = field(page, "Zuständig");
+      const team = field(page, "Beteiligt");
+      // the names stay the words of the options; the face says nothing a second time
+      expect(await owner.ariaSnapshot()).toContain('- radio "Jonas Wolf"');
+      expect(await team.ariaSnapshot()).toContain('- checkbox "Jonas Wolf" [checked]');
+      expect(await team.getByRole("group").count()).toBeGreaterThan(0);
+      // the face stands before the words, 20 px on the line of the words, and the mark stays first
+      const line = await owner
+        .locator(".k2-choice")
+        .first()
+        .evaluate((choice) => {
+          const mark = choice.querySelector(".k2-mark")!.getBoundingClientRect();
+          const face = choice.querySelector(".k2-av")!.getBoundingClientRect();
+          const text = choice.querySelector(".k2-choice-text")!.getBoundingClientRect();
+          return {
+            size: [Math.round(face.width), Math.round(face.height)],
+            order: mark.right <= face.left && face.right <= text.left,
+            middle: Math.abs(face.top + face.height / 2 - (text.top + 10)) <= 1,
+          };
+        });
+      expect(line).toEqual({ size: [20, 20], order: true, middle: true });
+      // keys: an arrow moves the one choice, Space adds another person
+      await owner.getByRole("radio", { name: "Anna Berg" }).focus();
+      await page.keyboard.press("ArrowDown");
+      expect(await owner.getByRole("radio", { name: "Jonas Wolf" }).isChecked()).toBe(true);
+      await team.getByRole("checkbox", { name: "Mia Lindqvist-Oswald" }).focus();
+      await page.keyboard.press("Space");
+      expect(entriesOf((await sent(page)).entries, "owner")).toEqual(["jonas"]);
+      expect(entriesOf((await sent(page)).entries, "team")).toEqual(["jonas", "mia"]);
+      // the form's reset puts both back
+      await reset(page);
+      await page.waitForFunction(() => document.querySelectorAll('#sent input[name="team"]:checked').length === 1);
+      expect(entriesOf((await sent(page)).entries, "owner")).toEqual(["anna"]);
+    }, width);
+  });
+
 test("select: a locked select takes no focus and opens nothing; a dimmed option is skipped", async () => {
   await withPage(async (page) => {
     const locked = field(page, "Verfahren").locator("[data-select]");

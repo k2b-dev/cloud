@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import {
   Band,
+  Choice,
   CodeInput,
   ColorInput,
   Disclosure,
@@ -120,6 +121,30 @@ export function Demo() {
         {/* a form that sends what it holds: uncontrolled tags, a locked list, a required image, a slider and a colour */}
         <form id="sent" onSubmit={(event) => event.preventDefault()}>
           <Band>
+            {/* people to choose, each with their face: one who is responsible, several who take part */}
+            <Field name="owner" label="Zuständig">
+              <Choice
+                name="owner"
+                value="anna"
+                options={[
+                  { value: "anna", label: "Anna Berg", person: { name: "Anna Berg", color: "#0f766e" } },
+                  { value: "jonas", label: "Jonas Wolf", person: { name: "Jonas Wolf", color: "#7c3aed" } },
+                  { value: "mia", label: "Mia Lindqvist-Oswald", person: { name: "Mia Lindqvist-Oswald" } },
+                ]}
+              />
+            </Field>
+            <Field name="team" label="Beteiligt">
+              <Choice
+                name="team"
+                multiple
+                value={["jonas"]}
+                options={[
+                  { value: "anna", label: "Anna Berg", person: { name: "Anna Berg", color: "#0f766e" } },
+                  { value: "jonas", label: "Jonas Wolf", person: { name: "Jonas Wolf", color: "#7c3aed" } },
+                  { value: "mia", label: "Mia Lindqvist-Oswald", person: { name: "Mia Lindqvist-Oswald" } },
+                ]}
+              />
+            </Field>
             <Field name="hosts" label="Server">
               <TagsInput value={["mx1.example"]} />
             </Field>
