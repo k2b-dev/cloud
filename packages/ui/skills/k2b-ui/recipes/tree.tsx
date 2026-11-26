@@ -71,19 +71,9 @@ const content: Entry[] = [
     kind: "folder",
     owner: people.mira,
     shared: "link",
-    size: "4 Dateien",
+    size: "3 Dateien",
     changed: "21.11.2026",
     children: [
-      {
-        id: "angebot-118",
-        name: "Angebot 2026-118.pdf",
-        kind: "pdf",
-        owner: people.mira,
-        shared: "link",
-        size: "312 KB",
-        changed: "heute, 08:31",
-        state: { status: "warn", label: "Unterschreiben" },
-      },
       {
         id: "angebot-112",
         name: "Angebot 2026-112.pdf",
@@ -104,6 +94,17 @@ const content: Entry[] = [
     size: "48 Dateien",
     changed: "gestern",
     folder: true,
+  },
+  // the offer that waits stands at the top level, so the statement above names a row that shows on the phone too
+  {
+    id: "angebot-118",
+    name: "Angebot 2026-118.pdf",
+    kind: "pdf",
+    owner: people.mira,
+    shared: "link",
+    size: "312 KB",
+    changed: "heute, 08:31",
+    state: { status: "warn", label: "Unterschreiben" },
   },
   {
     id: "notizen",

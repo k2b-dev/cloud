@@ -157,12 +157,12 @@ export default function SpaceMembers() {
         status={
           <StatusRow
             lead={`${list().length} Mitglieder`}
-            facts={[{ value: 3, after: "heute aktiv" }]}
+            facts={[{ value: 6, after: "heute aktiv" }]}
             filters={<Chip status="warn">1 Einladung kommt nicht an</Chip>}
           />
         }
       >
-        <Section icon="users" title="Mitglieder" count={list().length}>
+        <Section icon="users" title="Mitglieder">
           {/* one line per member: the face and name, the role as a chip, when they were here, their deeds */}
           {/* one row per member: the face, the role and when they were here in the second line, their deeds at the end */}
           <List label="Mitglieder">

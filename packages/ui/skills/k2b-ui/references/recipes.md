@@ -364,6 +364,8 @@ star and a "…" `Menu` with the same entries in its `end`. The offer the addres
 
 ![dialogs at 1440 px](../images/dialogs-1440.png)
 ![dialogs at 390 px](../images/dialogs-390.png)
+![the invitation dialog open at 1440 px](../images/dialogs-dialog-1440.png)
+![the invitation dialog open at 390 px](../images/dialogs-dialog-390.png)
 
 Members of a space (its `Mark` in the head, the spaces with theirs in the
 `Nav`) as rows with avatars, the role and the last activity in the

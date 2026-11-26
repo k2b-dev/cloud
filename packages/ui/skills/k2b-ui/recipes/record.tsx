@@ -77,7 +77,7 @@ const ottilie = (): Customer => ({
   kinds: ["Privat"],
   ids: [{ label: "Kunde", value: "7K4QX", copy: true }],
   customers: "412",
-  counts: { deliveries: "4", money: "12" },
+  counts: { deliveries: "3", money: "12" },
   note: { text: "Ruft lieber an, als Mails zu schreiben. Abholung nur samstags.", meta: "Ada Renz, 12. Nov." },
   money: { amount: "532,30 €", meta: "1 Rechnung offen" },
   deliveries: { value: "2 laufen", meta: "Abrechnung am 15. Dez." },

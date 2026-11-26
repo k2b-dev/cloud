@@ -133,7 +133,7 @@ export default function IntakeGuide(props: Props) {
             </Section>
             <Section icon="map" title="Hof-Plan" summary="Möbel kommen über Tor 2 in Halle B.">
               {/* A drawing of its own (a plan, a map, a chart of @k2b/ui) stands in a Canvas; inside it, CSS is free. */}
-              <Canvas label="Plan des Hofs: Einfahrt über Tor 2, Halle B für Möbel, Tresor in Halle A" height={240}>
+              <Canvas label="Plan des Hofs: Einfahrt über Tor 2, Halle B für Möbel, Tresor in Halle A" height={180}>
                 <svg viewBox="0 0 720 240" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
                   {/* the yard, the street and the way in */}
                   <rect x="0" y="0" width="720" height="240" style={{ fill: "var(--k2-n50)" }} />

@@ -30,6 +30,9 @@ bun packages/ui/scripts/v2-preview.ts packages/my-app/src/screens/sources.tsx --
 - without `--text`: Chromium at 1440 and 390 px (`--width` to change),
   outline with layout (hidden parts, dropped columns) and the measurement.
 - `--png <dir>`: also a light screenshot per width.
+- `--state <name>` (recipes of this skill): the recipe live in the
+  browser in one of its `states`, with what the state presses, so an open
+  dialog or menu stands in the picture (`<name>-<state>-<width>.png`).
 - Exit code 0 means every step is clean.
 - On a shared machine, run the browser variant through its load wrapper.
 
