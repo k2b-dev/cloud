@@ -587,7 +587,23 @@ export const fixtures = {
   structure: StructureFixture,
   // head actions of sections: with a leading symbol, with only a trailing "forward" chevron, and words only
   headActions: () => (
-    <Workspace head={<Bar start={<Text type="body">Auftrag AU-1</Text>} />}>
+    <Workspace
+      sidebar={
+        <Nav
+          title="Werkstatt"
+          icon="tool"
+          groups={[
+            {
+              items: [
+                { label: "Aufträge", icon: "list", current: true },
+                { label: "Kunden", icon: "users" },
+              ],
+            },
+          ]}
+        />
+      }
+      head={<Bar start={<Text type="body">Auftrag AU-1</Text>} />}
+    >
       <Pane label="Auftrag">
         <Section
           icon="info-circle"
@@ -597,10 +613,18 @@ export const fixtures = {
             { label: "Weiter", forward: true },
           ]}
         >
-          <Text>Einbauschrank Flur, 180,50 €.</Text>
+          <Facts
+            items={[
+              { label: "Kunde", value: "Holzwerk Brandt" },
+              { label: "Auftrag", value: "Einbauschrank Flur" },
+              { label: "Betrag", value: "180,50 €" },
+              { label: "Fällig", value: "12. Nov." },
+            ]}
+          />
         </Section>
         <Section icon="braces" title="Daten" actions={[{ label: "Rohdaten anzeigen" }]}>
-          <Text>Drei Felder.</Text>
+          <Row icon="ruler" lines={["Aufmaß", "2,40 × 0,60 m"]} />
+          <Row icon="palette" lines={["Oberfläche", "Eiche geölt"]} />
         </Section>
       </Pane>
     </Workspace>
