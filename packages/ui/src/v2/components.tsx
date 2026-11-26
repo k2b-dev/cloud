@@ -660,7 +660,7 @@ export type ActivityEntry = {
    * `<Mark icon color />` followed by its name, so it looks the same as in its list.
    */
   text: JSX.Element;
-  /** When, such as "09:42" or "gestern, 16:40". */
+  /** When, such as "09:42" or "gestern, 16:40": at the end of the sentence, or under it after the place. */
   time: string;
   /** Where, quiet before the time, such as the base "Werkstatt". */
   place?: string;
@@ -681,7 +681,7 @@ export type DigestProps =
     }
   | {
       items?: never;
-      /** What people did, newest first: an avatar, a sentence that may wrap, then place and time. */
+      /** What people did, newest first: an avatar, a sentence that may wrap with the time at its end, or place and time under it. */
       activity: readonly ActivityEntry[];
       children?: never;
       /** The name of the list, for assistive technology. */
@@ -714,7 +714,8 @@ export const Digest = (props: DigestProps) => {
                 class="k2-row"
                 data-k2-part="Digest.Entry"
                 data-activity=""
-                data-lines="2"
+                // without a place the time stands at the end of the sentence, as in a row; with one, under it
+                data-lines={entry.place ? "2" : "1"}
                 data-open={entry.href !== undefined ? "" : undefined}
                 role="listitem"
               >
@@ -726,7 +727,9 @@ export const Digest = (props: DigestProps) => {
                     {entry.text}
                   </RowOpen>
                 </span>
-                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
+                <Show when={entry.place} fallback={<span class="k2-row-time">{entry.time}</span>}>
+                  {(place) => <span class="k2-row-l2">{`${place()} · ${entry.time}`}</span>}
+                </Show>
               </div>
             )}
           </For>

@@ -154,6 +154,12 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
 
+### Section.Columns
+
+Sections side by side, such as the groups of a place's home: two columns
+where both get at least 360 px, one below that. Each section keeps its
+head and its one line at the end; no line stands between the columns.
+
 ### Group
 
 What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`
@@ -333,9 +339,10 @@ lines instead of cutting a thing.
   (one quiet deed at the end of the name's line, such as "Auf Standard
   zurücksetzen" while the value differs from its default, as `Field
   action`), one control as child. One setting of a settings page: the name
-  (13, 500) and its hint on the left, the control in a column of 300 px
-  beside them, no line between settings; one column when its pane is
-  narrower than 600 px (by the pane, not the window). Never stack `Field`s
+  (13, 500) and its hint together on the left, beside the middle of the
+  control in a column of 300 px, no line between settings; one column when
+  its pane is narrower than 600 px (800 px with an `action`; by the pane,
+  not the window). Never stack `Field`s
   as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
@@ -419,7 +426,8 @@ lines instead of cutting a thing.
   who did what, `{ person, text, time, place?, href?, onNavigate? }[]`
   (`onNavigate` opens the thing in place, as on rows). The sentence
   names the person in `<Text weight="strong">` and the thing with its
-  `Mark` and name; place and time stand quiet under it. A form or a
+  `Mark` and name; place and time stand quiet under it, and without a
+  place the time stands at the end of the sentence. A form or a
   workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;

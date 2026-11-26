@@ -28,7 +28,8 @@ type Case =
   | "path"
   | "split-canvas"
   | "long"
-  | "areas";
+  | "areas"
+  | "structure";
 
 let browser: Browser;
 let client: string;
@@ -625,6 +626,13 @@ test("key numbers stand two by two on the phone, a third alone across; big numbe
           expect(three!.widths[2]).toBe(three!.widths[0]! + three!.widths[1]!);
         } else for (const cells of found) expect(cells.rows).toBe(1);
         for (const cells of found) expect(cells.values).toEqual([]);
+        // a value is the cell's statement (18 px) where cells stand side by side, 14 px in half a phone
+        expect(
+          await page
+            .locator(".k2-cell-value")
+            .first()
+            .evaluate((value) => getComputedStyle(value).fontSize),
+        ).toBe(width === 390 ? "14px" : "18px");
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },
@@ -723,6 +731,78 @@ test("on the phone a deep path gives way to the shell's bar, and the head keeps 
     },
     390,
   );
+});
+
+// From DR's look pass (#4229), each in the primitive that owns it.
+test("a home of sections: side by side where both get 360 px, a group head as text, the time at the end of a sentence without a place, a foot without a line under it", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "structure",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const box = (element: Element) => element.getBoundingClientRect();
+          const sections = [...document.querySelectorAll(".k2-sec-cols > .k2-sec-col > .k2-sec")].map(box);
+          const [plain, placed] = [...document.querySelectorAll(".k2-row[data-activity]")];
+          const foot = document.querySelector(".k2-scroll > .k2-bar:last-child")!;
+          return {
+            side: sections.length === 2 && Math.round(sections[0]!.top) === Math.round(sections[1]!.top),
+            head: getComputedStyle(document.querySelector(".k2-gh")!).backgroundColor,
+            time:
+              Math.round(box(plain!.querySelector(":scope > .k2-row-time")!).top) ===
+              Math.round(box(plain!.querySelector(".k2-row-l1")!).top),
+            under: placed!.querySelector(":scope > .k2-row-l2")?.textContent,
+            foot: getComputedStyle(foot).borderBottomWidth,
+          };
+        });
+        expect(found).toEqual({
+          side: width === 1440,
+          head: "rgba(0, 0, 0, 0)",
+          time: true,
+          under: "Werkstatt · 09:40",
+          foot: "0px",
+        });
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("on the phone an open detail is the page: the list's filters and its floating main action leave with the list", async () => {
+  for (const which of ["list", "closed"] as const)
+    await withPage(
+      which,
+      async (page) => {
+        const found = await page.evaluate(() => ({
+          bar: !!document.querySelector(".k2-fbar")?.checkVisibility(),
+          fab: !!document.querySelector(".k2-fab")?.checkVisibility(),
+        }));
+        // with the file open its detail is the page; without it the list keeps both
+        expect({ which, ...found }).toEqual({ which, bar: which === "closed", fab: which === "closed" });
+      },
+      390,
+    );
+});
+
+test("a setting's name and hint stand together beside the middle of its value, what it was under the value", async () => {
+  await withPage("settings", async (page) => {
+    const found = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-k2-part='Setting']")].map((setting) => {
+        const box = (selector: string) => setting.querySelector(selector)?.getBoundingClientRect();
+        const label = box(":scope > .k2-field-label")!;
+        const hint = box(":scope > .k2-field-message");
+        const control = box(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action)")!;
+        const was = box(":scope > .k2-field-was");
+        const words = (label.top + (hint ?? label).bottom) / 2;
+        return {
+          name: setting.querySelector(".k2-field-label")!.textContent,
+          middle: Math.abs(words - (control.top + control.bottom) / 2) <= 2,
+          was: was ? was.top >= control.bottom : true,
+        };
+      }),
+    );
+    expect(found.filter((setting) => !setting.middle || !setting.was)).toEqual([]);
+  });
 });
 
 for (const which of ["list", "grid", "selecting", "settings"] as const)

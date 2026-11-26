@@ -9,6 +9,7 @@ import {
   DeepPathScreen,
   LongAddressScreen,
   RowStatesScreen,
+  StructureScreen,
 } from "./v2-row-states.fixture";
 
 // The folder and the settings page of the k2b-ui skill in the browser, by the case the page names before this bundle
@@ -29,7 +30,8 @@ declare global {
       | "path"
       | "split-canvas"
       | "long"
-      | "areas";
+      | "areas"
+      | "structure";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -46,6 +48,8 @@ render(
         <SigninSettings />
       ) : which === "states" ? (
         <RowStatesScreen />
+      ) : which === "structure" ? (
+        <StructureScreen />
       ) : which === "areas" ? (
         <AreasMenuScreen />
       ) : which === "long" ? (

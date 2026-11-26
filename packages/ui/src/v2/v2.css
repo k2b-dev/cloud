@@ -627,6 +627,10 @@
   min-width: 0;
   flex: none;
 }
+/* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
+.k2-ui .k2-scroll > .k2-bar:last-child {
+  border-bottom: 0;
+}
 .k2-ui .k2-bar-start,
 .k2-ui .k2-bar-end {
   display: flex;
@@ -747,8 +751,8 @@
 }
 .k2-ui .k2-cell-value {
   grid-column: 2 / -1;
-  font: var(--k2-t-body);
-  font-weight: 600;
+  /* the cell's statement in the type of a statement (18), as large as the page's lead */
+  font: var(--k2-t-lead);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1049,6 +1053,20 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
+/* sections side by side: two columns where both get 360 px, else one; no line between the columns */
+.k2-ui .k2-sec-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(min(360px, 100%), 40%), 1fr));
+  min-width: 0;
+}
+.k2-ui .k2-sec-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.k2-ui .k2-sec-col > .k2-sec {
+  flex: 1;
+}
 .k2-ui .k2-sh {
   display: flex;
   align-items: center;
@@ -1146,7 +1164,6 @@
   align-items: center;
   min-height: var(--k2-h-row);
   padding: 8px var(--k2-edge);
-  background: var(--k2-n50);
 }
 .k2-ui .k2-gh[data-meta] {
   min-height: var(--k2-h-head);
@@ -2741,8 +2758,8 @@
    between settings: a section separates them from the next topic. */
 .k2-ui .k2-field[data-setting] {
   grid-template-columns: minmax(0, 1fr) 300px;
-  grid-template-rows: auto auto;
-  grid-template-areas: "label control" "message was";
+  grid-template-rows: auto auto auto;
+  grid-template-areas: "label control" "message control" ". was";
   column-gap: 24px;
   row-gap: 0;
   align-items: center;
@@ -2751,6 +2768,8 @@
 }
 .k2-ui .k2-field[data-setting] > .k2-field-label {
   grid-area: label;
+  /* the name and its hint stand together, beside the middle of the value */
+  align-self: end;
   font: var(--k2-t-row);
   font-weight: 500;
   color: var(--k2-text);
@@ -2762,11 +2781,7 @@
 }
 .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
   grid-area: control;
-  grid-row: 1 / span 2;
   min-width: 0;
-}
-.k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-  grid-row: 1;
 }
 .k2-ui .k2-field[data-setting] > .k2-field-was {
   grid-area: was;
@@ -2776,10 +2791,11 @@
    column keeps its 300 px, so the deed coming or going moves nothing */
 .k2-ui .k2-field[data-setting][data-action] {
   grid-template-columns: minmax(0, 1fr) auto 300px;
-  grid-template-areas: "label action control" "message message was";
+  grid-template-areas: "label action control" "message message control" ". . was";
 }
 .k2-ui .k2-field[data-setting] > .k2-field-action {
   grid-area: action;
+  align-self: end;
   display: flex;
   align-items: center;
   height: 20px;
@@ -2809,12 +2825,12 @@
 @container k2-pane (max-width: 599px) {
   .k2-ui .k2-field[data-setting] {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
     grid-template-areas: "label" "message" "control" "was";
     row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action),
-  .k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-    grid-row: auto;
+  .k2-ui .k2-field[data-setting] > :is(.k2-field-label, .k2-field-action) {
+    align-self: start;
   }
 }
 /* A setting with a deed needs the deed's room too ("Auf Standard zurücksetzen", about 170 px): below 800 px of pane its
@@ -2822,11 +2838,12 @@
 @container k2-pane (max-width: 799px) {
   .k2-ui .k2-field[data-setting][data-action] {
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: none;
     grid-template-areas: "label action" "message message" "control control" "was was";
     row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting][data-action] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-    grid-row: auto;
+  .k2-ui .k2-field[data-setting][data-action] > :is(.k2-field-label, .k2-field-action) {
+    align-self: start;
   }
 }
 
@@ -4054,6 +4071,12 @@
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;
   }
+  /* the filters and counts of the list above the split belong to the list: they leave with it while a detail is the
+     page, and so does the floating main action of the list (the detail has its own deeds) */
+  .k2-ui .k2-pane:has(> .k2-scroll > .k2-split > .k2-pane[data-detail]) > [data-slot="status"],
+  .k2-ui .k2-ws:has(.k2-split > .k2-pane[data-detail] > [data-k2-part="Back"]) .k2-fab {
+    display: none;
+  }
   .k2-ui .k2-pane-back {
     display: flex;
   }
@@ -4349,9 +4372,12 @@
   .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meta) {
     grid-column: 1 / -1;
   }
-  /* a value longer than its half cell breaks between its words, a chip too, instead of being cut */
+  /* a value longer than its half cell breaks between its words, a chip too, instead of being cut; in half a phone a
+     statement of 18 px leaves no room for a big number ("12.345.678"), so it stands in 14 px, still in 600 */
   .k2-ui .k2-cell > .k2-cell-value {
     white-space: normal;
+    font: var(--k2-t-body);
+    font-weight: 600;
   }
   .k2-ui .k2-cell-value > .k2-chip {
     height: auto;

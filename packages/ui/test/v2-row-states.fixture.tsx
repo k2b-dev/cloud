@@ -5,7 +5,9 @@ import {
   Canvas,
   Cells,
   Chip,
+  Digest,
   FilterBar,
+  Group,
   Input,
   List,
   Menu,
@@ -235,6 +237,31 @@ export const AreasMenuScreen = () => (
       <Section title="Notizen" count={0}>
         <List label="Notizen">{[]}</List>
       </Section>
+    </Pane>
+  </Workspace>
+);
+
+// The home of a place: its sections side by side, a group with its head, what people did (with and without a place),
+// and a form's deeds as the foot of the column.
+export const StructureScreen = () => (
+  <Workspace>
+    <Pane label="Werkstatt">
+      <Section.Columns>
+        <Section title="Anstehend" count={2}>
+          <Group icon="tool" title="Küche Lindqvist" count={3}>
+            <Row lines={["Fronten ölen"]} time="heute" />
+          </Group>
+        </Section>
+        <Section title="Zuletzt">
+          <Digest
+            activity={[
+              { person: { name: "Felix Thal" }, text: "Felix Thal hat Aufmaß Küche geändert", time: "vor 2 Min." },
+              { person: { name: "Mira Solberg" }, text: "Mira Solberg hat Fronten angelegt", time: "09:40", place: "Werkstatt" },
+            ]}
+          />
+        </Section>
+      </Section.Columns>
+      <Bar end={<Button variant="primary">Speichern</Button>} />
     </Pane>
   </Workspace>
 );
