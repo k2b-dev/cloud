@@ -321,15 +321,19 @@ export default function KanbanBoard(props: Props) {
       return;
     }
     const doc = document as Document & {
-      startViewTransition?: (callback: () => void) => unknown;
+      startViewTransition?: (callback: () => void) => { ready?: Promise<unknown>; finished?: Promise<unknown> } | undefined;
     };
     if (!doc.startViewTransition) {
       update();
       return;
     }
-    doc.startViewTransition(() => {
+    const transition = doc.startViewTransition(() => {
       update();
     });
+    // A newer transition skips this one, and its promises then reject with an AbortError nobody waits for; the update
+    // still ran. Without these catches the page reports an unhandled rejection.
+    void transition?.ready?.catch(() => {});
+    void transition?.finished?.catch(() => {});
   };
   const boardScrollKey = () => `spaces-kanban-board-${props.spaceId}`;
   const rememberBoardScroll = () => {

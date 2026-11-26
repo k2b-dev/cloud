@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,7 +8,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
-import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, pageErrors } from "../../../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { formatTemplateDate, proposeTemplateDates, templateSchedule } from "../../../../presentation/item-templates";
 import { templateDraftSource } from "../shared/item-form/templates";
@@ -167,6 +167,13 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, 120_000);
 
+/** The page errors of each page the current case opened; a case passes only when none of its pages broke. */
+const pageErrorLists: string[][] = [];
+afterEach(() => {
+  const errors = pageErrorLists.flat();
+  pageErrorLists.length = 0;
+  expect(errors).toEqual([]);
+});
 afterAll(async () => {
   await browser?.close();
   server?.stop(true);
@@ -194,6 +201,8 @@ const openPage = async (view: View, locale: "en" | "de", query = "") => {
     timezoneId: TIME_ZONE,
   });
   const page = await context.newPage();
+  // Every page of a case reports its errors; the case fails after it when one broke (see afterEach).
+  pageErrorLists.push(pageErrors(page));
   await page.goto(`${server.url}app/spaces/Space1?lang=${locale}${query}`);
   await page.evaluate(() => window.document.fonts.ready);
   await page.waitForFunction(

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
@@ -6,7 +6,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
-import { browserName, hoverInPlace, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, keptThrough, launchBrowser, pageErrors, storedCookie } from "../../../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { kanbanBrowserPart as selectedPart } from "../../../../../test/kanban-browser";
 import type { KanbanBucketInitial } from "./types";
@@ -307,6 +307,13 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, 120_000);
 
+/** The page errors of each page the current case opened; a case passes only when none of its pages broke. */
+const pageErrorLists: string[][] = [];
+afterEach(() => {
+  const errors = pageErrorLists.flat();
+  pageErrorLists.length = 0;
+  expect(errors).toEqual([]);
+});
 afterAll(async () => {
   await browser?.close();
   server?.stop(true);
@@ -363,6 +370,8 @@ const open = async (
     javaScriptEnabled: options.javaScript ?? true,
   });
   const page = await context.newPage();
+  // Every page of a case reports its errors; the case fails after it when one broke (see afterEach).
+  pageErrorLists.push(pageErrors(page));
   if (scenario.now) await page.clock.setFixedTime(new Date(scenario.now));
   await page.goto(`${server.url}app/spaces/Space1?case=${id}${scenario.query ? `&${scenario.query.slice(1)}` : ""}`);
   await page.evaluate(() => window.document.fonts.ready);
