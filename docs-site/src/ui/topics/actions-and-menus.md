@@ -10,7 +10,7 @@ Where deeds stand: the page's deeds in the head, an entry's deeds in its row and
 
 Offers of a workshop. The head holds the views, a hint on the refresh button, a filter menu with two toggles, a view menu with one choice and two toggles, and the one main action, "Neues Angebot", a menu of its own. Each row has a star that is pressed or not and its deeds behind "…"; a right-click or a long press on the row opens the same menu. Switch the state: "Open" shows the offer the address names beside the list with its own deeds, "Sending" turns "Senden" while it sends, and "Menu" and "View" open the menus.
 
-<Example recipe="actions" height="560" default="List" />
+<Example recipe="actions" height="560" default="Open" />
 
 - One main action per page: the filled `primary` in the head, mirrored as `Workspace primary` so the phone shows it.
 - A deed that cannot be taken now is `disabled`, and a sentence beside it says why, such as the `Notice` "Freigabe fehlt".

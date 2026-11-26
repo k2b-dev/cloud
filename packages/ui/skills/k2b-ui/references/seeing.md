@@ -15,7 +15,10 @@ and fix what the cheaper one finds before you pay for the next.
 ## In the Cloud monorepo
 
 `packages/ui/scripts/v2-preview.ts` runs all steps on one screen file
-whose default export is a component without props:
+whose default export is a component without props. An optional export
+`app` (`{ color, icon }`) names the app the screen belongs to; the screen
+then stands in the frame of its host, as people see it: a tinted page with
+a rail of apps, the app marked in it (on a phone the screen alone).
 
 ```bash
 bun packages/ui/scripts/v2-preview.ts packages/my-app/src/screens/sources.tsx --text
@@ -47,9 +50,9 @@ Workspace (sidebar, head) primary "Neue Quelle"
   head: Bar: Tabs "Ansichten": Alle (3) ✓, Gestört (1) | ["Neue Quelle" primary]
   Pane.Split
     Pane "Quellen" width 320px–400px
-      status: StatusRow "3 Quellen" · 1 gestört
-      List "Quellen": 3 entries
-        Row "Lackfabrik Nordhaus" / "Webhook" · 09:42 opens link
+      status: StatusRow "3.920 Ereignisse heute" · 11 Quellen | (1 gestört · bad)
+      List "Quellen": 11 entries
+        Row [webhook] "Lackfabrik Nordhaus" / "Webhook · 1.240 Ereignisse heute" · 09:42 opens link
         …
     Pane "Holzwerk Brandt" detail
       head: Bar: "Holzwerk Brandt" lead | ["Bearbeiten"] ["Schließen" ghost link]
@@ -88,7 +91,11 @@ linkedom), call `describeV2(element)` from `@k2b/ui/v2` without `layout`.
 
 ## Screenshots
 
-Ask for one only when the outline cannot answer the question: does the
-drawing in a `Canvas` fit, does a long name read well, is the phone layout
-what the task meant. Light mode, 1440 and 390 px. Compare it with the
-recipe pictures in `images/`.
+Ask for one when the outline cannot answer the question (does the drawing
+in a `Canvas` fit, does a long name read well, is the phone layout what
+the task meant) and always before you show a screen to a person. Light
+mode, 1440 and 390 px, in the frame of the host (`v2-preview` draws it).
+Put it beside the matching recipe picture in `images/` and fix every
+difference in faces, density and hierarchy ("The look" in the skill): a
+row without its mark, a state as a bare word, an empty half, a counter as
+the biggest text.

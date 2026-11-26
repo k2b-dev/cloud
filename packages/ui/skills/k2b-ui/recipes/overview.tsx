@@ -20,6 +20,9 @@ import {
   Workspace,
 } from "@k2b/ui/v2";
 
+// The app this screen belongs to: its colour tints the page and marks it in the host's rail.
+export const app = { color: "#047857", icon: "table" };
+
 // The data colour and symbol of each base, the same in the sidebar, on the card and in a sentence.
 const base = {
   workshop: { icon: "tool", color: "#c2410c" },

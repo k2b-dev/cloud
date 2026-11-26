@@ -20,11 +20,11 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 ## Table with a status row
 
-<Example recipe="table" height="440" default="Rows" />
+<Example recipe="table" height="640" default="Rows" />
 
 ## Table people filter
 
-<Example recipe="filtered-table" height="520" default="Filtered" />
+<Example recipe="filtered-table" height="600" default="Filtered" />
 
 ## Record
 
@@ -44,15 +44,15 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 ## Deeds and menus
 
-<Example recipe="actions" height="560" default="List" />
+<Example recipe="actions" height="560" default="Open" />
 
 ## Dialogs, questions and toasts
 
-<Example recipe="dialogs" height="560" default="Members" />
+<Example recipe="dialogs" height="720" default="Members" />
 
 ## The states of a list
 
-<Example recipe="states" height="440" default="Rows" />
+<Example recipe="states" height="640" default="Rows" />
 
 ## A page to read
 

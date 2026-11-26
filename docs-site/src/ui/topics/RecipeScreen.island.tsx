@@ -1,6 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { onMount, Show } from "solid-js";
-import { isRecipeName, recipeLocale, resolveRecipeState } from "./recipes";
+import { ScreenFrame } from "../../../../packages/ui/src/v2/screen-frame";
+import { isRecipeName, recipeApp, recipeLocale, resolveRecipeState } from "./recipes";
 
 /** How long a press waits for its button or menu item to appear, such as a menu that opens after a frame. */
 const PRESS_TIMEOUT_MS = 3000;
@@ -37,7 +38,7 @@ const waitFor = async (name: string) => {
 };
 
 /**
- * One recipe screen of the skill `k2b-ui`, full size, as Fibel's `Example` frames it. The server renders the screen
+ * One recipe screen of the skill `k2b-ui`, full size and in the frame of a host, as Fibel's `Example` frames it. The server renders the screen
  * and the browser hydrates it, so it is live; a state with `press` then presses its buttons and menu items in order.
  * `data-recipe` on the root says `ready` when the screen stands as the state asks, or `missing: <name>` when a press
  * found nothing to press (the console says so too).
@@ -61,7 +62,12 @@ export default function RecipeScreen(props: { name: string; state?: string }) {
   return (
     <div class="k2-ui ui-v2-recipe" ref={root} data-recipe="hydrating">
       <Show when={resolved()} fallback={<p>No such recipe state.</p>}>
-        {(state) => <LocaleProvider locale={isRecipeName(props.name) ? recipeLocale(props.name) : "en"}>{state().render()}</LocaleProvider>}
+        {(state) => (
+          <LocaleProvider locale={isRecipeName(props.name) ? recipeLocale(props.name) : "en"}>
+            {/* the screen in the frame of a host (tinted page, rail of apps), as its pictures in the skill show it */}
+            <ScreenFrame app={isRecipeName(props.name) ? recipeApp(props.name) : undefined}>{state().render()}</ScreenFrame>
+          </LocaleProvider>
+        )}
       </Show>
     </div>
   );

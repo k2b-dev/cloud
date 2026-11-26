@@ -2,15 +2,32 @@
 // Nothing yet and nothing behind a filter are two different sentences with their own way out; loading holds the place
 // of the rows that will come; data that failed to load once offers "Erneut versuchen" there and nowhere else. A problem
 // a person must fix is a Notice that names the deed; a connection that retries on its own says so in the status row.
-import { Bar, Button, Chip, Empty, Failed, List, Loading, Notice, Pane, Row, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Empty, Failed, List, Loading, Nav, Notice, Pane, Row, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
 
-type Delivery = { id: string; supplier: string; place: string; time: string; state: "ok" | "warn" | "bad" };
+// The app this screen belongs to: its colour tints the page and marks it in the host's rail.
+export const app = { color: "#0e7490", icon: "building-warehouse" };
+
+// One mark per kind of goods, the same in every list of the app.
+const goods = {
+  paint: { icon: "paint", color: "#db2777" },
+  wood: { icon: "wood", color: "#a16207" },
+  hardware: { icon: "nut", color: "#475569" },
+  pallet: { icon: "forklift", color: "#c2410c" },
+  tiles: { icon: "layout-grid", color: "#0e7490" },
+};
+
+type Delivery = { id: string; supplier: string; goods: keyof typeof goods; place: string; time: string; state: "ok" | "warn" | "bad" };
 
 const deliveries: Delivery[] = [
-  { id: "WE-2611-081", supplier: "Lackfabrik Nordhaus", place: "Tor 1 · 6 Gebinde", time: "07:50", state: "ok" },
-  { id: "WE-2611-082", supplier: "Holzwerk Brandt", place: "Tor 2 · 14 Platten", time: "09:40", state: "warn" },
-  { id: "WE-2611-083", supplier: "Beschläge Krüger", place: "Tor 1 · 3 Pakete", time: "10:15", state: "ok" },
-  { id: "WE-2611-084", supplier: "Spedition Kraus", place: "Tor 2 · 1 Palette, beschädigt", time: "11:05", state: "bad" },
+  { id: "WE-2611-081", supplier: "Lackfabrik Nordhaus", goods: "paint", place: "Tor 1 · 6 Gebinde", time: "07:50", state: "ok" },
+  { id: "WE-2611-082", supplier: "Holzwerk Brandt", goods: "wood", place: "Tor 2 · 14 Platten", time: "09:40", state: "warn" },
+  { id: "WE-2611-083", supplier: "Beschläge Krüger", goods: "hardware", place: "Tor 1 · 3 Pakete", time: "10:15", state: "ok" },
+  { id: "WE-2611-084", supplier: "Spedition Kraus", goods: "pallet", place: "Tor 2 · 1 Palette, beschädigt", time: "11:05", state: "bad" },
+  { id: "WE-2611-085", supplier: "Fliesen Ortenau", goods: "tiles", place: "Tor 2 · 22 Kartons", time: "11:30", state: "ok" },
+  { id: "WE-2611-086", supplier: "Holzwerk Brandt", goods: "wood", place: "Tor 2 · 40 Leisten", time: "12:10", state: "ok" },
+  { id: "WE-2611-087", supplier: "Beschläge Krüger", goods: "hardware", place: "Tor 1 · 1 Paket", time: "13:05", state: "warn" },
+  { id: "WE-2611-088", supplier: "Lackfabrik Nordhaus", goods: "paint", place: "Tor 1 · 2 Gebinde", time: "13:40", state: "ok" },
+  { id: "WE-2611-089", supplier: "Spedition Kraus", goods: "pallet", place: "Tor 2 · 3 Paletten", time: "14:20", state: "ok" },
 ];
 const stateLabel = { ok: "Geprüft", warn: "Wartet", bad: "Beschädigt" } as const;
 
@@ -30,6 +47,29 @@ export default function IncomingGoods(props: Props) {
   const rows = () => (props.rows ?? deliveries).filter((row) => !props.filtered || row.place.startsWith("Tor 2"));
   return (
     <Workspace
+      sidebar={
+        <Nav
+          title="Lager"
+          icon="building-warehouse"
+          groups={[
+            {
+              items: [
+                { label: "Wareneingang", icon: "truck-delivery", current: true, count: 9 },
+                { label: "Bestand", icon: "packages", href: "#bestand", dot: "warn" },
+                { label: "Inventur", icon: "list-check", href: "#inventur" },
+              ],
+            },
+            {
+              label: "Orte",
+              items: [
+                { label: "Halle 1", icon: "building-warehouse", color: "#0e7490", href: "#halle-1" },
+                { label: "Halle 2", icon: "building-warehouse", color: "#7c3aed", href: "#halle-2" },
+                { label: "Hof", icon: "trees", color: "#15803d", href: "#hof" },
+              ],
+            },
+          ]}
+        />
+      }
       primary={{ label: "Einlieferung erfassen", icon: "plus", href: "#neu" }}
       head={
         <Bar
@@ -56,7 +96,11 @@ export default function IncomingGoods(props: Props) {
           <StatusRow
             lead={props.loading || props.failed ? "Heute" : `${rows().length} angekommen`}
             facts={
-              props.reconnecting ? [{ value: "Verbindung unterbrochen", after: "· verbindet neu …" }] : [{ value: 1, after: "beschädigt" }]
+              props.reconnecting
+                ? [{ value: "Verbindung unterbrochen", after: "· verbindet neu …" }]
+                : props.loading || props.failed || rows().length === 0
+                  ? []
+                  : [{ value: rows().filter((row) => row.state === "bad").length, after: "beschädigt" }]
             }
             filters={
               props.filtered ? (
@@ -87,7 +131,7 @@ export default function IncomingGoods(props: Props) {
             onRetry={() => location.reload()}
           />
         ) : props.loading ? (
-          <Loading rows={4} lines={2} />
+          <Loading rows={8} lines={2} />
         ) : rows().length === 0 ? (
           props.filtered ? (
             <Empty icon="filter-off" text="Keine Einlieferung an Tor 2." action={{ label: "Filter zurücksetzen", href: "#heute" }} />
@@ -102,8 +146,8 @@ export default function IncomingGoods(props: Props) {
           <List label="Einlieferungen von heute">
             {rows().map((row) => (
               <Row
-                icon="truck"
-                lines={[row.supplier, row.place]}
+                mark={goods[row.goods]}
+                lines={[row.supplier, `${row.id} · ${row.place}`]}
                 time={row.time}
                 href={`#${row.id}`}
                 end={<Chip status={row.state}>{stateLabel[row.state]}</Chip>}

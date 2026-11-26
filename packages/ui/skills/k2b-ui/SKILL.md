@@ -21,6 +21,50 @@ That is the point: two agents building the same screen get the same result.
 `@k2b/ui/v2` is **provisional** until the maintainer approves it. Names and
 props may change in any release; check the types of the installed version.
 
+## The look
+
+People reject screens that are clean but bare: grey text between lines, a
+white page, a counter as the biggest word, an empty half. The recipes follow
+the approved design pass (bases overview, a base's home, a folder with an
+open file, a file selection, a settings page). These rules bind every
+screen, recipe, test screen and documentation example:
+
+1. **Each thing carries its sign.** Every row, card and sidebar entry for
+   a thing leads with its `Mark` (symbol on its colour, or a thumbnail) or
+   a person's `Avatar`. Without a colour of its own a thing takes its
+   kind's colour (table, form, PDF), never grey without a reason.
+2. **The first line says what counts today:** a statement with a number
+   (`StatusRow` lead or `Cells`), plus chips with a tone for what lets a
+   person act. A count such as "6 Einträge" is quiet meta text, never the
+   biggest text.
+3. **A state is colour, sign and word:** a status `Chip`, a dot or symbol
+   with its word in the tone, never a bare word. A value with a limit gets
+   a `Progress` bar, a short history a `Spark`.
+4. **Space structures; lines only separate groups.** Group heads are text
+   (title and count), not grey bands; no line under the last row.
+5. **No empty half.** A detail pane only while something is open; a side
+   column only when it is full of useful things (activity, rules, people).
+6. **People are visible:** avatars, `Avatar.Stack` with "+n", and
+   activity as a sentence with avatar, verb and the thing's mark
+   (`Digest activity`).
+7. **Four type sizes, dense.** 12 meta, 13 row, 14 title, 18 statement,
+   set by the primitives; more information per screen than a classic
+   admin page. Dense is not busy and never says a thing twice.
+8. **Real dense sample data** in recipes, fixtures and tests: German
+   names, colours, people, states, ten rows and more. Never "Tabelle 1",
+   never four rows on a white page.
+9. **The page head has at most two full-width rows** above list and
+   detail: path or views with the actions, then filters with count, order
+   and view. Never four rows of head.
+10. **Settings are rows, not a form letter:** label and hint on the left,
+    the value at a fixed width beside it, its current state visible at a
+    glance; never full-width fields stacked one under the other.
+
+Prove it before you show it: `v2-preview` draws the screen in the frame
+of its host (icon rail, tinted page); put your 1440 and 390 px pictures
+beside the matching recipe's and fix every difference in faces, density
+and hierarchy.
+
 ## Start here
 
 1. Find the screen in the task table below and open its recipe in
@@ -29,7 +73,8 @@ props may change in any release; check the types of the installed version.
    recipes stand live, with their states and generated props, on the topic
    pages of the UI section in Fibel (`/en/ui/v2/<topic>`; `read_doc`
    returns each as Markdown with the code).
-2. Copy the recipe, keep its structure, replace the data. Change the
+2. Copy the recipe, keep its structure and its look (marks, people,
+   states, a sidebar with the app's places), replace the data. Change the
    arrangement only where the task really differs.
 3. Check it, cheapest first (see "See what you built"). Fix every finding
    before you look at a picture.
@@ -45,7 +90,7 @@ Read [primitives](references/primitives.md) for every prop and place,
 ## Set up
 
 ```tsx
-import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
+import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 ```
 
 - Styles: `@k2b/ui/v2.css`. Every v2 class lives under the scope class
@@ -98,7 +143,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
 | a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
-| a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
+| a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
 | data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
@@ -156,62 +201,17 @@ that failed to load once would stand. A connection that retries on its own
 says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
-## How a screen looks: dense, clear, with faces
+## Primitives
 
-The target (design pass 26.11.): dense, clear, space-efficient, tailored
-and appealing. Dense is not busy: show more, never the same thing twice.
-
-1. **Each thing carries its mark.** Every row, card and sidebar entry for a
-   thing leads with its `Mark` (colour and symbol, or thumbnail) or a
-   person's `Avatar`; without its own colour it takes its kind's, never grey.
-2. **The first line says what counts today.** `StatusRow` lead or `Cells`:
-   a statement with a number, chips with a tone for what lets one act. A
-   count such as "6 Einträge" is never the biggest text.
-3. **A state is colour, symbol and word.** A value with a limit gets a bar,
-   a short history a `Spark`.
-4. **Space structures, lines separate groups.** Group heads are text;
-   no box inside a card.
-5. **No empty half.** A detail only while something is open, a side column
-   only when it is full.
-6. **People stand beside what they did:** avatars, stacks, `Digest
-   activity` with the thing's mark.
-7. **Four type sizes** (12, 13, 14, 18), set by the primitives.
-8. **Sample data is dense and real**: colours, people, states; never
-   "Tabelle 1".
-
-## Primitives in one line each
-
-- **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
-  `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`.
-- **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `Check`, `Choice`.
-- **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
-  `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
-- **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
-  `Popover` (panel or `tip`), `useToast`.
-- **States:** `Empty`, `Loading`, `Failed`.
-- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
-  and `@k2b/ui/v2/testing` for Playwright tests.
-
+Every part with its props and place: [primitives](references/primitives.md).
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
 the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
 a code block with highlighting, an image or video viewer, and an assistant
 message or answer card.
 
-Filters, sorts and groups have exactly one way: declare them once with
-`defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
-lives in the address through that declaration; the server reads it with
-`parse`, and the app filters itself, on its server, with its own access
-checks (`@k2b/ui` filters nothing and stores nothing). In the island,
-keep one signal that mirrors that state: start it with what the server parsed
-and set it in `onChange`, as the recipe does. Never parse search parameters
-yourself, keep filter state the address does not hold, or build filter chips
-by hand. Read [list queries](references/list-queries.md).
+Filters, sorts and groups have exactly one way: declare them with
+`defineListQuery`, show them with `FilterBar` and `ListOrder`; the address
+holds the state. Read [list queries](references/list-queries.md).
 
 ## See what you built
 
@@ -235,13 +235,13 @@ bun packages/ui/scripts/v2-preview.ts path/to/screen.tsx --text   # 1-3, no brow
 bun packages/ui/scripts/v2-preview.ts path/to/screen.tsx --png out # 1-5
 ```
 
-Details, the outline format and use outside the monorepo:
-[seeing](references/seeing.md).
+Details and use outside the monorepo: [seeing](references/seeing.md).
 
 ## Most common mistakes
 
 | Finding | Fix |
 | --- | --- |
+| a list of grey text rows with a quiet `icon`, a state as a bare word, a white page | `Row mark` (the thing's colour and symbol) or `avatar`; a status `Chip`; the picture in the host frame of `v2-preview` ("The look") |
 | `class on <div> in a v2 screen` | delete it; pick the primitive that owns that look |
 | a segmented control (or a row of pressed buttons or chips) that switches views or panels | `Tabs`; a segmented control only chooses a value, such as a state or a width |
 | own `URLSearchParams`, filter state beside the address, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` (`filtered-table.tsx`) |

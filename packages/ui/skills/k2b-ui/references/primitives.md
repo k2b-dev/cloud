@@ -7,6 +7,25 @@ onNavigate?, onClick?, meta?, forward?, disabled? }`, `Width = { min, default }`
 "ok" | "warn" | "bad"`, `Person = { name, initials?, color?, image? }` (`image` is the address of a picture). Icons are
 Tabler names without `ti-` (`plus`, `package`).
 
+## All parts in one line each
+
+- **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
+  `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
+  (`tone`), `Cells`, `Tiles`, `Canvas`.
+- **Structure:** `Section`, `Group`.
+- **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
+  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  `Chip`, `Progress`, `Spark`, `Steps`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
+  `DateInput`, `Check`, `Choice`.
+- **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
+  `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
+- **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
+  `Popover` (panel or `tip`), `useToast`.
+- **States:** `Empty`, `Loading`, `Failed`.
+- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
+  and `@k2b/ui/v2/testing` for Playwright tests.
+
 **Links that open in place.** Every `href` stays a real `<a href>`: it works
 before the page is live and opens in a new tab with a modifier key. Beside
 it, `onNavigate` (type `OnNavigate`, the `LinkNavigateEvent` of

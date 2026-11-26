@@ -10,7 +10,7 @@ Many things of one kind. Use a `List` when each entry reads as a line of text, a
 
 Open invoices with a status row: the lead says how many, the figures follow, the filter sits at the end. Each row opens its invoice and has one deed. Switch the state: empty, loading and failed stand where the rows would stand, and nothing above them moves.
 
-<Example recipe="table" height="440" default="Rows" />
+<Example recipe="table" height="640" default="Rows" />
 
 ## A list beside the open entry
 
