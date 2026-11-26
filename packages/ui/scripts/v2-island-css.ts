@@ -28,8 +28,11 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 // What a browser pays for each form decides the last two points. WebKit sorts a rule by the class of its subject; a
 // rule whose subject is one `:is()` of several selectors it checks against every element that changes. And it checks
 // a `:has()` whose argument counts siblings with `:nth-*-child(… of S)` again on every change of the page. Both made
-// a page that redraws an SVG of 300 nodes in every frame (the Notebooks graph) five times slower than the plain sheet;
-// `src/v2/island-css-cost.browser.test.ts` holds it to the plain sheet's time. A form this cannot make transparent
+// WebKit style a page that redraws an SVG of 300 nodes (the Notebooks graph) about 20 times as long as with the plain
+// sheet; now it takes about three times as long, most of it for the child relation through a wrapper itself, which
+// a redraw of 300 nodes fits into a frame. `src/v2/island-css-cost.browser.test.ts` holds it to that (its comment has
+// the measured ratios). So a `:has()` whose last-child question is about the app's content, not about parts of one
+// primitive, asks it outside the `:has()` (the last but phone forms of a table). A form this cannot make transparent
 // (`:nth-*`, `:*-of-type`, `:empty`, a sibling relation inside `:has()` after its first step, also inside `:is()`,
 // a `:has()` before a sibling relation, two sibling relations in a row, an escaped pseudo-class)
 // fails the build;

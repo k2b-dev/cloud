@@ -51,6 +51,10 @@ describe("transparentIslands", () => {
     // skipping would make WebKit check the :has() again on every change of the page (island-css-cost.browser.test.ts)
     const first = `:first-child:where(:not(${W}>*),${W}:first-child>*)`;
     expect(transparentIslands(".p:has(> .i:first-child){x:1}")).toBe(`.p:has(>.i${first},>${W}>.i${first}){x:1}`);
+    // also inside a :not() inside :has()
+    const seam = transparentIslands(".p:has(+ .s:not(:last-child)){x:1}");
+    expect(seam).toContain(`.s:not(:last-child:where(:not(${W}>*),${W}:last-child>*))`);
+    expect(seam).not.toContain(":nth-last-child");
   });
 
   test(":has() looks through a wrapper below its anchor", () => {
