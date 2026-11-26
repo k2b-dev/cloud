@@ -160,11 +160,11 @@ describe("Hosts on v2", () => {
       await tab.getByRole("button", { name: "Bearbeiten" }).click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("button", { name: "MAC-Adresse hinzufügen" }).click();
-      await dialog.getByRole("textbox", { name: "MAC-Adresse 2" }).fill("kein-mac");
+      await dialog.getByRole("textbox", { name: "MAC-Adresse 3" }).fill("kein-mac");
       await dialog.getByRole("button", { name: "Speichern" }).click();
       expect(await dialog.innerText()).toContain("AA:BB:CC:DD:EE:FF");
       expect(calls).toEqual([]);
-      await dialog.getByRole("button", { name: "MAC-Adresse 2 entfernen" }).click();
+      await dialog.getByRole("button", { name: "MAC-Adresse 3 entfernen" }).click();
       await dialog.getByRole("button", { name: "Speichern" }).click();
       await tab.waitForFunction(() => !window.document.querySelector('[role="dialog"]'));
       expect(calls).toEqual(["PATCH /api/ipa-hosts/db1.werkstatt.example"]);

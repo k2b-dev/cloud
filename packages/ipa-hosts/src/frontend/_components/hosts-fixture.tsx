@@ -2,6 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import type { IpaHost, IpaHostgroup } from "@/contracts";
 import HostsScreen from "./HostsScreen";
+import { denseGroups, denseUngrouped, fixtureHost } from "./hosts-fixture-data";
 
 // Invented hosts for render and browser tests: no production data. `worst` carries long names, many MAC addresses and
 // groups, missing fields and five-digit counts; `empty` has nothing mirrored yet.
@@ -14,42 +15,8 @@ const nav: NavProps = {
   groups: [{ items: [{ label: "Hosts", icon: "server", href: "/admin/ipa-hosts", current: true }] }],
 };
 
-const host = (fqdn: string, extra: Partial<IpaHost> = {}): IpaHost => ({
-  fqdn,
-  description: null,
-  location: null,
-  locality: null,
-  memberofHostgroup: [],
-  macAddress: [],
-  platform: null,
-  osVersion: null,
-  sshFingerprints: [],
-  ...extra,
-});
-
-const NORMAL_GROUPS: (IpaHostgroup & { hostDetails: IpaHost[] })[] = [
-  ["server", "Server im Rechenraum", ["db1.werkstatt.example", "app1.werkstatt.example", "backup.werkstatt.example"]],
-  ["drucker", "Drucker und Scanner", ["drucker-buero.werkstatt.example"]],
-  ["arbeitsplaetze", null, ["pc-01.werkstatt.example", "pc-02.werkstatt.example"]],
-  ["leer", "Noch ohne Hosts", []],
-].map(([cn, description, fqdns]) => ({
-  cn: String(cn),
-  description: description === null ? null : String(description),
-  hosts: fqdns as string[],
-  hostgroups: cn === "server" ? ["arbeitsplaetze"] : [],
-  hostDetails: (fqdns as string[]).map((fqdn, index) =>
-    host(fqdn, {
-      description: index === 0 ? "Hauptsystem" : null,
-      locality: "Halle 2",
-      location: index === 0 ? "Rack A3" : null,
-      memberofHostgroup: [String(cn)],
-      macAddress: index === 0 ? ["AA:BB:CC:00:11:22"] : [],
-      platform: "x86_64",
-      osVersion: "Debian 13",
-      sshFingerprints: index === 0 ? ["SHA256:7f3a9c2e1b4d4e8a9c0d2b6f1e3a5d7c (ED25519)"] : [],
-    }),
-  ),
-}));
+const host = fixtureHost;
+const NORMAL_GROUPS = denseGroups();
 
 const LONG = "kunden-und-auftraege-werkstatt-nord-zeiterfassung-und-materialbestellung-01.intern.werkstatt-nord.example";
 const WORST_GROUPS: (IpaHostgroup & { hostDetails: IpaHost[] })[] = [
@@ -81,7 +48,7 @@ export const HostsFixture = (props: { search: string; data?: HostsFixtureData })
       ? [host("a"), host(LONG.replace("01", "02"), { macAddress: ["AA:BB:CC:DD:EE:FF", "AA:BB:CC:DD:EE:F1"] })]
       : data === "empty"
         ? []
-        : [host("neu-01.werkstatt.example", { locality: "Lager" }), host("laptop-azubi.werkstatt.example")];
+        : denseUngrouped();
   const everyHost = [...groups.flatMap((group) => group.hostDetails), ...ungrouped];
   const groupName = params.get("group");
   const fqdn = params.get("host");

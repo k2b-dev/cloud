@@ -14,6 +14,7 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/te
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { IpaHost } from "../contracts";
 import { ipaHostsService } from "../service";
+import { denseGroups, denseUngrouped } from "./_components/hosts-fixture-data";
 
 // The real page in the Cloud shell, from invented hosts: its first HTML with the shell's own stylesheets and fonts keeps
 // the v2 layout rules at 1440 and 390 px. `CLOUD_IPA_HOSTS_SHELL_SHOTS=<dir>` also saves light pictures.
@@ -21,6 +22,8 @@ const root = mkdtempSync(join(tmpdir(), "ipa-hosts-shell-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
+const LOGO =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2563eb"/><path d="M9 20a5 5 0 0 1 1-9.9A7 7 0 0 1 23 12a4 4 0 0 1 0 8z" fill="#fff"/></svg>';
 const shots = process.env.CLOUD_IPA_HOSTS_SHELL_SHOTS;
 const origin = "https://cloud.example.test";
 
@@ -85,25 +88,27 @@ const DATA = {
 } as const;
 type Data = keyof typeof DATA;
 const groupsOf = (data: Data) =>
-  DATA[data].groups.map((group) => ({
-    cn: group.cn,
-    description: group.description,
-    hosts: [...group.members],
-    hostgroups: group.cn === "server" ? ["arbeitsplaetze"] : [],
-    hostDetails: group.members.map((fqdn, index) =>
-      host(fqdn, {
-        description: index === 0 ? (data === "worst" ? "Терминал · 工作站 · محطة عمل 🖥️" : "Hauptsystem") : null,
-        locality: data === "worst" ? "Werkstatt Nord, Erdgeschoss, Halle 7 (Anbau)" : "Halle 2",
-        location: index === 0 ? "Rack A3" : null,
-        memberofHostgroup: data === "worst" ? Array.from({ length: 8 }, (_, at) => `gruppe-${at + 1}`) : [group.cn],
-        macAddress:
-          data === "worst" ? Array.from({ length: 6 }, (_, at) => `AA:BB:CC:DD:EE:0${at}`) : index === 0 ? ["AA:BB:CC:00:11:22"] : [],
-        platform: "x86_64",
-        osVersion: "Debian 13",
-        sshFingerprints: index === 0 ? ["SHA256:7f3a9c2e1b4d4e8a9c0d2b6f1e3a5d7c (ED25519)"] : [],
-      }),
-    ),
-  }));
+  data === "normal"
+    ? denseGroups()
+    : DATA[data].groups.map((group) => ({
+        cn: group.cn,
+        description: group.description,
+        hosts: [...group.members],
+        hostgroups: [],
+        hostDetails: group.members.map((fqdn, index) =>
+          host(fqdn, {
+            description: index === 0 ? (data === "worst" ? "Терминал · 工作站 · محطة عمل 🖥️" : "Hauptsystem") : null,
+            locality: data === "worst" ? "Werkstatt Nord, Erdgeschoss, Halle 7 (Anbau)" : "Halle 2",
+            location: index === 0 ? "Rack A3" : null,
+            memberofHostgroup: data === "worst" ? Array.from({ length: 8 }, (_, at) => `gruppe-${at + 1}`) : [group.cn],
+            macAddress:
+              data === "worst" ? Array.from({ length: 6 }, (_, at) => `AA:BB:CC:DD:EE:0${at}`) : index === 0 ? ["AA:BB:CC:00:11:22"] : [],
+            platform: "x86_64",
+            osVersion: "Debian 13",
+            sshFingerprints: index === 0 ? ["SHA256:7f3a9c2e1b4d4e8a9c0d2b6f1e3a5d7c (ED25519)"] : [],
+          }),
+        ),
+      }));
 
 let browser: Browser;
 let stylesheets: Record<string, string>;
@@ -134,7 +139,8 @@ afterAll(async () => {
 /** The first HTML of an address, as the page renders it for invented clients. */
 const firstHtml = async (search: string, data: Data) => {
   const groups = groupsOf(data);
-  const everyHost = [...groups.flatMap((group) => group.hostDetails), ...DATA[data].ungrouped];
+  const ungrouped = data === "normal" ? denseUngrouped() : [...DATA[data].ungrouped];
+  const everyHost = [...groups.flatMap((group) => group.hostDetails), ...ungrouped];
   const spies = [
     stubRailSnapshot(),
     spyOn(ipaHostsService.hostgroup, "listWithHosts").mockImplementation(async ({ filter }) => {
@@ -142,10 +148,10 @@ const firstHtml = async (search: string, data: Data) => {
       return { items, page: 1, perPage: 100, total: data === "worst" && !filter?.query ? 12_345 : items.length, hasNext: false };
     }),
     spyOn(ipaHostsService.host, "listUngrouped").mockResolvedValue({
-      items: [...DATA[data].ungrouped],
+      items: ungrouped,
       page: 1,
       perPage: 100,
-      total: data === "worst" ? 24_691 : DATA[data].ungrouped.length,
+      total: data === "worst" ? 24_691 : ungrouped.length,
       hasNext: false,
     } as never),
     spyOn(ipaHostsService.host, "list").mockImplementation(
@@ -212,6 +218,8 @@ describe("Hosts in the Cloud shell", () => {
             const path = resolve(fonts, url.pathname.slice("/public/fonts/".length));
             return path.startsWith(`${fonts}/`) ? route.fulfill({ path }) : route.fulfill({ status: 404 });
           }
+          // the shell's logos and app symbols: one invented mark, so no picture shows a broken image
+          if (route.request().resourceType() === "image") return route.fulfill({ contentType: "image/svg+xml", body: LOGO });
           // the islands stay as the server drew them: this is the first picture
           return route.fulfill({ status: 404, body: "" });
         });

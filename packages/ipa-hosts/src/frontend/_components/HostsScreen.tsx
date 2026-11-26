@@ -19,7 +19,6 @@ import {
   Row,
   Section,
   StatusRow,
-  Table,
   Tabs,
   Text,
   useToast,
@@ -219,22 +218,38 @@ export default function HostsScreen(props: HostsScreenProps) {
 
   // ── Parts ─────────────────────────────────────────────────────────────────────────────────────────────────────
   const place = (host: IpaHost) => [host.locality, host.location].filter(Boolean).join(" · ");
-  const hostColumns = [
-    {
-      title: "FQDN",
-      width: { min: 220, default: 320 },
-      cell: (host: IpaHost) => ({ lines: [host.fqdn, host.description || "—"] as const }),
-    },
-    { title: t().location, width: { min: 140, default: 200 }, cell: (host: IpaHost) => place(host) || "—", drop: true },
-    {
-      title: "MAC",
-      width: { min: 170, default: 190 },
-      cell: (host: IpaHost) =>
-        host.macAddress.length > 1 ? `${host.macAddress[0]} +${host.macAddress.length - 1}` : (host.macAddress[0] ?? "—"),
-      drop: true,
-    },
-  ];
-  const hostPhone = (host: IpaHost) => ({ lines: [host.fqdn, place(host) || host.description || "—"] as const });
+  /** A group's own colour, the same on every visit: its mark in lists and records. */
+  const PALETTE = ["#2563eb", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#0891b2", "#ca8a04"];
+  const groupColor = (cn: string) => PALETTE[[...cn].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
+  /** What a host's mirror says of its enrolment: SSH keys stored by the client, or none (colour, symbol and word). */
+  const hostState = (host: IpaHost) =>
+    host.sshFingerprints.length > 0 ? (
+      <Chip status="ok" icon="key">
+        {t().keysStored}
+      </Chip>
+    ) : (
+      <Chip icon="key-off">{t().noKeys}</Chip>
+    );
+  /** The second line of a host: only what the mirror holds. */
+  const hostLine = (host: IpaHost) =>
+    [place(host), host.description, host.osVersion].filter(Boolean).join(" · ") || (host.macAddress[0] ?? host.platform ?? "");
+  const hostRow = (host: IpaHost, open: string) => (
+    <Row
+      icon="server"
+      lines={hostLine(host) ? [host.fqdn, hostLine(host)] : [host.fqdn]}
+      marks={hostState(host)}
+      current={props.host?.fqdn === host.fqdn}
+      href={open}
+    />
+  );
+  const nestedChips = (group: IpaHostgroup, limit = 2) => (
+    <>
+      <For each={group.hostgroups.slice(0, limit)}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For>
+      <Show when={group.hostgroups.length > limit}>
+        <Chip>{`+${number(group.hostgroups.length - limit)}`}</Chip>
+      </Show>
+    </>
+  );
 
   const list = () => (
     <Pane
@@ -275,56 +290,49 @@ export default function HostsScreen(props: HostsScreenProps) {
           href={props.figures.ungrouped > 0 && props.tab !== "ungrouped" ? href({ tab: "ungrouped", group: null, host: null }) : undefined}
         />
       </Cells>
-      {/* k2b-ui gap: row mark – a table row has no mark (object symbol in its colour) before its first line */}
       <Show
         when={props.tab === "groups"}
         fallback={
-          <Table
-            label={t().ungroupedHosts}
-            rows={props.ungrouped}
-            rowKey={(host) => host.fqdn}
-            sticky
-            current={props.host?.fqdn}
-            open={(host) => ({ href: href({ host: host.fqdn }) })}
-            empty={{
-              icon: props.search ? "search-off" : "check",
-              text: props.search ? t().noUngroupedMatch({ query: props.search }) : t().noUngrouped,
-            }}
-            phone={hostPhone}
-            columns={hostColumns}
-          />
+          <Show
+            when={props.ungrouped.length > 0}
+            fallback={
+              <Empty
+                icon={props.search ? "search-off" : "check"}
+                text={props.search ? t().noUngroupedMatch({ query: props.search }) : t().noUngrouped}
+              />
+            }
+          >
+            <List label={t().ungroupedHosts}>
+              <For each={props.ungrouped}>{(host) => hostRow(host, href({ host: host.fqdn }))}</For>
+            </List>
+          </Show>
         }
       >
-        <Table
-          label={t().hostgroups}
-          rows={props.groups}
-          rowKey={(group) => group.cn}
-          sticky
-          current={openGroup() ?? undefined}
-          open={(group) => ({ href: href({ group: group.cn }) })}
-          empty={{
-            icon: props.search ? "search-off" : "folders",
-            text: props.search ? t().noGroupMatch({ query: props.search }) : t().noGroups,
-          }}
-          phone={(group) => ({ lines: [group.cn, group.description || t().hostCount({ count: group.hostDetails.length })] as const })}
-          columns={[
-            {
-              title: t().name,
-              width: { min: 200, default: 260 },
-              cell: (group) => ({ lines: [group.cn, group.description || "—"] as const }),
-            },
-            {
-              title: t().nested,
-              width: { min: 140, default: 180 },
-              cell: (group) =>
-                group.hostgroups.length > 0
-                  ? `${group.hostgroups[0]}${group.hostgroups.length > 1 ? ` +${group.hostgroups.length - 1}` : ""}`
-                  : "—",
-              drop: true,
-            },
-            { title: t().hosts, width: { min: 90, default: 100 }, align: "end", cell: (group) => number(group.hostDetails.length) },
-          ]}
-        />
+        <Show
+          when={props.groups.length > 0}
+          fallback={
+            <Empty
+              icon={props.search ? "search-off" : "folders"}
+              text={props.search ? t().noGroupMatch({ query: props.search }) : t().noGroups}
+            />
+          }
+        >
+          <List label={t().hostgroups}>
+            <For each={props.groups}>
+              {(group) => (
+                <Row
+                  icon="folders"
+                  color={groupColor(group.cn)}
+                  lines={group.description ? [group.cn, group.description] : [group.cn]}
+                  time={t().hostCount({ count: group.hostDetails.length })}
+                  marks={group.hostgroups.length > 0 ? nestedChips(group) : undefined}
+                  current={openGroup() === group.cn && !props.host}
+                  href={href({ group: group.cn })}
+                />
+              )}
+            </For>
+          </List>
+        </Show>
       </Show>
       <Show when={props.paging.pages > 1}>
         <Bar
@@ -362,16 +370,13 @@ export default function HostsScreen(props: HostsScreenProps) {
         />
       }
     >
-      <Facts
-        items={[
-          { label: t().description, value: group.description || "—" },
-          {
-            label: t().nested,
-            value: group.hostgroups.length > 0 ? <For each={group.hostgroups}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For> : "—",
-          },
-          { label: t().hosts, value: t().hostCount({ count: group.hostDetails.length }) },
-        ]}
-      />
+      <List label={group.cn}>
+        <Show when={group.description}>{(text) => <Row icon="align-left" lines={[text(), t().description]} />}</Show>
+        <Row icon="server" color={groupColor(group.cn)} lines={[t().hostCount({ count: group.hostDetails.length }), t().hosts]} />
+        <Show when={group.hostgroups.length > 0}>
+          <Row icon="folders" lines={[t().nested]} marks={nestedChips(group, group.hostgroups.length)} />
+        </Show>
+      </List>
       <Bar
         end={
           <>
@@ -390,15 +395,7 @@ export default function HostsScreen(props: HostsScreenProps) {
       <Section icon="server" title={t().hostsOfGroup}>
         <Show when={group.hostDetails.length > 0} fallback={<Empty icon="server-off" text={t().noHostsInGroup} />}>
           <List label={t().hostsOfGroup}>
-            <For each={group.hostDetails}>
-              {(host) => (
-                <Row
-                  icon="server"
-                  lines={[host.fqdn, place(host) || host.description || "—"]}
-                  href={href({ group: group.cn, host: host.fqdn })}
-                />
-              )}
-            </For>
+            <For each={group.hostDetails}>{(host) => hostRow(host, href({ group: group.cn, host: host.fqdn }))}</For>
           </List>
         </Show>
       </Section>
@@ -414,16 +411,21 @@ export default function HostsScreen(props: HostsScreenProps) {
         back={{ label: openGroup() ?? t().ungroupedHosts, href: back }}
         head={<Bar start={<Text type="lead">{host.fqdn}</Text>} end={<Button variant="ghost" icon="x" label={t().close} href={back} />} />}
       >
-        <Facts
-          items={[
-            { label: "FQDN", value: host.fqdn, mono: true, copy: host.fqdn },
-            { label: t().description, value: host.description || "—" },
-            { label: t().location, value: place(host) || "—" },
-            ...host.macAddress.map((mac, index) => ({ label: t().macAddress({ number: index + 1 }), value: mac, mono: true, copy: mac })),
-            ...(host.platform ? [{ label: t().platform, value: host.platform }] : []),
-            ...(host.osVersion ? [{ label: t().osVersion, value: host.osVersion }] : []),
-          ]}
-        />
+        <List label={host.fqdn}>
+          <Row icon="world" lines={[host.fqdn, "FQDN"]} marks={hostState(host)} />
+          <Show when={host.description}>{(text) => <Row icon="align-left" lines={[text(), t().description]} />}</Show>
+          <Show when={place(host)}>{(text) => <Row icon="map-pin" lines={[text(), t().location]} />}</Show>
+          <Show when={host.platform || host.osVersion}>
+            <Row icon="cpu" lines={[[host.osVersion, host.platform].filter(Boolean).join(" · "), t().platform]} />
+          </Show>
+        </List>
+        <Show when={host.macAddress.length > 0}>
+          <Facts
+            items={[
+              { label: t().macAddressesLabel, value: <For each={host.macAddress}>{(mac) => <Chip icon="network">{mac}</Chip>}</For> },
+            ]}
+          />
+        </Show>
         <Bar
           end={
             <>
@@ -590,11 +592,18 @@ export default function HostsScreen(props: HostsScreenProps) {
     <AdminWorkspace
       nav={props.nav}
       detail={props.group || props.host ? 460 : undefined}
-      primary={{
-        label: t().newGroup,
-        icon: "folder-plus",
-        onClick: () => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" })),
-      }}
+      // the main action follows what is open: a host takes groups, the groups view takes a new group, the rest none
+      primary={
+        props.host?.found
+          ? { label: t().addToGroup, icon: "folder-plus", onClick: () => (setFailure(null), setAdding([])) }
+          : props.tab === "groups" && !props.group
+            ? {
+                label: t().newGroup,
+                icon: "folder-plus",
+                onClick: () => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" })),
+              }
+            : undefined
+      }
       head={
         <Bar
           start={
@@ -634,13 +643,15 @@ export default function HostsScreen(props: HostsScreenProps) {
               />
               <Button variant="ghost" icon="refresh" label={t().syncNow} onClick={() => void sync()} />
               <Button variant="ghost" icon="settings" label={t().syncSettings} onClick={() => void openSchedule()} />
-              <Button
-                variant="primary"
-                icon="folder-plus"
-                onClick={() => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" }))}
-              >
-                {t().newGroup}
-              </Button>
+              <Show when={props.tab === "groups" && !props.group && !props.host}>
+                <Button
+                  variant="primary"
+                  icon="folder-plus"
+                  onClick={() => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" }))}
+                >
+                  {t().newGroup}
+                </Button>
+              </Show>
             </>
           }
         />
