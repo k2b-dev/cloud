@@ -4497,6 +4497,10 @@
   align-items: center;
   gap: 8px;
 }
+/* each choice of display is a menu of its own in the tail: its wrapper has no box, so the menu stands in the tail's gap */
+.k2-ui .k2-fbar-display {
+  display: contents;
+}
 .k2-ui .k2-fbar-results {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
