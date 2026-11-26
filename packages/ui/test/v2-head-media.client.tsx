@@ -11,6 +11,7 @@ import {
   LongAddressScreen,
   ProseCodeScreen,
   RowStatesScreen,
+  SelectionScreen,
   StructureScreen,
 } from "./v2-row-states.fixture";
 
@@ -33,6 +34,7 @@ declare global {
       | "path"
       | "path-chip"
       | "split-canvas"
+      | "selection"
       | "long"
       | "areas"
       | "structure"
@@ -63,6 +65,8 @@ render(
         <StructureScreen />
       ) : which === "areas" ? (
         <AreasMenuScreen />
+      ) : which === "selection" ? (
+        <SelectionScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (

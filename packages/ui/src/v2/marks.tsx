@@ -123,7 +123,7 @@ export type AvatarStackProps = {
 
 /**
  * People side by side, each over the one before it with a ring of the surface, and "+n" for the rest. The stack is
- * one picture with one name; the avatars in it are decoration. 20 px in a row, a tile and a cell, 24 px elsewhere.
+ * one picture with one name; the avatars in it are decoration. 20 px everywhere, each over the one before by 2 px.
  */
 Avatar.Stack = (props: AvatarStackProps) => {
   // at most five faces; fewer when the place is narrow (the stylesheet decides by the stack's own width)

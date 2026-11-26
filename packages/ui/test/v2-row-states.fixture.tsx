@@ -196,6 +196,11 @@ const levels = [
   "Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht",
 ];
 
+// a folder of everyday names, as the Files app has it: its page ("Entwürfe") must never shorten (Files v3)
+export const everydayPath = ["Werkstatt", "Projekte", "2026", "Kunden", "Lindqvist", "Küche", "Entwürfe"].map((label, index, all) =>
+  index < all.length - 1 ? { label, href: `#place-${index}` } : { label },
+);
+
 export const deepPath = levels.map((label, index) => (index < levels.length - 1 ? { label, href: `#level-${index}` } : { label }));
 
 // `chip`: the path stands in an `Inline` with a chip after it (the folder's sharing, W1b #4206).
@@ -206,7 +211,7 @@ export const DeepPathScreen = (props: { chip?: boolean }) => (
         start={
           props.chip ? (
             <Inline>
-              <Path label="Ort" items={deepPath} />
+              <Path label="Ort" items={everydayPath} />
               <Chip icon="users">Mit 4 Personen geteilt</Chip>
             </Inline>
           ) : (
@@ -378,5 +383,40 @@ export const GroupsScreen = () => (
       {delivery("EL-2609-00017", "Ohne Abteilung seit 3. Nov.")}
       {delivery("EL-2609-00018", "Ohne Abteilung seit 4. Nov.")}
     </Pane>
+  </Workspace>
+);
+
+// A selection with six deeds in a column beside a side column: the first three stand, the rest wait in "Mehr".
+export const SelectionScreen = () => (
+  <Workspace>
+    <Pane.Split>
+      <Pane
+        label="Dateien"
+        status={
+          <StatusRow
+            lead=""
+            selection={{
+              count: "3 ausgewählt",
+              actions: [
+                { label: "Teilen", icon: "share" },
+                { label: "Verschieben", icon: "folder-symlink" },
+                { label: "Als ZIP laden", icon: "download" },
+                { label: "Löschen", icon: "trash" },
+                { label: "In Ordner kopieren", icon: "copy" },
+                { label: "PDFs zusammenführen", icon: "stack-2" },
+              ],
+              clear: { label: "Auswahl aufheben", onClick: () => {} },
+            }}
+          />
+        }
+      >
+        <List label="Dateien">
+          <Row lines={["Ansicht Front Eiche.jpg"]} />
+        </List>
+      </Pane>
+      <Pane label="Vorschau" width={{ min: 320, default: 380 }}>
+        <Text>Ansicht Front Eiche.jpg</Text>
+      </Pane>
+    </Pane.Split>
   </Workspace>
 );

@@ -103,17 +103,18 @@ test("a quota is a meter with its words, amber from 75 % and red from 90 %", () 
   expect(nav(95)).toContain('data-status="bad"');
 });
 
-test("a deep path folds on the server already: first place, the menu, the last two, and short names marked", () => {
+test("a deep path folds on the server already: first place, the menu with every place between, the page, and short names marked", () => {
   const items = ["Werkstatt", "Projekte", "2026", "Kunden", "Lindqvist", "Küche", "Q1"].map((label, index, all) =>
     index < all.length - 1 ? { label, href: `#${index}` } : { label },
   );
   const markup = html(Path, { label: "Ort", items });
   // the menu's button stands in the markup with its name; the places between are not in the line
   expect(markup).toContain('aria-label="Übergeordnete Ebenen"');
-  for (const folded of ["Projekte", "2026", "Kunden", "Lindqvist"]) expect(markup).not.toContain(`>${folded}<`);
-  expect(markup).toContain('href="#0"');
-  expect(markup).toMatch(/<a class="k2-path-step" href="#5" data-near=""[^>]*title="Küche"/);
+  for (const folded of ["Projekte", "2026", "Kunden", "Lindqvist", "Küche"]) expect(markup).not.toContain(`>${folded}<`);
+  expect(markup).toMatch(/<a class="k2-path-step" href="#0"[^>]*title="Werkstatt"/);
   expect(markup).toMatch(/<b aria-current="page" title="Q1" data-short=""/);
+  // unfolded, the places between carry the mark that lets them shorten first
+  expect(html(Path, { label: "Ort", items: items.slice(-3) })).toMatch(/<a class="k2-path-step" href="#5" data-near=""[^>]*title="Küche"/);
   // up to four places nothing folds
   expect(html(Path, { label: "Ort", items: items.slice(-4) })).not.toContain("Übergeordnete Ebenen");
 });

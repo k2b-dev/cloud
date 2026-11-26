@@ -603,7 +603,8 @@ export type CellProps = {
 
 /** Two to six equal cells with a line between them, never one tall cell alone in a row (see the stylesheet). */
 export const Cells = (props: {
-  /** Two to six `Cells.Cell`: four two by two in a narrow pane, three as two and one line across on the phone. */
+  /** Two to six `Cells.Cell`: four two by two and five or six in rows of three in a narrow pane; on the phone two to a
+   * row, an odd last one as one line across. */
   children: JSX.Element;
 }) => (
   <div class="k2-cells" data-k2-part="Cells">
