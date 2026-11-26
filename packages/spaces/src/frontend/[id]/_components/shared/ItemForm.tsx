@@ -138,6 +138,14 @@ export default function ItemForm(props: ItemFormProps) {
   onMount(() => void requestEstimate());
   onCleanup(() => estimateRequest?.abort());
   let estimateInput: HTMLInputElement | HTMLTextAreaElement | undefined;
+  // A new item starts with typing its title, as before. k2b-ui gap: a v2 dialog takes no first focus of its own
+  // choosing (it focuses its first control, here the kind); from 768 px the title takes the focus once the dialog has
+  // placed its own. On the phone the dialog keeps the keyboard closed, as v2 does everywhere.
+  let titleInput: HTMLInputElement | HTMLTextAreaElement | undefined;
+  onMount(() => {
+    if (isEditMode() || matchMedia("not all and (min-width: 768px)").matches) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => titleInput?.focus()));
+  });
   const acceptEstimate = () => {
     const current = estimate();
     if (current === "loading" || current.state !== "ready") return;
@@ -709,6 +717,7 @@ export default function ItemForm(props: ItemFormProps) {
       </Show>
       <Field label={t.title} name="title" error={error() === t.titleRequired ? error() : undefined} required>
         <Input
+          ref={(element) => (titleInput = element)}
           value={title()}
           placeholder={isEvent() ? t.eventTitle : t.titlePlaceholder}
           onInput={(value) => {

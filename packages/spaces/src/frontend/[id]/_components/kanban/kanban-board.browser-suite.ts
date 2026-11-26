@@ -335,7 +335,7 @@ const pageHtml = (scenario: Scenario, theme: "light" | "dark", pointer?: Pointer
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${pointer ? pointerCss(css, pointer) : css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The page as the Space page draws it: the v2 workspace fills the window.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(scenario)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main class="k2-ui" style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${serverBody(scenario)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 let caseCounter = 0;
@@ -1558,7 +1558,14 @@ describePart("head", "Spaces Kanban board in a browser", () => {
             expect(box.x).toBeGreaterThanOrEqual(clip.x - 0.5);
             expect(box.x + box.width).toBeLessThanOrEqual(clip.x + clip.width + 0.5);
           }
-          const reset = bar.getByRole("button", { name: locale === "de" ? "Zurücksetzen" : "Reset", exact: true });
+          // From 768 px Reset follows the statements; below, the bar's sheet button holds them and Reset.
+          const reset =
+            width < 768
+              ? bar
+                  .locator("button:visible")
+                  .filter({ hasText: /^\s*Filter\s*\d+\s*$/ })
+                  .first()
+              : bar.getByRole("button", { name: locale === "de" ? "Zurücksetzen" : "Reset", exact: true });
           await reset.focus();
           expect(await reset.evaluate((element) => document.activeElement === element)).toBe(true);
           expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
