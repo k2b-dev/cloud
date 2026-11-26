@@ -289,3 +289,29 @@ test('right to left: the edge stands on the right, also for a selected band, and
     await page.close();
   }
 });
+
+for (const view of ["week", "day"] as const)
+  test(`${view}, 390 px: the head is one row, and the views are a menu, never a segmented control`, async () => {
+    const page = await open(view, 390);
+    try {
+      // every control of the head crosses one line across it: one row
+      const oneRow = await page.locator(".k2b-calendar-header").evaluate((head) => {
+        const boxes = [...head.querySelectorAll<HTMLElement>("a, button")]
+          .filter((element) => element.getClientRects().length > 0 && !element.closest("[popover], [role='menu']"))
+          .map((element) => element.getBoundingClientRect());
+        return Math.max(...boxes.map((box) => box.top)) < Math.min(...boxes.map((box) => box.bottom));
+      });
+      expect(oneRow).toBe(true);
+      expect(await page.locator(".k2b-calendar-header .k2b-segmented-control").isVisible()).toBe(false);
+      // the menu names the view on screen and offers the others
+      const trigger = page.getByRole("button", { name: /Woche|Tag/ }).and(page.locator("[aria-haspopup]"));
+      expect(await trigger.textContent()).toContain(view === "week" ? "Woche" : "Tag");
+      await trigger.click();
+      const options = page.getByRole("menuitemradio");
+      await options.first().waitFor();
+      expect(await options.allTextContents()).toEqual(["Tag", "Woche", "Monat", "Jahr"]);
+      expect(await page.getByRole("menuitemradio", { name: view === "week" ? "Woche" : "Tag" }).getAttribute("aria-checked")).toBe("true");
+    } finally {
+      await page.close();
+    }
+  });

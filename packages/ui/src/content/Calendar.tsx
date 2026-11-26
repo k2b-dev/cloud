@@ -3,7 +3,7 @@ import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX, ParentProps } from "solid-js";
 import { createComputed, createEffect, createMemo, createSignal, For, mergeProps, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button } from "../actions/Button";
-import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSection } from "../actions/Dropdown";
+import { Dropdown, type DropdownAction, type DropdownChoice, type DropdownItem, type DropdownSection } from "../actions/Dropdown";
 import { GestureMenu } from "../actions/GestureMenu";
 import SegmentedControl from "../actions/SegmentedControl";
 import { useDateConfigLocale } from "../intl/locale";
@@ -690,6 +690,51 @@ const CalendarViewLinks = <V extends string>(props: {
 };
 
 /**
+ * The views on a phone: a menu in the head's one row that names the view on screen, so the views never take a row of
+ * their own and are no segmented control (that chooses a value, not what the page shows).
+ */
+const CalendarViewMenu = <V extends string>(props: {
+  owner: CalendarProps<V>;
+  view: CalendarView | V;
+  options: Array<{ value: CalendarView | V; label: string }>;
+  /** The day selected in the month view: the other views open at it. */
+  focusDay?: Date | null;
+  onView: (view: CalendarView | V) => void;
+}): JSX.Element => {
+  const calendarMessages = useCalendarMessages();
+  const current = () => (props.view === "mobile-month" ? "month" : props.view);
+  const currentLabel = () => props.options.find((option) => option.value === current())?.label ?? "";
+  /** As `CalendarViewLinks`: links when the host names the views by their address. */
+  const hrefOf = (value: CalendarView | V) => {
+    if (props.owner.onViewChange || !props.owner.getViewHref) return undefined;
+    const day = props.focusDay;
+    const atDay = day && value !== current() ? props.owner.getDateHref?.(day, value) : undefined;
+    return atDay ?? props.owner.getViewHref(value);
+  };
+  const items = (): DropdownChoice[] =>
+    props.options.map((option) => {
+      const href = hrefOf(option.value);
+      return {
+        label: option.label,
+        choice: "radio",
+        checked: () => current() === option.value,
+        ...(href ? { href } : {}),
+        action: () => (href ? followCalendarHref(props.owner, href) : props.onView(option.value)),
+      };
+    });
+  return (
+    <div class="k2b-calendar-view-menu">
+      <Dropdown items={items()} align="end" label={calendarMessages().calendarView}>
+        <Dropdown.Trigger size="sm" variant="input" label={`${currentLabel()} · ${calendarMessages().calendarView}`}>
+          <span>{currentLabel()}</span>
+          <i class="ti ti-chevron-down" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown>
+    </div>
+  );
+};
+
+/**
  * The same day some months later, or the last day of that month when it is shorter: a step from January 31 lands on
  * February 28, never in March. stdlib's `addMonths` runs over into the next month.
  */
@@ -1031,6 +1076,7 @@ const CalendarHeader = <V extends string>(props: {
           >
             <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
           </Show>
+          <CalendarViewMenu owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} onView={goView} />
         </Show>
         {props.owner.toolbarActions}
         <Show when={props.nav.commands().length > 0}>
