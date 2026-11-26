@@ -3,7 +3,6 @@ import { AccountIdentityError } from "@k2b/cloud/services";
 import { hintOpen, Layout, markHintSeen } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import type { Context } from "hono";
-import { Show } from "solid-js";
 import { filegateErrorCode } from "../api/filegate-error";
 import { ssr } from "../config";
 import { type BaseSummary, BrowseQuerySchema, EntryQuerySchema, type SearchQuery, SearchQuerySchema } from "../contracts";
@@ -19,12 +18,11 @@ import { browseOf, folderQueries, legacyFolderHref, readFolderAddress, searchOf 
 import { RECENT_MOVED_HINT, SELECTION_PILL_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
+import { FAVORITES_PREVIEW, RECENT_LINES } from "./OverviewPane";
 import { filesPageScope } from "./page-scope";
-import { FAVORITES_PREVIEW } from "./StorageOverview";
 import { searchRequest } from "./search-state";
 import { snapshotTitle } from "./trail";
-import { activityUrl, filesUrl, parseActivityFilters, screenViewOf, showsOverview } from "./urls";
-import Workspace from "./Workspace.island";
+import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 /**
@@ -128,17 +126,25 @@ export default ssr<AuthContext>(async (c) => {
         // "Me" also lists the files this person opened; without them it still shows the changes.
         activityFilters.actor === "me" ? filesService.recent(requestCall(c)).catch(() => undefined) : undefined,
       ]);
-    } else if (view === "shares") initial.shares = await filesService.listShares(requestCall(c));
+    } else if (view === "shares") initial.shares = await filesService.listShares(requestCall(c)).catch(() => null);
     else if (view === "favorites") initial.marks = await filesService.favorites(requestCall(c));
     // The trash shows its first page in the first picture; a failed read lets the view say so with Try again.
     else if (trashView && selected?.status === "existing")
       initial.trash = await filesService.trash(requestCall(c), { baseId: selected.id }).catch(() => null);
     else if (overview)
-      // Favorites stand above the storage locations, so the first frame holds them and nothing below moves.
-      initial.favoritesPreview = await filesService
-        .favorites(requestCall(c), { limit: FAVORITES_PREVIEW + 1 })
-        .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
-        .catch(() => null);
+      // The overview's three parts are in the first picture, so nothing loads or moves after it; each fails alone.
+      [initial.favoritesPreview, initial.recentByYou] = await Promise.all([
+        filesService
+          .favorites(requestCall(c), { limit: FAVORITES_PREVIEW + 1 })
+          .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
+          .catch(() => null),
+        Promise.all([
+          filesService.activity(requestCall(c), { actor: "me", limit: RECENT_LINES }),
+          filesService.recent(requestCall(c)).catch(() => []),
+        ])
+          .then(([page, opened]) => ({ page, opened }))
+          .catch(() => null),
+      ]);
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
@@ -203,18 +209,9 @@ export default ssr<AuthContext>(async (c) => {
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   const scope = filesPageScope(initial) ?? undefined;
   return () => (
-    <Show
-      when={screenViewOf(source.searchParams, initial.bases.items.length) !== null && !initial.moved}
-      fallback={
-        <Layout context={{ scope }} c={c} title={title} fullWidth fullPage>
-          <Workspace initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />
-        </Layout>
-      }
-    >
-      <Layout context={{ scope }} c={c} title={title} fullWidth fullPage ui="v2">
-        <FilesScreen initial={initial} preferences={preferences} timeZone={timeZone} />
-      </Layout>
-    </Show>
+    <Layout context={{ scope }} c={c} title={title} fullWidth fullPage ui="v2">
+      <FilesScreen initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />
+    </Layout>
   );
 });
 

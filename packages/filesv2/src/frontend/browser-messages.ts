@@ -461,6 +461,15 @@ export const browserMessages = i18n.define({
       v2Unresolved: "Not finished",
       v2Favorites: (values: { count: number }) => (values.count === 1 ? "1 favorite" : `${values.count} favorites`),
       v2Place: "Location",
+      v2Understood: "Understood",
+      v2Close: "Close",
+      v2RecentMovedTitle: "“Recent” moved to Activity.",
+      v2RevokeTitle: (values: { name: string }) => `Revoke “${values.name}”?`,
+      v2ActiveShares: (values: { count: number; more: string }) =>
+        values.count === 1 && !values.more ? "1 active link" : `${values.count}${values.more} active links`,
+      v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 link shown" : `${values.count} links shown`),
+      v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 storage location" : `${values.count} storage locations`),
+      v2Unreachable: "unreachable",
     },
     de: {
       personal: "Persönlich",
@@ -922,6 +931,15 @@ export const browserMessages = i18n.define({
       v2Unresolved: "Nicht abgeschlossen",
       v2Favorites: (values: { count: number }) => (values.count === 1 ? "1 Favorit" : `${values.count} Favoriten`),
       v2Place: "Ort",
+      v2Understood: "Verstanden",
+      v2Close: "Schließen",
+      v2RecentMovedTitle: "„Zuletzt“ ist jetzt in der Aktivität.",
+      v2RevokeTitle: (values: { name: string }) => `„${values.name}“ widerrufen?`,
+      v2ActiveShares: (values: { count: number; more: string }) =>
+        values.count === 1 && !values.more ? "1 aktiver Link" : `${values.count}${values.more} aktive Links`,
+      v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 Link angezeigt" : `${values.count} Links angezeigt`),
+      v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 Ablage" : `${values.count} Ablagen`),
+      v2Unreachable: "nicht erreichbar",
     },
   },
 });

@@ -27,12 +27,15 @@ export type WorkspaceSnapshot = {
   directory: DirectoryView | null;
   errorCode: string | null;
   detail?: EntryResult | null;
-  shares?: SharePage;
+  /** The first page of this person's links for their view; null when it could not be read. */
+  shares?: SharePage | null;
   editor?: EditorLaunch | null;
   /** Favorites for their page, or the files opened for "Me" in Activity; each authorized for this read. */
   marks?: MarkedEntry[];
   /** At most six authorized favorites for the overview, so the first frame already holds them and nothing moves. */
   favoritesPreview?: { items: MarkedEntry[]; more: boolean } | null;
+  /** This person's last changes and opened files for the overview; null when they could not be read. */
+  recentByYou?: { page: ActivityPage; opened: MarkedEntry[] } | null;
   /** One-time hints the server decided to show to this person. */
   hints?: { recentMoved?: boolean; selectionPill?: boolean };
   /** Instant this snapshot was built; history dates count "today" and ranges from it on server and client alike. */

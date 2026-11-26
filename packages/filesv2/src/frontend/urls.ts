@@ -42,14 +42,19 @@ export const showsOverview = (params: URLSearchParams, storageCount: number) =>
   !searchState(params) &&
   !["trash", "shares", "recent", "favorites", "activity"].includes(params.get("view") ?? "");
 
+/** The views of the Files screen; each is shown in place beside the others. */
+export type ScreenView = "folder" | "trash" | "favorites" | "shares" | "activity" | "overview" | "edit";
+
 /**
- * The views the v2 Files screen shows in place: a folder or a search, the trash of a storage, and the favorites; null for
- * the views that are still their own v1 page (overview, Activity, shares, editors).
+ * The view an address shows: the trash of a storage, the favorites, the shares, Activity, a file in its editor, all
+ * storage, or a folder (with a search below it). Unknown views and an editor without a file are ignored, as in
+ * `showsOverview`.
  */
-export const screenViewOf = (params: URLSearchParams, storageCount: number): "folder" | "trash" | "favorites" | null => {
+export const screenViewOf = (params: URLSearchParams, storageCount: number): ScreenView => {
   const view = params.get("view");
-  if (view === "trash" || view === "favorites") return view;
-  return view === null && !showsOverview(params, storageCount) ? "folder" : null;
+  if (view === "trash" || view === "favorites" || view === "shares" || view === "activity") return view;
+  if (view === "edit" && params.get("file")) return "edit";
+  return showsOverview(params, storageCount) ? "overview" : "folder";
 };
 
 const WHEN: readonly ActivityWhen[] = ["today", "7", "30", "365"];
