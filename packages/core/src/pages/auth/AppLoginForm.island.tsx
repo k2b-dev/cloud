@@ -1,11 +1,12 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
-import { Button, ButtonLink, NoticeCard, Placeholder, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Band, Bar, Button, CodeFigure, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
-import ApprovalFeedback from "../app-approval/Feedback";
+import ApprovalFeedbackV2 from "../app-approval/FeedbackV2";
 import { appApprovalMessages } from "../app-approval/messages";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 
@@ -142,79 +143,99 @@ export default function AppLoginForm(props: {
       if (!disposed) setBusy(false);
     }
   };
+  // The password or email form for the same account, beside the form's own action; not while a request starts.
+  const fallbackButton = () =>
+    !busy() && props.fallback ? (
+      <Button variant="ghost" href={props.fallback.href} onClick={clear}>
+        {props.fallback.label}
+      </Button>
+    ) : undefined;
   return (
-    <section class="flex flex-col gap-3">
-      <ApprovalFeedback error={error()} />
+    <>
+      <ApprovalFeedbackV2 error={error()} />
       <Show when={message()}>
         {(key) => (
-          <NoticeCard tone={key() === "retrying" ? "info" : "warning"}>
-            <p role="status">{t()[key()]}</p>
-          </NoticeCard>
+          <Notice tone="warn">
+            <span role="status">{t()[key()]}</span>
+          </Notice>
         )}
       </Show>
-      <Show when={!signedIn()} fallback={<Placeholder state="loading" title={t().signedIn} />}>
+      <Show
+        when={!signedIn()}
+        fallback={
+          <Notice tone="note" icon="circle-check">
+            <span role="status">{t().signedIn}</span>
+          </Notice>
+        }
+      >
         <Show
           when={pending()}
           fallback={
             <form
-              class="flex flex-col gap-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 void start();
               }}
             >
-              <TextInput
-                class="auth-login-identifier"
-                label={t().identifier}
-                placeholder={t().identifierPlaceholder}
-                value={identifier}
-                onValueChange={setIdentifier}
-                autocomplete={props.forget ? "off" : "username"}
-                icon=""
-                activeIcon=""
-                required
-                maxLength={254}
+              <Band>
+                <Field label={t().identifier} required>
+                  <Input
+                    value={identifier()}
+                    onInput={setIdentifier}
+                    placeholder={t().identifierPlaceholder}
+                    autocomplete={props.forget ? "off" : "username"}
+                    autocapitalize="off"
+                    spellcheck={false}
+                    maxLength={254}
+                    autofocus
+                  />
+                </Field>
+              </Band>
+              <Bar
+                start={fallbackButton()}
+                end={
+                  <Button variant="primary" type="submit" busy={busy()} disabled={!identifier().trim()}>
+                    {t().signIn}
+                  </Button>
+                }
               />
-              <Button type="submit" class="auth-login-action w-full justify-center" loading={busy()} disabled={!identifier().trim()}>
-                {t().signIn}
-              </Button>
             </form>
           }
         >
           {(request) => (
-            <div class="flex flex-col gap-5">
-              <div class="text-center" role="status" aria-live="polite">
-                <p class="text-sm text-dimmed">{t().waiting}</p>
-                <span class="sr-only">{t().comparison}</span>
-                {/* Grouped by three like Cloud Login shows it, so the two codes read the same at a glance. */}
-                <p class="flex justify-center gap-4 py-6 text-4xl sm:text-5xl font-mono tabular-nums tracking-widest">
-                  <For each={request().comparison.match(/.{1,3}/g) ?? [request().comparison]}>{(group) => <span>{group}</span>}</For>
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                disabled={busy()}
-                onClick={() => {
-                  clear();
-                  setMessage(undefined);
-                }}
-              >
-                {t().cancelWait}
-              </Button>
-            </div>
+            <>
+              <Band>
+                {/* the same code as on the phone, grouped by three like Cloud Login shows it; read out when it comes */}
+                <div role="status" aria-live="polite">
+                  <Text muted>{t().waiting}</Text>
+                  <CodeFigure value={request().comparison} label={t().comparison} />
+                </div>
+              </Band>
+              <Bar
+                start={fallbackButton()}
+                end={
+                  <Button
+                    disabled={busy()}
+                    onClick={() => {
+                      clear();
+                      setMessage(undefined);
+                    }}
+                  >
+                    {t().cancelWait}
+                  </Button>
+                }
+              />
+            </>
           )}
         </Show>
       </Show>
-      <Show when={!busy() ? props.fallback : undefined}>
-        {(fallback) => (
-          <ButtonLink href={fallback().href} variant="ghost" class="auth-login-alternative w-full justify-center" onClick={clear}>
-            {fallback().label}
-          </ButtonLink>
-        )}
-      </Show>
       <Show when={!pending() && props.setupHint}>
-        <p class="text-xs text-center text-dimmed">{props.setupHint}</p>
+        <Band>
+          <Text type="meta" muted>
+            {props.setupHint}
+          </Text>
+        </Band>
       </Show>
-    </section>
+    </>
   );
 }

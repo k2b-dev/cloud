@@ -1,12 +1,13 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Band, Bar, Button, Field, Input, Notice } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
-import { signOutOthersRetryPath } from "../../sign-out-others";
+import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
 import { afterSignInHref, confirmationRequestOptions } from "../login-redirect";
 import { authMessages } from "../messages";
 import { PasswordChangedSignInAgain } from "../PasswordChangedSignInAgain";
-import { PasswordSetupFields } from "../PasswordSetupFields";
+import { PasswordSetupFieldsV2 } from "../PasswordSetupFieldsV2";
 import { SignOutOthersRecovery } from "../SignOutOthersRecovery";
 
 type NewPasswordFormProps = {
@@ -76,46 +77,53 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
             e.preventDefault();
             mutation.mutate({});
           }}
-          class="flex flex-col gap-4"
         >
-          <TextInput
-            label={t().username}
-            description={t().organizationUsernameDescription}
-            placeholder={t().usernameShortPlaceholder}
-            icon="ti ti-user"
-            value={username}
-            onValueChange={setUsername}
-            autocomplete="username"
+          <Band>
+            <Field label={t().username} hint={t().organizationUsernameDescription}>
+              <Input
+                icon="user"
+                value={username()}
+                onInput={setUsername}
+                placeholder={t().usernameShortPlaceholder}
+                autocomplete="username"
+                autocapitalize="off"
+                spellcheck={false}
+                autofocus={!props.defaultUsername}
+              />
+            </Field>
+            <Field label={t().currentPassword} hint={t().currentPasswordDescription}>
+              <Input
+                icon="lock"
+                type="password"
+                value={currentPassword()}
+                onInput={setCurrentPassword}
+                placeholder={t().currentPassword}
+                autocomplete="current-password"
+                autofocus={!!props.defaultUsername}
+              />
+            </Field>
+          </Band>
+          <Band>
+            <PasswordSetupFieldsV2
+              newPassword={newPassword}
+              confirmPassword={confirmPassword}
+              onNewPasswordChange={setNewPassword}
+              onConfirmPasswordChange={setConfirmPassword}
+            />
+          </Band>
+          <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+          <Bar
+            start={
+              <Button variant="ghost" icon="arrow-left" href={signInAgainHref(props.redirectTo)}>
+                {t().backToSignIn}
+              </Button>
+            }
+            end={
+              <Button variant="primary" type="submit" icon="lock-check" busy={mutation.loading()}>
+                {mutation.loading() ? t().updatingPassword : t().setPassword}
+              </Button>
+            }
           />
-
-          <TextInput
-            label={t().currentPassword}
-            description={t().currentPasswordDescription}
-            placeholder={t().currentPassword}
-            icon="ti ti-lock"
-            password
-            value={currentPassword}
-            onValueChange={setCurrentPassword}
-            autocomplete="current-password"
-          />
-
-          <PasswordSetupFields
-            newPassword={newPassword}
-            confirmPassword={confirmPassword}
-            onNewPasswordChange={setNewPassword}
-            onConfirmPasswordChange={setConfirmPassword}
-          />
-
-          {mutation.error() && (
-            <NoticeCard tone="danger">
-              <span>{mutation.error()?.message}</span>
-            </NoticeCard>
-          )}
-
-          <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().updatingPassword}>
-            <i class="ti ti-lock-check" />
-            <span>{t().setPassword}</span>
-          </Button>
         </form>
       </Show>
     </Show>

@@ -1,7 +1,10 @@
-import { i18n, password } from "@k2b/stdlib";
+import { password } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/solid";
 import { Button, prompts, TextInput, useLocale } from "@k2b/ui";
 import { type Accessor, createMemo, createSignal } from "solid-js";
+import { passwordSetupMessages } from "./password-setup-messages";
+
+export { passwordSetupMessages };
 
 type PasswordSetupFieldsProps = {
   newPassword: Accessor<string>;
@@ -10,60 +13,6 @@ type PasswordSetupFieldsProps = {
   onConfirmPasswordChange: (value: string) => void;
   locale?: string;
 };
-
-export const passwordSetupMessages = i18n.define({
-  baseLocale: "en",
-  messages: {
-    en: {
-      generatedPassword: "Generated password",
-      generatedPasswordDescription:
-        "The generated password was filled into both password fields. Copy it now if you want to store it in a password manager.",
-      copied: "Copied",
-      copyPassword: "Copy password",
-      done: "Done",
-      passwordGenerated: "Password generated",
-      newPassword: "New password",
-      newPasswordDescription: "Choose a strong password or generate one automatically.",
-      generate: "Generate",
-      noPassword: "No password yet",
-      minimumLength: "Use at least 12 characters.",
-      estimatedCrackTime: ({ time }: { time: string }) => `Estimated crack time: ${time}`,
-      generatedFilled: "Generated password filled into both password fields. Use the eye icon to review it before saving.",
-      confirmPassword: "Confirm new password",
-      confirmPasswordDescription: "Repeat the new password to avoid typos.",
-      strength0: "very weak",
-      strength1: "weak",
-      strength2: "fair",
-      strength3: "strong",
-      strength4: "very strong",
-      germanStrengthAdvice: "A longer, randomly generated password is harder to guess.",
-    },
-    de: {
-      generatedPassword: "Erzeugtes Passwort",
-      generatedPasswordDescription:
-        "Das erzeugte Passwort wurde in beide Passwortfelder eingetragen. Kopiere es jetzt, wenn du es in einem Passwortmanager speichern möchtest.",
-      copied: "Kopiert",
-      copyPassword: "Passwort kopieren",
-      done: "Fertig",
-      passwordGenerated: "Passwort erzeugt",
-      newPassword: "Neues Passwort",
-      newPasswordDescription: "Wähle ein starkes Passwort oder erzeuge automatisch eines.",
-      generate: "Erzeugen",
-      noPassword: "Noch kein Passwort",
-      minimumLength: "Verwende mindestens 12 Zeichen.",
-      estimatedCrackTime: ({ time }) => `Geschätzte Zeit zum Knacken: ${time}`,
-      generatedFilled: "Das erzeugte Passwort wurde in beide Felder eingetragen. Prüfe es vor dem Speichern über das Augensymbol.",
-      confirmPassword: "Neues Passwort bestätigen",
-      confirmPasswordDescription: "Wiederhole das neue Passwort, um Tippfehler zu vermeiden.",
-      strength0: "sehr schwach",
-      strength1: "schwach",
-      strength2: "mittel",
-      strength3: "stark",
-      strength4: "sehr stark",
-      germanStrengthAdvice: "Ein längeres, zufällig erzeugtes Passwort ist schwerer zu erraten.",
-    },
-  },
-});
 
 function GeneratedPasswordDialog(props: { password: string; close: () => void; locale?: string }) {
   const inheritedLocale = useLocale();

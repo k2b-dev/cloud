@@ -1,7 +1,9 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Band, Bar, Button, Field, Input, Notice } from "@k2b/ui/v2";
+import { createSignal, Show } from "solid-js";
+import { signInAgainHref } from "../../sign-out-others";
 import { authMessages } from "../messages";
 
 type PasswordResetRequestFormProps = {
@@ -39,31 +41,30 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
         e.preventDefault();
         mutation.mutate({});
       }}
-      class="flex flex-col gap-4"
     >
-      {sent() && <NoticeCard tone="success">{t().resetSent}</NoticeCard>}
-
-      <TextInput
-        label={t().emailAddress}
-        description={t().organizationEmailDescription}
-        placeholder="you@example.org"
-        icon="ti ti-mail"
-        type="email"
-        value={email}
-        onValueChange={setEmail}
-        autocomplete="email"
+      <Show when={sent()}>
+        <Notice tone="note" icon="mail-check">
+          <span role="status">{t().resetSent}</span>
+        </Notice>
+      </Show>
+      <Band>
+        <Field label={t().emailAddress} hint={t().organizationEmailDescription}>
+          <Input icon="mail" type="email" value={email()} onInput={setEmail} placeholder="you@example.org" autocomplete="email" autofocus />
+        </Field>
+      </Band>
+      <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+      <Bar
+        start={
+          <Button variant="ghost" icon="arrow-left" href={signInAgainHref(props.redirectTo)}>
+            {t().backToSignIn}
+          </Button>
+        }
+        end={
+          <Button variant="primary" type="submit" icon="send" busy={mutation.loading()}>
+            {mutation.loading() ? t().sendingResetLink : t().sendResetLink}
+          </Button>
+        }
       />
-
-      {mutation.error() && (
-        <NoticeCard tone="danger">
-          <span>{mutation.error()?.message}</span>
-        </NoticeCard>
-      )}
-
-      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().sendingResetLink}>
-        <i class="ti ti-send" />
-        {t().sendResetLink}
-      </Button>
     </form>
   );
 }

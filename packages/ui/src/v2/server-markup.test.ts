@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
+const { CodeFigure } = await import("./components");
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -72,4 +73,18 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+// A form opens with its first field focused before any script runs; a field without it gets no attribute.
+test("a text field sends autofocus in the server's markup only when asked", () => {
+  const input = (autofocus?: boolean) =>
+    renderToString(() => createComponent(Input, { label: "E-Mail", autofocus })).match(/<input[^>]*>/)?.[0] ?? "";
+  expect(input(true)).toMatch(/ autofocus(=""|\s|>)/);
+  for (const off of [false, undefined]) expect(input(off)).not.toContain("autofocus");
+});
+
+test("a code figure shows the code in groups and reads it sign by sign with what it is for", () => {
+  const markup = renderToString(() => createComponent(CodeFigure, { value: "123456", label: "Vergleichscode" }));
+  expect(markup).toContain(">Vergleichscode: 1 2 3 4 5 6</span>");
+  expect([...markup.matchAll(/<span aria-hidden="true">(\d+)<\/span>/g)].map((match) => match[1])).toEqual(["123", "456"]);
 });

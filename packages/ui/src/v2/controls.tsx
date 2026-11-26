@@ -212,6 +212,11 @@ export type InputProps = {
   spellcheck?: boolean;
   /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
   autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
+  /**
+   * The field takes the focus as the page arrives, such as the first field of a sign-in; at most one per page, and
+   * never where the phone's keyboard would cover what the person came to read.
+   */
+  autofocus?: boolean;
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -254,6 +259,8 @@ export const Input = (props: InputProps) => {
     inputmode: props.inputMode,
     spellcheck: props.spellcheck === undefined ? undefined : props.spellcheck ? ("true" as const) : ("false" as const),
     autocapitalize: props.autocapitalize,
+    // in the server's markup too, so the browser puts the caret here as the page arrives, before any script
+    autofocus: props.autofocus || undefined,
   });
   return (
     <span

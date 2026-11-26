@@ -15,6 +15,7 @@ export const corePageMessages = i18n.define({
       privacy: "Privacy Policy",
       imprint: "Imprint",
       legalNotConfigured: ({ title }: { title: string }) => `${title} is not configured. An administrator can add it in`,
+      legalOpenAdmin: "Open the settings",
     },
     de: {
       pageNotFound: "Seite nicht gefunden",
@@ -28,6 +29,7 @@ export const corePageMessages = i18n.define({
       privacy: "Datenschutzerklärung",
       imprint: "Impressum",
       legalNotConfigured: ({ title }) => `${title} ist nicht eingerichtet. Die Administration kann den Inhalt hier hinterlegen:`,
+      legalOpenAdmin: "Einstellungen öffnen",
     },
   },
 });

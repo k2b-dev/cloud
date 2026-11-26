@@ -16,7 +16,6 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Form } = await import("./CoreSettingsForm.island.tsx");
-const { default: AccountCategorySwitch } = await import("../../../auth/AccountCategorySwitch.island.tsx");
 const { default: AccountOperations } = await import("./AccountOperations.island.tsx");
 
 import { accountOperationsMessages } from "./account-operations-messages";
@@ -57,24 +56,6 @@ test("configuration status never presents a configured Cloud as a tested PWA", (
   }
 });
 
-test("login categories use the shared segmented radio control", () => {
-  const html = renderToString(() =>
-    createComponent(AccountCategorySwitch, {
-      options: [
-        { value: "guest", label: "Guest", href: "/auth/login?method=guest" },
-        { value: "login", label: "Firmenaccount", href: "/auth/login?method=login" },
-        { value: "freeipa", label: "FreeIPA", href: "/auth/login?method=ipa" },
-      ],
-      value: "login",
-      ariaLabel: "Account type",
-    }),
-  );
-  expect(html).toContain("k2b-segmented-control");
-  expect(html).toContain('role="radiogroup"');
-  expect(html.match(/role="radio"/g)).toHaveLength(3);
-  expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
-  expect(html).toContain("Firmenaccount");
-});
 const render = (
   enabled: boolean,
   locale = "en",

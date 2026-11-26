@@ -1,5 +1,6 @@
 import { finishIdleSignOut } from "@k2b/cloud/browser/session";
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Notice } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import { authMessages } from "./messages";
 
@@ -20,18 +21,9 @@ export default function IdleSignOutFinish() {
   onMount(() => void finish());
   return (
     <Show when={failed()}>
-      <NoticeCard
-        tone="warning"
-        layout="card"
-        icon
-        actions={
-          <Button variant="warning" size="sm" type="button" disabled={busy()} onClick={() => void finish()}>
-            {t().tryAgain}
-          </Button>
-        }
-      >
+      <Notice tone="warn" actions={[{ label: t().tryAgain, icon: "refresh", disabled: busy(), onClick: () => void finish() }]}>
         {t().idleCleanupFailed}
-      </NoticeCard>
+      </Notice>
     </Show>
   );
 }

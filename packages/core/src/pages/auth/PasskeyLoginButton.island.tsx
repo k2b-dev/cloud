@@ -1,8 +1,10 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Button, Notice } from "@k2b/ui/v2";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
+import { Show } from "solid-js";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
@@ -44,23 +46,11 @@ export default function PasskeyLoginButton(props: {
   });
 
   return (
-    <div class="auth-passkey flex flex-col gap-2">
-      <Button
-        type="button"
-        size="sm"
-        variant="text"
-        loading={mutation.loading()}
-        loadingLabel={t().signingIn}
-        onClick={() => mutation.mutate({})}
-      >
-        <i class="ti ti-key" />
-        {t().continueWithPasskey}
+    <>
+      <Button icon="key" busy={mutation.loading()} onClick={() => mutation.mutate({})}>
+        {mutation.loading() ? t().signingIn : t().continueWithPasskey}
       </Button>
-      {mutation.error() && (
-        <NoticeCard tone="danger">
-          <span>{mutation.error()?.message}</span>
-        </NoticeCard>
-      )}
-    </div>
+      <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+    </>
   );
 }

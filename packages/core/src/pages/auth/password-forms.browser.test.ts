@@ -59,11 +59,13 @@ let css: string;
 let harness: string;
 beforeAll(async () => {
   harness = await buildHarness();
-  const styles = [resolve(import.meta.dir, "../../styles/app.css"), resolve(import.meta.dir, "../../../../../styles.css")];
-  const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
+  // As a v2 visitor page links them: Core's own stylesheet, then Core's v2.css in place of global.css.
+  const built = await Promise.all([
+    Bun.build({ entrypoints: [resolve(import.meta.dir, "../../styles/app.css")], plugins: [tailwind] }),
+    Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../cloud/src/styles/v2-page.css")] }),
+  ]);
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
-  const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  css = (await Promise.all(built.map((build) => build.outputs[0]!.text()))).join("\n");
   await buildFontAssets(join(root, "public"));
   await buildTablerIconAssets(join(root, "public"));
   browser = await launchBrowser();
@@ -87,7 +89,7 @@ const page = (lang: string) =>
   // Playwright's WebKit ignores the charset of a routed response, so the page names it, as a Cloud page does.
   `<!doctype html><html lang="${lang}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-  `<body class="k2b-ui"><main class="mx-auto w-full max-w-md p-4"><div id="root"></div></main><script src="/harness.js"></script></body></html>`;
+  `<body class="k2b-ui k2-ui"><main class="minimal-layout-main" data-column><div class="minimal-layout-column" id="root"></div></main><script src="/harness.js"></script></body></html>`;
 
 /** Opens one form; the API answers come from `api` in order, and every call is recorded. */
 const open = async (form: Form, view: View, lang: "en" | "de", api: Api, path = `${pathOf(form)}${query(form)}`) => {
@@ -153,7 +155,7 @@ const failedAgain: Answer = {
 };
 
 const recovery = (tab: Page, lang: "en" | "de") =>
-  tab.locator(".k2b-notice-card").filter({ hasText: authMessages.resolve([lang]).t.passwordChangedSignOutFailed });
+  tab.locator("[data-k2-part=Notice]").filter({ hasText: authMessages.resolve([lang]).t.passwordChangedSignOutFailed });
 
 describe("setting a password on the sign-in page", () => {
   test("continues straight away when the other sign-ins ended", async () => {
@@ -254,7 +256,7 @@ describe("setting a password on the sign-in page", () => {
         const { context, tab } = await open("reset", view, lang, api);
         try {
           await submit(tab, "reset");
-          const notice = tab.locator(".k2b-notice-card").filter({ hasText: message });
+          const notice = tab.locator("[data-k2-part=Notice]").filter({ hasText: message });
           await notice.waitFor();
           const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
           expect({ width: view.width, lang, overflow: overflow <= 0 }).toEqual({ width: view.width, lang, overflow: true });
@@ -278,7 +280,7 @@ describe("setting a password on the sign-in page", () => {
           const { context, tab } = await open(form, view, lang, api);
           try {
             await submit(tab, form);
-            const notice = tab.locator(".k2b-notice-card").filter({ hasText: t.passwordChangedSignInAgain });
+            const notice = tab.locator("[data-k2-part=Notice]").filter({ hasText: t.passwordChangedSignInAgain });
             await notice.waitFor();
             expect(await tab.locator("input[type='password']").count()).toBe(0);
             const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -300,7 +302,7 @@ describe("setting a password on the sign-in page", () => {
       const { context, tab } = await open("login", phone, lang, api);
       try {
         await submit(tab, "login");
-        await tab.locator(".k2b-notice-card").filter({ hasText: t.signedOutWhileSigningIn }).waitFor();
+        await tab.locator("[data-k2-part=Notice]").filter({ hasText: t.signedOutWhileSigningIn }).waitFor();
         await tab.locator("button[type='submit']").click();
         await tab.waitForURL(continueUrl);
         expect({ lang, calls: api.calls }).toEqual({ lang, calls: ["change", "change"] });

@@ -742,3 +742,29 @@ export const RecordHead = (props: RecordHeadProps) => (
     </For>
   </>
 );
+
+// ── CodeFigure ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+export type CodeFigureProps = {
+  /** The code, such as "482913": it shows in groups (of three by default). */
+  value: string;
+  /** What the code is for assistive technology, such as "Vergleichscode"; it is read with the code itself. */
+  label: string;
+  /** Signs per group; 3 by default. */
+  group?: number;
+};
+
+/**
+ * A code a person compares with another screen or types elsewhere, such as the code a sign-in by app shows on both
+ * devices: large, monospaced, in groups, so two codes read the same at a glance. Not for secrets.
+ */
+export const CodeFigure = (props: CodeFigureProps) => {
+  const groups = () => props.value.match(new RegExp(`.{1,${Math.max(1, props.group ?? 3)}}`, "g")) ?? [props.value];
+  return (
+    <p class="k2-code-figure" data-k2-part="CodeFigure">
+      {/* read sign by sign, with what the code is for; the groups are for the eye */}
+      <span class="k2-hidden-text">{`${props.label}: ${props.value.split("").join(" ")}`}</span>
+      <For each={groups()}>{(group) => <span aria-hidden="true">{group}</span>}</For>
+    </p>
+  );
+};

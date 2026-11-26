@@ -51,8 +51,19 @@ const page = async (query = "", cookie = "") => {
     form: form?.[2],
     category: props && typeof props === "object" && "category" in props ? props.category : undefined,
     forget: props && typeof props === "object" && "forget" in props ? props.forget : undefined,
-    /** The plain link to the other credential: [target, label]. */
-    alternative: /<a href="([^"]+)" class="k2b-button auth-login-alternative[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1),
+    /** The link to the other credential, which the form shows beside its own action: [target, label]. */
+    alternative: (() => {
+      if (!props || typeof props !== "object") return undefined;
+      const link = "alternative" in props ? props.alternative : "fallback" in props ? props.fallback : undefined;
+      return link &&
+        typeof link === "object" &&
+        "href" in link &&
+        "label" in link &&
+        typeof link.href === "string" &&
+        typeof link.label === "string"
+        ? [link.href, link.label]
+        : undefined;
+    })(),
   };
 };
 

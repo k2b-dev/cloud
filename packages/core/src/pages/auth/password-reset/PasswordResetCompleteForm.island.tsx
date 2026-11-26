@@ -1,12 +1,13 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Band, Bar, Button, Notice } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
-import { signOutOthersRetryPath } from "../../sign-out-others";
+import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
 import { afterSignInHref, confirmationRequestOptions } from "../login-redirect";
 import { authMessages } from "../messages";
 import { PasswordChangedSignInAgain } from "../PasswordChangedSignInAgain";
-import { PasswordSetupFields } from "../PasswordSetupFields";
+import { PasswordSetupFieldsV2 } from "../PasswordSetupFieldsV2";
 import { SignOutOthersRecovery } from "../SignOutOthersRecovery";
 
 type PasswordResetCompleteFormProps = {
@@ -76,31 +77,39 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
             e.preventDefault();
             mutation.mutate({});
           }}
-          class="flex flex-col gap-4"
         >
-          <PasswordSetupFields
-            newPassword={newPassword}
-            confirmPassword={confirmPassword}
-            onNewPasswordChange={setNewPassword}
-            onConfirmPasswordChange={setConfirmPassword}
+          <Band>
+            <PasswordSetupFieldsV2
+              newPassword={newPassword}
+              confirmPassword={confirmPassword}
+              onNewPasswordChange={setNewPassword}
+              onConfirmPasswordChange={setConfirmPassword}
+              autofocus
+            />
+          </Band>
+          <Show when={mutation.error()}>
+            {(error) => (
+              // Every attempt uses up the link, so a failure offers a new one right where it is reported.
+              <Notice
+                tone="bad"
+                actions={[{ label: t().requestNewResetLink, icon: "mail-forward", href: newResetLinkHref(props.redirectTo) }]}
+              >
+                <span role="alert">{error().message}</span>
+              </Notice>
+            )}
+          </Show>
+          <Bar
+            start={
+              <Button variant="ghost" icon="arrow-left" href={signInAgainHref(props.redirectTo)}>
+                {t().backToSignIn}
+              </Button>
+            }
+            end={
+              <Button variant="primary" type="submit" icon="lock-check" busy={mutation.loading()}>
+                {mutation.loading() ? t().resettingPassword : t().setPassword}
+              </Button>
+            }
           />
-
-          {mutation.error() && (
-            // Every attempt uses up the link, so a failure offers a new one right where it is reported.
-            <NoticeCard tone="danger" role="alert" title={mutation.error()?.message}>
-              <div class="flex flex-wrap gap-2">
-                <ButtonLink size="sm" variant="secondary" navigation="document" href={newResetLinkHref(props.redirectTo)}>
-                  <i class="ti ti-mail-forward" />
-                  <span>{t().requestNewResetLink}</span>
-                </ButtonLink>
-              </div>
-            </NoticeCard>
-          )}
-
-          <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().resettingPassword}>
-            <i class="ti ti-lock-check" />
-            <span>{t().setPassword}</span>
-          </Button>
         </form>
       </Show>
     </Show>

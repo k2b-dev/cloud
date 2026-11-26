@@ -1,6 +1,7 @@
 import { signOutBrowserSession } from "@k2b/cloud/browser/session";
 import { apiClient } from "@k2b/cloud/clients/core";
-import { Button, Checkbox, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Band, Bar, Button, Check, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { authMessages } from "./messages";
 
@@ -43,45 +44,56 @@ export default function ConsentForm(props: { userId: string; version: string; re
     }
   };
   return (
+    // The nightly, release and Chat smokes read the pending version from this attribute.
     <form
-      class="mt-6 flex flex-col gap-5"
+      data-legal-version={props.version}
       onSubmit={(event) => {
         event.preventDefault();
         void submit(true);
       }}
     >
-      <Checkbox
-        value={accepted}
-        onValueChange={setAccepted}
-        disabled={busy()}
-        label={
-          <span>
-            {t().termsPrefix}{" "}
-            <a href="/legal/terms" target="_blank" rel="noopener" class="underline">
-              {t().terms}
-            </a>{" "}
-            {t().consentPrivacyJoin}{" "}
-            <a href="/legal/privacy" target="_blank" rel="noopener" class="underline">
-              {t().privacy}
-            </a>
-            {t().consentPrivacyEnd}
-          </span>
+      <Band>
+        <Check
+          checked={accepted()}
+          onChange={setAccepted}
+          disabled={busy() || stale()}
+          label={
+            <Text>
+              {t().termsPrefix}{" "}
+              <a href="/legal/terms" target="_blank" rel="noopener">
+                {t().terms}
+              </a>{" "}
+              {t().consentPrivacyJoin}{" "}
+              <a href="/legal/privacy" target="_blank" rel="noopener">
+                {t().privacy}
+              </a>
+              {t().consentPrivacyEnd}
+            </Text>
+          }
+        />
+      </Band>
+      <Show when={error()}>
+        {(message) => (
+          <Notice
+            tone="bad"
+            actions={stale() ? [{ label: t().consentReload, icon: "refresh", onClick: () => window.location.reload() }] : undefined}
+          >
+            {message()}
+          </Notice>
+        )}
+      </Show>
+      <Bar
+        end={
+          <>
+            <Button type="button" disabled={busy()} onClick={() => void submit(false)}>
+              {t().consentCancel}
+            </Button>
+            <Button variant="primary" type="submit" busy={busy()} disabled={!accepted() || stale()}>
+              {t().consentContinue}
+            </Button>
+          </>
         }
       />
-      <Show when={error()}>
-        <NoticeCard tone="danger">{error()}</NoticeCard>
-      </Show>
-      <Show when={stale()}>
-        <Button variant="secondary" onClick={() => window.location.reload()}>
-          {t().consentReload}
-        </Button>
-      </Show>
-      <Button type="submit" size="lg" loading={busy()} disabled={!accepted() || stale()}>
-        {t().consentContinue}
-      </Button>
-      <Button type="button" variant="secondary" disabled={busy()} onClick={() => void submit(false)}>
-        {t().consentCancel}
-      </Button>
     </form>
   );
 }

@@ -10,9 +10,8 @@
 
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
-import { markdown } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
-import { MarkdownView, Placeholder } from "@k2b/ui";
+import { MinimalLayout } from "@k2b/cloud/ssr";
+import { Band, Bar, Empty, Prose, RecordHead } from "@k2b/ui/v2";
 import { ssr } from "../../config";
 import { corePageMessages } from "../messages";
 
@@ -37,29 +36,24 @@ export const makeLegalPage = (kind: LegalKind) =>
     }
 
     const trimmedContent = (content ?? "").trim();
-    const html = trimmedContent ? markdown.render(trimmedContent, { locale: getLocale(c) }) : null;
+    const appName = (await coreSettings.get<string>("app.name")) || "My App";
+    c.get("page").title = title;
 
+    // A visitor page in one column on v2. The text is Markdown in `Prose`: raw HTML in it shows as text.
     return () => (
-      <Layout c={c} title={title}>
-        <div class="container max-w-3xl p-4 sm:p-8" data-print-region="">
-          <h1 class="text-xl font-bold mb-4">{title}</h1>
-          {html ? (
-            <MarkdownView trustedHtml={html} />
-          ) : (
-            <Placeholder
-              surface="paper"
-              description={
-                <>
-                  {t.legalNotConfigured({ title })}{" "}
-                  <a href="/admin/base/legal" class="underline">
-                    /admin/base/legal
-                  </a>
-                  .
-                </>
-              }
-            />
-          )}
-        </div>
-      </Layout>
+      <MinimalLayout c={c} ui="v2" column>
+        <Bar start={<RecordHead name={title} avatar={{ name: appName, image: "/branding/logo" }} />} />
+        {trimmedContent ? (
+          <Band label={title}>
+            <Prose markdown={trimmedContent} />
+          </Band>
+        ) : (
+          <Empty
+            icon="file-off"
+            text={`${t.legalNotConfigured({ title })} /admin/base/legal.`}
+            action={{ label: t.legalOpenAdmin, icon: "settings", href: "/admin/base/legal" }}
+          />
+        )}
+      </MinimalLayout>
     );
   });

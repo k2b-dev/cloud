@@ -556,6 +556,24 @@ state. Beside a Core from before `v2.css` the page keeps that Core's
 </MinimalLayout>
 ```
 
+Add `column` for a short visitor task such as a sign-in, a consent or a legal
+text: the content stands in one centred column of at most 560 px on the page
+background, and on a phone it fills the width. Write the column from v2 parts
+(`Bar`, `Band`, `Notice`, a form's `Bar` with its action at the end) instead of
+a `Workspace`. Core's sign-in, password, consent and legal pages use it.
+
+```tsx
+<MinimalLayout c={c} ui="v2" column>
+  <Bar start={<RecordHead name="Sign in" />} />
+  <SignInForm />
+</MinimalLayout>
+```
+
+A test renders such a page as beside a Core that serves `v2.css` with
+`serveCoreV2Sheet()` from `@k2b/cloud/ssr/testing`; without it the test has no
+registered Core and sees the older-Core fallback. It returns the function that
+ends it, for `afterEach`.
+
 Without `ui`, the application remains responsible for its one semantic `main`
 landmark and all page styling. Do not add a second language or theme control or a second
 legal-links footer to the page. Do not use `MinimalLayout` as an

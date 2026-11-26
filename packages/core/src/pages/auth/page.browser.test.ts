@@ -2,17 +2,19 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, te
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import * as cloud from "@k2b/cloud";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import * as services from "@k2b/cloud/services";
+import { serveCoreV2Sheet } from "@k2b/cloud/ssr/testing";
+import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { browserName, launchBrowser, pageErrors, storedCookie } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled, storedCookie } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
+import { authMessages } from "./messages";
 
-// Whether the sign-in card is a frame or flat is decided by the cascade
-// between Tailwind utilities, @k2b/ui and Cloud styles at a viewport width,
+// The sign-in page is a v2 visitor page: one centred column on the page background from the tablet up, the whole
+// width on a phone. Where it stands and whether a row wraps is decided by v2.css and the fonts at a viewport width,
 // which only a real engine resolves.
 const root = mkdtempSync(join(tmpdir(), "core-login-page-browser-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -32,13 +34,8 @@ beforeEach(() => {
       async (key) => (key === "freeipa.enable" ? true : key === "app.contact_email" ? "help@cloud.example.test" : undefined) as never,
     ),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
-    // All three legal pages, as Core lists them, the longest footer a phone shows.
-    spyOn(cloud, "listLegalLinks").mockImplementation(async (locale) =>
-      (locale === "de" ? ["Impressum", "Datenschutz", "Nutzungsbedingungen"] : ["Imprint", "Privacy", "Terms"]).map((label, index) => ({
-        label,
-        href: ["/impressum", "/legal/privacy", "/legal/terms"][index]!,
-      })),
-    ),
+    // Core serves v2.css, so the page links it alone.
+    { mockRestore: serveCoreV2Sheet() },
     spyOn(services.appApproval, "config").mockResolvedValue({
       issuer: "https://cloud.example.test",
       appOrigin: "https://auth.example.test",
@@ -55,12 +52,14 @@ let browser: Browser;
 let css: string;
 let stylesheets: Record<string, string>;
 beforeAll(async () => {
-  // As the page template does: the layer order first, then Core's stylesheet, then the global one.
-  const styles = [resolve(import.meta.dir, "../../styles/app.css"), resolve(import.meta.dir, "../../../../../styles.css")];
-  const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
+  // As the page template links them on a v2 visitor page: Core's own stylesheet, then Core's v2.css in place of global.css.
+  const built = await Promise.all([
+    Bun.build({ entrypoints: [resolve(import.meta.dir, "../../styles/app.css")], plugins: [tailwind] }),
+    Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../cloud/src/styles/v2-page.css")] }),
+  ]);
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
-  const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  const [appCss, v2Css] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
+  css = [appCss, v2Css].join("\n");
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
   // The stylesheets the page template links, by path.
@@ -68,7 +67,7 @@ beforeAll(async () => {
     "/public/fonts.css": await Bun.file(join(publicDir, "fonts.css")).text(),
     "/public/tabler-icons.css": await Bun.file(join(publicDir, "tabler-icons.css")).text(),
     "/public/core/app.css": appCss!,
-    "/public/global.css": globalCss!,
+    "/public/v2.css": v2Css!,
   };
   browser = await launchBrowser();
 }, 60_000);
@@ -78,7 +77,16 @@ afterAll(async () => {
 
 /** The server-rendered sign-in document. */
 const serverDocument = async (query: string, locale: string, cookie = "") => {
-  const app = new Hono().get("/auth/login", ...handler);
+  // All three legal pages, as the running apps declare them: the longest footer a phone shows.
+  const legalLinks = (locale === "de" ? ["Impressum", "Datenschutz", "Nutzungsbedingungen"] : ["Imprint", "Privacy", "Terms"]).map(
+    (label, index) => ({ label, href: ["/impressum", "/legal/privacy", "/legal/terms"][index]! }),
+  );
+  const app = new Hono()
+    .use((c, next) => {
+      c.set("runtime" as never, { apps: [{ id: "legal-probe", legalLinks }] } as never);
+      return next();
+    })
+    .get("/auth/login", ...handler);
   const response = await app.request(`https://cloud.example.test/auth/login${query}`, {
     headers: { Cookie: `cloud.locale=${locale}; ${cookie}` },
   });
@@ -86,110 +94,84 @@ const serverDocument = async (query: string, locale: string, cookie = "") => {
   return await response.text();
 };
 
-/** The server-rendered sign-in page body. */
-const body = async (query: string, locale: string, cookie?: string) =>
-  /<body[^>]*>([\s\S]*)<\/body>/.exec(await serverDocument(query, locale, cookie))![1]!;
+/** The server-rendered sign-in page body: its attributes (the v2 scope) and its content. */
+const body = async (query: string, locale: string, cookie?: string) => {
+  const [, attributes, content] = /<body([^>]*)>([\s\S]*)<\/body>/.exec(await serverDocument(query, locale, cookie))!;
+  return { attributes: attributes!, content: content! };
+};
 
 type View = { width: number; height: number; touch: boolean };
-type Options = { locale?: "en" | "de"; dark?: boolean; defaultFontSize?: number; cookie?: string };
-/** A tab with the server-rendered page as it arrives, before any page script runs; the caller closes it. */
+/** `shot` names a full-page image that lands in `CLOUD_VISITOR_SHOTS` when it is set. */
+type Options = { locale?: "en" | "de"; cookie?: string; shot?: string };
+/**
+ * A tab with the server-rendered page as it arrives: its own scripts never run (the content security policy allows
+ * none), while the checks still measure it from Playwright; the caller closes it.
+ */
 const open = async (view: View, query: string, options: Options = {}) => {
   const tab = await browser.newPage({
-    javaScriptEnabled: false,
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 2,
     isMobile: view.touch,
     hasTouch: view.touch,
   });
-  // A larger default font in the browser settings, which also moves rem-based breakpoints.
-  if (options.defaultFontSize) {
-    const session = await tab.context().newCDPSession(tab);
-    await session.send("Page.setFontSizes", { fontSizes: { standard: options.defaultFontSize } });
-  }
   await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
   await tab.route(`${origin}/branding/logo`, (route) =>
     route.fulfill({ path: resolve(import.meta.dir, "../../../../cloud/public/logo.svg") }),
   );
+  const page = await body(query, options.locale ?? "en", options.cookie);
   await tab.setContent(
-    `<!doctype html><html lang="en" class="${options.dark ? "dark" : "light"}"><head><base href="${origin}/"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<!doctype html><html lang="${options.locale ?? "en"}" class="light"><head><meta http-equiv="Content-Security-Policy" content="script-src &#39;none&#39;"><base href="${origin}/"><meta name="viewport" content="width=device-width, initial-scale=1">` +
       `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-      `<body class="k2b-ui">${await body(query, options.locale ?? "en", options.cookie)}</body></html>`,
+      `<body${page.attributes}>${page.content}</body></html>`,
   );
   await tab.evaluate(() => document.fonts.ready);
   return tab;
 };
 
-/** The boxes and styles the layout checks need, as the server response renders them. */
+/** The v2 outline and measurements, and the boxes the layout checks need, as the server response renders them. */
 const measure = async (view: View, query: string, options: Options = {}) => {
   const tab = await open(view, query, options);
   try {
-    return await tab.evaluate(() => {
-      const box = (element: Element) => {
-        const rect = element.getBoundingClientRect();
-        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+    await settled(tab);
+    const outline = await describeV2Page(tab, "main");
+    const layout = await measureV2Layout(tab, { root: ".minimal-layout-column" });
+    const shots = process.env.CLOUD_VISITOR_SHOTS;
+    if (shots && options.shot) {
+      mkdirSync(shots, { recursive: true });
+      await tab.screenshot({ path: join(shots, `${options.shot}.png`), fullPage: true });
+    }
+    const page = await tab.evaluate(() => {
+      const box = (element: Element | null) => {
+        if (!element) return undefined;
+        const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+        return { left, right, top, bottom, width, height };
       };
-      const card = document.querySelector(".standalone-card")!;
-      const style = getComputedStyle(card);
-      // The rows where a tap reaches a control, along its center line and both of its edges; a neighbour that
-      // covers only part of it shortens one of them, and the shortest counts.
-      const hitRows = (link: Element) => {
-        const rect = link.getBoundingClientRect();
-        const columns = [rect.left + 1, rect.left + rect.width / 2, rect.right - 1].map((x) => {
-          const rows: number[] = [];
-          for (let y = Math.floor(rect.top) - 30; y <= rect.bottom + 30; y++) {
-            const hit = document.elementFromPoint(x, y);
-            if (hit && (hit === link || link.contains(hit))) rows.push(y);
-          }
-          return {
-            top: Math.min(...rows),
-            bottom: Math.max(...rows) + 1,
-            contiguous: rows.length === Math.max(...rows) + 1 - Math.min(...rows),
-          };
-        });
-        return {
-          top: Math.max(...columns.map((column) => column.top)),
-          bottom: Math.min(...columns.map((column) => column.bottom)),
-          contiguous: columns.every((column) => column.contiguous),
-        };
-      };
-      const reset = document.querySelector(".auth-reset-link");
+      const focused = Array.from(document.querySelectorAll("[autofocus]"));
       return {
-        surface: {
-          border: style.borderTopWidth,
-          radius: style.borderTopLeftRadius,
-          shadow: style.boxShadow,
-          background: style.backgroundColor,
-        },
-        aside: getComputedStyle(document.querySelector("aside")!).display,
-        fields: Array.from(document.querySelectorAll("main .k2b-input-shell")).map(box),
-        actions: Array.from(document.querySelectorAll(".auth-secondary-actions :is(a, button)")).map((action) => ({
-          name: action.textContent?.trim() ?? "",
-          ...box(action),
-          iconLeft: action.querySelector("i")!.getBoundingClientRect().left,
-        })),
-        textLinks: [...(reset ? [reset] : []), ...Array.from(document.querySelectorAll(".auth-footer-link"))].map((link) => ({
-          name: link.textContent?.trim() ?? "",
-          ...box(link),
-          hit: hitRows(link),
-        })),
-        submit: Array.from(document.querySelectorAll("main button[type=submit]")).map(box),
-        languageSwitch: (() => {
-          const trigger = document.querySelector(".auth-language-trigger")!;
-          return {
-            name: trigger.getAttribute("aria-label"),
-            text: (trigger as HTMLElement).innerText.trim(),
-            ...box(trigger),
-            hit: hitRows(trigger),
-          };
-        })(),
-        footer: box(document.querySelector("footer")!),
-        cardTop: box(card).top,
-        // The page without its centering slack: where the footer ends, plus the page padding.
-        contentHeight: box(document.querySelector("footer")!).bottom - box(card).top + 32,
+        column: box(document.querySelector(".minimal-layout-column")),
+        footer: box(document.querySelector("footer")),
+        heading: document.querySelector("main h1")?.textContent?.trim(),
+        autofocus: focused.map((element) => `${element.tagName.toLowerCase()} ${element.getAttribute("type") ?? "text"}`),
+        autofocusInMain: focused.every((element) => element.closest("main") !== null),
+        legal: Array.from(document.querySelectorAll("footer nav a")).map((link) => link.textContent?.trim()),
+        // v1 parts and the old sign-in frame; the v2 scope on the body is the only k2b- class left.
+        v1: Array.from(document.body.querySelectorAll("[class*='k2b-'], [class*='standalone-'], [class*='auth-']")).map(
+          (element) => element.className,
+        ),
         scrollWidth: document.documentElement.scrollWidth,
-        scrollHeight: document.documentElement.scrollHeight,
+        // Controls and words the column cuts off at its edge (it clips, so the page itself never scrolls sideways).
+        cut: (() => {
+          const column = document.querySelector(".minimal-layout-column")!.getBoundingClientRect();
+          return Array.from(document.querySelectorAll(".minimal-layout-column :is(a, button, input, label, h1, [role=tab])"))
+            .filter((element) => {
+              const box = element.getBoundingClientRect();
+              return box.width > 0 && (box.left < column.left - 0.5 || box.right > column.right + 0.5);
+            })
+            .map((element) => element.textContent?.trim() || element.tagName.toLowerCase());
+        })(),
       };
     });
+    return { outline, problems: layout.problems, ...page };
   } finally {
     await tab.close();
   }
@@ -259,11 +241,11 @@ const firstFrameAndLoad = async (view: View, query: string, locale: "en" | "de")
   }
 };
 
-/** The names keyboard focus reaches after the "use the app instead" link. */
+/** The names keyboard focus reaches after the "use the app instead" link, which stands before the form's action. */
 const tabOrder = async (view: View, query: string, steps: number) => {
   const tab = await open(view, query);
   try {
-    await tab.focus(".auth-login-alternative");
+    await tab.focus("main a[href*='credential=']");
     const names: string[] = [];
     for (let step = 0; step < steps; step++) {
       await tab.keyboard.press("Tab");
@@ -283,141 +265,51 @@ const forms = {
   app: "?method=ipa&credential=app",
   guest: "?method=guest",
   login: "?method=login&credential=legacy",
+  admin: "?method=admin",
 };
-const flat = { border: "0px", radius: "0px", shadow: "none", background: "rgba(0, 0, 0, 0)" };
 
 describe("sign-in page in a browser", () => {
-  test("is flat on a phone and fits the first screen for every account type, form and language", async () => {
-    for (const [form, query] of Object.entries(forms)) {
-      for (const locale of ["en", "de"] as const) {
-        for (const view of [phone, { ...phone, width: 375 }, { ...phone, width: 360 }, { ...phone, width: 320 }]) {
-          const context = `${form} ${locale} ${view.width}`;
-          const page = await measure(view, query, { locale, dark: locale === "de" });
-          expect(page.surface, context).toEqual(flat);
-          expect(page.aside, context).toBe("none");
+  test("is one centred column on the page at 1440 and the whole width on a phone, clean in v2, for every form and language", async () => {
+    for (const locale of ["en", "de"] as const) {
+      const t = authMessages.resolve([locale]).t;
+      for (const [name, query] of Object.entries(forms)) {
+        for (const view of [phone, desktop]) {
+          const context = `${name} ${locale} ${view.width}`;
+          const page = await measure(view, query, { locale, shot: `sign-in-${name}-${locale}-${view.width}` });
+          expect(page.outline.includes("Problems (") ? page.outline : "", context).toBe("");
+          expect(page.problems, context).toEqual([]);
+          expect(page.v1, context).toEqual([]);
           expect(page.scrollWidth, context).toBeLessThanOrEqual(view.width);
-          expect(page.fields.length, context).toBeGreaterThan(0);
-          // Fields span the viewport minus the page padding of 16 px on each side.
-          for (const field of page.fields) expect([field.left, field.right], context).toEqual([16, view.width - 16]);
-          // At 320 px the German footer takes two rows, which keep their hit areas apart, so the German
-          // password form, the tallest one, scrolls by about 16 px: 44 px targets win over the first-screen fit
-          // on a screen this narrow.
-          if (view.width === 320 && locale === "de" && form === "password") continue;
-          expect(page.contentHeight, context).toBeLessThanOrEqual(view.height);
-          expect(page.scrollHeight, context).toBe(view.height);
+          expect(page.cut, context).toEqual([]);
+          const column = page.column!;
+          if (view === desktop) {
+            // A measure on the page background, in the middle of the window.
+            expect(column.width, context).toBeLessThanOrEqual(560);
+            expect(column.width, context).toBeGreaterThan(480);
+            expect(Math.abs(column.left - (view.width - column.right)), context).toBeLessThanOrEqual(1);
+            expect(column.top, context).toBeGreaterThanOrEqual(24);
+          } else {
+            expect([column.left, column.width], context).toEqual([0, view.width]);
+          }
+          expect(page.heading, context).toBe(name === "admin" ? t.adminToken : t.signIn);
+          // The first field takes the focus, as before: one, in the form.
+          expect(page.autofocus, context).toHaveLength(1);
+          expect(page.autofocus[0], context).toStartWith("input ");
+          expect(page.autofocusInMain, context).toBe(true);
+          // The legal links stay in the footer, below the column.
+          expect(page.legal, context).toEqual(
+            locale === "de" ? ["Impressum", "Datenschutz", "Nutzungsbedingungen"] : ["Imprint", "Privacy", "Terms"],
+          );
+          expect(page.footer!.top, context).toBeGreaterThanOrEqual(column.bottom);
         }
       }
     }
   }, 120_000);
 
-  test("lays the secondary actions out as an even grid where the form column is narrow", async () => {
-    for (const locale of ["en", "de"] as const) {
-      for (const width of [390, 320]) {
-        const context = `${locale} ${width}`;
-        const { actions } = await measure({ ...phone, width }, forms.password, { locale });
-        const [passkey, support, admin] = actions;
-        expect(actions.map((action) => action.name)).toEqual(
-          locale === "en" ? ["Use passkey", "Contact support", "Admin token"] : ["Mit Passkey", "Support kontaktieren", "Admin-Token"],
-        );
-        // The passkey takes the first row; support and the admin token share the second as equal halves.
-        expect([passkey!.left, passkey!.right], context).toEqual([16, width - 16]);
-        expect(support!.top, context).toBeGreaterThanOrEqual(passkey!.bottom + 10);
-        expect([support!.top, support!.width], context).toEqual([admin!.top, admin!.width]);
-        expect([support!.left, admin!.right], context).toEqual([16, width - 16]);
-        expect(admin!.left - support!.right, context).toBe(8);
-        for (const action of actions) expect(action.height, `${context} ${action.name}`).toBeGreaterThanOrEqual(36);
-      }
-    }
-  }, 60_000);
-
-  test("keeps the card from the tablet width up and the single action row in a wide form column", async () => {
-    // The two-column card of a small tablet has a narrow form column and the same even grid as a phone.
-    const tablet = await measure({ width: 768, height: 1024, touch: true }, forms.password, { locale: "de" });
-    expect([tablet.surface.border, tablet.surface.radius, tablet.aside]).toEqual(["1px", "16px", "flex"]);
-    expect(tablet.actions[1]!.top).toBe(tablet.actions[2]!.top);
-    expect(tablet.actions[0]!.bottom).toBeLessThan(tablet.actions[1]!.top);
-
-    for (const view of [desktop, { width: 1024, height: 768, touch: true }]) {
-      const context = `${view.width}`;
-      const page = await measure(view, forms.password);
-      expect(page.surface, context).toEqual({
-        border: "1px",
-        radius: "16px",
-        // A standalone page card sits on the canvas like the app card: the frame shadow (layers and shadows).
-        shadow: expect.stringContaining("rgba(15, 23, 19, 0.22) 0px 14px 36px -32px"),
-        background: "rgb(255, 255, 255)",
-      });
-      expect(page.aside, context).toBe("flex");
-      expect(page.scrollWidth, context).toBeLessThanOrEqual(view.width);
-      // The passkey starts the row; support and the admin token close it together. The passkey has no box of
-      // its own, so its icon lines up with the fields and labels above, as the outlined help actions' boxes do.
-      const [passkey, support, admin] = page.actions;
-      expect(new Set(page.actions.map((action) => action.height)).size, context).toBe(1);
-      expect([passkey!.iconLeft, admin!.right], context).toEqual([page.fields[0]!.left, page.fields[0]!.right]);
-      expect(passkey!.right, context).toBeLessThan(support!.left - 8);
-      expect(admin!.left - support!.right, context).toBe(8);
-      expect([support!.top, admin!.top], context).toEqual([passkey!.top, passkey!.top]);
-    }
-    expect((await measure(desktop, forms.password)).fields.map((field) => field.width)).toEqual([448, 448]);
-  }, 60_000);
-
-  test("grows and scrolls instead of clipping when the password form shows a notice", async () => {
-    // The banner is the same NoticeCard in the same place as a failed sign-in's error.
-    for (const locale of ["en", "de"] as const) {
-      const page = await measure(phone, `${forms.password}&banner=true`, { locale });
-      expect(page.scrollHeight, locale).toBeGreaterThan(phone.height);
-      // The card starts at the page padding and the document ends one padding below the footer.
-      expect(page.cardTop, locale).toBe(16);
-      expect(Math.abs(page.contentHeight - page.scrollHeight), locale).toBeLessThan(1);
-      expect(page.scrollWidth, locale).toBeLessThanOrEqual(phone.width);
-      for (const field of page.fields) expect([field.left, field.right], locale).toEqual([16, phone.width - 16]);
-    }
-  }, 60_000);
-
-  test("gives the small text links finger-sized hit areas that stop short of their neighbours", async () => {
-    for (const locale of ["en", "de"] as const) {
-      for (const width of [320, 360, 375, 390, 430]) {
-        const context = `${locale} ${width}`;
-        // A taller screen, so a page that scrolls at 320 px still shows the whole hit area of its last row.
-        const page = await measure({ ...phone, width, height: 800 }, forms.password, { locale });
-        const [reset, ...footer] = page.textLinks;
-        expect([reset!.name, ...footer.map((link) => link.name)], context).toEqual([
-          ...(locale === "en"
-            ? ["Reset password", "Imprint", "Privacy", "Terms"]
-            : ["Passwort zurücksetzen", "Impressum", "Datenschutz", "Nutzungsbedingungen"]),
-        ]);
-        // Below md the switch shows the language code; its name stays the full language.
-        expect([page.languageSwitch.text, page.languageSwitch.name], context).toEqual(
-          locale === "en" ? ["EN", "Language: English"] : ["DE", "Sprache: Deutsch"],
-        );
-        // The links and the switch share one row on every phone from 360 px, also in German; at 320 px the German
-        // switch takes a second row. At 360 px the German row needs 327 of its 328 px: a legal label or @k2b/ui's
-        // sm button padding, icon or gap that grows by more than 1 px wraps it there too, still without overlap,
-        // but the German password form then scrolls by about 16 px on a 664 px screen.
-        const rows = locale === "de" && width === 320 ? 2 : 1;
-        expect(page.footer.height > page.languageSwitch.height ? 2 : 1, context).toBe(rows);
-        // Every footer target is finger-sized, also where the footer wraps: no target covers another.
-        for (const target of [...footer, page.languageSwitch]) {
-          expect(target.hit.contiguous, `${context} ${target.name}`).toBe(true);
-          expect(target.hit.bottom - target.hit.top, `${context} ${target.name}`).toBeGreaterThanOrEqual(44);
-        }
-        // The footer links' hit areas reach 14 px up and stop short of the secondary actions', which reach 4 px down.
-        const actionsBottom = Math.max(...page.actions.map((action) => action.bottom));
-        for (const link of footer) expect(link.hit.top, `${context} ${link.name}`).toBeGreaterThanOrEqual(actionsBottom + 4);
-        // The reset link sits between the password field and the sign-in button.
-        const password = page.fields.at(-1)!;
-        const submit = page.submit[0]!;
-        expect(reset!.hit.contiguous, context).toBe(true);
-        expect(reset!.hit.bottom - reset!.hit.top, context).toBeGreaterThanOrEqual(30);
-        expect(reset!.hit.top, context).toBeGreaterThan(password.bottom);
-        expect(reset!.hit.bottom, context).toBeLessThan(submit.top - 2);
-      }
-    }
-    // A mouse keeps the link's own box, and a desktop switch names the full language.
-    const wide = await measure(desktop, forms.password, { locale: "de" });
-    expect(wide.textLinks[0]!.hit.bottom - wide.textLinks[0]!.hit.top).toBeLessThanOrEqual(Math.ceil(wide.textLinks[0]!.height) + 1);
-    expect([wide.languageSwitch.text, wide.languageSwitch.name]).toEqual(["Deutsch", "Sprache: Deutsch"]);
-  }, 120_000);
+  test("names a remembered account and focuses its password instead", async () => {
+    const page = await measure(desktop, `${forms.password}&ipa-uid=mira`);
+    expect(page.autofocus).toEqual(["input password"]);
+  }, 30_000);
 
   test("shows its final layout in the first frame instead of moving when the fonts arrive", async () => {
     for (const view of [...[360, 375, 390, 430].map((width) => ({ ...phone, width })), desktop]) {
@@ -432,27 +324,15 @@ describe("sign-in page in a browser", () => {
   }, 120_000);
 
   test("moves focus through the secondary actions in the order they are shown", async () => {
-    // The source order is the visual order in every layout, so every engine, Safari included, focuses the
-    // phone grid row by row and the wide row from left to right.
     for (const view of [phone, { ...phone, width: 320 }, desktop]) {
-      expect(await tabOrder(view, forms.password, 3), `${view.width}`).toEqual(["Use passkey", "Contact support", "Admin token"]);
+      expect(await tabOrder(view, forms.password, 4), `${view.width}`).toEqual([
+        "Sign in with FreeIPA",
+        "Use passkey",
+        "Contact support",
+        "Admin token",
+      ]);
     }
   }, 30_000);
-
-  // Only Chromium's input protocol can change the browser's default font size, which rem breakpoints follow.
-  test.skipIf(browserName === "webkit")(
-    "switches at the same rem breakpoint as the page's own md: layout with a larger default font",
-    async () => {
-      // With a 20 px default font, md starts at 960 px: at 800 px the page is a phone page throughout,
-      // and the form column keeps its 28rem (560 px) width centered on the flat page.
-      const narrow = await measure({ width: 800, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
-      expect([narrow.surface, narrow.aside]).toEqual([flat, "none"]);
-      for (const field of narrow.fields) expect([field.left, field.right]).toEqual([120, 680]);
-      const wide = await measure({ width: 1000, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
-      expect([wide.surface.border, wide.surface.radius, wide.aside]).toEqual(["1px", "20px", "flex"]);
-    },
-    30_000,
-  );
 });
 
 test("re-authentication opens the same remembered credential as normal sign-in", async () => {
@@ -472,9 +352,8 @@ test("re-authentication opens the same remembered credential as normal sign-in",
         const tab = await open(view, search!, { cookie });
         try {
           expect(await tab.locator("main button[type=submit]").textContent(), `${name} ${state}`).toContain(button!);
-          expect(await tab.locator(".auth-passkey button").count()).toBe(1);
-          expect(await tab.locator(".auth-passkey").textContent()).toContain("Use passkey");
-          const alternative = tab.locator(".auth-login-alternative");
+          expect(await tab.getByRole("button", { name: "Use passkey", exact: true }).count()).toBe(1);
+          const alternative = tab.locator("main a[href*='credential=']");
           expect(await alternative.count()).toBe(1);
           const href = new URL((await alternative.getAttribute("href"))!, origin);
           expect(href.searchParams.get("credential")).toBe(button === "Sign in with app" ? "legacy" : "app");
@@ -599,7 +478,7 @@ test("email-link completion remembers email and a later app approval remembers t
     const restarted = new URL(tab.url());
     expect(restarted.searchParams.get("redirectTo")).toBe(redirectTo);
     expect(restarted.searchParams.has("token")).toBe(false);
-    expect(await tab.locator(".auth-passkey button").count()).toBe(1);
+    expect(await tab.getByRole("button", { name: "Use passkey", exact: true }).count()).toBe(1);
     rejectEmail = false;
     // A newly requested proof for the original account, never reuse the rejected link.
     await tab.goto(`${origin}/fixture?${query}&token=fixture-new-mail-token`);

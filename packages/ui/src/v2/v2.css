@@ -4468,3 +4468,19 @@
     width: calc(100vw - 16px);
   }
 }
+
+/* A code to compare at a glance (CodeFigure): large, monospaced, in groups, centred in its place. */
+.k2-ui .k2-code-figure {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 16px;
+  margin: 8px 0;
+  font-family: var(--k2-font-mono);
+  font-size: 40px;
+  line-height: 48px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  color: var(--k2-text);
+}

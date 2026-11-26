@@ -1,7 +1,8 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Checkbox, NoticeCard, TextInput, useLocale } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Band, Bar, Button, Check, Field, Input, Notice } from "@k2b/ui/v2";
+import { createSignal, Show } from "solid-js";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
@@ -37,41 +38,40 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
         e.preventDefault();
         mutation.mutate({});
       }}
-      class="flex flex-col gap-4"
     >
-      <TextInput
-        label={t().adminToken}
-        description={t().adminTokenDescription}
-        placeholder={t().adminToken}
-        icon="ti ti-key"
-        password
-        value={token}
-        onValueChange={setToken}
-        autocomplete="off"
+      <Band>
+        <Field label={t().adminToken} hint={t().adminTokenDescription}>
+          <Input
+            icon="key"
+            type="password"
+            value={token()}
+            onInput={setToken}
+            placeholder={t().adminToken}
+            autocomplete="off"
+            spellcheck={false}
+            autofocus
+          />
+        </Field>
+      </Band>
+      <Show when={requiresRecovery()}>
+        <Notice tone="warn" title={t().restoreLoginTitle}>
+          <Check label={t().restoreLoginConfirmation} checked={restoreLocalLogin()} onChange={setRestoreLocalLogin} />
+        </Notice>
+      </Show>
+      <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+      <Bar
+        end={
+          <Button
+            variant="primary"
+            type="submit"
+            icon="shield"
+            disabled={requiresRecovery() && !restoreLocalLogin()}
+            busy={mutation.loading()}
+          >
+            {mutation.loading() ? t().signingIn : t().signInWithAdminToken}
+          </Button>
+        }
       />
-
-      {requiresRecovery() && (
-        <NoticeCard tone="warning" title={t().restoreLoginTitle}>
-          <Checkbox label={t().restoreLoginConfirmation} value={restoreLocalLogin} onValueChange={setRestoreLocalLogin} />
-        </NoticeCard>
-      )}
-
-      {mutation.error() && (
-        <NoticeCard tone="danger">
-          <span>{mutation.error()?.message}</span>
-        </NoticeCard>
-      )}
-
-      <Button
-        type="submit"
-        class="w-full justify-center py-2"
-        disabled={requiresRecovery() && !restoreLocalLogin()}
-        loading={mutation.loading()}
-        loadingLabel={t().signingIn}
-      >
-        <i class="ti ti-shield" />
-        {t().signInWithAdminToken}
-      </Button>
     </form>
   );
 }

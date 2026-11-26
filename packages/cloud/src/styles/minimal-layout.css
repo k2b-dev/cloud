@@ -30,6 +30,58 @@
   color: var(--k2-text);
 }
 
+/* A visitor page in one column (`column`): a sign-in, a consent, a legal text. A card of at most 560 px in the middle of
+   the page's background; on the phone the column is the page. */
+.minimal-layout-main[data-column] {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  justify-content: center;
+  align-items: center;
+  padding: 48px 24px;
+  background: var(--k2-canvas);
+}
+
+.minimal-layout > .minimal-layout-main[data-column] {
+  min-height: 0;
+}
+
+/* the footer stands on the same background as the column */
+.minimal-layout[data-ui="v2"][data-column] {
+  background: var(--k2-canvas);
+}
+
+.minimal-layout-column {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 560px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--k2-card-edge);
+  border-radius: var(--k2-r-card);
+  background: var(--k2-surface);
+}
+
+@media not all and (min-width: 768px) {
+  .minimal-layout-main[data-column] {
+    align-items: stretch;
+    padding: 0;
+    background: var(--k2-surface);
+  }
+
+  .minimal-layout[data-ui="v2"][data-column] {
+    background: var(--k2-surface);
+  }
+
+  .minimal-layout-column {
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
 /* The visitor footer on v2: the legal links and the language and theme menus, quiet, centred, in v2's words and
    lines. On touch screens every control is at least 44 px tall. */
 .minimal-layout-footer[data-ui="v2"] {
