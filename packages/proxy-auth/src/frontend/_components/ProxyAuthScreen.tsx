@@ -211,7 +211,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             filters={
               props.figures.withoutGroups > 0 ? (
                 <Chip status="warn" icon="lock">
-                  {t().blockedUntilConfigured}
+                  {t().groupMissing}
                 </Chip>
               ) : undefined
             }
@@ -225,7 +225,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             icon={props.figures.withoutGroups > 0 ? "alert-triangle" : "check"}
             label={t().noGroups}
             value={props.figures.withoutGroups > 0 ? <Text tone="warn">{number(props.figures.withoutGroups)}</Text> : "0"}
-            meta={props.figures.withoutGroups > 0 ? t().blockedUntilConfigured : t().allGated}
+            meta={props.figures.withoutGroups > 0 ? t().assignGroup : t().allGated}
           />
         </Cells>
         <Table
@@ -277,10 +277,10 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     <Pane label={t().setupTitle} scrollKey="proxy-auth-setup">
       <Section icon="route" title={t().setupTitle} summary={t().setupDescription}>
         <Facts items={[{ label: t().verifyUrlPattern, value: `${props.baseUrl}/proxy-auth/verify/<client-id>`, mono: true }]} />
+      </Section>
+      <Section icon="file-code" title={t().exampleConfiguration}>
         <Prose
           markdown={[
-            `**${t().exampleConfiguration}**`,
-            "",
             "```yaml",
             "http:",
             "  middlewares:",
@@ -295,7 +295,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             "```",
           ].join("\n")}
         />
-        <Text weight="strong">{t().responseHeaders}</Text>
+      </Section>
+      <Section icon="list-details" title={t().responseHeaders}>
         <Facts
           items={[
             { label: "X-Forwarded-User", value: t().username },
@@ -311,8 +312,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     <AdminWorkspace
       nav={props.nav}
       detail={props.tab === "clients" && props.open ? 440 : undefined}
-      // the main action: in the head on a wide screen, floating at the bottom right on the phone
-      primary={{ label: t().newClient, icon: "plus", onClick: () => start("new") }}
+      // the main action on the list, floating at the bottom right on the phone; never over an open client or the setup
+      primary={props.tab === "clients" && !props.open ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
       head={
         <Bar
           start={
@@ -325,9 +326,11 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             />
           }
           end={
-            <Button variant="primary" icon="plus" onClick={() => start("new")}>
-              {t().newClient}
-            </Button>
+            <Show when={props.tab === "clients" && !props.open}>
+              <Button variant="primary" icon="plus" onClick={() => start("new")}>
+                {t().newClient}
+              </Button>
+            </Show>
           }
         />
       }

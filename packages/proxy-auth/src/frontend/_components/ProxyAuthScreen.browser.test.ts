@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
-import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
+import { loadShellAssets, type ShellAssets } from "../../../../ui/test/shell-page";
 
 // Proxy Auth on v2, from invented clients: the screen keeps the v2 layout rules at desktop, tablet and phone width with
 // normal, worst-case and no data; a client opens beside the list, and creating, editing and deleting ask and report.
@@ -45,22 +44,12 @@ const buildHarness = async (): Promise<string> => {
 };
 
 let browser: Browser;
-let css: string;
 let harness: string;
-let icons: { css: string; font: string };
+let assets: ShellAssets;
 beforeAll(async () => {
   harness = await buildHarness();
-  const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
-  const iconCss = await Bun.file(fileURLToPath(iconCssUrl)).text();
-  const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
-  if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
-  icons = { css: iconCss.replace(fontAsset, "/tabler-icons.woff2"), font: fileURLToPath(new URL(fontAsset, iconCssUrl)) };
-  const styles = [resolve(import.meta.dir, "../../styles/app.css"), resolve(import.meta.dir, "../../../../../styles.css")];
-  const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
-  for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
-  const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  const v2Css = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css")), "utf8");
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss, v2Css].join("\n");
+  // the shell's own stylesheets, Plex fonts and icons, as the page loads them
+  assets = await loadShellAssets({ id: "proxy-auth", css: resolve(import.meta.dir, "../../styles/app.css") });
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -70,8 +59,8 @@ afterAll(async () => {
 
 const document = (state: string) =>
   `<!doctype html><html lang="de" class="light" data-state="${state}"><head><meta charset="utf-8">` +
-  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
+  `<meta name="viewport" content="width=device-width, initial-scale=1">${assets.head}` +
+  `<style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
 type View = { width: number; height: number; touch: boolean };
@@ -95,8 +84,11 @@ const open = async (view: View, address: string, state = "normal", failEntities 
   const calls: string[] = [];
   const bodies: unknown[] = [];
   let entityFailures = failEntities;
-  await tab.route(`${origin}/**`, async (route) => {
+  // nothing leaves the test origin
+  await context.route("**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.origin !== origin) return route.abort("blockedbyclient");
+    if (await assets.serve(route, url)) return;
     if (url.pathname === "/admin/proxy-auth") return route.fulfill({ contentType: "text/html; charset=utf-8", body: document(state) });
     if (url.pathname === "/api/accounts/entities" && entityFailures > 0) {
       entityFailures -= 1;
@@ -117,8 +109,6 @@ const open = async (view: View, address: string, state = "normal", failEntities 
       return route.fulfill({ json: route.request().method() === "POST" ? { clientId: "pa_new" } : { message: "ok" } });
     }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
-    if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
-    if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
     return route.fulfill({ status: 404, contentType: "text/html", body: "<!doctype html><title>elsewhere</title>" });
   });
   await tab.goto(`${origin}${address}`);
@@ -241,7 +231,7 @@ describe("Proxy Auth on v2", () => {
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("button", { name: "Erneut versuchen" }).click();
       await dialog.getByRole("option", { name: "Betrieb" }).waitFor();
-      expect(errors.filter((error) => !String(error).includes("503"))).toEqual([]);
+      expect(errors).toEqual([]);
     } finally {
       await context.close();
     }

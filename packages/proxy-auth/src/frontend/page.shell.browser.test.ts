@@ -1,30 +1,27 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
-import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
+import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
+import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { proxyAuthService } from "../service";
 
-// The real page in the Cloud shell, from invented clients: its first HTML with the shell's own stylesheets and fonts
-// keeps the v2 layout rules at 1440 and 390 px. `CLOUD_PROXY_AUTH_SHELL_SHOTS=<dir>` also saves light pictures.
+// The real page in the Cloud shell, from invented clients: its first HTML with the shell's own stylesheets, fonts
+// (Plex) and icons keeps the v2 layout rules at 1440 and 390 px. `CLOUD_PROXY_AUTH_SHELL_SHOTS=<dir>` also saves
+// light pictures.
 const root = mkdtempSync(join(tmpdir(), "proxy-auth-shell-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
-const LOGO =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2563eb"/><path d="M9 20a5 5 0 0 1 1-9.9A7 7 0 0 1 23 12a4 4 0 0 1 0 8z" fill="#fff"/></svg>';
 const shots = process.env.CLOUD_PROXY_AUTH_SHELL_SHOTS;
-const origin = "https://cloud.example.test";
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -83,24 +80,9 @@ const clients = (data: keyof typeof CLIENTS) =>
   }));
 
 let browser: Browser;
-let stylesheets: Record<string, string>;
-let uiDist: string;
-let iconFont: string;
+let assets: ShellAssets;
 beforeAll(async () => {
-  uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
-  const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
-  iconFont = /tabler-icons-[\w-]+\.woff2/.exec(icons)?.[0] ?? "";
-  const build = async (entry: string) => {
-    const result = await Bun.build({ entrypoints: [entry], plugins: [tailwind] });
-    if (!result.success) throw new AggregateError(result.logs, `Could not build ${entry}`);
-    return result.outputs[0]!.text();
-  };
-  stylesheets = {
-    "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
-    "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
-    "/public/global.css": await build(resolve(import.meta.dir, "../../../../styles.css")),
-    "/public/proxy-auth/app.css": await build(resolve(import.meta.dir, "../styles/app.css")),
-  };
+  assets = await loadShellAssets({ id: "proxy-auth", css: resolve(import.meta.dir, "../styles/app.css") });
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -143,40 +125,12 @@ describe("Proxy Auth in the Cloud shell", () => {
     for (const [name, search, data] of cases) {
       const html = await firstHtml(search, data);
       for (const width of [1440, 390]) {
-        const context = await browser.newContext({
-          viewport: { width, height: width === 390 ? 844 : 900 },
-          deviceScaleFactor: 1,
-          isMobile: width === 390,
-          hasTouch: width === 390,
-          reducedMotion: "reduce",
-          colorScheme: "light",
-        });
-        const tab = await context.newPage();
-        const errors = pageErrors(tab);
-        await tab.route(`${origin}/**`, async (route) => {
-          const url = new URL(route.request().url());
-          if (url.pathname === "/admin/proxy-auth") return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
-          if (stylesheets[url.pathname]) return route.fulfill({ contentType: "text/css", body: stylesheets[url.pathname] });
-          if (url.pathname === "/public/tabler-icons.woff2") return route.fulfill({ path: resolve(uiDist, iconFont) });
-          if (url.pathname.startsWith("/public/fonts/")) {
-            const fonts = resolve(uiDist, "fonts");
-            const path = resolve(fonts, url.pathname.slice("/public/fonts/".length));
-            return path.startsWith(`${fonts}/`) ? route.fulfill({ path }) : route.fulfill({ status: 404 });
-          }
-          // the shell's logos and app symbols: one invented mark, so no picture shows a broken image
-          if (route.request().resourceType() === "image") return route.fulfill({ contentType: "image/svg+xml", body: LOGO });
-          // the islands stay as the server drew them: this is the first picture
-          return route.fulfill({ status: 404, body: "" });
-        });
+        const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/proxy-auth${search}`, html, width });
         try {
-          await tab.goto(`${origin}/admin/proxy-auth${search}`);
-          await tab.evaluate(() => window.document.fonts.ready);
-          await settled(tab);
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
           expect({ name, width, problems: layout.problems }).toEqual({ name, width, problems: [] });
           if (shots) await tab.screenshot({ path: join(shots, `${name}-${width}.png`) });
-          // only the islands' scripts may be missing here
-          expect(errors.filter((error) => !/Failed to load|404|import/i.test(String(error)))).toEqual([]);
+          expect(errors).toEqual([]);
         } finally {
           await context.close();
         }
