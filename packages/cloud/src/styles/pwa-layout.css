@@ -1,9 +1,10 @@
 /* The frame of a Cloud app page on v2 (`PwaLayout ui="v2"`), phone first. In global.css and in Core's v2.css alike.
 
-   Below 48rem the page fills the window: its content (a `Workspace`) above, the tab bar at the bottom, clear of the
-   phone's safe areas; a page that is a screen of its own (`screen`) has no tab bar. From 48rem the sidebar (a v2
-   `Nav`) stands on the canvas beside the page's workspace, and the tab bar steps aside. The sidebar and the tab bar
-   are one island, whose element shows its contents only, so both are places of the frame's grid. */
+   Below 48rem the page fills the window: its content (a `Workspace`) above, the `TabBar` at the bottom, clear of the
+   phone's safe areas; a page that is a screen of its own (`screen`, or `setPwaScreen` in place) has no tab bar. From
+   48rem the sidebar (a v2 `Nav`) stands on the canvas beside the page's workspace, and the tab bar leaves. The sidebar
+   and the tab bar are one island, whose element shows its contents only, so both are places of the frame's grid. */
+
 /* The page is the frame: the document never scrolls, so iOS has nothing to rubber-band; only the page's panes do. */
 html[data-pwa-v2],
 html[data-pwa-v2] body {
@@ -11,9 +12,9 @@ html[data-pwa-v2] body {
   overscroll-behavior: none;
 }
 
-/* The frame stands on the canvas, the colour the status bar takes from the page's head (`PWA_CANVAS_COLORS`). */
+/* On the phone the frame has the colour of the page's head, so the status bar and the notch above it read as one
+   head; the status bar takes the same colour (`PWA_V2_HEAD_COLORS`). */
 .pwa-v2 {
-  --pwa-v2-tabs-h: 56px;
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -22,13 +23,24 @@ html[data-pwa-v2] body {
   height: 100dvh;
   overflow: hidden;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  background: var(--k2-canvas);
+  background: var(--k2-surface);
   color: var(--k2-text);
 }
 
-/* The tab bar takes the bottom safe area into its own height, on its own surface. */
+/* The tab bar takes the bottom safe area into its own height, and the frame's side insets already hold it. */
 .pwa-v2[data-tabs]:not([data-screen]) {
   padding-bottom: 0;
+}
+
+.k2-ui.pwa-v2 .k2-tabbar {
+  grid-row: 2;
+  grid-column: 1;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.k2-ui.pwa-v2[data-screen] .k2-tabbar {
+  display: none;
 }
 
 .pwa-v2-nav {
@@ -43,100 +55,25 @@ html[data-pwa-v2] body {
   min-height: 0;
 }
 
-.pwa-v2-tabs {
-  grid-row: 2;
-  grid-column: 1;
-  display: flex;
-  padding-bottom: env(safe-area-inset-bottom);
-  border-top: var(--k2-hairline);
-  background: var(--k2-surface);
-}
-
-/* A page that is a screen of its own (`screen`, or `setPwaScreen` in place) has no tab bar. */
-.pwa-v2:is(:not([data-tabs]), [data-screen]) .pwa-v2-tabs {
-  display: none;
-}
-
-.pwa-v2-tab {
-  position: relative;
-  display: flex;
-  flex: 1 1 0;
-  min-width: 0;
-  height: var(--pwa-v2-tabs-h);
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  color: var(--k2-muted);
-  font: var(--k2-t-meta);
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.pwa-v2-tab[aria-current="page"] {
-  color: var(--k2-app-text);
-  font-weight: 500;
-}
-
-.pwa-v2-tab:focus-visible {
-  outline: 2px solid var(--k2-blue);
-  outline-offset: -4px;
-  border-radius: var(--k2-r-card);
-}
-
-.pwa-v2-tab > .k2-icon {
-  font-size: 22px;
-}
-
-.pwa-v2-tab-label {
-  max-width: 100%;
-  padding: 0 4px;
-  box-sizing: border-box;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* A part's count calls for attention on its tab: a small round figure at the icon's top end. */
-.pwa-v2-tab-count {
-  position: absolute;
-  top: 6px;
-  left: calc(50% + 4px);
-  box-sizing: border-box;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--k2-app, var(--k2-blue));
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-  text-align: center;
-}
-
-/* The words of a tab's figure, for its accessible name only. */
-.pwa-v2-tab-phrase {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* The head: back, the title, and the page's actions. */
+/* The head: back, the logo on Start, the title, and the page's actions. */
 .pwa-v2-title {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
 .pwa-v2-title .k2-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pwa-v2-logo {
+  height: 24px;
+  max-width: 96px;
+  object-fit: contain;
+  flex: none;
 }
 
 .pwa-v2-wide-only {
@@ -150,31 +87,6 @@ html[data-pwa-v2] body {
   gap: 4px;
 }
 
-/* The runtime's notices float above the tab bar, so nothing on the page moves when one comes or goes. */
-.pwa-v2-notices {
-  position: fixed;
-  right: max(12px, env(safe-area-inset-right));
-  bottom: calc(env(safe-area-inset-bottom) + 12px);
-  left: max(12px, env(safe-area-inset-left));
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-}
-
-.pwa-v2[data-tabs]:not([data-screen]) .pwa-v2-notices {
-  bottom: calc(env(safe-area-inset-bottom) + var(--pwa-v2-tabs-h) + 12px);
-}
-
-.pwa-v2-notices > .k2-notice {
-  pointer-events: auto;
-  overflow: hidden;
-  border: 1px solid var(--k2-card-edge);
-  border-radius: var(--k2-r-card);
-  background: var(--k2-surface);
-}
-
 @media (min-width: 48rem) {
   /* No tab bar takes the bottom inset here; the frame keeps clear of it. */
   .pwa-v2,
@@ -184,6 +96,7 @@ html[data-pwa-v2] body {
 
   .pwa-v2[data-sidebar] {
     grid-template-columns: 248px minmax(0, 1fr);
+    background: var(--k2-canvas);
   }
 
   .pwa-v2[data-sidebar] .pwa-v2-nav {
@@ -204,10 +117,6 @@ html[data-pwa-v2] body {
     padding-left: 0;
   }
 
-  .pwa-v2 .pwa-v2-tabs {
-    display: none;
-  }
-
   .pwa-v2-phone-only {
     display: none;
   }
@@ -219,14 +128,5 @@ html[data-pwa-v2] body {
   /* The sidebar already leads where this back link would. */
   .pwa-v2[data-sidebar] .pwa-v2-back[data-with-sidebar="hide"] {
     display: none;
-  }
-
-  .pwa-v2 .pwa-v2-notices,
-  .pwa-v2[data-tabs]:not([data-screen]) .pwa-v2-notices {
-    /* inside the page's card, clear of its edge */
-    right: max(24px, calc(env(safe-area-inset-right) + 24px));
-    left: auto;
-    bottom: calc(env(safe-area-inset-bottom) + 24px);
-    width: min(400px, calc(100vw - 32px));
   }
 }

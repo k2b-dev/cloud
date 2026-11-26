@@ -16,6 +16,11 @@ export const PWA_MANIFEST_PATH = "/pwa/manifest.webmanifest";
  * before any stylesheet loads and give it to the status bar.
  */
 export const PWA_CANVAS_COLORS = { light: "#fafafa", dark: "#090d12" } as const;
+/**
+ * The colour of a v2 app page's head (`PwaLayout ui="v2"`), which the status bar takes on the phone: v2's surface in
+ * each theme, so the status bar, the notch and the head read as one.
+ */
+export const PWA_V2_HEAD_COLORS = { light: "#ffffff", dark: "#11151b" } as const;
 
 /** Cookie names. The session and last address reach parts; device and pairing secrets use Core-only paths. */
 export const PWA_COOKIES = {

@@ -190,6 +190,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
 | `screen` | Below 48 rem, the page opens as a screen of its own without the tab bar, such as one chat with its composer at the bottom edge; a part that opens or leaves such a screen in place calls [`MobileShell.setScreen`](/en/ui/layout/mobile-shell) |
 | `ui` | `"v2"` (provisional) for a page built with `@k2b/ui/v2`; see [The v2 frame](#the-v2-frame) |
+| `status` | With `ui="v2"` and without `bare`: the page's status row under the head, such as a `StatusRow`; it stays while the content scrolls |
 | `children` | The page content, in the app's only scroll area |
 
 It renders the app's document head, a
@@ -237,28 +238,38 @@ same. The page then loads Core's `/public/v2.css` in place of `global.css`, as
 no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
 
 - Below 48 rem the page fills the window: its head at the top below the
-  status bar and the notch, and a tab bar with Start and the first three parts
-  at the bottom, above the home indicator. A badge's count stands on its tab,
-  and the tab's name says it in words, such as "Chat, 3 unread". With
+  status bar and the notch, in one colour with them, and the `TabBar` of
+  `@k2b/ui/v2` at the bottom, above the home indicator. It holds Start and
+  every part: up to five tabs, or four and **More**, which opens a sheet with
+  the other parts and their counts. Settings marks no tab. A badge's count
+  stands on its tab, and the tab's name says it in words, such as "Chat, 3
+  unread". Start shows the installation's logo beside its title. With
   `screen`, the tab bar steps aside and the page keeps clear of the home
   indicator itself; a part that opens or leaves such a screen in place calls
   `setPwaScreen(element, screen)` from `@k2b/cloud/browser/pwa-screen`, which
   also works when the page shows in the v1 frame beside an older Core.
-- From 48 rem a v2 `Nav` with Start, every part with its count, and Settings
-  at its foot stands beside the page.
+- From 48 rem a v2 `Nav` with the installation's logo, Start, every part,
+  and Settings at its foot stands beside the page. A part's badge is a count
+  that calls for attention, its summary a quiet count beside it.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
   `back`, the title (`sidebarTitle` from 48 rem), and `actions` (kept on the
   phone, where the app has no shell bar to take them), with one
-  scrolling `Pane`. Write the content from v2 bands, sections, and rows.
+  scrolling `Pane` and its `status` row. Write the content from v2 bands,
+  sections, and rows. Give each row one signal, such as a count chip, not a
+  bold title, a chip, and a number in its second line at once.
 - With `bare`, the page's island returns its own `Workspace` without a
   sidebar, with its panes and heads. Only the panes scroll; the document
-  never does. The frame then shows no `back`, `actions`, or `sidebarTitle`;
-  in development the server warns when a bare page passes them.
-- Offline, Chrome signed in to another account, and a new version show as v2
-  notices that float above the tab bar until their state ends; a new version
-  offers **Reload**. They float, so nothing on the page moves. Each offers
-  **Hide**, which gives the place above the tab bar back; a hidden offline
-  notice comes again the next time the device goes offline.
+  never does. The frame then shows no `back`, `actions`, `sidebarTitle`, or
+  `status`; in development the server warns when a bare page passes them.
+- Offline (with what follows: new content arrives once the device is online
+  again), Chrome signed in to another account, and a new version show in a
+  `NoticeStack` of `@k2b/ui/v2`: notices that float above the tab bar until
+  their state ends. A new version offers **Reload**. Nothing on the page
+  moves, and the panes keep the room the notices cover free at their end.
+  Each offers **Hide**; a hidden offline notice comes again the next time the
+  device goes offline.
+- A page that is no part's place, such as Settings, opens as a `screen` with
+  `back` to Start, so it has a way back and no tab claims it.
 
 ```tsx
 <PwaLayout c={c} ui="v2" title={t(c).title} bare>

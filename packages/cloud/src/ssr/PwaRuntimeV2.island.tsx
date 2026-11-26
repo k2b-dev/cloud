@@ -1,5 +1,5 @@
 import { syncThemeColor, useLocale } from "@k2b/ui";
-import { Notice } from "@k2b/ui/v2";
+import { Notice, NoticeStack } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { pwaMessages } from "./pwa-messages";
 import { type PwaRuntimeProps, startPwaRuntime, THEME_PREFERENCE_EVENT } from "./pwa-runtime";
@@ -7,9 +7,9 @@ import { type PwaRuntimeProps, startPwaRuntime, THEME_PREFERENCE_EVENT } from ".
 /**
  * The browser side of a v2 mobile app page (`PwaLayout ui="v2"`): the runtime of every app page, and what it finds
  * as v2 notices that float above the tab bar and stay until their state ends or the person hides them: offline,
- * Chrome signed in to another account, a new version with "Reload". They float, so nothing on the page moves when
- * one comes or goes; "Hide" gives the place above the tab bar back. A hidden offline notice comes again the next
- * time the phone goes offline.
+ * Chrome signed in to another account, a new version with "Reload", in a v2 `NoticeStack`. They float, so nothing on
+ * the page moves when one comes or goes, and the panes keep their room free; "Hide" takes one away. A hidden offline
+ * notice comes again the next time the phone goes offline.
  */
 export default function PwaRuntimeV2(props: PwaRuntimeProps) {
   const locale = useLocale();
@@ -38,12 +38,10 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
   });
 
   return (
-    // k2b-ui gap: v2 has no toast that stays until its state ends and carries an action (`ToastOptions` has `undo`,
-    // `status` and `retry` only), so the runtime's states are floating `Notice`s of the frame.
-    <div class="pwa-v2-notices" aria-live="polite">
+    <NoticeStack>
       <Show when={offline()}>
         <Notice tone="warn" icon="wifi-off" actions={[{ label: t().hide, onClick: () => setOffline(false) }]}>
-          {t().offline}
+          {t().offlineConsequence}
         </Notice>
       </Show>
       <Show when={otherAccount()}>
@@ -55,7 +53,7 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
       </Show>
       <Show when={newVersion()}>
         <Notice
-          tone="note"
+          tone="info"
           icon="refresh"
           actions={[
             { label: t().reload, icon: "refresh", onClick: () => location.reload() },
@@ -65,6 +63,6 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
           {t().newVersion({ cloud: props.cloud })}
         </Notice>
       </Show>
-    </div>
+    </NoticeStack>
   );
 }

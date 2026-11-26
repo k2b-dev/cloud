@@ -10,10 +10,16 @@ import { pwaFrame } from "./pwa-frame";
 import TimezoneCookie from "./TimezoneCookie.island";
 
 /** The props of the frame's head that a bare page leaves out. */
-export const bareDrops = (props: Pick<PwaLayoutProps, "back" | "actions" | "sidebarTitle">): string[] =>
-  [props.back && "back", props.actions !== undefined && "actions", props.sidebarTitle !== undefined && "sidebarTitle"].filter(
-    (name): name is string => typeof name === "string",
-  );
+export const bareDrops = (props: Pick<PwaLayoutProps, "back" | "actions" | "sidebarTitle" | "status">): string[] =>
+  [
+    props.back && "back",
+    props.actions !== undefined && "actions",
+    props.sidebarTitle !== undefined && "sidebarTitle",
+    props.status !== undefined && "status",
+  ].filter((name): name is string => typeof name === "string");
+
+/** The installation's logo, as Core serves it. */
+const LOGO = "/branding/logo";
 
 /** A Tabler icon name from a part's icon class (`ti ti-mail`). */
 const iconName = (icon: string) => icon.replace(/^ti\s+ti-/, "");
@@ -27,10 +33,7 @@ const iconName = (icon: string) => icon.replace(/^ti\s+ti-/, "");
  * `Workspace` from its island, and the frame keeps only the navigation.
  */
 export default function PwaLayoutV2(props: PwaLayoutProps) {
-  const { locale, t, user, cloud, page, parts, path, builds, countRoutes, tabs, currentTab, settingsHref, currentPart } = pwaFrame(
-    props.c,
-    props.title,
-  );
+  const { locale, t, user, cloud, page, parts, path, builds, countRoutes, settingsHref, currentPart } = pwaFrame(props.c, props.title);
   // Its app colours sit on the body; it links Core's v2.css alone, without v1 and the shell (see `pageStylesheetLinks`).
   Object.assign(page, { appUi: "v2", stylesheets: "v2" });
   // A bare page brings its own head: what the frame's head would show is not shown, which an author should learn at once.
@@ -47,12 +50,9 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
     ...(part.pwa.badge ? { badge: part.pwa.badge } : {}),
     ...(part.pwa.summary ? { summary: part.pwa.summary } : {}),
   });
-  const tabItems: PwaNavEntry[] = navigation
-    ? [
-        { id: "start", label: t.start, icon: "home", href: PWA_SCOPE, current: !currentTab },
-        ...tabs.map((part) => ({ ...entry(part), current: part === currentTab })),
-      ]
-    : [];
+  // Start and every part: the tab bar shows four and "More" with the others. Settings is no tab, so none is marked there.
+  const start: PwaNavEntry = { id: "start", label: t.start, icon: "home", href: PWA_SCOPE, current: path === PWA_SCOPE };
+  const tabItems: PwaNavEntry[] = navigation ? [start, ...parts.map(entry)] : [];
   const back = props.back;
   const head = (
     <Bar
@@ -64,6 +64,10 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
                 <Button variant="ghost" icon="arrow-left" href={link().href} label={link().label} />
               </span>
             )}
+          </Show>
+          {/* Start carries the installation's logo on the phone, where no sidebar shows it */}
+          <Show when={path === PWA_SCOPE}>
+            <img class="pwa-v2-logo pwa-v2-phone-only" src={LOGO} alt="" />
           </Show>
           <Show
             when={props.sidebarTitle !== undefined && props.sidebarTitle !== props.title}
@@ -103,7 +107,8 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
         <Show when={user}>
           <PwaNavigationV2
             title={cloud}
-            start={{ id: "start", label: t.start, icon: "home", href: PWA_SCOPE, current: path === PWA_SCOPE }}
+            logo={LOGO}
+            start={start}
             appsLabel={t.apps}
             parts={parts.map(entry)}
             settings={{ id: "settings", label: t.settings, icon: "settings", href: settingsHref, current: path === settingsHref }}
@@ -117,7 +122,9 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
             props.children
           ) : (
             <Workspace head={head}>
-              <Pane label={props.title}>{props.children}</Pane>
+              <Pane label={props.title} status={props.status}>
+                {props.children}
+              </Pane>
             </Workspace>
           )}
         </main>

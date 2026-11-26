@@ -41,6 +41,11 @@ export type PwaLayoutProps = {
    * returns its own `Workspace`. Beside a Core without v2.css the page keeps the v1 frame, its content in a v2 scope.
    */
   ui?: "v2";
+  /**
+   * With `ui="v2"` and without `bare`: the page's status row under the head, such as a `StatusRow` with "Heute: 15
+   * ungelesen · 5 fällig"; it stays while the content scrolls.
+   */
+  status?: JSX.Element;
   children: JSX.Element;
 };
 

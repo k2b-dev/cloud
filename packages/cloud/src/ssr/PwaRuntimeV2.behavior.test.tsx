@@ -67,7 +67,7 @@ const mount = (options: { keepalive: boolean; online?: boolean; renewedThisSessi
     dom,
     frame,
     state,
-    notices: () => [...frame.querySelectorAll<HTMLElement>(".pwa-v2-notices > [data-k2-part='Notice']")],
+    notices: () => [...frame.querySelectorAll<HTMLElement>("[data-k2-part='NoticeStack'] > [data-k2-part='Notice']")],
     dispose: () => {
       dispose();
       interval.mockRestore();
@@ -88,7 +88,8 @@ else {
     const page = mount({ keepalive: false, online: false });
     try {
       await waitFor(() => page.notices().length === 1, "offline notice");
-      expect(page.notices()[0]!.textContent).toContain("You're offline");
+      // it names what follows from being offline
+      expect(page.notices()[0]!.textContent).toContain("Offline – new content arrives once you're back online");
       expect(page.notices()[0]!.getAttribute("data-tone")).toBe("warn");
       expect(page.dom.document.querySelector("[data-k2b-toast]")).toBeNull();
       page.dom.window.dispatchEvent(new page.dom.window.Event("online"));
@@ -119,6 +120,8 @@ else {
       const [account, update] = page.notices();
       expect(account!.textContent).toContain("Chrome on this device is signed in to Example Cloud as Max Beispiel.");
       expect(update!.textContent).toContain("New version of Example Cloud");
+      // a plain fact of the app, in the info tone
+      expect(update!.getAttribute("data-tone")).toBe("info");
       expect(page.state.reloads).toBe(0);
       [...update!.querySelectorAll("button")].find((button) => button.textContent?.includes("Reload"))!.click();
       expect(page.state.reloads).toBe(1);

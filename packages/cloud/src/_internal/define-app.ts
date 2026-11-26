@@ -67,7 +67,7 @@ import {
 import { type AppInstallable, installableContains, validateInstallable } from "../contracts/installable";
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
 import { type PlatformPermission, PlatformPermissionSchema } from "../contracts/outgoing-mail";
-import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID } from "../contracts/pwa";
+import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID, PWA_V2_HEAD_COLORS } from "../contracts/pwa";
 import { rememberedPwaAddress } from "../contracts/pwa-location";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { ScreenPreferences } from "../contracts/screen-preferences";
@@ -635,7 +635,9 @@ export const defineApp = <
       // App pages paint the canvas before any stylesheet and give it to the
       // status bar. No status-bar style: `black-translucent` lays a blur band
       // over the top edge on iOS 26.
-      const canvas = resolved ? PWA_CANVAS_COLORS[resolved] : undefined;
+      // A v2 app page (it links v2.css) gives the status bar the colour of its head instead.
+      const colors = pwa && sheets === "v2" ? PWA_V2_HEAD_COLORS : PWA_CANVAS_COLORS;
+      const canvas = resolved ? colors[resolved] : undefined;
       const head = pageInstallable
         ? installableHead(pageInstallable, resolved)
         : pwa
@@ -648,9 +650,9 @@ export const defineApp = <
               app: `${
                 canvas
                   ? `<meta name="theme-color" content="${canvas}">`
-                  : `<meta name="theme-color" media="(prefers-color-scheme: light)" content="${PWA_CANVAS_COLORS.light}">
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="${PWA_CANVAS_COLORS.dark}">
-    <style data-cloud-canvas>html{background-color:${PWA_CANVAS_COLORS.light}}@media (prefers-color-scheme: dark){html{background-color:${PWA_CANVAS_COLORS.dark}}}</style>`
+                  : `<meta name="theme-color" media="(prefers-color-scheme: light)" content="${colors.light}">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="${colors.dark}">
+    <style data-cloud-canvas>html{background-color:${colors.light}}@media (prefers-color-scheme: dark){html{background-color:${colors.dark}}}</style>`
               }
     <link rel="manifest" href="${PWA_MANIFEST_PATH}">
     <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">

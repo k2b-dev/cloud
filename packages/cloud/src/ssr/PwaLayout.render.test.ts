@@ -110,6 +110,7 @@ const page = ssr<AuthContext>(
       title: c.req.query("title") ?? "Items",
       back: c.req.query("back") ? { href: "/pwa/inventory", label: "Items", withSidebar: c.req.query("back") !== "phone" } : undefined,
       sidebarTitle: c.req.query("sidebarTitle"),
+      status: c.req.query("status") ? "[[status]]" : undefined,
       actions: "[[actions]]",
       ui: c.req.query("ui") === "v2" ? "v2" : undefined,
       bare: c.req.query("bare") !== undefined,
@@ -418,9 +419,9 @@ describe("PwaLayout ui v2", () => {
   });
   afterEach(() => coreRoutes.mockRestore());
   const v2Tabs = (document: Document) =>
-    [...document.querySelectorAll<HTMLAnchorElement>(".pwa-v2-tabs a")].map((link) => ({
+    [...document.querySelectorAll<HTMLElement>(".k2-tabbar > .k2-tab")].map((link) => ({
       href: link.getAttribute("href"),
-      label: link.querySelector(".pwa-v2-tab-label")?.textContent,
+      label: link.querySelector(".k2-tab-label")?.textContent,
       current: link.getAttribute("aria-current") === "page",
       badge: (islandProps(link.ownerDocument, "PwaNavigationV2.island.tsx") as { tabs: { href: string; badge?: string }[] }).tabs.find(
         (tab) => tab.href === link.getAttribute("href"),
@@ -484,31 +485,67 @@ describe("PwaLayout ui v2", () => {
     expect(document.body.classList.contains("k2-ui")).toBe(false);
   });
 
-  test("a badge on its tab says how many are unread; a tab has no tooltip", async () => {
+  test("a badge is a count that calls for attention, on its tab and in the sidebar, in figures and words", async () => {
     signIn("app");
     apps = [
       shell,
-      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread" } }),
+      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread", summary: "/pwa/alpha/summary" } }),
       part("beta", "Beta", { pwa: { href: "/pwa/beta", badge: "/pwa/beta/unread" } }),
     ];
     const counts = spyOn(badges, "appBadgeCount").mockImplementation((input) =>
-      input.endpoint === "/pwa/alpha/unread" ? 3 : input.endpoint === "/pwa/beta/unread" ? 120 : 0,
+      input.endpoint === "/pwa/alpha/unread"
+        ? 3
+        : input.endpoint === "/pwa/beta/unread"
+          ? 120
+          : input.endpoint === "/pwa/alpha/summary"
+            ? 8
+            : 0,
     );
     try {
       const { document } = await render("/pwa/?ui=v2", { "Accept-Language": "de" });
-      const tab = (href: string) => document.querySelector(`.pwa-v2-tabs a[href="${href}"]`)!;
-      expect(tab("/pwa/alpha").querySelector(".pwa-v2-tab-count")?.textContent).toBe("3");
-      expect(tab("/pwa/alpha").querySelector(".pwa-v2-tab-count")?.getAttribute("aria-hidden")).toBe("true");
-      expect(tab("/pwa/alpha").querySelector(".pwa-v2-tab-phrase")?.textContent).toBe("3 ungelesen");
-      expect(tab("/pwa/beta").querySelector(".pwa-v2-tab-count")?.textContent).toBe("99+");
-      expect(tab("/pwa/beta").querySelector(".pwa-v2-tab-phrase")?.textContent).toBe("Mehr als 99 ungelesen");
-      expect([...document.querySelectorAll(".pwa-v2-tabs a")].some((link) => link.hasAttribute("title"))).toBe(false);
+      const tab = (href: string) => document.querySelector(`.k2-tabbar > .k2-tab[href="${href}"]`)!;
+      expect(tab("/pwa/alpha").querySelector(".k2-unread")?.textContent).toBe("3");
+      expect(tab("/pwa/alpha").querySelector(".k2-unread")?.getAttribute("aria-hidden")).toBe("true");
+      expect(tab("/pwa/alpha").querySelector(".k2-vh")?.textContent).toBe("3 ungelesen");
+      expect(tab("/pwa/beta").querySelector(".k2-unread")?.textContent).toBe("99+");
+      expect(tab("/pwa/beta").querySelector(".k2-vh")?.textContent).toBe("Mehr als 99 ungelesen");
+      expect([...document.querySelectorAll(".k2-tabbar > .k2-tab")].some((link) => link.hasAttribute("title"))).toBe(false);
+      // In the sidebar the badge is the attention count beside the summary's quiet one; one signal each.
+      const entry = document.querySelector('.pwa-v2-nav a[href="/pwa/alpha"]')!;
+      expect(entry.querySelector(".k2-ni-count")?.textContent).toBe("8");
+      expect(entry.querySelector(".k2-unread")?.textContent).toBe("3");
+      expect(document.querySelector(".pwa-v2-nav .k2-nav-title img")?.getAttribute("src")).toBe("/branding/logo");
     } finally {
       counts.mockRestore();
     }
   });
 
-  test("offers Start and the first three parts as tabs, a count only for a badge, and every part in the sidebar", async () => {
+  test("Start, every part as tabs (four, then More), the open one marked; Settings marks no tab", async () => {
+    signIn("app");
+    apps = [shell, ...["alpha", "beta", "gamma", "delta", "inventory"].map((id) => part(id, id[0]!.toUpperCase() + id.slice(1)))];
+    const tabs = (document: Document) =>
+      [...document.querySelectorAll<HTMLElement>(".k2-tabbar > .k2-tab")].map(
+        (tab) => `${tab.textContent}${tab.matches("[aria-current], [data-current]") ? " *" : ""}`,
+      );
+    expect(tabs((await render("/pwa/inventory/42?ui=v2")).document)).toEqual(["Start", "Alpha", "Beta", "Delta", "More *"]);
+    // a part among the first ones marks its own tab
+    apps = [shell, ...["inventory", "whiskey", "xray", "yankee", "zeta"].map((id) => part(id, id[0]!.toUpperCase() + id.slice(1)))];
+    expect(tabs((await render("/pwa/inventory?ui=v2")).document)).toEqual(["Start", "Inventory *", "Whiskey", "Xray", "More"]);
+    expect(tabs((await render("/pwa/?ui=v2")).document)).toEqual(["Start *", "Inventory", "Whiskey", "Xray", "More"]);
+    expect(tabs((await render("/pwa/settings?ui=v2")).document)).toEqual(["Start", "Inventory", "Whiskey", "Xray", "More"]);
+    // Start shows the installation's logo on the phone, beside its title
+    expect((await render("/pwa/?ui=v2&title=Example%20Cloud")).document.querySelector(".pwa-v2-title img.pwa-v2-logo")).not.toBeNull();
+    expect((await render("/pwa/inventory?ui=v2")).document.querySelector(".pwa-v2-logo")).toBeNull();
+  });
+
+  test("a status row stands under the frame's head", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const { document } = await render("/pwa/inventory?ui=v2&status=1");
+    expect(document.querySelector('[data-k2-part="Pane"] [data-slot="status"]')?.textContent).toBe("[[status]]");
+  });
+
+  test("every part in the sidebar and as a tab, with its routes for the counts", async () => {
     signIn("app");
     apps = [
       shell,
@@ -519,16 +556,19 @@ describe("PwaLayout ui v2", () => {
     ];
     const { document } = await render("/pwa/inventory/42?ui=v2");
     expect(document.querySelector(".pwa-v2")?.hasAttribute("data-tabs")).toBe(true);
-    expect(document.querySelector(".pwa-v2-tabs")?.getAttribute("aria-label")).toBe("App");
+    expect(document.querySelector(".k2-tabbar")?.getAttribute("aria-label")).toBe("App");
+    // five places fit: no More
     expect(v2Tabs(document)).toEqual([
       { href: "/pwa/", label: "Start", current: false, badge: undefined },
       { href: "/pwa/alpha", label: "Alpha", current: false, badge: "/pwa/alpha/unread" },
       { href: "/pwa/beta", label: "Beta", current: false, badge: undefined },
       { href: "/pwa/inventory", label: "Inventory", current: true, badge: undefined },
+      { href: "/pwa/zeta", label: "Zeta", current: false, badge: undefined },
     ]);
     const navigation = islandProps(document, "PwaNavigationV2.island.tsx") as Record<string, unknown>;
     expect({ ...navigation, tabs: undefined } as Record<string, unknown>).toEqual({
       title: "Example Cloud",
+      logo: "/branding/logo",
       start: { id: "start", label: "Start", icon: "home", href: "/pwa/", current: false },
       appsLabel: "Apps",
       parts: [
@@ -585,7 +625,7 @@ describe("PwaLayout ui v2", () => {
       const open = (await render("/pwa/open?ui=v2")).document;
       expect(open.querySelector(".pwa-v2")?.hasAttribute("data-sidebar")).toBe(false);
       expect(open.querySelector(".pwa-v2-nav")).toBeNull();
-      expect(open.querySelector(".pwa-v2-tabs")).toBeNull();
+      expect(open.querySelector(".k2-tabbar")).toBeNull();
       expect(islandProps(open, "PwaRuntimeV2.island.tsx")).toMatchObject({ keepalive: false });
       expect(islandProps(open, "TimezoneCookie.island.tsx")).toMatchObject({ reload: false });
     } finally {
@@ -596,11 +636,9 @@ describe("PwaLayout ui v2", () => {
 
   test("names what a bare page's frame does not show, for the warning in development", () => {
     expect(bareDrops({})).toEqual([]);
-    expect(bareDrops({ back: { href: "/pwa/inventory", label: "Items" }, actions: "[[actions]]", sidebarTitle: "Items" })).toEqual([
-      "back",
-      "actions",
-      "sidebarTitle",
-    ]);
+    expect(
+      bareDrops({ back: { href: "/pwa/inventory", label: "Items" }, actions: "[[actions]]", sidebarTitle: "Items", status: "[[status]]" }),
+    ).toEqual(["back", "actions", "sidebarTitle", "status"]);
   });
 
   test("renders in the request locale", async () => {

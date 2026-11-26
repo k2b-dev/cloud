@@ -11,7 +11,7 @@ import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as watcher from "../_internal/runtime-watcher";
 import type { RuntimeAppMeta } from "../contracts/app";
-import { PWA_CANVAS_COLORS } from "../contracts/pwa";
+import { PWA_V2_HEAD_COLORS } from "../contracts/pwa";
 import type { User } from "../contracts/shared";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
@@ -228,14 +228,14 @@ describe("PwaLayout ui v2 in a browser", () => {
               frame: box(".pwa-v2"),
               main: box(".pwa-v2-main"),
               nav: box(".pwa-v2-nav"),
-              tabs: box(".pwa-v2-tabs"),
+              tabs: box(".k2-tabbar"),
               actions: box(".pwa-v2-actions a"),
               // a slot shows its contents only; the bar is the head's box
               head: box(".pwa-v2-main .k2-bar"),
               scrollWidth: document.documentElement.scrollWidth,
               documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
               paneScrolls: pane.scrollHeight > pane.clientHeight,
-              tabsPadding: getComputedStyle(document.querySelector(".pwa-v2-tabs")!).paddingBottom,
+              tabsPadding: getComputedStyle(document.querySelector(".k2-tabbar")!).paddingBottom,
             };
           });
           expect(result.scrollWidth).toBeLessThanOrEqual(width);
@@ -274,7 +274,7 @@ describe("PwaLayout ui v2 in a browser", () => {
         const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON() as DOMRect;
         return {
           main: box(".pwa-v2-main"),
-          tabs: box(".pwa-v2-tabs"),
+          tabs: box(".k2-tabbar"),
           scrollWidth: document.documentElement.scrollWidth,
           documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
         };
@@ -330,7 +330,7 @@ describe("PwaLayout ui v2 in a browser", () => {
   test("a screen page has no tab bar and keeps clear of the home indicator, also when it becomes one in place", async () => {
     const measure = (page: Page) =>
       page.evaluate(() => ({
-        tabs: document.querySelector(".pwa-v2-tabs")?.getClientRects().length ?? 0,
+        tabs: document.querySelector(".k2-tabbar")?.getClientRects().length ?? 0,
         main: Math.round(document.querySelector(".pwa-v2-main")!.getBoundingClientRect().bottom),
       }));
     const screen = await open("/pwa/inventory/screen", 390, "v2.css");
@@ -350,7 +350,7 @@ describe("PwaLayout ui v2 in a browser", () => {
   }, 60_000);
 
   for (const theme of ["light", "dark"] as const)
-    test(`gives the status bar the frame's canvas (${theme})`, async () => {
+    test(`on the phone the status bar, the notch and the head are one colour (${theme})`, async () => {
       const page = await open("/pwa/inventory", 390, "v2.css", { theme });
       try {
         const result = await page.evaluate(() => {
@@ -365,12 +365,15 @@ describe("PwaLayout ui v2 in a browser", () => {
             themeColor,
             html: getComputedStyle(document.documentElement).backgroundColor,
             frame: getComputedStyle(document.querySelector(".pwa-v2")!).backgroundColor,
+            // the head stands on the workspace's surface
+            head: getComputedStyle(document.querySelector(".pwa-v2-main [data-k2-workspace]")!).backgroundColor,
             colorScheme: getComputedStyle(document.documentElement).colorScheme,
           };
         });
         const rgb = (hex: string) => `rgb(${[1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).join(", ")})`;
-        const canvas = rgb(PWA_CANVAS_COLORS[theme]);
-        expect(result).toEqual({ themeColor: canvas, html: canvas, frame: canvas, colorScheme: theme });
+        // the constant names v2's surface: a change of either fails here
+        const head = rgb(PWA_V2_HEAD_COLORS[theme]);
+        expect(result).toEqual({ themeColor: head, html: head, frame: head, head, colorScheme: theme });
       } finally {
         await page.close();
       }
