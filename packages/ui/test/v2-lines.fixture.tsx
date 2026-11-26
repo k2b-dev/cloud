@@ -36,7 +36,7 @@ export const LinesFixture = () => (
             rows={orders}
             rowKey={(row) => row.key}
             current="AU-101"
-            select={{ selected: ["AU-103"], onChange: () => undefined, all: "Alle Belege", row: (row) => row.name }}
+            select={{ selected: ["AU-102"], onChange: () => undefined, all: "Alle Belege", row: (row) => row.name }}
           />
         </Section>
       </Pane>

@@ -107,6 +107,22 @@ test("the open row is tinted in the colour of the app its rows belong to: the pa
       expect(await background('table[aria-label="Belege"] tr[aria-current] > td')).toBe(await tint("#7c3aed"));
       // a row chosen for a deed takes the owner's tint too, never a generic blue
       expect(await background('table[aria-label="Belege"] tr[data-selected] > td')).toBe(await tint("#7c3aed"));
+      // the quiet line under a tinted row leaves, as in study B: the tint parts it; the line keeps its pixel, so nothing moves
+      const under = (selector: string) =>
+        page.evaluate((target) => {
+          const element = document.querySelector(target);
+          if (!element) return "missing";
+          const style = getComputedStyle(element);
+          return `${style.borderBottomWidth} ${style.borderBottomColor}`;
+        }, selector);
+      for (const selector of [
+        ".k2-list > .k2-row[data-current]",
+        'table[aria-label="Positionen"] tr[aria-current] > td',
+        'table[aria-label="Belege"] tr[data-selected] > td',
+      ])
+        expect([selector, await under(selector)]).toEqual([selector, "1px rgba(0, 0, 0, 0)"]);
+      // a row that is not open keeps its quiet line
+      expect(await under(".k2-list > .k2-row:not([data-current])")).toBe(`1px ${await resolved(page, "var(--k2-line-subtle)")}`);
     } finally {
       await page.close();
     }

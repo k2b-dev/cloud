@@ -1429,6 +1429,11 @@
 .k2-ui .k2-table[data-grid] tbody tr[data-selected] > td {
   background: var(--k2-app-tint);
 }
+/* The quiet line under a tinted row leaves, as in study B: the tint parts it. The line keeps its pixel, so nothing moves. */
+.k2-ui .k2-row:is([data-current], [data-selected]),
+.k2-ui .k2-table tbody tr:is([aria-current], [data-selected]) > td {
+  border-bottom-color: transparent;
+}
 /* Forced colours drop the tint: the open and the chosen rows stand in a frame of the system's highlight. */
 @media (forced-colors: active) {
   .k2-ui .k2-row:is([data-current], [data-selected]),
