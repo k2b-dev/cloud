@@ -337,7 +337,7 @@ export type PaneProps = {
    * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
    */
   status?: JSX.Element;
-  /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
+  /** A column that can be dragged wider: its minimum and default width (`fixed`: its width, no grip). Only inside `Pane.Split`. */
   width?: Width;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
@@ -494,7 +494,7 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
     const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? {} : undefined);
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
-    return moving?.width ? { label: moving.label ?? "Column", width: moving.width } : undefined;
+    return moving?.width && !moving.width.fixed ? { label: moving.label ?? "Column", width: moving.width } : undefined;
   };
   return (
     <div class="k2-split" data-k2-part="Pane.Split">
