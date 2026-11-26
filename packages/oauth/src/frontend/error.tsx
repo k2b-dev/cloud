@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { Empty, Facts } from "@k2b/ui/v2";
+import { Band, Empty, Facts } from "@k2b/ui/v2";
 import { ssr } from "../config";
 import { oauth } from "../service/oauth";
 import { AuthorizationPage } from "./_components/AuthorizationPage";
@@ -39,7 +39,10 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <AuthorizationPage c={c} title={t.authorizationError} heading={t.authorizationFailed}>
       <Empty icon="shield-x" tone="bad" text={sentence} action={{ label: t.backHome, icon: "home", href: "/" }} />
-      <Facts items={[{ label: t.errorCode, value: reason ?? "unknown_error", mono: true }]} />
+      {/* the code in a block of its own, clear of the card's edge */}
+      <Band>
+        <Facts items={[{ label: t.errorCode, value: reason ?? "unknown_error", mono: true }]} />
+      </Band>
     </AuthorizationPage>
   );
 });

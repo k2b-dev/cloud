@@ -114,6 +114,7 @@ const confirmPage = (reauthenticate: boolean) =>
       createComponent(AuthorizationPage, {
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.deviceTitle,
+        heading: oauthMessages.resolve([getLocale(c)]).t.deviceConfirmTitle({ name: sample.cli.name }),
         get children() {
           return createComponent(DeviceApproval, {
             view: {

@@ -45,7 +45,6 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
           <>
             {/* the question, what to compare and the code: one block below the head, with its own top edge */}
             <Band>
-              <Text weight="strong">{t().deviceConfirmTitle({ name: view().client.name })}</Text>
               <Text>{t().deviceConfirmCode}</Text>
               {/* comparing the code with the terminal is what keeps a person from approving someone else's sign-in */}
               <Canvas label={t().deviceCodeLabel}>

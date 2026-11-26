@@ -14,7 +14,8 @@ export default ssr<AuthContext>(async (c) => {
   // The tab names the task until the request has an answer, then the answer.
   const title = view.kind === "result" ? deviceResultTitle(view.outcome, t) : t.deviceTitle;
   return () => (
-    <AuthorizationPage c={c} title={title}>
+    // a confirmation's heading is its question, the one heading of the page
+    <AuthorizationPage c={c} title={title} heading={view.kind === "confirm" ? t.deviceConfirmTitle({ name: view.client.name }) : undefined}>
       <DeviceApproval view={view} />
     </AuthorizationPage>
   );

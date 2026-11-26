@@ -77,7 +77,8 @@ describe("device approval page DOM", () => {
   test("confirmation names the client once, the code, every scope, and the own-code warning in English", async () => {
     const page = await mount("en", confirm);
     try {
-      expect(page.root.textContent).toContain("Allow Cloud CLI to access your account?");
+      // the question is the page's heading (device.tsx), so the block holds the code and what to compare
+      expect(page.root.textContent).toContain("Check that this code matches the one on your device");
       expect(page.root.textContent).toContain("WDJB-MJHT");
       // the question names the client once; no fact repeats its name or ID
       expect(page.root.textContent).not.toContain("cloud-cli");
@@ -99,7 +100,7 @@ describe("device approval page DOM", () => {
   test("confirmation and outcomes read naturally in German", async () => {
     const page = await mount("de", confirm);
     try {
-      expect(page.root.textContent).toContain("Cloud CLI Zugriff auf dein Konto erlauben?");
+      expect(page.root.textContent).toContain("Prüfe, ob dieser Code mit dem auf deinem Gerät übereinstimmt");
       expect(page.root.textContent).toContain("Für dein Konto verfügbare Änderungen ausführen");
       expect(page.root.textContent).toContain("Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast.");
       expect(buttons(page.root)).toEqual(["Ablehnen", "Zugriff erlauben"]);
