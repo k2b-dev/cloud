@@ -4249,26 +4249,6 @@
     overflow-wrap: anywhere;
   }
 }
-/* Three or four key numbers stand one under the other a little earlier: below about 200 px a cell, an amount and
-   its words would no longer fit beside the others. */
-@container k2-pane (max-width: 599px) {
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) {
-    grid-auto-flow: row;
-  }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell + .k2-cell {
-    border-left: 0;
-    border-top: var(--k2-hairline);
-  }
-}
-@container k2-pane (max-width: 799px) {
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) {
-    grid-auto-flow: row;
-  }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell + .k2-cell {
-    border-left: 0;
-    border-top: var(--k2-hairline);
-  }
-}
 
 /* ── States: empty, loading, failed (design guide "Zustände"; mockup Notice · Empty, tabelle.html "Lädt") ──────── */
 /* Empty and Failed: no box; a round sign, one sentence, one way out, on the text edge where the data would stand */
