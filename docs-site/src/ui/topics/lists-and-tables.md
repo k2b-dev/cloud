@@ -81,8 +81,7 @@ Reorder by dragging, and a tree. Until they ship, use the nearest part and write
 ### Do
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
-- Give every wide table a `phone(row)`.
-- A phone row keeps the row's deeds: pass them as `phone(row).end`.
+- Give every wide table a `phone(row)`, with the row's deeds as `phone(row).end`.
 - Put the count and key figures in the `StatusRow`.
 - Keep row text short; long text is cut with "…" and shows whole on hover.
 

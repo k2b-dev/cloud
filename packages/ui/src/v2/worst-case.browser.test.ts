@@ -314,6 +314,7 @@ test("a link in a cut second line shows its whole focus ring", async () => {
       const link = page.getByRole("link", { name: "Letzte Anfragen öffnen" });
       for (let step = 0; step < 20 && !(await link.evaluate((element) => element === document.activeElement)); step++)
         await page.keyboard.press("Tab");
+      await settled(page);
       const ring = await link.evaluate((element) => {
         const style = getComputedStyle(element);
         const grow =
