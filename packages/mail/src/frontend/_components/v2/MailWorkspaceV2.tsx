@@ -6,6 +6,7 @@ import {
   Bar,
   Button,
   Input,
+  type ListController,
   Menu,
   type MenuEntry,
   Nav,
@@ -51,14 +52,28 @@ const folderIcon = (role: string): string =>
  * own link, so that link's href names it; the list registers the href of each row key while it renders. The link
  * takes the focus; the whole row holds it.
  */
-export const createMailV2Dom = (): { dom: MailWorkspaceDom; rows: Map<string, string> } => {
+export const createMailV2Dom = (): {
+  dom: MailWorkspaceDom;
+  rows: Map<string, string>;
+  connectList: (list: ListController) => void;
+} => {
   const rows = new Map<string, string>();
   const link = (href: string | undefined) =>
     href ? document.querySelector<HTMLElement>(`[data-k2-workspace] [data-k2-part="Row"] a[href="${CSS.escape(href)}"]`) : null;
+  // With many conversations only the rows in view are in the page; the list brings another one back for the focus.
+  let list: ListController | undefined;
+  const rowLink = (rowKey: string) => {
+    const shown = link(rows.get(rowKey));
+    if (shown || !list?.reveal(rowKey)) return shown;
+    return link(rows.get(rowKey));
+  };
   return {
     rows,
+    connectList: (connected) => {
+      list = connected;
+    },
     dom: {
-      row: (rowKey) => link(rows.get(rowKey)),
+      row: (rowKey) => rowLink(rowKey),
       entry: (item) => link(rows.get(mailListRowKey(item)))?.closest<HTMLElement>('[data-k2-part="Row"]') ?? null,
       // The reader's head has no focusable title; its first action takes the focus.
       readerHeading: () =>
@@ -77,6 +92,8 @@ export type MailV2Shell = {
   mailboxes: MailSidebarMailbox[];
   preferences: MailboxPreferences;
   rows: Map<string, string>;
+  /** Receives the conversation list's controller, so the focus reaches a row that left the page. */
+  list: (list: ListController) => void;
   /** Opens a mailbox in place (the shown one again at its start); a failed switch loads its page. */
   openMailbox: OnNavigate;
 };
@@ -117,20 +134,19 @@ export default function MailWorkspaceV2(props: {
   const overviewText = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
   const mailboxMenu = () => {
     const id = c().data.mailbox.id;
-    const name = c().data.mailbox.name;
     const preferences = props.shell.preferences;
     const pinned = preferences.isPinned(id);
     const own: DropdownItem[] = [
       {
         items: preferences.isHidden(id)
-          ? [{ label: overviewText().showMailbox({ name }), icon: "ti ti-eye", action: () => preferences.change(id, "hidden", false) }]
+          ? [{ label: text().showMailbox, icon: "ti ti-eye", action: () => preferences.change(id, "hidden", false) }]
           : [
               {
-                label: pinned ? overviewText().unpinMailbox({ name }) : overviewText().pinMailbox({ name }),
+                label: pinned ? text().unpinMailbox : text().pinMailbox,
                 icon: pinned ? "ti ti-flag-off" : "ti ti-flag",
                 action: () => preferences.change(id, "pinned", !pinned),
               },
-              { label: overviewText().hideMailbox({ name }), icon: "ti ti-eye-off", action: () => preferences.change(id, "hidden", true) },
+              { label: text().hideMailbox, icon: "ti ti-eye-off", action: () => preferences.change(id, "hidden", true) },
             ],
       },
     ];
@@ -175,18 +191,18 @@ export default function MailWorkspaceV2(props: {
 
   // ── Sidebar ────────────────────────────────────────────────────────────────────────────────────────────────────
   // Each mailbox's own deeds at its row's "…", as v1's sidebar rows offer them: pin or release it, hide or show it.
-  const rowMenu = (id: string, name: string): MenuEntry[] => {
+  const rowMenu = (id: string): MenuEntry[] => {
     const preferences = props.shell.preferences;
     if (preferences.isHidden(id))
-      return [{ label: overviewText().showMailbox({ name }), icon: "eye", onClick: () => preferences.change(id, "hidden", false) }];
+      return [{ label: text().showMailbox, icon: "eye", onClick: () => preferences.change(id, "hidden", false) }];
     const pinned = preferences.isPinned(id);
     return [
       {
-        label: pinned ? overviewText().unpinMailbox({ name }) : overviewText().pinMailbox({ name }),
+        label: pinned ? text().unpinMailbox : text().pinMailbox,
         icon: pinned ? "flag-off" : "flag",
         onClick: () => preferences.change(id, "pinned", !pinned),
       },
-      { label: overviewText().hideMailbox({ name }), icon: "eye-off", onClick: () => preferences.change(id, "hidden", true) },
+      { label: text().hideMailbox, icon: "eye-off", onClick: () => preferences.change(id, "hidden", true) },
     ];
   };
   // The group's "…": a new mailbox and the deleted ones, v1's deeds of the mailbox list.
@@ -252,7 +268,7 @@ export default function MailWorkspaceV2(props: {
         href: `/app/mail/${openId}`,
         onNavigate: props.shell.openMailbox,
         current: atRoot,
-        menu: rowMenu(data.mailbox.id, data.mailbox.name),
+        menu: rowMenu(data.mailbox.id),
       },
       ...primary.slice(0, 2),
       ...outbox,
@@ -272,7 +288,7 @@ export default function MailWorkspaceV2(props: {
               icon: mailboxIcon(mailbox.id),
               href: `/app/mail/${mailbox.id}`,
               onNavigate: props.shell.openMailbox,
-              menu: rowMenu(mailbox.id, mailbox.name),
+              menu: rowMenu(mailbox.id),
             } satisfies NavItem,
           ],
     );
@@ -321,7 +337,7 @@ export default function MailWorkspaceV2(props: {
             icon: "mail",
             href: `/app/mail/${mailbox.id}`,
             onNavigate: props.shell.openMailbox,
-            menu: rowMenu(mailbox.id, mailbox.name),
+            menu: rowMenu(mailbox.id),
           }),
         ),
       },
@@ -335,18 +351,20 @@ export default function MailWorkspaceV2(props: {
     const shown = all.filter((tab) => HEAD_TABS.has(tab.id));
     const further = all.filter((tab) => !HEAD_TABS.has(tab.id));
     const openFurther = further.find((tab) => tab.id === current);
+    // the open view stands as a tab of its own, so the menu does not name it a second time
+    const waiting = further.filter((tab) => tab !== openFurther);
     return [
       ...shown.map((tab) => ({ label: tab.label, count: tab.count, href: tab.href, onNavigate: openView, current: tab.id === current })),
       ...(openFurther
         ? [{ label: openFurther.label, count: openFurther.count, href: openFurther.href, onNavigate: openView, current: true }]
         : []),
       // "Weitere +N": the views that wait behind it, each opening in place like a tab.
-      ...(further.length > 0
+      ...(waiting.length > 0
         ? [
             {
               label: text().moreViews,
-              count: `+${further.length}`,
-              menu: further.map((tab) => ({
+              count: `+${waiting.length}`,
+              menu: waiting.map((tab) => ({
                 label: tab.label,
                 meta: tab.count === undefined ? undefined : String(tab.count),
                 onClick: () => void c().openWorkspaceHref(tab.href),
@@ -465,6 +483,7 @@ export default function MailWorkspaceV2(props: {
           >
             <MailListV2
               items={items()}
+              onList={props.shell.list}
               requestPath={c().requestPath()}
               selectedConversationId={c().data.selectedConversationId}
               selectedMessageId={c().data.selectedMessageId}

@@ -1,0 +1,6 @@
+### The Mail v2 pilot was built and tested with friendly data only
+
+- **What happened:** Every Mail v2 test and screenshot used the mockup's data: short names, one tag, a few readers. With worst realistic data (a tag of 80 characters, an address as the only name, 12 tags, 14 links, 5 readers, 1,000 conversations) the list row lost its sender, the reader's state line grew to 170 px, menu entries looked alike, and 1,000 rows took 7.3 s.
+- **Root cause:** `packages/mail/src/frontend/_components/v2/MailReaderV2.tsx` and `MailListV2.tsx` showed every tag, reader and recipient in one line, named mailbox deeds after the mailbox, and rendered every loaded conversation; nothing in `mail-v2.browser.test.ts` fed them more than the mockup held.
+- **Error class:** A screen proven only with the data of its mockup, so lengths, counts and sizes that real mailboxes reach are never seen before a person meets them.
+- **Guard:** The worst-case states of the v2 harness (`?fixture=worst`, `?fixture=huge`, `mail-v2.browser-worst-fixture.ts`) are part of `mail-v2.browser.test.ts`: list and reader at 1440, 1024 and 390 px without a `squeezed` or `cut` finding, the state line at one line, and 1,000 rows with at most 60 in the page. The `break-ui` skill asks for such a fixture on every main screen.

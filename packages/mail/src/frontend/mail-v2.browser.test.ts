@@ -116,6 +116,32 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // Review of #4212: with 1,000 rows the row that opened the reader may have left the page while the list scrolled.
+  test("Escape gives the focus back to the row that opened the reader, also after it scrolled out of the page", async () => {
+    const page = await open(`${MAIL_V2_PATH}?fixture=huge`);
+    try {
+      const list = page.locator('[data-k2-part="Pane"] > [data-scroll-preserve^="mail-list-"]');
+      const opener = page.locator('[data-k2-part="List"] > [data-k2-part="Row"][aria-posinset="276"]');
+      await list.evaluate((element) => {
+        element.scrollTop = 275 * 73;
+      });
+      await opener.waitFor();
+      await opener.locator(":scope > a[href]").focus();
+      await page.keyboard.press("Enter");
+      await page.waitForURL(/conversation=/);
+      await page.locator('[data-k2-part="Pane"][data-detail]').waitFor();
+      await list.evaluate((element) => {
+        element.scrollTop = 0;
+      });
+      await page.waitForFunction(() => !document.querySelector('[data-k2-part="Row"][aria-posinset="276"]'));
+      await page.locator("body").press("Escape");
+      await page.waitForURL((url) => !url.searchParams.has("conversation"));
+      await page.waitForFunction(() => document.activeElement?.closest('[data-k2-part="Row"]')?.getAttribute("aria-posinset") === "276");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("the keyboard opens a row: Tab reaches it, Enter opens it in place", async () => {
     const page = await open(MAIL_V2_PATH);
     try {
@@ -218,7 +244,7 @@ describe("Mail on the v2 pilot", () => {
       await page.keyboard.press("Escape");
       // The head's "…": the open mailbox's rare deeds, led by pinning and hiding it (v1's mailbox menu).
       await page.locator('[data-k2-workspace] .k2-ws-main > [data-slot="head"]').getByRole("button", { name: "Weitere Aktionen" }).click();
-      await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
+      await page.getByRole("menuitem", { name: "Ausblenden", exact: true }).waitFor();
       await page.getByRole("menuitem", { name: "Einstellungen" }).waitFor();
       await page.keyboard.press("Escape");
       // The head's filter menu at the search field, v1's (F9).
@@ -370,8 +396,8 @@ describe("Mail on the v2 pilot", () => {
       await page.getByRole("menuitem", { name: "Gelöschte Postfächer" }).waitFor();
       await page.keyboard.press("Escape");
       await nav.getByRole("button", { name: "Aktionen für Kontakt" }).click();
-      await page.getByRole("menuitem", { name: "Kontakt lösen" }).waitFor();
-      await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
+      await page.getByRole("menuitem", { name: "Nicht mehr anheften" }).waitFor();
+      await page.getByRole("menuitem", { name: "Ausblenden", exact: true }).waitFor();
       await page.keyboard.press("Escape");
       await page
         .locator('[data-k2-workspace] [data-k2-part="Tabs"]')
@@ -823,5 +849,85 @@ describe("Mail on the v2 pilot in its live states", () => {
   // "…" before its note (#4083).
   test("at 1024 px nothing is cut: the head's actions keep their room, every row's first line on one line", async () => {
     expect(await cutAt(1024, false)).toEqual([]);
+  }, 60_000);
+});
+
+// The worst realistic data (break-ui 25.11., mail-v2.browser-worst-fixture.ts): long names, addresses and tags, many
+// marks, tags, links and readers. Nothing may be pressed to nothing, stand one letter per line, or be cut without "…".
+describe("Mail on the v2 pilot with worst-case data", () => {
+  const worst = `${MAIL_V2_PATH}?fixture=worst`;
+  for (const width of [1440, 1024, 390] as const)
+    for (const [state, path] of [
+      ["the list", worst],
+      ["the reader", `${worst}&conversation=Worst01`],
+    ] as const)
+      test(`${state} at ${width} px keeps every text readable`, async () => {
+        const page = await open(path, width);
+        try {
+          await settled(page);
+          const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+          expect(layout.squeezed).toEqual([]);
+          expect(layout.cut).toEqual([]);
+          expect(errorsOf.get(page)).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      }, 60_000);
+
+  test("the reader's state line shows three tags and the rest behind +N, the readers as faces and a count", async () => {
+    const page = await open(`${worst}&conversation=Worst01`, 1440);
+    try {
+      const status = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="status"]');
+      expect(await status.locator('.k2-chip[data-kind="tag"]').count()).toBe(3);
+      await status.getByRole("button", { name: /^\+\d+$/ }).waitFor();
+      await status.getByText(/^\d+ lesen mit$/).waitFor();
+      // with 12 tags, 14 links and 5 readers the line takes two lines at most (it took 170 px), each tag cut to ~16 letters
+      expect((await status.locator(":scope > .k2-bar").boundingBox())?.height ?? 0).toBeLessThanOrEqual(80);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("the open reply keeps To whole and the sender within half the head", async () => {
+    const page = await open(`${worst}&conversation=Worst01`, 1440);
+    try {
+      await page.locator(".k2-composer-start").click();
+      await page.locator('[data-k2-part="Canvas"] [data-k2-part="Composer"]').waitFor();
+      // the pointer leaves the opened reply, so no hover fades while the page settles
+      await page.mouse.move(1, 1);
+      await settled(page);
+      const head = await page.locator('[data-k2-part="Canvas"] .k2-composer-head').boundingBox();
+      const end = await page.locator('[data-k2-part="Canvas"] .k2-composer-head-end').boundingBox();
+      expect((end?.width ?? 0) <= (head?.width ?? 0) / 2 + 1).toBe(true);
+      expect((end?.x ?? 0) + (end?.width ?? 0)).toBeLessThanOrEqual((head?.x ?? 0) + (head?.width ?? 0) + 0.5);
+      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).squeezed).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // "Jede Liste, die potenziell unendlich wachsen kann, muss virtualisiert sein" (maintainer, 25.11.).
+  test("1,000 conversations keep only the rows in view in the page, from the first render to the last row", async () => {
+    const page = await open(`${MAIL_V2_PATH}?fixture=huge`, 1440);
+    try {
+      const rows = page.locator('[data-k2-part="List"] > [data-k2-part="Row"]');
+      expect(await rows.count()).toBeLessThanOrEqual(60);
+      expect(await page.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(1500);
+      expect(await rows.first().getAttribute("aria-setsize")).toBe("1000");
+      const list = page.locator('[data-k2-part="Pane"] > [data-scroll-preserve^="mail-list-"]');
+      await list.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await page.waitForFunction(() =>
+        Array.from(document.querySelectorAll('[data-k2-part="List"] > [data-k2-part="Row"]')).some(
+          (row) => row.getAttribute("aria-posinset") === "1000",
+        ),
+      );
+      await settled(page);
+      expect(await rows.count()).toBeLessThanOrEqual(60);
+      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+    } finally {
+      await page.close();
+    }
   }, 60_000);
 });

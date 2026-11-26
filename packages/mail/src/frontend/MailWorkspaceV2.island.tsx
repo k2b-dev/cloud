@@ -36,6 +36,7 @@ export default function MailWorkspacePilot(props: MailWorkspaceProps) {
             mailboxes: props.sidebar.mailboxes,
             preferences: mailboxPreferences,
             rows: v2.rows,
+            list: v2.connectList,
             openMailbox: (nav) => switchMailbox(nav.url, nav),
           }}
           session={{
