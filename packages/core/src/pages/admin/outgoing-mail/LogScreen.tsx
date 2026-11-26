@@ -37,13 +37,13 @@ const STATUS: Record<MailStatus, "ok" | "warn" | "bad" | undefined> = {
   cancelled: undefined,
 };
 
-/** The state of a mail as a chip: a tone for done, failed and bounced, a plain word for the rest. */
+/** The state of a mail: failed and bounced as a toned chip, every other state as quiet words (colour only for problems). */
 const MailChip = (props: { status: MailStatus }) => {
   const locale = useLocale();
   const label = () => statusLabel(props.status, outgoingMailMessages.resolve([locale()]).t);
   const tone = () => STATUS[props.status];
   return (
-    <Show when={tone()} fallback={<Chip>{label()}</Chip>}>
+    <Show when={tone() === "ok" ? undefined : tone()} fallback={<Text>{label()}</Text>}>
       {(status) => <Chip status={status()}>{label()}</Chip>}
     </Show>
   );

@@ -444,7 +444,7 @@ export function RoutesView(props: Ctx & { detail: Extract<DetailData, { view: "r
                     ) : row.router === "unknown" ? (
                       t.routerUnknown
                     ) : (
-                      <Chip status="ok">{t.routerActive}</Chip>
+                      <Text>{t.routerActive}</Text>
                     ),
                 },
               ]}

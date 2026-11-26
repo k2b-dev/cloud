@@ -130,7 +130,8 @@ export default function Domains(props: DomainsProps) {
 
   const step = (label: string, value: Step) => {
     const words = `${label} ${value ? (value.ok ? t().stepOk : t().stepFailed) : t().stepOpen}`;
-    return value ? <Chip status={value.ok ? "ok" : "bad"}>{words}</Chip> : <Chip>{words}</Chip>;
+    // a failed step is the problem and carries the colour; a passed or open step stays a quiet chip
+    return value && !value.ok ? <Chip status="bad">{words}</Chip> : <Chip>{words}</Chip>;
   };
   const DomainRow = (row: { domain: AppDomainEntry }) => {
     const domain = () => row.domain;

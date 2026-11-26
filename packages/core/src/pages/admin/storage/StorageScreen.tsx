@@ -66,11 +66,11 @@ const draftOf = (bucket: AdminStorageBucket | null): Draft => ({
   secretAccessKey: "",
 });
 
-/** A bucket's state as a chip: a tone for ok and failed, a plain word for untested and removed. */
+/** A bucket's state: a failure as a toned chip, every other state as quiet words (colour only for problems). */
 const StateChip = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket }) => {
   const state = () => storageBucketState(props.bucket);
   return (
-    <Show when={TONE[state()]} fallback={<Chip>{storageStateLabel(props.t, state())}</Chip>}>
+    <Show when={TONE[state()] === "ok" ? undefined : TONE[state()]} fallback={<Text>{storageStateLabel(props.t, state())}</Text>}>
       {(tone) => <Chip status={tone()}>{storageStateLabel(props.t, state())}</Chip>}
     </Show>
   );

@@ -6,7 +6,6 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
-  Chip,
   Choice,
   Dialog,
   Field,
@@ -51,7 +50,7 @@ const toIso = (value: string): string | undefined => {
   const date = new Date(trimmed);
   return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
 };
-const STATUS = { active: "ok", scheduled: "warn", expired: "bad" } as const;
+const _STATUS = { active: "ok", scheduled: "warn", expired: "bad" } as const;
 
 /**
  * Announcements and banners on v2: the list with its key figures, and the open entry beside it as a form that creates,
@@ -175,7 +174,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
               {
                 title: t().state,
                 width: { min: 110, default: 130 },
-                cell: (row) => <Chip status={STATUS[row.state]}>{t()[row.state]}</Chip>,
+                // no state of an announcement is a problem: live in words, scheduled and expired quieter
+                cell: (row) => <Text muted={row.state !== "active"}>{t()[row.state]}</Text>,
               },
               { title: t().published, width: { min: 140, default: 160 }, drop: true, cell: (row) => row.published },
               { title: t().expires, drop: true, cell: (row) => row.expires },
