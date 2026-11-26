@@ -133,6 +133,8 @@ export function ChatWorkspace(props: {
   arrangeHintSeen?: boolean;
   /** The operator set up reading web pages: web links of the chat open as reading-view tabs. */
   webReader?: boolean;
+  /** v1's "back to the chat" on the phone; a frame with its own way back (the v2 page's pane) leaves it out. */
+  backToChat?: boolean;
 }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t,
@@ -423,10 +425,12 @@ export function ChatWorkspace(props: {
   const layout = createMemo(() => state().layout ?? { version: 2 as const, root: null });
   return (
     <div class="artifact-workspace">
-      <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
-        <i class="ti ti-chevron-left" aria-hidden="true" />
-        {w().backToChat}
-      </Button>
+      <Show when={props.backToChat !== false}>
+        <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
+          <i class="ti ti-chevron-left" aria-hidden="true" />
+          {w().backToChat}
+        </Button>
+      </Show>
       <Panes
         class="artifact-workspace__panes"
         ariaLabel={t().workspace}

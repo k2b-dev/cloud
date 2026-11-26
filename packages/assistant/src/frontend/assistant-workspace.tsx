@@ -1905,6 +1905,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
   });
   // The head row above the timeline (title, "In diesem Chat"); the v2 page carries both in its own head instead.
   const [contextHead, setContextHead] = createSignal(true);
+  // v1's "back to the chat" above the tabs on the phone; the v2 page's pane has its own way back.
+  const [tabsBackToChat, setTabsBackToChat] = createSignal(true);
   const openContextSheet = () =>
     // The phone sheet loads when it opens.
     void import("./AssistantChatContextSheet")
@@ -3655,6 +3657,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
         }
       >
         <ChatWorkspace
+          backToChat={tabsBackToChat()}
           onOpenView={openContextView}
           project={activeConversationProject()}
           conversationId={chat.activeConversationId()}
@@ -3710,6 +3713,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     archiveBlocker,
     openContextSheet,
     setContextHead,
+    setTabsBackToChat,
+    focusComposer,
     /** What belongs to the open chat (files, results, sources) as a tab beside it, "In diesem Chat". */
     openChatContext: (title: string) => openContextOverview("context", title),
   };

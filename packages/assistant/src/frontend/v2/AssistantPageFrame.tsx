@@ -18,6 +18,8 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
   const w = frame.w;
   // The chat's title and "In diesem Chat" stand in this frame's head, not in a row above the timeline.
   w.setContextHead(false);
+  // The tabs' pane has the one way back on the phone; v1's own button above the tabs stays away.
+  w.setTabsBackToChat(false);
   const deeds = createAssistantChatDeeds({
     basePath: w.basePath,
     locale: w.locale,
@@ -112,7 +114,11 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         focused: () => w.artifactWorkspace.mobile() === "workspace",
         back: () => ({
           label: w.activeConversation()?.title ?? w.artifactCopy().chat,
-          onClick: () => w.artifactWorkspace.setMobile("chat"),
+          // Back to the chat, and the focus with it: into the composer, never left on the page's body.
+          onClick: () => {
+            w.artifactWorkspace.setMobile("chat");
+            w.focusComposer();
+          },
         }),
         content: <w.TabsContent />,
       }}

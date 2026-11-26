@@ -478,7 +478,7 @@ test("a chat with stored tabs and no tab in its address opens on the chat: the s
   spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
   spies.push(spyOn(ai, "loadAiStreamState").mockResolvedValue({ type: "state", conversation: chat, messages: [], activeTurn: null }));
   spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
-  const tab = { id: "web-1", key: JSON.stringify(["web", "Lieferant", "https://lieferant.example.org/"]), title: "Lieferant" };
+  const tab = { id: "web-1", key: JSON.stringify(["web", chat.shortId, "https://lieferant.example.org/"]), title: "Lieferant" };
   spies.push(
     spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({
       state: { tabs: [tab], layout: null, front: "web-1" },
@@ -491,7 +491,10 @@ test("a chat with stored tabs and no tab in its address opens on the chat: the s
   // The page's island, on v2; the stored tab travels with it, and nothing is the open detail before the person opens it.
   expect(html).toContain('data-file="AssistantWorkspace.island.tsx"');
   expect(html).toContain("Lieferant");
-  expect(html).not.toMatch(/data-k2-part="Pane"[^>]*data-detail/);
+  // The tab's own pane stands beside the chat on the wide page, and it is no detail: the chat stays in front.
+  const tabsPane = /<section[^>]*data-k2-part="Pane"[^>]*aria-label="Open tabs of the chat"[^>]*>/.exec(html)?.[0];
+  expect(tabsPane).toBeDefined();
+  expect(tabsPane).not.toContain("data-detail");
 });
 
 test("the panel starts without selecting an unrelated recent chat and renders no second shell", async () => {

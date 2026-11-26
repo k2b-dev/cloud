@@ -81,7 +81,11 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
     <Pane.Split>
       <Pane label={v2().chatPane}>
         <Canvas label={v2().chatPane} height="fill">
-          <div style={drawing}>{props.main}</div>
+          {/* The chat's own layout reads its width from this container (`assistant-chat`): from 56 rem the chat's
+              context stands beside the timeline, as in v1. */}
+          <div class="assistant-chat-pane" style={drawing}>
+            {props.main}
+          </div>
         </Canvas>
       </Pane>
       <Show when={props.tabs.open()}>

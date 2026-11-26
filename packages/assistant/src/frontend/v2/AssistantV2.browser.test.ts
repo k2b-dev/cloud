@@ -91,7 +91,7 @@ const storedTabs = (chatId: string) => ({
   snapshot: {
     revision: 1,
     state: {
-      tabs: [{ id: "web-1", key: JSON.stringify(["web", "Lieferant", "https://lieferant.example.org/katalog"]), title: "Lieferant" }],
+      tabs: [{ id: "web-1", key: JSON.stringify(["web", chatId, "https://lieferant.example.org/katalog"]), title: "Lieferant" }],
       layout: null,
       front: "web-1",
     },
@@ -591,6 +591,47 @@ describe("Assistant on v2", () => {
       const composer = await page.locator(".assistant-chat-composer").boundingBox();
       expect(composer && composer.y + composer.height <= phone.height).toBe(true);
       await shoot(page, "390-chat-with-tabs");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  const openInThisChat = async (page: Page) => {
+    await page.locator('[data-k2-workspace] [data-slot="head"]').getByRole("button", { name: "Weitere Aktionen für diesen Chat" }).click();
+    await page.getByRole("menuitem", { name: "In diesem Chat" }).click();
+  };
+
+  test("wide: In diesem Chat opens the chat's context as a tab beside the chat, and the chat stays", async () => {
+    const { context, page, errors } = await open(wide, "/app/assistant");
+    try {
+      await openInThisChat(page);
+      const tabs = page.locator('[data-k2-part="Pane"][aria-label="Offene Tabs des Chats"]');
+      await tabs.waitFor();
+      await tabs.getByText("Kontext").first().waitFor();
+      expect(await page.locator('[data-k2-part="Pane"][aria-label="Chat"]').count()).toBe(1);
+      expect(await page.locator(".assistant-chat-composer").isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("phone: In diesem Chat is the page with exactly one way back, which returns to the chat with the focus", async () => {
+    const { context, page, errors } = await open(phone, "/app/assistant");
+    try {
+      await openInThisChat(page);
+      await page.locator('[data-k2-part="Pane"][data-detail]').waitFor();
+      // One way back: the pane's own; v1's "back to the chat" above the tabs stays away.
+      const back = page.locator('[data-k2-part="Back"]').filter({ visible: true });
+      expect(await back.count()).toBe(1);
+      expect(await page.locator(".artifact-mobile-toggle").filter({ visible: true }).count()).toBe(0);
+      await shoot(page, "390-in-this-chat");
+      await back.getByRole("button").or(back.getByRole("link")).first().click();
+      await page.locator('[data-k2-part="Pane"][data-detail]').waitFor({ state: "detached" });
+      expect(await page.locator(".assistant-chat-composer").isVisible()).toBe(true);
+      await page.waitForFunction(() => document.activeElement !== document.body);
+      expect(await page.evaluate(() => document.activeElement?.closest(".assistant-chat-composer") !== null)).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
