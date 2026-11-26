@@ -141,13 +141,7 @@ export default function PairDevice(props: Props) {
                   title: "Zustand",
                   width: { min: 90, default: 130 },
                   cell: (device) =>
-                    device.stale ? (
-                      <Chip status="warn">Still</Chip>
-                    ) : device.id === fresh.id ? (
-                      <Chip status="ok">Neu</Chip>
-                    ) : (
-                      "aktiv"
-                    ),
+                    device.stale ? <Chip status="warn">Still</Chip> : device.id === fresh.id ? <Chip status="ok">Neu</Chip> : "aktiv",
                 },
                 {
                   title: "Entfernen",
