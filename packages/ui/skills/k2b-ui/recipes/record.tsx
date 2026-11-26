@@ -7,7 +7,10 @@ import {
   Cells,
   Chip,
   Digest,
+  Empty,
   Facts,
+  Failed,
+  Loading,
   Nav,
   Notice,
   Pane,
@@ -21,7 +24,10 @@ import {
 
 const area = { money: "#8e1b6f", deliveries: "#c2410c", todo: "#2563eb" };
 
-export default function CustomerOverview() {
+// `empty`: a customer created today, with nothing yet; `loading` and `failed`: the history that loads on its own.
+type Props = { empty?: boolean; loading?: boolean; failed?: boolean };
+
+export default function CustomerOverview(props: Props) {
   return (
     <Workspace
       sidebar={
@@ -64,8 +70,8 @@ export default function CustomerOverview() {
             label="Bereiche"
             items={[
               { label: "Überblick", icon: "layout-grid", current: true },
-              { label: "Einlieferungen", icon: "package", count: 4, href: "#einlieferungen" },
-              { label: "Geld", icon: "currency-euro", count: 12, href: "#geld" },
+              { label: "Einlieferungen", icon: "package", count: props.empty ? undefined : 4, href: "#einlieferungen" },
+              { label: "Geld", icon: "currency-euro", count: props.empty ? undefined : 12, href: "#geld" },
             ]}
           />
         }
@@ -79,62 +85,91 @@ export default function CustomerOverview() {
             icon="currency-euro"
             color={area.money}
             label="Geld heute"
-            value={<Chip amount="out">532,30 €</Chip>}
-            meta="1 Rechnung offen"
+            value={props.empty ? "0,00 €" : <Chip amount="out">532,30 €</Chip>}
+            meta={props.empty ? "nichts offen" : "1 Rechnung offen"}
             href="#geld"
           />
           <Cells.Cell
             icon="package"
             color={area.deliveries}
             label="Einlieferungen"
-            value="2 laufen"
-            meta="Abrechnung am 15. Dez."
+            value={props.empty ? "keine" : "2 laufen"}
+            meta={props.empty ? undefined : "Abrechnung am 15. Dez."}
             href="#einlieferungen"
           />
           <Cells.Cell icon="file-text" label="Vertrag" value={<Chip status="ok">Gültig</Chip>} meta="bis 31. Dez. 2027" />
         </Cells>
         <Pane.Split>
           <Pane label="Überblick">
-            <Section icon="checklist" color={area.todo} title="Anstehend" count={2} actions={[{ label: "Todo anlegen", icon: "plus" }]}>
-              <Row
-                yours
-                strong
-                icon="signature"
-                lines={["Quittung wartet auf Unterschrift", "Q-2611-00021 · seit 18. Nov."]}
-                action={{ label: "Zur Quittung" }}
-              />
-              <Row
-                strong
-                icon="packages"
-                lines={["3 Artikel sind abholbereit", "bis 12. Dez."]}
-                action={{ label: "Herausgabe vorbereiten" }}
-              />
+            <Section
+              icon="checklist"
+              color={area.todo}
+              title="Anstehend"
+              count={props.empty ? undefined : 2}
+              actions={[{ label: "Todo anlegen", icon: "plus" }]}
+            >
+              {props.empty ? (
+                <Empty icon="checks" text="Für diesen Kunden steht nichts an." />
+              ) : (
+                <>
+                  <Row
+                    yours
+                    strong
+                    icon="signature"
+                    lines={["Quittung wartet auf Unterschrift", "Q-2611-00021 · seit 18. Nov."]}
+                    action={{ label: "Zur Quittung" }}
+                  />
+                  <Row
+                    strong
+                    icon="packages"
+                    lines={["3 Artikel sind abholbereit", "bis 12. Dez."]}
+                    action={{ label: "Herausgabe vorbereiten" }}
+                  />
+                </>
+              )}
             </Section>
-            <Section icon="list-details" color={area.deliveries} title="Vorgänge" more={{ label: "Alle Einlieferungen", forward: true }}>
-              <Digest
-                items={[
-                  {
-                    icon: "package",
-                    color: area.deliveries,
-                    date: "3. Nov.",
-                    title: "EL-2611-00009",
-                    state: { icon: "gavel", label: "Läuft" },
-                    text: (
-                      <>
-                        8 Artikel laufen, die Auktion endet <Text weight="strong">morgen</Text>.
-                      </>
-                    ),
-                  },
-                  {
-                    icon: "package",
-                    color: area.deliveries,
-                    date: "14. Okt.",
-                    title: "EL-2610-00031",
-                    state: { icon: "check", label: "Abgerechnet", tone: "ok" },
-                    text: "Ausgezahlt am 15. Nov.",
-                  },
-                ]}
-              />
+            {/* The history loads on its own: its states stand in this section, the rest of the record stays. */}
+            <Section
+              icon="list-details"
+              color={area.deliveries}
+              title="Vorgänge"
+              more={props.empty || props.failed ? undefined : { label: "Alle Einlieferungen", forward: true }}
+            >
+              {props.failed ? (
+                <Failed
+                  text="Die Vorgänge konnten nicht geladen werden. Die übrige Akte bleibt, wie sie ist."
+                  onRetry={() => location.reload()}
+                />
+              ) : props.loading ? (
+                <Loading rows={2} lines={2} />
+              ) : props.empty ? (
+                <Empty icon="package" text="Noch keine Einlieferung." action={{ label: "Einlieferung erfassen", icon: "plus" }} />
+              ) : (
+                <Digest
+                  items={[
+                    {
+                      icon: "package",
+                      color: area.deliveries,
+                      date: "3. Nov.",
+                      title: "EL-2611-00009",
+                      state: { icon: "gavel", label: "Läuft" },
+                      text: (
+                        <>
+                          8 Artikel laufen, die Auktion endet <Text weight="strong">morgen</Text>.
+                        </>
+                      ),
+                    },
+                    {
+                      icon: "package",
+                      color: area.deliveries,
+                      date: "14. Okt.",
+                      title: "EL-2610-00031",
+                      state: { icon: "check", label: "Abgerechnet", tone: "ok" },
+                      text: "Ausgezahlt am 15. Nov.",
+                    },
+                  ]}
+                />
+              )}
             </Section>
           </Pane>
           <Pane side label="Angaben" width={{ min: 280, default: 360 }}>
@@ -161,3 +196,10 @@ export default function CustomerOverview() {
     </Workspace>
   );
 }
+
+// The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
+export const states = {
+  empty: () => <CustomerOverview empty />,
+  loading: () => <CustomerOverview loading />,
+  failed: () => <CustomerOverview failed />,
+};
