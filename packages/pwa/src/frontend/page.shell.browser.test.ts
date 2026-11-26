@@ -11,7 +11,8 @@ import { session } from "@k2b/cloud/services/session";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { serveCoreV2Sheet } from "../../../../tests/fixtures/core-v2-sheet";
+import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
+import { serveCoreV2Sheet } from "../../../../scripts/fixtures/core-v2-sheet";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
 import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
@@ -208,7 +209,9 @@ let browser: Browser;
 let assets: ShellAssets;
 let harness: string;
 beforeAll(async () => {
-  assets = await loadShellAssets({ id: "pwa", css: resolve(import.meta.dir, "../styles/app.css") });
+  assets = await loadShellAssets(
+    await cloudShellSheets({ id: "pwa", css: resolve(import.meta.dir, "../styles/app.css"), v2Page: true }, import.meta.dir),
+  );
   harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();

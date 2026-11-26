@@ -2,7 +2,7 @@ import { For, Index, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton, Button } from "./button";
 import { Icon } from "./marks";
-import type { Action } from "./types";
+import type { Action, Status } from "./types";
 
 // The three states every place that shows data has, in the place where the data will stand (design guide "Zustände"):
 // empty, loading and failed. None draws a box; each stands where the list, the table or the content would stand, so
@@ -25,7 +25,7 @@ export type EmptyProps = {
    * The sign in the colour of the state, with its symbol and its sentence: `ok` for a result that went well, `warn` for
    * something that cannot happen now, `bad` for something that is refused.
    */
-  tone?: "ok" | "warn" | "bad";
+  tone?: Status;
 };
 
 /** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
