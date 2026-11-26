@@ -61,3 +61,36 @@ test("a waiting notice is a status, a section takes an anchor, a QR code and a c
   expect(code).toContain('aria-label="Vergleichscode: 4 8 2 9 1 3"');
   expect(code).toContain(">482 913<");
 });
+
+// A password manager reads the server's markup, before the island hydrates: what it may fill in stands there (#4173).
+test("a text field sends autocomplete, length, keyboard, spelling and capitals in the server's markup", () => {
+  const markup = renderToString(() =>
+    createComponent(Input, {
+      label: "Code",
+      name: "code",
+      type: "password",
+      autocomplete: "one-time-code",
+      maxLength: 8,
+      inputMode: "numeric",
+      spellcheck: false,
+      autocapitalize: "off",
+    }),
+  );
+  const input = markup.match(/<input[^>]*>/)?.[0] ?? "";
+  for (const attribute of [
+    'name="code"',
+    'autocomplete="one-time-code"',
+    'maxlength="8"',
+    'inputmode="numeric"',
+    'spellcheck="false"',
+    'autocapitalize="off"',
+  ])
+    expect(input).toContain(attribute);
+  expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", spellcheck: true }))).toContain(
+    'spellcheck="true"',
+  );
+  // without them the field stays as it was: no attribute is guessed
+  expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
+    /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
+  );
+});
