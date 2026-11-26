@@ -15,6 +15,7 @@ import { activeThreads, archivedThreads, type Thread, type ThreadList, type Thre
 type Conversation = z.infer<typeof ConversationSchema>;
 
 import { CHAT_COLOR, iconName } from "./ChatListV2";
+import { chatV2Messages } from "./chat-v2-messages";
 
 /**
  * "For you" on v2: mentions of and replies to the reader in every chat they may read, newest first, one row each
@@ -120,11 +121,13 @@ export function ThreadsPageV2(props: {
         <Failed text={t().threadsLoadFailed} onRetry={props.onRetry} />
       </Match>
       <Match when={true}>
-        <List label={t().threadsIn({ title: props.conversation.title })}>
-          {row("all", t().allThreads, props.conversation.unread, props.conversation.lastMessage, t().allThreadsHint)}
-          {row("general", t().general, props.threads?.general.unread ?? 0, props.threads?.general.lastMessage ?? null, t().generalHint)}
-          <For each={activeThreads(props.threads)}>{thread}</For>
-        </List>
+        <Section title={chatV2Messages.resolve([locale()]).t.threads} count={activeThreads(props.threads).length || undefined}>
+          <List label={t().threadsIn({ title: props.conversation.title })}>
+            {row("all", t().allThreads, props.conversation.unread, props.conversation.lastMessage, t().allThreadsHint)}
+            {row("general", t().general, props.threads?.general.unread ?? 0, props.threads?.general.lastMessage ?? null, t().generalHint)}
+            <For each={activeThreads(props.threads)}>{thread}</For>
+          </List>
+        </Section>
         <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
           <Empty icon="hash" text={props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet} />
         </Show>
