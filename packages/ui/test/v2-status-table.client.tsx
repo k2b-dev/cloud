@@ -15,6 +15,14 @@ declare global {
     __k2MoreFacts?: () => void;
     /** Takes the filters away and shortens the lead: a status row with nothing at its end, as Mail's list column. */
     __k2NoFilters?: () => void;
+    /** Gives the status row a lead longer than fits beside its worded filters in a column below 760 px. */
+    __k2LongLead?: () => void;
+    /**
+     * Draws the status row as the operations log does (break-ui finding 21): its result, figures with large counts,
+     * live as a toggle with a symbol and a short label, and sort and grouping as framed menus in words. Live is on, or
+     * off and blocked: then the toggle is disabled and the reason stands as a figure in the row.
+     */
+    __k2Logs?: (live?: "on" | "until-now" | "first-page") => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -72,6 +80,12 @@ const [more, setMore] = createSignal(false);
 window.__k2MoreFacts = () => setMore(true);
 const [filters, setFilters] = createSignal(true);
 window.__k2NoFilters = () => setFilters(false);
+const [longLead, setLongLead] = createSignal(false);
+window.__k2LongLead = () => setLongLead(true);
+const [logs, setLogs] = createSignal<"on" | "until-now" | "first-page" | undefined>();
+window.__k2Logs = (live = "on") => setLogs(live);
+const liveBlocked = () =>
+  logs() === "until-now" ? "Live nur mit Zeitraum bis jetzt" : logs() === "first-page" ? "Live nur auf der ersten Seite" : undefined;
 
 const root = document.getElementById("root");
 if (!root) throw new Error("status-table: #root is missing");
@@ -125,11 +139,27 @@ render(
         label="Protokolle"
         status={
           <StatusRow
-            lead={filters() ? "11 von 11 Einträgen" : "4 neu"}
+            lead={
+              logs()
+                ? "300 von 12.345 Einträgen"
+                : longLead()
+                  ? "11 von 11 Einträgen aus Gateway, Mail und Zustellung"
+                  : filters()
+                    ? "11 von 11 Einträgen"
+                    : "4 neu"
+            }
             loading={loading()}
             facts={[
-              { value: 6, after: "Fehler" },
-              { value: 5, after: "Warnungen" },
+              ...(logs()
+                ? [
+                    { value: "1.204", after: "Fehler" },
+                    { value: 321, after: "Warnungen" },
+                    ...(liveBlocked() ? [{ after: liveBlocked() }] : []),
+                  ]
+                : [
+                    { value: 6, after: "Fehler" },
+                    { value: 5, after: "Warnungen" },
+                  ]),
               ...(more()
                 ? [
                     { before: "zuletzt", value: "10:43:48", after: "aus dem Gateway" },
@@ -138,7 +168,19 @@ render(
                 : []),
             ]}
             filters={
-              filters() ? (
+              logs() ? (
+                <>
+                  <Button icon="broadcast" pressed={logs() === "on"} disabled={liveBlocked() !== undefined} title={liveBlocked()}>
+                    Live
+                  </Button>
+                  <Button icon="arrows-sort" menu>
+                    Eingang ↓
+                  </Button>
+                  <Button icon="stack-2" menu>
+                    Keine Gruppen
+                  </Button>
+                </>
+              ) : filters() ? (
                 <>
                   <Button variant="text" icon="arrows-sort">
                     Neueste zuerst
