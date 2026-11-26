@@ -230,6 +230,15 @@ test("a selection with six deeds shows three and 'Mehr' with the rest in their o
           };
         });
         expect(found.count).toEqual(["14px", "600"]);
+        // on the phone the panes of the split stand one under the other: no room between them, the room for the
+        // floating deeds after the last (review r7)
+        if (width === 390)
+          expect(
+            await page.evaluate(() => [
+              ...[...document.querySelectorAll(".k2-split > .k2-pane > .k2-scroll")].map((scroll) => getComputedStyle(scroll).marginBottom),
+              getComputedStyle(document.querySelector(".k2-split")!).marginBottom,
+            ]),
+          ).toEqual(["0px", "0px", "80px"]);
         expect(found.deeds.slice(0, 3)).toEqual(["Teilen", "Verschieben", "Als ZIP laden"]);
         expect(found.deeds.length).toBe(4);
         expect(found.inside).toBe(true);

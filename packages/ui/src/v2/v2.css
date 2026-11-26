@@ -2302,7 +2302,7 @@
 }
 /* each face lies over the one before only as far as its initials stay whole: 2 px of 20 */
 .k2-ui .k2-avs > .k2-av + .k2-av {
-  margin-left: -2px;
+  margin-inline-start: -2px;
 }
 /* A stack shows as many faces as its width holds whole, beside a count of up to three signs; the count that stands
    belongs to the faces that stand, so it is always right and never cut. */
@@ -4618,9 +4618,12 @@
   .k2-ui:has(.k2-bar[data-selecting]) .k2-fab {
     display: none;
   }
-  /* the floating actions cover nothing of a list: each column ends above them (their height 56, their distance 16, a
-     gap of 8 and the safe area), at rest and at its end alike; the content does not move, only its window ends higher */
-  .k2-ui:has(.k2-bar[data-selecting]) .k2-pane > .k2-scroll {
+  /* the floating actions cover nothing of a list: the column that scrolls ends above them (their height 56, their
+     distance 16, a gap of 8 and the safe area), at rest and at its end alike; the content does not move, only its window
+     ends higher. The panes of a split stand one under the other here: inside a column that scrolls they keep no room of
+     their own; a split standing alone keeps it after itself. */
+  .k2-ui:has(.k2-bar[data-selecting]) .k2-pane:not(.k2-split > .k2-pane) > .k2-scroll,
+  .k2-ui:has(.k2-bar[data-selecting]) .k2-split:not(.k2-pane > .k2-scroll > .k2-split) {
     margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
