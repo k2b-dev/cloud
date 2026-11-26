@@ -14,6 +14,7 @@ import {
   fixtureBase,
   fixtureBases,
   fixtureFavorites,
+  fixtureItemHistory,
   fixtureItemShares,
   fixtureListing,
   fixtureMarkdown,
@@ -132,7 +133,12 @@ const shell =
   `.shell-bar{position:fixed;inset:0 0 auto 0;height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;font:600 15px system-ui;color:#09090b}` +
   `.shell-bar i{font-size:20px;color:#52525b}}</style>` +
   `<nav class="shell-rail" aria-hidden="true"><b>C</b>${SHELL_APPS.map((app) => `<i class="ti ti-${app}${app === "folders" ? " on" : ""}"></i>`).join("")}<span></span><i class="ti ti-help-circle"></i><em>MS</em></nav>` +
-  `<div class="shell-bar" aria-hidden="true"><i class="ti ti-menu-2"></i>Dateien</div>`;
+  `<div class="shell-bar" aria-hidden="true"><i class="ti ti-menu-2"></i><span data-shell-title>Dateien</span><i class="ti ti-chevron-down"></i></div>` +
+  // the shell's phone bar names the page as the app's workspace navigation says it ("Name ⌄"), and follows it
+  `<script>(()=>{const read=()=>{const own=document.querySelector("script[data-cloud-workspace-navigation]");` +
+  `const title=document.querySelector("[data-shell-title]");if(!own||!title)return;` +
+  `try{const label=JSON.parse(own.textContent).label;if(title.textContent!==label)title.textContent=label}catch{}};` +
+  `new MutationObserver(read).observe(document.documentElement,{subtree:true,childList:true,characterData:true});read()})()</script>`;
 const page = (fixture: FixtureCase) =>
   `<!doctype html><html lang="de" class="light" data-fixture="${fixture}"><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
@@ -224,15 +230,24 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     }
     if (url.pathname === `${api}/bases/demo/trash`) return route.fulfill({ json: fixtureTrash });
     if (url.pathname === `${api}/favorites`) return route.fulfill({ json: fixtureFavorites });
-    // An item's own history stays empty; Activity answers with the day of the fixture.
+    // The open notes tell their history as their versions do; other items' own histories stay empty, and Activity
+    // answers with the day of the fixture.
+    const notes =
+      fixture === "plain" && url.searchParams.get("scope") === "item" && url.searchParams.get("path") === "Notizen.md"
+        ? fixtureListing(fixture, "", { sort: "name", order: "asc", type: "all", groupFolders: true }).find(
+            (item) => item.path === "Notizen.md",
+          )
+        : undefined;
     if (url.pathname === `${api}/activity`)
       // "me" is answered as the server answers it: the person's own changes only.
       return route.fulfill({
-        json: url.searchParams.get("scope")
-          ? emptyHistory
-          : url.searchParams.get("actor") === "me"
-            ? fixtureMine(Number(url.searchParams.get("limit")) || undefined)
-            : searched(fixtureActivity(fixture), url.searchParams.get("q"), fixture === "plain" ? fixtureSearchHistory() : []),
+        json: notes
+          ? { ...emptyHistory, items: fixtureItemHistory(notes.path, notes.modified), visibleCount: 3 }
+          : url.searchParams.get("scope")
+            ? emptyHistory
+            : url.searchParams.get("actor") === "me"
+              ? fixtureMine(Number(url.searchParams.get("limit")) || undefined)
+              : searched(fixtureActivity(fixture), url.searchParams.get("q"), fixture === "plain" ? fixtureSearchHistory() : []),
       });
     // the detail asks for the links of its file; the overview of links asks without a path
     if (url.pathname === `${api}/shares`)
@@ -353,6 +368,11 @@ describe("a folder of Files on v2", () => {
         "Skizze Hochschrank.png",
         "Zuschnitt Küchenfront.dxf",
       ]);
+      // the folder's reach stands once in the head; a row names it only where it differs (its own links), never
+      // "Team" in every row (B)
+      const table = tab.locator("[data-k2-part=Table]");
+      expect(await table.getByRole("cell", { name: "Team", exact: true }).count()).toBe(0);
+      expect(await table.getByRole("cell", { name: /Link/ }).count()).toBeGreaterThan(0);
       await shoot(tab, "01-folder-1440");
       await expectClean(tab);
 
@@ -724,12 +744,15 @@ describe("the views beside the folders on v2", () => {
       // "Me" is where Activity starts; six photos of one person at one time read as one line.
       expect(new URL(tab.url()).searchParams.get("who")).toBe("me");
       expect(await tab.locator("[data-k2-part=List][aria-label='Aktivität']").innerText()).toContain("6 Dateien hochgeladen");
+      // the head never repeats the active entry of the sidebar as a title (B)
+      expect(await tab.locator("[data-k2-part=Workspace] [data-k2-part=Path]").count()).toBe(0);
       await shoot(tab, "12-activity-1440");
       await expectClean(tab);
 
       await nav.getByRole("link", { name: "Freigaben" }).click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "shares");
       await tab.getByText("Unterlagen Lindqvist").first().waitFor();
+      expect(await tab.locator("[data-k2-part=Workspace] [data-k2-part=Path]").count()).toBe(0);
       await shoot(tab, "13-shares-1440");
       await expectClean(tab);
 
@@ -742,6 +765,7 @@ describe("the views beside the folders on v2", () => {
       const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
       expect(await recent.innerText()).toContain("Ansicht Front Eiche.jpg");
       expect(await recent.locator("[data-k2-part=Row] [data-k2-part=Avatar]").count()).toBe(0);
+      expect(await tab.locator("[data-k2-part=Workspace] [data-k2-part=Path]").count()).toBe(0);
       await shoot(tab, "14-overview-1440");
       await expectClean(tab);
 
@@ -886,6 +910,13 @@ describe("the views beside the folders on v2", () => {
     test(`${address} fits the phone`, async () => {
       const { context, tab, errors } = await open(phone, address);
       try {
+        // the phone bar names the place, as the sidebar's active entry does on the desktop (B)
+        const place = {
+          activity: "Aktivität",
+          shares: "Freigaben",
+          edit: "Notizen.md",
+        }[new URL(address, origin).searchParams.get("view") ?? ""];
+        expect(await tab.locator("[data-shell-title]").innerText()).toBe(place ?? "Alle Ablagen");
         await shoot(tab, `18-${new URL(address, origin).searchParams.get("view") ?? "overview"}-390`);
         if (address.includes("view=edit")) {
           // the phone's head keeps only its search: saving is in the editor's own bar, the way back above it, as the

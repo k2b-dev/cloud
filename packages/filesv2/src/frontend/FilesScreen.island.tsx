@@ -706,9 +706,11 @@ export default function FilesScreen(props: {
   const when = (iso: string) =>
     formatWhen(iso, locale(), h(), { now: snapshot().now ?? props.initial.now ?? new Date().toISOString(), timeZone: timeZone() });
   const sizeText = (entry: FileEntry) => (entry.directory ? "" : formatFileViewSize(entry.size, locale()));
-  /** Who reaches an entry: its own active download links, else the team of a group storage, or only this person. */
-  const sharing = (entry: FileEntry) =>
-    entry.facts?.links ? b().v2Links({ count: entry.facts.links }) : selected()?.kind === "groups" ? b().v2Team : b().onlyYou;
+  /**
+   * Who reaches an entry, only where it differs from its folder (B: a qualifier only at the exception): its own active
+   * download links. The folder's own reach (the team, or only you) stands once, in the head beside the path.
+   */
+  const sharing = (entry: FileEntry) => (entry.facts?.links ? b().v2Links({ count: entry.facts.links }) : "");
   const fresh = () => actions.fresh();
   const rows = createMemo((): FolderRow[] => entries().map((entry) => ({ key: entry.path, entry, fresh: fresh().has(entry.path) })));
   // an empty folder has nothing to filter, sort or show otherwise: no filter row over it, unless a filter made it empty
@@ -748,7 +750,7 @@ export default function FilesScreen(props: {
       },
       people: entry.facts?.author ? [{ name: entry.facts.author.name }] : [],
       get sign() {
-        return { icon: entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock", label: sharing(entry) };
+        return entry.facts?.links ? { icon: "link", label: sharing(entry) } : undefined;
       },
       get href() {
         return openTarget(entry).href;
@@ -990,15 +992,15 @@ export default function FilesScreen(props: {
       onClick: () => openGlobalSearch({ query: "", scope: { appId: "filesv2", tag: "file", label: t().files, icon: "ti ti-folders" } }),
     },
   ];
+  // A view of the sidebar is named by its active entry there: its head never repeats that word as a title (B: no title
+  // that only repeats the nav). Its name stays on the phone, where the sidebar is away: the phone bar carries it.
   const pathItems = () => {
     const base = selected();
-    if (screen() === "favorites") return [{ label: b().favorites }];
-    if (screen() === "shares") return [{ label: b().sharesTitle }];
-    if (screen() === "overview") return [{ label: b().allStorage }];
+    if (screen() === "favorites" || screen() === "shares" || screen() === "overview") return [];
     if (screen() === "activity") {
       const item = activityFilters().path;
       return item === undefined
-        ? [{ label: b().activity }]
+        ? []
         : [
             { label: b().activity, href: activityUrl({ ...activityFilters(), path: undefined, scope: undefined }) },
             { label: item.split("/").at(-1) || (base ? label(base) : item) },
@@ -1028,6 +1030,18 @@ export default function FilesScreen(props: {
       ...(searching() ? [{ label: b().v2SearchResults }] : []),
     ];
   };
+  /** The name of the place on the phone bar, where the sidebar is away: the view, the open folder (never cut), the file. */
+  const placeName = () => {
+    if (screen() === "favorites") return b().favorites;
+    if (screen() === "shares") return b().sharesTitle;
+    if (screen() === "overview") return b().allStorage;
+    if (screen() === "activity") return b().activity;
+    if (screen() === "trash") return b().trashTitle;
+    if (screen() === "edit") return snapshot().editor?.entry.name ?? t().files;
+    const moved = snapshot().moved;
+    if (moved) return moved.path.split("/").at(-1) || folderName("");
+    return folderName(folder());
+  };
   /** Who reaches the open folder: the team of a group storage or only this person, and the links among its entries. */
   const folderSharing = () => {
     const shown = directory();
@@ -1040,7 +1054,7 @@ export default function FilesScreen(props: {
 
   return (
     <>
-      <V2WorkspaceNavigation label={t().files} groups={navGroups()} foot={navFoot()} />
+      <V2WorkspaceNavigation label={placeName()} groups={navGroups()} foot={navFoot()} />
       <actions.Layer />
       <Workspace
         sidebarLabel={b().v2SidebarWidth}
@@ -1048,71 +1062,82 @@ export default function FilesScreen(props: {
         // No empty half (look rule 5): the detail stands only while an entry is open.
         detail={screen() === "folder" && !snapshot().moved && openPath() ? true : undefined}
         // no floating main action: the head's "+" is the one create action (Valentin 26.11.), and nothing floats over
-        // an open file on the phone
+        // an open file on the phone. A view that only the sidebar names has no head row at all: no row without content.
         head={
-          <Bar
-            start={
-              // a folder says who reaches it beside its path, as the mockup's "Team + 1 Link"
-              <Show
-                when={screen() === "folder" && !snapshot().moved && selected()}
-                fallback={<Path label={b().v2Where} items={pathItems()} />}
-              >
-                <Inline>
-                  <Path label={b().v2Where} items={pathItems()} />
-                  <Chip icon={selected()?.kind === "groups" ? "users" : "lock"}>{folderSharing()}</Chip>
-                </Inline>
-              </Show>
-            }
-            end={
-              <>
-                {/* the draft's state beside the file's name in the one head row; saving ends the editor's own bar */}
-                <Show when={screen() === "edit" && editorHead()}>
-                  {(head) => <Chip status={head().dirty() ? "warn" : "ok"}>{head().state()}</Chip>}
+          screen() === "favorites" || screen() === "shares" || screen() === "overview" ? undefined : (
+            <Bar
+              start={
+                // a folder says who reaches it beside its path, as the mockup's "Team + 1 Link"
+                <Show
+                  when={screen() === "folder" && !snapshot().moved && selected()}
+                  fallback={
+                    <Show when={pathItems().length > 0}>
+                      <Path label={b().v2Where} items={pathItems()} />
+                    </Show>
+                  }
+                >
+                  <Inline>
+                    <Path label={b().v2Where} items={pathItems()} />
+                    <Chip icon={selected()?.kind === "groups" ? "users" : "lock"}>{folderSharing()}</Chip>
+                  </Inline>
                 </Show>
-                <Show when={screen() === "activity"}>
-                  <Input
-                    type="search"
-                    icon="search"
-                    label={h().searchLabel}
-                    placeholder={b().v2SearchShort}
-                    value={activityFilters().q ?? ""}
-                    onKeyDown={(event) => {
-                      if (event.isComposing) return;
-                      const input = event.currentTarget as HTMLInputElement;
-                      if (event.key === "Enter") submitActivitySearch(input.value);
-                      if (event.key === "Escape" && input.value) {
-                        input.value = "";
-                        submitActivitySearch("");
-                      }
-                    }}
-                  />
-                </Show>
-
-                <Show when={screen() === "folder" && !snapshot().moved}>
-                  <Input
-                    type="search"
-                    icon="search"
-                    label={b().searchIn(folderName(folder()))}
-                    placeholder={b().v2SearchShort}
-                    value={address().state.search ?? ""}
-                    onKeyDown={(event) => {
-                      if (event.isComposing) return;
-                      const input = event.currentTarget as HTMLInputElement;
-                      if (event.key === "Enter") submitSearch(input.value);
-                      if (event.key === "Escape" && input.value) {
-                        input.value = "";
-                        submitSearch("");
-                      }
-                    }}
-                  />
-                  <Show when={canCreate() && !searching()}>
-                    {/* ONE create action, never "+" beside "Hochladen" (Valentin 26.11.) */}
-                    <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
+              }
+              end={
+                <>
+                  {/* the draft's state beside the file's name in the one head row; saving ends the editor's own bar */}
+                  <Show when={screen() === "edit" && editorHead()}>
+                    {(head) => (
+                      // a saved draft is the good case and stays neutral; colour only while something waits (B rule 7)
+                      <Show when={head().dirty()} fallback={<Chip>{head().state()}</Chip>}>
+                        <Chip status="warn">{head().state()}</Chip>
+                      </Show>
+                    )}
                   </Show>
-                </Show>
-              </>
-            }
-          />
+                  <Show when={screen() === "activity"}>
+                    <Input
+                      type="search"
+                      icon="search"
+                      label={h().searchLabel}
+                      placeholder={b().v2SearchShort}
+                      value={activityFilters().q ?? ""}
+                      onKeyDown={(event) => {
+                        if (event.isComposing) return;
+                        const input = event.currentTarget as HTMLInputElement;
+                        if (event.key === "Enter") submitActivitySearch(input.value);
+                        if (event.key === "Escape" && input.value) {
+                          input.value = "";
+                          submitActivitySearch("");
+                        }
+                      }}
+                    />
+                  </Show>
+
+                  <Show when={screen() === "folder" && !snapshot().moved}>
+                    <Input
+                      type="search"
+                      icon="search"
+                      label={b().searchIn(folderName(folder()))}
+                      placeholder={b().v2SearchShort}
+                      value={address().state.search ?? ""}
+                      onKeyDown={(event) => {
+                        if (event.isComposing) return;
+                        const input = event.currentTarget as HTMLInputElement;
+                        if (event.key === "Enter") submitSearch(input.value);
+                        if (event.key === "Escape" && input.value) {
+                          input.value = "";
+                          submitSearch("");
+                        }
+                      }}
+                    />
+                    <Show when={canCreate() && !searching()}>
+                      {/* ONE create action, never "+" beside "Hochladen" (Valentin 26.11.) */}
+                      <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
+                    </Show>
+                  </Show>
+                </>
+              }
+            />
+          )
         }
       >
         <Show when={screen() === "overview"}>
@@ -1452,18 +1477,25 @@ export default function FilesScreen(props: {
                           avatar: (row) => (row.entry.facts?.author ? { name: row.entry.facts.author.name } : undefined),
                           cell: (row) => row.entry.facts?.author?.name ?? "",
                         },
-                        {
-                          // Who reaches it: its own download links, else the team of a group storage or only you.
-                          title: b().v2Sharing,
-                          width: { min: 96, default: 110 },
-                          drop: true,
-                          cell: (row) => (
-                            <Text>
-                              <Icon name={row.entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock"} />{" "}
-                              {sharing(row.entry)}
-                            </Text>
-                          ),
-                        },
+                        // Who reaches it where that differs from the folder: its own download links; an open entry
+                        // says it in its detail, so the column leaves while one is open and "Von" keeps its names.
+                        ...(openPath()
+                          ? []
+                          : [
+                              {
+                                title: b().v2Sharing,
+                                width: { min: 96, default: 110 },
+                                drop: true,
+                                cell: (row: FolderRow) =>
+                                  row.entry.facts?.links ? (
+                                    <Text>
+                                      <Icon name="link" /> {sharing(row.entry)}
+                                    </Text>
+                                  ) : (
+                                    ""
+                                  ),
+                              },
+                            ]),
                         {
                           title: t().modified,
                           width: { min: 100, default: 120 },

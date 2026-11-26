@@ -363,7 +363,9 @@ describe("Filesv2 progressive navigation", () => {
     expect(apiRequests[1]!.kind).toBe("shares");
     apiRequests[1]!.resolve(Response.json({ items: [], next: null }));
     await flush();
-    expect(dom.root.querySelector('[data-k2-part="Path"]')?.textContent).toContain("Shares");
+    // the shares page is named by its active sidebar entry; its head repeats no title
+    expect(dom.root.querySelector('[data-k2-part="Nav"] [aria-current="page"]')?.textContent).toContain("Shares");
+    expect(dom.root.querySelector('[data-k2-part="Workspace"] [data-k2-part="Path"]')).toBeNull();
     expect(dom.root.textContent).toContain("No shares yet.");
     expect(dom.root.textContent).not.toContain("This directory is missing");
   });

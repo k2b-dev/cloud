@@ -261,6 +261,16 @@ export const fixtureSearchHistory = (): ActivityEntry[] => [
   change("file.upload", 4_300, 2, { after: gone("Angebote/Alter Entwurf.pdf") }),
 ];
 
+/**
+ * The history of the open notes, as its versions tell it: Jana's edit made the file as it is now, Mira's the version
+ * before, and Felix uploaded it the day before.
+ */
+export const fixtureItemHistory = (path: string, modified: string): ActivityEntry[] => [
+  change("file.edit", (Date.parse(FIXTURE_NOW) - Date.parse(modified)) / 60_000, 2, { after: side(path) }),
+  change("file.edit", 3 * 60, 0, { after: side(path) }),
+  change("file.upload", 26 * 60, 1, { after: side(path) }),
+];
+
 /** People break-ui feeds a list of changes: long and compound names, one letter, RTL, emoji, CJK. */
 const WORST_PEOPLE = [
   "Aleksandra Wiśniewska-Kowalczyk",

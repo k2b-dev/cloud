@@ -338,18 +338,26 @@ function Loaded(
           </Inline>
         }
         end={
-          // what the file is, at the end of its deeds, as the recipe has it; a file only read says so instead
-          <Show when={!readOnly()} fallback={<Chip icon="lock">{t().readOnly}</Chip>}>
-            <Show when={!props.item.directory}>
-              <Text type="meta">{`${fileKindLabel({ name: props.item.name }, locale())} · ${formatFileViewSize(props.item.size, locale())}`}</Text>
-            </Show>
+          // a file only read says so at the end of its deeds; what the file is stands among its facts, so the deeds
+          // keep one line (B)
+          <Show when={readOnly()}>
+            <Chip icon="lock">{t().readOnly}</Chip>
           </Show>
         }
       />
-      {/* the facts without a head of their own: who changed it last and when, and where it lies */}
+      {/* the key facts as pairs: who changed it last and when, what it is, and where it lies. The tinted object head
+          (name 18, one meta line, three key facts) waits for the shared part; these move into it then. */}
       <Facts
         items={[
           { label: f().modified, value: changedBy() ? `${changedBy()} · ${modified()}` : modified() },
+          ...(props.item.directory
+            ? []
+            : [
+                {
+                  label: f().size,
+                  value: `${fileKindLabel({ name: props.item.name }, locale())} · ${formatFileViewSize(props.item.size, locale())}`,
+                },
+              ]),
           {
             label: t().location,
             value: [baseLabel(props.base, t(), locale()), ...props.item.path.split("/").slice(0, -1)].join(" › "),
