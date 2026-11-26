@@ -1,7 +1,7 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { type ToastHandle, toast } from "@k2b/ui";
+import { useToast } from "@k2b/ui/v2";
 import { onCleanup, onMount } from "solid-js";
 import { type SpaceLiveEvent, SpaceLiveEventSchema } from "../../../../live-events";
 import { useSpaceMessages } from "../../messages";
@@ -22,17 +22,21 @@ const changesPage = (event: SpaceLiveEvent) => event.type.startsWith("space.") |
 
 export default function SpaceLiveEvents(props: Props) {
   const t = useSpaceMessages();
+  const toast = useToast();
   onMount(() => {
     let stopped = false;
     let reloading = false;
-    let unavailable: ToastHandle | null = null;
+    let unavailable = false;
     // A condition that persists across loads must not reload the page forever.
     const reload = (): boolean => {
       if (stopped || reloading) return true;
       if (unavailable) return false;
       reloading = reloadOnce(`spaces:live:${props.spaceId}`);
       if (reloading) return true;
-      unavailable = toast(t.liveUpdatesUnavailable, { duration: 0, action: { label: t.reload, onClick: () => window.location.reload() } });
+      // k2b-ui gap: a v2 toast cannot stay until it is answered; it offers the reload for its five seconds, and the
+      // page's data still catches up below.
+      unavailable = true;
+      toast(t.liveUpdatesUnavailable, { status: "bad", retry: () => window.location.reload() });
       return false;
     };
     // The server renders the Space's name, settings, and the reader's permissions. When the page cannot reload
@@ -88,7 +92,6 @@ export default function SpaceLiveEvents(props: Props) {
       stopped = true;
       document.removeEventListener("visibilitychange", refreshForNewDay);
       subscription.close();
-      unavailable?.dismiss();
     });
   });
 
