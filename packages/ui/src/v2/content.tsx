@@ -602,8 +602,9 @@ const signsOf = (value: CellValue): number => {
   return 0;
 };
 
-/** The room a column without a width needs before its table drops columns, and a figure's width for that sum. */
+/** What a column without a width counts with (its default and its minimum), and a figure's width for those sums. */
 const flexibleColumn = 160;
+const flexibleMin = 96;
 const figureWidth = 8;
 
 /**
@@ -642,35 +643,50 @@ export const Table = <T,>(props: TableProps<T>) => {
       return longest === 0 ? 0 : Math.max(longest, signsOf(column.title));
     }),
   );
+  // What each column needs, in px: at least `lo` (its minimum; a numeric one its longest value) and at most `hi` (its
+  // default). A column without a width counts with 96 and 160 px.
+  const need = createMemo(() =>
+    props.columns.map((column, index) => {
+      const fit = (signs()[index] ?? 0) > 0 ? (signs()[index] ?? 0) * figureWidth + 32 : 0;
+      const lo = Math.max(column.width?.min ?? column.width?.default ?? flexibleMin, fit);
+      return { lo, hi: Math.max(column.width?.default ?? flexibleColumn, lo) };
+    }),
+  );
+  const box = props.select ? 44 : 0;
+  // In a small table with widths every column moves between its minimum and its default with the width of the table's
+  // place (`100cqw`, the table's container), so together they fill it: at the sum of the defaults each has its default,
+  // at the sum of the minimums each its minimum. The stylesheet decides, on the server's page too.
+  const shrink = (index: number) => {
+    const all = need();
+    const { lo, hi } = all[index]!;
+    const least = all.reduce((sum, each) => sum + each.lo, box);
+    const most = all.reduce((sum, each) => sum + each.hi, box);
+    if (hi === lo || most <= least) return `${lo}px`;
+    const share = Math.round(((hi - lo) / (most - least)) * 10000) / 10000;
+    return `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${share}), ${hi}px)`;
+  };
   const colWidth = (column: Column<T>, index: number): string | undefined => {
     const last = index === props.columns.length - 1;
     // in a small table with widths the last column takes the rest of the row, which holds its value
     if (sized() && !grid() && last) return undefined;
-    const fixed = column.width && (grid() || !last) ? `${column.width.default}px` : undefined;
     const count = signs()[index] ?? 0;
-    if (count === 0) return fixed;
-    const fit = `calc(${count}ch + 12px + var(--k2-edge))`;
-    return fixed ? `max(${fixed}, ${fit})` : fit;
+    const fit = count > 0 ? `calc(${count}ch + 12px + var(--k2-edge))` : undefined;
+    const base = !column.width ? undefined : grid() ? `${column.width.default}px` : shrink(index);
+    return base && fit ? `max(${base}, ${fit})` : (base ?? fit);
   };
   const measured = () => signs().some((count) => count > 0);
   const id = createUniqueId();
-  // Rule 7 by the room of the table: the `drop` columns go one by one, from the last, as the table's place gets
-  // narrower than the columns it shows need. The room is known from the widths (and the measured numbers), so the
-  // stylesheet decides on the server's page too; it is one container query per table.
-  // What each column needs: its default (a column without one, 160 px), and a numeric one its longest value.
-  const need = createMemo(() =>
-    props.columns.map((column, index) => Math.max(column.width?.default ?? flexibleColumn, (signs()[index] ?? 0) * figureWidth + 32)),
-  );
-  // A table of fixed columns is never narrower than the columns that stay need: in a place narrower than that it
-  // scrolls sideways, so the last column (the rest of the row) never squeezes a number to "…".
+  // A table of fixed columns is never narrower than the columns that stay need at their minimum: in a place narrower
+  // than that it scrolls sideways (with a fade at the edge it continues past), so no column squeezes a number.
   const least = () =>
-    sized() && !grid()
-      ? need().reduce((sum, width, index) => (props.columns[index]!.drop ? sum : sum + width), props.select ? 44 : 0)
-      : undefined;
+    sized() && !grid() ? need().reduce((sum, width, index) => (props.columns[index]!.drop ? sum : sum + width.lo), box) : undefined;
+  // Rule 7 by the room of the table: the `drop` columns go one by one, from the last, as the table's place gets
+  // narrower than the columns it shows need at their minimum. The room is known from the widths (and the measured
+  // numbers), so the stylesheet decides on the server's page too; it is one container query per table.
   const steps = createMemo(() => {
     if (!sized()) return [] as { column: number; below: number }[];
-    const widths = need();
-    let room = widths.reduce((sum, width) => sum + width, props.select ? 44 : 0);
+    const widths = need().map((width) => width.lo);
+    let room = widths.reduce((sum, width) => sum + width, box);
     const out: { column: number; below: number }[] = [];
     for (let index = props.columns.length - 1; index >= 0; index--) {
       if (!props.columns[index]!.drop) continue;

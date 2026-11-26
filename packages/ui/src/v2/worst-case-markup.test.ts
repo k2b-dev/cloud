@@ -50,9 +50,12 @@ const table = () =>
 
 test("an amount column is at least as wide as its longest value and marked numeric, so it is never cut", () => {
   const markup = table();
-  // "12.345.678,90 €" has 15 signs; the date column keeps its 120 px at least, the last column takes the rest
-  expect(markup).toContain("--k2-col-w:max(120px, calc(15ch + 12px + var(--k2-edge)))");
-  expect(markup).toContain("--k2-col-w:max(120px, calc(10ch + 12px + var(--k2-edge)))");
+  // the amount needs more than its default, so it keeps what it needs; the date gives way between 112 and 120 px with
+  // the width of the table's place, and never below its longest date
+  expect(markup).toContain("--k2-col-w:max(152px, calc(15ch + 12px + var(--k2-edge)))");
+  expect(markup).toContain(
+    "--k2-col-w:max(clamp(112px, calc(112px + (100cqw - 640px) * 0.0465), 120px), calc(10ch + 12px + var(--k2-edge)))",
+  );
   expect(markup.match(/<td[^>]*data-numeric=""/g)?.length).toBe(4); // two rows × (Fällig, Betrag)
 });
 
@@ -60,14 +63,14 @@ test("drop columns leave one by one from the last, by a container query on the t
   const markup = table();
   const id = markup.match(/data-k2-table="([^"]+)"/)?.[1];
   expect(id).toBeDefined();
-  // the columns need 140 + 240 + 120 + 152 + 160 px (the amount measured at 8 px a sign beyond its width, the last
-  // column without a width 160): below that the date (the last drop column) leaves, below what the rest need the
-  // number leaves as well
+  // at their minimum the columns need 120 + 160 + 112 + 152 + 96 px (the date and the amount measured at 8 px a sign,
+  // the last column without a width 96): below that the date (the last drop column) leaves, below what the rest need
+  // the number leaves as well; above it the columns give way between minimum and default
   expect(markup).toContain(
-    `@container k2-table (width < 812px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="1"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; } }`,
+    `@container k2-table (width < 640px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="1"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; } }`,
   );
   expect(markup).toContain(
-    `@container k2-table (width < 692px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="2"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; } }`,
+    `@container k2-table (width < 528px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="2"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; } }`,
   );
   // the column leaves with its cells, so the remaining columns keep their widths
   expect(markup).toMatch(/<col data-drop="" data-drop-step="1"/);

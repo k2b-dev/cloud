@@ -1391,6 +1391,12 @@
   overflow-x: auto;
   scrollbar-width: none;
   container: k2-table / inline-size;
+  /* a table wider than its place continues past its edge: the edge fades over 40 px until it is scrolled to its end
+     (a scroll-driven fade, as at the end of a column; a table that fits has no fade) */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--k2-fade)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--k2-fade)), transparent);
+  animation: k2-fade-end linear both;
+  animation-timeline: scroll(self inline);
 }
 .k2-ui .k2-table-scroll::-webkit-scrollbar {
   display: none;
@@ -1977,6 +1983,13 @@
 .k2-ui :is(.k2-chip[data-kind="control"], .k2-chip[data-kind="amount"]) > .k2-chip-text,
 .k2-ui :is(.k2-table[data-sized] .k2-cell-line, .k2-row-marks, .k2-bar, .k2-ni, .k2-tab) .k2-chip-text {
   --k2-chip-lines: 1;
+}
+/* one line there is one line of words cut with "…", not a second line hidden under the first */
+.k2-ui :is(.k2-table[data-sized] .k2-cell-line, .k2-row-marks, .k2-bar, .k2-ni, .k2-tab) .k2-chip-text {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
 }
 .k2-ui
   .k2-chip:not([data-kind="control"], [data-kind="amount"], :is(.k2-table[data-sized] .k2-cell-line, .k2-row-marks, .k2-bar, .k2-ni, .k2-tab) .k2-chip) {
