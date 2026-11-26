@@ -4153,12 +4153,24 @@
   .k2-ui .k2-cgrip {
     display: none;
   }
+  /* key figures stand two in a row, never one per row; a last one alone takes the whole row. Each cell draws a line
+     into the 1 px gap before it and above it, and the cells clip the ones at their outer edge, so the lines need no
+     count of the cells and the band's tint stays behind them. */
   .k2-ui .k2-cells {
-    grid-auto-flow: row;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    overflow: clip;
+  }
+  .k2-ui .k2-cell {
+    flex: 1 1 calc(50% - 1px);
+    box-shadow:
+      -1px 0 0 var(--k2-line),
+      0 -1px 0 var(--k2-line),
+      -1px -1px 0 var(--k2-line);
   }
   .k2-ui .k2-cell ~ .k2-cell {
     border-left: 0;
-    border-top: var(--k2-hairline);
   }
   .k2-ui .k2-frow {
     grid-auto-flow: row;
