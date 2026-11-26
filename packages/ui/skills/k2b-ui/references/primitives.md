@@ -97,12 +97,16 @@ fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
 
-2–4 equal cells with a line between; on the phone two by two (a third
-alone across the second row). A cell:
+2–6 equal cells with a line between, never one tall cell alone in a row:
+two side by side down to the phone, three while each gets 150 px (else two,
+then the third as one line across: label left, value right), four in a row
+or two by two (below a pane of 880 px), five or six in rows of three. A
+cell under 220 px sets its value in 14 px across its width. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
-as orders per day this week). Use for the key statements of a record or
-the home of a place.
+as orders per day this week), `meter: { value, of, label? }` (a value with
+a limit, "1,5 von 3 h": a thin bar under it, amber from the limit on).
+Use for the key statements of a record or the home of a place.
 
 ### Tiles
 
@@ -344,9 +348,12 @@ lines instead of cutting a thing.
   zurücksetzen" while the value differs from its default, as `Field
   action`), one control as child. One setting of a settings page: the name
   (13, 500) and its hint together on the left, beside the middle of the
-  control in a column of 300 px, no line between settings; one column when
-  its pane is narrower than 600 px (800 px with an `action`; by the pane,
-  not the window). Never stack `Field`s
+  control in a column of 300 px, the name keeping at least 240 px; one
+  column when its pane is narrower than 640 px (800 px with an `action`; by
+  the pane, not the window). `compact` (a number with its unit, a short
+  selection) and a `Check` keep the value beside the name also there. A
+  column of settings ends above the phone's floating main action. Never
+  stack `Field`s
   as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
