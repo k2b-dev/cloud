@@ -252,17 +252,20 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
 A page that people open without signing in, without the Cloud shell (a
 venue's programme, a public form, a share). In Cloud it stands in
 `MinimalLayout ui="v2"`. A head `Bar` with the brand as `RecordHead` (its
-initials on its colour) and the one task as the primary, mirrored as
-`Workspace primary`; a `StatusRow` that says what matters today with its
-figures; `Cells` with the next thing, the free places and the way in; a
-`Section` per day with one `Row` per event in the colour of its type and its
-state as a `Chip` (colour, sign and word); the load of the rooms as
-`Progress`; a `Notice` for access. `states` exports kiosk (the same page on a
-wall screen: no task, what runs now first, a quiet "aktualisiert sich jede
-Minute" in the status row), empty and failed.
+initials on its colour) and the one task as the primary with `keep`, so it
+stays in the head on the phone and nothing floats over a row; the status row
+as one statement with toned chips ("1 fast voll", "1 ausgebucht"), never the
+figures a column repeats. The programme is one `Table` grouped by day: the
+event with when and where, its type as a `Chip tag` in its colour, the host
+as `Avatar`, the seats taken as `Progress` (a value with a limit gets a
+meter), and the state as a `Chip` with colour, sign and word; on the phone
+each event is a row of two lines with its state. A `Pane side` holds the
+visit: free places as a meter, the way in as `Facts`, the rooms with their
+load, and access as a `Notice`. `states` exports kiosk (the same page on a
+wall screen: no task, what runs now first, "aktualisiert sich jede Minute" in
+the head), empty and failed.
 
 - A visitor page has no rail and no sidebar: the brand stands in the head.
 - A kiosk refreshes itself and says so in words, never with a button.
-- Look pending: the tinted marks, a larger kiosk type and the brand mark
-  follow the identity primitives (`Mark`, density); until then the rows lead
-  with the type's symbol in its colour.
+- Gaps: the brand mark (`Mark`) and a larger kiosk type come with the
+  identity primitives; a phone row of a table may still wrap a long title.

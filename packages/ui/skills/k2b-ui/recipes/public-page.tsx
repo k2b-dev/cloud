@@ -1,22 +1,25 @@
 // Recipe: a page for visitors without the Cloud shell (a venue's programme, a public form, a share). The brand stands
-// in the head with its colour, the one task is the head's primary, the first row says what matters today, and every
-// entry carries its type colour and its state in colour, sign and word. `kiosk`: the same page on a wall screen in the
-// foyer, without a task, with what runs now first and a quiet note that it refreshes itself.
+// in the head with its colour, the one task is the head's primary (kept on the phone, so nothing floats over a row),
+// the status row says what matters today in one statement with toned chips, the programme fills the main column with
+// dense rows, and the side column holds the visit: free places as a meter, the way in, the rooms. Every entry carries
+// its type colour, the people who host it, its seats as a meter and its state in colour, sign and word. `kiosk`: the
+// same page on a wall screen in the foyer, without a task, with what runs now first.
 
 import {
+  Avatar,
   Bar,
   Button,
-  Cells,
   Chip,
-  Empty,
+  Facts,
   Failed,
+  Inline,
   Notice,
   Pane,
   Progress,
   RecordHead,
   Row,
   Section,
-  StatusRow,
+  Table,
   Text,
   Workspace,
 } from "@k2b/ui/v2";
@@ -32,17 +35,24 @@ const kinds = {
 } as const;
 type Kind = keyof typeof kinds;
 type Seats = { free: number; of: number };
-type Event = { title: string; kind: Kind; time: string; room: string; seats: Seats; host?: string };
+type Event = { title: string; kind: Kind; time: string; room: string; seats: Seats; host?: { name: string; color: string } };
 
 const today: Event[] = [
-  { title: "Offene Holzwerkstatt", kind: "workshop", time: "14:00–17:00", room: "Werkraum", seats: { free: 3, of: 12 }, host: "Ali Demir" },
+  {
+    title: "Offene Holzwerkstatt",
+    kind: "workshop",
+    time: "14:00–17:00",
+    room: "Werkraum",
+    seats: { free: 3, of: 12 },
+    host: { name: "Ali Demir", color: "#b45309" },
+  },
   {
     title: "Stadtgeschichten: Der Lindenhof 1920–1960",
     kind: "reading",
     time: "18:30–20:00",
     room: "Saal 2",
     seats: { free: 12, of: 40 },
-    host: "Dr. Henrike Vogt",
+    host: { name: "Dr. Henrike Vogt", color: "#7c3aed" },
   },
   {
     title: "Kammermusik am Abend – Schubert, Fauré",
@@ -55,31 +65,89 @@ const today: Event[] = [
 ];
 const week: Event[] = [
   { title: "Sprachcafé Deutsch–Ukrainisch", kind: "talk", time: "Do 17:00", room: "Café", seats: { free: 18, of: 25 } },
-  { title: "Kinder-Theaterwerkstatt", kind: "workshop", time: "Fr 15:30", room: "Werkraum", seats: { free: 2, of: 14 } },
+  {
+    title: "Kinder-Theaterwerkstatt",
+    kind: "workshop",
+    time: "Fr 15:30",
+    room: "Werkraum",
+    seats: { free: 2, of: 14 },
+    host: { name: "Mara Okafor", color: "#be185d" },
+  },
   { title: "Jazz-Session mit offener Bühne", kind: "concert", time: "Fr 20:00", room: "Großer Saal", seats: { free: 61, of: 120 } },
   { title: "Lyrik aus dem Stadtteil", kind: "reading", time: "Sa 11:00", room: "Saal 2", seats: { free: 22, of: 40 } },
   { title: "Dokumentarfilm: Der letzte Bäcker", kind: "film", time: "Sa 19:00", room: "Saal 1", seats: { free: 5, of: 60 } },
   { title: "Podium: Wohnen im Quartier", kind: "talk", time: "So 16:00", room: "Großer Saal", seats: { free: 44, of: 120 } },
 ];
 
+const few = (seats: Seats) => seats.free > 0 && seats.free <= Math.max(3, seats.of / 10);
+
 /** The state of the seats in colour, sign and word; never a colour alone. */
 const seatsChip = (seats: Seats) =>
   seats.free === 0 ? (
-    <Chip status="bad">Ausgebucht</Chip>
-  ) : seats.free <= Math.max(3, seats.of / 10) ? (
-    <Chip status="warn">{`Noch ${seats.free}`}</Chip>
+    <Chip status="bad" icon="ban">
+      Ausgebucht
+    </Chip>
+  ) : few(seats) ? (
+    <Chip status="warn" icon="alert-triangle">{`Noch ${seats.free}`}</Chip>
   ) : (
     <Chip status="ok">{`${seats.free} frei`}</Chip>
   );
 
-const eventRow = (event: Event) => (
-  <Row
-    icon={kinds[event.kind].icon}
-    color={kinds[event.kind].color}
-    lines={[event.title, `${event.time} · ${event.room}${event.host ? ` · ${event.host}` : ""}`]}
-    meta={kinds[event.kind].label}
-    end={seatsChip(event.seats)}
-    href="#termin"
+type Listed = Event & { day: "Heute" | "Diese Woche"; key: string };
+const listed = (events: Event[], day: Listed["day"]): Listed[] => events.map((event, index) => ({ ...event, day, key: `${day}-${index}` }));
+const taken = (seats: Seats) => seats.of - seats.free;
+
+/**
+ * The programme as one table grouped by day: the event with when and where, its type as a tag in its colour, who
+ * hosts it, how full it is as a meter, and its state. On the phone each event is one row of two lines with its state.
+ */
+const programme = (events: Listed[]) => (
+  <Table
+    label="Programm"
+    rows={events}
+    rowKey={(event) => event.key}
+    group={(event) => ({
+      key: event.day,
+      head: () => <Text weight="strong">{event.day}</Text>,
+      count: String(events.filter((other) => other.day === event.day).length),
+    })}
+    open={() => ({ href: "#termin" })}
+    columns={[
+      {
+        title: "Veranstaltung",
+        width: { min: 240, default: 340 },
+        cell: (event) => ({ lines: [event.title, `${event.time} · ${event.room}`] }),
+      },
+      {
+        title: "Art",
+        width: { min: 100, default: 112 },
+        drop: true,
+        cell: (event) => (
+          <Chip tag color={kinds[event.kind].color} icon={kinds[event.kind].icon}>
+            {kinds[event.kind].label}
+          </Chip>
+        ),
+      },
+      {
+        title: "Leitung",
+        width: { min: 64, default: 72 },
+        drop: true,
+        cell: (event) => (event.host ? <Avatar name={event.host.name} color={event.host.color} /> : ""),
+      },
+      {
+        title: "Belegt",
+        width: { min: 172, default: 196 },
+        drop: true,
+        cell: (event) => <Progress value={taken(event.seats)} of={event.seats.of} label={`${taken(event.seats)}/${event.seats.of}`} />,
+      },
+      { title: "Plätze", align: "end", cell: (event) => seatsChip(event.seats) },
+    ]}
+    // k2b-ui gap: a phone row of a table lets a long title take a second line; the look asks for one line with "…".
+    phone={(event) => ({
+      lines: [event.title, `${event.time} · ${event.room} · ${kinds[event.kind].label}`],
+      avatar: event.host,
+      marks: seatsChip(event.seats),
+    })}
   />
 );
 
@@ -89,18 +157,18 @@ export default function VenueProgramme(props: Props) {
   const events = () => (props.empty ? [] : today);
   const free = () => events().reduce((sum, event) => sum + event.seats.free, 0);
   const seats = () => events().reduce((sum, event) => sum + event.seats.of, 0);
-  const reserve = { label: "Platz reservieren", icon: "ticket", href: "#reservieren" };
+  const full = () => events().filter((event) => event.seats.free === 0).length;
+  const almost = () => events().filter((event) => few(event.seats)).length;
   return (
     <Workspace
-      primary={props.kiosk ? undefined : reserve}
       head={
         <Bar
           start={<RecordHead name={brand.name} avatar={{ name: brand.name, initials: "KL", color: brand.color }} kinds={["Programm"]} />}
           end={
             props.kiosk ? (
-              <Text type="meta">Mittwoch, 26. November</Text>
+              <Text type="meta">Mittwoch, 26. November · aktualisiert sich jede Minute</Text>
             ) : (
-              <Button variant="primary" icon="ticket" href="#reservieren">
+              <Button variant="primary" icon="ticket" href="#reservieren" keep>
                 Platz reservieren
               </Button>
             )
@@ -108,61 +176,84 @@ export default function VenueProgramme(props: Props) {
         />
       }
     >
-      <Pane
-        label="Programm"
-        status={
-          <StatusRow
-            lead={props.kiosk ? "Jetzt: Offene Holzwerkstatt · Werkraum" : `Heute ${events().length} Veranstaltungen`}
-            facts={[
-              { value: String(free()), after: `von ${seats()} Plätzen frei` },
-              { before: "Einlass", value: "30 Min. vorher" },
-              ...(props.kiosk ? [{ after: "aktualisiert sich jede Minute" }] : []),
-            ]}
-            loading={props.kiosk ? false : undefined}
-          />
-        }
-      >
-        <Show
-          when={!props.failed}
-          fallback={<Failed text="Das Programm konnte nicht geladen werden. Die Reservierung bleibt möglich." onRetry={() => {}} />}
+      <Pane.Split>
+        <Pane
+          label="Programm"
+          status={
+            <Bar
+              start={
+                <Inline>
+                  <Text weight="strong">
+                    {props.kiosk ? "Jetzt: Offene Holzwerkstatt · Werkraum" : `Heute ${events().length} Veranstaltungen`}
+                  </Text>
+                  <Show when={almost() > 0}>
+                    <Chip status="warn" icon="alert-triangle">{`${almost()} fast voll`}</Chip>
+                  </Show>
+                  <Show when={full() > 0}>
+                    <Chip status="bad" icon="ban">{`${full()} ausgebucht`}</Chip>
+                  </Show>
+                </Inline>
+              }
+            />
+          }
         >
           <Show
-            when={events().length > 0}
-            fallback={<Empty icon="calendar-off" text="Heute keine Veranstaltung. Das Programm der Woche steht unten." />}
+            when={!props.failed}
+            fallback={<Failed text="Das Programm konnte nicht geladen werden. Die Reservierung bleibt möglich." onRetry={() => {}} />}
           >
-            <Cells>
-              <Cells.Cell icon="clock" color={kinds.reading.color} label="Als Nächstes" value="18:30" meta="Stadtgeschichten · Saal 2" />
-              <Cells.Cell icon="armchair" color={brand.color} label="Plätze heute" value={`${free()} frei`} meta={`von ${seats()}`} />
-              <Cells.Cell icon="door-enter" color="#15803d" label="Einlass" value="ab 14:00" meta="Haupteingang Lindenstraße 4" />
-            </Cells>
-            <Section icon="calendar-event" title="Heute" count={events().length}>
-              {events().map(eventRow)}
-            </Section>
+            <Show when={events().length === 0}>
+              <Notice tone="note" icon="calendar-off">
+                Heute keine Veranstaltung. Das Programm der Woche steht darunter.
+              </Notice>
+            </Show>
+            {programme([...listed(events(), "Heute"), ...listed(week, "Diese Woche")])}
           </Show>
-          <Section icon="calendar-week" title="Diese Woche" count={week.length}>
-            {week.map(eventRow)}
+        </Pane>
+        <Pane side label="Ihr Besuch" width={{ min: 280, default: 360 }}>
+          <Section icon="armchair" color={brand.color} title="Plätze heute">
+            <Row
+              icon="armchair"
+              color={brand.color}
+              lines={[`${free()} von ${seats()} frei`, "über alle Veranstaltungen"]}
+              end={<Progress value={seats() - free()} of={seats() || 1} label={`${seats() - free()}/${seats()}`} />}
+            />
           </Section>
-          <Section icon="armchair" title="Auslastung der Säle">
+          <Section icon="door-enter" color="#15803d" title="Ihr Weg hinein">
+            <Facts
+              items={[
+                { label: "Einlass", value: "30 Min. vor Beginn" },
+                { label: "Eingang", value: "Lindenstraße 4, über den Hof" },
+                { label: "Kasse", value: "ab 13:30, nur Karte" },
+              ]}
+            />
+          </Section>
+          <Section icon="building" color={brand.color} title="Säle">
             <Row
               icon="building"
               color={brand.color}
               lines={["Großer Saal", "Kammermusik · 120 Plätze"]}
-              end={<Progress value={120} of={120} label="Großer Saal 120 von 120 belegt" />}
+              end={<Progress value={120} of={120} label="120/120" />}
             />
             <Row
               icon="building"
               color={brand.color}
               lines={["Saal 2", "Stadtgeschichten · 40 Plätze"]}
-              end={<Progress value={28} of={40} label="Saal 2 28 von 40 belegt" />}
+              end={<Progress value={28} of={40} label="28/40" />}
+            />
+            <Row
+              icon="building"
+              color={brand.color}
+              lines={["Werkraum", "Holzwerkstatt · 12 Plätze"]}
+              end={<Progress value={9} of={12} label="9/12" />}
             />
           </Section>
           <Show when={!props.kiosk}>
-            <Notice tone="note" title="Barrierefrei">
+            <Notice tone="note" icon="wheelchair" title="Barrierefrei">
               Alle Säle sind stufenlos über den Hof erreichbar. Eine Höranlage gibt es im Großen Saal.
             </Notice>
           </Show>
-        </Show>
-      </Pane>
+        </Pane>
+      </Pane.Split>
     </Workspace>
   );
 }
