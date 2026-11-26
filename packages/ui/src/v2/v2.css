@@ -1859,6 +1859,51 @@
   height: 100%;
   object-fit: cover;
 }
+/* ── Ticks: one tick per time slot, ok soft in the colour of what it belongs to, a failure red and taller ──── */
+.k2-ui .k2-ticks {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1px;
+  width: 140px;
+  height: 20px;
+  flex: none;
+  vertical-align: middle;
+}
+/* across its place between the text edges, such as a detail; the ticks stay thin and spread over the width */
+.k2-ui .k2-ticks[data-stretch] {
+  display: flex;
+  width: auto;
+  margin-inline: var(--k2-edge);
+}
+/* an empty slot keeps its place and draws nothing */
+.k2-ui .k2-ticks > i {
+  flex: 0 1 4px;
+  min-width: 1px;
+  height: 12px;
+  border-radius: 1px;
+}
+.k2-ui .k2-ticks > i[data-s="ok"] {
+  background: color-mix(in srgb, var(--k2-c, var(--k2-app, var(--k2-blue))) 45%, var(--k2-surface));
+}
+/* red only for a failure, and taller, so it reads without its colour too */
+.k2-ui .k2-ticks > i[data-s="bad"] {
+  height: 18px;
+  background: var(--k2-bad);
+}
+/* forced colours replace backgrounds: the ticks draw in system colours, a failure in the text colour */
+@media (forced-colors: active) {
+  .k2-ui .k2-ticks > i {
+    forced-color-adjust: none;
+  }
+  .k2-ui .k2-ticks > i[data-s="ok"] {
+    background: GrayText;
+  }
+  .k2-ui .k2-ticks > i[data-s="bad"] {
+    background: CanvasText;
+  }
+}
+
 /* the bar sits in the line of its words, on their middle; the words may wrap under it on a narrow column */
 .k2-ui .k2-progress {
   display: inline;
