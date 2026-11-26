@@ -29,7 +29,8 @@
  * - **cut:** a control's label never leaves its box and is never clipped, unless it ends in "…" in its own box (the
  *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
- *   whole and cuts a line at its end only with "…".
+ *   whole and cuts a line at its end only with "…"; text never runs out of a box that does not clip it, where it would
+ *   run under what stands beside it and look cut mid-word.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -602,6 +603,29 @@ function measureInPage(options: InPage): DomResult {
       const holdsControl = Array.from(element.children).some((child) => child.matches(options.controls));
       if (clipsX && !holdsControl && element.scrollWidth > element.clientWidth + 1 && style.textOverflow !== "ellipsis")
         cut.push(`${name(element)} "${labelOf(element)}" cuts its line without "…"`);
+    }
+    // Text that runs out of the box it stands in, where that box does not clip, runs under what stands beside it: a
+    // person sees it cut mid-word with no "…" (a lead under the chips at the end of its row). It belongs cut with "…"
+    // in its own box. A box that is placed on its own (absolute, fixed) may stand outside on purpose.
+    for (const element of elements) {
+      if (!(element instanceof HTMLElement) || element.closest(options.controls) || hiddenName(element)) continue;
+      if (!Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) continue;
+      if (["absolute", "fixed"].includes(getComputedStyle(element).position)) continue;
+      let parent = element.parentElement;
+      while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+      if (!parent || !root.contains(parent) || getComputedStyle(parent).overflowX !== "visible") continue;
+      const place = parent.getBoundingClientRect();
+      // only what is in sight: a box that clips its own text (with "…") keeps it inside, whatever the text's range says
+      const clip = hardClipX(element);
+      const own = textBoxes(element, (node) => node.parentElement !== element);
+      const out = Math.max(
+        0,
+        ...own.map((box) => Math.max(Math.min(box.right, clip.right) - place.right, place.left - Math.max(box.left, clip.left))),
+      );
+      if (out > 1)
+        cut.push(
+          `${name(element)} "${labelOf(element)}" runs ${Math.round(out)} px out of ${name(parent)} and under what stands beside it; it is cut with "…" in its own box`,
+        );
     }
     for (const element of Array.from(root.querySelectorAll(options.oneLine))) {
       if (!visible(element) || element.parentElement?.closest(options.skip)) continue;

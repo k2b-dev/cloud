@@ -429,6 +429,7 @@ export type StatusRowProps = {
   /**
    * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
    * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   * The whole statement stays as a hint on hover.
    */
   lead: string;
   /**
@@ -439,9 +440,9 @@ export type StatusRowProps = {
    */
   loading?: boolean;
   /**
-   * Key figures after the lead. They give way only where they do not fit before the filters, the later ones first and
-   * whole, so the filters keep their words and no figure runs under them; without filters they keep the row's room.
-   * On the phone they go. Put what must stay in `lead`.
+   * Key figures after the lead. They keep their width while a long lead is cut with "…" (down to about 40 % of the
+   * room before the filters); then they give way, the later ones first and whole, so the filters keep their words and
+   * no figure runs under them. They take at most 60 % of that room. On the phone they go. Put what must stay in `lead`.
    */
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
@@ -473,7 +474,10 @@ export const StatusRow = (props: StatusRowProps) => {
               <Show when={props.select}>
                 {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
               </Show>
-              <span class="k2-status-lead">{props.lead}</span>
+              {/* where the lead is cut with "…", its whole statement stays as a hint on hover */}
+              <span class="k2-status-lead" title={props.lead}>
+                {props.lead}
+              </span>
               {/* the place of the loading mark is there while the row can refresh, so the mark moves nothing */}
               <Show when={props.loading !== undefined}>
                 <span class="k2-status-busy" role="status">

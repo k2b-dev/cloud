@@ -685,6 +685,35 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A lead that keeps its width in a start that gave way runs out of it and under the chip beside it: cut mid-word,
+  // no "…" (the status rows of ipa-hosts and proxy-auth with a detail open, 26.11.).
+  const leadRow = (lead: string) =>
+    columns(
+      '<div class="row" style="display:flex; width:300px">' +
+        `<div data-probe="start" style="display:flex; flex:1 1 0; min-width:0"><span class="k2-t-row" data-probe="lead" style="${lead}">1 Client ist bis zur Konfiguration gesperrt</span></div>` +
+        '<span class="k2-t-meta" style="flex:none">bis zur Konfiguration gesperrt</span></div>',
+    );
+
+  test(
+    'red: a text that runs out of a box that does not clip it is cut mid-word under its neighbour; green with "…"',
+    async () => {
+      const page = await open(leadRow("flex:none; white-space:nowrap"));
+      const ellipsis = await open(leadRow("flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          expect.stringMatching(
+            /^\[data-probe="lead"\] "1 Client ist bis zur Konfiguration ges\w*" runs \d+ px out of \[data-probe="start"\] and under what stands beside it/,
+          ),
+        ]);
+        expect((await measureV2Layout(ellipsis)).cut).toEqual([]);
+      } finally {
+        await page.close();
+        await ellipsis.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "free drawing in Canvas is never measured",
     async () => {

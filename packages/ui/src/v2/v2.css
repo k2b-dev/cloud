@@ -2582,11 +2582,15 @@
 /* The key figures stand on one line that hides what wraps: where not all fit before the filters, the later ones wrap
    out of sight, whole figure by whole figure, and none runs under a control (#4149). The empty first item, one line
    high, lets even the first figure go whole instead of being cut; its gap and the row's make the 16 px after the
-   lead. The filters keep their room, and so does the lead: the figures start from no width and take what is left. */
+   lead. The filters keep their room. Then the parts give way in order: a long lead is cut with "…" first while the
+   figures keep their width, down to about 40 % of the room before the filters; only then do the figures fold, as they
+   may take at most the other 60 %, and never so much that the lead and its loading mark keep less than 7.5 rem (about
+   a word) in a narrow row. */
 .k2-ui .k2-bar-start > .k2-status-facts {
   display: flex;
   flex-wrap: wrap;
-  flex: 1 1 0;
+  flex: 0 0 auto;
+  max-width: min(60%, 100% - 7.5rem);
   column-gap: 8px;
   min-width: 0;
   height: 1lh;

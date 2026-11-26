@@ -217,6 +217,72 @@ for (const live of ["on", "until-now", "first-page"] as const)
       );
     });
 
+// A list with an entry open beside it (proxy-auth, ipa-hosts; design review 26.11.): the narrower list column cuts the
+// long lead with "…" before the chip at its end, never mid-word under the chip, and the whole statement stays as a hint
+// on hover. measureV2Layout reports nothing cut in the row.
+for (const width of [1440, 1024])
+  test(`a list with an entry open in a window of ${width} px: the lead ends in "…" before the chip and keeps its words as hint`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2Proxy?.());
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const lead = row.querySelector<HTMLElement>(".k2-status-lead")!;
+          const chip = row.querySelector(".k2-bar-end .k2-chip")!.getBoundingClientRect();
+          const style = getComputedStyle(lead);
+          return {
+            detail: document.querySelector(".k2-pane[data-detail]") !== null,
+            cut: lead.scrollWidth > lead.clientWidth + 0.5,
+            ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+            clear: lead.getBoundingClientRect().right <= chip.left,
+            title: lead.title,
+          };
+        });
+        // at 1440 the list beside the entry may hold the whole lead; at 1024 it is cut
+        expect(found).toEqual({
+          detail: true,
+          cut: width === 1024 ? true : found.cut,
+          ellipsis: true,
+          clear: true,
+          title: "1 Client ist bis zur Konfiguration gesperrt",
+        });
+        expect((await measureV2Layout(page, { root: '[data-k2-part="StatusRow"]' })).cut).toEqual([]);
+      },
+      { width },
+    );
+  });
+
+// The order of giving way (Tools, U3): a long lead beside three figures and the filters is cut with "…" first, down to
+// about 40 % of the room before the filters, while the figures keep their width; only then do the figures fold. On the
+// phone the figures and filters leave and the lead takes the row.
+for (const width of [1440, 1024, 390])
+  test(`${width} px, a long lead, three figures and filters: the lead gives way first and keeps about 40 %`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          window.__k2LongLead?.();
+          window.__k2ThreeFacts?.();
+        });
+        await settled(page);
+        const found = await page.evaluate(statusRow);
+        // on the phone the figures and filters have left, so only the lead is measured there
+        if (width >= 768) expectHeld(found);
+        const room = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const start = row.querySelector(".k2-bar-start")!.getBoundingClientRect().width;
+          return { start, lead: row.querySelector(".k2-status-lead")!.getBoundingClientRect().width };
+        });
+        if (width >= 768) {
+          // the figures keep their width while the lead gives way
+          expect(found.shown).toEqual([true, true, true]);
+          if (found.lead.cut) expect(room.lead).toBeGreaterThanOrEqual(room.start * 0.4 - 32);
+        } else expect(found.lead).toEqual({ cut: true, ellipsis: true, word: true });
+      },
+      { width },
+    );
+  });
+
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
   await withPage(
