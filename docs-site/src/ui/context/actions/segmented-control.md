@@ -36,7 +36,7 @@ type SegmentOption<T extends string = string> = {
 
 type SegmentedControlProps<T extends string = string> = {
   options: readonly SegmentOption<T>[]; value: T | (() => T); onValueChange: (value: T) => void;
-  disabled?: boolean; ariaLabel?: string; label?: string; size?: "sm" | "md"; stretch?: boolean; class?: string;| "md"; class?: string;
+  disabled?: boolean; ariaLabel?: string; label?: string; size?: "sm" | "md"; stretch?: boolean; class?: string;
 };
 ```
 
