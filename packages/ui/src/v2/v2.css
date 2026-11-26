@@ -3380,6 +3380,10 @@
     width: var(--k2-h-control-small);
     padding: 0;
   }
+  /* "Mehr" keeps its symbol only, as the deeds beside it */
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-actions > .k2-btn[data-menu] > .k2-icon:not(:first-child) {
+    display: none;
+  }
   .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-actions > .k2-btn:not([data-variant]):has(> .k2-icon) > .k2-btn-label {
     position: absolute;
     width: 1px;
@@ -3408,9 +3412,14 @@
   }
 }
 
-/* the actions of a selection stand in the line of the bar; on the phone they float at the bottom (below) */
+/* the actions of a selection stand in the line of the bar; on the phone they float at the bottom (below). From five
+   on, the first three stand and the rest wait in "Mehr". The count is a statement of the row in 14 px, 600. */
 .k2-ui .k2-status-actions {
   display: contents;
+}
+.k2-ui .k2-bar[data-selecting] .k2-status-lead {
+  font: var(--k2-t-body);
+  font-weight: 600;
 }
 
 /* StatusRow: one lead statement, key figures; filters on the right */
@@ -4580,6 +4589,10 @@
     border-radius: var(--k2-r-card);
     background: var(--k2-surface);
     box-shadow: var(--k2-float);
+  }
+  /* "Mehr" floats with them, its symbol over its word, without its arrow */
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-actions > .k2-btn[data-menu] > .k2-icon:not(:first-child) {
+    display: none;
   }
   .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-actions > .k2-btn:not([data-variant]):has(> .k2-icon) {
     flex: 1;

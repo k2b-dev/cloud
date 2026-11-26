@@ -246,3 +246,38 @@ export const AreasMenuScreen = () => (
     </Pane>
   </Workspace>
 );
+
+// A selection with six deeds in a column beside a side column: the first three stand, the rest wait in "Mehr".
+export const SelectionScreen = () => (
+  <Workspace>
+    <Pane.Split>
+      <Pane
+        label="Dateien"
+        status={
+          <StatusRow
+            lead=""
+            selection={{
+              count: "3 ausgewählt",
+              actions: [
+                { label: "Teilen", icon: "share" },
+                { label: "Verschieben", icon: "folder-symlink" },
+                { label: "Als ZIP laden", icon: "download" },
+                { label: "Löschen", icon: "trash" },
+                { label: "In Ordner kopieren", icon: "copy" },
+                { label: "PDFs zusammenführen", icon: "stack-2" },
+              ],
+              clear: { label: "Auswahl aufheben", onClick: () => {} },
+            }}
+          />
+        }
+      >
+        <List label="Dateien">
+          <Row lines={["Ansicht Front Eiche.jpg"]} />
+        </List>
+      </Pane>
+      <Pane label="Vorschau" width={{ min: 320, default: 380 }}>
+        <Text>Ansicht Front Eiche.jpg</Text>
+      </Pane>
+    </Pane.Split>
+  </Workspace>
+);

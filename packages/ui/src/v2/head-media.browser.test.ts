@@ -28,6 +28,7 @@ type Case =
   | "path-chip"
   | "split-canvas"
   | "split-list-canvas"
+  | "selection"
   | "long"
   | "areas";
 
@@ -207,6 +208,48 @@ test("the head has two full-width rows above list and detail: path and deeds, th
   });
 });
 
+test("a selection with six deeds shows three and 'Mehr' with the rest in their order, its count in 14 px 600, and nothing leaves its bar (Files v3)", async () => {
+  for (const width of [1440, 1024, 390])
+    await withPage(
+      "selection",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector(".k2-bar[data-selecting]")!;
+          const box = bar.getBoundingClientRect();
+          const lead = getComputedStyle(bar.querySelector(".k2-status-lead")!);
+          const deeds = [...bar.querySelectorAll<HTMLElement>(".k2-status-actions > .k2-btn")].map((button) => ({
+            name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
+            rect: button.getBoundingClientRect(),
+          }));
+          const floating = getComputedStyle(bar.querySelector(".k2-status-actions")!).position === "fixed";
+          return {
+            count: [lead.fontSize, lead.fontWeight],
+            deeds: deeds.map((deed) => deed.name),
+            // in the bar's line, every deed inside the bar (on the phone they float at the bottom of the window)
+            inside: deeds.every((deed) => deed.rect.right <= (floating ? innerWidth : box.right) + 0.5 && deed.rect.left >= 0),
+          };
+        });
+        expect(found.count).toEqual(["14px", "600"]);
+        expect(found.deeds.slice(0, 3)).toEqual(["Teilen", "Verschieben", "Als ZIP laden"]);
+        expect(found.deeds.length).toBe(4);
+        expect(found.inside).toBe(true);
+        // "Mehr" holds the rest in their order
+        await page.locator(".k2-status-actions > .k2-btn[data-menu]").click();
+        await settled(page);
+        expect(await page.getByRole("menu").getByRole("menuitem").allTextContents()).toEqual([
+          "Löschen",
+          "In Ordner kopieren",
+          "PDFs zusammenführen",
+        ]);
+        await page.keyboard.press("Escape");
+        await settled(page);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+});
+
 test("a selection takes the bar's place at the same height, so the list does not move", async () => {
   let before = 0;
   await withPage("grid", async (page) => {
@@ -313,7 +356,7 @@ test("on the phone the actions of a selection float at the bottom, symbol over w
       expect(labels).toEqual([
         { text: "Teilen", visible: true },
         { text: "Verschieben", visible: true },
-        { text: "Laden", visible: true },
+        { text: "Als ZIP laden", visible: true },
         { text: "Löschen", visible: true },
       ]);
       expect(await page.locator(".k2-fab").evaluate((element) => getComputedStyle(element).display)).toBe("none");

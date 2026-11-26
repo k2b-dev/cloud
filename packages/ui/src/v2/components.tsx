@@ -523,8 +523,12 @@ export type StatusRowProps = {
 };
 
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
+/** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
+const SELECTION_SHOWN = 3;
+
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
+  const overlay = useOverlayMessages();
   const filters = resolveChildren(() => props.filters);
   return (
     <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
@@ -580,7 +584,30 @@ export const StatusRow = (props: StatusRowProps) => {
             {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
                 On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
             <span class="k2-status-actions">
-              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+              <For
+                each={
+                  selection().actions.length > SELECTION_SHOWN + 1 ? selection().actions.slice(0, SELECTION_SHOWN) : selection().actions
+                }
+              >
+                {(action) => <ActionButton action={action} titled />}
+              </For>
+              <Show when={selection().actions.length > SELECTION_SHOWN + 1}>
+                <Menu
+                  icon="dots"
+                  items={selection()
+                    .actions.slice(SELECTION_SHOWN)
+                    .map((action) => ({
+                      label: action.label,
+                      icon: action.icon,
+                      href: action.href,
+                      onNavigate: action.onNavigate,
+                      onClick: action.onClick,
+                      disabled: action.disabled,
+                    }))}
+                >
+                  {overlay().more}
+                </Menu>
+              </Show>
             </span>
             <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>

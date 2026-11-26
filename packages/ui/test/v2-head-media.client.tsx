@@ -2,7 +2,14 @@ import { render } from "solid-js/web";
 import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
-import { AreasMenuScreen, CanvasFillScreen, DeepPathScreen, LongAddressScreen, RowStatesScreen } from "./v2-row-states.fixture";
+import {
+  AreasMenuScreen,
+  CanvasFillScreen,
+  DeepPathScreen,
+  LongAddressScreen,
+  RowStatesScreen,
+  SelectionScreen,
+} from "./v2-row-states.fixture";
 
 // The folder and the settings page of the k2b-ui skill in the browser, by the case the page names before this bundle
 // runs: the list with the open file, the grid, the grid with three photos selected, or the settings page.
@@ -21,6 +28,7 @@ declare global {
       | "path-chip"
       | "split-canvas"
       | "split-list-canvas"
+      | "selection"
       | "long"
       | "areas";
     /** The height of the drawing right after the first render, before anything could measure it. */
@@ -41,6 +49,8 @@ render(
         <RowStatesScreen />
       ) : which === "areas" ? (
         <AreasMenuScreen />
+      ) : which === "selection" ? (
+        <SelectionScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (
