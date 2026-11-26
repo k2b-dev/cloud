@@ -67,7 +67,7 @@ describe("Photo editor on v2", () => {
     const controls = inspector(html);
     expect(controls).toMatch(/data-k2-part="Tabs" aria-label="Editor mode"/);
     expect(controls).toMatch(/aria-current="page"[^>]*>(?:(?!<\/button>).)*Edit</);
-    for (const title of ["Photo", "Transform", "Adjustments", "Presets", "Edits"]) expect(controls).toContain(`<h3>${title}</h3>`);
+    for (const title of ["Image", "Transform", "Adjustments", "Presets", "Edits"]) expect(controls).toContain(`<h3>${title}</h3>`);
     // the crop button names its group; no heading says the same word above it
     expect(controls).not.toContain("<h3>Crop</h3>");
     expect(controls).toMatch(/<span class="k2-btn-label">Crop<\/span>/);
@@ -88,7 +88,7 @@ describe("Photo editor on v2", () => {
     expect(html).toContain('aria-label="Open invoice.png"');
     expect(html).toContain('aria-label="Open receipt.png"');
     expect(html).toMatch(/aria-label="Open invoice.png" aria-current="true"|aria-current="true"[^>]*aria-label="Open invoice.png"/);
-    expect(html).toContain("image 1 of 2");
+    expect(html).toContain("Image 1 of 2");
   });
 
   test("the markup tab offers its tools, and its history deeds start disabled", () => {
@@ -130,5 +130,22 @@ describe("Photo editor on v2", () => {
     expect(html).toContain("later.png: Apply or cancel the crop before adding images");
     expect(html).toContain("Apply or cancel it, then add the images again.");
     expect(html).toContain("Hide broken.heic");
+  });
+
+  test("the path has no link to its own address: a click there would reload and lose every open photo", () => {
+    const html = renderView({ initialImages: [image] });
+    const path = html.slice(html.indexOf('data-k2-part="Path"'), html.indexOf("</nav>", html.indexOf('data-k2-part="Path"')));
+    expect(path).toContain("Edit photo");
+    expect(path).not.toContain('href="/tools/image"');
+    expect(path).toContain('href="/tools"');
+  });
+
+  test("one status region is always there, so what happens on the stage is announced", () => {
+    for (const html of [renderView(), renderView({ initialImages: [image] })])
+      expect(html.match(/role="status"[^>]*aria-live="polite"|aria-live="polite"[^>]*role="status"/g)).toHaveLength(1);
+  });
+
+  test("the photo's whole name is a fact too, where the path gives way on the phone", () => {
+    expect(inspector(renderView({ initialImages: [image] }))).toMatch(/Name<\/dt>\s*<dd[^>]*>(?:<[^>]+>)*invoice.png/);
   });
 });
