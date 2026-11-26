@@ -1,7 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { AgentKeyView } from "./AgentKeyDialogs";
 import AgentScreen, { type AgentView } from "./AgentScreen";
-import AgentsScreen, { type AgentListEntry } from "./AgentsScreen";
 import { type AgentKey, type AgentKeyOpen, type AgentKeySort, sortAgentKeys } from "./agent-keys";
 import { AGENT_ID, KEY_IDS } from "./agent-screens.fixture-ids";
 
@@ -60,12 +59,6 @@ const stored: AgentKey[] = [
 ];
 const sortedKeys = (sort: AgentKeySort) => sortAgentKeys(stored, sort, "de").map((key) => keys.find((view) => view.id === key.id)!);
 
-export const agents: AgentListEntry[] = [
-  { id: AGENT_ID, name: "Wochenbericht", active: true, created: "22.09.2026, 09:14" },
-  { id: "0b2f5c7e-0000-4000-8000-0000000000bc", name: "Festplaner", active: true, created: "14.10.2026, 11:02" },
-  { id: "0b2f5c7e-0000-4000-8000-0000000000bd", name: "Import Buchhaltung", active: false, created: "01.04.2026, 16:30" },
-];
-
 export const AgentScreenFixture = (props: { keys?: AgentKeyView[] | null; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean }) => (
   <LocaleProvider locale="de">
     <AgentScreen
@@ -77,11 +70,5 @@ export const AgentScreenFixture = (props: { keys?: AgentKeyView[] | null; open?:
       modelsAvailable
       pendingRequests={2}
     />
-  </LocaleProvider>
-);
-
-export const AgentsScreenFixture = (props: { empty?: boolean }) => (
-  <LocaleProvider locale="de">
-    <AgentsScreen agents={props.empty ? [] : agents} total={props.empty ? 0 : agents.length} page={1} pages={1} pendingRequests={2} />
   </LocaleProvider>
 );

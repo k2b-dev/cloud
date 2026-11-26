@@ -67,7 +67,7 @@ export default function AgentScreen(props: Props) {
 
   return (
     <Workspace
-      sidebar={<AccountsNav active="agents" pendingRequests={props.pendingRequests} />}
+      sidebar={<AccountsNav active="users" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
           start={

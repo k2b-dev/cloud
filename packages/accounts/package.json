@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
-    "test": "bun test --isolate --path-ignore-patterns '**/frontend/duplicate-emails/page.test.tsx' --path-ignore-patterns '**/test/**' ./src && bun test --isolate --preload ./test/solid-ssr-preload.ts ./src/frontend/duplicate-emails/page.test.tsx"
+    "test": "bun test --isolate --path-ignore-patterns '**/test/**' ./src"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",

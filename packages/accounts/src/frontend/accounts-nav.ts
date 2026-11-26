@@ -3,12 +3,10 @@ import type { AccountsMessages } from "./messages";
 export type AccountsNavActiveKey =
   | "dashboard"
   | "users"
-  | "duplicate-emails"
   | "groups"
   | "requests"
   | "audit"
   | "api-keys"
-  | "agents"
   | "notifications"
   | "deleted-accounts"
   | "reminders"
@@ -41,14 +39,8 @@ export const accountsNavItems = (
       active: props.active === "requests",
       badge: props.pendingRequests > 0 ? String(props.pendingRequests) : undefined,
     },
-    { href: "/app/accounts/users", icon: "ti ti-users", label: messages().users, active: props.active === "users" },
-    {
-      href: "/app/accounts/duplicate-emails",
-      icon: "ti ti-copy",
-      label: messages().duplicateEmails,
-      active: props.active === "duplicate-emails",
-    },
-    { href: "/app/accounts/agents", icon: "ti ti-robot", label: messages().agents, active: props.active === "agents" },
+    // the one account list: people, agents and API key accounts, with views for agents and shared addresses
+    { href: "/app/accounts/users", icon: "ti ti-users", label: messages().accountList, active: props.active === "users" },
     {
       href: "/app/accounts/api-keys",
       icon: "ti ti-user-key",

@@ -1,6 +1,7 @@
 import { getLocale, middleware, rateLimit } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import accountRequestsRoutes from "./account-requests";
+import accountsRoutes from "./accounts";
 import actionNoticeRoutes from "./action-notice";
 import auditRoutes from "./audit";
 import groupsRoutes from "./groups";
@@ -42,10 +43,12 @@ const localizeApiError = async (c: Context, next: () => Promise<void>) => {
 //
 // Mounted at `/api/accounts`, so sub-routes become:
 //   /api/accounts/widget/*  — dashboard widget endpoints (own auth)
-//   /api/accounts/users/*, /groups/*, /account-requests/*  — admin api
+//   /api/accounts/accounts, /users/*, /groups/*, /account-requests/*  — admin api
 const app = new Hono()
   .use("/service-accounts", middleware.noTransform())
   .use("/service-accounts/*", middleware.noTransform())
+  .use("/accounts", middleware.noTransform())
+  .use("/accounts/*", middleware.noTransform())
   .use("/users", middleware.noTransform())
   .use("/users/*", middleware.noTransform())
   .use("/audit", middleware.noTransform())
@@ -54,6 +57,7 @@ const app = new Hono()
   .route("/widget", widgetRoutes)
   .use(rateLimit())
   .route("/action-notice", actionNoticeRoutes)
+  .route("/accounts", accountsRoutes)
   .route("/users", usersRoutes)
   .route("/groups", groupsRoutes)
   .route("/account-requests", accountRequestsRoutes)

@@ -93,9 +93,7 @@ afterAll(async () => {
 type View = { width: number; height: number; touch: boolean; name: string };
 const desktop: View = { width: 1280, height: 860, touch: false, name: "1280" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
-type State =
-  | { screen: "agents"; empty?: boolean }
-  | { screen: "agent"; keys?: "sample" | "empty" | "failed"; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean };
+type State = { screen: "agent"; keys?: "sample" | "empty" | "failed"; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean };
 /** What the API answers next: a create answers with a token, a status, or a lost connection; a revoke with a status. */
 type Api = { create: "token" | 400 | 500 | "lost"; revoke: number[]; posts: unknown[]; deletes: string[]; pages: string[] };
 const api = (create: Api["create"] = "token", revoke: number[] = [200]): Api => ({ create, revoke, posts: [], deletes: [], pages: [] });
@@ -122,7 +120,7 @@ const open = async (
   view: View,
   address: string,
   answers: Api,
-  options: { dark?: boolean; state?: Partial<Extract<State, { screen: "agent" }>>; list?: { empty?: boolean } } = {},
+  options: { dark?: boolean; state?: Partial<Extract<State, { screen: "agent" }>> } = {},
 ) => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
@@ -140,11 +138,6 @@ const open = async (
   await tab.route(`${origin}/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === "/app/accounts/agents")
-      return route.fulfill({
-        contentType: "text/html; charset=utf-8",
-        body: page({ screen: "agents", ...options.list }, Boolean(options.dark)),
-      });
     if (url.pathname === `/app/accounts/agents/${AGENT_ID}`) {
       answers.pages.push(`${url.pathname}${url.search}`);
       return route.fulfill({
@@ -190,12 +183,10 @@ const expectClean = async (tab: Page) => {
 };
 
 describe("an agent's API keys on v2", () => {
-  test("the list, an agent's keys, the order and the states keep the v2 rules at 1280 and 390 px", async () => {
+  test("an agent's keys, the order and the states keep the v2 rules at 1280 and 390 px", async () => {
     const tableWidths: number[] = [];
     for (const view of [desktop, phone]) {
       for (const [name, address, options] of [
-        ["list", "/app/accounts/agents", {}],
-        ["list-empty", "/app/accounts/agents", { list: { empty: true } }],
         ["detail", `/app/accounts/agents/${AGENT_ID}`, {}],
         ["detail-sorted", `/app/accounts/agents/${AGENT_ID}?sort=name`, {}],
         ["detail-empty", `/app/accounts/agents/${AGENT_ID}`, { state: { keys: "empty" } }],
@@ -206,7 +197,6 @@ describe("an agent's API keys on v2", () => {
         const { context, tab, errors } = await open(view, address, api(), options);
         try {
           const outline = await expectClean(tab);
-          if (name === "list-empty") expect(outline).toContain(t.noAgents.slice(0, 30));
           if (name === "detail-empty") expect(outline).toContain(t.noKeys.slice(0, 30));
           if (name === "detail-failed") expect(outline).toContain(t.retry);
           if (name === "detail-disabled") expect(outline).toContain(t.agentDisabledNotice.slice(0, 30));

@@ -66,6 +66,60 @@ export const UserDirectoryEntrySchema = BaseUserSchema.extend({
 });
 export type UserDirectoryEntry = z.infer<typeof UserDirectoryEntrySchema>;
 
+/**
+ * The kinds of the administration's account list: people, agents (service accounts of the kind `agent`, and
+ * `standalone` ones from before agents existed), and API key accounts (service accounts bound to an app resource,
+ * `resource_bound`). Personal keys (`user_delegated`) belong to their person, and code accounts are not listed.
+ */
+export const AccountDirectoryKindSchema = z.enum(["person", "agent", "api-key"]);
+export type AccountDirectoryKind = z.infer<typeof AccountDirectoryKindSchema>;
+
+/** Where an account stands: a person is active, invited or expired; a service account is active or disabled. */
+export const AccountDirectoryStatusSchema = z.enum(["active", "invited", "expired", "disabled"]);
+export type AccountDirectoryStatus = z.infer<typeof AccountDirectoryStatusSchema>;
+
+/** A person on the account list: the user list's entry, and whether another account shares its email address. */
+export const AccountDirectoryPersonSchema = UserDirectoryEntrySchema.extend({
+  kind: z.literal("person"),
+  duplicateMail: z.boolean(),
+});
+export type AccountDirectoryPerson = z.infer<typeof AccountDirectoryPersonSchema>;
+
+/** An agent or an API key account on the account list. */
+export const AccountDirectoryServiceAccountSchema = z.object({
+  kind: z.enum(["agent", "api-key"]),
+  id: z.string(),
+  name: z.string(),
+  /** The app resource an API key account belongs to; null for an agent. */
+  resource: z.object({ appId: z.string(), type: z.string(), id: z.string() }).nullable(),
+  status: z.enum(["active", "disabled"]),
+  avatarHash: z.string().nullable(),
+  /** When one of its API keys was used last, or null when none was used. */
+  lastUsed: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+/**
+ * What matters today on the account list, over all accounts and independent of its filters: sign-ins since the start
+ * of the day, people who never signed in, expired people, active people without a passkey, and the email addresses
+ * more than one account uses.
+ */
+export const AccountDirectorySummarySchema = z.object({
+  signedInToday: z.number().int().nonnegative(),
+  invited: z.number().int().nonnegative(),
+  expired: z.number().int().nonnegative(),
+  withoutPasskey: z.number().int().nonnegative(),
+  sharedAddresses: z.number().int().nonnegative(),
+});
+export type AccountDirectorySummary = z.infer<typeof AccountDirectorySummarySchema>;
+
+/** One account of the administration's account list. */
+export const AccountDirectoryEntrySchema = z.discriminatedUnion("kind", [
+  AccountDirectoryPersonSchema,
+  AccountDirectoryServiceAccountSchema,
+]);
+export type AccountDirectoryEntry = z.infer<typeof AccountDirectoryEntrySchema>;
+
 export const IpaUserDataSchema = z.object({
   uidNumber: z.number().nullable(),
   phone: z.string().nullable(),

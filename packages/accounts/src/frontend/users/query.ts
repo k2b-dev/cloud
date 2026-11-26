@@ -1,11 +1,12 @@
 /**
- * The user list's one declaration: its filters, sorts, grouping and address. The SSR page, the users API and the
- * browser read and write the address only through it, so reload, back and a shared link show the same users.
+ * The account list's one declaration: its filters, sorts, grouping and address. The SSR page, the accounts and users
+ * APIs and the browser read and write the address only through it, so reload, back and a shared link show the same
+ * accounts. The list holds people, agents and API key accounts; the filters only a person has narrow it to people.
  *
- * Accounts filters on the server (`accountsAppService.user.directory`); the declaration only names fields, values and
- * bounds. There are no saved views: the views live in code (`USER_VIEWS`), as the approved filter concept says.
+ * Accounts filters on the server (`accountsAppService.account.directory`); the declaration only names fields, values
+ * and bounds. There are no saved views: the views live in code (`USER_VIEWS`), as the approved filter concept says.
  */
-import type { UserDirectoryRole, UserDirectoryStatus } from "@k2b/cloud/contracts";
+import type { AccountDirectoryKind, AccountDirectoryStatus, UserDirectoryRole } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import {
   defineListQuery,
@@ -32,7 +33,8 @@ export const LOGIN_DAY_MIN = "1970-01-01";
 export const LOGIN_DAY_MAX = "9999-12-30";
 
 const ROLES = ["admin", "member", "guest"] as const satisfies readonly UserDirectoryRole[];
-const STATUSES = ["active", "invited", "expired"] as const satisfies readonly UserDirectoryStatus[];
+const STATUSES = ["active", "invited", "expired", "disabled"] as const satisfies readonly AccountDirectoryStatus[];
+const KINDS = ["person", "agent", "api-key"] as const satisfies readonly AccountDirectoryKind[];
 export type LoginPreset = "last-7d" | "last-30d" | "older-90d" | "never";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,6 +51,15 @@ export const usersQuery = (locale: string, groups?: GroupLookup) => {
   return defineListQuery({
     key: "accounts.users",
     fields: {
+      kind: field.choice({
+        label: t.kind,
+        common: true,
+        options: [
+          { value: "person", label: t.person },
+          { value: "agent", label: t.agent },
+          { value: "api-key", label: t.apiKey },
+        ] satisfies { value: (typeof KINDS)[number]; label: string }[],
+      }),
       role: field.choice({
         label: t.role,
         common: true,
@@ -72,6 +83,7 @@ export const usersQuery = (locale: string, groups?: GroupLookup) => {
           { value: "active", label: t.active },
           { value: "invited", label: t.invited },
           { value: "expired", label: t.expired },
+          { value: "disabled", label: t.disabled },
         ] satisfies { value: (typeof STATUSES)[number]; label: string }[],
       }),
       login: field.dateRange({
@@ -93,16 +105,18 @@ export const usersQuery = (locale: string, groups?: GroupLookup) => {
           { value: "local", label: t.local },
         ],
       }),
+      duplicate: field.bool({ label: t.mailAddress, common: true, labels: { yes: t.mailShared, no: t.mailUnique } }),
     },
     search: { label: t.searchUsers },
     sort: {
       options: {
         name: { label: t.name, directions: ["asc", "desc"] },
         login: { label: t.lastActive, directions: ["desc", "asc"] },
+        mail: { label: t.mailAddress, directions: ["asc", "desc"] },
       },
       default: { field: "name", direction: "asc" },
     },
-    group: { "member-of": { label: t.byGroup } },
+    group: { "member-of": { label: t.byGroup }, mail: { label: t.mailAddress } },
     pageParams: ["page"],
   });
 };
@@ -117,6 +131,13 @@ export const USER_VIEWS = {
   expired: (query: UsersQuery): UsersState => view(query, "expired", { status: ["expired"] }),
   "inactive-admins": (query: UsersQuery): UsersState =>
     view(query, "inactive-admins", { role: ["admin"], login: { kind: "preset", preset: "older-90d" } }),
+  agents: (query: UsersQuery): UsersState => view(query, "agents", { kind: ["agent"] }),
+  // accounts that share an address stand together, as the duplicate address page showed them
+  duplicates: (query: UsersQuery): UsersState => ({
+    ...view(query, "duplicates", { duplicate: true }),
+    sort: { field: "mail", direction: "asc" },
+    group: "mail",
+  }),
 };
 export type UserView = keyof typeof USER_VIEWS;
 export const USER_VIEW_KEYS = Object.keys(USER_VIEWS) as UserView[];
@@ -161,6 +182,9 @@ export const parseUsersAddress = (query: UsersQuery, params: URLSearchParams): U
 
 const dayStart = (day: string, timeZone: string): Date =>
   new Date(dates.zonedDateTimeToInstant(`${day}T00:00`, timeZone, { disambiguation: "compatible" }));
+/** The start of the day `now` falls on, in the person's time zone: from when "today" counts. */
+export const todayStart = (timeZone: string, now: Date = new Date()): Date =>
+  dayStart(new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now), timeZone);
 const nextDay = (day: string): string => new Date(Date.parse(`${day}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
 
 /** The last-sign-in window a period asks for, in the person's time zone: `since` inclusive, `until` exclusive. */
@@ -182,6 +206,7 @@ export const loginWindow = (
 
 /** The service query a list state asks for. */
 export const directoryQueryOf = (state: UsersState, timeZone: string, now: Date = new Date()) => ({
+  kinds: state.filters.kind,
   search: state.search,
   roles: state.filters.role,
   groupIds: state.filters["member-of"],
@@ -189,7 +214,11 @@ export const directoryQueryOf = (state: UsersState, timeZone: string, now: Date 
   lastLogin: state.filters.login ? loginWindow(state.filters.login, timeZone, now) : undefined,
   passkey: state.filters.passkey,
   provider: state.filters.provider,
-  sort: { field: state.sort.field === "login" ? ("lastLogin" as const) : ("name" as const), direction: state.sort.direction },
+  duplicateMail: state.filters.duplicate,
+  sort: {
+    field: state.sort.field === "login" ? ("lastLogin" as const) : state.sort.field === "mail" ? ("mail" as const) : ("name" as const),
+    direction: state.sort.direction,
+  },
 });
 
 /** The address of a state, plus its page. */
@@ -246,3 +275,24 @@ export const usersListHref = (context: string): string => (context ? `${USERS_PA
 /** A user's page, carrying the list context it was opened from. */
 export const userDetailHref = (id: string, context: string): string =>
   context ? `${USERS_PAGE_PATH}/${id}?${new URLSearchParams({ list: context })}` : `${USERS_PAGE_PATH}/${id}`;
+
+/** The address of a view in its whole state, for links from other pages (an agent's page leads to the agents view). */
+export const usersViewHref = (view: UserView): string => {
+  const query = usersQuery("en");
+  return usersHref(query, USER_VIEWS[view](query));
+};
+
+/** The list for an address of a page the account list replaced: the view in its whole state, every old parameter kept. */
+const legacyViewHref = (view: "agents" | "duplicates", params: URLSearchParams): string => {
+  const query = usersQuery("en");
+  const next = query.serialize(USER_VIEWS[view](query));
+  // the old pages read only `page`; anything else passes on, and the list says what did not apply
+  for (const [name, value] of params) if (!next.has(name)) next.append(name, value);
+  return `${USERS_PAGE_PATH}?${readable(next)}`;
+};
+
+/** The account list for an address of the former agent list (`/app/accounts/agents`): the agents view, same page. */
+export const legacyAgentsHref = (params: URLSearchParams): string => legacyViewHref("agents", params);
+
+/** The account list for an address of the former duplicate address page: the view of shared addresses, same page. */
+export const legacyDuplicateEmailsHref = (params: URLSearchParams): string => legacyViewHref("duplicates", params);

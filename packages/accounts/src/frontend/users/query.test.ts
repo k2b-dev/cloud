@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   directoryQueryOf,
+  legacyAgentsHref,
+  legacyDuplicateEmailsHref,
   legacyUsersHref,
   loginWindow,
   parseUsersAddress,
@@ -10,6 +12,7 @@ import {
   usersListContext,
   usersListHref,
   usersQuery,
+  usersViewHref,
 } from "./query";
 
 const query = usersQuery("de");
@@ -70,6 +73,7 @@ describe("what the service is asked for", () => {
   test("maps the filters and the sort", () => {
     const { state } = parse(`role=guest&member-of=${GROUP}&status=invited,expired&passkey=yes&provider=ipa&q=lin&sort=name.desc`);
     expect(directoryQueryOf(state, "Europe/Berlin", NOW)).toEqual({
+      kinds: undefined,
       search: "lin",
       roles: ["guest"],
       groupIds: [GROUP],
@@ -77,6 +81,7 @@ describe("what the service is asked for", () => {
       lastLogin: undefined,
       passkey: true,
       provider: "ipa",
+      duplicateMail: undefined,
       sort: { field: "name", direction: "desc" },
     });
     expect(directoryQueryOf(parse("sort=login.asc").state, "UTC", NOW).sort).toEqual({ field: "lastLogin", direction: "asc" });
@@ -92,6 +97,51 @@ describe("what the service is asked for", () => {
       until: new Date("2026-11-30T23:00:00.000Z"),
     });
     expect(loginWindow({ kind: "range", to: "2026-03-28" }, "Europe/Berlin", NOW)).toEqual({ until: new Date("2026-03-28T23:00:00.000Z") });
+  });
+});
+
+describe("the kinds of the account list", () => {
+  test("kind, the disabled status and a shared address are list state like any filter", () => {
+    const address = parse("kind=agent,api-key&status=active,disabled&duplicate=yes&sort=mail.desc&group=mail");
+    expect(address.issues).toEqual([]);
+    expect(address.state.filters).toEqual({ kind: ["agent", "api-key"], status: ["active", "disabled"], duplicate: true });
+    expect(directoryQueryOf(address.state, "UTC", NOW)).toMatchObject({
+      kinds: ["agent", "api-key"],
+      statuses: ["active", "disabled"],
+      duplicateMail: true,
+      sort: { field: "mail", direction: "desc" },
+    });
+    expect(address.state.group).toBe("mail");
+  });
+
+  test("the address names the list's kinds (person, agent, api-key), never a stored service account kind", () => {
+    for (const kind of ["user_delegated", "resource_bound", "code", "standalone"]) {
+      const address = parse("kind=" + kind);
+      expect(address.state.filters.kind).toBeUndefined();
+      expect(address.issues.map((issue) => issue.param)).toEqual(["kind"]);
+    }
+  });
+
+  test("the agents and shared-address views hold their whole state", () => {
+    expect(usersViewHref("agents")).toBe("/app/accounts/users?view=agents&kind=agent");
+    expect(usersViewHref("duplicates")).toBe("/app/accounts/users?view=duplicates&duplicate=yes&sort=mail.asc&group=mail");
+  });
+});
+
+describe("pages the account list replaced", () => {
+  test("the agent list opens the agents view, on the same page", () => {
+    expect(legacyAgentsHref(new URLSearchParams())).toBe("/app/accounts/users?view=agents&kind=agent");
+    expect(legacyAgentsHref(new URLSearchParams("page=4"))).toBe("/app/accounts/users?view=agents&kind=agent&page=4");
+  });
+
+  test("the duplicate address page opens the shared-address view, on the same page", () => {
+    expect(legacyDuplicateEmailsHref(new URLSearchParams("page=2"))).toBe(
+      "/app/accounts/users?view=duplicates&duplicate=yes&sort=mail.asc&group=mail&page=2",
+    );
+  });
+
+  test("any other parameter passes on, so the list can say it did not apply", () => {
+    expect(legacyAgentsHref(new URLSearchParams("page=2&foo=bar"))).toBe("/app/accounts/users?view=agents&kind=agent&page=2&foo=bar");
   });
 });
 

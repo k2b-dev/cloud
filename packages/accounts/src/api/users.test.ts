@@ -318,6 +318,7 @@ test("the user list reads the list's address: filters, search and sort reach the
       lastLogin: undefined,
       passkey: false,
       provider: undefined,
+      duplicateMail: undefined,
       sort: { field: "lastLogin", direction: "asc" },
       pagination: { page: 1, perPage: 50 },
     });
@@ -336,7 +337,15 @@ test("the user list reads the list's address: filters, search and sort reach the
     // a day the list cannot turn into an instant is refused up front, never a server error
     expect((await users.request("/?login=..9999-12-31")).status).toBe(400);
     expect((await users.request("/?login=0001-01-01..")).status).toBe(400);
-    expect(directory).toHaveBeenCalledTimes(3);
+    // the list of people takes the shared-address filter; other kinds belong to GET /api/accounts/accounts
+    expect((await users.request("/?duplicate=yes&sort=mail.asc")).status).toBe(200);
+    expect(directory).toHaveBeenLastCalledWith(expect.objectContaining({ duplicateMail: true, sort: { field: "mail", direction: "asc" } }));
+    expect(directory.mock.lastCall?.[0]).not.toHaveProperty("kinds");
+    const agents = await users.request("/?kind=agent");
+    expect(agents.status).toBe(400);
+    expect(await agents.json()).toMatchObject({ message: expect.stringContaining("kind") });
+    expect((await users.request("/?kind=person")).status).toBe(200);
+    expect(directory).toHaveBeenCalledTimes(5);
   } finally {
     directory.mockRestore();
   }

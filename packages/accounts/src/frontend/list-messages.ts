@@ -2,6 +2,10 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
+/** A count in the language's digits and thousands separator ("1,284", "1.284"). */
+const en = new Intl.NumberFormat("en").format;
+const de = new Intl.NumberFormat("de").format;
+
 /** The words of the user and group lists on v2: their filters, sorts, views, rows and states. */
 export const listMessages = i18n.define({
   baseLocale: "en",
@@ -47,9 +51,9 @@ export const listMessages = i18n.define({
       inSeveralGroups: ({ count }: { count: number }) =>
         i18n.plural(count, "en", {
           one: "1 of them in several groups",
-          other: `${count} of them in several groups`,
+          other: `${en(count)} of them in several groups`,
         }),
-      groupedOnPage: "Groups arrange the users of this page.",
+      groupedOnPage: "Groups arrange the accounts of this page.",
       noUsers: "No users yet.",
       noMatches: "No user matches these filters.",
       noGroupMatches: "No group matches these filters.",
@@ -64,9 +68,37 @@ export const listMessages = i18n.define({
       hide: "Hide",
       previous: "Previous",
       next: "Next",
-      pageOf: ({ page, pages }: { page: number; pages: number }) => `Page ${page} of ${pages}`,
+      pageOf: ({ page, pages }: { page: number; pages: number }) => `Page ${en(page)} of ${en(pages)}`,
       moreGroups: ({ count }: { count: number }) => `+${count}`,
       expiresOn: ({ when }: { when: string }) => `expired ${when}`,
+      // the account list
+      accounts: "Accounts",
+      kind: "Kind",
+      app: "App",
+      person: "Person",
+      agent: "Agent",
+      apiKey: "API key",
+      disabled: "Disabled",
+      mailAddress: "Email address",
+      mailShared: "shared",
+      mailUnique: "unique",
+      noMail: "No email address",
+      viewAgents: "Agents",
+      viewDuplicates: "Duplicate email",
+      accountsCount: ({ count }: { count: string }) => `${count} accounts`,
+      accountsOf: ({ count, total }: { count: string; total: string }) => `${count} of ${total} accounts`,
+      noAccounts: "No accounts yet.",
+      noAccountMatches: "No account matches these filters.",
+      noAgents: "No agents yet. Create one with cld admin agents create.",
+      signedInToday: ({ count }: { count: number }) =>
+        count === 0 ? "No sign-in today yet" : i18n.plural(count, "en", { one: "1 sign-in today", other: `${en(count)} sign-ins today` }),
+      invitedCount: ({ count }: { count: number }) => `${en(count)} invited`,
+      expiredCount: ({ count }: { count: number }) => `${en(count)} expired`,
+      withoutPasskeyCount: ({ count }: { count: number }) => `${en(count)} without passkey`,
+      sharedAddressesCount: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 shared address", other: `${en(count)} shared addresses` }),
+      sharedOnPage: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 address used by several accounts", other: `${en(count)} addresses used by several accounts` }),
       // groups
       scope: "Groups",
       scopeOp: "are",
@@ -125,9 +157,9 @@ export const listMessages = i18n.define({
       inSeveralGroups: ({ count }) =>
         i18n.plural(count, "de", {
           one: "1 davon in mehreren Gruppen",
-          other: `${count} davon in mehreren Gruppen`,
+          other: `${de(count)} davon in mehreren Gruppen`,
         }),
-      groupedOnPage: "Die Gruppen ordnen die Benutzer dieser Seite.",
+      groupedOnPage: "Die Gruppen ordnen die Konten dieser Seite.",
       noUsers: "Noch keine Benutzer.",
       noMatches: "Kein Benutzer passt zu diesen Filtern.",
       noGroupMatches: "Keine Gruppe passt zu diesen Filtern.",
@@ -142,9 +174,37 @@ export const listMessages = i18n.define({
       hide: "Ausblenden",
       previous: "Zurück",
       next: "Weiter",
-      pageOf: ({ page, pages }) => `Seite ${page} von ${pages}`,
+      pageOf: ({ page, pages }) => `Seite ${de(page)} von ${de(pages)}`,
       moreGroups: ({ count }) => `+${count}`,
       expiresOn: ({ when }) => `abgelaufen ${when}`,
+      accounts: "Konten",
+      kind: "Art",
+      app: "App",
+      person: "Person",
+      agent: "Agent",
+      apiKey: "API Key",
+      disabled: "Deaktiviert",
+      mailAddress: "E-Mail-Adresse",
+      mailShared: "doppelt",
+      mailUnique: "eindeutig",
+      noMail: "Ohne E-Mail-Adresse",
+      viewAgents: "Agenten",
+      viewDuplicates: "Doppelte E-Mail",
+      accountsCount: ({ count }) => `${count} Konten`,
+      accountsOf: ({ count, total }) => `${count} von ${total} Konten`,
+      noAccounts: "Noch keine Konten.",
+      noAccountMatches: "Kein Konto passt zu diesen Filtern.",
+      noAgents: "Noch keine Agenten. Lege einen mit cld admin agents create an.",
+      signedInToday: ({ count }) =>
+        count === 0
+          ? "Heute noch keine Anmeldung"
+          : i18n.plural(count, "de", { one: "1 Anmeldung heute", other: `${de(count)} Anmeldungen heute` }),
+      invitedCount: ({ count }) => `${de(count)} eingeladen`,
+      expiredCount: ({ count }) => `${de(count)} abgelaufen`,
+      withoutPasskeyCount: ({ count }) => `${de(count)} ohne Passkey`,
+      sharedAddressesCount: ({ count }) => i18n.plural(count, "de", { one: "1 doppelte Adresse", other: `${de(count)} doppelte Adressen` }),
+      sharedOnPage: ({ count }) =>
+        i18n.plural(count, "de", { one: "1 Adresse mit mehreren Konten", other: `${de(count)} Adressen mit mehreren Konten` }),
       scope: "Gruppen",
       scopeOp: "sind",
       managedByMe: "von mir verwaltet",

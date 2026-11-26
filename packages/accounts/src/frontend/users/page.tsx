@@ -13,6 +13,7 @@ import {
   isUserView,
   legacyUsersHref,
   parseUsersAddress,
+  todayStart,
   USER_VIEWS,
   USERS_PER_PAGE,
   usersHref,
@@ -20,7 +21,10 @@ import {
 } from "./query";
 import UsersScreen from "./UsersScreen.island";
 
-/** The users of this Cloud on v2. The address is the whole list state: the declaration in `query.ts` reads it. */
+/**
+ * The accounts of this Cloud on v2: people, agents and API key accounts. The address is the whole list state: the
+ * declaration in `query.ts` reads it.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const timeZone = getTimeZone(c);
@@ -41,8 +45,14 @@ export default ssr<AuthContext>(async (c) => {
   const groupIds = address.state.filters["member-of"];
   const [pendingRequests, list, groups] = await Promise.all([
     accountsService.accountRequest.countPending(),
-    accountsService.user
-      .directory({ actor, ...directoryQueryOf(address.state, timeZone, now), pagination: { page: address.page, perPage: USERS_PER_PAGE } })
+    accountsService.account
+      .directory({
+        actor,
+        ...directoryQueryOf(address.state, timeZone, now),
+        // what matters today stands in the first row; it rides on the count statement
+        summary: { today: todayStart(timeZone, now) },
+        pagination: { page: address.page, perPage: USERS_PER_PAGE },
+      })
       .then((result) => (result.ok ? result.data : null))
       .catch(() => null),
     groupIds
@@ -66,13 +76,14 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullWidth
       ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.users }]}
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: words.accounts }]}
     >
       <AccountsNavigation items={accountsNavigationItems(t, { active: "users", pendingRequests, isAdmin: true })} />
       <UsersScreen
         state={address.state}
         page={address.page}
         entries={list?.items ?? null}
+        summary={list?.summary ?? null}
         total={list?.total ?? 0}
         groupNames={(groups?.items ?? []).map((group) => ({ value: group.id, label: group.name }))}
         ignored={ignored}

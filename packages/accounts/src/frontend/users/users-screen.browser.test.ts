@@ -8,11 +8,13 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import "../../../../ui/test/solid-ssr-preload";
-import { parseUsersAddress, usersQuery } from "./query";
-import { FIXTURE_GROUPS, FIXTURE_PEOPLE, fixtureDirectory, fixtureGroupItems } from "./users-screen.fixture";
+import type { AccountDirectoryEntry } from "@k2b/cloud/contracts";
+import { parseUsersAddress, USERS_PER_PAGE, usersQuery } from "./query";
+import { FIXTURE_ACCOUNTS, FIXTURE_GROUPS, fixtureDirectory, fixtureGroupItems, fixtureSample } from "./users-screen.fixture";
 
-// An administrator filters, sorts and groups the user list on v2; the address holds it all, so reload and back show the
-// same rows. The test stands in for the server: the page and the users API answer from the same invented sample.
+// An administrator filters, sorts and groups the account list on v2: people, agents and API key accounts in one list. The
+// address holds it all, so reload and back show the same rows. The test stands in for the server: the page and the
+// accounts API answer from the same invented sample (the demo, the break-ui worst case, 1,250 accounts, or none).
 const root = mkdtempSync(join(tmpdir(), "accounts-users-screen-browser-"));
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const ui = resolve(import.meta.dir, "../../../../ui");
@@ -79,15 +81,17 @@ const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
-const page = (failed: boolean) =>
-  `<!doctype html><html lang="de" class="light" data-failed="${failed}"><head><meta charset="utf-8">` +
+type Sample = "demo" | "worst" | "huge" | "empty";
+const page = (failed: boolean, sample: Sample = "demo") =>
+  `<!doctype html><html lang="de" class="light" data-failed="${failed}" data-sample="${sample}"><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
 type Seen = { pages: string[]; api: string[]; created: unknown[] };
 
-const open = async (view: View, address: string, options: { failed?: boolean } = {}) => {
+const open = async (view: View, address: string, options: { failed?: boolean; sample?: Sample } = {}) => {
+  const sample = fixtureSample(options.sample);
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -105,15 +109,29 @@ const open = async (view: View, address: string, options: { failed?: boolean } =
     if (url.pathname === "/app/accounts/groups") return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(false) });
     if (url.pathname === "/app/accounts/users") {
       seen.pages.push(url.search);
-      return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(Boolean(options.failed)) });
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(Boolean(options.failed), options.sample) });
     }
-    if (url.pathname === "/api/accounts/users") {
+    if (url.pathname === "/api/accounts/accounts") {
       seen.api.push(url.search);
-      const users = fixtureDirectory(parseUsersAddress(query, url.searchParams).state);
+      const pageNumber = Number(url.searchParams.get("page") ?? "1");
+      const matching = fixtureDirectory(parseUsersAddress(query, url.searchParams).state, sample);
+      const accounts = matching.slice((pageNumber - 1) * USERS_PER_PAGE, pageNumber * USERS_PER_PAGE);
+      const total_pages = Math.max(1, Math.ceil(matching.length / USERS_PER_PAGE));
       return route.fulfill({
-        json: { users, pagination: { page: 1, per_page: 100, total: users.length, total_pages: 1, has_next: false } },
+        json: {
+          accounts,
+          pagination: {
+            page: pageNumber,
+            per_page: USERS_PER_PAGE,
+            total: matching.length,
+            total_pages,
+            has_next: pageNumber < total_pages,
+          },
+        },
       });
     }
+    if (url.pathname.startsWith("/api/accounts/users/") && url.pathname.endsWith("/avatar"))
+      return route.fulfill({ status: 404, json: {} });
     if (url.pathname === "/api/accounts/groups" && route.request().method() === "POST") {
       const body = route.request().postDataJSON() as { name: string; provider: "ipa" | "local"; description?: string };
       seen.created.push(body);
@@ -144,8 +162,11 @@ const open = async (view: View, address: string, options: { failed?: boolean } =
 const names = (tab: Page) =>
   tab.locator("[data-k2-part=Table] tbody tr:not([data-group]) td:first-child [data-k2-part=Text]").allTextContents();
 const groupHeads = (tab: Page) => tab.locator("[data-k2-part=Table] tbody tr[data-group]").allTextContents();
+const nameOf = (entry: AccountDirectoryEntry) => (entry.kind === "person" ? entry.displayName || entry.mail || entry.uid : entry.name);
 const expectedNames = (address: string) =>
-  fixtureDirectory(parseUsersAddress(query, new URLSearchParams(address)).state).map((person) => person.displayName);
+  fixtureDirectory(parseUsersAddress(query, new URLSearchParams(address)).state)
+    .slice(0, USERS_PER_PAGE)
+    .map(nameOf);
 
 const shoot = async (tab: Page, name: string) => {
   if (shots) await tab.screenshot({ path: join(shots, `accounts-users-v2-${name}.png`) });
@@ -161,7 +182,7 @@ const expectClean = async (tab: Page) => {
   expect(layout.problems).toEqual([]);
 };
 
-describe("the user list on v2", () => {
+describe("the account list on v2", () => {
   test("a filter writes the address, a reload shows the same rows, and Back returns to the list before", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/accounts/users");
     try {
@@ -228,12 +249,17 @@ describe("the user list on v2", () => {
         "Lager",
         "Verkauf",
         "Werkstatt",
+        // agents and the second account of Jonas have no group
+        "Ohne Gruppe",
       ]);
       // Milan Horvat (Geschäftsführung, Verkauf) and Petra Lindqvist (Verkauf, Werkstatt) stand twice
       const shown = await names(tab);
       expect(shown.filter((name) => name === "Milan Horvat")).toHaveLength(2);
       expect(shown.filter((name) => name === "Petra Lindqvist")).toHaveLength(2);
-      expect(await tab.locator("[data-status-row]").textContent()).toContain("2 davon in mehreren Gruppen");
+      const several = fixtureDirectory(parseUsersAddress(query, new URLSearchParams("status=active")).state).filter(
+        (entry) => entry.kind === "person" && entry.groups.length > 1,
+      ).length;
+      expect(await tab.locator("[data-status-row]").textContent()).toContain(`${several} davon in mehreren Gruppen`);
       await shoot(tab, "grouped-light-1440");
       await expectClean(tab);
       // grouping only arranges the page: Back takes it away without loading the rows again
@@ -286,11 +312,172 @@ describe("the user list on v2", () => {
     const plain = await open(wide, "/app/accounts/users");
     try {
       await shoot(plain.tab, "all-light-1440");
-      expect(await names(plain.tab)).toHaveLength(FIXTURE_PEOPLE.length);
+      expect(await names(plain.tab)).toHaveLength(FIXTURE_ACCOUNTS.length);
     } finally {
       await plain.context.close();
     }
   }, 60_000);
+
+  test("the kind filter narrows to agents, its address survives a reload, and Back returns to every account", async () => {
+    const { context, tab, errors, seen } = await open(wide, "/app/accounts/users");
+    try {
+      await tab.getByRole("button", { name: "Filter", exact: true }).click();
+      await tab.getByRole("menuitem", { name: /Art/ }).click();
+      await tab.getByRole("option", { name: /Agent/ }).click();
+      await tab.keyboard.press("Escape");
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("kind") === "agent");
+      await tab.waitForFunction(
+        (count) => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === count,
+        expectedNames("kind=agent").length,
+      );
+      expect(await names(tab)).toEqual([
+        "Angebotsentwurf",
+        "Festplaner",
+        "Inventur-Assistent",
+        "Nachbestellung",
+        "Posteingang sortieren",
+        "Rechnungsexport",
+        "Wochenbericht",
+      ]);
+      expect(seen.api.at(-1)).toContain("kind=agent");
+      // an agent row opens the agent's page
+      const first = tab.locator("[data-k2-part=Table] tbody tr td:first-child a").first();
+      expect(await first.getAttribute("href")).toBe("/app/accounts/agents/0b2f5c7e-0000-4000-8000-000000000009");
+      await tab.reload();
+      await settled(tab);
+      expect(await names(tab)).toEqual([
+        "Angebotsentwurf",
+        "Festplaner",
+        "Inventur-Assistent",
+        "Nachbestellung",
+        "Posteingang sortieren",
+        "Rechnungsexport",
+        "Wochenbericht",
+      ]);
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("kind"));
+      await tab.waitForFunction(
+        (count) => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === count,
+        FIXTURE_ACCOUNTS.length,
+      );
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a person-only filter leaves the agents out, and the agents view says how to make one when there is none", async () => {
+    const people = await open(wide, "/app/accounts/users?passkey=no");
+    try {
+      const shown = await names(people.tab);
+      expect(shown).toEqual(expectedNames("passkey=no"));
+      expect(shown).not.toContain("Wochenbericht");
+      expect(people.errors).toEqual([]);
+    } finally {
+      await people.context.close();
+    }
+    // an API key account has no page of its own: its row opens its keys on the API key page
+    const keys = await open(wide, "/app/accounts/users?kind=api-key");
+    try {
+      expect(await names(keys.tab)).toEqual(["Formular Auftrag annehmen", "Import Buchhaltung", "Kalender-Abo Werkstatt"]);
+      const link = keys.tab.locator("[data-k2-part=Table] tbody tr td:first-child a").first();
+      expect(await link.getAttribute("href")).toBe(
+        "/app/accounts/api-keys?search=Formular+Auftrag+annehmen&kind=resource_bound&automatic=1",
+      );
+      expect(keys.errors).toEqual([]);
+    } finally {
+      await keys.context.close();
+    }
+    const empty = await open(wide, "/app/accounts/users?view=agents&kind=agent", { sample: "empty" });
+    try {
+      expect(await empty.tab.locator("#root").textContent()).toContain("cld admin agents create");
+      await expectClean(empty.tab);
+      expect(empty.errors).toEqual([]);
+    } finally {
+      await empty.context.close();
+    }
+  }, 60_000);
+
+  test("the duplicate address view groups accounts by their shared address and keeps it in the address", async () => {
+    const { context, tab, errors } = await open(wide, "/app/accounts/users");
+    try {
+      await tab.getByRole("link", { name: "Doppelte E-Mail" }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("duplicate") === "yes");
+      await tab.locator("[data-k2-part=Table] tbody tr[data-group]").first().waitFor();
+      expect((await groupHeads(tab)).map((head) => head.replace(/\d+$/, ""))).toEqual(["j.hartwig@solberg-kramer.example"]);
+      expect(await names(tab)).toEqual(["Jonas Hartwig", "Jonas Hartwig"]);
+      expect(await tab.locator("[data-status-row]").textContent()).toContain("1 Adresse mit mehreren Konten");
+      await shoot(tab, "duplicates-light-1440");
+      await expectClean(tab);
+      // a row opens the person's page, where the account can be deleted
+      const href = await tab.locator("[data-k2-part=Table] tbody tr:not([data-group]) td:first-child a").first().getAttribute("href");
+      expect(href).toStartWith("/app/accounts/users/22222222-2222-4222-8222-");
+      await tab.reload();
+      await settled(tab);
+      expect(await names(tab)).toEqual(["Jonas Hartwig", "Jonas Hartwig"]);
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("duplicate"));
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the worst case (break-ui) keeps the v2 rules at 1440, 1024 and 390 px, every name readable in its row", async () => {
+    for (const view of [wide, narrow, phone]) {
+      const { context, tab, errors } = await open(view, "/app/accounts/users", { sample: "worst" });
+      try {
+        await expectClean(tab);
+        await shoot(tab, "worst-light-" + view.name);
+        const text = (await tab.locator("#root").textContent()) ?? "";
+        // a person without a name or address is named by the account name; an emoji name and markup stay plain text
+        expect(text).toContain("svc-scanner");
+        expect(text).toContain("🦊 Fox");
+        expect(text).toContain("<script>alert(1)</script> &amp; **fett**");
+        if (view !== phone) {
+          // twelve groups: three faces and "+9" lead the cell, so the cut names never hide how many there are
+          const groups = tab.locator("[data-k2-part=Table] tbody tr").filter({ hasText: "Waldenburg" }).locator("td").nth(3);
+          const chip = groups.locator('[data-k2-part="Avatar.Stack"]');
+          expect(await chip.textContent()).toContain("+9");
+          const cell = await groups.boundingBox();
+          const mark = await chip.boundingBox();
+          expect(mark!.x + mark!.width).toBeLessThanOrEqual(cell!.x + cell!.width);
+        }
+        expect(text).not.toContain("undefined");
+        expect(text).not.toContain("NaN");
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 90_000);
+
+  test("1,284 accounts: the list is ready within 1.5 s and holds one page, so the page stays the same size", async () => {
+    for (const view of [wide, phone]) {
+      const { context, tab, errors } = await open(view, "/app/accounts/users", { sample: "huge" });
+      try {
+        await tab.locator("[data-status-row]").waitFor();
+        // ready: from the start of the list's code (the answer for 1,284 accounts included) to its rendered rows; the
+        // test harness loads an unminified bundle through the test's own routes, so that download is left out
+        const ready = await tab.evaluate(() => performance.measure("accounts", "accounts-start", "accounts-ready").duration);
+        expect(ready).toBeGreaterThan(0);
+        expect(ready).toBeLessThan(1500);
+        const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-group]):visible, [data-k2-part=Row]:visible").count();
+        expect(rows).toBeGreaterThan(0);
+        expect(rows).toBeLessThanOrEqual(USERS_PER_PAGE);
+        // bounded DOM: about what one page of 100 rows needs, whatever the number of accounts
+        const nodes = await tab.evaluate(() => document.querySelectorAll("#root *").length);
+        expect(nodes).toBeLessThan(4000);
+        expect(await tab.locator("[data-status-row]").textContent()).toContain("100 von 1.284 Konten");
+        expect(await tab.getByText("Seite 1 von 13").count()).toBe(1);
+        await shoot(tab, "huge-light-" + view.name);
+        await expectClean(tab);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 90_000);
 
   test("the group list keeps the v2 rules at 1440, 1024 and 390 px", async () => {
     for (const view of [wide, narrow, phone]) {

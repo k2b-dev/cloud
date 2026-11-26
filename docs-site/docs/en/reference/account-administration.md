@@ -176,6 +176,37 @@ remains available for assigning a GID to an existing local group.
 See [Assign Linux identities](/en/docs/operations/linux-identities) for setup,
 name requirements and CLI examples.
 
+## List accounts
+
+The account list of Accounts (`/app/accounts/users`) holds people, agents
+(service accounts of the kind `agent`, and `standalone` ones from before
+agents existed) and API key accounts (service accounts bound to an app
+resource, `resource_bound`). Personal keys (`user_delegated`) belong to their
+person and code accounts never appear. An agent row opens the agent's page; an
+API key account has no page of its own and opens its keys on the API key page.
+The list page, `GET /api/accounts/accounts` and
+`accountsAppService.account.directory(config)` read the same address and run
+the same query: one count and one page. Each entry carries its `kind`
+(`person`, `agent` or `api-key`).
+
+| Parameter | Values |
+| --- | --- |
+| `kind` | `person`, `agent` (`agent` and `standalone`), `api-key` (`resource_bound`); absent means all three |
+| `status` | `active`, `invited`, `expired` (people), `disabled` (service accounts) |
+| `duplicate` | `yes` or `no`: people whose email address, trimmed and in any case, another account shares |
+| `role`, `member-of`, `login`, `passkey`, `provider` | as on `GET /api/accounts/users`; each narrows the list to people |
+| `sort` | `name`, `login` (a person's last sign-in, a service account's last API key use) or `mail`, each `.asc` or `.desc` |
+
+`GET /api/accounts/users` stays the list of people with the people's fields;
+it takes `duplicate` and the `mail` sort too and refuses a `kind` other than
+`person`. Both routes and the service require the `admin` role; the service
+checks it itself and answers `403` otherwise. A value the list cannot hold is
+refused with `400`.
+
+The former addresses `/app/accounts/agents` and `/app/accounts/duplicate-emails`
+redirect permanently to the views **Agents** and **Duplicate email** of the
+list, with their page kept.
+
 ## Remove devices from the Cloud app
 
 > **Preview:** the Cloud app is not released yet. This contract may still
