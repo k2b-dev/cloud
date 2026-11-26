@@ -39,14 +39,25 @@ export const openMailV2Dialog = <T,>(locale: string, view: (answer: (value: T | 
     stop = render(() => <LocaleProvider locale={locale}>{view(answer)}</LocaleProvider>, host);
   });
 
-/** A dialog that closes with its answer: open from the start, closed by Escape, its × or a press outside as `null`. */
-const Asking = <T,>(props: { title: string; answer: (value: T | null) => void; foot: JSX.Element; children: JSX.Element }) => {
+/**
+ * A dialog that closes with its answer: open from the start, closed by Escape, its × or a press outside as `null`.
+ * While `busy` (a save runs), every way to close waits: the dialog stays until the save has answered.
+ */
+const Asking = <T,>(props: {
+  title: string;
+  answer: (value: T | null) => void;
+  foot: JSX.Element;
+  children: JSX.Element;
+  busy?: () => boolean;
+}) => {
   const [open, setOpen] = createSignal(true);
   return (
     <Dialog
       title={props.title}
       open={open()}
       onOpenChange={(next) => {
+        // the open state is held here: a close asked for while a save runs is not taken
+        if (!next && props.busy?.()) return;
         setOpen(next);
         if (!next) props.answer(null);
       }}
@@ -60,6 +71,7 @@ const Asking = <T,>(props: { title: string; answer: (value: T | null) => void; f
 /**
  * The conversation's summary in a text of several lines ("" removes it). Saving keeps the dialog open until `save`
  * succeeds: a refusal of the server (too long, changed meanwhile) stands at the field, and the text stays to change.
+ * While a save runs, the field is locked (what is stored is what it shows) and the dialog waits for the answer.
  */
 export const askMailV2Summary = (
   locale: string,
@@ -83,9 +95,12 @@ export const askMailV2Summary = (
       <Asking
         title={text.title}
         answer={answer}
+        busy={busy}
         foot={
           <>
-            <Button onClick={() => answer(null)}>{text.cancel}</Button>
+            <Button disabled={busy()} onClick={() => answer(null)}>
+              {text.cancel}
+            </Button>
             <Button variant="primary" busy={busy()} onClick={() => void submit()}>
               {text.confirm}
             </Button>
@@ -93,7 +108,7 @@ export const askMailV2Summary = (
         }
       >
         <Field label={text.label} hint={text.hint} {...(error() ? { error: error() } : {})}>
-          <Input multiline value={summary()} onInput={setSummary} />
+          <Input multiline value={summary()} onInput={setSummary} disabled={busy()} />
         </Field>
       </Asking>
     );

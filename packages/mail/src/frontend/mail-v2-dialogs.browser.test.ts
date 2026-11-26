@@ -134,6 +134,73 @@ describe("Mail v2: the reader's dialogs are v2 dialogs", () => {
     }
   }, 60_000);
 
+  /** Holds the first summary save until the test lets it answer, as a slow server would. */
+  const holdFirstSave = async (page: Page, answer: (summary: string) => { status: number; json: unknown }) => {
+    let release = () => {};
+    const released = new Promise<void>((done) => {
+      release = done;
+    });
+    const puts: string[] = [];
+    await page.route("**/api/mail/mailboxes/Box001/conversations/Demo01/summary", async (route) => {
+      const { summary } = route.request().postDataJSON() as { summary: string };
+      puts.push(summary);
+      if (puts.length === 1) await released;
+      const { status, json } = answer(summary);
+      await route.fulfill({ status, json });
+    });
+    return { release, puts };
+  };
+
+  // Review of #4213: what is saved is what the field shows; while a save runs, the field cannot change.
+  test("while the summary saves, its field is locked, so what is stored is what was shown", async () => {
+    const { page, errors } = await open();
+    try {
+      const { release, puts } = await holdFirstSave(page, (summary) => ({
+        status: 200,
+        json: summaryState({ summary, summaryRevision: 2, source: "person" }),
+      }));
+      await reader(page).locator('[data-k2-part="Notice"][data-tone="ai"]').getByRole("button", { name: "Bearbeiten" }).click();
+      const text = dialog(page).getByRole("textbox", { name: "Zusammenfassung" });
+      await text.fill("A");
+      await dialog(page).getByRole("button", { name: "Zusammenfassung speichern" }).click();
+      await page.waitForFunction(
+        () => document.querySelector('[data-k2-part="Dialog"] [data-busy], [data-k2-part="Dialog"] [aria-busy="true"]') !== null,
+      );
+      expect(await text.isEditable()).toBe(false);
+      release();
+      await dialog(page).waitFor({ state: "detached" });
+      expect(puts).toEqual(["A"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // Review of #4213: a save that runs keeps the dialog: Abbrechen, Escape and a press outside wait for its answer, so a
+  // refusal still stands at the field with the text.
+  test("while the summary saves, the dialog stays; a late refusal still shows at the field with the text", async () => {
+    const { page, errors } = await open();
+    try {
+      const { release } = await holdFirstSave(page, () => ({ status: 400, json: { message: "Die Zusammenfassung ist zu lang." } }));
+      await reader(page).locator('[data-k2-part="Notice"][data-tone="ai"]').getByRole("button", { name: "Bearbeiten" }).click();
+      const text = dialog(page).getByRole("textbox", { name: "Zusammenfassung" });
+      await text.fill("Viel zu lang");
+      await dialog(page).getByRole("button", { name: "Zusammenfassung speichern" }).click();
+      await dialog(page).getByRole("button", { name: "Abbrechen" }).click({ force: true });
+      await page.keyboard.press("Escape");
+      await page.mouse.click(8, 8);
+      await Bun.sleep(300);
+      expect(await dialog(page).isVisible()).toBe(true);
+      release();
+      await dialog(page).getByText("Die Zusammenfassung ist zu lang.").waitFor();
+      expect(await text.inputValue()).toBe("Viel zu lang");
+      expect(await text.isEditable()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("Vorhandenes verknüpfen picks a task in the v2 lookup and links it", async () => {
     const { page, errors, sent } = await open();
     try {
