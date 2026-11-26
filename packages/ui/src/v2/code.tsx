@@ -76,13 +76,14 @@ const languageNames: Partial<Record<CodeLanguage, string>> = {
 
 /**
  * The highlighter's classes (`hl-*` for scripts, `cd-*` for SQL and Markdown) in the namespace of v2.css: every class
- * of a token gets `k2-` before it. The highlighter writes only its own spans, so their class lists are all there is.
+ * of a token gets `k2-` before it. Only the highlighter's own spans: the code's text is escaped (a `<` never stands as
+ * itself in it), but its quotes are not, so a `class="…"` written in the code stays as written.
  */
 const inNamespace = (line: string) =>
   line.replace(
-    /class="([^"]*)"/g,
+    /<span class="([^"]*)"/g,
     (_attribute, classes: string) =>
-      `class="${classes
+      `<span class="${classes
         .split(" ")
         .map((name) => `k2-${name}`)
         .join(" ")}"`,
@@ -126,7 +127,7 @@ export const CodeBlock = (props: CodeBlockProps) => {
   const lines = createMemo(() => props.code.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"));
   const shown = () => (all() ? lines() : lines().slice(0, codeLinesShown));
   // highlighted only while it shows: a hidden secret never reaches the page as text
-  // the highlighter's classes (`hl-*`) in the namespace of v2.css
+  // the highlighter's classes in the namespace of v2.css
   const drawn = createMemo(() =>
     masked() ? shown() : highlightCodeDisplayLines(shown().join("\n"), props.language ?? "text").map(inNamespace),
   );

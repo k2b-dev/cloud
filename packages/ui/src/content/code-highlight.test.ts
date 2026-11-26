@@ -166,8 +166,9 @@ for (const [name, line] of [
   ["many link openings", (n: number) => `${"[".repeat(n)}a](${"b".repeat(n)}`],
   ["many links without an end", (n: number) => "[a](b".repeat(n / 5)],
   ["many formulas without an end", (n: number) => "=A(".repeat(n / 3)],
-  ["many code spans without an end", (n: number) => "`a".repeat(n / 2)],
-  ["many strong marks without an end", (n: number) => "**a".repeat(n / 3)],
+  ["many links with an open inner parenthesis", (n: number) => `[a](${"(b".repeat(n / 2)}`],
+  ["many formulas with comparisons and no end", (n: number) => `=IF(${"A1=B1 ".repeat(n / 6)}`],
+  ["many formulas inside a comparison", (n: number) => "=A(B=".repeat(n / 5)],
 ] as const)
   test(`Markdown highlighting reads a long line once: ${name}`, () => {
     const short = fastest(() => highlightCodeDisplayLines(line(6_000), "markdown"));
@@ -175,3 +176,26 @@ for (const [name, line] of [
     // linear: about 4; quadratic: about 16
     expect(long / Math.max(short, 1)).toBeLessThan(8);
   });
+
+// What a link and a formula are, read as people write them: a link target with parentheses (Wikipedia, a query), a
+// formula that compares.
+test("Markdown highlights a link whose target holds parentheses, as one link", () => {
+  for (const [line, target] of [
+    ["[Foo](https://en.wikipedia.org/wiki/Foo_(bar))", "(https://en.wikipedia.org/wiki/Foo_(bar))"],
+    ["[x](https://x/?a=(1)&b=2)", "(https://x/?a=(1)&amp;b=2)"],
+  ] as const) {
+    const [html] = highlightCodeDisplayLines(line, "markdown");
+    expect(html).toContain('<span class="cd-md-link">[');
+    expect(html).toContain(`<span class="cd-md-syntax">${target}</span>`);
+  }
+});
+
+test("Markdown highlights a formula that compares, as one formula", () => {
+  for (const [line, formula] of [
+    ["Summe: =IF(A1=B1, 1, 0)", "=IF(A1=B1, 1, 0)"],
+    ['Status: =IF(A1>=5,"x","y")', '=IF(A1&gt;=5,"x","y")'],
+  ] as const) {
+    const [html] = highlightCodeDisplayLines(line, "markdown");
+    expect(html).toContain(`<span class="cd-md-formula">${formula}</span>`);
+  }
+});

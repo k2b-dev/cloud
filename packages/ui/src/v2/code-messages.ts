@@ -8,7 +8,7 @@ const codeMessages = i18n.define({
     en: {
       copied: "Copied",
       copyFailed: "Copying did not work; select the code and copy it with your keyboard.",
-      copyFailedHidden: "Copying did not work; press Show, then select the code and copy it with your keyboard.",
+      copyFailedHidden: "Copying did not work; press “Show”, then select the code and copy it with your keyboard.",
       show: "Show",
       wrap: "Wrap long lines",
       hiddenName: ({ name }: { name: string }) => `${name}, hidden`,

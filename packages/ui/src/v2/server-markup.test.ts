@@ -92,3 +92,14 @@ test("a hidden secret leaves no sign of its code in the server's markup; highlig
   expect(code).toContain('<span class="k2-hl-keyword">const</span>');
   expect(code).toContain('class="k2-code-number"');
 });
+
+// A class written in the code is text: only the highlighter's own spans move into the namespace of v2.css.
+test('code that writes class="…" shows it as written, in plain text and in Markdown', () => {
+  for (const language of ["text", "markdown"] as const) {
+    const markup = renderToString(() =>
+      createComponent(CodeBlock, { label: "note.html", code: '<div class="note big">`x`</div>', language }),
+    );
+    expect(markup).toContain('class="note big"');
+    expect(markup).not.toContain("k2-note");
+  }
+});
