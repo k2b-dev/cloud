@@ -46,9 +46,9 @@ describe("Notebook attachment preview", () => {
   let dom: ReturnType<typeof createDomTestHarness>;
   const loadModules = async () => {
     const { dialogCore } = await import("@k2b/ui");
-    const { default: AttachmentsOverview } = await import("../[id]/_components/attachments-overview/AttachmentsOverview.island");
+    const { default: PreviewTiles } = await import("./attachment-preview.test-host");
     const { openAttachmentById } = await import("./attachment-preview");
-    return { dialogCore, AttachmentsOverview, openAttachmentById };
+    return { dialogCore, PreviewTiles, openAttachmentById };
   };
   let modules: Awaited<ReturnType<typeof loadModules>>;
   beforeAll(async () => {
@@ -98,11 +98,8 @@ describe("Notebook attachment preview", () => {
 
   test("a tile opens the Lightbox with the document title, the facts and the dialog's former actions", async () => {
     const { dom, requests, dialog, lightbox, closeAll } = await mount();
-    const { AttachmentsOverview } = modules;
-    const dispose = render(
-      () => createComponent(AttachmentsOverview, { notebookId: "nb0001", initial: attachments, searchQuery: "" }),
-      dom.root,
-    );
+    const { PreviewTiles } = modules;
+    const dispose = render(() => createComponent(PreviewTiles, { notebookId: "nb0001", attachments }), dom.root);
     const tile = (index: number) => dom.root.querySelectorAll<HTMLButtonElement>(".notebooks-attachment-tile__open")[index]!;
     try {
       expect(tile(0).getAttribute("aria-label")).toBe("Preview Summer_party.md");

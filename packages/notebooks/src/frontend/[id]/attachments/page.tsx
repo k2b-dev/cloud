@@ -11,23 +11,20 @@ import { hasRole } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { AppWorkspace, Pagination, ScrollArea } from "@k2b/ui";
 import { toPublicAttachment } from "@/api/public-resources";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../config";
-import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
+import { requestedPresentationMode } from "../../../lib/presentation-url";
 import { parseSidebarFilter } from "../../../lib/sidebar-filter";
 import { notebooksPageMessages } from "../../messages";
 import { buildAttachmentsUrl } from "../../params";
-import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
 import RememberNotebook from "../_components/RememberNotebook.island";
 import { parseFullWidth, parseNavigationHidden, parseSettings } from "../_components/settings/NotebookSettingsStore";
-import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
 import { notebookWorkspaceMessages } from "../messages";
 import { loadSidebarWithoutNote, projectNotebook } from "../page-data";
+import AttachmentsScreen from "./AttachmentsScreen.island";
 
 const PER_PAGE = 200;
 
@@ -93,14 +90,8 @@ export default ssr<AuthContext>(async (c) => {
     permission,
   });
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / paginatedResult.perPage));
-  const baseHref = buildAttachmentsUrl(notebook.shortId);
   const presentationMode = requestedPresentationMode(new URL(c.req.url).searchParams);
-  const searchHref = presentationMode ? withPresentationMode(baseHref, presentationMode) : baseHref;
-  const paginationQuery = new URLSearchParams();
-  if (presentationMode) paginationQuery.set("mode", presentationMode);
-  if (search) paginationQuery.set("search", search);
-  paginationQuery.set("page", "");
-  const paginationBaseUrl = `${baseHref}?${paginationQuery}`;
+  const baseHref = buildAttachmentsUrl(notebook.shortId, presentationMode);
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
@@ -125,34 +116,29 @@ export default ssr<AuthContext>(async (c) => {
       printHint={printHint}
       c={c}
       fullPage
+      fullWidth
+      ui="v2"
+      context={{ scope: { type: "notebooks.notebook", id: notebook.shortId } }}
       title={[
         { title: t.start, href: "/" },
-        { title: t.notebooks, href: "/app/notebooks" },
+        { title: t.notebooks },
         { title: notebook.name, href: `/app/notebooks/${notebook.shortId}` },
         { title: t.attachments },
       ]}
     >
       <RememberNotebook notebookId={notebook.shortId} />
-      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
-        <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
-        <NotebookSidebar ctx={ctx} current="attachments" graphBack={c.req.path + new URL(c.req.url).search} />
-        <AppWorkspace.Content>
-          <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
-            {/* Search bar across the full content width. The breadcrumb already
-                labels the page — no additional title above. */}
-            <SearchBar value={search} action={searchHref} placeholder={t.searchAttachments} ariaLabel={t.searchAttachmentsLabel} />
-
-            <ScrollArea class="mt-2 flex-1 min-h-0 flex flex-col gap-2">
-              <AttachmentsOverview
-                notebookId={notebook.shortId}
-                initial={paginatedResult.items.map((attachment) => toPublicAttachment(attachment, notebook.shortId))}
-                searchQuery={search}
-              />
-              <Pagination currentPage={paginatedResult.page} totalPages={totalPages} baseUrl={paginationBaseUrl} />
-            </ScrollArea>
-          </AppWorkspace.Main>
-        </AppWorkspace.Content>
-      </AppWorkspace>
+      <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
+      <AttachmentsScreen
+        ctx={ctx}
+        attachments={paginatedResult.items.map((attachment) => toPublicAttachment(attachment, notebook.shortId))}
+        total={paginatedResult.total}
+        search={search}
+        page={paginatedResult.page}
+        pages={totalPages}
+        baseHref={baseHref}
+        graphBack={c.req.path + new URL(c.req.url).search}
+        now={new Date().toISOString()}
+      />
     </Layout>
   );
 });

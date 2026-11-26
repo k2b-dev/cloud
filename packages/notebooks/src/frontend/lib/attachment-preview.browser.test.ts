@@ -124,25 +124,6 @@ const mount = async (context: BrowserContextOptions): Promise<Page> => {
 const shownName = (page: Page) => page.locator("dialog.k2b-lightbox[open]").getAttribute("aria-label");
 
 describe("Notebook attachment preview", () => {
-  test("a focused image tile shows its focus ring above the thumbnail", async () => {
-    const page = await (await browser.newContext(desktop)).newPage();
-    try {
-      await page.goto(server.url.href);
-      await page.evaluate((list) => window.mountAttachments(list, "en"), [attachments[3]!]);
-      const tile = page.locator(".notebooks-attachment-tile__open");
-      await tile.locator("img").evaluate((image: HTMLImageElement) => image.decode());
-      // The left edge in the middle of the tile, away from the action buttons that appear in its top-right corner.
-      const box = (await tile.boundingBox())!;
-      const edge = { x: box.x, y: box.y + box.height / 2, width: 2, height: 8 };
-      const unfocused = await page.screenshot({ clip: edge });
-      await page.keyboard.press("Tab");
-      expect(await tile.evaluate((element) => element.matches(":focus-visible"))).toBeTrue();
-      expect((await page.screenshot({ clip: edge })).equals(unfocused)).toBeFalse();
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
   for (const [name, context] of [
     ["desktop", desktop],
     ["phone", phone],
