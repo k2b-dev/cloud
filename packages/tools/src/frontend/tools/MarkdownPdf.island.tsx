@@ -229,7 +229,8 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
               {t().serverNotice}
             </Text>
           </Band>
-          {/* The Markdown editor keeps its own behaviour (toolbar, shortcuts, counts); v2 has none of its own yet. */}
+          {/* k2b-ui gap: no v2 Markdown editor; the v1 MarkdownEditor (toolbar, shortcuts, counts) and the CSS editor below
+              stand embedded in a Canvas until one lands. */}
           <Canvas label={t().markdownLabel} height={520}>
             <MarkdownEditor
               label={t().markdownLabel}
