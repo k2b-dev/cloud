@@ -27,6 +27,15 @@ test("addresses: what is no address stays with its own separators, and a name be
     rest: "kein-at-zeichen; noch eins",
   });
   expect(scanAddresses("Anna Berg,")).toEqual({ found: [], rest: "Anna Berg" });
+  // while typing, the entry still open stays as it is typed, with its comma and its space
+  expect(scanAddresses("jonas@werkstatt.example, Mia Lindqvist,", { final: false })).toEqual({
+    found: ["jonas@werkstatt.example"],
+    rest: "Mia Lindqvist,",
+  });
+  expect(scanAddresses("jonas@werkstatt.example; kaputt; Mia ", { final: false })).toEqual({
+    found: ["jonas@werkstatt.example"],
+    rest: "kaputt; Mia ",
+  });
   expect(scanAddresses("anna@ ; @werkstatt.example ; anna@werkstatt").found).toEqual([]);
 });
 

@@ -351,6 +351,60 @@ test("addresses: a field takes no more than it may, and says so beside a refused
       [...document.querySelectorAll(".k2-field-message")].some((message) => message.textContent?.includes("höchstens 2 Werte")),
     );
     expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example", "mx2.example"]);
+    // what is left out is not held anywhere: Backspace in the empty field takes back the last chip that shows
+    await page.keyboard.press("Backspace");
+    await page.waitForFunction(() => document.querySelectorAll('input[type="hidden"][name="hosts"]').length === 1);
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example"]);
+  });
+});
+
+test("addresses: a press beside the open suggestions takes the typed address", async () => {
+  await withPage(async (page) => {
+    const bcc = field(page, "Weitere Empfänger");
+    const input = bcc.getByRole("combobox");
+    await input.click();
+    await input.pressSequentially("tom@werkstatt.examp");
+    await page.getByRole("option", { name: "tom@werkstatt.example" }).waitFor();
+    // a press somewhere else on the page: the typed address becomes a chip, it is not lost
+    await page.mouse.click(4, 4);
+    await bcc.locator(".k2-chip").first().waitFor();
+    expect(await bcc.locator(".k2-chip").evaluateAll((list) => list.map((chip) => chip.firstChild?.textContent))).toEqual([
+      "tom@werkstatt.examp",
+    ]);
+    expect(await input.inputValue()).toBe("");
+  });
+});
+
+test("addresses: sending with the focus in the field sends the typed address, and keeps a text that is no address", async () => {
+  await withPage(async (page) => {
+    await field(page, "Banner")
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    const to = field(page, "An").getByRole("combobox");
+    await to.click();
+    await to.pressSequentially("kai@werkstatt.example");
+    const submitted = () =>
+      page.evaluate(() => {
+        const form = document.getElementById("sent");
+        if (!(form instanceof HTMLFormElement)) return null;
+        const seen: { to?: string[] } = {};
+        const hear = () => {
+          seen.to = [...new FormData(form)].filter(([name]) => name === "to").map(([, value]) => String(value));
+        };
+        form.addEventListener("submit", hear);
+        form.requestSubmit();
+        form.removeEventListener("submit", hear);
+        return seen.to ?? null;
+      });
+    expect(await submitted()).toEqual(["anna.berg@werkstatt.example", "kai@werkstatt.example"]);
+    expect(await to.inputValue()).toBe("");
+    // a text that is no address is not sent: it stays with its reason
+    await to.focus();
+    await to.pressSequentially("kaputt");
+    expect(await submitted()).toBeNull();
+    expect(await to.inputValue()).toBe("kaputt");
+    expect(await field(page, "An").locator(".k2-field-message[data-error]").textContent()).toBe("„kaputt“ ist keine E-Mail-Adresse.");
   });
 });
 

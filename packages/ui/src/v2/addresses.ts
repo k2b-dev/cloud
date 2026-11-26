@@ -91,14 +91,13 @@ export const scanAddresses = (text: string, { final = true }: { final?: boolean 
       else held.push(i);
     }
   }
-  // the entry after the last separator: taken when the text is done, else it is still being typed
-  const open: [number, number] = [start, text.length];
-  if (final && start <= text.length) cut(text.length);
+  // the entry after the last separator: taken when the text is done, else it is still being typed, and stays so
+  const typing = final ? "" : text.slice(start);
+  if (final) cut(text.length);
 
   const found: string[] = [];
   const taken: [number, number][] = [];
   for (const [from, to] of tokens) {
-    if (!final && from >= open[0]) continue;
     const display = text.slice(from, to).trim();
     if (display && isAddress(addressOf(display))) {
       found.push(display);
@@ -112,8 +111,13 @@ export const scanAddresses = (text: string, { final = true }: { final?: boolean 
     rest += text.slice(at, from);
     at = to;
   }
-  rest += text.slice(at);
-  return { found, rest: trimSeparators(rest) };
+  rest += text.slice(at, final ? text.length : start);
+  const closed = trimSeparators(rest);
+  const open = typing.trimStart();
+  if (!open) return { found, rest: closed };
+  // a closed rest and the open entry keep the separator between them
+  const between = text[start - 1] === "," || text[start - 1] === ";" ? `${text[start - 1]} ` : "\n";
+  return { found, rest: closed ? closed + between + open : open };
 };
 
 /** A text without separators and spaces at its ends, and with one in place of a run of them inside. */

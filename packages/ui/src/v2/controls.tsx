@@ -583,7 +583,9 @@ export const TagsInput = (props: TagsInputProps) => {
     }
     if (found.length) commit([...values(), ...found]);
     setQuery(rest);
-    const shown = rest.length > 60 ? `${rest.slice(0, 59)}…` : rest;
+    // cut by characters, so a long text never ends in half an emoji
+    const letters = Array.from(rest);
+    const shown = letters.length > 60 ? `${letters.slice(0, 59).join("")}…` : rest;
     setRefused(final && rest ? t().notAnAddress({ text: shown }) : undefined);
   };
   const items = (): ChoiceItem[] => [...new Set([...(props.suggestions ?? []), ...values()])].map((value) => ({ value, label: value }));
@@ -596,35 +598,57 @@ export const TagsInput = (props: TagsInputProps) => {
     const reason = refused() ?? "";
     input?.setCustomValidity(reason);
   });
-  // Without `onChange` the given values are where a form's reset returns to; core reports the reset like any change.
-  // Addresses are held here, so their field puts them back itself.
+  // Without `onChange` the given values are where a form's reset returns to. The values are held here for every kind
+  // (core only shows them), so `max` holds for what core keeps too, and the field puts them back itself.
   const initial = [...(props.value ?? [])];
   let chips: HTMLElement | undefined;
+  const ours = (event: Event) => event.target instanceof HTMLFormElement && !!chips && event.target.contains(chips);
   const onReset = (event: Event) => {
-    if (!email() || props.onChange || !(event.target instanceof HTMLFormElement) || !chips || !event.target.contains(chips)) return;
+    if (props.onChange || !ours(event)) return;
     setOwn(initial);
     setQuery("");
     setRefused(undefined);
     setOverflow(undefined);
   };
+  // Sending while the focus is still in the field takes the typed addresses first, as leaving it would; a text that
+  // is no address then keeps the form from being sent, with its sentence.
+  const onSubmit = (event: Event) => {
+    if (!email() || !ours(event) || !query().trim()) return;
+    take(query(), true);
+    if (!rejected()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    input?.reportValidity();
+  };
+  // leaving the field and its suggestions takes the last entry, as Enter does (a press outside too: core keeps the text)
+  const onLeave = (event: FocusEvent) => {
+    const to = event.relatedTarget;
+    const list = input?.getAttribute("aria-controls");
+    const popup = list ? document.getElementById(list) : null;
+    if (to instanceof Node && (chips?.contains(to) || popup?.contains(to))) return;
+    if (query().trim()) take(query(), true);
+  };
   onMount(() => {
     document.addEventListener("reset", onReset);
-    onCleanup(() => document.removeEventListener("reset", onReset));
+    document.addEventListener("submit", onSubmit, true);
+    onCleanup(() => {
+      document.removeEventListener("reset", onReset);
+      document.removeEventListener("submit", onSubmit, true);
+    });
   });
   const combo = useCombobox(() => ({
     items: items(),
     multiple: true as const,
     allowCustomValue: true,
-    // addresses are held here (a paste adds several at once); other values may be held by core, so a reset is its own
-    ...(props.onChange || email() ? { value: values() } : { defaultValue: initial }),
+    // the values are held here: a paste adds several at once, and `max` leaves nothing in core that does not show
+    value: values(),
     // typing: a separator turns the addresses before it into chips; anything else is typed on, and the sentence of a
     // refused text goes while it is fixed
     ...(email()
       ? {
           query: query(),
-          onQueryChange: (next: string, details?: { reason?: string }) => {
-            // leaving the field (core empties it then) takes the last entry, as Enter does
-            if (details?.reason === "focus-out" && query().trim()) return take(query(), true);
+          keepQuery: true,
+          onQueryChange: (next: string) => {
             if (/[,;\n]/.test(next)) return take(next, false);
             setQuery(next);
             if (rejected()) setRefused(undefined);
@@ -647,6 +671,7 @@ export const TagsInput = (props: TagsInputProps) => {
       <combo.Chips
         ref={(element: HTMLElement) => {
           chips = element;
+          if (email()) element.addEventListener("focusout", onLeave);
         }}
         class="k2-input"
         data-k2-part="TagsInput"

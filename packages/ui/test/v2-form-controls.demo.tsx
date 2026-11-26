@@ -143,6 +143,10 @@ export function Demo() {
             <Field name="cc" label="Kopie">
               <TagsInput type="email" max={3} />
             </Field>
+            {/* addresses with suggestions to pick from while typing */}
+            <Field name="bcc" label="Weitere Empfänger">
+              <TagsInput type="email" suggestions={["lea@werkstatt.example", "tom@werkstatt.example"]} />
+            </Field>
             <Field name="locked" label="Gesperrte Server">
               <TagsInput value={["mx9.example"]} disabled />
             </Field>
