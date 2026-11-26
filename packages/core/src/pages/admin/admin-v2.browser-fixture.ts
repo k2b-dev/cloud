@@ -56,6 +56,42 @@ const start = (): { announcements: AnnouncementEntry[]; rail: RailAdminState } =
   },
 });
 
+/** break-ui: a long announcement title, an emoji and a one-letter one; a long link shortcut with an unbreakable address. */
+const worst = (): ReturnType<typeof start> => {
+  const base = start();
+  return {
+    announcements: [
+      ...base.announcements,
+      announcement(
+        "aaaaaaaa-0000-4000-8000-000000000003",
+        "Umstellung der Anmeldung auf Passkeys für alle Konten der Werkstatt Nord-Ost ab dem 1. Dezember 2026",
+        {
+          kind: "banner",
+          tone: "warning",
+        },
+      ),
+      announcement("aaaaaaaa-0000-4000-8000-000000000004", "🎄 Betriebsferien"),
+      announcement("aaaaaaaa-0000-4000-8000-000000000005", "Ö"),
+    ],
+    rail: {
+      ...base.rail,
+      entries: [
+        ...base.rail.entries,
+        {
+          shortcut: {
+            id: "bbbbbbbb-0000-4000-8000-000000000003",
+            kind: "link",
+            title: "Zeiterfassung und Abwesenheitsplanung Werkstatt Nord-Ost",
+            href: "https://zeiterfassung.eu-central-1.northwind-industries-holdings.example.com/werkstatt-nord-ost/abwesenheiten?ansicht=monat",
+            icon: "ti ti-clock",
+          },
+          access: [],
+        },
+      ],
+    },
+  };
+};
+
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "demo-admin",
@@ -142,6 +178,7 @@ export async function adminV2BrowserFixture() {
   const pages = new Hono<{ Variables: Variables }>();
   const localeOf = (c: Context<{ Variables: Variables }>) => (new URL(c.req.url).searchParams.get("locale") === "en" ? "en" : "de");
   pages.use("*", async (c, next) => {
+    if (c.req.query("state") === "worst") data = worst();
     const locale = localeOf(c);
     c.req.raw.headers.set("x-cloud-locale", locale);
     c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });

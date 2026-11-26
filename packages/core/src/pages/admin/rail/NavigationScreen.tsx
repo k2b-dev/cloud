@@ -80,6 +80,11 @@ export default function NavigationScreen(props: NavigationScreenProps) {
   const authenticated = start?.access.find((access) => access.principal.type === "authenticated") ?? everyoneAccess();
   const index = () => state().entries.findIndex((item) => item.shortcut.id === entry()?.shortcut.id);
 
+  /** The sign the shortcut shows in the app bar: the app's icon, or the link's own. */
+  const symbol = (shortcut: RailShortcut) =>
+    (shortcut.kind === "app" ? (props.apps.find((app) => app.id === shortcut.appId)?.icon ?? "ti ti-apps") : shortcut.icon)
+      .replace(/^ti\s+/, "")
+      .replace(/^ti-/, "");
   const label = (shortcut: RailShortcut) =>
     shortcut.kind === "app" ? (props.apps.find((app) => app.id === shortcut.appId)?.label ?? t().unavailable) : shortcut.title;
   const audience = (row: RailAdminEntry) =>
@@ -191,9 +196,9 @@ export default function NavigationScreen(props: NavigationScreenProps) {
               {
                 title: t().name,
                 width: { min: 200, default: 260 },
-                cell: (row) => ({
-                  lines: [label(row.shortcut), row.shortcut.kind === "app" ? row.shortcut.appId : row.shortcut.href],
-                }),
+                // one line per row (identity rule 4) with the shortcut's own sign; the address is in the open shortcut
+                mark: (row) => ({ icon: symbol(row.shortcut) }),
+                cell: (row) => label(row.shortcut),
               },
               {
                 title: t().type,
@@ -254,7 +259,7 @@ export default function NavigationScreen(props: NavigationScreenProps) {
                   <Field name="icon" label={t().icon}>
                     {/* k2b-ui gap: no icon picker in v2; the v1 picker stands in. */}
                     <IconInput
-                      label={t().icon}
+                      aria-label={t().icon}
                       value={() => link()?.icon ?? "ti ti-link"}
                       clearable={false}
                       onValueChange={(value) => updateLink({ icon: value ?? "ti ti-link" })}

@@ -170,7 +170,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
               {
                 title: t().title,
                 width: { min: 200, default: 280 },
-                cell: (row) => ({ lines: [row.title, row.kind === "banner" ? t().banner : t().announcement] }),
+                // one line per row (identity rule 4); the kind has its own column
+                cell: (row) => row.title,
               },
               {
                 title: t().state,
@@ -179,7 +180,13 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
                 cell: (row) => <Text muted={row.state !== "active"}>{t()[row.state]}</Text>,
               },
               { title: t().published, width: { min: 140, default: 160 }, drop: true, cell: (row) => row.published },
-              { title: t().expires, drop: true, cell: (row) => row.expires },
+              { title: t().expires, width: { min: 140, default: 160 }, drop: true, cell: (row) => row.expires },
+              {
+                title: t().kind,
+                width: { min: 110, default: 120 },
+                drop: true,
+                cell: (row) => (row.kind === "banner" ? t().banner : t().announcement),
+              },
             ]}
           />
           <CacheSection area="announcements" />
