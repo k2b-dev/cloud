@@ -142,8 +142,8 @@ What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`
 (head grows to 56), `state` (a `Chip`; for a running state such as "Läuft"
 `state={<Text weight="medium"><Icon name="gavel" /> Läuft</Text>}`; or an amount),
 `actions` (text buttons),
-`menu` (more deeds behind "…"), `folded` (head only, with a chevron),
-children. No line inside; never a `Group` in a `Group`, and never in a
+`menu` (more deeds behind "…"), `folded` (starts as head only; its
+chevron opens and closes it in place), children. No line inside; never a `Group` in a `Group`, and never in a
 `Band` (the band's line would cut the frame). Groups stand in a `Section`
 or directly in a `Pane`. A group's way (arrived → … → paid) is `Steps`
 inside it.
@@ -284,7 +284,9 @@ lines instead of cutting a thing.
   it needs `label`.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
-  such as "Sekunden", or "optional"), one control as child. `Field.Row`
+  such as "Sekunden", or "optional"), `action` (one quiet deed at the end
+  of the label line instead, such as "Auf Standard zurücksetzen"; the field
+  keeps its height), one control as child. `Field.Row`
   puts fields side by side (one column on the phone). `required` keeps the
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
@@ -308,10 +310,11 @@ lines instead of cutting a thing.
   and `onInput` carry the plain number ("1500.5"), the form sends it, and
   `min`/`max` stop a send outside them. A fixed set of sizes (an interval,
   "7 / 30 / 90 Tage") is a `Select`, not a number.
-- `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
-  `placeholder`. The chosen option has its tick at the end of its row, as
-  everywhere one choice is marked (a menu, a filter's options); several
-  choices have their box first.
+- `Select`: `options` (strings or `{ value, label, disabled }`), `value`,
+  `onChange`, `placeholder`, `disabled` (a grey well, the value still
+  shown, while it cannot be changed). The chosen option has its tick at the
+  end of its row, as everywhere one choice is marked (a menu, a filter's
+  options); several choices have their box first.
 - `LookupSelect`: one value (or `multiple`) from many that load while the
   person types, such as a customer or a person: `value`, `onChange`,
   `load` (with `signal` and `limit`), `known` (names the server resolved,
@@ -322,6 +325,27 @@ lines instead of cutting a thing.
   label, name, hint, error and `required`; the form gets each chosen code,
   nothing while disabled. Never a `Select` with a few of many entries, never
   free text for a person.
+- `TagsInput`: several short values as chips in one field (domains,
+  server addresses): `value`, `onChange`, `suggestions` (values to pick
+  while typing; any other text is taken on Enter), `placeholder`,
+  `disabled`. Backspace in the empty field takes the last chip back.
+- `ImageInput`: one image: `value` (its address), `onChange` (the new
+  address, or `null` when removed), `transform` (file to address; by
+  default a square picture as a data URL; upload and return a URL for
+  large files), `accept`, `round` (a person's picture), `disabled`. A
+  dropped or pasted file counts as chosen.
+- `Slider`: a number on a range: `value`, `onChange` (every step),
+  `onCommit` (the drag or key press ended: save here), `min`, `max`,
+  `step`, `format` (`Intl.NumberFormat` options, such as percent),
+  `disabled`. The number reads at the end.
+- `ColorInput`: a colour as `#rrggbb`: `value`, `onChange`, `onCommit`,
+  `swatches` (presets), `disabled`. Swatch and code (any CSS colour typed
+  in), a surface of saturation and brightness, a hue slider, the presets.
+- `CodeInput`: a one-time or pairing code, a box per character: `value`,
+  `onInput`, `onComplete` (the last box filled), `length` (6),
+  `characters` (`digits` or `alphanumeric`), `autocomplete`
+  (`one-time-code` by default; `off` for a code shown on another device),
+  `disabled`.
 - `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
   writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
   text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
@@ -359,6 +383,9 @@ lines instead of cutting a thing.
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+- Counts of `Nav` and `Tabs`: a number is written in the page's language and
+  in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
+  you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
@@ -374,7 +401,8 @@ lines instead of cutting a thing.
   as they go), with the same look. Give them `panel` (an id) and put the
   open tab's content in `<Tabs.Panel id>`, which the open tab names. A
   choice of a value is never tabs; that is `Select` or `Choice`.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
+- `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
+  where it does not fit before the filters), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
   the row never refreshes), `facts: { before?, value?, after? }[]` (where
@@ -383,7 +411,9 @@ lines instead of cutting a thing.
   `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
-  `Button variant="ghost" menu`; leave on the phone),
+  `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
+  they keep only their symbols, the words stay their names; leave on the
+  phone),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
