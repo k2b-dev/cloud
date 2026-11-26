@@ -28,7 +28,8 @@ const iconName = (icon: string) => icon.replace(/^ti\s+ti-/, "");
  * `PwaLayout ui="v2"`: the frame of a Cloud app page built with `@k2b/ui/v2`, phone first. The page loads Core's
  * v2.css alone and no v1 shell code. Below 48rem the page fills the window with its head at the top and a tab bar of
  * Start and the first parts at the bottom, both clear of the phone's safe areas; from 48rem a v2 `Nav` with Start,
- * every part and Settings stands beside the page instead. Without `bare` the frame puts the page's content in a
+ * every part and Settings stands beside the page instead, a `Rail` as Cloud's app bar.
+ * There the head shows no title that only names the open place, and a head left empty by that leaves. Without `bare` the frame puts the page's content in a
  * `Workspace` with the head (back, title, actions) and one scrolling `Pane`; with `bare` the page brings its own
  * `Workspace` from its island, and the frame keeps only the navigation.
  */
@@ -56,6 +57,12 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
   const back = props.back;
   // the frame owns the way to Settings: pages never add their own
   const settingsOnStart = !!user && path === PWA_SCOPE;
+  // Beside the rail, a title that only names the open place says nothing the rail does not; the phone keeps it.
+  const wideTitle = props.sidebarTitle ?? props.title;
+  const openPlace = path === PWA_SCOPE ? t.start : path === settingsHref ? t.settings : currentPart?.name;
+  const titleRepeats = !!user && wideTitle === openPlace;
+  // Then a head with nothing else beside the rail leaves there (no back the rail leads to, no actions).
+  const wideHeadEmpty = titleRepeats && (!back || back.withSidebar === false) && props.actions === undefined;
   const head = (
     <Bar
       start={
@@ -72,8 +79,14 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
             <img class="pwa-v2-logo pwa-v2-phone-only" src={LOGO} alt="" />
           </Show>
           <Show
-            when={props.sidebarTitle !== undefined && props.sidebarTitle !== props.title}
-            fallback={<Text weight="strong">{props.title}</Text>}
+            when={!titleRepeats && props.sidebarTitle !== undefined && props.sidebarTitle !== props.title}
+            fallback={
+              <Show when={titleRepeats} fallback={<Text weight="strong">{props.title}</Text>}>
+                <span class="pwa-v2-phone-only">
+                  <Text weight="strong">{props.title}</Text>
+                </span>
+              </Show>
+            }
           >
             <span class="pwa-v2-phone-only">
               <Text weight="strong">{props.title}</Text>
@@ -85,7 +98,7 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
         </span>
       }
       // The app has no phone bar of the shell, where a v2 head's end goes below 768 px: the page's actions stay. Start
-      // carries the way to Settings on the phone, which is no tab; beside the sidebar its foot leads there.
+      // carries the way to Settings on the phone, which is no tab; beside it the rail's foot leads there.
       end={
         props.actions === undefined && !settingsOnStart ? undefined : (
           <span class="pwa-v2-actions" data-keep="">
@@ -111,13 +124,13 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
         data-tabs={navigation ? "" : undefined}
         data-screen={props.screen ? "" : undefined}
         data-sidebar={user ? "" : undefined}
+        data-wide-head={wideHeadEmpty && !props.bare ? "none" : undefined}
       >
         <Show when={user}>
           <PwaNavigationV2
             title={cloud}
             logo={LOGO}
             start={start}
-            appsLabel={t.apps}
             parts={parts.map(entry)}
             settings={{ id: "settings", label: t.settings, icon: "settings", href: settingsHref, current: path === settingsHref }}
             tabsLabel={t.tabs}

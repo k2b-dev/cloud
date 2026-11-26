@@ -105,7 +105,7 @@ const section = (props: Omit<Parameters<typeof Section>[0], "children">, rows: (
     },
   } as Parameters<typeof Section>[0]);
 
-// Start says what waits for the person, not which apps exist (the sidebar and the tabs list them): what is new for
+// Start says what waits for the person, not which apps exist (the rail and the tabs list them): what is new for
 // them with who sent it, today's dates, this device; beside it on a wide screen, the activity of the people around.
 // One signal per row: an avatar or a mark leads, a chip only where something asks to act.
 const forYou = () =>
@@ -225,8 +225,10 @@ const settingsMain = () => [
       action: { label: "Abmelden", icon: "logout" },
     }),
   ]),
+  // the account and everything beyond this device live in Cloud's own settings: one clear way there
   section({ icon: "user", color: "#be185d", title: "Konto" }, () => [
     row({ avatar: { name: "Mia Muster", color: "#be185d" }, lines: ["Mia Muster", "mia.muster@example.org"] }),
+    row({ icon: "settings", color: "#be185d", lines: ["Alle Einstellungen", "Konto, Sicherheit und Mitteilungen in Lindenhof Cloud"], href: "/me" }),
   ]),
   section({ icon: "palette", color: "#7c3aed", title: "Darstellung" }, () => [
     row({
@@ -242,7 +244,7 @@ const settingsMain = () => [
       end: createComponent(Text, { muted: true, children: "Deutsch" }),
     }),
   ]),
-  section({ icon: "bell", color: "#0e7490", title: "Mitteilungen", count: 5 }, () => [
+  section({ icon: "bell", color: "#0e7490", title: "Mitteilungen auf diesem Gerät", count: 5 }, () => [
     row({
       icon: "messages",
       color: "#0e7490",
@@ -370,7 +372,11 @@ const server = new Hono<AuthContext>()
           title: "Einstellungen",
           // no part's place: a screen of its own with the way back to Start
           screen: true,
-          // beside the sidebar, its marked entry already says where the page stands
+          // what this page holds, in one line: this device only; the rest is in Cloud's settings
+          get status() {
+            return createComponent(StatusRow, { lead: "Nur für dieses Gerät · alles Weitere unter „Alle Einstellungen“" });
+          },
+          // beside the rail, its marked entry already says where the page stands
           back: { href: "/pwa/", label: "Start", withSidebar: false },
           get children() {
             return settings();
