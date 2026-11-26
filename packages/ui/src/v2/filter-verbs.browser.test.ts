@@ -301,6 +301,9 @@ test("phone: the sheet searches many fields in their groups; a field's verb is t
       await sheet.locator(".k2-fsheet-row", { hasText: "Epoche" }).tap();
       await page.getByRole("dialog", { name: "Epoche" }).waitFor();
       await steady(page);
+      // the verb's select takes the sheet's quiet first focus without a ring: a ring is for the keys
+      await settled(page);
+      expect(await page.locator(".k2-fsheet .k2-fed-verb [data-select]").evaluate((node) => getComputedStyle(node).boxShadow)).toBe("none");
       await page.locator(".k2-fsheet .k2-fed-verb [data-select]").tap();
       await page.getByRole("option", { name: "ist nicht leer", exact: true }).tap();
       await page.waitForFunction(() => new URL(location.href).search === "?era.notEmpty=");
