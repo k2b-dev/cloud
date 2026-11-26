@@ -58,8 +58,8 @@ screen, recipe, test screen and documentation example:
     the value at a fixed width beside it, its current state visible at a
     glance; never full-width fields stacked one under the other.
 
-Prove it before you show it: put your `v2-preview` pictures (1440, 390 px)
-beside the recipe's and fix every difference in faces, density, hierarchy.
+Prove it before you show it: put your 1440 and 390 px pictures beside the
+recipe's ([seeing](references/seeing.md)); fix every difference in faces.
 
 ## Start here
 

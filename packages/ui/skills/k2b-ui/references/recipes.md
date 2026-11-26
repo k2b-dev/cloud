@@ -96,10 +96,11 @@ marks and a state chip) and who changed it (`Digest activity`).
 
 The page's one primary "Neuer Termin" stays in the head; the list shows
 each appointment with the mark of its kind and the fitter in its second
-line, and a clash as a chip; the form is a `Pane detail` beside the list, so the list stays in view while it is
-filled in, with `Select`, `DateInput`, `Input`, `Choice` inside a `Field`, a
-multiline `Input`, and `Check`s, one of them `disabled` with the reason
-in its words. Its footer `Bar` saves with a default button.
+line, and a clash as a chip; the form is a `Pane detail` beside the list,
+so the list stays in view while it is filled in, with `Select`,
+`DateInput`, `Input`, `Choice` inside a `Field`, a multiline `Input`, and
+`Check`s, one of them `disabled` with the reason in its words. Its footer
+`Bar` saves with a default button.
 
 - A form beside a page with a head primary never gets a second primary.
 - On the phone the form is the page; `back` leads to the list.
@@ -154,11 +155,11 @@ and lists with their marks.
 
 Three-line `Row`s (sender, subject, preview) with the sender's `avatar`,
 `unread`, `meta` count, `time` and `marks`; mailboxes and shared mailboxes
-in the `Nav` with their colours; `StatusRow` with select-all. The reader: head `Bar`
-with the subject as `Text type="lead"` and actions; a `Bar` with `Inline`
-chips; `Notice tone="ai"` for the summary; one `Band` per message with a
-sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles` with the
-colour of each file type.
+in the `Nav` with their colours; `StatusRow` with select-all. The reader:
+head `Bar` with the subject as `Text type="lead"` and actions; a `Bar` with
+`Inline` chips; `Notice tone="ai"` for the summary; one `Band` per message
+with a sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles` with
+the colour of each file type.
 
 - A colleague's internal note in the thread is a `Notice tone="note"` with
   `title` and `meta` (who, when).
@@ -247,11 +248,11 @@ its kind, the team as `Avatar` or `Avatar.Stack`, the state as a chip.
 ![actions at 390 px](../images/actions-390.png)
 
 The head `Bar` holds `Tabs`, a `Popover tip` on the refresh button, a
-`Menu` "Filter" with ticked entries (a `Popover` in the head leaves on the phone),
-a `Menu` with a choice section and toggles, and the
-one primary as a `Menu` with a submenu. Each `Row` stands in a
-`Menu.Context`, leads with the mark of its kind and has a `Button pressed`
-star and a "…" `Menu` with the same entries in its `end`. The offer the address names opens in a
+`Menu` "Filter" with ticked entries (a `Popover` in the head leaves on the
+phone), a `Menu` with a choice section and toggles, and the one primary as
+a `Menu` with a submenu. Each `Row` stands in a `Menu.Context`, leads with
+the mark of its kind and has a `Button pressed` star and a "…" `Menu` with
+the same entries in its `end`. The offer the address names opens in a
 `Pane detail` with its own deeds; `Button busy` while it sends, and a
 `Notice` with a `disabled` action that says why.
 
