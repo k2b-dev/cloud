@@ -87,9 +87,8 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     expect(response.status, html).toBe(200);
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
-    // the lead counts what the search found; the notice about hosts without a group waits until the search is cleared
-    expect(text).toContain("1 Hostgruppe");
-    expect(text).not.toContain("keiner Gruppe zugeordnet");
+    // the first row says what matters, with its number; the list's count and the search are quiet facts beside it
+    expect(text).toContain("7 Hosts sind keiner Gruppe zugeordnet Suche server 1 Hostgruppe");
     // no figure tiles: nothing counts the hosts in groups a second time
     expect(text).not.toContain("in Gruppen");
     expect(text).not.toContain("Zuordnung erforderlich");
@@ -102,7 +101,7 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     const all = read(await (await app.request("/admin/ipa-hosts", { headers: { "Accept-Language": "de" } })).text());
     expect(all).toContain("12.345 Hostgruppen");
     const ungrouped = read(await (await app.request("/admin/ipa-hosts?tab=ungrouped", { headers: { "Accept-Language": "de" } })).text());
-    expect(ungrouped).toContain("7 Hosts ohne Gruppe");
+    expect(ungrouped).toContain("7 Hosts sind keiner Gruppe zugeordnet");
   } finally {
     for (const spy of spies) spy.mockRestore();
   }

@@ -212,9 +212,15 @@ describe("Hosts in the Cloud shell", () => {
               "/api/ipa-hosts/hostgroups/search": {
                 type: "application/json",
                 body: JSON.stringify({
+                  // enough groups for "a" that the dialog shows a list beside the chosen ones
                   hostgroups: [
+                    { cn: "arbeitsplaetze", description: "PCs in Büro und Werkstatt" },
                     { cn: "drucker", description: "Drucker und Scanner" },
                     { cn: "kameras", description: null },
+                    { cn: "lager", description: "Scanner und Etikettendrucker im Lager" },
+                    { cn: "laptops", description: "Mobile Geräte der Bauleitung" },
+                    { cn: "maschinen", description: "Steuerrechner der Maschinen" },
+                    { cn: "telefonie", description: "Telefonanlage" },
                   ],
                 }),
               },
@@ -230,7 +236,7 @@ describe("Hosts in the Cloud shell", () => {
             await tab.getByRole("region", { name: "Hostgruppen" }).getByRole("button").first().click();
             const dialog = tab.getByRole("dialog");
             await dialog.getByRole("searchbox").fill("a");
-            await dialog.getByRole("option", { name: /drucker/ }).click();
+            await dialog.getByRole("option", { name: /^drucker/ }).click();
           }
           await settled(tab);
           if (shots) await tab.screenshot({ path: join(shots, `${name}-${width}.png`) });

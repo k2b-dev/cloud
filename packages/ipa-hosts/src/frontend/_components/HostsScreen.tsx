@@ -251,16 +251,27 @@ export default function HostsScreen(props: HostsScreenProps) {
   const place = (host: IpaHost) => [host.locality, host.location].filter(Boolean).join(" · ");
   /** A group's own colour, the same on every visit: its mark in lists and records. */
   const PALETTE = ["#2563eb", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#0891b2", "#ca8a04"];
+  const KEYS_STORED = "#0d9488";
+  const KEYS_MISSING = "#d97706";
   const groupColor = (cn: string) => PALETTE[[...cn].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
   /** A row marks only the exception: a host whose client stored no SSH keys yet (symbol and word). */
-  const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Chip status="warn" icon="key-off">{t().noKeys}</Chip> : undefined);
-  /** The second line of a host: only what the mirror holds. */
+  const hostState = (host: IpaHost) =>
+    host.sshFingerprints.length === 0 ? (
+      <Chip status="warn" icon="key-off">
+        {t().noKeys}
+      </Chip>
+    ) : undefined;
+  /** A host's sign in the colour of its state: keys stored, or still none (the row's chip names the exception). */
+  const hostColor = (host: IpaHost) => (host.sshFingerprints.length > 0 ? KEYS_STORED : KEYS_MISSING);
+  /** The second line of a host: what the mirror holds, else how many groups it is in, so every row has one height. */
   const hostLine = (host: IpaHost) =>
-    [place(host), host.description, host.osVersion].filter(Boolean).join(" · ") || (host.macAddress[0] ?? host.platform ?? "");
+    [place(host), host.description, host.osVersion].filter(Boolean).join(" · ") ||
+    (host.macAddress[0] ?? host.platform ?? t().memberOfCount({ count: host.memberofHostgroup.length }));
   const hostRow = (host: IpaHost, open: string) => (
     <Row
       icon="server"
-      lines={hostLine(host) ? [host.fqdn, hostLine(host)] : [host.fqdn]}
+      color={hostColor(host)}
+      lines={[host.fqdn, hostLine(host)]}
       marks={hostState(host)}
       current={props.host?.fqdn === host.fqdn}
       href={open}
@@ -285,23 +296,18 @@ export default function HostsScreen(props: HostsScreenProps) {
           lead={
             emptyMirror()
               ? t().emptyLead
-              : props.tab === "groups"
-                ? t().groupCount({ count: props.figures.groups })
-                : t().ungroupedCount({ count: props.figures.ungrouped })
+              : props.figures.ungrouped > 0
+                ? t().unassignedLead({ count: props.figures.ungrouped })
+                : t().assignedLead({ count: props.figures.hostsTotal })
           }
-          facts={props.search ? [{ before: t().search, value: props.search }] : []}
+          facts={[
+            ...(props.search ? [{ before: t().searchFact, value: props.search }] : []),
+            // the list's count is a quiet fact; on the hosts without a group the lead already counts them
+            ...(emptyMirror() || props.tab !== "groups" ? [] : [{ value: t().groupCount({ count: props.figures.groups }) }]),
+          ]}
         />
       }
     >
-      <Show when={props.tab === "groups" && props.figures.ungrouped > 0 && !props.search}>
-        <Notice
-          tone="warn"
-          icon="server-off"
-          actions={[{ label: t().showUngrouped, href: href({ tab: "ungrouped", group: null, host: null }) }]}
-        >
-          {t().unassignedLead({ count: props.figures.ungrouped })}
-        </Notice>
-      </Show>
       <Show
         when={props.tab === "groups"}
         fallback={
@@ -328,8 +334,18 @@ export default function HostsScreen(props: HostsScreenProps) {
               text={
                 props.search ? t().noGroupMatch({ query: props.search }) : props.figures.hostsTotal === 0 ? t().syncToFill : t().noGroups
               }
-              // an empty mirror is filled by the first sync, the page's main action; groups without hosts are made in the head
-              action={undefined}
+              // the empty state holds its way on: an empty mirror is filled by a sync, a mirror without groups gets its first
+              action={
+                props.search
+                  ? undefined
+                  : emptyMirror()
+                    ? { label: t().syncNow, icon: "refresh", onClick: () => void sync() }
+                    : {
+                        label: t().newGroup,
+                        icon: "folder-plus",
+                        onClick: () => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" })),
+                      }
+              }
             />
           }
         >
@@ -339,10 +355,11 @@ export default function HostsScreen(props: HostsScreenProps) {
                 <Row
                   icon="folders"
                   color={groupColor(group.cn)}
-                  lines={group.description ? [group.cn, group.description] : [group.cn]}
-                  time={t().hostCount({ count: group.hostDetails.length })}
+                  // one height: the second line holds the description, else the hosts it counts
+                  lines={[group.cn, group.description || t().hostCount({ count: group.hostDetails.length })]}
+                  time={group.description ? t().hostCount({ count: group.hostDetails.length }) : undefined}
                   marks={group.hostgroups.length > 0 ? nestedChips(group) : undefined}
-                  current={openGroup() === group.cn && !props.host}
+                  current={openGroup() === group.cn}
                   href={href({ group: group.cn })}
                 />
               )}
@@ -550,7 +567,13 @@ export default function HostsScreen(props: HostsScreenProps) {
           foot={
             <>
               <Button onClick={closeAdding}>{t().cancel}</Button>
-              <Button icon="folder-plus" busy={busy()} disabled={(adding() ?? []).length === 0} onClick={() => void addToGroups(host.fqdn)}>
+              <Button
+                variant="primary"
+                icon="folder-plus"
+                busy={busy()}
+                disabled={(adding() ?? []).length === 0}
+                onClick={() => void addToGroups(host.fqdn)}
+              >
                 {t().add}
               </Button>
             </>
@@ -572,7 +595,7 @@ export default function HostsScreen(props: HostsScreenProps) {
           foot={
             <>
               <Button onClick={() => setHostDraft(null)}>{t().cancel}</Button>
-              <Button icon="check" busy={busy()} onClick={() => void saveHost(host.fqdn)}>
+              <Button variant="primary" icon="check" busy={busy()} onClick={() => void saveHost(host.fqdn)}>
                 {t().save}
               </Button>
             </>
@@ -651,7 +674,7 @@ export default function HostsScreen(props: HostsScreenProps) {
       // an open host takes groups in its own section, so the phone shows one way to add, not two
       primary={
         emptyMirror()
-          ? { label: t().syncNow, icon: "refresh", onClick: () => void sync() }
+          ? undefined
           : props.tab === "groups" && !props.group && !props.host
             ? {
                 label: t().newGroup,
@@ -704,22 +727,14 @@ export default function HostsScreen(props: HostsScreenProps) {
                   { label: t().syncSettings, icon: "settings", onClick: () => void openSchedule() },
                 ]}
               />
-              <Show
-                when={emptyMirror()}
-                fallback={
-                  <Show when={props.tab === "groups" && !props.group && !props.host}>
-                    <Button
-                      variant="primary"
-                      icon="folder-plus"
-                      onClick={() => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" }))}
-                    >
-                      {t().newGroup}
-                    </Button>
-                  </Show>
-                }
-              >
-                <Button variant="primary" icon="refresh" onClick={() => void sync()}>
-                  {t().syncNow}
+              {/* an empty mirror's way on stands in its empty state, not a second time in the head */}
+              <Show when={!emptyMirror() && props.tab === "groups" && !props.group && !props.host}>
+                <Button
+                  variant="primary"
+                  icon="folder-plus"
+                  onClick={() => (setFailure(null), setGroupDraft({ cn: null, name: "", description: "" }))}
+                >
+                  {t().newGroup}
                 </Button>
               </Show>
             </>
@@ -751,7 +766,7 @@ export default function HostsScreen(props: HostsScreenProps) {
         foot={
           <>
             <Button onClick={() => setGroupDraft(null)}>{t().cancel}</Button>
-            <Button icon="check" busy={busy()} onClick={() => void saveGroup()}>
+            <Button variant="primary" icon="check" busy={busy()} onClick={() => void saveGroup()}>
               {groupDraft()?.cn ? t().save : t().create}
             </Button>
           </>
@@ -783,7 +798,7 @@ export default function HostsScreen(props: HostsScreenProps) {
         foot={
           <>
             <Button onClick={() => setSchedule(null)}>{t().cancel}</Button>
-            <Button icon="check" busy={busy()} disabled={!schedule()?.loaded} onClick={() => void saveSchedule()}>
+            <Button variant="primary" icon="check" busy={busy()} disabled={!schedule()?.loaded} onClick={() => void saveSchedule()}>
               {t().save}
             </Button>
           </>
