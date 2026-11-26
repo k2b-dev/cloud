@@ -1,6 +1,6 @@
 import { clipboard } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
-import { dialogCore, Paper, panelDialogOptions, useLocale } from "@k2b/ui";
+import { dialogCore, panelDialogOptions, useLocale } from "@k2b/ui";
 import {
   Button,
   Canvas,
@@ -11,6 +11,7 @@ import {
   List,
   Menu,
   type MenuEntry,
+  Notice,
   Pane,
   Row,
   Section,
@@ -59,10 +60,9 @@ function FeedbackPreview() {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
   return (
-    <Paper as="section" class="grid gap-1 p-4">
-      <h2 class="text-base font-semibold text-primary">{t().visitQuestion}</h2>
-      <p class="text-sm text-secondary">{t().feedbackPreviewNote}</p>
-    </Paper>
+    <Notice tone="note" icon="message-star" title={t().visitQuestion}>
+      {t().feedbackPreviewNote}
+    </Notice>
   );
 }
 
