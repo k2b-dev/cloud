@@ -228,13 +228,17 @@ never cut, the column at least as wide as its longest text value),
 `width={{ min, default }}` (its default where the row has room, sharing the
 room left with the other columns that can give way; down to its minimum
 where it has less; cut text never widens it; a grip in the head that a drag or the keys move; with
-`{ fixed }` that width without a grip, for a narrow number or deed column), `wrap` (one text column may take 3
+`{ fixed }` that width without a grip, for a narrow column of row actions), `wrap` (one text column may take 3
 lines), `drop` (leaves when the table has no room for it: one by one from
 the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
-page itself if it needs one. A column without a width counts with 160 px. Chips,
+page itself if it needs one. The row is always filled: the columns without a
+width (at least 96 px each) share the rest of it by how much their text asks
+for, so a short column stays short and a long description gets the room;
+without them the columns that can give way grow; when every column is fixed,
+the last one takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 

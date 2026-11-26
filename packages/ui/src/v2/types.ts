@@ -11,8 +11,7 @@ export type OnNavigate = (event: LinkNavigateEvent) => void | Promise<void>;
 
 /**
  * The width of a column, in CSS px: `{ min, default }` can be dragged between its minimum and wider; `{ fixed }` keeps
- * that width without a grip, for a page to read rather than to arrange (a visitor page, a wall screen) or a narrow
- * column of numbers or deeds.
+ * that width without a grip, such as a narrow column of row actions.
  */
 export type Width = { min: number; default: number } | { fixed: number };
 

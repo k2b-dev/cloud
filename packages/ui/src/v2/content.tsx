@@ -504,8 +504,8 @@ export type Column<T> = {
    * The width of the column, its minimum and default in px: a column that can be dragged wider or narrower (a grip in
    * its head); in a small table it is its default wide where the row has room and shares the room left with the other
    * columns that can give way; where the row has less, it gives way down to its minimum. `{ fixed }` is that width
-   * without a grip, such as a narrow column of numbers or deeds; it neither gives way nor grows. Columns without a
-   * width take the rest of the row when no column can give way. Cut text never widens a column.
+   * without a grip, such as a narrow column of row actions; it neither gives way nor grows. Columns without a width
+   * share the rest of the row by how much their text asks for (at least 96 px each). Cut text never widens a column.
    */
   width?: Width;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
@@ -697,16 +697,20 @@ export const Table = <T,>(props: TableProps<T>) => {
       return longest === 0 ? 0 : Math.max(longest, signsOf(column.title));
     }),
   );
-  // How long the text of each column is, in signs (its longest value, at least its head): the columns without a width
-  // share the rest of the row in this measure, so the one with more to say gets more room.
-  const lengths = createMemo(() =>
-    props.columns.map((column, index) =>
-      Math.max(
-        1,
-        signsOf(column.title),
-        values().reduce((most, row) => Math.max(most, signsOf(row[index]!)), 0),
-      ),
-    ),
+  // The room each column's content asks for, in px: a text its signs at about 7 px and the padding of its cell, a part
+  // the app made (a chip, a link, a button) as much as a column without a width; at least its head. The columns
+  // without a width share the rest of the row in this measure, so the one with more to say gets more room.
+  const rooms = createMemo(() =>
+    props.columns.map((column, index) => {
+      const text = (signs: number) => Math.max(signs, 1) * 7 + 32;
+      const ask = (value: CellValue) =>
+        typeof value === "string" || typeof value === "number" || isPair(value)
+          ? text(signsOf(value))
+          : value === undefined || value === null || typeof value === "boolean"
+            ? 0
+            : flexibleColumn;
+      return values().reduce((most, row) => Math.max(most, ask(row[index]!)), text(signsOf(column.title)));
+    }),
   );
   // What each column needs, in px: at least `lo` (its minimum; a numeric one its longest value) and at most `hi` (its
   // default). A column without a width counts with 96 and 160 px.
@@ -739,7 +743,7 @@ export const Table = <T,>(props: TableProps<T>) => {
   // The sums are over the columns shown: after `drop` columns left, the others share the room among themselves.
   // Above the sum of the defaults the room left is shared among the columns with a width that can give way (minimum
   // below default), in the measure they give way: no column takes all of it, and an action column at the end leaves
-  // no air on the right. A column without a width (a deed, a note) keeps its 160 px.
+  // no air on the right. Columns without a width take the rest themselves (below).
   const round = (value: number) => Math.round(value * 10000) / 10000;
   const shrink = (index: number, gone: ReadonlySet<number> = new Set()) => {
     const { lo, hi } = need()[index]!;
@@ -757,15 +761,16 @@ export const Table = <T,>(props: TableProps<T>) => {
     const span = (at: number) => (props.columns[at]!.width && !held(at) ? need()[at]!.hi - need()[at]!.lo : 0);
     const spans = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + span(at)), 0);
     const free = need().filter((_, at) => !gone.has(at) && props.columns[at]!.width === undefined).length;
-    // The columns without a width fill the whole rest of the row together, each in the measure of its text: a column
-    // cuts its text only when the row has no room left for both.
+    // The columns without a width fill the whole rest of the row together. Each keeps its minimum; what the row has
+    // beyond the others and those minimums (100cqw − most) goes to them in the measure their content asks for more
+    // than its minimum. So they sum to the row exactly from `least` on, and a short column raised to its minimum
+    // takes nothing from the long one's share (delta review of #4209: no sideways scroll at medium widths).
     const isFree = (at: number) => !gone.has(at) && props.columns[at]!.width === undefined;
     if (free > 0 && isFree(index)) {
-      const fixedSum = need().reduce((sum, each, at) => (gone.has(at) || isFree(at) ? sum : sum + each.hi), box);
-      // the room a text takes: its signs at about 7 px and the padding of its cell
-      const room = (at: number) => lengths()[at]! * 7 + 32;
-      const textSum = need().reduce((sum, _, at) => (isFree(at) ? sum + room(at) : sum), 0);
-      return `max(${lo}px, calc((100cqw - ${fixedSum}px) * ${round(room(index) / textSum)}))`;
+      const extra = (at: number) => Math.max(rooms()[at]! - need()[at]!.lo, 0);
+      const extras = need().reduce((sum, _, at) => (isFree(at) ? sum + extra(at) : sum), 0);
+      const weight = extras > 0 ? extra(index) / extras : 1 / free;
+      return `max(${lo}px, calc(${lo}px + (100cqw - ${most}px) * ${round(weight)}))`;
     }
     const lastShown = props.columns.findLastIndex((_, at) => !gone.has(at));
     const weight = free > 0 ? 0 : spans > 0 ? span(index) / spans : index === lastShown ? 1 : 0;

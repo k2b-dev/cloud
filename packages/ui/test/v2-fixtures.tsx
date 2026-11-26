@@ -643,7 +643,12 @@ export const fixtures = {
         <Table
           label="Programm"
           rowKey={(row) => row.key}
-          group={(row) => ({ key: row.day, head: () => <Text weight="strong">{row.day}</Text>, meta: row.count })}
+          group={(row) => ({
+            key: row.day,
+            // one head a word, one a chip: both stand at the same height
+            head: () => (row.day.startsWith("Sonntag") ? <Chip status="warn">{row.day}</Chip> : <Text weight="strong">{row.day}</Text>),
+            meta: row.count,
+          })}
           rows={[
             { key: "a", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Werkstattführung", host: "Mira Solberg", time: "10:00" },
             { key: "b", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Lackierwerk", host: "Felix Thal", time: "14:00" },
@@ -652,6 +657,30 @@ export const fixtures = {
           columns={[
             { title: "Führung", width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.title, row.host] }) },
             { title: "Zeit", width: { fixed: 80 }, numeric: true, cell: (row) => row.time },
+          ]}
+        />
+      </Pane>,
+    ),
+  // a short and a long text column beside a fixed deed (delta review of #4209): together they fill the row exactly
+  tableShortLong: () =>
+    shell(
+      <Pane label="Rollen">
+        <Table
+          label="Rollen"
+          rows={[
+            { role: "Gast", text: "Darf lesen und kommentieren, aber nichts ändern oder freigeben; sieht keine Preise und Kunden" },
+            { role: "Admin", text: "Darf alles, auch Rollen vergeben und Daten exportieren" },
+            { role: "Leser", text: "Liest" },
+            { role: "Team", text: "Arbeitet mit, darf Einträge anlegen, ändern und verschieben" },
+          ]}
+          columns={[
+            { title: "Rolle", cell: (row) => row.role },
+            { title: "Beschreibung", cell: (row) => row.text },
+            {
+              title: "Aktionen",
+              width: { fixed: 72 },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für ${row.role}`} />,
+            },
           ]}
         />
       </Pane>,

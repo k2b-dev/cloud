@@ -1444,11 +1444,11 @@
   padding-block: 8px;
   vertical-align: top;
 }
-/* A group head of a small table is one quiet line at the height of its words (36 px with a word, 40 with a chip),
+/* A group head of a small table is one quiet line at the height of the column heads, with a word or a chip alike,
    its words on its middle: never the height of the rows of two lines it heads, with room left under it. */
 .k2-ui .k2-table:not([data-grid]) tr[data-group] > td {
-  height: auto;
-  padding-block: 8px;
+  height: var(--k2-h-columns);
+  padding-block: 0;
   vertical-align: middle;
 }
 .k2-ui .k2-table:not([data-grid]) tr[data-group] > td > .k2-group-row {

@@ -556,7 +556,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         );
         expect(heads.length).toBe(2);
         for (const head of heads) {
-          expect(head.height).toBeLessThanOrEqual(40);
+          // a head with a word and a head with a chip stand at the same height, the height of the column heads
+          expect(head.height).toBe(36);
           expect(Math.abs(head.below - head.above)).toBeLessThanOrEqual(2);
         }
       } finally {
@@ -565,6 +566,29 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     },
     TEST_TIMEOUT,
   );
+
+  // Delta review of #4209: a short text column raised to its 96 px minimum must not push the row past its place
+  for (const width of [640, 1024])
+    test(
+      `${width} px: a short and a long text column fill the row exactly, the table does not scroll`,
+      async () => {
+        const page = await open("tableShortLong", { width });
+        try {
+          const found = await page.evaluate(() => {
+            const scroller = document.querySelector<HTMLElement>(".k2-table-scroll")!;
+            const heads = [...document.querySelectorAll(".k2-table th")].map((head) => Math.round(head.getBoundingClientRect().width));
+            return { overflow: scroller.scrollWidth - scroller.clientWidth, heads };
+          });
+          expect(found.overflow).toBeLessThanOrEqual(0);
+          expect(found.heads[0]!).toBeGreaterThanOrEqual(96);
+          expect(found.heads[1]!).toBeGreaterThan(found.heads[0]!);
+          expect(found.heads[2]!).toBe(72);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
 
   // The floating main action never covers the last row or field of a pane (W3, Spaces #4197): scrolled to its end, an
   // open entry's last field stands above the button, and describeV2 finds nothing it covers.
