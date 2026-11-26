@@ -40,7 +40,16 @@ const events = Array.from({ length: 30 }, (_, index) => {
   };
 });
 // alone in the evening, 50 minutes: on a phone its hour is lower than on a wide screen, and its title still fits whole
-events.push({ id: "e30", title: "Rückruf Steuerbüro wegen Jahresabschluss und Umsatzsteuervoranmeldung", start: at(19 * 60), end: at(19 * 60 + 50), color: "cyan" });
+events.push({
+  id: "e30",
+  title: "Rückruf Steuerbüro wegen Jahresabschluss und Umsatzsteuervoranmeldung",
+  start: at(19 * 60),
+  end: at(19 * 60 + 50),
+  color: "cyan",
+  // faces and a link count beside the time stay inside the band
+  attendees: [{ name: "Lea Berg" }, { name: "Jonas Hahn" }],
+  links: [{ label: "Agenda", href: "https://example.org/agenda" }],
+});
 render(() => createComponent(Calendar, { view: options.view, date: "2026-11-05", events, timeZone: "Europe/Berlin", dayHours: [7, 21] }), document.getElementById("host"));
 `;
 const build = await Bun.build({
@@ -120,7 +129,9 @@ const bands = (page: Page) =>
           // line may end in "…" once)
           wide: getComputedStyle(title).whiteSpace !== "nowrap" && title.scrollWidth > title.clientWidth + 1,
           titleFirst: Boolean(
-            title.nextElementSibling?.matches(".k2b-calendar-event__meta") || !band.querySelector(".k2b-calendar-event__meta"),
+            // the time follows the title, alone or in the row beside faces and links
+            title.nextElementSibling?.matches(".k2b-calendar-event__meta, .k2b-calendar-event__row") ||
+              !band.querySelector(".k2b-calendar-event__meta"),
           ),
           lines: Math.round(box.height / line),
           // a title on one line is one line of text cut once at its end, never a wrapped first word with the rest hidden
@@ -144,6 +155,10 @@ const bands = (page: Page) =>
                 )
               );
             }),
+          // faces and the link count beside the time stay inside the band
+          extrasInside: [...band.querySelectorAll<HTMLElement>(".k2b-calendar-event__extras")]
+            .filter((extras) => getComputedStyle(extras).display !== "none" && extras.getClientRects().length > 0)
+            .every((extras) => extras.getBoundingClientRect().right <= rect.right + 0.5),
           // filled in its colour, with a colour edge of 3 px at its start
           filled: getComputedStyle(band).backgroundColor !== "rgb(255, 255, 255)",
           edge: getComputedStyle(band).boxShadow.includes("3px 0px 0px"),
@@ -188,6 +203,7 @@ for (const view of ["week", "day"] as const)
             clear: band.clear,
             cutOnce: band.cutOnce,
             timesWhole: band.timesWhole,
+            extrasInside: band.extrasInside,
           }).toEqual({
             id: band.id,
             inside: true,
@@ -200,6 +216,7 @@ for (const view of ["week", "day"] as const)
             clear: true,
             cutOnce: true,
             timesWhole: true,
+            extrasInside: true,
           });
         }
         // at most two bands at any time; the rest are counted in "+n" buttons, and together they are all 31
@@ -325,13 +342,18 @@ for (const view of ["week", "day"] as const)
       expect(oneRow).toBe(true);
       expect(await page.locator(".k2b-calendar-header .k2b-segmented-control").isVisible()).toBe(false);
       // the menu names the view on screen and offers the others
-      const trigger = page.getByRole("button", { name: /Woche|Tag/ }).and(page.locator("[aria-haspopup]"));
+      const trigger = page.locator(".k2b-calendar-view-menu__trigger");
       expect(await trigger.textContent()).toContain(view === "week" ? "Woche" : "Tag");
       await trigger.click();
-      const options = page.getByRole("menuitemradio");
+      const options = page.locator(".k2b-calendar-view-menu__list:popover-open .k2b-calendar-view-menu__item");
       await options.first().waitFor();
       expect(await options.allTextContents()).toEqual(["Tag", "Woche", "Monat", "Jahr"]);
-      expect(await page.getByRole("menuitemradio", { name: view === "week" ? "Woche" : "Tag" }).getAttribute("aria-checked")).toBe("true");
+      expect(await options.filter({ hasText: view === "week" ? "Woche" : "Tag" }).getAttribute("aria-pressed")).toBe("true");
+      // the list stands below its button, inside the screen
+      const list = await page.locator(".k2b-calendar-view-menu__list").evaluate((element) => element.getBoundingClientRect().toJSON());
+      const button = await trigger.evaluate((element) => element.getBoundingClientRect().toJSON());
+      expect(list.top).toBeGreaterThanOrEqual(button.bottom);
+      expect(list.right).toBeLessThanOrEqual(390);
     } finally {
       await page.close();
     }

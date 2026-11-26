@@ -910,8 +910,8 @@ export const TimeBand = (props: {
       data-cut-bottom={props.band.end > limit() ? "true" : undefined}
       data-moving={view.movingId() === event().id ? "true" : undefined}
       data-display={event().display}
-      data-meta={wide().meta ? undefined : "none"}
-      data-meta-phone={phone().meta ? undefined : "none"}
+      data-meta={wide().meta ? undefined : wide().lines === 1 ? "inline" : "none"}
+      data-meta-phone={phone().meta ? undefined : phone().lines === 1 ? "inline" : "none"}
       data-lines={String(wide().lines)}
       data-lines-phone={String(phone().lines)}
       data-beside={props.band.beside ? "" : undefined}
@@ -1037,6 +1037,10 @@ export const TimeMore = (props: {
         onPointerDown={(event) => {
           event.stopPropagation();
           pressedOpen = list?.matches(":popover-open") ?? false;
+        }}
+        // a press that a gesture took over never becomes a click: the next click starts afresh
+        onPointerCancel={() => {
+          pressedOpen = false;
         }}
         onClick={toggle}
       >

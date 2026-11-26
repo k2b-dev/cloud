@@ -262,8 +262,55 @@
   display: none;
 }
 
-.k2b-ui .k2b-calendar-view-menu .k2b-button {
+.k2b-ui .k2b-calendar-view-menu__trigger {
   gap: 0.25rem;
+}
+
+/* The views' list: a native popover, so it opens before any script runs; with one it stands below its button. */
+.k2b-ui .k2b-calendar-view-menu__list {
+  position: fixed;
+  min-width: 10rem;
+  padding: 0.25rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: 0.75rem;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated, var(--k2b-surface));
+  box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.25);
+}
+
+.k2b-ui .k2b-calendar-view-menu__item {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  box-sizing: border-box;
+  align-items: center;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-calendar-view-menu__item:hover {
+  background: var(--k2b-calendar-event-hover, var(--k2b-surface-muted));
+}
+
+.k2b-ui .k2b-calendar-view-menu__item:is([aria-current="page"], [aria-pressed="true"]) {
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-calendar-view-menu__item > i {
+  margin-inline-start: auto;
+}
+
+.k2b-ui .k2b-calendar-view-menu__item:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 /* Chips give their names up to make room for the view switcher; without one the row has that room. */
@@ -2052,7 +2099,8 @@
   --k2b-calendar-night-bar: 2rem;
   --k2b-calendar-fold: 2.5rem;
   --k2b-calendar-gutter: 3.5rem;
-  --k2b-calendar-inset: 0px;
+  /* bands, "+n" and the all-day row keep 2 px from the day's clipping edge, as in the week */
+  --k2b-calendar-inset: 2px;
   container: k2b-calendar-days / inline-size;
 }
 
@@ -2316,7 +2364,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.375rem;
-  padding: 0.5rem 0 0 var(--k2b-calendar-gutter);
+  padding: 0.5rem var(--k2b-calendar-inset) 0 var(--k2b-calendar-gutter);
 }
 
 .k2b-ui .k2b-calendar-days__body {
@@ -2531,6 +2579,8 @@
   hyphens: auto;
   /* a word shorter than ten letters is never hyphenated: "Sprint-Review" breaks at its own hyphen, not in "Re-view" */
   hyphenate-limit-chars: 10 4 4;
+  -webkit-hyphenate-limit-before: 4;
+  -webkit-hyphenate-limit-after: 4;
   overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -2558,6 +2608,31 @@
   .k2b-ui .k2b-calendar-band[data-meta-phone="none"] .k2b-calendar-event__meta {
     display: none;
   }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] > .k2b-calendar-event {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.375rem;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] .k2b-calendar-event__title {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] > .k2b-calendar-event > :is(.k2b-calendar-event__meta, .k2b-calendar-event__row) {
+    min-width: 0;
+    flex: 1 1 0;
+    margin: 0;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] > .k2b-calendar-event > .k2b-calendar-event__row {
+    min-width: min-content;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] .k2b-calendar-event__meta[data-pieces] {
+    display: block;
+  }
 }
 
 @container k2b-calendar-week (max-width: 40rem) {
@@ -2574,6 +2649,31 @@
 
   .k2b-ui .k2b-calendar-band[data-meta-phone="none"] .k2b-calendar-event__meta {
     display: none;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] > .k2b-calendar-event {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.375rem;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] .k2b-calendar-event__title {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] > .k2b-calendar-event > :is(.k2b-calendar-event__meta, .k2b-calendar-event__row) {
+    min-width: 0;
+    flex: 1 1 0;
+    margin: 0;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] > .k2b-calendar-event > .k2b-calendar-event__row {
+    min-width: min-content;
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="inline"] .k2b-calendar-event__meta[data-pieces] {
+    display: block;
   }
 }
 
@@ -2598,6 +2698,30 @@
 /* too low for the time below the title: the title takes the band, the time stays in its label */
 .k2b-ui .k2b-calendar-band[data-meta="none"] .k2b-calendar-event__meta {
   display: none;
+}
+
+/* too low for the time below a title of one line: the time stands beside the title, as far as the band is wide
+   enough for its pieces (a wide day view shows "Interview · 10:00–10:45", a narrow band the title alone) */
+.k2b-ui .k2b-calendar-band[data-meta="inline"] > .k2b-calendar-event {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-calendar-band[data-meta="inline"] .k2b-calendar-event__title {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-calendar-band[data-meta="inline"] > .k2b-calendar-event > :is(.k2b-calendar-event__meta, .k2b-calendar-event__row) {
+  min-width: 0;
+  flex: 1 1 0;
+  margin: 0;
+}
+
+/* faces and the link count keep their room: the title gives way */
+.k2b-ui .k2b-calendar-band[data-meta="inline"] > .k2b-calendar-event > .k2b-calendar-event__row {
+  min-width: min-content;
 }
 
 /* "+n": the entries of an hour that do not fit side by side, at the column's end; it opens their list */
@@ -2681,6 +2805,18 @@
   overflow: hidden;
   white-space: normal;
   text-overflow: clip;
+}
+
+/* Beside faces and the link count the time takes only the room they leave; they keep theirs inside the band, and the
+   row never shrinks below them, so beside a title (a short band) the title gives way. */
+.k2b-ui .k2b-calendar-band .k2b-calendar-event__row {
+  min-width: min-content;
+}
+
+.k2b-ui .k2b-calendar-band .k2b-calendar-event__row > .k2b-calendar-event__meta[data-pieces] {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .k2b-ui .k2b-calendar-event__meta[data-pieces] > .k2b-calendar-event__piece {

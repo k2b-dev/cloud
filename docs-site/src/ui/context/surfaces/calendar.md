@@ -144,7 +144,9 @@ when the page shows the views elsewhere, such as tabs in its head; the view
 commands stay. Below a 40 rem wide head, such as on a phone, the head is one
 row: the arrows, the title, which ends in "…" before anything moves to a
 second row, Today, and the views as a menu that names the view on screen
-("Week ▾"), never a segmented control. The switcher's links stay links there. `getDateHref`, `getViewHref`, and
+("Week ▾"), never a segmented control. The button opens its list through
+`popovertarget`, and the views in it are the switcher's links, so the server's page
+switches views before any script runs. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after mount.
 
@@ -375,7 +377,8 @@ and the visible hours.
 - **Titles and times.** A band's title takes whole lines, at most two, with
   the time below it when a line of it fits too. Two lines end with "…" once;
   a long word is hyphenated in the page's language. One line is one line of
-  text cut by its letters with "…". The time is its start, "–end" and what is
+  text cut by its letters with "…"; when the time finds no line below such a
+  title, it stands beside it as far as there is room. The time is its start, "–end" and what is
   left of a running entry, each whole: a narrow band shows the start alone and
   never cuts a time inside its digits.
 - **Checkboxes.** An event with `checked` shows a small ring in its edge color
