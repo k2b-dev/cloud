@@ -11,7 +11,7 @@ import {
   untrack,
 } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
-import { hintOf, isCount } from "./button";
+import { hintOf, namedByLabel } from "./button";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -370,7 +370,7 @@ const MenuRoot = (props: MenuProps) => {
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
         // as Button: words name the button and its label is a hint; a count or a symbol is named by the label
-        aria-label={iconOnly() ? name() : isCount(words()) ? props.label : undefined}
+        aria-label={iconOnly() ? name() : namedByLabel(words()) ? props.label : undefined}
         title={iconOnly() ? name() : hintOf(props.label, words())}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />

@@ -35,6 +35,12 @@ describe("describeV2", () => {
       `<button class="k2-btn" data-k2-part="Button" aria-label="${label}" title="${label}"><i class="ti ti-message-circle k2-icon" aria-hidden="true"></i><span class="k2-btn-label">2</span></button>`;
     expect(outline(button("Offene Kommentare"))).toContain('Button "2" is named "Offene Kommentare", which does not hold the "2" it shows');
     expect(outline(button("2 offene Kommentare"))).not.toContain("which does not hold");
+    // a symbol is named by a label that says the deed; a time, a date, a share or a sum are words of their own
+    const shows = (text: string, label: string) =>
+      outline(`<button class="k2-btn" data-k2-part="Button" aria-label="${label}"><span class="k2-btn-label">${text}</span></button>`);
+    expect(shows("+", "Neue Notiz")).not.toContain("which does not hold");
+    for (const text of ["12:30", "26.11.2026", "100 %", "€ 12,50"]) expect(shows(text, "Öffnen")).not.toContain("which does not hold");
+    expect(shows("99+", "Ungelesen")).toContain('Button "99+" is named "Ungelesen"');
   });
 
   test("outlines the mail fixture part by part", () => {

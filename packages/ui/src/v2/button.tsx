@@ -56,10 +56,11 @@ export type ButtonProps = ButtonBase &
         /** The words on the button. */
         children: JSX.Element;
         /**
-         * Beside words ("Speichern", also "1.2k") or other content the words are the name and this is a hint under
-         * the pointer (none when it only repeats them). Beside a count or a symbol as text, which says no deed on its
-         * own (`2`), this is the name and the hint ("2 offene Kommentare"): it holds what shows, so a person who says
-         * what they see still reaches it (`describeV2` names a label that does not).
+         * Beside words ("Speichern", also "1.2k", "12:30", "26.11.2026", "100 %", "€ 12,50") or other content the
+         * words are the name and this is a hint under the pointer (none when it only repeats them). Beside a count
+         * (`2`, `99+`) or a symbol (`+`) as text, which says no deed on its own, this is the name and the hint: a
+         * count's label holds the count ("2 offene Kommentare"), so a person who says what they see still reaches it
+         * (`describeV2` names one that does not); a symbol's label says the deed ("Neue Notiz").
          */
         label?: string;
       }
@@ -78,13 +79,17 @@ const plainText = (value: unknown): string | null =>
       ? value.map(plainText).reduce<string | null>((all, part) => (all === null || part === null ? null : all + part), "")
       : null;
 
+/** A count as text: digits, maybe with a "+" ("2", "99+"). */
+const COUNT = /^\d+\+?$/u;
+
 /**
- * Whether the content of a button is a count or a symbol as text ("2", "+"), which names no deed: plain text without a
- * letter. Words ("Speichern", also "1.2k") and content of another kind, such as an element, name the button themselves.
+ * Whether the content of a button names no deed, so its label is its name: a count ("2", "99+") or a symbol as text
+ * ("+", "…": neither letter nor digit). Words ("Speichern", also "1.2k"), a time, a date, a share or a sum ("12:30",
+ * "26.11.2026", "100 %", "€ 12,50") and content of another kind, such as an element, name the button themselves.
  */
-export const isCount = (content: unknown): boolean => {
+export const namedByLabel = (content: unknown): boolean => {
   const text = plainText(content)?.trim();
-  return !!text && !/\p{L}/u.test(text);
+  return !!text && (COUNT.test(text) || /^[^\p{L}\p{N}]+$/u.test(text));
 };
 
 /** The hint of a button with content: its label, unless the label only repeats the words it shows. */
@@ -112,7 +117,7 @@ export const Button = (props: ButtonProps) => {
       aria-busy={props.busy ? "true" : undefined}
       aria-pressed={props.href === undefined && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       // words name the button and its label is a hint; a count or a symbol is named by the label, which holds it
-      aria-label={iconOnly() || isCount(label()) ? props.label : undefined}
+      aria-label={iconOnly() || namedByLabel(label()) ? props.label : undefined}
       title={iconOnly() ? props.label : (props.title ?? hintOf(props.label, label()))}
       aria-haspopup={props.menu ? "menu" : undefined}
       onClick={(event: MouseEvent & { currentTarget: HTMLElement; target: Element }) => {
