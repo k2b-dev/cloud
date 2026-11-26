@@ -1,4 +1,4 @@
-import { accessMemberEntries } from "@k2b/cloud/access/ui";
+import { accessMemberEntries } from "@k2b/cloud/access/members";
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
