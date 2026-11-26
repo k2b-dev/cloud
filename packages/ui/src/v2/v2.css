@@ -2001,6 +2001,10 @@
 .k2-ui .k2-progress {
   display: inline;
 }
+/* the page's toaster and confirm dialog (`PageHosts`): no box of their own, they draw only while they show */
+.k2-ui .k2-page-hosts {
+  display: contents;
+}
 .k2-ui .k2-progress-track {
   display: inline-block;
   vertical-align: middle;

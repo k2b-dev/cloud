@@ -205,7 +205,8 @@ type Ask = (options: ConfirmOptions) => Promise<boolean>;
 const hostKey = Symbol.for("k2b.ui.v2.confirm");
 
 const pageAnswer = (): Ask | undefined => {
-  for (const host of document.querySelectorAll("[data-k2-workspace]")) {
+  // a living Workspace, or the page's hosts where the server renders the Workspace without a script (`PageHosts`)
+  for (const host of document.querySelectorAll("[data-k2-workspace], [data-k2-hosts]")) {
     const ask: unknown = Reflect.get(host, hostKey);
     if (typeof ask === "function") return (options) => Promise.resolve(Reflect.apply(ask, undefined, [options])).then(Boolean);
   }

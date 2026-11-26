@@ -263,6 +263,9 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
   sidebar, with its panes and heads. Only the panes scroll; the document
   never does. The frame then shows no `back`, `actions`, `phoneActions`, `sidebarTitle`, or
   `status`; in development the server warns when a bare page passes them.
+- The frame holds the page's toaster and confirm dialog (`PageHosts` of
+  `@k2b/ui/v2`). An island calls `useToast` or `Dialog.confirm` and they answer
+  there, one host per page; an island needs no `Workspace` of its own for them.
 - Offline (with what follows: what was loaded stays visible, and loading and
   saving work again once the device is online), Chrome signed in to another account, and a new version show in a
   `NoticeStack` of `@k2b/ui/v2`: notices that float above the tab bar until

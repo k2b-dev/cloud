@@ -431,6 +431,11 @@ lines instead of cutting a thing.
   one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
   Use it for errors with a way out instead of "try again"
   buttons of your own.
+- `PageHosts`: the toaster and the confirm dialog of a page whose
+  `Workspace` the server renders without a script (a platform frame around
+  islands). Mount it once in an island of the frame; every `useToast` and
+  `Dialog.confirm` of the page answers there. A living `Workspace` has them
+  already.
 - `NoticeStack`: children are `Notice`s of a state of the whole app that
   lasts ("Offline", a new version). They float at the bottom, above the
   safe area and, on a page with a `TabBar`, above the bar from the server's
