@@ -31,7 +31,8 @@ declare global {
       | "split-canvas"
       | "long"
       | "areas"
-      | "structure";
+      | "structure"
+      | "split-list-canvas";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -56,8 +57,8 @@ render(
         <LongAddressScreen />
       ) : which === "path" ? (
         <DeepPathScreen />
-      ) : which === "canvas" || which === "split-canvas" ? (
-        <CanvasFillScreen split={which === "split-canvas"} />
+      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
+        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
       ) : which === "cells" ? (
         <CellsScreen />
       ) : (

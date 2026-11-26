@@ -3238,6 +3238,10 @@
   flex-shrink: 1;
   min-width: 48px;
 }
+/* a short name is narrower than those 48 px: it keeps its own width instead of growing to them */
+.k2-ui .k2-path > :is(.k2-path-step[data-near], b)[data-short] {
+  min-width: min-content;
+}
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {
   background: var(--k2-blue-tint);
@@ -4062,7 +4066,9 @@
      the drawing fills it as it does beside other panes (W3 #4197) */
   .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) {
     flex: 1;
-    min-height: 0;
+    /* never less than its head, its status and the drawing's 240 px: a long list beside it in the split moves the
+       drawing down the page instead of squeezing it */
+    min-height: min-content;
     overflow: hidden;
   }
   .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) > .k2-scroll {
