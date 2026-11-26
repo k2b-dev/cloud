@@ -1,7 +1,7 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Avatar, Band, Button, Chip, Cut, Empty, Failed, Icon, List, Notice, Row, Text } from "@k2b/ui/v2";
+import { Avatar, Band, Button, Chip, Cut, Empty, Failed, Icon, List, type ListController, Notice, Row, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import type { MailListItem } from "../../../service/workspace";
 import { mailRowSnoozeDay, mailRowSuggestedBy } from "../MailConversationRow";
@@ -32,6 +32,8 @@ export default function MailListV2(props: {
   onOpen: (nav: LinkNavigateEvent, item: MailListItem) => void | Promise<void>;
   onRetry: () => void;
   onLoadMore: () => void;
+  /** Receives the list's controller, so the focus can go back to a row that left the page. */
+  onList?: (list: ListController) => void;
 }) {
   const locale = useLocale();
   const t = () => mailConversationUiMessages.resolve([locale()]).t;
@@ -105,6 +107,7 @@ export default function MailListV2(props: {
           label={props.label}
           items={props.items}
           rowKey={mailListRowKey}
+          controller={props.onList}
           row={(item) => (
             <Row
               href={buildMailSelectionHref(requestUrl(), item)}

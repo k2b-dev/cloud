@@ -6,6 +6,7 @@ import {
   Bar,
   Button,
   Input,
+  type ListController,
   Menu,
   type MenuEntry,
   Nav,
@@ -51,14 +52,28 @@ const folderIcon = (role: string): string =>
  * own link, so that link's href names it; the list registers the href of each row key while it renders. The link
  * takes the focus; the whole row holds it.
  */
-export const createMailV2Dom = (): { dom: MailWorkspaceDom; rows: Map<string, string> } => {
+export const createMailV2Dom = (): {
+  dom: MailWorkspaceDom;
+  rows: Map<string, string>;
+  connectList: (list: ListController) => void;
+} => {
   const rows = new Map<string, string>();
   const link = (href: string | undefined) =>
     href ? document.querySelector<HTMLElement>(`[data-k2-workspace] [data-k2-part="Row"] a[href="${CSS.escape(href)}"]`) : null;
+  // With many conversations only the rows in view are in the page; the list brings another one back for the focus.
+  let list: ListController | undefined;
+  const rowLink = (rowKey: string) => {
+    const shown = link(rows.get(rowKey));
+    if (shown || !list?.reveal(rowKey)) return shown;
+    return link(rows.get(rowKey));
+  };
   return {
     rows,
+    connectList: (connected) => {
+      list = connected;
+    },
     dom: {
-      row: (rowKey) => link(rows.get(rowKey)),
+      row: (rowKey) => rowLink(rowKey),
       entry: (item) => link(rows.get(mailListRowKey(item)))?.closest<HTMLElement>('[data-k2-part="Row"]') ?? null,
       // The reader's head has no focusable title; its first action takes the focus.
       readerHeading: () =>
@@ -77,6 +92,8 @@ export type MailV2Shell = {
   mailboxes: MailSidebarMailbox[];
   preferences: MailboxPreferences;
   rows: Map<string, string>;
+  /** Receives the conversation list's controller, so the focus reaches a row that left the page. */
+  list: (list: ListController) => void;
   /** Opens a mailbox in place (the shown one again at its start); a failed switch loads its page. */
   openMailbox: OnNavigate;
 };
@@ -466,6 +483,7 @@ export default function MailWorkspaceV2(props: {
           >
             <MailListV2
               items={items()}
+              onList={props.shell.list}
               requestPath={c().requestPath()}
               selectedConversationId={c().data.selectedConversationId}
               selectedMessageId={c().data.selectedMessageId}

@@ -116,6 +116,32 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // Review of #4212: with 1,000 rows the row that opened the reader may have left the page while the list scrolled.
+  test("Escape gives the focus back to the row that opened the reader, also after it scrolled out of the page", async () => {
+    const page = await open(`${MAIL_V2_PATH}?fixture=huge`);
+    try {
+      const list = page.locator('[data-k2-part="Pane"] > [data-scroll-preserve^="mail-list-"]');
+      const opener = page.locator('[data-k2-part="List"] > [data-k2-part="Row"][aria-posinset="276"]');
+      await list.evaluate((element) => {
+        element.scrollTop = 275 * 73;
+      });
+      await opener.waitFor();
+      await opener.locator(":scope > a[href]").focus();
+      await page.keyboard.press("Enter");
+      await page.waitForURL(/conversation=/);
+      await page.locator('[data-k2-part="Pane"][data-detail]').waitFor();
+      await list.evaluate((element) => {
+        element.scrollTop = 0;
+      });
+      await page.waitForFunction(() => !document.querySelector('[data-k2-part="Row"][aria-posinset="276"]'));
+      await page.locator("body").press("Escape");
+      await page.waitForURL((url) => !url.searchParams.has("conversation"));
+      await page.waitForFunction(() => document.activeElement?.closest('[data-k2-part="Row"]')?.getAttribute("aria-posinset") === "276");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("the keyboard opens a row: Tab reaches it, Enter opens it in place", async () => {
     const page = await open(MAIL_V2_PATH);
     try {
