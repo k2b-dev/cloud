@@ -262,7 +262,8 @@
   --k2-drawer-w: initial;
   --k2-p: initial;
   --k2-v: initial;
-  --k2-avs-w: initial;
+  --k2-avs-n: initial;
+  --k2-avs-rest: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
@@ -2396,12 +2397,16 @@
 
 /* ── Avatar.Stack: people over each other with a ring of the surface, "+n" for the rest ─────────────────────── */
 .k2-ui .k2-avs {
+  /* a face and the step to the next: 24 px over 4, 20 px over 2 in a tile, cell, row or table */
+  --k2-avs-face: 24px;
+  --k2-avs-step: 20px;
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
-  /* its own room, never more than its place: the faces it can hold whole decide how many stand (below) */
+  /* its own room, never more than its place: its faces, and a count of up to three signs only when people are left
+     over; the faces it can hold whole decide how many stand (below) */
   container: k2-avs / inline-size;
-  width: var(--k2-avs-w);
+  width: calc(var(--k2-avs-face) + (var(--k2-avs-n) - 1) * var(--k2-avs-step) + var(--k2-avs-rest) * 30px);
   max-width: 100%;
   flex: 0 1 auto;
   min-width: 0;
@@ -2412,6 +2417,10 @@
 /* each face lies over the one before only as far as its initials stay whole: 4 px of 24, 2 px of 20 */
 .k2-ui .k2-avs > .k2-av + .k2-av {
   margin-left: -4px;
+}
+.k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs {
+  --k2-avs-face: 20px;
+  --k2-avs-step: 18px;
 }
 .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av {
   width: 20px;
@@ -2438,51 +2447,289 @@
 .k2-ui .k2-avs[data-k="5"] > .k2-avs-rest[data-visible="5"] {
   display: inline;
 }
+/* Where a stack's place is narrower than its room, it shows the most faces j that still fit with their count:
+   face + (j - 1) × step + 30 px (24/20 px, and 20/18 px in a tile, cell, row or table). A stack whose people all show
+   (data-all) needs no count while its faces fit; narrower, a count takes the place of the faces that go. */
 @container k2-avs (max-width: 133.98px) {
-  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 5) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="5"]) > .k2-av:nth-of-type(n + 5) {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="5"]) > .k2-avs-rest[data-visible] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="5"]) > .k2-avs-rest[data-visible] {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="5"]) > .k2-avs-rest[data-visible="4"] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="5"]) > .k2-avs-rest[data-visible="4"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 121.98px) {
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="5"]) > .k2-av:nth-of-type(n + 5) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="5"]) > .k2-avs-rest[data-visible="4"] {
     display: inline;
   }
 }
 @container k2-avs (max-width: 113.98px) {
-  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 4) {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="3"] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="3"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 103.98px) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-av:nth-of-type(n + 5) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest[data-visible="4"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="4"]) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-av:nth-of-type(n + 4) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest[data-visible="3"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="3"]) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 4) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="3"] {
     display: inline;
   }
 }
 @container k2-avs (max-width: 93.98px) {
-  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 3) {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
     display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="2"]) {
+    display: none;
+  }
+}
+@container k2-avs (max-width: 91.98px) {
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 5) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="4"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="4"]) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 4) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="3"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="3"]) {
+    display: none;
+  }
+}
+@container k2-avs (max-width: 85.98px) {
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="2"]) {
+    display: none;
+  }
+}
+@container k2-avs (max-width: 83.98px) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-av:nth-of-type(n + 4) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-avs-rest[data-visible="3"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="3"]) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="2"]) {
+    display: none;
   }
 }
 @container k2-avs (max-width: 73.98px) {
-  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 2) {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
     display: none;
   }
-  .k2-ui .k2-avs:is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs):not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
     display: inline;
   }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 4) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="3"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="3"]) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="2"]) {
+    display: none;
+  }
 }
-
+@container k2-avs (max-width: 67.98px) {
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+}
+@container k2-avs (max-width: 63.98px) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="3"] > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="3"] > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="3"] > .k2-avs-rest:not([data-visible="2"]) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="3"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="3"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="3"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+}
+@container k2-avs (max-width: 55.98px) {
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="3"] > .k2-avs-rest:not([data-visible="2"]) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="3"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+}
+@container k2-avs (max-width: 43.98px) {
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="2"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="2"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui .k2-avs:not(:is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs)[data-all][data-k="2"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+}
+@container k2-avs (max-width: 37.98px) {
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="2"] > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="2"] > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
+  .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs[data-all][data-k="2"] > .k2-avs-rest:not([data-visible="1"]) {
+    display: none;
+  }
+}
 /* ── Spark: a few bars of a short history, the last in full colour; 20 px high ─────────────────────────────── */
 .k2-ui .k2-spark {
   display: inline-flex;

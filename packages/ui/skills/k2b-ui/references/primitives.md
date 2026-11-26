@@ -487,7 +487,8 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `color` (the data colour of what it stands for, such as an
   area of a notebook: a dot in the symbol's place, or the symbol in that
-  colour, kept readable), `meta` (a quiet hint at the end, such as a key), `checked`
+  colour; a hex colour is kept at 3:1, `oklch()` and `var()` stand as
+  given, anything else leaves the entry neutral), `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side); or `"separator"` between groups; or a
   section `{ title, items }` under a quiet heading. A section with

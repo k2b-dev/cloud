@@ -117,3 +117,16 @@ test("an activity sends the person, the sentence as the link of the thing, and w
   expect(activity).toContain("Werkstatt · 09:42");
   expect(activity.match(/data-activity/g)?.length).toBe(2);
 });
+
+test("initials come from the first and the last word of a name, skip suffixes, and never split a character", async () => {
+  const { initialsOf } = await import("./types");
+  const of = (name: string) => initialsOf({ name });
+  expect(of("Charles Augustus Montgomery III")).toBe("CM");
+  expect(of("Ölaf Ärger Jr.")).toBe("ÖÄ");
+  expect(of("José María García")).toBe("JG");
+  expect(of("Mira")).toBe("M");
+  // an emoji first is one character, not half of one
+  expect(of("🦊 Fuchs Bau")).toBe("🦊B");
+  expect(of("👩‍🔧 Jana Berger")).toBe("👩‍🔧B");
+  expect(initialsOf({ name: "Felix Thal", initials: "FX" })).toBe("FX");
+});
