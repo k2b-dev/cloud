@@ -455,7 +455,7 @@ function AccessArea(props: {
                 <Row
                   // a person shows a face, a group the group's symbol (never the initial of its name)
                   {...(entry.principal.type === "group"
-                    ? { mark: { icon: "users-group", color: "#475569" } }
+                    ? { mark: { icon: "users-group", color: "var(--k2-muted)" } }
                     : { avatar: { name: principalLabel(entry, locale()) } })}
                   lines={[principalLabel(entry, locale()), level(entry.permission)]}
                 />

@@ -335,7 +335,7 @@ describe("Venue on v2", () => {
     }
   }, 60_000);
 
-  test("access without anyone else says so once, and lists people with faces and groups with their symbol", async () => {
+  test("access that nobody has yet says so once, and lists people with faces and groups with their symbol", async () => {
     const alone = await open(desktop, "/app/venue/Cafe01/settings/access", { variant: "alone" });
     try {
       expect(await alone.tab.getByText("Noch niemand hat Zugriff.").isVisible()).toBe(true);
