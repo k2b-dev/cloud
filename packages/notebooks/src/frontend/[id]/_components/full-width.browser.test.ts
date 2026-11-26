@@ -206,7 +206,9 @@ for (const width of [390, 1023, 1024]) {
   test(`the menu choice and command follow the 64rem boundary at ${width}px`, async () => {
     const page = await open("write", width, width === 390);
     try {
-      expect(await toggle(page).isVisible()).toBe(width >= 1024);
+      // the entry is always there, so the menu stands from the first frame; the choice is personal and can always be made
+      expect(await toggle(page).isVisible()).toBe(true);
+      expect(await toggle(page).isDisabled()).toBe(false);
       expect(await page.evaluate(() => window.harness.command() !== null)).toBe(width >= 1024);
     } finally {
       await page.close();
@@ -251,8 +253,8 @@ test("resizing removes and restores the command without losing the preference", 
     expect(await toggle(page).isVisible()).toBe(true);
     await page.setViewportSize({ width: 1023, height: 1440 });
     await page.waitForFunction(() => window.harness.command() === null);
-    expect(await toggle(page).isVisible()).toBe(false);
-    // Nothing here can switch it off, so the text keeps the reading column.
+    expect(await toggle(page).isVisible()).toBe(true);
+    // Below the boundary the choice waits: the text keeps the reading column.
     const measureValue = () =>
       page
         .locator(".notebook-document-surface")
@@ -345,7 +347,7 @@ test("command, ViewMenu and the settings switch follow a narrowed host, includin
     try {
       const offered = host >= 1024;
       expect(await page.evaluate(() => window.harness.command() !== null)).toBe(offered);
-      expect(await toggle(page).count()).toBe(offered ? 1 : 0);
+      expect(await toggle(page).count()).toBe(1);
       await page.evaluate(() => window.harness.preferences());
       const option = page.locator(".k2b-ui-portal .notebooks-full-width-option");
       expect(await option.count()).toBe(offered ? 1 : 0);
@@ -353,7 +355,7 @@ test("command, ViewMenu and the settings switch follow a narrowed host, includin
         await page.locator("#app-host").evaluate((element, width) => (element.style.width = `${width}px`), next);
         await settle(page);
         await page.waitForFunction((offered) => (window.harness.command() !== null) === offered, next >= 1024);
-        expect(await toggle(page).count()).toBe(next >= 1024 ? 1 : 0);
+        expect(await toggle(page).count()).toBe(1);
         expect(await option.count()).toBe(next >= 1024 ? 1 : 0);
       }
     } finally {
