@@ -23,3 +23,6 @@ export const StoreChip = (props: { store: BaseStoreStatus; t: StoreWords }) => {
 /** The data colour of a base, from its colour setting, for its symbol in lists. */
 export const baseColor = (color: string): string =>
   ({ zinc: "#52525b", blue: "#2563eb", emerald: "#059669", amber: "#d97706", red: "#dc2626" })[color] ?? "#2563eb";
+
+/** v1 icon classes ("ti ti-database") to v2 Tabler names ("database"). */
+export const iconName = (classes: string) => classes.replace(/^ti\s+/, "").replace(/^ti-/, "") || "activity-heartbeat";

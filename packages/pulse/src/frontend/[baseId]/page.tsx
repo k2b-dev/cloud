@@ -50,7 +50,7 @@ export default ssr<AuthContext>(async (c) => {
           canWrite={props.initialPermissions?.write ?? false}
         />
       ) : (
-        <SourcesScreen {...props} initialSearch={c.req.query("q")?.trim() ?? ""} />
+        <SourcesScreen {...props} sourceCount={data.sourceCount} initialSearch={c.req.query("q")?.trim() ?? ""} />
       )}
     </Layout>
   );

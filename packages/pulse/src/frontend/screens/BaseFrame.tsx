@@ -5,15 +5,14 @@ import type { PulseBase } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
 import { navBases } from "../workspace/nav-bases";
 import { useScreenMessages } from "./messages";
-import { baseColor } from "./store-state";
+import { baseColor, iconName } from "./store-state";
+
+export { iconName };
 
 export type BaseView = "sources" | "sql" | "queries";
 
 export const baseHref = (baseId: string, view: BaseView | "settings" = "sources") =>
   `/app/pulse/${encodeURIComponent(baseId)}${view === "sources" ? "" : `/${view}`}`;
-
-/** v1 icon classes ("ti ti-database") to v2 Tabler names ("database"). */
-export const iconName = (classes: string) => classes.replace(/^ti\s+/, "").replace(/^ti-/, "") || "activity-heartbeat";
 
 type Props = {
   bases: PulseBase[];

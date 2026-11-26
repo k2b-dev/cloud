@@ -37,8 +37,7 @@ import type {
   PulsePolicy,
   ReadProfileName,
 } from "../../store/admin-contracts";
-import { iconName } from "../screens/BaseFrame";
-import { baseColor } from "../screens/store-state";
+import { baseColor, iconName } from "../screens/store-state";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import { AdminClientError, adminClient } from "./admin-client";
 import { adminErrorText, type PulseAdminMessages, pulseAdminMessages } from "./pulse-admin-messages";

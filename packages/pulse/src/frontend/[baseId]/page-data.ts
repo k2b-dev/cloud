@@ -15,6 +15,7 @@ import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
 import { navBases } from "../workspace/nav-bases";
 import { readWorkspacePathState } from "../workspace/routes";
+import { SOURCES_PAGE } from "../workspace/source-page";
 import type { PulseWorkspaceProps } from "../workspace/types";
 
 const publicOrigin = (rawAppUrl: string | null | undefined, requestOrigin: string): string => {
@@ -54,11 +55,11 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   // The sources view lists the sources with their store figures; every other view needs only their number for its tab.
   const sources =
     route.view === "sources"
-      ? await pulseService.source.list(baseId, user, { signal: c.req.raw.signal })
+      ? // one page of sources with their store figures, as many as the table shows at a time (bounded read)
+        await pulseService.source.list(baseId, user, { signal: c.req.raw.signal, limit: SOURCES_PAGE })
       : { ok: true as const, data: noSources };
   if (!sources.ok) return { kind: "error", status: sources.error.status };
-  const sourceCount =
-    route.view === "sources" ? { ok: true as const, data: sources.data.length } : await pulseService.source.count(baseId, user);
+  const sourceCount = await pulseService.source.count(baseId, user);
   if (!sourceCount.ok) return { kind: "error", status: sourceCount.error.status };
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
   const [write, admin] = scope.ok

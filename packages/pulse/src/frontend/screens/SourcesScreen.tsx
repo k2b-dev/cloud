@@ -40,6 +40,7 @@ import { launchPulseOverviewAssistant, launchPulseSqlAssistant } from "../worksp
 import { buildPulseWorkspaceHref } from "../workspace/routes";
 import { createSourceController } from "../workspace/source-controller";
 import { sourceStatus } from "../workspace/source-helpers";
+import { SOURCES_PAGE } from "../workspace/source-page";
 import { installStoreRecheck } from "../workspace/store-recheck";
 import type { PulseWorkspaceProps } from "../workspace/types";
 import { createPulseWorkspaceQueries } from "../workspace/workspace-queries";
@@ -50,6 +51,8 @@ import { EditSourceDialog, NewSourceDialog } from "./SourceDialogs";
 export type SourcesScreenProps = PulseWorkspaceProps & {
   /** `?q=`: the words the source list is filtered by. */
   initialSearch?: string;
+  /** How many sources the base has; the server reads only the first page of them. */
+  sourceCount?: number;
 };
 
 type Words = ReturnType<ReturnType<typeof usePulseMessages>>;
@@ -86,11 +89,7 @@ const dataCount = (source: PulseSource, t: Words) =>
       ? "—"
       : t.sqlTodayCount({ count: source.todayCount });
 
-/**
- * Rows the sources table shows at a time. Measured with 1,000 sources in WebKit on the test VM (6 runs each, 26.11.2026):
- * 100 rows were ready in 1534–1583 ms, over the 1.5 s budget of the scale test; 50 rows in 1242–1275 ms.
- */
-const PAGE = 50;
+const PAGE = SOURCES_PAGE;
 
 const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
   -H "Authorization: Bearer <api-key>" \\
@@ -264,7 +263,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
       bases={bases()}
       baseId={baseId}
       view="sources"
-      sourceCount={sources().length}
+      sourceCount={Math.max(props.sourceCount ?? 0, sources().length)}
       // A detail stands beside the list only while a source is open; without one the list has the whole width.
       detail={selected() ? 420 : undefined}
       more={[{ label: t().sqlAskAssistant, icon: "sparkles", disabled: assistantPending(), onClick: () => void askAssistant() }]}
