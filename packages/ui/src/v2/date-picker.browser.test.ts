@@ -14,7 +14,7 @@ import type {} from "../../test/v2-filter.demo";
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
-  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
+  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; overflow: auto; } .ti { display: inline-block; width: 1em; height: 1em; }";
 const origin = "http://dates.test";
 const now = new Date("2026-11-25T10:00:00Z");
 
@@ -490,7 +490,9 @@ for (const width of [1440, 390])
         // where a month starts, its name stands; screen readers hear the whole date
         expect(first?.text).toBe("Dez");
         expect(days.find((day) => day.date === "2027-01-01")?.text).toBe("Jan");
-        expect(await weeks.locator('[data-value="2026-12-01"]').getAttribute("aria-label")).toBe("Dienstag, 1. Dezember 2026");
+        // a month's first day is named with the short month it shows ("Dez"), so its visible text is in its name
+        expect(await weeks.locator('[data-value="2026-12-01"]').getAttribute("aria-label")).toBe("Dienstag, 1. Dez. 2026");
+        expect(await weeks.locator('[data-value="2026-12-02"]').getAttribute("aria-label")).toBe("Mittwoch, 2. Dezember 2026");
         expect(await weeks.locator(".k2-cal-t").textContent()).toBe("November 2026 – Januar 2027");
         expect(await weeks.locator('[data-value="2026-11-24"]').getAttribute("aria-disabled")).toBe("true");
         // ONE grid for screen readers: a row of seven column heads and six rows of seven days
@@ -539,9 +541,9 @@ for (const lang of ["en-US", "de-u-fw-sun"])
         expect(await grid.getByRole("columnheader").first().getAttribute("aria-label")).toBe(lang === "en-US" ? "Sunday" : "Sonntag");
         expect(await firstShown(page)).toBe("2026-11-22");
         // Home goes to the start of the week the heads show
-        await page.getByTestId("weeks").locator('[data-value="2026-11-25"]').focus();
+        await page.getByTestId("weeks").locator('[data-value="2026-12-02"]').focus();
         await page.keyboard.press("Home");
-        expect(await focusedDay(page)).toBe("2026-11-22");
+        expect(await focusedDay(page)).toBe("2026-11-29");
       },
       { lang },
     );
@@ -587,7 +589,9 @@ test("the keys move the six weeks by whole weeks, never their height; the button
       await back.click();
       expect(await firstShown(page)).toBe("2026-11-23");
       expect(await back.getAttribute("aria-disabled")).toBe("true");
-      await back.click();
+      // a blocked button is still a button: pressed, it changes nothing and keeps the focus
+      await back.focus();
+      await page.keyboard.press("Enter");
       expect(await firstShown(page)).toBe("2026-11-23");
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Sechs Wochen zurück");
     },
@@ -602,7 +606,8 @@ test("`max` ends the weeks: the next six are blocked and the keys stop at its da
       const weeks = page.getByTestId("weeks-max");
       const next = weeks.getByRole("button", { name: "Sechs Wochen weiter" });
       expect(await next.getAttribute("aria-disabled")).toBe("true");
-      await next.click();
+      await next.focus();
+      await page.keyboard.press("Enter");
       expect(await firstShown(page, "weeks-max")).toBe("2026-11-23");
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Sechs Wochen weiter");
       await weeks.locator('[data-value="2026-12-25"]').focus();
@@ -620,7 +625,8 @@ test("the weeks follow a value set from elsewhere and a change of the locale, wi
     async (page) => {
       await page.getByRole("button", { name: "Auf 1. März setzen" }).click();
       expect(await page.getByTestId("weeks").locator('[data-value="2027-03-01"]').getAttribute("aria-selected")).toBe("true");
-      await page.getByRole("button", { name: "Wochen-Sprache wechseln" }).click();
+      await page.getByRole("button", { name: "Wochensprache umstellen" }).click();
+      await settled(page);
       const days = await shownDays(page, "weeks-switch");
       expect(days[0]?.date).toBe("2026-11-22");
       expect(days.length).toBe(42);

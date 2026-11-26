@@ -99,7 +99,9 @@ export const WeekWindow = (props: WeekWindowProps) => {
   };
   const rangeLabel = createMemo(() => formatDateRange(start(), windowEnd(start()), locale(), { month: "long", year: "numeric" }));
   const shortMonth = (key: string) => formatDate(key, locale(), { month: "short" }).replace(/\.$/, "");
-  const dayLabel = (key: string) => formatDate(key, locale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  // a month's first day shows its short month ("Dez") and names it so too: the visible text is part of the name
+  const dayLabel = (key: string) =>
+    formatDate(key, locale(), { weekday: "long", day: "numeric", month: key.endsWith("-01") ? "short" : "long", year: "numeric" });
   const heads = createMemo(() => {
     const short = weekdayNames(locale(), "short", weekStartsOn());
     const long = weekdayNames(locale(), "long", weekStartsOn());

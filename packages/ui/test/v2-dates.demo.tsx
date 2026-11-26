@@ -85,7 +85,7 @@ export function Demo() {
           <LocaleProvider locale={weeksLang()}>
             <DatePicker view="weeks" min="2026-11-25" label="Umschaltbar" onPick={record} />
           </LocaleProvider>
-          <Button onClick={() => setWeeksLang(weeksLang() === "de" ? "en-US" : "de")}>Wochen-Sprache wechseln</Button>
+          <Button onClick={() => setWeeksLang(weeksLang() === "de" ? "en-US" : "de")}>Wochensprache umstellen</Button>
         </section>
         {/* without `min`: today in the picker's zone, never the zone of the server or the browser */}
         <section data-testid="weeks-zone">
