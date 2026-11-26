@@ -56,7 +56,7 @@ const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
  */
 export const Text = (props: TextProps) => {
   // a text in the start of a bar names its page there
-  markBarPlace("start");
+  markBarPlace("start", "title");
   return (
     <Dynamic
       component={props.href ? "a" : "span"}

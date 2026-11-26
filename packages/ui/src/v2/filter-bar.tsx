@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
+import { markBarPlace, markStatusRow } from "./bar-place";
 import { useListbox } from "./behavior/lists";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
@@ -299,6 +300,9 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
  */
 export const FilterBar = <F extends Fields, S extends string, G extends string>(props: FilterBarProps<F, S, G>) => {
   const t = useFilterMessages();
+  // a toolbar row of its pane, or of a head's bar (it stands in its start there)
+  markStatusRow("filter");
+  markBarPlace("start", "toolbar");
   const timeZone = () => props.timeZone ?? "UTC";
   const format = useFormats(timeZone);
   const fields = createMemo(() => Object.entries(props.query.fields));

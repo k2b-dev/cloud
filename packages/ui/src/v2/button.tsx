@@ -1,6 +1,7 @@
 import { type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { markBarCreate } from "./bar-place";
 import { linkOr } from "./link";
 import { Avatar, Icon } from "./marks";
 import type { Action, OnNavigate, Person } from "./types";
@@ -77,9 +78,24 @@ export const Button = (props: ButtonProps) => {
   // focus a press gave it (a native `disabled` would drop it): it says "disabled" and refuses the click, which also
   // stops a form being sent twice.
   const off = () => props.disabled || props.busy;
+  let element: HTMLElement | undefined;
+  // a main action at the end of a bar: several there become one "+" menu, whose entry runs this button's own click
+  if (props.variant === "primary")
+    markBarCreate(() => {
+      const words = label();
+      return {
+        label: props.label ?? (typeof words === "string" ? words : (element?.textContent?.trim() ?? "")),
+        icon: props.icon,
+        disabled: off(),
+        ...(props.href !== undefined ? { href: props.href } : { onClick: () => element?.click() }),
+      };
+    });
   return (
     // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic
+      ref={(node: HTMLElement) => {
+        element = node;
+      }}
       component={off() && props.href !== undefined ? "a" : linkOr(props.href, "button")}
       href={off() ? undefined : props.href}
       onNavigate={off() || props.href === undefined ? undefined : props.onNavigate}

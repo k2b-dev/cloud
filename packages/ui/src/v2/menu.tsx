@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
-import { markBarPlace } from "./bar-place";
+import { markBarCreate, markBarPlace } from "./bar-place";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -371,8 +371,17 @@ const MenuRoot = (props: MenuProps) => {
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
-  // the "…" at the end of a bar takes in what gives way beside it
-  if (iconOnly()) markBarPlace("end");
+  // the "…" at the end of a bar takes in what gives way beside it; a main action there joins the bar's one "+"
+  if (iconOnly()) markBarPlace("end", "more");
+  else if (props.variant === "primary")
+    markBarCreate(() => {
+      const label = words();
+      return {
+        label: props.label ?? (typeof label === "string" ? label : (trigger?.textContent?.trim() ?? "")),
+        icon: props.icon,
+        items: props.items,
+      };
+    });
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("end");

@@ -13,12 +13,14 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { BarPlaceContext } from "./bar-place";
+import { BarPlaceContext, StatusPlaceContext, type StatusRowKind } from "./bar-place";
 import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
+import { Menu, type MenuEntry } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
@@ -155,12 +157,17 @@ const flexibleMin = 400;
  * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
  * says so, since the workspace counts it once, open or closed.
  */
-type Column = { readonly need: number; readonly detail: boolean };
+type Column = { readonly need: number; readonly detail: boolean; readonly block: boolean };
 /**
  * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
  * at the top also learns what stands in the place of a declared detail while none is open.
  */
-type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+type Columns = {
+  register: (column: Column) => void;
+  empty: () => { icon: string; text: string } | undefined;
+  /** The workspace has a head: a column under it with toolbar rows makes one block with it. */
+  head: () => boolean;
+};
 const ColumnsContext = createContext<Columns | undefined>();
 
 /**
@@ -276,8 +283,13 @@ export const Workspace = (props: WorkspaceProps) => {
             {head()}
           </div>
         </Show>
-        <ColumnsContext.Provider value={{ register, empty }}>{props.children}</ColumnsContext.Provider>
+        <ColumnsContext.Provider value={{ register, empty, head: () => head() !== undefined }}>{props.children}</ColumnsContext.Provider>
       </div>
+      {/* the head and the toolbar rows of the column under it are one block: the head draws no line of its own (made
+          after the columns, which tell it, so the server's page has it too) */}
+      <Show when={columns().some((column) => column.block)}>
+        <style>{`.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] .k2-bar { border-bottom-color: transparent; }`}</style>
+      </Show>
       <Show when={sidebar()}>
         <style>{drawerRule()}</style>
         {/* the sidebar once more, made only while the drawer is open (in the browser, after a press) */}
@@ -379,17 +391,33 @@ export const Pane = (props: PaneProps) => {
     },
   };
   useContext(SplitContext)?.(entry);
+  // the toolbar rows in its status place, in their order: a filter bar, a status row
+  const [rows, setRows] = createSignal<readonly StatusRowKind[]>([]);
+  const hear = (row: StatusRowKind) => {
+    setRows((list) => [...list, row]);
+    return () =>
+      setRows((list) => {
+        const at = list.indexOf(row);
+        return at < 0 ? list : [...list.slice(0, at), ...list.slice(at + 1)];
+      });
+  };
   // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
-  useContext(ColumnsContext)?.register({
+  const columns = useContext(ColumnsContext);
+  // under the workspace's head, a column without a head of its own makes one block of the head and its toolbar rows
+  const block = () => columns !== undefined && columns.head() && head() === undefined && rows().length > 0;
+  columns?.register({
     get need() {
       return props.width?.min ?? flexibleMin;
     },
     get detail() {
       return props.detail === true;
     },
+    get block() {
+      return block();
+    },
   });
   const head = resolveChildren(() => props.head);
-  const status = resolveChildren(() => props.status);
+  const status = resolveChildren(() => <StatusPlaceContext.Provider value={hear}>{props.status}</StatusPlaceContext.Provider>);
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -440,7 +468,7 @@ export const Pane = (props: PaneProps) => {
         </div>
       </Show>
       <Show when={status()}>
-        <div class="k2-slot" data-slot="status">
+        <div class="k2-slot" data-slot="status" data-block={block() ? rows().join(" ") : undefined}>
           {status()}
         </div>
       </Show>
@@ -542,21 +570,42 @@ export type BarProps = {
 export const Bar = (props: BarProps) => {
   // what stands in its places marks the bar, already on the server: a title in its start, the "…" at its end
   const [title, setTitle] = createSignal(false);
+  const [toolbar, setToolbar] = createSignal(false);
   const [more, setMore] = createSignal(false);
+  // the main actions at its end; more than one become one "+" menu (one create action at a head's end)
+  const [creates, setCreates] = createSignal<readonly (() => MenuEntry)[]>([]);
+  const create = (entry: () => MenuEntry) => {
+    setCreates((list) => [...list, entry]);
+    return () => setCreates((list) => list.filter((other) => other !== entry));
+  };
+  const many = () => creates().length > 1;
+  const t = useOverlayMessages();
   const start = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "start", mark: () => setTitle(true) }}>{props.start}</BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "start", mark: (what) => (what === "toolbar" ? setToolbar(true) : setTitle(true)) }}>
+      {props.start}
+    </BarPlaceContext.Provider>
   ));
   const end = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "end", mark: () => setMore(true) }}>{props.end}</BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "end", mark: (what) => what === "more" && setMore(true), create }}>
+      {props.end}
+    </BarPlaceContext.Provider>
   ));
   return (
-    <div class="k2-bar" data-k2-part="Bar" data-title={title() ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="Bar" data-title={title() ? "" : undefined} data-toolbar={toolbar() ? "" : undefined}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
       <Show when={end() !== undefined}>
-        <div class="k2-bar-end" data-more={more() ? "" : undefined}>
+        <div class="k2-bar-end" data-more={more() ? "" : undefined} data-creates={many() ? "" : undefined}>
           {end()}
+          <Show when={many()}>
+            {/* the bar's own "+": outside its end's place, so it joins no "+" itself */}
+            <span class="k2-creates">
+              <Menu variant="primary" icon="plus" items={creates().map((entry) => entry())}>
+                {t().create}
+              </Menu>
+            </span>
+          </Show>
         </div>
       </Show>
     </div>

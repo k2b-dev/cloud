@@ -259,11 +259,39 @@ const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: 
   return hosted;
 };
 
+/** Typing goes on here: a field, a text that can be edited, or a widget that takes keys itself. */
+const typingIn = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='combobox']") !== null);
+
+/**
+ * "/" opens the search of a workspace's head, as in most apps: where the person is not typing, the first head search
+ * on the page takes the focus and opens over the head. Known in the browser only.
+ */
+const useSlashToHeadSearch = (input: () => HTMLInputElement | undefined, search: () => boolean) => {
+  onMount(() => {
+    const field = input();
+    if (!search() || !field?.parentElement?.parentElement?.matches('.k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end')) return;
+    const open = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (typingIn(event.target) || field.getClientRects().length === 0) return;
+      event.preventDefault();
+      field.focus();
+    };
+    document.addEventListener("keydown", open);
+    onCleanup(() => document.removeEventListener("keydown", open));
+  });
+};
+
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
   let input: HTMLInputElement | undefined;
   const hosted = useHostedHeadSearch(
+    () => input,
+    () => props.type === "search",
+  );
+  useSlashToHeadSearch(
     () => input,
     () => props.type === "search",
   );
