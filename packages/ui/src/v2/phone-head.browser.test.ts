@@ -29,8 +29,9 @@ for (const name of recipes) {
     renderToString(() => createComponent(screen.default, {})),
   );
 }
-const { PathAndSearch } = await import("../../test/v2-phone-head.fixture");
+const { DetailBack, longSpace, PathAndSearch } = await import("../../test/v2-phone-head.fixture");
 const pathAndSearch = renderToString(() => createComponent(PathAndSearch, {}));
+const detailBack = (back: string) => renderToString(() => createComponent(DetailBack, { back }));
 const hostScript = await (async () => {
   const build = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "../../test/v2-phone-head.entry.ts")],
@@ -136,4 +137,37 @@ test("in a wide window the host's search is its own: focusPageSearch leaves the 
   } finally {
     await page.close();
   }
+}, 30_000);
+
+test("a way back that names a Space of a hundred characters stays short, keeps its whole name, and never moves the title", async () => {
+  const measure = async (back: string) => {
+    const page = await open(detailBack(back));
+    try {
+      expect((await look(page)).details).toEqual([{ back: true, title: true, listViews: false }]);
+      return await page.evaluate(() => {
+        const row = document.querySelector<HTMLElement>('[data-k2-part="Back"]')!;
+        const button = row.querySelector<HTMLElement>(".k2-btn")!;
+        const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
+        const title = document.querySelector('.k2-pane[data-detail] > [data-slot="head"] .k2-bar-start')!.getBoundingClientRect();
+        return {
+          share: button.getBoundingClientRect().width / row.getBoundingClientRect().width,
+          rowHeight: row.getBoundingClientRect().height,
+          cut: label.scrollWidth > label.clientWidth,
+          name: `${button.textContent?.trim()}|${button.getAttribute("title")}`,
+          title: [title.left, title.top, title.width].map(Math.round).join(","),
+        };
+      });
+    } finally {
+      await page.close();
+    }
+  };
+  const short = await measure("Protokolle");
+  const long = await measure(longSpace);
+  expect(short.cut).toBe(false);
+  // short: at most 60 % of its row, one line, cut with "…", the whole name for assistive technology and as the hint
+  expect(long.share).toBeLessThanOrEqual(0.6);
+  expect(long.rowHeight).toBe(short.rowHeight);
+  expect(long.cut).toBe(true);
+  expect(long.name).toBe(`${longSpace}|${longSpace}`);
+  expect(long.title).toBe(short.title);
 }, 30_000);
