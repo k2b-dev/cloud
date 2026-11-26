@@ -52,6 +52,21 @@ const address = (page: Page) => decodeURIComponent(new URL(page.url()).search.sl
 /** The titles of the rows the table shows, in order. */
 const rows = (page: Page) => page.locator("tbody tr:not([data-group]):not([data-loading]) td:nth-child(2)").allTextContents();
 
+/** Waits until the sheet keeps its place for two frames inside the window, once it has slid up. */
+const steady = (page: Page) =>
+  page.waitForFunction(
+    () => {
+      const element = document.querySelector<HTMLElement>('[role="dialog"]');
+      if (!element) return false;
+      const box = element.getBoundingClientRect();
+      const last = Number(element.dataset.testTop ?? "NaN");
+      element.dataset.testTop = String(box.top);
+      return box.top === last && box.bottom <= innerHeight + 1;
+    },
+    undefined,
+    { polling: 100, timeout: 5000 },
+  );
+
 /** Opens the editor of a statement by its field. */
 const edit = async (page: Page, field: string) => {
   await page.getByRole("button", { name: new RegExp(`^Filter ${field}\\b.* bearbeiten$`) }).click();
@@ -264,6 +279,7 @@ test("phone: the sheet searches many fields in their groups; a field's verb is t
       await page.locator(".k2-fbar > .k2-btn").first().tap();
       const sheet = page.getByRole("dialog", { name: "Filter" });
       await sheet.waitFor();
+      await steady(page);
       expect(await sheet.locator(".k2-fsheet-sec").allTextContents()).toEqual([
         "Häufig",
         "Preise",
@@ -275,10 +291,16 @@ test("phone: the sheet searches many fields in their groups; a field's verb is t
       const search = sheet.getByRole("searchbox", { name: "Filter suchen" });
       // the keyboard waits for a tap, as everywhere in the sheet
       expect(await page.evaluate(() => document.activeElement?.matches("input"))).toBe(false);
+      const height = async () => (await sheet.boundingBox())?.height;
+      const before = await height();
       await search.fill("epo");
+      // fewer matches never move the sheet
+      await settled(page);
+      expect(await height()).toBe(before);
       expect(await sheet.locator(".k2-fsheet-row .k2-fsheet-label").allTextContents()).toEqual(["Epoche", "Sortierung", "Gruppierung"]);
       await sheet.locator(".k2-fsheet-row", { hasText: "Epoche" }).tap();
       await page.getByRole("dialog", { name: "Epoche" }).waitFor();
+      await steady(page);
       await page.locator(".k2-fsheet .k2-fed-verb [data-select]").tap();
       await page.getByRole("option", { name: "ist nicht leer", exact: true }).tap();
       await page.waitForFunction(() => new URL(location.href).search === "?era.notEmpty=");
@@ -290,4 +312,21 @@ test("phone: the sheet searches many fields in their groups; a field's verb is t
     },
     { width: 390, touch: true },
   );
+});
+
+test("an option the app deleted, from its own old state, shows with a warning, and the bar still changes the list", async () => {
+  await withPage("_stale=1", async (page) => {
+    expect(await statements(page)).toEqual(["Status ist Eingeliefert oder gone"]);
+    expect(
+      await page
+        .locator(".k2-stmt-b b", { hasText: "gone" })
+        .getByRole("img", { name: /^Name nicht gefunden/ })
+        .count(),
+    ).toBe(1);
+    await edit(page, "Status");
+    await page.locator(".k2-fpop").getByRole("option", { name: "Online" }).click();
+    // the address never holds the deleted option; the next state leaves it out
+    expect(address(page)).toBe("_stale=1&status=consigned,online");
+    expect(await statements(page)).toEqual(["Status ist Eingeliefert oder Online"]);
+  });
 });

@@ -561,9 +561,11 @@ export type ListQuery<
    * Its text keeps `,` `:` `/` and `@` readable (`status=open,sold`); everything else is encoded as usual.
    * Defaults and mandatory fields at their default are omitted, so equal states give equal URLs.
    * Parameters of `base` the query does not own come first and stay unchanged. Whatever `serialize` writes, `parse`
-   * reads back to the same state. States from `parse`, `set`, `clear` and `reset` always fit; a state built by hand
-   * that the URL cannot hold (an undeclared value, sort or group, a reversed range, a number with an exponent, more
-   * than {@link LIST_QUERY_MAX_LENGTH} characters) throws a `RangeError`. Derive follow-up states with `set`.
+   * reads back to the same state. What the declaration does not know (an option, preset, sort or group an app deleted
+   * while an old link or saved view still names it) is left out, as `parse` leaves it out. States from `parse`,
+   * `set`, `clear` and `reset` always fit; a state built by hand that the URL cannot hold otherwise (a reversed
+   * range, a number with an exponent, more than {@link LIST_QUERY_MAX_LENGTH} characters) throws a `RangeError`.
+   * Derive follow-up states with `set`.
    */
   serialize(state: ListQueryState<F, S, G>, base?: URLSearchParams | string): URLSearchParams;
   /**
@@ -842,15 +844,30 @@ const paramOf = (key: string, definition: ListQueryField, verb: FilterVerb | und
 
 type Checked = { readonly name: string; readonly raw: string; readonly value: unknown } | "empty" | "invalid";
 
-/** Checks a state value against the URL: its name and text, and the canonical value `parse` reads from that text. */
-const check = (key: string, definition: ListQueryField, value: unknown): Checked => {
+/**
+ * Whether the parts of this value that `decode` refused are only values the declaration does not know: options of a
+ * choice and presets of a period, which an app may delete while old links and saved views still name them. Those are
+ * left out, as `parse` leaves them out; anything else the URL cannot hold (a reversed range, a number with an
+ * exponent) stays invalid.
+ */
+const forgettable = (definition: ListQueryField, value: unknown): boolean =>
+  definition.kind === "choice" ||
+  ((definition.kind === "dateRange" || definition.kind === "timeRange") && isRecord(value) && value.kind === "preset");
+
+/**
+ * Checks a state value against the URL: its name and text, and the canonical value `parse` reads from that text.
+ * `strict` refuses what the declaration does not know instead of leaving it out: a new value given to `set`, a
+ * mandatory default.
+ */
+const check = (key: string, definition: ListQueryField, value: unknown, strict = false): Checked => {
   const verbs = definition.verbs;
   if (!verbs) {
     const raw = encode(definition, value);
     if (raw === undefined) return "empty";
     if (raw === null) return "invalid";
     const decoded = decode(definition, raw);
-    if (decoded.invalid.length > 0 || decoded.value === undefined) return "invalid";
+    if (decoded.invalid.length > 0 && (strict || !forgettable(definition, value))) return "invalid";
+    if (decoded.value === undefined) return decoded.invalid.length > 0 ? "empty" : "invalid";
     // The canonical text: declared value order, no duplicates, the shortest number form.
     const canonical = encode(definition, decoded.value);
     return typeof canonical === "string" ? { name: key, raw: canonical, value: decoded.value } : "invalid";
@@ -863,7 +880,10 @@ const check = (key: string, definition: ListQueryField, value: unknown): Checked
   if (raw === undefined) return "empty";
   if (raw === null) return "invalid";
   const decoded = decodeTerm(definition, verb, raw);
-  if (decoded.invalid.length > 0 || !isRecord(decoded.value)) return "invalid";
+  if (decoded.invalid.length > 0 && (strict || verbShape(definition, verb) !== "plain" || !forgettable(definition, value.value))) {
+    return "invalid";
+  }
+  if (!isRecord(decoded.value)) return decoded.invalid.length > 0 ? "empty" : "invalid";
   const canonical = encodeTerm(definition, verb, decoded.value.value);
   return typeof canonical === "string" ? { name: paramOf(key, definition, verb), raw: canonical, value: decoded.value } : "invalid";
 };
@@ -933,7 +953,7 @@ const checkDeclaration = (declaration: ListQueryDeclaration): ReadonlyMap<string
       throw new Error(`defineListQuery: limit of ${key} must be between 1 and 50`);
     }
     if (definition.required !== undefined) {
-      const checked = check(key, definition, definition.required);
+      const checked = check(key, definition, definition.required, true);
       if (typeof checked === "string") throw new Error(`defineListQuery: required value of ${key} is not valid`);
       defaults.set(key, checked);
     }
@@ -1087,17 +1107,14 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
       if (checked.raw !== defaults.get(key)?.raw) params.set(checked.name, checked.raw);
     }
     if (declaration.search && state.search) params.set(names.search, state.search);
+    // a sort or grouping the declaration does not (or no longer) offer is left out, as parse leaves it out
     if (state.sort.field !== defaultSort.field || state.sort.direction !== defaultSort.direction) {
       const option = sortDeclaration.fixed ? undefined : own(sortOptions, state.sort.field);
-      if (!option || !(option.directions ?? DIRECTIONS).includes(state.sort.direction)) {
-        return new RangeError(`serialize: sort "${state.sort.field}.${state.sort.direction}" is not an option`);
+      if (option && (option.directions ?? DIRECTIONS).includes(state.sort.direction)) {
+        params.set(names.sort, `${state.sort.field}.${state.sort.direction}`);
       }
-      params.set(names.sort, `${state.sort.field}.${state.sort.direction}`);
     }
-    if (state.group !== undefined) {
-      if (!Object.hasOwn(groups, state.group)) return new RangeError(`serialize: group "${state.group}" is not an option`);
-      params.set(names.group, state.group);
-    }
+    if (state.group !== undefined && Object.hasOwn(groups, state.group)) params.set(names.group, state.group);
     const length = ownedLength(params);
     if (length > LIST_QUERY_MAX_LENGTH) {
       return new RangeError(`serialize: the query has ${length} characters, more than ${LIST_QUERY_MAX_LENGTH}`);
@@ -1122,7 +1139,7 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
     // a field may hold the name of a part the declaration does not have (a field `q` without a search); it comes first
     const field = own<ListQueryField>(declaration.fields, key);
     if (field) {
-      const checked = check(key, field, value);
+      const checked = check(key, field, value, true);
       if (checked === "invalid") return undefined;
       const stored = checked === "empty" ? defaults.get(key)?.value : checked.value;
       if (stored === undefined) delete filters[key];
@@ -1134,16 +1151,21 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
     } else if (key === "sort") {
       if (!isRecord(value) || typeof value.field !== "string" || (value.direction !== "asc" && value.direction !== "desc"))
         return undefined;
+      // a new sort or grouping must be one the declaration offers; only what the state already holds is left out
+      const option = sortDeclaration.fixed ? undefined : own(sortOptions, value.field);
+      const isDefault = value.field === defaultSort.field && value.direction === defaultSort.direction;
+      if (!isDefault && !(option && (option.directions ?? DIRECTIONS).includes(value.direction))) return undefined;
       next.sort = { field: value.field, direction: value.direction };
     } else if (key === "group") {
       if (value === undefined) delete next.group;
-      else if (typeof value === "string") next.group = value;
+      else if (typeof value === "string" && Object.hasOwn(groups, value)) next.group = value;
       else return undefined;
     } else {
       return undefined;
     }
-    const result = asState(next);
-    return write(result) instanceof RangeError ? undefined : result;
+    const written = write(asState(next));
+    // the state the address holds: what the declaration does not know (a deleted option, an old sort) is gone from it
+    return written instanceof RangeError ? undefined : parse(written).state;
   };
 
   const clear = (state: State, key: keyof F & string): State => {

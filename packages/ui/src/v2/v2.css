@@ -4103,6 +4103,10 @@
 .k2-ui .k2-fsheet-search {
   margin: 8px var(--k2-edge) 4px;
 }
+/* the phone sheet over many fields stands at its full height while it searches them: fewer matches never move it */
+.k2-ui .k2-dialog[data-presentation="sheet"]:has(.k2-fsheet[data-many]) {
+  height: calc(100dvh - 48px);
+}
 .k2-ui .k2-fed-body[data-flush] {
   padding-inline: 0;
   gap: 0;

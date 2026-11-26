@@ -164,8 +164,12 @@ const plainParts = (
 ): Part[] => {
   switch (definition.kind) {
     case "choice":
+      // an option the app deleted (an old link) shows as its code with a warning, as a lookup code nobody can name
       return listParts(
-        codes(value).map((code) => ({ text: labelOf(definition.options, code) })),
+        codes(value).map((code) => {
+          const option = definition.options.find((each) => each.value === code);
+          return option ? { text: option.label } : { text: code, missing: true };
+        }),
         t,
       );
     case "lookup":
@@ -762,6 +766,10 @@ const fieldMatches = (groups: readonly FieldGroup[], query: string): FieldGroup[
   });
 };
 
+/** The field keys of the group with this heading ("" for the one without). */
+const keysIn = (groups: readonly FieldGroup[], title: string): string[] =>
+  groups.find((group) => (group.title ?? "") === title)?.fields.map(([key]) => key) ?? [];
+
 /**
  * "+ Filter" for many fields: core's command in a popover, a search over the fields with their groups. The focus stays
  * in the search; the arrows move through the fields, Enter or a press opens the chosen one's editor.
@@ -794,6 +802,7 @@ const FieldPicker = (props: {
     filter: false,
     loop: false,
   }));
+  const idBase = createUniqueId();
   let popup: HTMLElement | undefined;
   return (
     <>
@@ -818,25 +827,29 @@ const FieldPicker = (props: {
             <list.Input aria-label={t().searchFields} placeholder={t().searchFields} spellcheck={false} />
           </div>
           <list.List class="k2-lookup-list" aria-label={t().addFilter}>
-            <For each={groups()}>
-              {(group, index) => {
+            {/* by name, not by object: a new search keeps the entries that still match and their highlight */}
+            <For each={groups().map((group) => group.title ?? "")}>
+              {(title, index) => {
                 // core names a group by its label's id; each entry names its group, else core takes it for empty
-                const id = () => `${group.title ?? "fields"}:${index()}`;
+                const id = `${idBase}-${index()}`;
                 return (
-                  <list.Group class="k2-opt-group" id={id()}>
-                    <Show when={group.title}>
-                      <list.GroupLabel class="k2-opt-head" id={id()} group={id()}>
-                        {group.title}
+                  <list.Group class="k2-opt-group" id={id}>
+                    <Show when={title}>
+                      <list.GroupLabel class="k2-opt-head" id={id} group={id}>
+                        {title}
                       </list.GroupLabel>
                     </Show>
-                    <For each={group.fields}>
-                      {([key, definition]) => (
-                        <list.Item class="k2-opt" value={key} label={definition.label} group={id()}>
-                          <Show when={props.icons?.[key]}>{(name) => <Icon name={name()} />}</Show>
-                          <span class="k2-opt-label">{definition.label}</span>
-                          <Show when={props.meta(key, definition)}>{(words) => <span class="k2-opt-meta">{words()}</span>}</Show>
-                        </list.Item>
-                      )}
+                    <For each={keysIn(groups(), title)}>
+                      {(key) => {
+                        const definition = props.fields.find(([each]) => each === key)![1];
+                        return (
+                          <list.Item class="k2-opt" value={key} label={definition.label} group={id}>
+                            <Show when={props.icons?.[key]}>{(name) => <Icon name={name()} />}</Show>
+                            <span class="k2-opt-label">{definition.label}</span>
+                            <Show when={props.meta(key, definition)}>{(words) => <span class="k2-opt-meta">{words()}</span>}</Show>
+                          </list.Item>
+                        );
+                      }}
                     </For>
                   </list.Group>
                 );
@@ -1084,22 +1097,26 @@ const Editor = (props: EditorProps) => {
 const EditorBody = (props: EditorProps) => {
   const definition = props.definition;
   switch (definition.kind) {
-    case "choice":
+    case "choice": {
+      // only the options the declaration knows: one the app deleted (an old link) goes with the next change, and no
+      // change carries it on (the address could not hold it, so every option would be locked)
+      const known = () => codes(props.value).filter((code) => definition.options.some((option) => option.value === code));
       return (
         <Options
           label={definition.label}
           options={definition.options}
           multiple={definition.multiple}
-          value={codes(props.value)}
+          value={known()}
           counts={definition.counts ? props.counts : undefined}
           possible={(code) => {
-            const chosen = codes(props.value);
+            const chosen = known();
             if (!definition.multiple) return props.possible(code);
             return props.possible(chosen.includes(code) ? chosen.filter((other) => other !== code) : [...chosen, code]);
           }}
           onChange={(next) => props.onChange(definition.multiple ? next : next[0])}
         />
       );
+    }
     case "lookup":
       return (
         <Lookup
@@ -2380,7 +2397,12 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
         </>
       }
     >
-      <div class="k2-fsheet" data-k2-part="FilterSheet">
+      <div
+        class="k2-fsheet"
+        data-k2-part="FilterSheet"
+        // the list of many fields with its search: the sheet keeps its full height, so a search never moves it
+        data-many={many() && props.place?.field === undefined && props.place?.display === undefined ? "" : undefined}
+      >
         <Show
           when={props.place?.field !== undefined || props.place?.display !== undefined}
           fallback={
@@ -2406,11 +2428,12 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
                     onInput={(event) => setSearch(event.currentTarget.value)}
                   />
                 </div>
-                <For each={sheetGroups()}>
-                  {(group) => (
+                {/* by name, not by object: a new search keeps the rows that still match, so a tap never lands on a row made anew */}
+                <For each={sheetGroups().map((group) => group.title ?? "")}>
+                  {(title) => (
                     <>
-                      <div class="k2-fsheet-sec">{group.title ?? t().filters}</div>
-                      <For each={group.fields}>{FieldRow}</For>
+                      <div class="k2-fsheet-sec">{title || t().filters}</div>
+                      <For each={keysIn(sheetGroups(), title)}>{(key) => FieldRow([key, props.query.fields[key]!])}</For>
                     </>
                   )}
                 </For>

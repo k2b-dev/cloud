@@ -348,9 +348,9 @@ describe("list query review guards", () => {
         sort: { options: { name: { label: "Name" } }, default: { field: "constructor" as "name", direction: "asc" } },
       }),
     ).toThrow("default sort");
-    expect(() => articles.serialize({ ...articles.reset(), sort: { field: "constructor" as "price", direction: "asc" } })).toThrow(
-      RangeError,
-    );
+    // an inherited key is no option: serialize leaves it out like any sort it does not know, and set refuses it
+    expect(articles.serialize({ ...articles.reset(), sort: { field: "constructor" as "price", direction: "asc" } }).toString()).toBe("");
+    expect(articles.set(articles.reset(), "sort", { field: "constructor" as "price", direction: "asc" })).toBeUndefined();
   });
 
   test("field keys of Object.prototype are refused, so no filter reads an inherited value", () => {
@@ -683,4 +683,92 @@ test("a declaration built at runtime with hundreds of fields parses and serializ
   expect(parsed.state.filters).toEqual({ c7: { verb: "contains", value: "Berg" }, c250: { verb: "empty" } });
   expect(wide.serialize(parsed.state).toString()).toBe("c7=Berg&c250.empty=");
   expect(wide.fields.c250?.category).toBe("Zahlen");
+});
+
+describe("values an app deleted", () => {
+  // A Space deleted its tag "Gone01" and a sort column, while an old link and a saved view still name them. The
+  // declaration is built from the app's current data, as Spaces and Grids build it at runtime.
+  const tags = [
+    { value: "Tag01", label: "Urgent" },
+    { value: "Tag02", label: "Later" },
+  ];
+  const space = defineListQuery({
+    key: "space",
+    fields: {
+      tags: field.choice({ label: "Tags", options: tags }),
+      column: field.choice({ label: "Column", options: tags, multiple: false }),
+      not: field.choice({ label: "Not", options: tags, verbs: ["not", "is", "empty"] }),
+      assignee: field.lookup({ label: "Assignee", load: async () => ({ items: [] }), resolve: noItems }),
+      due: field.dateRange({ label: "Due", presets: [{ value: "this-week", label: "This week" }] }),
+      seen: field.timeRange({
+        label: "Seen",
+        presets: [{ value: "last-1h", label: "Last hour" }],
+        required: { kind: "preset", preset: "last-1h" },
+      }),
+      price: field.numberRange({ label: "Price" }),
+      done: field.bool({ label: "Done", labels: { yes: "yes", no: "no" } }),
+      title: field.text({ label: "Title" }),
+    },
+    search: { label: "Search" },
+    sort: { options: { title: { label: "Title" }, due: { label: "Due" } }, default: { field: "title", direction: "asc" } },
+    group: { column: { label: "Column" } },
+  });
+  // what the app hands the bar: its own state, built from an old link or saved view, naming what no longer exists
+  const stale = {
+    filters: {
+      tags: ["Tag01", "Gone01"],
+      column: "Gone02",
+      not: { verb: "not", value: ["Gone01"] },
+      assignee: ["u-deleted"],
+      due: { kind: "preset", preset: "last-month" },
+      seen: { kind: "preset", preset: "last-24h" },
+      price: { min: 5 },
+      done: true,
+      title: "Vase",
+    },
+    sort: { field: "deletedColumn", direction: "desc" },
+    group: "deletedGroup",
+  } as unknown as ListQueryStateOf<typeof space>;
+
+  test("parse leaves out each deleted option, preset, sort and group, reports it, and never throws", () => {
+    const parsed = space.parse(
+      "tags=Tag01,Gone01&column=Gone02&not=Gone01&assignee=u-deleted&due=last-month&seen=last-24h&price=5..&done=yes&title=Vase&sort=deletedColumn.desc&group=deletedGroup",
+    );
+    expect(parsed.state).toEqual({
+      filters: {
+        tags: ["Tag01"],
+        assignee: ["u-deleted"],
+        seen: { kind: "preset", preset: "last-1h" },
+        price: { min: 5 },
+        done: true,
+        title: "Vase",
+      },
+      sort: { field: "title", direction: "asc" },
+    } as unknown as ListQueryStateOf<typeof space>);
+    expect(parsed.issues.map((issue) => issue.param).sort()).toEqual(["column", "due", "group", "not", "seen", "sort", "tags"]);
+  });
+
+  test("serialize leaves them out the same way: the address of a stale state is the one parse reads back", () => {
+    // a lookup code is the app's to name: it stays (the bar marks it when the app cannot name it)
+    const text = space.serialize(stale).toString();
+    expect(text).toBe("tags=Tag01&assignee=u-deleted&price=5..&done=yes&title=Vase");
+    expect(space.serialize(space.parse(text).state).toString()).toBe(text);
+  });
+
+  test("set works on a stale state and returns the state the address holds", () => {
+    const next = must(space.set(stale, "title", "Bowl"));
+    expect(next.filters).toEqual({
+      tags: ["Tag01"],
+      assignee: ["u-deleted"],
+      seen: { kind: "preset", preset: "last-1h" },
+      price: { min: 5 },
+      done: true,
+      title: "Bowl",
+    });
+    expect(next.sort).toEqual({ field: "title", direction: "asc" });
+    expect(next.group).toBeUndefined();
+    // a new value must still be one the declaration knows: set refuses it instead of changing it on the way
+    expect(space.set(stale, "tags", ["Gone01"] as unknown as "Tag01"[])).toBeUndefined();
+    expect(space.set(stale, "group", "deletedGroup" as "column")).toBeUndefined();
+  });
 });

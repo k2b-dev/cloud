@@ -265,7 +265,12 @@ declare global {
 }
 
 export function Demo() {
-  const initial = inventoryQuery.parse(isServer ? "" : location.search).state;
+  const parsed = inventoryQuery.parse(isServer ? "" : location.search).state;
+  // `_stale`: the app's own state from an old link names a status it deleted since ("gone"), as a Space's deleted tag
+  const stale = !isServer && new URLSearchParams(location.search).has("_stale");
+  const initial = stale
+    ? ({ ...parsed, filters: { ...parsed.filters, status: { verb: "is", value: ["consigned", "gone"] } } } as unknown as State)
+    : parsed;
   const [state, setState] = createSignal<State>(initial);
   const rows = createMemo(() => {
     const list = items.filter((item) => matches(item, state()));
