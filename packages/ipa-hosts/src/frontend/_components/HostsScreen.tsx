@@ -1,3 +1,4 @@
+import { formatRelative } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
@@ -19,7 +20,6 @@ import {
   Pane,
   Row,
   Section,
-  StatusRow,
   Table,
   Tabs,
   Text,
@@ -38,7 +38,17 @@ export type HostsScreenProps = {
   nav: NavProps;
   tab: HostsTab;
   search: string;
-  figures: { groups: number; hostsTotal: number; ungrouped: number };
+  /** Counts of the list (`groups`, `ungrouped` as the search shows them) and of the whole mirror for the hero. */
+  figures: {
+    groups: number;
+    hostsTotal: number;
+    ungrouped: number;
+    ungroupedAll: number;
+    groupsAll: number;
+    lastSyncedAt: string | null;
+  };
+  /** The colour of the host mirror: its figures carry it inside the Administration shell. */
+  accent: string;
   groups: (IpaHostgroup & { hostDetails: IpaHost[] })[];
   ungrouped: IpaHost[];
   /** Pages of the visible list: the groups or the hosts without a group. */
@@ -282,31 +292,33 @@ export default function HostsScreen(props: HostsScreenProps) {
 
   // a mirror that holds nothing yet: its one way on is a sync
   const emptyMirror = () => props.figures.hostsTotal === 0 && props.figures.groups === 0 && !props.search;
-  const list = () => (
-    <Pane
-      label={t().hosts}
-      scrollKey={`ipa-hosts-${props.tab}`}
-      status={
-        <StatusRow
-          lead={
-            emptyMirror()
-              ? t().emptyLead
-              : props.figures.ungrouped > 0
-                ? t().unassignedLead({ count: props.figures.ungrouped })
-                : t().assignedLead({ count: props.figures.hostsTotal })
-          }
-          facts={props.search ? [{ before: t().searchFact, after: props.search }] : []}
-          // the count stands at the end of the row, as in a console's toolbar; the hosts without a group are counted by the lead
-          filters={
-            emptyMirror() || props.tab !== "groups" ? undefined : (
-              <Text type="meta" muted>
-                {t().groupCount({ count: props.figures.groups })}
-              </Text>
-            )
-          }
+  /**
+   * The one statement of the page with its figure: how many hosts have no group yet, the groups and the last sync. A
+   * slot of its own, so the hero band of @k2b/ui (figure type) replaces it in one step. The mirror keeps no history, so
+   * the hero has no trend.
+   */
+  const hero = () => {
+    const f = props.figures;
+    return (
+      <Cells>
+        <Cells.Cell
+          icon={f.ungroupedAll > 0 ? "server-off" : "folders"}
+          color={props.accent}
+          label={f.ungroupedAll > 0 ? t().ungroupedLabel : t().allGroupedLabel}
+          value={number(f.ungroupedAll > 0 ? f.ungroupedAll : f.hostsTotal)}
+          meta={[
+            t().groupCount({ count: f.groupsAll }),
+            f.lastSyncedAt ? t().lastSynced({ when: formatRelative(f.lastSyncedAt, { locale: locale() }) }) : t().neverSynced,
+            ...(props.search ? [t().searchFor({ query: props.search })] : []),
+          ].join(" · ")}
         />
-      }
-    >
+      </Cells>
+    );
+  };
+
+  const list = () => (
+    <Pane label={t().hosts} scrollKey={`ipa-hosts-${props.tab}`}>
+      <Show when={!emptyMirror()}>{hero()}</Show>
       <Show
         when={props.tab === "groups"}
         fallback={
@@ -785,12 +797,14 @@ export default function HostsScreen(props: HostsScreenProps) {
                   label: t().hostgroups,
                   icon: "folders",
                   href: href({ tab: "groups", group: null, host: null }),
+                  count: props.figures.groupsAll,
                   current: props.tab === "groups",
                 },
                 {
                   label: t().ungrouped,
                   icon: "server-off",
                   href: href({ tab: "ungrouped", group: null, host: null }),
+                  count: props.figures.ungroupedAll,
                   current: props.tab === "ungrouped",
                 },
               ]}

@@ -101,6 +101,10 @@ const firstHtml = async (search: string, data: Data) => {
     spyOn(ipaHostsService, "stats").mockResolvedValue({
       hostsInGroups: data === "worst" ? 98_765 : groups.reduce((sum, group) => sum + group.hostDetails.length, 0),
       hostsTotal: data === "worst" ? 123_456 : hosts.length,
+      hostsUngrouped: data === "worst" ? 24_691 : ungrouped.length,
+      hostgroupsTotal: data === "worst" ? 12_345 : groups.length,
+      // the last sync twelve minutes ago, whatever day the test runs
+      lastSyncedAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
     } as never),
   ];
   try {

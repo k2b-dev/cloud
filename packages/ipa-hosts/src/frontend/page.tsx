@@ -1,6 +1,6 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
-import { ssr } from "../config";
+import { ACCENT, ssr } from "../config";
 import { createPagination } from "../contracts";
 import { ipaHostsService } from "../service";
 import HostsScreen from "./_components/HostsScreen.island";
@@ -75,7 +75,12 @@ export default ssr<AuthContext>(async (c) => {
           groups: groupsPage.total,
           hostsTotal: stats.hostsTotal,
           ungrouped: ungroupedHosts.total,
+          // the hero counts the whole mirror, whatever the search shows
+          ungroupedAll: stats.hostsUngrouped,
+          groupsAll: stats.hostgroupsTotal,
+          lastSyncedAt: stats.lastSyncedAt,
         }}
+        accent={ACCENT}
         groups={groupsPage.items}
         ungrouped={ungroupedHosts.items}
         paging={{ page: pagination.page, pages: pagination.total_pages }}

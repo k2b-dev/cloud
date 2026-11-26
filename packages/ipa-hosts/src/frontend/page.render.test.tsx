@@ -71,7 +71,13 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     groups,
     hosts,
     spyOn(ipaHostsService.host, "listUngrouped").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 7, hasNext: false } as never),
-    spyOn(ipaHostsService, "stats").mockResolvedValue({ hostsInGroups: 1_234, hostsTotal: 5_678 } as never),
+    spyOn(ipaHostsService, "stats").mockResolvedValue({
+      hostsInGroups: 1_234,
+      hostsTotal: 5_678,
+      hostsUngrouped: 7,
+      hostgroupsTotal: 12_345,
+      lastSyncedAt: null,
+    } as never),
   ];
   try {
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -87,8 +93,8 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     expect(response.status, html).toBe(200);
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
-    // the first row says what matters, with its number; the list's count and the search are quiet facts beside it
-    expect(text).toContain("7 Hosts sind keiner Gruppe zugeordnet Suche server 1 Hostgruppe");
+    // the hero says what matters with its figure; the groups, the last sync and the search stand quiet under it
+    expect(text).toContain("Hosts ohne Gruppe 7 12.345 Hostgruppen · noch nie abgeglichen · Suche „server“");
     // no figure tiles: nothing counts the hosts in groups a second time
     expect(text).not.toContain("in Gruppen");
     expect(text).not.toContain("Zuordnung erforderlich");
@@ -101,7 +107,7 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     const all = read(await (await app.request("/admin/ipa-hosts", { headers: { "Accept-Language": "de" } })).text());
     expect(all).toContain("12.345 Hostgruppen");
     const ungrouped = read(await (await app.request("/admin/ipa-hosts?tab=ungrouped", { headers: { "Accept-Language": "de" } })).text());
-    expect(ungrouped).toContain("7 Hosts sind keiner Gruppe zugeordnet");
+    expect(ungrouped).toContain("Hosts ohne Gruppe 7");
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
@@ -133,7 +139,13 @@ test("an open group pages its hosts: the pager names the page, a host keeps it f
     } as never),
     spyOn(ipaHostsService.host, "listUngrouped").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false } as never),
     spyOn(ipaHostsService.host, "get").mockResolvedValue(null),
-    spyOn(ipaHostsService, "stats").mockResolvedValue({ hostsInGroups: 120, hostsTotal: 120 } as never),
+    spyOn(ipaHostsService, "stats").mockResolvedValue({
+      hostsInGroups: 120,
+      hostsTotal: 120,
+      hostsUngrouped: 0,
+      hostgroupsTotal: 3,
+      lastSyncedAt: null,
+    } as never),
   ];
   try {
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();

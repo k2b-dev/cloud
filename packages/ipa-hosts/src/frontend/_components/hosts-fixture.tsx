@@ -36,7 +36,12 @@ export const HostsFixture = (props: { search: string; data?: HostsFixtureData; n
           groups: data === "worst" ? 12_345 : groups.length,
           hostsTotal: data === "worst" ? 123_456 : everyHost.length,
           ungrouped: data === "worst" ? 24_691 : ungrouped.length,
+          ungroupedAll: data === "worst" ? 24_691 : ungrouped.length,
+          groupsAll: data === "worst" ? 12_345 : groups.length,
+          // twelve minutes ago, whatever day the picture is made
+          lastSyncedAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
         }}
+        accent="#7e22ce"
         groups={groups}
         ungrouped={ungrouped}
         paging={{ page: 1, pages: data === "worst" ? 124 : 1 }}

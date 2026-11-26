@@ -1,5 +1,8 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
+/** The colour of the host mirror: the shell around and its own figures carry it. */
+export const ACCENT = "#7e22ce";
+
 export const app = defineApp({
   id: "ipa-hosts",
   access: appAccess.roles(["admin"], {
@@ -18,7 +21,7 @@ export const app = defineApp({
       },
     },
   },
-  appearance: { accent: "#7e22ce", background: { from: "#9333ea", to: "#7e22ce", angle: 135 } },
+  appearance: { accent: ACCENT, background: { from: "#9333ea", to: "#7e22ce", angle: 135 } },
   basePath: "/admin/ipa-hosts",
   baseUrl: "http://app-ipa-hosts:3000",
   adminHref: "/admin/ipa-hosts",
