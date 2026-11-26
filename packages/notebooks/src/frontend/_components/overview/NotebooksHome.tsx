@@ -131,8 +131,9 @@ export default function NotebooksHome(props: NotebooksHomeProps) {
 
   // ── creating ────────────────────────────────────────────────────────────────────────────────────────────────────
   const [creating, setCreating] = createSignal<NewNotebookSource | null>(null);
+  // the names alone: a description beside them in a menu would cut the name
   const createItems = (): MenuEntry[] => [
-    { label: t().blankNotebook, icon: "notebook", meta: t().blankNotebookDescription, onClick: () => setCreating({ kind: "blank" }) },
+    { label: t().blankNotebook, icon: "notebook", onClick: () => setCreating({ kind: "blank" }) },
     ...(props.templates.length > 0
       ? [
           {
@@ -140,7 +141,6 @@ export default function NotebooksHome(props: NotebooksHomeProps) {
             items: props.templates.map((template) => ({
               label: template.name,
               icon: sign(template.icon),
-              meta: template.description,
               onClick: () => setCreating({ kind: "template", template }),
             })),
           },
@@ -270,7 +270,9 @@ export default function NotebooksHome(props: NotebooksHomeProps) {
                       <Row
                         avatar={item.actor.kind === "system" ? undefined : actorPerson(item)}
                         icon={item.actor.kind === "system" ? notebookActivityIcon(item.action).replace(/^ti ti-/, "") : undefined}
-                        lines={[sentence(item), `${item.notebook.name} · ${when(item.lastOccurredAt)}`]}
+                        // what happened (the sentence names the note and its notebook once), who did it, and when
+                        lines={item.actor.kind === "system" ? [sentence(item)] : [sentence(item), item.actor.displayName]}
+                        time={when(item.lastOccurredAt)}
                         href={activityHref(item)}
                       />
                     )}
