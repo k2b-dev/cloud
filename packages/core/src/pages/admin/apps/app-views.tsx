@@ -26,9 +26,18 @@ export const STATUS: Record<AppStatusKind, "ok" | "warn" | "bad" | undefined> = 
 export const statusLabel = (t: AppsPageMessages, status: AppStatusKind) =>
   ({ ok: t.statusOk, warn: t.statusWarn, error: t.statusError, idle: t.statusIdle })[status];
 
-/** The app's state as a chip with its word; idle is a plain chip. */
+/** An app's declared icon ("ti ti-folder") as the symbol name a v2 mark takes ("folder"). */
+export const markIcon = (icon: string) => icon.replace(/^ti\s+/, "").replace(/^ti-/, "");
+
+/**
+ * The app's state in its word: a problem (disturbed, not running) as a toned chip, a good or idle state as quiet
+ * words, because colour stands only for problems (identity rule 7).
+ */
 export const StatusChip = (props: { t: AppsPageMessages; status: AppStatusKind }) => (
-  <Show when={STATUS[props.status]} fallback={<Chip>{statusLabel(props.t, props.status)}</Chip>}>
+  <Show
+    when={props.status === "warn" || props.status === "error" ? STATUS[props.status] : undefined}
+    fallback={<Text muted={props.status === "idle"}>{statusLabel(props.t, props.status)}</Text>}
+  >
     {(tone) => <Chip status={tone()}>{statusLabel(props.t, props.status)}</Chip>}
   </Show>
 );

@@ -3,11 +3,11 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Failed, Input, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Failed, Inline, Input, Mark, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { adminToasts } from "../_area/toasts";
 import AddApp from "./AddApp";
-import { AppOverview, ErrorsView, EventsView, RoutesView, RuntimeView, StatusChip, statusLabel } from "./app-views";
+import { AppOverview, ErrorsView, EventsView, markIcon, RoutesView, RuntimeView, StatusChip, statusLabel } from "./app-views";
 import Domains from "./Domains";
 import DomainsAdd from "./DomainsAdd";
 import { appsFormat } from "./format";
@@ -101,7 +101,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
     const first = entry.hints[0];
     return first
       ? `${hintShort(t(), f(), first)}${entry.hints.length > 1 ? ` · ${t().moreHints({ count: entry.hints.length - 1 })}` : ""}`
-      : "–";
+      : "";
   };
   const known = () => apps().map((entry) => ({ id: entry.id, name: entry.name }));
 
@@ -158,6 +158,8 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
           width={{ min: 420, default: 620 }}
           scrollKey="admin-apps"
           status={
+            // k2b-ui gap: the hero band (one figure in the owner colour with its real trend) comes with DP; there is no
+            // series of app states over time yet, so the statement stands without a trend
             <StatusRow lead={props.data.list.state === "ok" ? t().summary({ total: apps().length, ...countStatuses(apps()) }) : t().apps} />
           }
         >
@@ -199,7 +201,9 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                     {
                       title: t().columnApp,
                       width: { min: 160, default: 200 },
-                      cell: (entry) => ({ lines: [entry.name, routesLine(entry)] }),
+                      // the app's own sign in its colour (the content shows whose it is); one line per row, routes in the detail
+                      mark: (entry) => ({ icon: markIcon(entry.icon), color: entry.accent ?? undefined }),
+                      cell: (entry) => entry.name,
                     },
                     {
                       title: t().columnStatus,
@@ -225,7 +229,13 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
             back={{ label: t().apps, href: appsHref({ list: list() }) }}
             head={
               <Bar
-                start={<Text type="body">{app()!.entry.name}</Text>}
+                start={
+                  // k2b-ui gap: the tinted object head (40 px sign, name 18, three key facts) comes with DP; mark and name stand in
+                  <Inline>
+                    <Mark icon={markIcon(app()!.entry.icon)} color={app()!.entry.accent ?? undefined} />
+                    <Text type="body">{app()!.entry.name}</Text>
+                  </Inline>
+                }
                 end={
                   <>
                     <Show when={keysDetail()}>
