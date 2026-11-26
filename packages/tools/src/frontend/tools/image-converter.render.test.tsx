@@ -28,47 +28,39 @@ const renderConverter = (initialImages: readonly ImageConverterEntry[] = []) =>
   renderToString(() => createComponent(ImageConverterView, { initialImages }));
 
 describe("Image Converter", () => {
-  test("renders an accessible browser-local dropzone and disabled export state", () => {
+  test("offers to add images, says the conversion stays in the browser, and keeps the settings closed while empty", () => {
     const html = renderConverter();
 
-    expect(html).toContain("Drop images here or click to choose");
+    expect(html).toContain("Add images");
     expect(html).toContain("conversion stays in this browser");
-    expect(html).toContain("Convert and export");
-    expect(html).toMatch(/id="k2b-workspace-detail-image-converter-settings"[^>]* hidden/);
-    expect(html).not.toContain('aria-label="Open export settings"');
-    expect(html).not.toContain('aria-label="Show images"');
-    expect(html).toContain('aria-label="Target image format"');
+    expect(html).not.toContain("Convert and export");
     expect(html).not.toContain("Export all (");
   });
 
-  test("renders image metadata and per-image overlay actions", () => {
+  test("renders image metadata, its deeds and the settings beside the list", () => {
     const html = renderConverter([image()]);
 
     expect(html).toContain("team-photo.png");
-    expect(html).not.toMatch(/id="k2b-workspace-detail-image-converter-settings"[^>]* hidden/);
     // Solid may mark each inserted value with an empty `<!--!$-->` comment.
     expect(html).toMatch(/800(?:<!--!\$-->)? × (?:<!--!\$-->)?1200(?:<!--!\$-->)? px/);
-    expect(html).toContain('aria-label="Select team-photo.png"');
-    expect(html).toContain('aria-label="Rotate team-photo.png clockwise"');
-    expect(html).toContain('aria-label="Remove team-photo.png"');
+    expect(html).toContain('aria-label="Actions for team-photo.png"');
+    expect(html).toContain("Convert and export");
+    expect(html).toContain("Target image format");
     expect(html).toMatch(/Export all \([^)]*1[^)]*\)/);
-    expect(html).toContain("Copy all (1) as Base64 HTML");
-    expect(html).toContain('aria-label="More export options for all images"');
-    expect(html).not.toContain("Export destination");
-    expect(html).not.toContain("bg-[var(--ui-surface)]/90");
+    expect(html).toContain("Copy as Base64");
     expect(html).not.toContain("Export selected");
   });
 
-  test("adds separate all and selected export actions when selection is active", () => {
+  test("a selection turns the status row into the bar of what can be done with it", () => {
     const html = renderConverter([image(true)]);
 
     expect(html).toContain("1 selected");
-    expect(html).toMatch(/Export all \([^)]*1[^)]*\)/);
     expect(html).toContain("Export selected (1)");
-    expect(html).toContain("Copy all (1) as Base64 HTML");
     expect(html).toContain("Copy selected (1) as Base64 HTML");
-    expect(html).toContain('aria-label="More export options for selected images"');
-    expect(html).toContain('data-selected="true"');
+    expect(html).toContain("Clear selection");
+    // the copy of the settings pane copies the selection too, and says so
+    expect(html).not.toContain("Copy as Base64<");
+    expect(html.match(/Copy selected \(1\) as Base64 HTML/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -76,25 +68,26 @@ describe("image intake states in the main workspace", () => {
   const file = new File([], "IMG_0001.HEIC", { type: "image/heic" });
   const renderItems = (initialItems: NonNullable<Parameters<typeof ImageConverterView>[0]>["initialItems"]) =>
     renderToString(() => createComponent(ImageConverterView, { initialItems }));
-  test("a loading card announces its stage and has no item actions", () => {
+
+  test("a loading image says its stage and has no deeds", () => {
     const html = renderItems([{ status: "loading", id: "loading", file, stage: "loading-decoder" }]);
-    expect(html).toContain('data-status="loading"');
+
     expect(html).toContain("IMG_0001.HEIC");
     expect(html).toContain("Loading the HEIC decoder");
-    expect(html).toContain('aria-live="polite"');
-    expect(html).not.toContain('aria-label="Remove IMG_0001.HEIC"');
-    expect(html).not.toContain('aria-label="Select IMG_0001.HEIC"');
+    expect(html).not.toContain("Remove IMG_0001.HEIC");
   });
-  test("a failed card keeps the reason, recovery and remove action in the main area, with the settings still closed", () => {
+
+  test("a file that failed keeps its reason, recovery and remove action, with the settings closed", () => {
     const html = renderItems([{ status: "failed", id: "failed", file, reason: "decode-failed" }]);
-    const main = html.slice(0, html.indexOf('id="k2b-workspace-detail-image-converter-settings"'));
-    expect(main).toContain('data-status="failed"');
-    expect(main).toContain("IMG_0001.HEIC");
-    expect(main).toContain("This image could not be read.");
-    expect(main).toContain("Export it again from the source app, or choose another file.");
-    expect(main).toContain('aria-label="Remove IMG_0001.HEIC"');
-    expect(html).toMatch(/id="k2b-workspace-detail-image-converter-settings"[^>]* hidden/);
-    expect(html).not.toContain("1 image ready");
+
+    // the failure stands in the file's own row, in the list: no band across the page per file
+    expect(html).not.toContain('data-k2-part="Notice"');
+    const row = html.slice(html.indexOf('data-k2-part="Row"'));
+    expect(row).toContain("IMG_0001.HEIC");
+    expect(row).toContain("This image could not be read.");
+    expect(row).toContain("Export it again from the source app, or choose another file.");
+    expect(html).toContain("Remove IMG_0001.HEIC");
+    expect(html).not.toContain("Convert and export");
     expect(html).not.toContain("Export all (");
   });
 });

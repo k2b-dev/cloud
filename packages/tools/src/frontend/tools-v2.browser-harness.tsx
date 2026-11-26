@@ -6,6 +6,7 @@ import ColorConverter from "./tools/ColorConverter.island";
 import EncodingTool from "./tools/EncodingTool.island";
 import EncryptionTool from "./tools/EncryptionTool.island";
 import HashGenerator from "./tools/HashGenerator.island";
+import ImageConverter from "./tools/ImageConverter.island";
 import LoremIpsumGenerator from "./tools/LoremIpsumGenerator.island";
 import MailtoGenerator from "./tools/MailtoGenerator.island";
 import PasswordGenerator from "./tools/PasswordGenerator.island";
@@ -24,6 +25,7 @@ export const v2Screens: Record<string, () => JSX.Element> = {
   mailto: () => <MailtoGenerator />,
   encryption: () => <EncryptionTool />,
   qr: () => <QrCodeGenerator />,
+  "image-converter": () => <ImageConverter />,
 };
 
 const params = new URL(location.href).searchParams;
