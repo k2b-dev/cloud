@@ -40,16 +40,27 @@ const parsed = <T>(schema: z.ZodType<T>, value: string | null): T | null => {
   return result.success ? result.data : null;
 };
 
+/** The catalog's sorts as the v2 list declaration writes them (`documents-query.ts`); older links say the sort's name. */
+export const DOCUMENT_LIST_SORT: Record<string, DocumentCatalogSort> = {
+  "created.desc": "newest",
+  "created.asc": "oldest",
+  "name.asc": "name",
+};
+
 /** Invalid values fall back to their defaults so a stale or edited URL still opens the catalog. */
 export const parseDocumentCatalogUrlState = (params: URLSearchParams): DocumentCatalogState => ({
   q: params.get("q")?.trim() ?? "",
-  view: params.get("view") === "list" ? "list" : "folders",
+  // `mode` since v2 (list queries own `view` for saved views); links from before still say `view=list`
+  view: params.get("mode") === "list" || params.get("view") === "list" ? "list" : "folders",
   path: parsePath(params.get("path")),
   workflow: parsed(ShortIdSchema, params.get("workflow")),
   template: parsed(ShortIdSchema, params.get("template")),
   table: parsed(ShortIdSchema, params.get("table")),
   mediaType: parsed(DocumentMediaTypeSchema, params.get("type")),
-  sort: DOCUMENT_CATALOG_SORTS.find((sort) => sort === params.get("sort")) ?? DEFAULT_DOCUMENT_CATALOG_STATE.sort,
+  sort:
+    DOCUMENT_LIST_SORT[params.get("sort") ?? ""] ??
+    DOCUMENT_CATALOG_SORTS.find((sort) => sort === params.get("sort")) ??
+    DEFAULT_DOCUMENT_CATALOG_STATE.sort,
 });
 
 /** Search, a filter or a non-default sort shows one flat, newest-first-by-default list instead of folders. */
@@ -63,7 +74,7 @@ export const documentCatalogUrlHref = (currentUrl: URL, state: DocumentCatalogSt
   const url = new URL(currentUrl);
   const entries: Array<[string, string | null]> = [
     ["q", state.q.trim() || null],
-    ["view", state.view === "list" ? "list" : null],
+    ["mode", state.view === "list" ? "list" : null],
     ["path", documentCatalogIsFlat(state) || state.path.length === 0 ? null : state.path.join("/")],
     ["workflow", state.workflow],
     ["template", state.template],

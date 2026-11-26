@@ -2,7 +2,6 @@ import { AppWorkspace } from "@k2b/ui";
 import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { GridsWorkflowRun } from "../../../workflows/contracts";
 import CustomAppBuilder from "../custom-apps/CustomAppBuilder";
-import DocumentsWorkspace from "../documents/DocumentsWorkspace";
 import DocumentTemplateWorkspace from "../documents/DocumentTemplateWorkspace";
 import QueryResultView from "../query/QueryResultView";
 import QueryWorkspace from "../query/QueryWorkspace";
@@ -59,7 +58,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
   });
 
   // Records render on v2 in records-view/RecordsScreen; this island serves the remaining kinds.
-  if (route.kind === "records") return null;
+  if (route.kind === "records" || route.kind === "documents") return null;
 
   return (
     <>
@@ -143,22 +142,6 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
                   initialDocumentViewMode={document.initialDocumentViewMode}
                   initialBrowserPage={document.initialBrowserPage}
                   dateConfig={state.dateConfig}
-                />
-              );
-            })()}
-          </Match>
-          <Match when={route.kind === "documents"}>
-            {(() => {
-              if (route.kind !== "documents") return null;
-              return (
-                <DocumentsWorkspace
-                  baseId={state.base.id}
-                  canWriteDocuments={route.canWriteDocuments}
-                  documentTemplateLevels={state.catalog.documentTemplateLevels}
-                  linkableWorkflowIds={state.catalog.workflows.map((workflow) => workflow.id)}
-                  initialCatalog={route.initialCatalog}
-                  facets={route.facets}
-                  initialBrowserPage={route.initialBrowserPage}
                 />
               );
             })()}

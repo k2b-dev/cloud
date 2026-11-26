@@ -4,6 +4,7 @@ import { NotFoundState } from "@k2b/ui";
 import { currentActorUser } from "../../api/permissions";
 import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";
+import DocumentsScreen from "../_components/documents/DocumentsScreen.island";
 import BaseHome from "../_components/frame/BaseHome.island";
 import { homeTab, resourcesQuery } from "../_components/frame/resources-query";
 import RecordsScreen from "../_components/records-view/RecordsScreen.island";
@@ -94,6 +95,14 @@ export default ssr<AuthContext>(async (c) => {
       </Layout>
     );
   }
+
+  if (state.route.kind === "documents")
+    return () => (
+      <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
+        <RememberGridsPath />
+        <DocumentsScreen state={state} />
+      </Layout>
+    );
 
   if (state.route.kind === "records") {
     const now = new Date().toISOString();

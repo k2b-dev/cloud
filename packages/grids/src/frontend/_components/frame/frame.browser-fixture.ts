@@ -4,6 +4,7 @@
  * missing descriptions, huge counts), `huge` a Grids with 1,000 bases and a base with 1,000 tables.
  */
 import type { PublicBase, PublicTable } from "../../../api/public-dto";
+import { documentCatalogIsFlat, parseDocumentCatalogUrlState } from "../documents/document-catalog-url-state";
 import type { BasesOverviewProps } from "../overview/BasesOverview";
 import { recordsFilterStatements } from "../records-view/filter-statements";
 import { parseRecordsState } from "../records-view/query-url";
@@ -307,5 +308,84 @@ export const recordsFixture = (variant: FixtureVariant, params: URLSearchParams)
     dateConfig: DATE_CONFIG,
     now: FIXTURE_NOW,
     workspaceRouteKey: "records:table::false",
+  };
+};
+
+const document = (index: number, variant: FixtureVariant) => {
+  const worst = variant === "worst";
+  const name =
+    worst && index === 0
+      ? "Rechnung-2026-11-0042-Werkstatt-Nordhausen-Ersatzteile-Druckluftanlage-final-v3.pdf"
+      : `Rechnung-2026-${String(index + 1).padStart(4, "0")}.pdf`;
+  return {
+    id: `D${String(index).padStart(5, "0")}`,
+    baseId: "Bas001",
+    tableId: null,
+    recordId: null,
+    templateId: index % 3 === 0 ? null : "TPL001",
+    workflowId: index % 3 === 0 ? "WFL001" : null,
+    workflowRunId: index % 3 === 0 ? `RUN${index}` : null,
+    number: worst && index === 1 ? "物流-請求書-0001" : `R-2026-${index + 1}`,
+    filename: name,
+    createdAt: minutesAgo(index * 53 + 7),
+    tags: [],
+    createdBy: null,
+    renderer: { kind: "html" as const },
+    validationStatus: "valid" as const,
+    artifacts: [
+      {
+        key: "pdf",
+        filename: name,
+        mimeType: index % 5 === 4 ? "application/zip" : "application/pdf",
+        sizeBytes: 48_213 + index,
+        sha256: "a".repeat(64),
+        downloadUrl: `/api/grids/documents/D${index}/artifacts/pdf`,
+      },
+    ],
+    primaryArtifactKey: "pdf",
+    downloadUrl: `/api/grids/documents/D${index}/download`,
+    sourceRecordCount: null,
+    dataSnapshot: null,
+  };
+};
+
+/** "All documents" of the fixture base: folders at the start, a list when the address asks for one. */
+export const documentsFixture = (variant: FixtureVariant, params: URLSearchParams) => {
+  const catalog = parseDocumentCatalogUrlState(params);
+  const flat = documentCatalogIsFlat(catalog);
+  const count = variant === "huge" ? 1000 : variant === "worst" ? 12 : 18;
+  const items = flat || catalog.path.length ? Array.from({ length: count }, (_, index) => document(index, variant)) : [];
+  const frame = baseHomeFixture(variant, { edit: false, groups: false });
+  return {
+    frame: { ...frame, route: { kind: "documents" as const, activeKey: "documentTemplate:all" } },
+    revision: FIXTURE_REVISION,
+    baseId: "Bas001",
+    canWriteDocuments: true,
+    documentTemplateLevels: { TPL001: "admin" as const },
+    linkableWorkflowIds: ["WFL001"],
+    initialCatalog: catalog,
+    facets: {
+      workflows: [
+        { id: "WFL001", name: variant === "worst" ? "Monatsabschluss-und-Export-an-die-Steuerberatung-2026" : "Monatsabschluss" },
+      ],
+      templates: [{ id: "TPL001", name: "Rechnung" }],
+      tables: [{ id: "T1", name: "Aufträge" }],
+      mediaTypes: ["application/pdf", "application/zip"],
+    },
+    initialBrowserPage: {
+      items,
+      path: catalog.path,
+      cursor: null,
+      hasMore: false,
+      folders: flat
+        ? []
+        : catalog.path.length === 0
+          ? [
+              { kind: "template" as const, key: "TPL001", label: "Rechnung", path: ["TPL001"], count: count - 6 },
+              { kind: "workflow" as const, key: "workflow:WFL001", label: "Monatsabschluss", path: ["workflow:WFL001"], count: 6 },
+            ]
+          : [],
+    },
+    dateConfig: DATE_CONFIG,
   };
 };

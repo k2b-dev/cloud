@@ -3,7 +3,8 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
 
-const { default: DocumentsWorkspace } = await import("./DocumentsWorkspace");
+const { default: DocumentsScreen } = await import("./DocumentsScreen");
+const { testFrame } = await import("../records-view/records-frame.test-fixture");
 const { default: DocumentBrowser } = await import("./DocumentBrowser");
 const { DEFAULT_DOCUMENT_CATALOG_STATE } = await import("./document-catalog-url-state");
 
@@ -39,9 +40,10 @@ test("document errors appear once and preserve distinct details", () => {
   expect(renderError("Request timed out")).toContain(title);
 });
 
-test("All documents renders its initial folders and search field on the server", () => {
+test("All documents on v2 renders its initial folders and search field on the server", () => {
   const html = renderToString(() =>
-    createComponent(DocumentsWorkspace, {
+    createComponent(DocumentsScreen, {
+      frame: testFrame(),
       baseId: "BASE01",
       canWriteDocuments: false,
       documentTemplateLevels: {},
@@ -60,7 +62,8 @@ test("All documents renders its initial folders and search field on the server",
   expect(html).toContain("Demo invoices");
   expect(html).toContain('type="search"');
   expect(html).toContain("Folders");
-  expect(html).not.toContain("Loading documents");
+  expect(html).toContain('href="/app/grids/BASE01/documents?path=TMPL01"');
+  expect(html).not.toContain('data-k2-part="Loading"');
 });
 
 test("All documents renders filtered rows with their file type and a link to the workflow run", () => {
@@ -95,7 +98,8 @@ test("All documents renders filtered rows with their file type and a link to the
     dataSnapshot: null,
   };
   const html = renderToString(() =>
-    createComponent(DocumentsWorkspace, {
+    createComponent(DocumentsScreen, {
+      frame: testFrame(),
       baseId: "BASE01",
       canWriteDocuments: false,
       documentTemplateLevels: {},

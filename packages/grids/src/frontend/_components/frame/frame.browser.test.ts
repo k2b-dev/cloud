@@ -427,3 +427,61 @@ describe("the records page on v2", () => {
     }
   }, 90_000);
 });
+
+describe("all documents on v2", () => {
+  const documents = "/app/grids/Bas001/documents";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const view of [wide, narrow, phone])
+        for (const address of [documents, `${documents}?mode=list`]) {
+          const { context, tab, errors } = await open(view, address, variant);
+          try {
+            await expectClean(tab);
+            await shoot(tab, `grids-documents-${address.includes("list") ? "list" : "folders"}-${variant}-light-${view.name}`);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 120_000);
+
+  test("a folder opens in the address and Back returns to the folders", async () => {
+    const { context, tab, errors } = await open(wide, documents);
+    try {
+      await tab.locator("[data-k2-part=Pane] [data-k2-part=List] [data-k2-part=Row]").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("path") === "TPL001");
+      expect(await tab.locator("[data-k2-part=Path]").textContent()).toContain("Rechnung");
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("path"));
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Tabs]").count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("filters and an old sort name keep working in the address", async () => {
+    const { context, tab, errors } = await open(wide, `${documents}?view=list&workflow=WFL001&sort=oldest`);
+    try {
+      const bar = tab.locator("[data-k2-part=FilterBar]");
+      expect(await bar.textContent()).toContain("Monatsabschluss");
+      // a run this person can open is a link to it
+      expect(await tab.locator('[data-k2-part=Table] a[href*="/workflows/WFL001?run="]').count()).toBeGreaterThan(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 documents keep only the rows in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, `${documents}?mode=list`, "huge");
+    try {
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(`grids documents huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms`);
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});

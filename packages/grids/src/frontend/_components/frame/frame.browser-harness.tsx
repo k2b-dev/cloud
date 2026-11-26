@@ -1,10 +1,11 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import DocumentsScreen from "../documents/DocumentsScreen";
 import BasesOverview from "../overview/BasesOverview";
 import { basesQuery, parseBasesAddress } from "../overview/bases-query";
 import RecordsView from "../records-view/RecordsView";
 import BaseHome from "./BaseHome";
-import { baseHomeFixture, basesFixture, type FixtureVariant, recordsFixture } from "./frame.browser-fixture";
+import { baseHomeFixture, basesFixture, documentsFixture, type FixtureVariant, recordsFixture } from "./frame.browser-fixture";
 import { homeTab, resourcesQuery } from "./resources-query";
 
 /**
@@ -19,7 +20,9 @@ const params = new URLSearchParams(location.search);
 render(
   () => (
     <LocaleProvider locale="de">
-      {location.pathname.includes("/table/") ? (
+      {location.pathname.endsWith("/documents") ? (
+        <DocumentsScreen {...documentsFixture(variant, params)} />
+      ) : location.pathname.includes("/table/") ? (
         <RecordsView {...recordsFixture(variant, params)} />
       ) : location.pathname === "/app/grids" ? (
         <BasesOverview state={parseBasesAddress(basesQuery("de"), params).state} {...basesFixture(variant, params)} />

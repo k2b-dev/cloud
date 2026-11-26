@@ -88,9 +88,8 @@ function HomeHead(props: HomeProps) {
               { label: t().allResources, href: tabHref("resources"), current: props.tab === "resources" },
             ]}
           />
-        ) : (
-          <Text type="body">{props.state.base.name}</Text>
-        )
+        ) : // the sidebar names the base and marks its overview; the head does not repeat it (look rules)
+        undefined
       }
       end={
         <>
