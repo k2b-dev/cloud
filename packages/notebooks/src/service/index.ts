@@ -44,6 +44,7 @@ export const notebooksService = {
     list: activity.list,
     record: activity.record,
     noteAuthors: activity.noteAuthors,
+    noteEditDays: activity.noteEditDays,
   },
   notebook: {
     list: async (config: {

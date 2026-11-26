@@ -3,7 +3,7 @@ import { sql } from "@k2b/cloud";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
-import { list, noteAuthors, record } from "./activity";
+import { list, noteAuthors, noteEditDays, record } from "./activity";
 
 const AVATAR_HASH = "a".repeat(64);
 const AVATAR_DATA_URL = "data:image/png;base64,iVBORw0KGgo=";
@@ -103,3 +103,32 @@ databaseTest(
     expect(await list({ ...params, actions: [] })).toEqual({ items: [], nextCursor: null });
   },
 );
+
+databaseTest("edit days count a note's edits per local day, today last, and the people who made them", async () => {
+  await sql`DELETE FROM notebooks.activity_events WHERE note_id = ${noteId}::uuid`;
+  const now = new Date("2026-10-16T10:00:00.000Z");
+  const at = (iso: string) => new Date(iso);
+  const edit = (action: "note.created" | "note.edited" | "note.restored" | "comment.created", actorId: string, iso: string) =>
+    record({ notebookId, noteId, action, actor: { kind: "user", id: actorId }, occurredAt: at(iso) });
+  // Berlin is two hours ahead: 22:30 UTC on the 15th is already the 16th there.
+  await edit("note.edited", editorId, "2026-10-15T22:30:00.000Z");
+  await edit("note.edited", creatorId, "2026-10-16T09:00:00.000Z");
+  await edit("note.restored", editorId, "2026-10-15T08:00:00.000Z");
+  await edit("note.created", creatorId, "2026-10-14T08:00:00.000Z");
+  // Comments are no edits, and what lies before the 30 days is not counted.
+  await edit("comment.created", editorId, "2026-10-16T09:30:00.000Z");
+  await edit("note.edited", editorId, "2026-09-10T08:00:00.000Z");
+
+  const berlin = await noteEditDays({ noteId, days: 30, timeZone: "Europe/Berlin", now });
+  expect(berlin.perDay).toHaveLength(30);
+  expect(berlin.perDay.slice(-3)).toEqual([1, 1, 2]);
+  expect(berlin.perDay.reduce((sum, count) => sum + count, 0)).toBe(4);
+  expect(berlin.people).toBe(2);
+  const utc = await noteEditDays({ noteId, days: 30, timeZone: "UTC", now });
+  expect(utc.perDay.slice(-3)).toEqual([1, 2, 1]);
+  expect(await noteEditDays({ noteId: crypto.randomUUID(), days: 30, timeZone: "UTC", now })).toEqual({
+    perDay: Array(30).fill(0),
+    people: 0,
+  });
+  await sql`DELETE FROM notebooks.activity_events WHERE note_id = ${noteId}::uuid`;
+});

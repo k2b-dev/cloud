@@ -115,6 +115,7 @@ export default ssr<AuthContext>(async (c) => {
     readonlyMode,
     graph,
     versionHistory,
+    editDays,
     ctx,
     appUrl,
     currentHref,
@@ -163,6 +164,7 @@ export default ssr<AuthContext>(async (c) => {
           dateConfig={dateConfig}
           initialVersions={versionHistory?.versions}
           initialTotal={versionHistory?.total}
+          edits={editDays ?? undefined}
           initialVersionId={c.req.query("version") || null}
         />
       </Layout>
