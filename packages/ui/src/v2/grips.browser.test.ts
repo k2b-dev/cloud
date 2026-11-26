@@ -38,7 +38,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, options: { dir?: "rtl"; touch?: boolean } = {}) => {
+const withPage = async (run: (page: Page) => Promise<void>, options: { dir?: "rtl"; touch?: boolean; fixture?: "widths" } = {}) => {
   const page = await browser.newPage({ viewport: { width: 1400, height: 800 }, hasTouch: options.touch });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -46,6 +46,7 @@ const withPage = async (run: (page: Page) => Promise<void>, options: { dir?: "rt
     await page.setContent(
       `<!doctype html><html lang="de"${options.dir ? ` dir="${options.dir}"` : ""}><head><meta charset="utf-8"><title>Griffe</title><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
+    if (options.fixture) await page.evaluate((fixture) => (window.__k2GripsFixture = fixture), options.fixture);
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -220,7 +221,8 @@ test("a table's column grip moves the column before it by keys and by a drag, at
     await page.keyboard.press("Home");
     await widths(page, { subject: 120 });
     await page.keyboard.press("End");
-    await widths(page, { subject: 488, from: 140 });
+    // the other columns give way down to their minimum (a dragged column holds only itself), then the table scrolls
+    await widths(page, { subject: 488, from: 80 });
     await page.keyboard.press("Enter");
     await widths(page, { subject: 200 });
     await drag(page, grips.subject, 30);
@@ -229,6 +231,68 @@ test("a table's column grip moves the column before it by keys and by a drag, at
     await values(page, grips.subject, ["120", "230", "488", "230 px"]);
   });
 });
+
+// Delta review r2 of #4209: a column that stands wider than its default (a small table whose columns all have widths,
+// in a wide pane) moves from where it stands, not from its default; the other columns give way by at most the step
+// and none of them drops, and Escape after a drag puts the table back as it was laid out.
+const heads = (page: Page) =>
+  page.$$eval(".k2-table th", (cells) =>
+    cells
+      .filter((cell) => getComputedStyle(cell).visibility !== "hidden" && cell.getBoundingClientRect().width > 0)
+      .map((cell) => ({ title: cell.textContent?.trim() ?? "", width: cell.getBoundingClientRect().width })),
+  );
+const gruppe = '.k2-cgrip[aria-label="Gruppe"]';
+
+test("a column wider than its default moves from where it stands; the others give way by at most the step and stay", async () => {
+  await withPage(
+    async (page) => {
+      const before = await heads(page);
+      expect(before.map((head) => head.title)).toEqual(["Gruppe", "Rolle", "Einlieferer", "Stand"]);
+      expect(before[0]!.width).toBeGreaterThan(268 + 8);
+      await page.locator(gruppe).focus();
+      await page.keyboard.press("ArrowRight");
+      await page.waitForFunction(
+        (want) => Math.round(document.querySelector(".k2-table th")!.getBoundingClientRect().width) === want,
+        Math.round(before[0]!.width) + 8,
+      );
+      const after = await heads(page);
+      expect(after.map((head) => head.title)).toEqual(before.map((head) => head.title));
+      for (const [at, head] of after.entries())
+        if (at > 0) {
+          expect(head.width).toBeLessThanOrEqual(before[at]!.width + 0.5);
+          expect(head.width).toBeGreaterThanOrEqual(before[at]!.width - 8.5);
+        }
+      // the row is still filled exactly, no sideways scroll
+      expect(await page.$eval(".k2-table-scroll", (scroller) => scroller.scrollWidth - scroller.clientWidth)).toBeLessThanOrEqual(0);
+    },
+    { fixture: "widths" },
+  );
+});
+
+test.skipIf(webkit)(
+  "a drag of a column wider than its default starts where it stands, and Escape lays the table out as before [skipped in WebKit: WEBKIT_HELD]",
+  async () => {
+    await withPage(
+      async (page) => {
+        const before = await heads(page);
+        await drag(page, gruppe, 20);
+        await page.waitForFunction(
+          (want) => Math.round(document.querySelector(".k2-table th")!.getBoundingClientRect().width) === want,
+          Math.round(before[0]!.width) + 20,
+        );
+        await page.keyboard.press("Escape");
+        await page.mouse.up();
+        await page.waitForFunction(
+          (want) => Math.round(document.querySelector(".k2-table th")!.getBoundingClientRect().width) === want,
+          Math.round(before[0]!.width),
+        );
+        const after = await heads(page);
+        for (const [at, head] of after.entries()) expect(Math.round(head.width)).toBe(Math.round(before[at]!.width));
+      },
+      { fixture: "widths" },
+    );
+  },
+);
 
 // The browser takes a touch gesture that starts on an element without touch-action: none (a pan of the table's
 // scroller), and cancels the pointer: the drag ended back at the start. Chromium only: Playwright's WebKit has no way
@@ -247,7 +311,8 @@ test.skipIf(webkit)("a touch drag moves a table column [skipped in WebKit: no to
         await page.evaluate(() => new Promise(requestAnimationFrame));
       }
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      await widths(page, { subject: 264, from: 140 });
+      // "Datum" (no width) gives way to its minimum first, then "Von": 80 + (488 − 264 − 80 − 96) = 128
+      await widths(page, { subject: 264, from: 128 });
     },
     { touch: true },
   );

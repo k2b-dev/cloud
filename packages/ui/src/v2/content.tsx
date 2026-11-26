@@ -603,11 +603,24 @@ const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
  * The grip at the start of a column head: it moves the width of the column before it (`useGrip`). A column is at
  * most as wide as the table's visible width; the table scrolls sideways when its columns need more.
  */
-const ColumnGrip = (props: { label: string; width: { min: number; default: number }; value: number; onChange: (px: number) => void }) => {
+const ColumnGrip = (props: {
+  label: string;
+  width: { min: number; default: number };
+  /** The width a drag gave the column; nothing while it stands by the table's layout. */
+  size: number | undefined;
+  onChange: (px: number | undefined) => void;
+}) => {
   const grip = useGrip({
     label: () => props.label,
-    value: () => props.value,
+    value: () => props.size ?? props.width.default,
     onChange: (px) => props.onChange(px),
+    // a column never dragged moves from where it stands, also wider than its default (delta review r2)
+    start: (now) => props.size ?? now,
+    // Escape puts back what was before the drag, also "never dragged"
+    undo: () => {
+      const size = props.size;
+      return () => props.onChange(size);
+    },
     min: () => props.width.min,
     reset: () => props.width.default,
     direction: () => 1,
@@ -723,15 +736,9 @@ export const Table = <T,>(props: TableProps<T>) => {
     props.columns.map((column, index) => {
       const fit = (signs()[index] ?? 0) > 0 ? (signs()[index] ?? 0) * figureWidth + 32 : 0;
       const dragged = sizes()[index];
-      // once a person has dragged a column, the columns hold their widths (the table scrolls instead of squeezing them)
-      const arranged = Object.keys(sizes()).length > 0;
-      const range = column.width ? widthRange(column.width) : undefined;
-      const span =
-        dragged !== undefined
-          ? { min: dragged, default: dragged }
-          : range && arranged
-            ? { min: range.default, default: range.default }
-            : range;
+      // a dragged column holds the width it was given; the others give way and drop as before (delta review r2: holding
+      // them all at their default made them jump and a drop column leave on the first drag)
+      const span = dragged !== undefined ? { min: dragged, default: dragged } : column.width ? widthRange(column.width) : undefined;
       const lo = Math.max(span?.min ?? flexibleMin, fit);
       return { lo, hi: Math.max(span?.default ?? flexibleColumn, lo) };
     }),
@@ -745,37 +752,50 @@ export const Table = <T,>(props: TableProps<T>) => {
   // below default), in the measure they give way: no column takes all of it, and an action column at the end leaves
   // no air on the right. Columns without a width take the rest themselves (below).
   const round = (value: number) => Math.round(value * 10000) / 10000;
+  // A column's share of a room, given every column's part (0: not sharing), rounded. The last sharing column takes
+  // what the others leave, so the shares never add up to more than the room (delta review r2: 0.1 px a column made
+  // the table scroll by 1 px).
+  const share = (index: number, parts: readonly number[]) => {
+    const sum = parts.reduce((all, part) => all + part, 0);
+    if (sum <= 0 || parts[index]! <= 0) return 0;
+    const last = parts.findLastIndex((part) => part > 0);
+    if (index !== last) return round(parts[index]! / sum);
+    return round(1 - parts.reduce((taken, part, at) => (at === last || part <= 0 ? taken : taken + round(part / sum)), 0));
+  };
   const shrink = (index: number, gone: ReadonlySet<number> = new Set()) => {
     const { lo, hi } = need()[index]!;
+    const shown = (at: number) => !gone.has(at);
+    const isFree = (at: number) => shown(at) && props.columns[at]!.width === undefined;
     // a column without a width only fills what is left, so it counts with its minimum: the others reach their default
     // as soon as the row holds them and that minimum
-    const reach = (at: number) => (props.columns[at]!.width === undefined ? need()[at]!.lo : need()[at]!.hi);
-    const least = need().reduce((sum, each, at) => (gone.has(at) ? sum : sum + each.lo), box);
-    const most = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + reach(at)), box);
+    const reach = (at: number) => (isFree(at) ? need()[at]!.lo : need()[at]!.hi);
+    const least = need().reduce((sum, each, at) => (shown(at) ? sum + each.lo : sum), box);
+    const most = need().reduce((sum, _, at) => (shown(at) ? sum + reach(at) : sum), box);
     const below =
       hi === lo || most <= least
         ? `${lo}px`
-        : `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${round((hi - lo) / (most - least))}), ${hi}px)`;
+        : `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${share(
+            index,
+            need().map((each, at) => (shown(at) && !isFree(at) ? each.hi - each.lo : 0)),
+          )}), ${hi}px)`;
     // What grows: the columns without a width (below); without them, the columns that can give way, in the measure they
     // do; when every column is fixed, the last one, so there is always one that takes the rest of the row.
-    const span = (at: number) => (props.columns[at]!.width && !held(at) ? need()[at]!.hi - need()[at]!.lo : 0);
-    const spans = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + span(at)), 0);
-    const free = need().filter((_, at) => !gone.has(at) && props.columns[at]!.width === undefined).length;
+    const free = need().filter((_, at) => isFree(at)).length;
     // The columns without a width fill the whole rest of the row together. Each keeps its minimum; what the row has
     // beyond the others and those minimums (100cqw − most) goes to them in the measure their content asks for more
     // than its minimum. So they sum to the row exactly from `least` on, and a short column raised to its minimum
     // takes nothing from the long one's share (delta review of #4209: no sideways scroll at medium widths).
-    const isFree = (at: number) => !gone.has(at) && props.columns[at]!.width === undefined;
     if (free > 0 && isFree(index)) {
-      const extra = (at: number) => Math.max(rooms()[at]! - need()[at]!.lo, 0);
-      const extras = need().reduce((sum, _, at) => (isFree(at) ? sum + extra(at) : sum), 0);
-      const weight = extras > 0 ? extra(index) / extras : 1 / free;
-      return `max(${lo}px, calc(${lo}px + (100cqw - ${most}px) * ${round(weight)}))`;
+      const extras = need().map((each, at) => (isFree(at) ? Math.max(rooms()[at]! - each.lo, 0) : 0));
+      const parts = extras.some((extra) => extra > 0) ? extras : need().map((_, at) => (isFree(at) ? 1 : 0));
+      return `max(${lo}px, calc(${lo}px + (100cqw - ${most}px) * ${share(index, parts)}))`;
     }
-    const lastShown = props.columns.findLastIndex((_, at) => !gone.has(at));
-    const weight = free > 0 ? 0 : spans > 0 ? span(index) / spans : index === lastShown ? 1 : 0;
+    if (free > 0) return below;
+    const spans = need().map((each, at) => (shown(at) && props.columns[at]!.width && !held(at) ? each.hi - each.lo : 0));
+    const lastShown = props.columns.findLastIndex((_, at) => shown(at));
+    const weight = spans.some((span) => span > 0) ? share(index, spans) : index === lastShown ? 1 : 0;
     if (weight === 0) return below;
-    return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${round(weight)}))`;
+    return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${weight}))`;
   };
   const colWidth = (column: Column<T>, index: number, gone?: ReadonlySet<number>): string | undefined => {
     const count = signs()[index] ?? 0;
@@ -978,8 +998,15 @@ export const Table = <T,>(props: TableProps<T>) => {
                         <ColumnGrip
                           label={props.columns[index() - 1]?.title ?? ""}
                           width={width()}
-                          value={sizes()[index() - 1] ?? width().default}
-                          onChange={(px) => setSizes((sizes) => ({ ...sizes, [index() - 1]: px }))}
+                          size={sizes()[index() - 1]}
+                          onChange={(px) =>
+                            setSizes((sizes) => {
+                              const next = { ...sizes };
+                              if (px === undefined) delete next[index() - 1];
+                              else next[index() - 1] = px;
+                              return next;
+                            })
+                          }
                         />
                       )}
                     </Show>
