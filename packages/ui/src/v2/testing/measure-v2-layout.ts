@@ -30,6 +30,9 @@
  *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
  *   whole and cuts a line at its end only with "…".
+ * - **squeezed** (`measure-v2-squeezed.ts`): no text is pressed by its neighbours to a box of a few px or to one
+ *   letter per line; a visually hidden name is no finding.
+ * - **past** (`measure-v2-squeezed.ts`): no row runs past its column or the screen, no part of a row past the row.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -44,6 +47,7 @@
  */
 import type { Page } from "playwright";
 import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
+import { measurePastInPage, measureSqueezedInPage } from "./measure-v2-squeezed";
 import { settled } from "./settled";
 
 export type V2LayoutOptions = {
@@ -86,6 +90,10 @@ export type V2Layout = {
   inside: string[];
   /** Cut control labels and one-line texts that wrap. */
   cut: string[];
+  /** Text pressed to a box of a few px or to one letter per line (see `measure-v2-squeezed.ts`). */
+  squeezed: string[];
+  /** Rows past their column or the screen, and parts of a row past the row (see `measure-v2-squeezed.ts`). */
+  past: string[];
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
@@ -752,10 +760,10 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     untyped: options.untyped ?? "[data-k2-avatar]",
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
-    // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
+    // A row of three lines cuts each line, a row of two its second; the title of one or two lines may wrap (the row is about it).
     oneLine:
       options.oneLine ??
-      ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
+      ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row[data-lines='2'] > .k2-row-l2, .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
     sizes: roles.map((role) => role.size),
     lineHeights: [...new Set(roles.map((role) => role.lineHeight))],
     weights: [...fontWeights],
@@ -811,12 +819,26 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     if (JSON.stringify(now) !== JSON.stringify(then))
       grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
   }
-  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
+  const text = await page.evaluate(measureSqueezedInPage, { root: limits.root, skip: limits.skip });
+  const edges = await page.evaluate(measurePastInPage, { root: limits.root, skip: limits.skip });
+  const problems = [
+    ...dom.pseudo,
+    ...dom.edge,
+    ...dom.double,
+    ...dom.inside,
+    ...dom.cut,
+    ...text.squeezed,
+    ...edges.past,
+    ...dom.type,
+    ...grip,
+  ];
   return {
     edge: dom.edge,
     double: dom.double,
     inside: dom.inside,
     cut: dom.cut,
+    squeezed: text.squeezed,
+    past: edges.past,
     type: dom.type,
     grip,
     grips,

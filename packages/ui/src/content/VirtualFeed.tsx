@@ -17,6 +17,7 @@ import { isServer } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useFeedMessages } from "./feed-messages";
 import { LoadMore } from "./LoadMore";
+import { carrySizes, indexAtOffset, prefixOffsets } from "./virtual-sizes";
 
 /**
  * The tallest loaded window in px. Firefox renders an element taller than about 17.9 M px with a height of 0, so the
@@ -306,30 +307,17 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     return size > 0 ? size : 1;
   };
 
+  // The size model is shared with the v2 lists (`virtual-sizes.ts`): prefix sums over the loaded window [lo, hi).
   const recompute = () => {
-    const length = hi - lo;
-    if (offsets.length !== length + 1) {
-      offsets = new Float64Array(length + 1);
-      dirtyFrom = 0;
-    }
-    for (let j = dirtyFrom; j < length; j++) offsets[j + 1] = offsets[j]! + sizes[lo + j]!;
-    dirtyFrom = length;
+    offsets = prefixOffsets(sizes, lo, hi, offsets, dirtyFrom);
+    dirtyFrom = hi - lo;
   };
   const total = () => offsets[hi - lo]!;
   /** The farthest position the reader can scroll to, at this viewport height. */
   const maxTop = (height: number) => Math.max(0, total() + tail - height);
   const offsetOf = (index: number) => offsets[Math.min(hi - lo, Math.max(0, index - lo))]!;
   /** The loaded item whose bottom edge lies below `y`. */
-  const indexAt = (y: number) => {
-    let low = 0;
-    let high = hi - lo - 1;
-    while (low < high) {
-      const middle = (low + high) >> 1;
-      if (offsets[middle + 1]! <= y) low = middle + 1;
-      else high = middle;
-    }
-    return lo + Math.max(0, low);
-  };
+  const indexAt = (y: number) => lo + indexAtOffset(offsets, hi - lo, y);
 
   const anchorAt = (top: number) => {
     const index = indexAt(top);
@@ -977,14 +965,12 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       if (lo > 0) lo += shift;
       hi += shift;
     } else {
-      const known = new Map<string, number>();
-      for (let index = 0; index < previous; index++) known.set(keys[index]!, sizes[index]!);
       const position = new Map<string, number>();
       for (let index = 0; index < length; index++) position.set(nextKeys[index]!, index);
-      if (!nextKeys.some((key) => known.has(key))) reset();
+      const carried = carrySizes(keys, sizes, nextKeys, (index) => estimate(next[index]!));
+      if (!carried) reset();
       else {
-        sizes = new Float64Array(length);
-        for (let index = 0; index < length; index++) sizes[index] = known.get(nextKeys[index]!) ?? estimate(next[index]!);
+        sizes = carried;
         // An item that is gone hands its role to the nearest surviving neighbor.
         const survivor = (from: number) => {
           for (let distance = 0; distance < previous; distance++) {

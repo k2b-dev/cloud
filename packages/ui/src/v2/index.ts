@@ -10,6 +10,7 @@
  *   enforce this.
  */
 
+export { NoticeStack, type NoticeStackProps, TabBar, type TabBarItem, type TabBarProps } from "./app-frame";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -40,12 +41,16 @@ export {
 export {
   type CellValue,
   type Column,
+  Cut,
+  type CutProps,
   type Fact,
   Facts,
   type FactsProps,
   Inline,
   type InlineProps,
   List,
+  type ListController,
+  type ListGroup,
   type ListProps,
   type OpenTarget,
   Prose,

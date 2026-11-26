@@ -19,6 +19,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
 - **Phone (below 768 px):** the sidebar leaves, and head actions hide unless they have `keep`. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
 - **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
+- **An installed app:** where no shell holds the app's places, a `TabBar` at the bottom edge holds them on the phone: four places and "Mehr" with the others in a sheet. From 768 px it leaves, and the app's `Nav` beside the page holds them.
 
 ## Tabs or path?
 
@@ -58,9 +59,15 @@ A bar of fixed height with one line below and two places, `start` and `end`; its
 
 ### Nav
 
-The app's places in the sidebar: groups with a heading and a deed, counts, dots, folding entries and a foot.
+The app's places in the sidebar: groups with a heading and a deed, quiet counts and counts that call for attention (`unread`, a filled figure read out as "3 ungelesen"), dots, folding entries and a foot; a brand's `logo` in the place of the icon.
 
 <Props of="Nav NavGroup NavItem" />
+
+### TabBar
+
+The places of an installed app on the phone, at the bottom edge with the safe area: four and "Mehr" with the others and their counts in a sheet; a count that calls for attention stands as a filled figure on its symbol and is read out in words. From 768 px it leaves.
+
+<Props of="TabBar TabBarItem" />
 
 ### Tabs
 
