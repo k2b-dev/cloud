@@ -114,9 +114,11 @@ const NavEnd = (props: { item: NavItem }) => {
   return (
     <>
       <span class="k2-ni-name">{props.item.label}</span>
-      <Show when={status()}>{(dot) => <Dot status={dot()} />}</Show>
-      <Show when={props.item.dot === "running"}>
-        <NavRunning label={t().running} />
+      {/* one place for the dot or the running mark, so an entry without either renders as it did before */}
+      <Show when={props.item.dot}>
+        <Show when={status()} fallback={<NavRunning label={t().running} />}>
+          {(dot) => <Dot status={dot()} />}
+        </Show>
       </Show>
       <Show when={props.item.count !== undefined}>
         <span class="k2-ni-count">{props.item.count}</span>
