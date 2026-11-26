@@ -396,6 +396,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* the place of a split at the top, as wide as it: a split's own rule asks it (see `Pane side`) */
+  container: k2-host / inline-size;
 }
 .k2-ui .k2-ws-main > * {
   flex: none;
@@ -621,6 +623,11 @@
 }
 .k2-ui .k2-scroll > .k2-split {
   flex: 1 0 auto;
+}
+/* A main column with its context column (`Pane side`): the reach of a grip (its `::after`) stays inside its line, so
+   the split, which scrolls where the context gives way, never grows by it and ends at its content. */
+.k2-ui .k2-split[data-context] > .k2-seam {
+  overflow-y: clip;
 }
 
 /* ── Bar: fixed height by place, line below, places start and end ──────────────────────────────────────────── */
@@ -5186,8 +5193,9 @@
    What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
    fields of a row, cells and the way of steps stand one under the other, and no column of a table is dragged. What
    is about touch and the page (rows of 60 px, the phone bar, columns as pages, the text edge) stays with the window. */
+/* a pane is also the place (`k2-host`) of a split inside it, as wide as that split (see `Pane side`) */
 .k2-ui .k2-pane {
-  container: k2-pane / inline-size;
+  container: k2-pane k2-host / inline-size;
 }
 @container k2-pane (max-width: 479px) {
   /* an entry of a digest puts its date, title, state and text one under the other: beside each other the text would
