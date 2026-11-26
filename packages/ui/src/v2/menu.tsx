@@ -40,8 +40,9 @@ export type MenuItem = {
   /** A submenu, opened to the side. */
   items?: readonly MenuEntry[];
   /**
-   * In place of `items`: a panel opened to the side like a submenu, such as a `DatePicker`; on the phone the sheet's
-   * next step. Its keys stay its own (only Escape goes back); `close` closes the menu once the panel has picked.
+   * In place of `items`: a panel, such as a `DatePicker`, opened as the next step: it takes the place of the menu the
+   * entry stands in (on the phone a sheet of its own) under a head that leads back, and Escape leads back too. Its keys
+   * stay its own (the arrows walk a calendar, not the menu); `close` closes the menu once the panel has picked.
    */
   panel?: (close: () => void) => JSX.Element;
   /** In a section with `choice`: what choosing this entry gives; its `label` by default. */
@@ -287,20 +288,34 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
 );
 
 /**
- * An entry that opens a panel (a calendar) beside it: a menu item, so the menu's keys reach it, that is also the
- * trigger of its own popover. The popover is a dialog of its own at the end of the page, a layer over the menu: the
- * menu never sees its keys, a press inside it is no press outside the menu, Escape closes it first and puts the focus
- * back on the entry. Enter, Space and the arrow to the side open it, as they open a submenu; it stays open while the
- * menu's data changes (a clock that moved on keeps what was typed in it). On the phone it is a sheet of its own.
+ * An entry that opens a panel (a calendar) as the next step: a menu item, so the menu's keys reach it, that is also
+ * the trigger of its own popover. The popover is a dialog of its own at the end of the page, a layer over the menu:
+ * the menu never sees its keys (the arrows stay with the calendar), a press inside it is no press outside the menu.
+ * On a wide screen it takes the place of the menu the entry stands in (at most two layers show); on the phone it is a
+ * sheet of its own. Its head, Escape and the back button lead back to the entry. Enter, Space and the arrow to the side
+ * open it, as they open a submenu; it stays open while the menu's data changes (a clock that moved on keeps what was
+ * typed in it).
  */
 const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Record<string, unknown>; lead: boolean }) => {
   const t = useOverlayMessages();
   const phone = usePhone();
   const [open, setOpenState] = createSignal(false);
   const [entry, setEntry] = createSignal<HTMLElement>();
+  // Where the panel stands on a wide screen: on the corner of its menu that the menu grew from, taken when it opens
+  // (before the menu gives way). A menu that opened to the left, or that stands at the end of its button, grows to the
+  // left; every other one, also a context menu at the pointer or a menu turned upwards, to the right.
+  const [place, setPlace] = createSignal<{ x: number; y: number; toLeft: boolean }>();
   // Closing gives the menu its place back at once, before the focus returns to the entry in it (a hidden entry takes
   // no focus); the focus then stands on the entry unless something else took it.
   const setOpen = (next: boolean) => {
+    if (next && !open()) {
+      const menu = entry()?.closest<HTMLElement>(".k2-menu");
+      const box = menu?.getBoundingClientRect();
+      const toLeft =
+        menu?.getAttribute("data-side") === "left" ||
+        (menu?.getAttribute("data-side") !== "right" && menu?.getAttribute("data-align") === "end");
+      setPlace(box ? { x: toLeft ? box.right : box.left, y: box.top, toLeft } : undefined);
+    }
     if (!next && open()) {
       entry()?.closest(".k2-menu")?.removeAttribute("data-covered");
       requestAnimationFrame(() => {
@@ -362,8 +377,7 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
     });
   });
   // On a wide screen the panel takes the place of the menu its entry stands in (at most two layers show): that menu
-  // gives way while the panel is open, and the panel stands where it stood, against the same button or entry, on the
-  // same side. The panel's head leads back to it.
+  // gives way while the panel is open, and the panel stands where it stood. The panel's head leads back to it.
   const holder = () => entry()?.closest<HTMLElement>(".k2-menu") ?? undefined;
   createEffect(() => {
     const menu = holder();
@@ -371,15 +385,7 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
     menu.setAttribute("data-covered", "");
     onCleanup(() => menu.removeAttribute("data-covered"));
   });
-  const anchor = () => {
-    const trigger = holder()?.getAttribute("aria-labelledby");
-    return trigger ? `#${CSS.escape(trigger)}` : undefined;
-  };
-  const side = () => {
-    const placed = holder()?.getAttribute("data-side");
-    return placed === "left" || placed === "right" || placed === "top" ? placed : "bottom";
-  };
-  const align = () => (holder()?.getAttribute("data-align") === "end" ? "end" : "start");
+  const corner = () => (phone() ? undefined : place());
   const close = () => {
     setOpen(false);
     props.level.close();
@@ -397,10 +403,13 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
           class="k2-pop k2-dpop"
           data-k2-part="Popover"
           aria-label={props.item.label}
-          {...(anchor() ? { anchor: anchor() } : {})}
-          side={side()}
-          align={align()}
-          sideOffset={4}
+          {...(() => {
+            const at = corner();
+            return at ? { anchor: { x: at.x, y: at.y } } : {};
+          })()}
+          side="bottom"
+          align={corner()?.toLeft ? "end" : "start"}
+          sideOffset={corner() ? 0 : 4}
           collisionPadding={8}
         >
           {/* the panel names its step and leads back to the entries it took the place of, as a submenu's step does */}

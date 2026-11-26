@@ -7,10 +7,11 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/bro
 import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-menu-panel.demo";
 
-// A menu entry with a panel (`MenuItem.panel`): the panel is a dialog of its own beside the entry, not a part of the
-// menu. So the menu's keys never reach it (a delegated `onKeyDown` in it gets every key), Escape closes the innermost
-// layer first (a popover in the panel, then the panel, then the menu) and the focus goes back where it came from, and
-// no menu holds a dialog (axe). On the phone the panel is a sheet of its own.
+// A menu entry with a panel (`MenuItem.panel`): the panel is a dialog of its own, not a part of the menu. On a wide
+// screen it takes the place of the menu its entry stands in, on the phone it is a sheet of its own; its head, Escape and
+// the back button lead back. The menu's keys never reach it (a delegated `onKeyDown` in it gets every key, the arrows
+// stay with what is in it), Escape closes the innermost layer first (a popover in the panel, then the panel, then the
+// menu) and the focus goes back where it came from, and no menu holds a dialog (axe).
 
 declare global {
   interface Window {
@@ -32,8 +33,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, touch = false } = {}) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch });
+const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, height = 900, touch = false } = {}) => {
+  const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
   page.setDefaultTimeout(3000);
   const errors = pageErrors(page);
   try {
@@ -307,3 +308,57 @@ test("on a wide screen the panel takes its menu's place, and its head leads back
     expect(await focused(page)).toBe("Notiz und Zeit …");
   });
 });
+
+// Review of #4249: a panel stands on the corner its menu grew from. A submenu that opened to the left (the button is
+// on the right) grows to the left, so the panel never lies over the menu it came from.
+test("a panel in a submenu that opened to the left takes the submenu's place and grows to the left", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Später" }).click();
+    await page.getByRole("menuitem", { name: /^Wann/ }).hover();
+    const submenu = page.locator('[role="menu"]').nth(1);
+    await submenu.waitFor();
+    expect(await submenu.getAttribute("data-side")).toBe("left");
+    const [first, sub] = [await page.locator('[role="menu"]').first().boundingBox(), await submenu.boundingBox()];
+    await page.getByRole("menuitem", { name: "Andere Zeit …" }).click();
+    const other = page.getByRole("dialog", { name: "Andere Zeit …" });
+    await other.waitFor();
+    await settled(page);
+    expect(await submenu.isVisible()).toBe(false);
+    const placed = await other.boundingBox();
+    expect(!!sub && !!placed && Math.abs(placed.x + placed.width - (sub.x + sub.width)) <= 1 && Math.abs(placed.y - sub.y) <= 1).toBe(true);
+    expect(!!first && !!placed && placed.x + placed.width <= first.x + 1).toBe(true);
+  });
+});
+
+// Review of #4249: a context menu has no button to stand against; the panel takes the menu's place at the pointer,
+// also where the menu turned upwards at the bottom of the window.
+for (const [where, height] of [
+  ["at the pointer", 900],
+  ["turned upwards", 600],
+] as const)
+  test(`a panel from a context menu ${where} takes the menu's place`, async () => {
+    await withPage(
+      async (page) => {
+        const row = page.getByText("Auftrag", { exact: true });
+        const at = await row.boundingBox();
+        if (!at) throw new Error("no row");
+        // at the bottom of the window the menu has no room below the pointer and turns upwards
+        await page.mouse.click(at.x + 4, height < 900 ? height - 12 : at.y + 4, { button: "right" });
+        const context = page.locator('[role="menu"]');
+        await context.waitFor();
+        await settled(page);
+        if (height < 900) expect(await context.getAttribute("data-side")).toBe("top");
+        const menuBox = await context.boundingBox();
+        await page.getByRole("menuitem", { name: "Notiz zur Zeile …" }).click();
+        const note = page.getByRole("dialog", { name: "Notiz zur Zeile …" });
+        await note.waitFor();
+        await settled(page);
+        expect(await context.isVisible()).toBe(false);
+        const placed = await note.boundingBox();
+        expect(!!menuBox && !!placed && Math.abs(placed.x - menuBox.x) <= 1).toBe(true);
+        // on screen, whatever room the menu had
+        expect(!!placed && placed.y >= 0 && placed.y + placed.height <= height).toBe(true);
+      },
+      { height },
+    );
+  });
