@@ -379,7 +379,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             columns={[
               {
                 title: t().source,
-                width: { min: 200, default: 380 },
+                width: { min: 180, default: 320 },
                 mark: sourceMark,
                 cell: (source) => ({ lines: [source.name, sourceLine(source, t())] }),
               },
