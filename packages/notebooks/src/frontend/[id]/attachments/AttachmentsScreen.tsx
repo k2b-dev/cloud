@@ -7,10 +7,12 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Cells,
   confirm,
   Empty,
   Input,
   List,
+  type MarkProps,
   Menu,
   type MenuEntry,
   Pane,
@@ -22,6 +24,7 @@ import {
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import type { AttachmentFigures } from "../../../service/notebook-figures";
 import { openAttachment } from "../../lib/attachment-preview";
 import {
   type Attachment,
@@ -34,11 +37,14 @@ import NotebookSidebarBody from "../_components/sidebar/NotebookSidebarBody";
 import { useNotebookSidebar } from "../_components/sidebar/notebook-sidebar-state";
 import type { NotebookContext } from "../_components/sidebar/types";
 import { notebookWorkspaceMessages } from "../messages";
+import { attachmentsPageMessages } from "./messages";
 
 export type AttachmentsScreenProps = {
   ctx: NotebookContext;
   attachments: Attachment[];
   total: number;
+  /** The notebook's attachment figures, independent of the search: count, bytes, uploads per day. */
+  figures: AttachmentFigures;
   search: string;
   page: number;
   pages: number;
@@ -48,11 +54,29 @@ export type AttachmentsScreenProps = {
   now: string;
 };
 
-/** A Tabler name for a file, from the v1 class `fileIcons` returns ("ti-file-text"). */
-const iconOf = (attachment: Attachment) =>
-  attachment.kind === "image"
-    ? "photo"
-    : fileIcons.getFileIcon({ name: attachment.filename, type: "file", mimeType: attachment.mimeType }).replace(/^ti-/, "");
+/** The data colour of a kind of file on its mark, the same in every list; text, code and other files stay neutral. */
+const KIND_COLORS: Partial<Record<ReturnType<typeof fileIcons.getFileCategory>, string>> = {
+  image: "#059669",
+  pdf: "#dc2626",
+  video: "#7c3aed",
+  audio: "#db2777",
+  document: "#2563eb",
+  archive: "#ca8a04",
+};
+
+/**
+ * The mark of a file: its kind's symbol on the kind's colour, and its type in letters ("PDF"). The Tabler name comes
+ * from the v1 class `fileIcons` returns ("ti-file-text text-zinc-500").
+ */
+const markOf = (attachment: Attachment): MarkProps => {
+  const file = { name: attachment.filename, type: "file" as const, mimeType: attachment.mimeType };
+  const extension = attachment.filename.includes(".") ? attachment.filename.split(".").pop()!.toUpperCase() : "";
+  return {
+    icon: attachment.kind === "image" ? "photo" : (fileIcons.getFileIcon(file).split(" ")[0] ?? "ti-file").replace(/^ti-/, ""),
+    color: KIND_COLORS[fileIcons.getFileCategory(file)],
+    kind: extension.length >= 2 && extension.length <= 4 ? extension : undefined,
+  };
+};
 
 /**
  * The notebook's attachments on v2: one row per file with its kind and size, newest first as the server sends them.
@@ -61,6 +85,9 @@ const iconOf = (attachment: Attachment) =>
 export default function AttachmentsScreen(props: AttachmentsScreenProps) {
   const locale = useLocale();
   const t = createMemo(() => notebookWorkspaceMessages.resolve([locale()]).t);
+  const words = createMemo(() => attachmentsPageMessages.resolve([locale()]).t);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const days = () => props.figures.days.length;
   const toast = useToast();
   const sidebar = useNotebookSidebar({ ctx: props.ctx, current: "attachments", graphBack: props.graphBack });
   const notebookId = () => props.ctx.notebook.id;
@@ -155,7 +182,33 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
         <Pane
           label={t().attachments}
           scrollKey={`notebooks-attachments-${notebookId()}`}
-          status={<StatusRow lead={t().attachmentCount({ count: props.total })} />}
+          status={
+            <>
+              {/* k2b-ui gap: hero band + tinted object head (DP) – the notebook's attachment figure with its real trend
+                  stands in Cells until the band (figure 30, the trend as a chart) exists. */}
+              <Cells>
+                <Cells.Cell
+                  icon="paperclip"
+                  label={words().attachmentsFigure}
+                  value={number(props.figures.count)}
+                  meta={words().addedIn({ count: number(props.figures.added), days: days() })}
+                  trend={{
+                    values: props.figures.days,
+                    label: words().uploadsTrend({
+                      days: days(),
+                      count: number(props.figures.added),
+                      today: number(props.figures.days.at(-1) ?? 0),
+                    }),
+                  }}
+                />
+                <Cells.Cell icon="database" label={words().storage} value={formatBytes(props.figures.bytes)} />
+              </Cells>
+              {/* the count of a search: what the search found, once; without one the figure above says it */}
+              <Show when={props.search}>
+                <StatusRow lead={t().attachmentCount({ count: props.total })} />
+              </Show>
+            </>
+          }
         >
           <Show
             when={items().length > 0}
@@ -171,14 +224,16 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
               )
             }
           >
-            {/* k2b-ui gap: Row has no image thumbnail; an image shows its kind's symbol and opens its preview. */}
+            {/* k2b-ui gap: Mark loads its picture at once (no lazy loading) and Notebooks has no thumbnails, so an image
+                shows its kind's mark, not its picture, and opens its preview. */}
             <List label={t().attachments}>
               <For each={items()}>
                 {(attachment) => (
                   <Menu.Context items={menu(attachment)}>
                     <Row
-                      icon={iconOf(attachment)}
-                      lines={[attachment.filename, `${formatBytes(attachment.sizeBytes)} · ${attachment.mimeType}`]}
+                      mark={markOf(attachment)}
+                      lines={[attachment.filename]}
+                      meta={formatBytes(attachment.sizeBytes)}
                       time={when(attachment.createdAt)}
                       onOpen={() => openAttachment(notebookId(), attachment, items())}
                       end={<Menu label={t().attachmentActions({ filename: attachment.filename })} items={menu(attachment)} />}

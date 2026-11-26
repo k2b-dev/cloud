@@ -27,6 +27,15 @@ const ATTACHMENTS: Attachment[] = [
   file("Att003", "Inventur_2026.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 88_120, 26),
   file("Att004", "Tourenplan.csv", "text/csv", 2_048, 50),
   file("Att005", "Sicherheitsunterweisung.md", "text/markdown", 3_120, 120),
+  file("Att006", "Rampe_Nord_Schaden.jpg", "image/jpeg", 3_870_512, 140),
+  file("Att007", "Lieferschein_Brandt_4471.pdf", "application/pdf", 210_440, 170),
+  file("Att008", "Stapler_Wartungsprotokoll.pdf", "application/pdf", 1_204_118, 220),
+  file("Att009", "Hallenplan_2027.png", "image/png", 942_300, 260),
+  file("Att010", "Preisliste_Haendler.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 56_210, 330),
+  file("Att011", "Schulung_Scanner.mp4", "video/mp4", 48_200_000, 410),
+  file("Att012", "Vertrag_Reinigung.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 120_330, 520),
+  file("Att013", "Fotos_Inventur.zip", "application/zip", 22_400_100, 700),
+  file("Att014", "Notfallplan_Aushang.pdf", "application/pdf", 640_002, 900),
 ];
 const worst: Attachment[] = [
   file("Att900", "Statikberechnungsnachweisprüfungsergebnisprotokoll_final_v12_wirklich_final_neu_2.pdf", "application/pdf", 9_999_999, 1),
@@ -44,6 +53,12 @@ render(
         ctx={notesContext(sampleNotes())}
         attachments={shown}
         total={shown.length}
+        figures={{
+          days: Array.from({ length: 30 }, (_, index) => (index % 7 > 4 ? 0 : (index * 5) % 4)),
+          count: all.length,
+          bytes: all.reduce((sum, attachment) => sum + attachment.sizeBytes, 0),
+          added: 3,
+        }}
         search={search}
         page={1}
         pages={1}

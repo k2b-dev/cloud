@@ -88,11 +88,24 @@ function fixtures(permission: PermissionLevel = "read", total = 1) {
         createdAt: timestamp,
         updatedAt: timestamp,
         lockedAt: null,
+        editors: [{ kind: "user", id: user.id, name: "Jana Berger", avatarHash: null }],
       },
     ],
     total,
   });
-  return { list };
+  const figures = track(spyOn(notebooksService.figures, "notes")).mockResolvedValue({
+    days: Array.from({ length: 30 }, (_, index) => (index === 29 ? 4 : 1)),
+    changes: 33,
+    people: 2,
+    notes: 140,
+    newNotes: 6,
+    latest: {
+      actor: { kind: "user", id: user.id, displayName: "Jana Berger", avatarHash: null },
+      at: timestamp,
+      note: { shortId: "note01", title: "Onboarding" },
+    },
+  });
+  return { list, figures };
 }
 
 const request = async (path: string, actor: User = user) => {
@@ -118,7 +131,7 @@ describe("the notes list", () => {
   });
 
   test("the server reads the address and filters with the person's access, and the first picture shows the notes", async () => {
-    const { list } = fixtures("read", 101);
+    const { list, figures } = fixtures("read", 101);
     const response = await request("/app/notebooks/book01/notes?tag=team&q=plan&page=2&mode=book");
     expect(response.status).toBe(200);
     expect(list).toHaveBeenCalledWith({
@@ -136,7 +149,13 @@ describe("the notes list", () => {
     expect(html).toContain('data-k2-part="FilterBar"');
     expect(html).toContain("101 notes");
     expect(html).toContain("Onboarding");
-    expect(html).toContain("Start here");
+    // the notebook's hero: its changes of 30 days with their trend, read in the person's time zone
+    expect(figures).toHaveBeenCalledWith({ notebookId: notebook.id, timeZone: "UTC", now: expect.any(Date) });
+    expect(html).toContain("Changes · 30 days");
+    expect(html).toContain("33 changes in 30 days, 4 today");
+    expect(html).toContain("by 2 people");
+    // the row's data column: who changed the note lately
+    expect(html).toContain("Changed lately by Jana Berger");
     // a reader keeps Book: the note opens in Book
     expect(html).toContain('href="/app/notebooks/book01/notes/note01?mode=book"');
     // readers cannot create notes
@@ -162,10 +181,11 @@ describe("the notes list", () => {
   });
 
   test("without access the list is not read", async () => {
-    const { list } = fixtures("none");
+    const { list, figures } = fixtures("none");
     const response = await request("/app/notebooks/book01/notes?tag=team");
     expect(response.status).toBe(403);
     expect(await response.text()).not.toContain("Onboarding");
     expect(list).not.toHaveBeenCalled();
+    expect(figures).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import NotesListScreen from "./NotesListScreen";
-import { filterNotes, NOTES_NOW, notesContext, sampleNotes, tagsOf, worstNotes } from "./notes-list.fixture";
+import { filterNotes, NOTES_NOW, notesContext, sampleFigures, sampleNotes, tagsOf, worstFigures, worstNotes } from "./notes-list.fixture";
 import { NOTES_PER_PAGE, notesQuery, parseNotesAddress } from "./query";
 
 /**
@@ -30,6 +30,7 @@ render(
         pages={Math.max(1, Math.ceil(total / NOTES_PER_PAGE))}
         total={total}
         items={items}
+        figures={sample === "worst" ? worstFigures() : sampleFigures()}
         ignored={null}
         mode={mode}
         graphBack={`${location.pathname}${location.search}`}

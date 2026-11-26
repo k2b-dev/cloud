@@ -150,7 +150,7 @@ describe("the attachments page on v2", () => {
   test("delete: the row's menu asks first, names the notes that show the file, and the row leaves", async () => {
     const { context, tab, errors, deleted } = await open(wide, PATH);
     try {
-      expect(await names(tab)).toHaveLength(5);
+      expect(await names(tab)).toHaveLength(14);
       await expectOutlineClean(tab);
       await shoot(tab, "light-1440");
       await tab.getByRole("button", { name: "Aktionen für Lageplan_Halle_2.pdf" }).click();
@@ -158,7 +158,7 @@ describe("the attachments page on v2", () => {
       const question = tab.getByRole("alertdialog");
       await question.getByText(/2 Notizen/).waitFor();
       await question.getByRole("button", { name: "Löschen" }).click();
-      await tab.waitForFunction(() => document.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]').length === 4);
+      await tab.waitForFunction(() => document.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]').length === 13);
       expect(deleted).toEqual(["Att001"]);
       expect(await names(tab)).not.toContain("Lageplan_Halle_2.pdf");
       expect(errors).toEqual([]);
@@ -189,7 +189,7 @@ describe("the attachments page on v2", () => {
       await expectOutlineClean(tab);
       await shoot(tab, "worst-light-390");
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      expect(await tab.getByRole("button", { name: /^Aktionen für / }).count()).toBe(7);
+      expect(await tab.getByRole("button", { name: /^Aktionen für / }).count()).toBe(16);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

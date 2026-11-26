@@ -1,4 +1,5 @@
-import type { PageListEntry } from "../../../service/page-list";
+import type { NotesFigures } from "../../../service/notebook-figures";
+import type { PageEditor, PageListEntry } from "../../../service/page-list";
 import type { NotebookContext } from "../_components/sidebar/types";
 import { NOTES_PER_PAGE, type NotesState } from "./query";
 
@@ -19,6 +20,17 @@ const titles = [
   ["Kundenanfrage Kraus", "Sonderanfertigung 2,40 m, Angebot bis Donnerstag.", ["vertrieb"]],
 ] as const;
 
+const people: PageEditor[] = [
+  { kind: "user", id: "u-ada", name: "Ada Renz", avatarHash: null },
+  { kind: "user", id: "u-jonas", name: "Jonas Kern", avatarHash: null },
+  { kind: "user", id: "u-mira", name: "Mira Solberg", avatarHash: null },
+  { kind: "user", id: "u-sami", name: "Sami Yilmaz", avatarHash: null },
+  { kind: "service_account", id: "s-import", name: "Import Lager", avatarHash: null },
+];
+/** Who changed a note lately: one to all five people, the last one first, varied by the note's number. */
+const editorsOf = (index: number): PageEditor[] =>
+  Array.from({ length: ((index * 3) % 5) + 1 }, (_, offset) => people[(index + offset) % people.length]!);
+
 /** Realistic notes: dense rows with previews and tags; `count` repeats them with numbered titles (the huge sample). */
 export const sampleNotes = (count: number = titles.length): PageListEntry[] =>
   Array.from({ length: count }, (_, index) => {
@@ -32,6 +44,7 @@ export const sampleNotes = (count: number = titles.length): PageListEntry[] =>
       createdAt: at(index * 7 + 30),
       updatedAt: at(index * 3 + 1),
       lockedAt: index === 3 ? at(100) : null,
+      editors: index % 7 === 6 ? [] : editorsOf(index),
     };
   });
 
@@ -45,10 +58,50 @@ export const worstNotes = (): PageListEntry[] => [
     createdAt: at(2),
     updatedAt: at(1),
     lockedAt: null,
+    editors: Array.from({ length: 8 }, (_, index) => ({
+      kind: "user" as const,
+      id: `u-long-${index}`,
+      name: index === 0 ? "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach" : `Person ${index + 1}`,
+      avatarHash: null,
+    })),
   },
-  { shortId: "W00002", title: "A", preview: null, tags: [], createdAt: at(900), updatedAt: at(800), lockedAt: null },
+  { shortId: "W00002", title: "A", preview: null, tags: [], createdAt: at(900), updatedAt: at(800), lockedAt: null, editors: [] },
   ...sampleNotes(),
 ];
+
+/** The notebook's key figures: 30 days of changes with a quiet weekend rhythm and a busy last week. */
+export const sampleFigures = (): NotesFigures => {
+  const days = Array.from({ length: 30 }, (_, index) => {
+    const weekend = index % 7 === 5 || index % 7 === 6;
+    return weekend ? index % 3 : 4 + ((index * 7) % 9) + (index > 22 ? 6 : 0);
+  });
+  return {
+    days,
+    changes: days.reduce((sum, value) => sum + value, 0),
+    people: 5,
+    notes: 128,
+    newNotes: 14,
+    latest: {
+      actor: { kind: "user", id: "u-ada", displayName: "Ada Renz", avatarHash: null },
+      at: at(0.2),
+      note: { shortId: "N00000", title: "Tourenplanung KW 48" },
+    },
+  };
+};
+
+/** The worst case: a quiet notebook without changes, and huge counts. */
+export const worstFigures = (): NotesFigures => ({
+  days: Array.from({ length: 30 }, () => 0),
+  changes: 0,
+  people: 0,
+  notes: 1_234_567,
+  newNotes: 0,
+  latest: {
+    actor: { kind: "user", id: "u-long", displayName: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach", avatarHash: null },
+    at: at(2000),
+    note: { shortId: "W00001", title: "Statikberechnungsnachweisprüfungsergebnisprotokollzusammenfassung_final_v12_wirklich_final" },
+  },
+});
 
 /** Filters and orders like `notebooksService.pages.list`; favorites are the notes with an even number. */
 export const filterNotes = (all: PageListEntry[], state: NotesState, page: number, favorites: readonly string[]) => {
