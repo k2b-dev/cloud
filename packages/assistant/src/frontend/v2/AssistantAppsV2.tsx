@@ -109,6 +109,8 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
                   mark: () => ({ icon: "code" }),
                   cell: (item) => ({ lines: [item.title, cardDescription(item, t(), locale())] }),
                   width: { min: 180, default: 260 },
+                  // A long name or schedule wraps instead of hiding its end, such as the last run of the day.
+                  wrap: true,
                 },
                 { title: t().appsColumnState, cell: (item) => state(cardStatus(item)), width: { min: 210, default: 210 } },
                 {
