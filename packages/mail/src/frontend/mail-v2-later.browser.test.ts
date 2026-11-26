@@ -184,11 +184,14 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       expect(sent).toEqual([]);
       // the digits of the time are the field's, not the menu's typeahead
       await calendar.locator('[data-value="2026-12-02"]').click();
-      const time = calendar.getByRole("textbox", { name: "Uhrzeit" });
-      await time.fill("");
-      await time.pressSequentially("1430");
-      expect(await time.inputValue()).toBe("1430");
-      await time.press("Enter");
+      // the time is core's time input: typed digits fill the hour, then the minute
+      const time = calendar.getByRole("group", { name: "Uhrzeit" });
+      const hour = time.getByRole("spinbutton", { name: "Stunde" });
+      const minute = time.getByRole("spinbutton", { name: "Minute" });
+      await hour.focus();
+      await page.keyboard.type("1430");
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["14", "30"]);
+      await minute.press("Enter");
       await openMenus(page, 0);
       await calls(sent, 1);
       expect(sent[0]).toMatchObject({ method: "PUT", body: { dueAt: "2026-12-02T14:30:00.000Z", expectedRevision: null } });
@@ -220,8 +223,8 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       expect(await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'))).toBe(true);
       // the arrows move the caret in the time field, not the menu
       await panel(page).locator('[data-value="2026-12-02"]').click();
-      const time = panel(page).getByRole("textbox", { name: "Uhrzeit" });
-      await time.focus();
+      const hour = panel(page).getByRole("group", { name: "Uhrzeit" }).getByRole("spinbutton", { name: "Stunde" });
+      await hour.focus();
       await page.keyboard.press("ArrowLeft");
       await page.keyboard.press("ArrowRight");
       expect(await panel(page).isVisible()).toBe(true);
@@ -269,13 +272,16 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
       await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
       await panel(page).locator('[data-value="2026-12-02"]').click();
-      const time = panel(page).getByRole("textbox", { name: "Uhrzeit" });
-      await time.fill("14:30");
-      const element = await time.elementHandle();
+      const time = panel(page).getByRole("group", { name: "Uhrzeit" });
+      const hour = time.getByRole("spinbutton", { name: "Stunde" });
+      const minute = time.getByRole("spinbutton", { name: "Minute" });
+      await hour.focus();
+      await page.keyboard.type("1430");
+      const element = await minute.elementHandle();
       await page.clock.fastForward(125_000);
       await page.clock.fastForward(125_000);
       expect(await page.evaluate((input) => input?.isConnected, element)).toBe(true);
-      expect(await time.inputValue()).toBe("14:30");
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["14", "30"]);
       expect(await panel(page).locator('[data-value="2026-12-02"]').getAttribute("aria-selected")).toBe("true");
       expect(await page.evaluate((input) => document.activeElement === input, element)).toBe(true);
       expect(errors).toEqual([]);
