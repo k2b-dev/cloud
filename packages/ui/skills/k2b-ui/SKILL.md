@@ -107,9 +107,10 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
   text only to look like the real thing.
 - A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
   page's language: the `@k2b/ui` entry belongs to v1.
-- On the phone one search place: a host whose bar holds the page's search
-  marks the v2 scope with `data-k2-host-search`. A detail `Pane` always has
-  `back`: on the phone a page with its way back and title, not the list's views.
+- On the phone one search place and no empty head row: a host whose bar
+  holds the page's search marks the v2 scope with `data-k2-host-search`. A
+  detail `Pane` always has `back`: on the phone a page with its way back and
+  title, not the list's views.
 
 ## What to use for what
 

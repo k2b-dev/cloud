@@ -302,16 +302,6 @@ try {
       if (typeof testing[name] !== "function") throw new Error("packed v2/testing misses " + name);
   `;
   run([process.execPath, "--no-install", "-e", v2TestingSmoke], consumer);
-  // v2/host is the small entry a host's own island loads instead of the v2 barrel; without a window it does nothing.
-  const v2HostSmoke = `
-    const resolved = import.meta.resolve("@k2b/ui/v2/host");
-    if (!resolved.includes("/node_modules/@k2b/ui/dist/ssr/v2/host.js")) {
-      throw new Error("v2/host did not resolve inside the packed package: " + resolved);
-    }
-    const { focusPageSearch } = await import("@k2b/ui/v2/host");
-    if (typeof focusPageSearch !== "function" || focusPageSearch() !== false) throw new Error("packed v2/host misses focusPageSearch");
-  `;
-  run([process.execPath, "--no-install", "-e", v2HostSmoke], consumer);
   const v2BrowserEntry = join(consumer, "v2-browser-entry.ts");
   await Bun.write(v2BrowserEntry, 'export { typeRoles, Workspace, Row, Table } from "@k2b/ui/v2";\n');
   const v2BrowserBuild = await Bun.build({

@@ -363,8 +363,7 @@ export const Input = (props: InputProps) => {
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
-    // a search shows its name while empty, so a folded search with words in it can be told from an empty one (v2.css)
-    placeholder: props.placeholder ?? (props.type === "search" ? props.label : undefined),
+    placeholder: props.placeholder,
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,

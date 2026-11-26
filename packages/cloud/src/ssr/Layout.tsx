@@ -336,7 +336,8 @@ export default function Layout(props: LayoutProps) {
         theme: c.get("page").theme,
         build: swapBuild,
         shell: {
-          // A v2 page's shell is the host of its search (`data-k2-host-search`): between v1 and v2 the document loads.
+          // A v2 page's header offers the page's search on the phone (`pageSearch`), and a swap replaces only the content
+          // column (<main> with its `data-k2-host-search`), not the header: between v1 and v2 the document loads.
           ...(props.ui === "v2" ? { ui: "v2" } : {}),
           // The document's <html> theme and the profile menu keep this preference.
           themePreference: theme,
@@ -441,8 +442,6 @@ export default function Layout(props: LayoutProps) {
         data-page-trail-title-only={titleOnly ? "" : undefined}
         data-layout-full-page={fullPage ? "true" : undefined}
         data-layout-authenticated={showRail ? "true" : undefined}
-        // the header's search on the phone is the one search place: a v2 page's head search gives way to it
-        data-k2-host-search={showRail && props.ui === "v2" ? "" : undefined}
         data-shell-focus={shellFocus ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
         data-layout-header=""

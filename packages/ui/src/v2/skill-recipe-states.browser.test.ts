@@ -122,7 +122,7 @@ const searchPlaces = (page: Page) =>
       const box = element.getBoundingClientRect();
       return box.width > 2 && box.height > 2;
     };
-    return [...document.querySelectorAll("[data-k2-host-search-button], [data-slot='head'] .k2-input[data-search]")].filter(seen).length;
+    return [...document.querySelectorAll(".k2-sf-search, [data-slot='head'] .k2-input[data-search]")].filter(seen).length;
   });
 
 /** Presses the visible button, link or menu entry with exactly this name. */
