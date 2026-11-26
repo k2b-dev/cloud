@@ -521,27 +521,24 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         columns={[
           {
             title: t().client,
-            width: { min: 180, default: 240 },
+            width: { min: 160, default: 200 },
             // the kind stands in its own column; the name alone here
             cell: (client) => client.name,
           },
           // a state that needs a look has its own column, so a long name never cuts it
           { title: t().state, width: { min: 130, default: 130 }, cell: (client: ClientRow) => stateChip(client) ?? "" },
-          { title: t().type, width: { min: 110, default: 120 }, cell: (client: ClientRow) => kindLine(client), drop: true },
+          // kind and date are secondary: the open client and the phone's second line hold them, so no column is cut at 1024
           ...(props.open
             ? []
             : [
                 {
                   title: t().redirectTarget,
-                  width: { min: 160, default: 220 },
+                  width: { min: 150, default: 180 },
                   cell: (client: ClientRow) => redirectHost(client) || t().withoutRedirect,
                   drop: true,
                 },
               ]),
-          { title: t().access, width: { min: 120, default: 140 }, cell: (client) => accessCell(client), drop: true },
-          ...(props.open
-            ? []
-            : [{ title: t().created, width: { min: 110, default: 110 }, cell: (client: ClientRow) => client.created, drop: true }]),
+          { title: t().access, width: { min: 110, default: 120 }, cell: (client) => accessCell(client), drop: true },
         ]}
       />
       <Show when={props.paging.pages > 1}>
