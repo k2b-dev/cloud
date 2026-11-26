@@ -264,10 +264,12 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
   createEffect(() => {
     const element = entry();
     if (!element) return;
-    onCleanup(popover.bindTrigger(element));
+    // a disabled entry stays shut, to a press and to the keys
+    const disabled = !!props.item.disabled;
+    onCleanup(popover.bindTrigger(element, { disabled }));
     // the menu's Enter would choose the entry and its arrow to the side does nothing here: both open the panel
     const keys = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" && event.key !== " " && event.key !== "ArrowRight") return;
+      if (disabled || (event.key !== "Enter" && event.key !== " " && event.key !== "ArrowRight")) return;
       event.preventDefault();
       event.stopPropagation();
       setOpen(true);
@@ -293,9 +295,11 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
     };
     frame = requestAnimationFrame(take);
     // An Escape that still lands in the menu behind (the menu's sheet keeps the focus in WebKit) closes the panel
-    // only, as the innermost layer, and puts the focus back on its entry.
+    // only, as the innermost layer, and puts the focus back on its entry. Only that menu: a menu inside the panel is a
+    // layer above it and closes by itself.
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !document.activeElement?.closest('[role="menu"]')) return;
+      const behind = entry()?.closest('[role="menu"]');
+      if (event.key !== "Escape" || !behind || document.activeElement?.closest('[role="menu"]') !== behind) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       setOpen(false);

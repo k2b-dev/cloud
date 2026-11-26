@@ -31,6 +31,9 @@ const Panel = (props: { close: () => void }) => {
           props.close();
         }}
       />
+      <Menu label="Vorlage" items={[{ label: "Früh", onClick: () => did("early") }]}>
+        Vorlage
+      </Menu>
       <Popover title="Hinweis" content={<Check name="remember" label="Merken" checked={false} onChange={() => did("remember")} />}>
         Hinweis
       </Popover>
@@ -55,6 +58,7 @@ export function Demo() {
                 { label: "Morgen, 8:00", onClick: () => did("tomorrow") },
                 "separator",
                 { label: "Notiz und Zeit …", panel: (close) => <Panel close={close} /> },
+                { label: "Gesperrt …", disabled: true, panel: (close) => <Panel close={close} /> },
               ]}
             />
           }

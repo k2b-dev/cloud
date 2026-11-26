@@ -198,9 +198,9 @@ export type PopoverParts = {
   /**
    * Makes an element someone else rendered the popover's trigger (a menu's entry): core writes its attributes
    * (`aria-haspopup`, `aria-expanded`, `aria-controls`) and its listeners onto it, the popover opens beside it and
-   * belongs to the layer it stands in. Returns the function that lets go of it.
+   * belongs to the layer it stands in. `disabled` keeps it shut. Returns the function that lets go of it.
    */
-  bindTrigger: (element: HTMLElement) => () => void;
+  bindTrigger: (element: HTMLElement, props?: { disabled?: boolean }) => () => void;
   /** The popover; renders only while open. Takes `Placement` props. */
   Popup: SlotComponent;
   Title: SlotComponent;
@@ -219,7 +219,7 @@ export function usePopover(
   const handle = usePrimitive(popoverPrimitive, options);
   return {
     Trigger: slotComponent(handle, "trigger", "button"),
-    bindTrigger: (element) => bindSlot(handle, "trigger", { id: partId() }, element),
+    bindTrigger: (element, props = {}) => bindSlot(handle, "trigger", { id: partId(), disabled: !!props.disabled }, element),
     Popup: popupComponent(handle, "content"),
     Title: slotComponent(handle, "title", "h2"),
     Close: slotComponent(handle, "close", "button"),

@@ -179,3 +179,40 @@ test("on the phone Escape closes the panel's sheet first and leaves the menu ope
     { width: 390, touch: true },
   );
 });
+
+// Review of #4157: a menu inside the panel is the innermost layer; Escape closes it alone, not the panel around it.
+test("Escape in a menu inside the panel closes that menu only", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Später" }).click();
+    await entry(page).click();
+    await panel(page).waitFor();
+    await panel(page).getByRole("button", { name: "Vorlage" }).click();
+    await page.getByRole("menuitem", { name: "Früh" }).waitFor();
+    expect(await page.locator('[role="menu"]').count()).toBe(2);
+    await page.keyboard.press("Escape");
+    await page.getByRole("menuitem", { name: "Früh" }).waitFor({ state: "detached" });
+    await settled(page);
+    expect(await panel(page).isVisible()).toBe(true);
+    expect(await page.locator('[role="menu"]').count()).toBe(1);
+    expect(await focused(page)).toBe("Vorlage");
+  });
+});
+
+// Review of #4157: a disabled panel entry stays shut, to a click and to the keys.
+test("a disabled panel entry opens its panel neither on a click nor on Enter, Space or the arrow", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Später" }).click();
+    const locked = page.getByRole("menuitem", { name: "Gesperrt …" });
+    expect(await locked.getAttribute("aria-disabled")).toBe("true");
+    await locked.click({ force: true });
+    await settled(page);
+    expect(await page.getByRole("dialog").count()).toBe(0);
+    await locked.focus();
+    for (const key of ["Enter", " ", "ArrowRight"]) {
+      await page.keyboard.press(key);
+      await settled(page);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+    }
+    expect(await page.locator('[role="menu"]').count()).toBe(1);
+  });
+});
