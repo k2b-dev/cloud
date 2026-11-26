@@ -7,6 +7,8 @@ declare global {
   interface Window {
     /** How often the head's "Teilen" ran, from the head or from its "…". */
     __shared?: number;
+    /** How often "Exportieren" opened in place, from the head or from its "…". */
+    __exported?: number;
   }
 }
 
@@ -51,7 +53,15 @@ export function SpaceHead(props: { name: string; deeds?: boolean; more?: boolean
                   <Button variant="ghost" icon="share" onClick={() => (window.__shared = (window.__shared ?? 0) + 1)}>
                     Teilen
                   </Button>
-                  <Button variant="ghost" icon="download" href="#export">
+                  {/* opens in place (the app's own way), so a full load is a mistake the test sees */}
+                  <Button
+                    variant="ghost"
+                    icon="download"
+                    href="#export"
+                    onNavigate={() => {
+                      window.__exported = (window.__exported ?? 0) + 1;
+                    }}
+                  >
                     Exportieren
                   </Button>
                   <Menu icon="adjustments-horizontal" items={[{ label: "Kompakt" }, { label: "Bequem" }]}>

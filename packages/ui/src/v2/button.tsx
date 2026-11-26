@@ -80,6 +80,8 @@ export const Button = (props: ButtonProps) => {
   return (
     // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic
+      // a link carries its way of opening, so the head's "…" can open it in place when the link gives way there
+      ref={(node: HTMLElement) => Reflect.set(node, Symbol.for("k2b.ui.v2.onNavigate"), props.onNavigate)}
       component={off() && props.href !== undefined ? "a" : linkOr(props.href, "button")}
       href={off() ? undefined : props.href}
       onNavigate={off() || props.href === undefined ? undefined : props.onNavigate}

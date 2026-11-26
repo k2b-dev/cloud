@@ -182,7 +182,6 @@ export function createMailV2ReaderMenus(props: {
       ...(reply ? { respond: { replyAll: reply.canReplyAll(), run: (intent) => reply.respond(intent) } } : {}),
       ...(c().canWrite()
         ? {
-            followUp: [],
             organize: {
               unread: c().selectedUnread(),
               flagged: c().selectedFlagged(),

@@ -52,7 +52,7 @@ Workspace (sidebar, head) primary "Neue Quelle"
         Row "Lackfabrik Nordhaus" / "Webhook" · 09:42 opens link
         …
     Pane "Holzwerk Brandt" detail
-      head: Bar: "Holzwerk Brandt" lead | ["Bearbeiten"] ["Schließen" ghost link]
+      head: Bar · title: "Holzwerk Brandt" lead | ["Bearbeiten"] ["Schließen" ghost link]
       Notice bad "Antwortet nicht": "Seit gestern, 17:20 …" ["Erneut prüfen" text]
 
 Problems (1):
