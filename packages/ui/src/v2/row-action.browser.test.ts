@@ -51,3 +51,25 @@ for (const width of [1440, 390])
       expect(words.map((word) => word.trim())).toEqual(["Ansehen", "Ansehen"]);
     });
   });
+
+// PS (PWA review): on the phone a row's deed with words ("Abmelden") stood 28 px tall, under the 44 px a finger needs.
+// It keeps its look and its place; a finger hits 44 px of it.
+test("on the phone a row's deed takes a finger's 44 px without moving", async () => {
+  await withPage(390, async (page) => {
+    const hits = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".k2-row[data-action] > .k2-row-end > .k2-btn:first-child")).map((button) => {
+        const box = button.getBoundingClientRect();
+        const x = box.left + box.width / 2;
+        const middle = box.top + box.height / 2;
+        // what a finger 22 px above and below the middle of the deed lands on
+        const at = (y: number) => document.elementFromPoint(x, y)?.closest(".k2-btn") === button;
+        return { height: Math.round(box.height), above: at(middle - 21), below: at(middle + 21) };
+      }),
+    );
+    expect(hits.length).toBe(2);
+    for (const hit of hits) {
+      expect(hit.height).toBeLessThan(44);
+      expect(hit).toEqual(expect.objectContaining({ above: true, below: true }));
+    }
+  });
+});

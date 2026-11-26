@@ -166,7 +166,8 @@ inside it.
   the marks, so keep it a preview text that may be cut, never an amount.
 - `action` (one framed button at the end; under the text on the phone; its
   name is its words and then the row's title, "Ansehen Angebot Küche", so
-  rows with the same deed are told apart: name nothing yourself),
+  rows with the same deed are told apart: name nothing yourself; on the
+  phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).

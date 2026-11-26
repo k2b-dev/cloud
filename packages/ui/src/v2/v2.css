@@ -3637,6 +3637,21 @@
     justify-content: flex-start;
     padding: 8px 0 4px;
   }
+  /* a finger hits 44 px of the row's deed (PS 26.11.); its look and its place stay. Its words never shrink (a button
+     keeps its room), so nothing of them needs the button to clip. */
+  .k2-ui .k2-row[data-action] > .k2-row-end > .k2-btn:first-child {
+    position: relative;
+    overflow: visible;
+  }
+  .k2-ui .k2-row[data-action] > .k2-row-end > .k2-btn:first-child::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
   .k2-ui .k2-fact {
     display: none;
   }
