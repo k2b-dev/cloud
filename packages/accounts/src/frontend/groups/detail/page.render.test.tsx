@@ -119,7 +119,8 @@ const withGroup = async (
     pages: [] as number[],
     entity: [] as unknown[],
     relations: [] as unknown[],
-    managers: 0,
+    faces: 0,
+    counts: 0,
     audit: 0,
     names: [] as unknown[],
   };

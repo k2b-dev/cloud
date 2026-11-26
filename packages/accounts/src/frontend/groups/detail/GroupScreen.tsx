@@ -346,13 +346,16 @@ export default function GroupScreen(props: GroupScreenProps) {
 
   /** How many each tab holds, where the page knows it. */
   const tabCount = (tab: GroupTab) =>
-    tab === "members"
-      ? props.group.members + props.group.subGroups
-      : tab === "managers"
-        ? props.group.managers.total
-        : tab === "member-of"
-          ? props.group.parents
-          : undefined;
+    // the relations tab reads no figures; its tabs go without counts
+    props.tab === "relations"
+      ? undefined
+      : tab === "members"
+        ? props.group.members + props.group.subGroups
+        : tab === "managers"
+          ? props.group.managers.total
+          : tab === "member-of"
+            ? props.group.parents
+            : undefined;
   /** The entries of the page in their kinds, each under its own head: people, groups, agents. */
   const sections = () => {
     const of = (kinds: GroupMember["kind"][]) => props.rows.filter((member) => kinds.includes(member.kind));

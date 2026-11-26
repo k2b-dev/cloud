@@ -114,10 +114,15 @@ suite("a group record's statements per tab (integration)", () => {
       const count = (groupKinds: ("user" | "group" | "service_account")[]) => () =>
         service.entity.list({ actor, pagination: { page: 1, perPage: 1 }, recursive: false, memberOfGroupId: teamId, kinds: groupKinds });
       return [
-        { purpose: "group", v1: true, run: () => service.group.get({ id: teamId }) },
+        // v1 showed the relations on a page of their own: the open requests and the relations, without the group frame
+        { purpose: "group", v1: summary, run: () => service.group.get({ id: teamId }) },
         ...(admin ? [{ purpose: "open requests", v1: true, run: () => service.accountRequest.countPending() }] : []),
-        { purpose: "parent group ids", v1: true, run: () => service.group.parent.list({ id: teamId }) },
-        { purpose: "managed group ids", v1: true, run: () => service.group.managedGroup.list({ id: teamId }) },
+        ...(summary
+          ? [
+              { purpose: "parent group ids", v1: true, run: () => service.group.parent.list({ id: teamId }) },
+              { purpose: "managed group ids", v1: true, run: () => service.group.managedGroup.list({ id: teamId }) },
+            ]
+          : []),
         ...(tab === "members"
           ? [
               {
@@ -175,7 +180,7 @@ suite("a group record's statements per tab (integration)", () => {
           ? [
               {
                 purpose: "relations",
-                v1: false,
+                v1: true,
                 run: () => service.group.relations({ actor, focus: teamId, depth: 2, managers: false, view: "graph", expand: [] }),
               },
             ]
@@ -256,7 +261,45 @@ suite("a group record's statements per tab (integration)", () => {
     } finally {
       rail.mockRestore();
     }
-    console.log(`GROUP-RECORD-COUNTS ${JSON.stringify(counts)}`);
-    console.log(`GROUP-RECORD-BUDGET ${JSON.stringify(budget)}`);
+    // The record's own statements per tab, by purpose (besides the session person, the screen preferences and the
+    // settings every page reads). The local group's member and manager lists cost five statements, the parent and
+    // managed group ids three each; v1 read them the same way. New in v2: the key figures (one count each, or the
+    // managers' first faces), the activity for administrators (the audit log's count and rows: `audit.list` always
+    // counts) and one directory read for names no row of the page carries.
+    const frame = { group: 1, "parent group ids": 3, "managed group ids": 3 };
+    const activity = { "activity (audit)": 2, "names of faces and activity": 1 };
+    expect(counts).toEqual({
+      "admin members": { ...frame, "open requests": 1, "members page": 1, "direct members": 5, "managers' faces": 1, ...activity },
+      "admin managers": {
+        ...frame,
+        "open requests": 1,
+        "managers page": 1,
+        "direct managers": 5,
+        "count of people and agents": 1,
+        "count of sub-groups": 1,
+        ...activity,
+      },
+      "admin member-of": {
+        ...frame,
+        "open requests": 1,
+        "parent groups page": 1,
+        "count of people and agents": 1,
+        "count of sub-groups": 1,
+        "managers' faces": 1,
+        ...activity,
+      },
+      "admin relations": { group: 1, "open requests": 1, relations: 2 },
+      "manager members": { ...frame, "members page": 1, "direct members": 5, "managers' faces": 1 },
+      "manager managers": { ...frame, "managers page": 1, "direct managers": 5, "count of people and agents": 1, "count of sub-groups": 1 },
+    });
+    // v1 (the page before v2, and the relations page of its own) against v2, statements of the record alone
+    expect(budget).toEqual({
+      "admin members": { v1: 14, v2: 18 },
+      "admin managers": { v1: 14, v2: 19 },
+      "admin member-of": { v1: 9, v2: 15 },
+      "admin relations": { v1: 3, v2: 4 },
+      "manager members": { v1: 13, v2: 14 },
+      "manager managers": { v1: 13, v2: 15 },
+    });
   }, 120_000);
 });

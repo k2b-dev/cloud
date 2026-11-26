@@ -237,8 +237,9 @@ export default ssr<AuthContext>(async (c) => {
     events,
   ] = await Promise.all([
     isAdmin ? accountsService.accountRequest.countPending() : Promise.resolve(0),
-    accountsService.group.parent.list({ id: groupId }),
-    accountsService.group.managedGroup.list({ id: groupId }),
+    // the parents and the managed groups feed the tab counts and the facts, which the relations tab does not show
+    summary ? accountsService.group.parent.list({ id: groupId }) : Promise.resolve({ items: [] as string[] }),
+    summary ? accountsService.group.managedGroup.list({ id: groupId }) : Promise.resolve({ items: [] as string[] }),
     tab === "relations"
       ? Promise.resolve(noEntries)
       : accountsService.entity.list({
