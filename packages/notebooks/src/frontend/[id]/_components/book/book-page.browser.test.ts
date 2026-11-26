@@ -329,7 +329,7 @@ test("an address with an anchor opens at its heading, and mounting the islands k
 test("390: the shell's menu reaches Book's page tree", async () => {
   const page = await open(390);
   try {
-    await page.evaluate(() => (window as Window & { openShellMenu: () => void }).openShellMenu());
+    await page.evaluate(() => window.openShellMenu?.());
     const menu = page.getByRole("dialog").filter({ hasText: "Überblick" });
     await menu.waitFor();
     expect(await menu.textContent()).toContain("Handbuch Lager");
@@ -370,6 +370,26 @@ test("scrolling keeps the reading position in the entry at most every 150 ms, an
     expect(counts.writes).toBeLessThanOrEqual(12);
     // the position is read once a frame, from the children at the port's edge, not from all of the note's
     expect(counts.styles).toBeLessThanOrEqual(60 * 4);
+  } finally {
+    await close(page);
+  }
+}, 60_000);
+
+test("Cloud's search hides and shows the navigation with the workspace's own toggle, and says which it does", async () => {
+  const page = await open(1440);
+  const title = () => page.evaluate(() => window.navigationCommandTitle?.() ?? null);
+  const run = () => page.evaluate(() => window.runNavigationCommand?.());
+  try {
+    const workspace = page.locator("[data-k2-workspace]");
+    expect(await title()).toBe("Notizbuch-Navigation ausblenden");
+    await run();
+    expect(await workspace.getAttribute("data-collapsed")).toBe("");
+    // the workspace keeps it for the next page, as its button does
+    expect(await page.evaluate(() => document.cookie)).toContain("book-sidebar=hidden");
+    await page.waitForFunction(() => window.navigationCommandTitle?.() === "Notizbuch-Navigation einblenden");
+    await run();
+    expect(await workspace.getAttribute("data-collapsed")).toBeNull();
+    await page.waitForFunction(() => window.navigationCommandTitle?.() === "Notizbuch-Navigation ausblenden");
   } finally {
     await close(page);
   }
