@@ -109,6 +109,9 @@ export const runsQuery = (locale: string, apps: readonly { id: string; label: st
       }),
       source: field.text({ label: t.jobSource }),
       channel: field.text({ label: t.channel }),
+      // Workflow runs of one definition, or the children of one run (a fan-out): links from the Workflows record land here.
+      workflow: field.text({ label: t.workflowDefinition }),
+      parent: field.text({ label: t.parentRun }),
     },
     search: { label: t.search },
     sort: { fixed: { field: "started", direction: "desc", label: t.newestFirst } },
@@ -124,6 +127,7 @@ export const kindsOf = (state: RunsState): readonly RunKind[] => (state.filters.
 
 /** The open record: its kind and the kind's own key, such as `job:<traceId>:<spanId>` or `delivery:<uuid>`. */
 export type RunRef = { kind: RunKind; id: string };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RUN_REF = /^(job|workflow|delivery|deadLetter):([^\s]{1,300})$/;
 export const parseRunRef = (raw: string | null): RunRef | null => {
   const match = raw ? RUN_REF.exec(raw) : null;
@@ -147,6 +151,14 @@ export const parseRunsAddress = (query: RunsQuery, params: URLSearchParams): Run
   if (state.search && state.search.length > RUNS_SEARCH_MAX) {
     issues.push({ code: "invalid", param: "q", value: state.search });
     state = { ...state, search: undefined };
+  }
+  // Both name a workflow store row by its UUID; anything else is no filter the store can read.
+  for (const key of ["workflow", "parent"] as const) {
+    const value = state.filters[key];
+    if (value !== undefined && !UUID.test(value)) {
+      issues.push({ code: "invalid", param: key, value });
+      state = query.clear(state, key);
+    }
   }
   const pageRaw = params.get("page");
   const page = pageRaw === null ? 1 : Number(pageRaw);

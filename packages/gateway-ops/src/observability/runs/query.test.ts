@@ -34,6 +34,19 @@ describe("the runs address", () => {
     expect(address).toMatchObject({ page: 1, run: null });
   });
 
+  test("workflow runs of one definition and the children of one run: UUIDs only", () => {
+    const definition = "5b1e9a00-0000-4000-8000-000000000001";
+    const parent = "5b1e9a00-0000-4000-8000-000000000002";
+    const address = read(`kind=workflow&workflow=${definition}&parent=${parent}`);
+    expect(address.issues).toEqual([]);
+    expect(address.state.filters).toMatchObject({ workflow: definition, parent });
+    expect(runsHref(query, address.state)).toBe(`/admin/observability/runs?kind=workflow&workflow=${definition}&parent=${parent}`);
+    const wrong = read("workflow=nightly&parent=1");
+    expect(wrong.state.filters.workflow).toBeUndefined();
+    expect(wrong.state.filters.parent).toBeUndefined();
+    expect(wrong.issues.map((issue) => issue.param).sort()).toEqual(["parent", "workflow"]);
+  });
+
   test("a run reference names its kind and the kind's own key", () => {
     expect(parseRunRef("delivery:6f1c0d2e-0000-4000-8000-000000000001")).toEqual({
       kind: "delivery",

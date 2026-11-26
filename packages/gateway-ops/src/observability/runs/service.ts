@@ -49,7 +49,7 @@ const jobStatus = (span: TraceSpan): RunStatus => (!span.endedAt ? "running" : s
 /** A job filter for a state, or null when no job can match (a status jobs do not have). */
 const jobFilter = (state: RunsState): TraceListFilter | null => {
   const status = state.filters.status;
-  if (status === "waiting" || status === "canceled") return null;
+  if (status === "waiting" || status === "canceled" || workflowOnly(state)) return null;
   const time = state.filters.time;
   return {
     window: time.kind === "preset" ? RUN_WINDOWS[time.preset] : "24h",
@@ -133,6 +133,8 @@ const workflows = async (state: RunsState, paging: Paging, now: Date): Promise<R
   const runs: WorkflowRunSummary[] = await listWorkflowRuns({
     ...(state.filters.app ? { appId: state.filters.app } : {}),
     ...(status ? { state: WORKFLOW_STATE[status] } : {}),
+    ...(state.filters.workflow ? { workflowId: state.filters.workflow } : {}),
+    ...(state.filters.parent ? { parentRunId: state.filters.parent } : {}),
     since: sinceOf(state, now),
     limit: paging.limit + 1,
     offset: paging.offset,
@@ -171,8 +173,12 @@ const DELIVERY_STATUSES: Record<RunStatus, DeliveryStatus[]> = {
 const deliveryStatus = (status: DeliveryStatus): RunStatus =>
   (Object.keys(DELIVERY_STATUSES) as RunStatus[]).find((key) => DELIVERY_STATUSES[key].includes(status)) ?? "waiting";
 
-/** Deliveries have no job filters: with those set, no delivery can match. */
-const deliveriesMatch = (state: RunsState) => !state.filters.category && !state.filters.duration && !state.filters.source;
+/** Filters that name one workflow definition or one parent run: only workflow runs can match them. */
+const workflowOnly = (state: RunsState) => Boolean(state.filters.workflow || state.filters.parent);
+
+/** Deliveries have no job or workflow filters: with those set, no delivery can match. */
+const deliveriesMatch = (state: RunsState) =>
+  !state.filters.category && !state.filters.duration && !state.filters.source && !workflowOnly(state);
 
 const deliveries = async (state: RunsState, paging: Paging, now: Date): Promise<RunsPart> => {
   if (!deliveriesMatch(state)) return { kind: "delivery", rows: [], total: 0, more: false, error: null };
@@ -226,7 +232,8 @@ const deadLetters = async (state: RunsState, paging: Paging, credentials: SyncOp
     state.filters.category ||
     state.filters.duration ||
     state.filters.source ||
-    state.filters.channel
+    state.filters.channel ||
+    workflowOnly(state)
   ) {
     return { kind: "deadLetter", rows: [], total: 0, more: false, error: null };
   }
