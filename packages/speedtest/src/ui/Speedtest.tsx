@@ -276,6 +276,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean; i
             disabled={running()}
             ariaLabel={t().duration}
             class="tools-speedtest-mode"
+            stretch
             options={[
               { value: "quick", label: t().quick },
               { value: "accurate", label: t().accurate },
@@ -400,6 +401,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean; i
               onValueChange={setCliVariant}
               ariaLabel={t().terminalTitle}
               size="sm"
+              stretch
               options={[
                 { value: "cloud", label: "Cloud CLI" },
                 { value: "node", label: "Node" },

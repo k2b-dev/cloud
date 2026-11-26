@@ -7,10 +7,15 @@ import {
   Chip,
   Choice,
   CodeBlock,
+  CodeInput,
+  ColorInput,
   DateInput,
   Digest,
+  Disclosure,
   Facts,
   Field,
+  Group,
+  ImageInput,
   Input,
   List,
   Pane,
@@ -18,7 +23,9 @@ import {
   Row,
   Section,
   Select,
+  Slider,
   Table,
+  TagsInput,
   Text,
   Workspace,
 } from "../src/v2";
@@ -177,6 +184,33 @@ export function Fixture() {
             <Field name="note" label="Notiz">
               <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />
             </Field>
+          </Section>
+          {/* the form controls beyond text (#4191): each renders the same on the server and in the browser */}
+          <Section title="Einstellungen">
+            <Field name="session" label="Sitzungsdauer" action={{ label: "Auf Standard zurücksetzen", icon: "restore" }}>
+              <Input value="7 Tage" disabled />
+            </Field>
+            <Field name="hosts" label="Server">
+              <TagsInput value={["mx1.example", "mx2.example"]} placeholder="Server" />
+            </Field>
+            <Field name="logo" label="Logo">
+              <ImageInput value={null} onChange={() => undefined} />
+            </Field>
+            <Field name="code" label="Code">
+              <CodeInput />
+            </Field>
+            <Field name="dim" label="Abdunkeln" hint="In Prozent.">
+              <Slider value={30} step={10} />
+            </Field>
+            <Field name="accent" label="Akzentfarbe">
+              <ColorInput value="#0f766e" swatches={["#0f766e", "#1d4ed8"]} />
+            </Field>
+            <Disclosure title="Was gilt für laufende Sitzungen?">
+              <Text type="body">Sie laufen bis zu ihrem Ende.</Text>
+            </Disclosure>
+            <Group title="Lieferung 4711" folded>
+              <Text type="body">Drei Pakete.</Text>
+            </Group>
           </Section>
           <Facts
             loading={loading()}

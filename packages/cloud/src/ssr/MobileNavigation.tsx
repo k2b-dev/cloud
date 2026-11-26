@@ -71,6 +71,7 @@ function MobileNavigation(props: {
             <SegmentedControl
               class="cloud-mobile-menu__switch"
               size="md"
+              stretch
               ariaLabel={t().navigation}
               value={tab}
               onValueChange={setTab}
