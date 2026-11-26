@@ -557,7 +557,18 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
-      if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
+      // words kept only as the name of a control that gave way to its symbol are not cut: they are not in sight at all.
+      // Only a label hidden that way counts (at most 1 px, taken out of the flow and clipped away, as sr-only text);
+      // a label squeezed to 1 px in a broken layout is still cut.
+      const shown = label.getBoundingClientRect();
+      const labelStyle = getComputedStyle(label);
+      const visuallyHidden =
+        label !== control &&
+        (shown.width <= 1 || shown.height <= 1) &&
+        labelStyle.position === "absolute" &&
+        (labelStyle.clipPath !== "none" || labelStyle.clip !== "auto");
+      if (visuallyHidden) continue;
+      if (label.scrollWidth > label.clientWidth + 1 || shown.right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
         );
