@@ -1,15 +1,14 @@
 import { formatFileViewSize, useLocale } from "@k2b/ui";
-import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Table, Tiles } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Failed, List, type OnNavigate, Pane, Row, Section, Table, Text } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry, StorageFacts } from "../contracts";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
+import { entryMark, storageMark } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
-import { issueText } from "./feedback";
 import {
   actorOf,
   daysAgo,
@@ -142,17 +141,28 @@ export default function OverviewPane(props: {
       {/* no statement row: "Heute 5 Änderungen von dir" gave nothing to act on (Valentin 26.11.); a storage that is
           not there says so with its own chip */}
       <Pane label={b().allStorage} scrollKey="filesv2-overview">
+        {/* an area that could not be read is an exception of one line, not a box (B): its state, what it means, and the
+            way to read it again. It speaks of the area, not of "the storage", so it never seems to mean a storage the
+            list shows */}
         {props.issues.map((issue) => (
-          <Notice tone="warn" title={t()[issue.area]}>
-            {/* an area that could not be read has no storage of its own in the list: the notice speaks of the area,
-                not of "the storage", so it never seems to mean a storage the list shows */}
-            {issueText(t(), issue.code, b().v2AreaUnread({ area: t()[issue.area] }))}
-          </Notice>
+          <Bar
+            start={
+              // one line, as B: the state as a word and the way to read it again ("● FreeIPA-Ablagen fehlen")
+              <Chip status="warn">{b().v2AreaMissing({ area: t()[issue.area] })}</Chip>
+            }
+            end={
+              <Button variant="text" onClick={() => props.onRetry()}>
+                {h().retry}
+              </Button>
+            }
+          />
         ))}
         {/* The storages as a table (Valentin 26.11.: dense, not the sidebar again): what each is, who belongs to it,
             what it holds and who changed it last. On the phone each is a row of two lines. A storage that is not
             there says so with its chip. */}
-        <Section icon="folders" color={FILES_COLOR} title={t().storage} count={props.bases.length}>
+        {/* plain section heads (B): a symbol without its tinted tile; the table's first column is "Name", never the
+            section's word again */}
+        <Section icon="folders" title={t().storage} count={props.bases.length}>
           <Table
             label={b().allStorage}
             rows={props.bases}
@@ -167,9 +177,9 @@ export default function OverviewPane(props: {
             })}
             columns={[
               {
-                // a width of its own: the table gives the rest of the row to its last column, the last change
-                title: t().storage,
-                width: { min: 120, default: 150 },
+                // the wide column (B): a name is cut last; the table gives the rest of the row to its last column
+                title: t().name,
+                width: { min: 140, default: 240 },
                 mark: (base) => storageMark(base),
                 cell: (base) => baseLabel(base, b(), locale()),
               },
@@ -183,7 +193,7 @@ export default function OverviewPane(props: {
               { title: b().v2Used, width: { min: 84, default: 92 }, align: "end", drop: true, cell: (base) => used(base) },
               {
                 title: b().v2LastChange,
-                width: { min: 180, default: 220 },
+                width: { min: 150, default: 170 },
                 drop: true,
                 avatar: (base) => {
                   const actor = lastBy(base);
@@ -199,7 +209,6 @@ export default function OverviewPane(props: {
         </Section>
         <Section
           icon="star"
-          color="#ca8a04"
           title={b().favorites}
           count={props.favorites?.items.length ? `${props.favorites.items.length}${props.favorites.more ? "+" : ""}` : undefined}
           more={
@@ -210,29 +219,25 @@ export default function OverviewPane(props: {
         >
           <Show when={props.favorites} fallback={<Failed text={b().favoritesFailed} onRetry={props.onRetry} />}>
             {(favorites) => (
-              <Show when={favorites().items.length} fallback={<Empty icon="star" text={b().noFavoritesInline} />}>
-                <Tiles
-                  label={b().favorites}
-                  items={favorites().items.map((item) => ({
-                    ...entryMark(item.entry),
-                    title: item.entry.name,
-                    meta: favoritePlace(item, labels()),
-                    href: favoriteHref(item),
-                    onNavigate: props.onNavigate,
-                  }))}
-                />
+              <Show when={favorites().items.length} fallback={<Text type="meta">{b().noFavoritesInline}</Text>}>
+                {/* flat rows with their type's sign, as the recently opened beside them; nothing in a card (B) */}
+                <List label={b().favorites}>
+                  {favorites().items.map((item) => (
+                    <Row
+                      mark={entryMark(item.entry)}
+                      lines={[item.entry.name, favoritePlace(item, labels())]}
+                      href={favoriteHref(item)}
+                      onNavigate={props.onNavigate}
+                    />
+                  ))}
+                </List>
               </Show>
             )}
           </Show>
         </Section>
         <Show when={props.recent?.opened.length}>
           {/* what this person opened last, as tiles beside the favorites: the way back to the work of the last days */}
-          <Section
-            icon="clock"
-            color={FILES_COLOR}
-            title={b().v2RecentlyOpened}
-            count={props.recent!.opened.slice(0, FAVORITES_PREVIEW).length}
-          >
+          <Section icon="clock" title={b().v2RecentlyOpened} count={props.recent!.opened.slice(0, FAVORITES_PREVIEW).length}>
             {/* rows, not tiles: a few files fill the column, and on the phone no tile stands alone in its row */}
             <List label={b().v2RecentlyOpened}>
               {props.recent!.opened.slice(0, FAVORITES_PREVIEW).map((item) => (
@@ -249,14 +254,16 @@ export default function OverviewPane(props: {
         </Show>
       </Pane>
       <Pane label={b().recentByYou} side width={{ min: 320, default: 400 }} scrollKey="filesv2-overview-recent">
+        {/* the way to all of it only where there is something (B) */}
         <Section
           icon="history"
-          color={FILES_COLOR}
           title={b().recentByYou}
-          more={{ label: b().showAllActivity, href: activityUrl({ actor: "me" }), onNavigate: props.onNavigate }}
+          more={
+            recent().length ? { label: b().showAllActivity, href: activityUrl({ actor: "me" }), onNavigate: props.onNavigate } : undefined
+          }
         >
           <Show when={props.recent} fallback={<Failed text={b().recentFailed} onRetry={props.onRetry} />}>
-            <Show when={recent().length} fallback={<Empty icon="history" text={b().noRecentByYou} />}>
+            <Show when={recent().length} fallback={<Text type="meta">{b().noRecentByYou}</Text>}>
               <List
                 label={b().recentByYou}
                 items={recent()}

@@ -752,6 +752,11 @@ describe("the views beside the folders on v2", () => {
       await tab.locator("table[aria-label='Alle Ablagen'] tbody tr:not([data-spacer])").first().waitFor();
       await shoot(tab, "14b-overview-1024");
       await expectClean(tab);
+      // at 1920 the table keeps its columns; the room goes to the columns beside it, not to gaps
+      await tab.setViewportSize({ width: 1920, height: 1080 });
+      await tab.locator("table[aria-label='Alle Ablagen'] tbody tr:not([data-spacer])").first().waitFor();
+      await shoot(tab, "14c-overview-1920");
+      await expectClean(tab);
       await tab.setViewportSize({ width: 1440, height: 900 });
 
       await tab.goBack();
@@ -948,7 +953,10 @@ describe("the views beside the folders on v2", () => {
       test(`an empty ${new URL(address, origin).searchParams.get("view") ?? "overview"} says so at ${view.name}px`, async () => {
         const { context, tab, errors } = await open(view, address, "empty");
         try {
-          expect(await tab.locator("[data-k2-part=Empty]").count()).toBeGreaterThan(0);
+          // a view says so with its empty state; all storage keeps its storages, and its empty side parts are one quiet
+          // line each, no stage of their own (B)
+          if (address === "/app/filesv2") await tab.getByText("Noch keine Favoriten").waitFor();
+          else expect(await tab.locator("[data-k2-part=Empty]").count()).toBeGreaterThan(0);
           await shoot(tab, `21-empty-${new URL(address, origin).searchParams.get("view") ?? "overview"}-${view.name}`);
           await expectClean(tab);
           expect(errors).toEqual([]);
@@ -966,6 +974,7 @@ describe("the views beside the folders on v2", () => {
       expect(await tab.locator("table[aria-label='Alle Ablagen']").getAttribute("aria-rowcount")).toBe("202");
       expect(await tab.locator("table[aria-label='Alle Ablagen'] tbody tr:not([data-spacer])").count()).toBeLessThan(80);
       console.info(`overview of 200 storages ready in ${Math.round(ready)} ms`);
+      await shoot(tab, "23-overview-200-1440");
       await expectClean(tab);
       expect(ready).toBeLessThan(5000);
       expect(errors).toEqual([]);

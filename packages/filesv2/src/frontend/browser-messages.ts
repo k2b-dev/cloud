@@ -471,8 +471,7 @@ export const browserMessages = i18n.define({
       v2RecentlyOpened: "Recently opened",
       v2RevokeLink: "Revoke link",
       otherStorage: "another storage",
-      v2AreaUnread: (values: { area: string }) =>
-        `The ${values.area} storages could not be read right now, so they are missing here. Try again later.`,
+      v2AreaMissing: (values: { area: string }) => `${values.area} storages missing`,
       v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
         `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "link" : "links"}`,
       v2SharesLead: (values: { count: number; more: string; expired: number; revoked: number }) =>
@@ -967,8 +966,7 @@ export const browserMessages = i18n.define({
       // the deed, apart from the state "Widerrufen" of a revoked link in the same column
       v2RevokeLink: "Link widerrufen",
       otherStorage: "andere Ablage",
-      v2AreaUnread: (values: { area: string }) =>
-        `Die ${values.area}-Ablagen konnten gerade nicht gelesen werden und fehlen deshalb hier. Versuch es später noch einmal.`,
+      v2AreaMissing: (values: { area: string }) => `${values.area}-Ablagen fehlen`,
       v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
         `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "Link" : "Links"}`,
       v2SharesLead: (values: { count: number; more: string; expired: number; revoked: number }) =>
