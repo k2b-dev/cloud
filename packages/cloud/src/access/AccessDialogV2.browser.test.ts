@@ -200,7 +200,7 @@ describe("the access dialog on v2", () => {
     const { context, dialog } = await open(views[0]!, "?public");
     try {
       await dialog.getByRole("switch", { name: /Public/ }).check({ force: true });
-      await dialog.getByText("https://cloud.beispiel.de/s/lager-nord").waitFor();
+      await dialog.getByText("https://cloud.example.org/s/lager-nord").waitFor();
       await dialog.locator('[data-k2-part="Notice"]').first().waitFor();
     } finally {
       await context.close();
@@ -277,6 +277,21 @@ describe("the access dialog on v2", () => {
     }
   });
 
+  test("a key that cannot be revoked stays, and the toast says so with Try again", async () => {
+    const { context, tab, dialog } = await open(views[0]!, "?keys&revokeFails");
+    try {
+      const keys = dialog.getByRole("region", { name: /API keys/ });
+      await keys.getByRole("button", { name: "Actions for Lagerimport" }).click();
+      await tab.getByRole("menuitem", { name: "Revoke" }).click();
+      await tab.getByRole("alertdialog").getByRole("button", { name: "Revoke" }).click();
+      await tab.getByText("Not revoked").waitFor();
+      await tab.getByRole("button", { name: "Try again" }).waitFor();
+      expect(await keys.getByText("Lagerimport").count()).toBe(1);
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const view of [views[0]!, views[2]!])
     test(`${view.name} px: the worst case stays readable and nothing overflows`, async () => {
       const { context, tab, errors, dialog } = await open(view, "?worst");
@@ -328,6 +343,9 @@ describe("the access dialog on v2", () => {
         // a code account by its handle
         await services.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
         const handle = services.getByRole("textbox", { name: "Kennung des Dienstkontos" });
+        // the empty line gives way to the field that adds one
+        await handle.waitFor();
+        expect(await services.getByText("Noch kein Dienstkonto.").count()).toBe(0);
         await handle.fill("code-7k2q9m4xwt");
         await handle.press("Enter");
         await row(services, "Code von Protokolle Vorstand").waitFor();

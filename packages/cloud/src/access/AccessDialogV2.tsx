@@ -177,13 +177,22 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
       },
     ];
   };
+  // A code account's level stands in its menu; its line says only what it is.
+  const line = (row: DraftRow) =>
+    isCodeAccount(row.display.serviceAccountKind) && state.canEdit() && row.next
+      ? (row.display.serviceAccountDescription ?? t().serviceAccount)
+      : state.kindLine(row);
   const AccessRowV2 = (rowProps: { row: DraftRow }): JSX.Element => {
     const row = () => rowProps.row;
     return (
       <Row
         avatar={person(row())}
-        lines={[state.nameOf(row()), state.kindLine(row()) || " "]}
-        meta={state.isViewer(row()) ? t().you : undefined}
+        lines={[state.nameOf(row()), line(row()) || " "]}
+        meta={
+          [state.isViewer(row()) ? t().you : undefined, row().next && state.lastManagers().has(row().key) ? t().managesAlone : undefined]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
         href={row().display.serviceAccountHref}
         end={
           <>
@@ -249,10 +258,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                 </Menu>
               )}
             </Show>
-            <Show
-              when={state.canEdit()}
-              fallback={<Text type="meta">{state.generalOn(type) ? state.levelLabel({ type }, row()?.next ?? null) : t().off}</Text>}
-            >
+            <Show when={state.canEdit()}>
               {/* k2b-ui gap: Setting (#4223): a switch at a row's end has no name of its own; the row already shows it. */}
               <Check
                 switch
@@ -359,7 +365,11 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                           meta={
                             already() ? t().alreadyHas({ level: state.levelLabel(already()!.principal, already()!.next) }) : entry.badge
                           }
-                          action={already() ? undefined : { label: t().add, icon: "plus", onClick: () => add(entry) }}
+                          end={
+                            already() ? undefined : (
+                              <Button variant="ghost" icon="plus" label={`${t().add}: ${entry.label}`} onClick={() => add(entry)} />
+                            )
+                          }
                         />
                       );
                     }}
@@ -408,7 +418,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
         <Section
           icon="code"
           title={t().serviceAccounts}
-          count={state.objectAccountRows().filter((row) => row.next).length}
+          count={state.objectAccountRows().filter((row) => row.next).length || undefined}
           summary={state.objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : undefined}
           actions={
             state.canAddObjectAccounts() && !handleOpen()
@@ -449,7 +459,6 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
             >
               <Input
                 value={handle()}
-                placeholder="code-7k2q9m4xwt"
                 disabled={state.saving()}
                 onInput={(value) => {
                   setHandle(value);
@@ -476,16 +485,19 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                 <Row
                   icon="code"
                   lines={[account().display.displayName, account().description ?? t().serviceAccount]}
-                  action={{
-                    label: t().addServiceAccount,
-                    icon: "plus",
-                    onClick: () => {
-                      state.addFound(account());
-                      setHandleOpen(false);
-                      setHandle("");
-                      setFound(null);
-                    },
-                  }}
+                  end={
+                    <Button
+                      variant="ghost"
+                      icon="plus"
+                      label={t().addServiceAccount}
+                      onClick={() => {
+                        state.addFound(account());
+                        setHandleOpen(false);
+                        setHandle("");
+                        setFound(null);
+                      }}
+                    />
+                  }
                 />
               )}
             </Show>

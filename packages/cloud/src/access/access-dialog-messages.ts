@@ -102,6 +102,7 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Service account",
       you: "You",
+      managesAlone: "Manages alone",
       summaryTitle: "Who has access",
       summaryStackLabel: ({ name, more }: { name: string; more: number }) =>
         more === 0
@@ -219,6 +220,7 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Dienstkonto",
       you: "Du",
+      managesAlone: "Verwaltet allein",
       summaryTitle: "Wer Zugriff hat",
       summaryStackLabel: ({ name, more }) =>
         more === 0
