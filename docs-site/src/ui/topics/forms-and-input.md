@@ -52,7 +52,7 @@ Names one control with a label, a hint or an error, and "optional" or a unit; `F
 
 ### Input
 
-A text field of one line or several (`multiline`), a number, an address or a search.
+A text field of one line or several (`multiline`), a number, an address or a search. A field of several lines shows `rows` lines at least (3 by default) and grows with its words up to ten lines, then it scrolls.
 
 <Props of="Input" />
 
@@ -70,7 +70,7 @@ A day, typed as the person reads it, with a calendar symbol.
 
 ### Check
 
-One thing on or off; `switch` when it acts at once.
+One thing on or off; `switch` when it acts at once. A `description` says under its words what turning it on does.
 
 <Props of="Check" />
 
@@ -85,7 +85,6 @@ One choice from a few options, all visible.
 - A time field: a time is an `Input` with a placeholder such as "09:00".
 - `DateInput` has no picker yet and takes no `disabled`.
 - `Select` can dim single options (`SelectOption` `disabled`), but not the whole select.
-- A multiline `Input` with a `value` shows empty in the server's page until the page comes alive ([#4148](https://github.com/k2b-dev/cloud/issues/4148)).
 
 Until they ship, use the nearest part and write `// k2b-ui gap: …` at that place.
 

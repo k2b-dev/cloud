@@ -1,17 +1,20 @@
 import {
   createContext,
+  createEffect,
   createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
+  onCleanup,
   children as resolveChildren,
   Show,
   useContext,
 } from "solid-js";
 import { isServer } from "solid-js/web";
 import { type ChoiceItem, useSelect } from "./behavior/select";
-import { Icon } from "./marks";
+import { custom, Icon } from "./marks";
 import { textEdge } from "./tokens";
 
 type FieldIds = {
@@ -166,8 +169,10 @@ export type InputProps = {
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
-  /** A text of several lines (80 px). */
+  /** A text of several lines: it shows `rows` lines at least and grows with its words up to ten lines, then scrolls. */
   multiline?: boolean;
+  /** The lines a multi-line field shows at least; 3 (80 px) when not set. */
+  rows?: number;
   /** The smallest number a `number` field takes. */
   min?: number;
   /** The largest number a `number` field takes. */
@@ -193,6 +198,33 @@ export type InputProps = {
   end?: JSX.Element;
   /** The value cannot be changed now: a grey well; the browser leaves it out of a form that is sent. */
   disabled?: boolean;
+};
+
+/** Whether the browser sizes a text of several lines to its words itself (CSS `field-sizing`, as v2.css asks). */
+const sizesToText = () => typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+
+/**
+ * Where the browser cannot, the height of a text of several lines follows its words: as you type, when its value
+ * changes and when its width does (the way core's textarea does it). v2.css bounds it between `rows` and ten lines.
+ */
+const followText = (area: HTMLTextAreaElement, value: () => string | undefined) => {
+  const fit = () => {
+    area.style.height = "auto";
+    area.style.height = `${area.scrollHeight}px`;
+  };
+  createEffect(on(value, () => queueMicrotask(fit)));
+  area.addEventListener("input", fit);
+  let width = -1;
+  const sizes = new ResizeObserver(([entry]) => {
+    if (!entry || entry.contentRect.width === width) return;
+    width = entry.contentRect.width;
+    fit();
+  });
+  sizes.observe(area);
+  onCleanup(() => {
+    area.removeEventListener("input", fit);
+    sizes.disconnect();
+  });
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -238,6 +270,7 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
+      style={props.multiline && props.rows !== undefined ? custom({ "--k2-rows": String(props.rows) }) : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       <Show
@@ -262,7 +295,11 @@ export const Input = (props: InputProps) => {
             one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
-          ref={(element) => forwardRef(props.ref, element)}
+          rows={props.rows ?? 3}
+          ref={(element) => {
+            forwardRef(props.ref, element);
+            if (!sizesToText()) followText(element, () => props.value);
+          }}
           onInput={(event) => props.onInput?.(event.currentTarget.value)}
           onKeyDown={(event) => props.onKeyDown?.(event)}
         >
@@ -416,6 +453,8 @@ export type CheckProps = {
   disabled?: boolean;
   /** Called with the new state when a person changes it. */
   onChange?: (checked: boolean) => void;
+  /** A quiet line under the words, such as what turning it on does; assistive technology reads it with the box. */
+  description?: string;
 };
 
 /**
@@ -429,6 +468,7 @@ export const Check = (props: CheckProps) => {
   // With `onChange` the caller holds the state; without, the box keeps it, so the mark always shows what is set.
   const checked = () => (props.onChange ? props.checked : own());
   const set = () => checked() === true || checked() === "mixed";
+  const described = `${createUniqueId()}-description`;
   return (
     <label
       class="k2-choice"
@@ -444,7 +484,7 @@ export const Check = (props: CheckProps) => {
           name={props.name ?? field?.name}
           checked={checked() === true}
           ref={(input) => mixed(input, () => checked() === "mixed")}
-          aria-describedby={field?.described}
+          aria-describedby={[field?.described, props.description ? described : undefined].filter(Boolean).join(" ") || undefined}
           required={field?.required || undefined}
           disabled={props.disabled}
           onChange={(event) => {
@@ -465,7 +505,16 @@ export const Check = (props: CheckProps) => {
           <span class="k2-switch" data-checked={checked() === true ? "" : undefined} data-k2-mark="" />
         </Show>
       </span>
-      <span class="k2-choice-text">{props.label}</span>
+      <span class="k2-choice-text">
+        {props.label}
+        <Show when={props.description}>
+          {(text) => (
+            <span class="k2-choice-description" id={described}>
+              {text()}
+            </span>
+          )}
+        </Show>
+      </span>
     </label>
   );
 };

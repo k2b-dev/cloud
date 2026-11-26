@@ -804,18 +804,25 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
+/* The head of a section is 52 px; a long title (a question, a name) wraps onto more lines and the head grows with it,
+   so no word is cut. */
 .k2-ui .k2-sh {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: var(--k2-h-status);
+  min-height: var(--k2-h-status);
   padding: 8px var(--k2-edge) 0;
   min-width: 0;
 }
 .k2-ui .k2-sh > h3 {
   font: var(--k2-t-body);
   font-weight: 600;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* the symbol, the count and the deeds keep their size; only the title wraps */
+.k2-ui .k2-sh > :not(h3) {
+  flex: none;
 }
 .k2-ui .k2-sh > .k2-sh-count {
   color: var(--k2-subtle);
@@ -860,7 +867,7 @@
   padding: 12px 0 4px;
 }
 .k2-ui .k2-pane[data-side] .k2-sh {
-  height: var(--k2-h-control-small);
+  min-height: var(--k2-h-control-small);
   padding: 0 var(--k2-edge);
 }
 .k2-ui .k2-pane[data-side] .k2-sh > h3 {
@@ -2062,6 +2069,12 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* a quiet line under the words of a check, as a field's hint stands under its control */
+.k2-ui .k2-choice-description {
+  display: block;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
 .k2-ui .k2-choices {
   display: flex;
   flex-direction: column;
@@ -2117,13 +2130,21 @@
   color: var(--k2-subtle);
   opacity: 1;
 }
+/* A text of several lines shows `rows` lines at least (3: 80 px) and grows with its text up to ten lines, then it
+   scrolls. The browser sizes it to its text (`field-sizing`); where it cannot, Input sets its height as you type. */
 .k2-ui .k2-input[data-multiline] {
-  height: 80px;
+  --k2-rows: 3;
+  height: auto;
   align-items: flex-start;
-  padding-top: 8px;
+  padding-block: 8px 10px;
 }
 .k2-ui .k2-input[data-multiline] > textarea {
   resize: none;
+  height: auto;
+  line-height: 20px;
+  field-sizing: content;
+  min-height: calc(var(--k2-rows) * 20px);
+  max-height: 200px;
 }
 .k2-ui .k2-input > .k2-icon {
   color: var(--k2-subtle);
