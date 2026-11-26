@@ -3920,9 +3920,10 @@
     border-bottom: 0;
   }
   /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells */
-  /* (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
-  /* one primitive: Pane.Split puts a seam after every pane, a Table its phone form after the large one */
-  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
+  /* (a table with a phone form ends with that form, which stays hidden while the large table still shows; the last
+     but phone forms: what follows in the pane is the app's, and an empty island there counts as nothing) */
+  /* one primitive: Pane.Split puts a seam after every pane */
+  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:nth-last-child(1 of :not(.k2-table-phone)) {
     --k2-table-end: 0;
   }
   /* a menu or popover that opens from a kept button renders beside it and is in the top layer (core's popover="manual") */
