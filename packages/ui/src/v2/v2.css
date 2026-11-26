@@ -4592,7 +4592,9 @@
      page, with its way back or without, and so does the floating main action of the list (the detail has its own
      deeds) */
   .k2-ui .k2-pane:has(> .k2-scroll > .k2-split > .k2-pane[data-detail]) > [data-slot="status"],
-  .k2-ui .k2-ws:has(.k2-split > .k2-pane[data-detail]) .k2-fab {
+  .k2-ui
+    .k2-ws:has(> .k2-ws-main > .k2-split > .k2-pane[data-detail], > .k2-ws-main > .k2-pane > .k2-scroll > .k2-split > .k2-pane[data-detail])
+    > .k2-fab {
     display: none;
   }
   .k2-ui .k2-pane-back {

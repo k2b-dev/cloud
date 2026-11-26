@@ -789,10 +789,24 @@ test("key numbers never stand alone as a tall cell: four in a row or two by two,
                 .map((cell) => cell.querySelector<HTMLElement>(".k2-cell-value")!)
                 .filter((value) => value.scrollWidth > value.clientWidth + 1)
                 .map((value) => `${value.textContent} (${value.scrollWidth} in ${value.clientWidth})`),
+              // a number is one word: it stands on one line, never broken between its digits (review r5)
+              numbers: items.flatMap((cell) => {
+                const value = cell.querySelector<HTMLElement>(".k2-cell-value")!;
+                const text = [...value.childNodes].find(
+                  (node) => node.nodeType === Node.TEXT_NODE && /^[\d.,]+$/.test(node.textContent ?? ""),
+                );
+                if (!text) return [];
+                const range = document.createRange();
+                range.selectNodeContents(text);
+                return [[text.textContent ?? "", range.getClientRects().length] as const];
+              }),
             };
           }),
         );
         const [four, three] = found;
+        const numbers = found.flatMap((cells) => cells.numbers);
+        expect(numbers.map(([text]) => text)).toContain("12.345.678");
+        expect(numbers.filter(([, lines]) => lines !== 1)).toEqual([]);
         if (width === 390) {
           // two by two, equal; two and the third as one line across
           expect(four!.rows).toBe(2);
