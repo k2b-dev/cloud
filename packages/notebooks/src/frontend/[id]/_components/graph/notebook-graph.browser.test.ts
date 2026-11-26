@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { measureSidebarGutter, SIDEBAR_GUTTER } from "../sidebar/sidebar-gutter.test-fixture";
 import { bigGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph } from "./graph.fixtures";
 import { buildGraphModel, matchesQuery, visibleEdges, visibleNotes } from "./model";
 import { startGraphServer } from "./notebook-graph.browser-server";
@@ -194,6 +195,21 @@ for (const viewport of [
       await close(page);
     }
   }, 30_000);
+
+test(`${browserName}: Book's sidebar beside the graph keeps the v2 gutter, and nothing touches its edge`, async () => {
+  const page = await open(graphPath("hand01"));
+  try {
+    const { starts, touching } = await measureSidebarGutter(page);
+    expect(touching).toEqual([]);
+    expect(starts.map(({ name, left }) => [name, left])).toEqual([
+      ["switcher", SIDEBAR_GUTTER],
+      ["first row", SIDEBAR_GUTTER],
+      ["foot row", SIDEBAR_GUTTER],
+    ]);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
 
 test(`${browserName}: one change in the notebook asks Book once`, async () => {
   const page = await open(graphPath("hand01"));

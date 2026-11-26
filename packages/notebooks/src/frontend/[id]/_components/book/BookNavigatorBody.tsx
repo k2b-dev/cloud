@@ -320,11 +320,12 @@ export function useBookNavigator(props: BookNavigatorProps) {
 /**
  * Book's navigation on a wide screen: the notebook switcher, the way into the workspace, the reading order, the tags,
  * and Links at its foot. The v1 frame puts it in `AppWorkspace.Sidebar`; the v2 workspace puts it in its `sidebar`
- * slot until v2 has a tree (k2b-ui gap: Nav tree).
+ * slot until v2 has a tree (k2b-ui gap: Nav tree). It shares the notebook sidebar's frame, which keeps the v2 Nav's
+ * gutter there (app.css `.notebook-sidebar-frame`).
  */
 export default function BookNavigatorBody(props: { navigator: ReturnType<typeof useBookNavigator>; current?: "graph" }) {
   return (
-    <>
+    <div class="notebook-sidebar-frame">
       <AppWorkspace.SidebarSwitcher {...props.navigator.switcher()} />
       <AppWorkspace.SidebarBody>{props.navigator.navigation()}</AppWorkspace.SidebarBody>
       {/* Marking the graph as the current page also names it, so the workspace head shows no way up beside it. */}
@@ -333,6 +334,6 @@ export default function BookNavigatorBody(props: { navigator: ReturnType<typeof 
           {props.navigator.workspaceText().noteLinks}
         </AppWorkspace.SidebarItem>
       </AppWorkspace.SidebarFooter>
-    </>
+    </div>
   );
 }
