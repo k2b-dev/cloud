@@ -363,26 +363,21 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
       );
     }
   });
-  /** Where the event's invitation stands: colour, symbol and word. */
+  /** Where the event's invitation stands: symbol and word, neutral while all is well; colour only when it failed. */
   const deliveryState = (state: "preparing" | "prepared" | "drafted" | "failed" | undefined) =>
     state === "drafted" ? (
-      <Chip status="ok" icon="mail">
-        {t.invitationDrafted}
-      </Chip>
+      <Chip icon="mail">{t.invitationDrafted}</Chip>
     ) : state === "failed" ? (
       <Chip status="bad" icon="alert-circle">
         {t.invitationFailedChip}
       </Chip>
     ) : state ? (
-      <Chip status="warn" icon="loader">
-        {t.invitationPreparing}
-      </Chip>
+      <Chip icon="loader">{t.invitationPreparing}</Chip>
     ) : (
       <Text type="meta">{t.invitationNone}</Text>
     );
   return (
     <Section
-      icon="send"
       title={t.invitations}
       count={context()?.attendees.length || undefined}
       actions={

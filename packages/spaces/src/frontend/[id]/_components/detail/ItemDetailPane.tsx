@@ -1040,7 +1040,6 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
     >
       {keyFacts()}
       <Section
-        icon="list-details"
         title={t.properties}
         actions={canEditItem() ? [{ label: t.editItem, icon: "pencil", onClick: () => void handleEdit() }] : undefined}
       >
@@ -1067,7 +1066,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
       <Show
         when={!isEvent() && (canEditItem() || props.detail.blockedBy.length > 0 || props.detail.blocks.length > 0 || hiddenBlockers() > 0)}
       >
-        <Section icon="lock" title={t.blockedBy} count={props.detail.blockedBy.length + hiddenBlockers()}>
+        <Section title={t.blockedBy} count={props.detail.blockedBy.length + hiddenBlockers()}>
           <Show when={hiddenBlockers() > 0}>
             <Text type="meta">{t.hiddenBlockers({ count: hiddenBlockers() })}</Text>
           </Show>
@@ -1149,7 +1148,6 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
       <Show when={item().description}>
         {(description) => (
           <Section
-            icon="align-left"
             title={t.description}
             actions={canEditItem() ? [{ label: t.editDescription, icon: "pencil", onClick: () => void handleEdit() }] : undefined}
           >
@@ -1168,40 +1166,20 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
         />
       </Show>
 
-      <Show when={props.canWrite || comments.page().total > 0}>
-        <CommentsSection
-          spaceId={spaceId}
-          itemId={props.detail.commentTarget.itemId}
-          recurrenceId={props.detail.commentTarget.recurrenceId}
-          comments={comments.page().items}
-          total={comments.page().total}
-          loading={comments.query.loading()}
-          hasMore={comments.page().hasNext}
-          loadingMore={comments.query.loadingMore()}
-          loadError={comments.query.error()?.message}
-          onLoadMore={() => comments.query.loadMore()}
-          onRetry={() => comments.query.refresh()}
-          currentUserId={props.currentUserId}
-          onUpdate={comments.refresh}
-          dateConfig={props.dateConfig}
-          canWrite={props.canWrite}
-        />
-      </Show>
-
       <Show when={isEvent() && canEditItem() && props.mailIntegrationAvailable}>
         <EventInvitations spaceId={spaceId} itemId={item().id} title={item().title} />
       </Show>
 
       <Show when={!isEvent() && props.detail.work?.progress}>
         {(note) => (
-          <Section icon="progress" title={t.workProgress}>
+          <Section title={t.workProgress}>
             <Prose markdown={note().content} />
           </Section>
         )}
       </Show>
       <Show when={!isEvent() && props.detail.work?.result}>
         {(result) => (
-          <Section icon="flag-check" title={t.workResult}>
+          <Section title={t.workResult}>
             <Prose markdown={result().content} />
             <Show when={result().commit}>
               {(commit) => <Facts items={[{ label: t.commit, value: commit(), mono: true, copy: commit() }]} />}
@@ -1231,11 +1209,32 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
         />
       </Show>
 
+      {/* What it is comes first, then who said and did what: comments, then the history. */}
+      <Show when={props.canWrite || comments.page().total > 0}>
+        <CommentsSection
+          spaceId={spaceId}
+          itemId={props.detail.commentTarget.itemId}
+          recurrenceId={props.detail.commentTarget.recurrenceId}
+          comments={comments.page().items}
+          total={comments.page().total}
+          loading={comments.query.loading()}
+          hasMore={comments.page().hasNext}
+          loadingMore={comments.query.loadingMore()}
+          loadError={comments.query.error()?.message}
+          onLoadMore={() => comments.query.loadMore()}
+          onRetry={() => comments.query.refresh()}
+          currentUserId={props.currentUserId}
+          onUpdate={comments.refresh}
+          dateConfig={props.dateConfig}
+          canWrite={props.canWrite}
+        />
+      </Show>
+
       <Show when={props.route.detail()?.item.id === item().id}>
         <ItemHistorySection spaceId={spaceId} itemId={props.detail.commentTarget.itemId} dateConfig={props.dateConfig} />
       </Show>
 
-      <Section icon="info-circle" title={isEvent() ? t.moreAboutEvent : t.moreAboutTask}>
+      <Section title={isEvent() ? t.moreAboutEvent : t.moreAboutTask}>
         <Facts
           items={[
             { label: t.created, value: dates.formatDateTime(item().createdAt, props.dateConfig) },
@@ -1246,7 +1245,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
       </Section>
       <Show when={props.route.access()}>
         {(access) => (
-          <Section icon="users" title={t.accessTitle} summary={t.accessWholeSpace}>
+          <Section title={t.accessTitle} summary={t.accessWholeSpace}>
             <Show when={access().state !== "error"} fallback={<Failed text={t.loadAccessFailed} onRetry={access().retry} />}>
               <Show when={access().state === "ready"} fallback={<Loading rows={3} lines={1} />}>
                 <For each={accessMemberEntries(access().members, { currentUserId: props.currentUserId, locale: locale() })}>

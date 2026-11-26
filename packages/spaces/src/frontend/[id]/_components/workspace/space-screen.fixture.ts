@@ -82,6 +82,8 @@ const usualItems: SpaceItem[] = [
     startsAt: "2026-10-15T14:00:00+02:00",
     endsAt: "2026-10-15T15:00:00+02:00",
     location: "Hall 2",
+    // The people the invitations go to take part; the facts and the invitations name the same people.
+    assignees: [kim, robin],
   }),
   item("Item07", "Col003", "Check the September delivery notes", { activeBlockerCount: 1, priority: "urgent" }),
   item("Item10", "Col004", "Sweep ramp 2", { assignees: [robin] }),

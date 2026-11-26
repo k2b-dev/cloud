@@ -293,7 +293,8 @@ export default function SpaceScreen(props: SpaceScreenProps) {
         />
       }
       primary={
-        state.canWrite
+        // An open item on the phone is the page with back and its own deeds; the floating main action stays with the list.
+        state.canWrite && !detail.open()
           ? {
               label: primaryLabel,
               icon: "plus",
