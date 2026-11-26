@@ -87,6 +87,21 @@
 .k2b-ui .notebooks-workspace {
   --k2b-workspace-sidebar-width: 16rem;
 }
+/* The notebook sidebar's own frame. In the v2 workspace's sidebar it keeps the v2 Nav's gutter (12 px beside and
+   below), so the switcher, the search field, the chips and the rows start on one edge and none touches the sidebar's
+   edge; the v1 sidebar (`SidebarDesktop`) brings its own padding. */
+.notebook-sidebar-frame {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+.k2b-app-workspace__sidebar-desktop > .notebook-sidebar-frame {
+  padding: 0;
+}
 .notebook-sidebar-head {
   display: flex;
   min-width: 0;
