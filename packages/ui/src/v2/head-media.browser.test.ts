@@ -1351,3 +1351,32 @@ test("on the phone a row that leads with a mark is 56 px with a mark of 40; a ro
     1024,
   );
 });
+
+for (const width of [1440, 1024, 800])
+  test(`a bar in the flow of a column puts its end on a line of its own where it has no room, never under its deeds (Files, ${width})`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector(".k2-pane[data-detail] .k2-scroll > .k2-bar")!;
+          const end = bar.querySelector(".k2-bar-end")!.getBoundingClientRect();
+          const deeds = [...bar.querySelectorAll(".k2-bar-start .k2-btn")].map((button) => button.getBoundingClientRect());
+          const pane = bar.closest(".k2-pane")!.getBoundingClientRect();
+          return {
+            apart: deeds.every((deed) => end.left >= deed.right || end.top >= deed.bottom || end.bottom <= deed.top),
+            inside: [end, ...deeds].every((box) => box.right <= pane.right + 0.5),
+            // every deed keeps its whole label
+            whole: [...bar.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].every(
+              (button) => button.scrollWidth <= button.clientWidth + 1,
+            ),
+          };
+        });
+        expect({ width, ...found }).toEqual({ width, apart: true, inside: true, whole: true });
+        // at 800 the detail stands at its narrowest; the actions of its sections are another place (MW)
+        if (width === 800) return;
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+  });
