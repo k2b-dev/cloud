@@ -129,7 +129,10 @@ export function Demo() {
                       setSender(value);
                       did(`sender:${value}`)();
                     },
-                    items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
+                    items: [
+                      { label: "anna@werkstatt.example", description: "Persönlich, mit deiner Signatur" },
+                      { label: "info@werkstatt.example", description: "Für das Team, Antworten gehen an alle" },
+                    ],
                   },
                   { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
                 ]}

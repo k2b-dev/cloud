@@ -1,5 +1,5 @@
 // Recipe: dialogs and toasts on the members of a space. "Einladen" opens a dialog with its fields (a sheet from the
-// bottom on the phone) and its own one primary. Removing a member asks first with Dialog.confirm and then answers with
+// bottom on the phone) and its own one primary. A member's "…" chooses the role, each option with what it allows. Removing a member asks first with Dialog.confirm and then answers with
 // a toast and "Rückgängig"; sending an invitation again answers with a toast that says whether it worked.
 import {
   Bar,
@@ -34,6 +34,12 @@ const invitations: Invitation[] = [
   { email: "lea.brandt@holzwerk-brandt.de", sent: "eingeladen am 21. Nov.", reachable: true },
 ];
 const roles = ["Lesen", "Bearbeiten", "Verwalten"];
+// what each role allows: one quiet line under the option of the menu's choice
+const allows: Record<string, string> = {
+  Lesen: "Sieht Aufgaben und Dateien",
+  Bearbeiten: "Ändert Aufgaben und lädt Dateien hoch",
+  Verwalten: "Lädt auch Mitglieder ein und entfernt sie",
+};
 
 export default function SpaceMembers() {
   const toast = useToast();
@@ -60,7 +66,12 @@ export default function SpaceMembers() {
       ? toast(`Einladung an ${invitation.email} erneut gesendet`, { status: "ok" })
       : toast(`Einladung an ${invitation.email} nicht gesendet: Die Adresse hat keine Domain.`, { status: "bad" });
   const deeds = (member: Member): MenuEntry[] => [
-    { title: "Rolle", choice: member.role, onChoose: (next) => setRoleOf(member, next), items: roles.map((label) => ({ label })) },
+    {
+      title: "Rolle",
+      choice: member.role,
+      onChoose: (next) => setRoleOf(member, next),
+      items: roles.map((label) => ({ label, description: allows[label] })),
+    },
     // `void`: a returned Promise would keep the menu open and its entry busy while the question waits
     { label: "Entfernen", icon: "user-minus", danger: true, onClick: () => void remove(member) },
   ];
@@ -140,6 +151,7 @@ export default function SpaceMembers() {
 // after the page is live the Example presses the visible buttons and menu entries with these names, one after the other.
 export const states = {
   dialog: { render: () => <SpaceMembers />, press: "Einladen" },
+  roles: { render: () => <SpaceMembers />, press: "Aktionen für Jonas Wolf" },
   confirm: { render: () => <SpaceMembers />, press: ["Aktionen für Jonas Wolf", "Entfernen"] },
   undo: { render: () => <SpaceMembers />, press: ["Aktionen für Jonas Wolf", "Entfernen", "Entfernen"] },
   error: { render: () => <SpaceMembers />, press: "Erneut senden" },

@@ -1,4 +1,15 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  onCleanup,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -27,6 +38,11 @@ export type MenuItem = {
   disabled?: boolean;
   /** A quiet hint at the end, such as the key that does the same ("⌘ D"). */
   meta?: string;
+  /**
+   * One quiet line under the label that says what the entry gives, such as what a level of access allows ("Kann
+   * lesen und kommentieren"). Assistive technology hears it as the entry's description, not as part of its name.
+   */
+  description?: string;
   /** An entry that toggles: `onClick` flips it. */
   checked?: boolean;
   /** A submenu, opened to the side. */
@@ -187,6 +203,8 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
     );
   }
   const valueOf = (item: MenuItem) => item.value ?? item.label;
+  const base = createUniqueId();
+  const descriptionId = (value: string) => `${base}-${props.section.items.findIndex((each) => valueOf(each) === value)}`;
   return (
     <props.level.RadioGroup
       name={props.name}
@@ -207,9 +225,12 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
               disabled={item().disabled}
               closeOnSelect
               class="k2-mi"
+              data-described={item().description ? "" : undefined}
+              aria-describedby={item().description ? descriptionId(value) : undefined}
             >
               <EntryFace
                 item={item()}
+                descriptionId={descriptionId(value)}
                 lead={props.lead}
                 end={
                   <span class="k2-mi-tick">
@@ -234,14 +255,24 @@ const kindOf = (entry: MenuItem): EntryKind =>
 
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
-const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
+const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element; descriptionId?: string }) => (
   <>
     <Show when={props.lead}>
       <span class="k2-mi-lead">
         <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
       </span>
     </Show>
-    <span class="k2-mi-label">{props.item.label}</span>
+    <Show when={props.item.description} fallback={<span class="k2-mi-label">{props.item.label}</span>}>
+      {(description) => (
+        <span class="k2-mi-text">
+          <span class="k2-mi-label">{props.item.label}</span>
+          {/* the entry's description (aria-describedby), kept out of its name */}
+          <span class="k2-mi-desc" id={props.descriptionId} aria-hidden="true">
+            {description()}
+          </span>
+        </span>
+      )}
+    </Show>
     <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
     {props.end}
   </>
@@ -249,8 +280,15 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
 
 /** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */
 const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; value: string; lead: boolean }) => {
+  const describedBy = createUniqueId();
   const shared = {
     class: "k2-mi",
+    get "data-described"() {
+      return props.item.description ? "" : undefined;
+    },
+    get "aria-describedby"() {
+      return props.item.description ? describedBy : undefined;
+    },
     get "data-danger"() {
       return props.item.danger ? "" : undefined;
     },
@@ -271,7 +309,7 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
     return (
       <>
         <sub.Trigger {...shared}>
-          <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
+          <EntryFace item={props.item} lead={props.lead} descriptionId={describedBy} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
         <sub.Popup class="k2-menu" data-k2-part="Menu" sideOffset={4} collisionPadding={8}>
           <Entries level={sub} entries={props.item.items ?? []} />
@@ -285,6 +323,7 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
         <EntryFace
           item={props.item}
           lead={props.lead}
+          descriptionId={describedBy}
           end={
             <span class="k2-mi-tick">
               <Show when={props.item.checked}>
@@ -302,13 +341,13 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
         when={props.item.onNavigate}
         fallback={
           <props.level.LinkItem {...keyed} href={props.item.href}>
-            <EntryFace item={props.item} lead={props.lead} />
+            <EntryFace item={props.item} lead={props.lead} descriptionId={describedBy} />
           </props.level.LinkItem>
         }
       >
         {(onNavigate) => (
           <props.level.NavLinkItem {...keyed} href={props.item.href} onNavigate={onNavigate()}>
-            <EntryFace item={props.item} lead={props.lead} />
+            <EntryFace item={props.item} lead={props.lead} descriptionId={describedBy} />
           </props.level.NavLinkItem>
         )}
       </Show>
@@ -316,7 +355,7 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
   }
   return (
     <props.level.Item {...keyed} onSelect={() => props.item.onClick?.()}>
-      <EntryFace item={props.item} lead={props.lead} />
+      <EntryFace item={props.item} lead={props.lead} descriptionId={describedBy} />
     </props.level.Item>
   );
 };

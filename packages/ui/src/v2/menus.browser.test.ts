@@ -5,6 +5,7 @@ import type { Browser, Locator, Page } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-menus.demo";
+import { measureV2Layout } from "./testing";
 import { heights } from "./tokens";
 
 // Menu, Popover and Toast of v2 in a real engine, with v2.css: the shapes of the mockup (entries of 32 px in a menu
@@ -159,6 +160,30 @@ test("menu: a tick flips in place (the same element) and stands at the end of it
   });
 });
 
+test("menu: an option with a description shows it under its label; it describes the option and is no part of its name", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Antwort" }).click();
+    await page.locator(menu).waitFor();
+    await settled(page);
+    const personal = page.getByRole("menuitemradio", { name: "anna@werkstatt.example", exact: true });
+    const described = await personal.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby") ?? "")?.textContent);
+    expect(described).toBe("Persönlich, mit deiner Signatur");
+    // two lines: the label on the 20 px line of the tick, the description under it; the entry grows from 32 to 48 px
+    const [entry, label, description, tick] = [
+      await box(personal),
+      await box(personal.locator(".k2-mi-label")),
+      await box(personal.locator(".k2-mi-desc")),
+      await box(personal.locator(".k2-mi-tick")),
+    ];
+    expect(entry.height).toBe(48);
+    expect(description.y).toBeGreaterThanOrEqual(label.y + label.height);
+    expect(Math.round(tick.y)).toBe(Math.round(label.y));
+    // an option without a description keeps its 32 px
+    expect((await box(page.getByRole("menuitemradio", { name: "Antworten", exact: true }))).height).toBe(32);
+    expect((await measureV2Layout(page, { root: menu })).problems).toEqual([]);
+  });
+});
+
 test("menu: sections with headings; a choice is one radio group, choosing closes the menu and moves the tick", async () => {
   await withPage(async (page) => {
     const trigger = page.getByRole("button", { name: "Antwort" });
@@ -199,7 +224,8 @@ test("menu: sections with headings; a choice is one radio group, choosing closes
     expect(await page.getByRole("menuitemradio", { name: "Allen antworten" }).getAttribute("aria-checked")).toBe("true");
     expect(await reply.getAttribute("aria-checked")).toBe("false");
     for (let step = 0; step < 4; step++) await page.keyboard.press("ArrowDown");
-    expect(await focused(page)).toBe("info@werkstatt.example");
+    // the focused option, by its label (its description is the second line)
+    expect(await page.evaluate(() => document.activeElement?.querySelector(".k2-mi-label")?.textContent)).toBe("info@werkstatt.example");
     await page.keyboard.press("Enter");
     await closed(page, menu);
     expect(await deeds(page)).toEqual(["kind:all", "sender:info@werkstatt.example"]);

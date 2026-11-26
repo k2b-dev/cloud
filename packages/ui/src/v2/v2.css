@@ -3047,6 +3047,29 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* an entry with a description: the label and one quiet line under it; the entry grows from 32 to 48 px, its sign and
+   tick stay on the label's line */
+.k2-ui .k2-mi[data-described] {
+  height: auto;
+  min-height: 48px;
+  padding-block: 6px;
+  align-items: flex-start;
+}
+.k2-ui .k2-mi[data-described] > :is(.k2-mi-lead, .k2-mi-tick, .k2-mi-meta, .k2-icon) {
+  height: 20px;
+  align-items: center;
+}
+.k2-ui .k2-mi-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-mi-desc {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  white-space: normal;
+}
 .k2-ui .k2-mi-meta {
   flex: none;
   font: var(--k2-t-meta);

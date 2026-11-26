@@ -386,7 +386,10 @@ lines instead of cutting a thing.
   section `{ title, items }` under a quiet heading. A section with
   `choice` and `onChoose` is one choice (reply kind, sender, order): its
   entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
+  tick, choosing closes the menu. `description` on an option or a toggle
+  is one quiet line under its label that says what it gives ("Ändert
+  Aufgaben und lädt Dateien hoch"); it describes the entry for assistive
+  technology and is no part of its name. Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
   its button; there is no `align`.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
