@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser } from "../../../../ui/test/browser";
 
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
@@ -90,7 +90,7 @@ const boxes = (page: Page) =>
     }),
   );
 
-test("rating line and ratings bars name the day, the rating and the count on keyboard and hover", async () => {
+test("the rating line names the day, the rating and the count on keyboard", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1400 } });
   try {
     await open(page, "de");
@@ -110,11 +110,7 @@ test("rating line and ratings bars name the day, the rating and the count on key
     expect(text).toContain("Durchschnittliche Bewertung: 3,0/5");
     await page.keyboard.press("Escape");
 
-    const bar = '[data-chart-kind="bar"]';
-    await hoverInPlace(page.locator(`${bar} .stdlib-chart-bar`).last());
-    text = await tooltipText(page, bar);
-    expect(text).toContain("28. Sept.");
-    expect(text).toContain("Bewertungen: 4");
+    expect(text).toContain("Bewertungen: 2");
     // Inspection draws over the plot; the charts keep their place and size.
     expect(await boxes(page)).toEqual(before);
   } finally {
@@ -132,20 +128,6 @@ test("a single day's point names its day and rating like the line", async () => 
     const text = await tooltipText(page, point);
     expect(text).toContain("Sep 28");
     expect(text).toContain("Average rating: 5.0/5");
-  } finally {
-    await page.close();
-  }
-}, 30_000);
-
-test("a tap on a phone opens the bar's tooltip with its day and count", async () => {
-  const page = await browser.newPage({ viewport: { width: 390, height: 1400 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
-  try {
-    await open(page, "en");
-    const bar = '[data-chart-kind="bar"]';
-    await page.locator(`${bar} .stdlib-chart-bar`).first().tap();
-    const text = await tooltipText(page, bar);
-    expect(text).toContain("Sep 26");
-    expect(text).toContain("Ratings: 1");
   } finally {
     await page.close();
   }

@@ -640,7 +640,12 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
               xAxis={xAxis()}
               yAxis={yAxis}
               smooth={false}
-              tooltip={feedbackRatingTooltip({ dayLabels: labels(), label: t().averageRating, locale: locale() })}
+              tooltip={feedbackRatingTooltip({
+                dayLabels: labels(),
+                label: t().averageRating,
+                locale: locale(),
+                counts: { label: t().ratings, values: buckets().map((bucket) => bucket.count) },
+              })}
             />
           </Show>
         </Canvas>

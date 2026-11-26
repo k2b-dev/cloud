@@ -3,7 +3,7 @@ import type { ChartSelection } from "@k2b/ui";
 import { charts } from "@k2b/ui/charts/core";
 import { venueMessages } from "../../../messages";
 import { formatDateKey } from "../../../time-format";
-import { feedbackCountTooltip, feedbackRatingTooltip } from "./feedback-chart-tooltips";
+import { feedbackRatingTooltip } from "./feedback-chart-tooltips";
 
 const de = venueMessages.resolve(["de"]).t;
 const days = ["2026-09-26", "2026-09-27"];
@@ -61,15 +61,33 @@ test("a single day's point names its day and rating like the line", () => {
   noGenericText(tooltip);
 });
 
-test("ratings per day name the day and count the ratings as a whole number", () => {
-  const svg = charts.bar({
-    data: [
-      { label: dayLabels[0]!, value: 1234 },
-      { label: dayLabels[1]!, value: 2 },
+test("with the counts of the days the rating tooltip also says how many ratings came, as a whole number", () => {
+  const svg = charts.line({
+    series: [
+      {
+        label: de.averageRating,
+        data: [
+          { x: 1, y: 4.25 },
+          { x: 2, y: 3 },
+        ],
+      },
     ],
+    xAxis,
+    yAxis,
+    smooth: false,
     inspect: true,
   });
-  const tooltip = feedbackCountTooltip({ label: de.ratings, locale: "de" })(firstSelection("bar", svg));
-  expect(tooltip).toEqual({ title: dayLabels[0], rows: [{ label: "Bewertungen", value: "1.234" }] });
-  noGenericText(tooltip);
+  const withCounts = feedbackRatingTooltip({
+    dayLabels,
+    label: de.averageRating,
+    locale: "de",
+    counts: { label: de.ratings, values: [1234, 2] },
+  });
+  expect(withCounts(firstSelection("line", svg))).toEqual({
+    title: dayLabels[0],
+    rows: [
+      { label: "Durchschnittliche Bewertung", value: "4,3/5" },
+      { label: "Bewertungen", value: "1.234" },
+    ],
+  });
 });
