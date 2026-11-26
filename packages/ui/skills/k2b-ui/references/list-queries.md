@@ -49,7 +49,9 @@ default and keeps the plain address name (`title=Vitrine`), every other one is
 `key.verb` (`status.not=online,sold`, `price.after=500`, `due.empty=`). The
 state then holds a term `{ verb, value }` (`empty` and `notEmpty` have no
 value); a field without `verbs` keeps its plain value. `filterVerbs[kind]`
-lists what each kind allows; a `required` field has no verbs.
+lists what each kind allows; a `required` field has no verbs, and the first
+verb compares with a value (never `empty`: a form's empty field `a=` must
+not mean "is empty").
 
 ```ts
 title: field.text({ label: "Titel", verbs: ["contains", "is", "notContains", "empty"] }),

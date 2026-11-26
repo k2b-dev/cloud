@@ -125,7 +125,10 @@ type FieldCommon = {
   readonly common: boolean;
   /** The heading "+ Filter" lists the field under, for a list of many fields (a table with hundreds of columns). */
   readonly category?: string;
-  /** The verbs the person may pick, the default first (see {@link FilterVerb}); without it the field has one. */
+  /**
+   * The verbs the person may pick, the default first (see {@link FilterVerb}); without it the field has one. The first
+   * compares with a value: it keeps the plain URL name, and a form's empty field (`a=`) must not mean "is empty".
+   */
   readonly verbs?: readonly FilterVerb[];
 };
 
@@ -940,6 +943,8 @@ const checkDeclaration = (declaration: ListQueryDeclaration): ReadonlyMap<string
         throw new Error(`defineListQuery: verbs of ${key} must be some of ${allowed.join(", ")}`);
       }
       if (new Set(definition.verbs).size !== definition.verbs.length) throw new Error(`defineListQuery: verbs of ${key} repeat`);
+      // the first verb keeps the plain name, and a form that sends an empty field (`status=`) must not filter on empty
+      if (noValue(definition.verbs[0]!)) throw new Error(`defineListQuery: the first verb of ${key} must compare with a value`);
       if (definition.required !== undefined) throw new Error(`defineListQuery: ${key} has verbs and cannot be mandatory`);
     }
     if (definition.kind === "choice") for (const option of definition.options) assertCode(option.value, `value of ${key}`);
