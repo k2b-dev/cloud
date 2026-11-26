@@ -3157,6 +3157,8 @@
   margin: 0;
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
   border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  /* its content (the calendar) in the middle */
+  align-items: center;
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
