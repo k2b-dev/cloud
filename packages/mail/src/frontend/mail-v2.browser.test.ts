@@ -275,8 +275,9 @@ describe("Mail on the v2 pilot", () => {
       }
     }, 60_000);
 
-  // The summary is written through v1's save: a failed save keeps the text behind Retry, which sends it again.
-  test("a failed summary save offers Retry, which sends the same text again", async () => {
+  // The summary is written through v1's save in a v2 dialog: a failed save keeps the dialog open with the text and the
+  // reason, and saving again sends the same text.
+  test("a failed summary save keeps the dialog open, and saving again sends the same text", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
     try {
       const puts: unknown[] = [];
@@ -284,17 +285,17 @@ describe("Mail on the v2 pilot", () => {
         if (route.request().method() !== "PUT") return route.fallback();
         const body = route.request().postDataJSON() as { summary: string; expectedSummaryRevision: number };
         puts.push(body);
-        if (puts.length === 1) return route.fulfill({ status: 503, json: { error: "Gerade nicht erreichbar" } });
+        if (puts.length === 1) return route.fulfill({ status: 503, json: { message: "Gerade nicht erreichbar" } });
         return route.fulfill({
           json: summaryState({ summary: body.summary, summaryRevision: body.expectedSummaryRevision + 1, source: "person" }),
         });
       });
       await page.locator('[data-k2-part="Notice"][data-tone="ai"]').getByRole("button", { name: "Bearbeiten" }).click();
-      await page.getByRole("dialog").getByRole("button", { name: "Zusammenfassung speichern" }).click();
-      const retry = page.getByRole("button", { name: "Erneut versuchen" });
-      await retry.waitFor();
+      const save = page.getByRole("dialog").getByRole("button", { name: "Zusammenfassung speichern" });
+      await save.click();
+      await page.getByRole("dialog").getByText("Gerade nicht erreichbar").waitFor();
       const saved = page.waitForResponse((response) => response.url().endsWith("/summary") && response.request().method() === "PUT");
-      await retry.click();
+      await save.click();
       expect((await saved).ok()).toBe(true);
       expect(puts.length).toBe(2);
       expect(puts[1]).toEqual(puts[0]);

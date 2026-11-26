@@ -57,14 +57,28 @@ const Asking = <T,>(props: { title: string; answer: (value: T | null) => void; f
   );
 };
 
-/** The conversation's summary in a text of several lines; "" removes it. */
+/**
+ * The conversation's summary in a text of several lines ("" removes it). Saving keeps the dialog open until `save`
+ * succeeds: a refusal of the server (too long, changed meanwhile) stands at the field, and the text stays to change.
+ */
 export const askMailV2Summary = (
   locale: string,
   text: { title: string; label: string; hint: string; confirm: string; cancel: string },
   value: string,
-): Promise<string | null> =>
-  openMailV2Dialog<string>(locale, (answer) => {
+  save: (typed: string) => Promise<string | null>,
+): Promise<true | null> =>
+  openMailV2Dialog<true>(locale, (answer) => {
     const [summary, setSummary] = createSignal(value);
+    const [error, setError] = createSignal<string>();
+    const [busy, setBusy] = createSignal(false);
+    const submit = async () => {
+      if (busy()) return;
+      setBusy(true);
+      setError(undefined);
+      const refused = await save(summary()).finally(() => setBusy(false));
+      if (refused) setError(refused);
+      else answer(true);
+    };
     return (
       <Asking
         title={text.title}
@@ -72,13 +86,13 @@ export const askMailV2Summary = (
         foot={
           <>
             <Button onClick={() => answer(null)}>{text.cancel}</Button>
-            <Button variant="primary" onClick={() => answer(summary())}>
+            <Button variant="primary" busy={busy()} onClick={() => void submit()}>
               {text.confirm}
             </Button>
           </>
         }
       >
-        <Field label={text.label} hint={text.hint}>
+        <Field label={text.label} hint={text.hint} {...(error() ? { error: error() } : {})}>
           <Input multiline value={summary()} onInput={setSummary} />
         </Field>
       </Asking>

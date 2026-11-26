@@ -104,6 +104,36 @@ describe("Mail v2: the reader's dialogs are v2 dialogs", () => {
     }
   }, 60_000);
 
+  // Review of #4213: a summary the server refuses (too long, changed meanwhile) stays in the dialog, with the reason at
+  // the field; saving again sends what is in the field now.
+  test("a summary the server refuses stays editable in the open dialog, with the server's reason at the field", async () => {
+    const { page, errors } = await open();
+    try {
+      const puts: { summary: string }[] = [];
+      await page.route("**/api/mail/mailboxes/Box001/conversations/Demo01/summary", async (route) => {
+        const body = route.request().postDataJSON() as { summary: string };
+        puts.push(body);
+        if (puts.length === 1) return route.fulfill({ status: 400, json: { message: "Die Zusammenfassung ist zu lang." } });
+        return route.fulfill({ json: summaryState({ summary: body.summary, summaryRevision: 2, source: "person" }) });
+      });
+      await reader(page).locator('[data-k2-part="Notice"][data-tone="ai"]').getByRole("button", { name: "Bearbeiten" }).click();
+      const text = dialog(page).getByRole("textbox", { name: "Zusammenfassung" });
+      await text.fill("Viel zu lang");
+      await dialog(page).getByRole("button", { name: "Zusammenfassung speichern" }).click();
+      await dialog(page).getByText("Die Zusammenfassung ist zu lang.").waitFor();
+      expect(await text.inputValue()).toBe("Viel zu lang");
+      // no Retry beside the dialog: the dialog is the way to try again
+      expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(0);
+      await text.fill("Kurz");
+      await dialog(page).getByRole("button", { name: "Zusammenfassung speichern" }).click();
+      await dialog(page).waitFor({ state: "detached" });
+      expect(puts.map((put) => put.summary)).toEqual(["Viel zu lang", "Kurz"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("Vorhandenes verknüpfen picks a task in the v2 lookup and links it", async () => {
     const { page, errors, sent } = await open();
     try {

@@ -45,7 +45,7 @@ export function createMailV2ReaderMenus(props: {
     conversationId: () => data().selectedConversationId,
     summary: () => data().conversationSummary,
     onSaved: () => c().applySavedConversationSummary,
-    ask: (text, value) => askMailV2Summary(locale(), text, value),
+    ask: (text, value, save) => askMailV2Summary(locale(), text, value, save),
   });
 
   const conversationState = createMailConversationState({
