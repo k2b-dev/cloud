@@ -141,6 +141,8 @@ type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const tablet: View = { width: 1024, height: 768, touch: true };
 const phone: View = { width: 390, height: 844, touch: true };
+// large screens are a target of their own: the brief plans their room, the layout rules hold there too
+const wide: View = { width: 1920, height: 1080, touch: false };
 
 type Call = { method: string; path: string; body: unknown; query?: URLSearchParams };
 /** The Pulse API as the server answers it for the invented base; `override` answers one call differently. */
@@ -483,7 +485,7 @@ describe("Pulse on v2", () => {
     }
   }, 60_000);
 
-  test("every page keeps the layout rules at 1440, 1024 and 390 px", async () => {
+  test("every page keeps the layout rules at 1920, 1440, 1024 and 390 px", async () => {
     const addresses = [
       "/app/pulse",
       `/app/pulse/${baseId}`,
@@ -499,7 +501,7 @@ describe("Pulse on v2", () => {
       "/admin/pulse?view=targets",
     ];
     const found: string[] = [];
-    for (const view of [desktop, tablet, phone])
+    for (const view of [wide, desktop, tablet, phone])
       for (const address of addresses) {
         const { context, tab, errors } = await open(view, address);
         try {
