@@ -28,6 +28,7 @@ import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog
 import { loadWaitingAutomations } from "../waiting-automations";
 import AssistantPanel from "./AssistantPanel.island";
 import AssistantWorkspace from "./AssistantWorkspace.island";
+import { assistantPrefsTabFromHref } from "./assistant-navigation";
 import { readAssistantPlace } from "./assistant-place";
 import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
 import { loadCodeOverview } from "./code-overview";
@@ -52,6 +53,8 @@ export default ssr<AuthContext>(async (c) => {
   const codeOpen =
     detailCodeId !== undefined ||
     (!approvalsOpen && url.searchParams.get("code") === "1" && !requestedConversationId && !requestedProjectId);
+  // Gustav's settings, a view of the page only (the panel keeps its dialog).
+  const prefsTab = embedded || detailCodeId !== undefined ? null : assistantPrefsTabFromHref(url.href);
   const panelContext = embedded ? readPanelContext(c) : null;
   // Gustav reads Code through Core's public queries with the person's own credentials, like any application.
   const codeCaller = {
@@ -145,7 +148,7 @@ export default ssr<AuthContext>(async (c) => {
   const projectContext = activeProject ? await loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null;
 
   const selectedConversationId =
-    activeProject || approvalsOpen || codeOpen
+    activeProject || approvalsOpen || codeOpen || prefsTab
       ? null
       : (requestedConversationId ??
         (embedded ? placeConversationId : conversations.find((conversation) => !conversation.isDone)?.shortId) ??
@@ -254,6 +257,7 @@ export default ssr<AuthContext>(async (c) => {
       : null,
     initialProjectContext: projectContext,
     approvals: { ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen },
+    initialPrefsTab: prefsTab,
     code: {
       has: hasCode,
       open: codeOpen,

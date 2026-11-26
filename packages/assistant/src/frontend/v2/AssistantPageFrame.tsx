@@ -4,10 +4,10 @@ import { createSignal, lazy, Show, Suspense } from "solid-js";
 import { AssistantLiveProvider } from "../assistant-live";
 import { assistantProjectHref } from "../assistant-navigation";
 import type { AssistantWorkspaceParts } from "../assistant-workspace";
-import { AssistantAppsV2 } from "../code-deferred-views";
+import { AssistantAppsV2, AssistantPrefsV2 } from "../code-deferred-views";
 import { lazyAction } from "../lazy-action";
-import { openAssistantPrefsModal } from "../rare-dialogs";
 import AssistantFrameV2 from "./AssistantFrameV2";
+import AssistantProjectV2 from "./AssistantProjectV2";
 import AssistantWaitingV2 from "./AssistantWaitingV2";
 import { createAssistantChatDeeds } from "./assistant-chat-deeds";
 
@@ -52,6 +52,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
   const headPath = () => {
     if (w.mainView() === "approvals") return [{ label: w.t().waitingForYou }];
     if (w.mainView() === "code") return [{ label: w.t().myCode, href: w.codeHref }];
+    if (w.mainView() === "prefs") return [{ label: w.t().personalize }];
     const project = w.activeProject();
     if (project) return [{ label: project.name }];
     const open = w.activeConversation();
@@ -100,7 +101,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
           archiveConversation: deeds.archive,
           archiveBlocker: w.archiveBlocker,
           openAllChats: () => setAllChats(true),
-          openPreferences: () => void openAssistantPrefsModal(),
+          openPreferences: () => w.openPrefs("personalization"),
           onConversationUpdated: w.updateConversation,
         }}
         openContext={(title) => w.openChatContext(title)}
@@ -143,14 +144,30 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
                     )}
                   />
                 )
-              : w.projectView()
+              : w.mainView() === "prefs"
                 ? () => (
-                    // The open Project as its own panes: its chats and composer, its context beside them.
-                    <Show when={w.projectView()} keyed>
-                      {(view) => <w.ProjectContent view={view} frame="v2" />}
-                    </Show>
+                    <AssistantPrefsV2
+                      basePath={w.basePath}
+                      tab={w.prefsTab()}
+                      onTab={w.openPrefs}
+                      // The pane stands while the view's code loads, so nothing moves when it comes.
+                      waiting={(state) => (
+                        <Pane label={w.t().personalize}>
+                          <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
+                            <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
+                          </Show>
+                        </Pane>
+                      )}
+                    />
                   )
-                : null
+                : w.projectView()
+                  ? () => (
+                      // The open Project as its own panes: its chats and composer, its context beside them.
+                      <Show when={w.projectView()} keyed>
+                        {(view) => <w.ProjectContent view={view} v2={(parts) => <AssistantProjectV2 {...parts} />} />}
+                      </Show>
+                    )
+                  : null
         }
         tabs={{
           open: () => w.artifactWorkspace.state().tabs.length > 0,

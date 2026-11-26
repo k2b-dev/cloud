@@ -115,7 +115,7 @@ import { openAssistantCloudReference, resolveAssistantCloudResource } from "./As
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
 import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
-import AssistantProjectView from "./AssistantProjectView";
+import AssistantProjectView, { type ProjectParts } from "./AssistantProjectView";
 import type { AssistantQueueEntry } from "./AssistantQueue";
 import type { AssistantQueueHost } from "./AssistantQueueConnected";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
@@ -131,6 +131,7 @@ import {
   matchesAssistantInvalidation,
 } from "./assistant-live";
 import {
+  type AssistantPrefsTab,
   assistantApprovalsOpenFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
@@ -139,6 +140,8 @@ import {
   assistantConversationIdFromHref,
   assistantMessageHref,
   assistantMessageSeqFromHref,
+  assistantPrefsHref,
+  assistantPrefsTabFromHref,
   assistantProjectHref,
   assistantProjectIdFromHref,
   assistantQuestionAnchorFromHref,
@@ -271,6 +274,8 @@ export type AssistantWorkspaceProps = {
   initialProjectContext: AssistantProjectContextSnapshot | null;
   /** Whether the page opened on the approvals view, and then its open approvals at render time. */
   approvals: { page?: ApprovalPage; open: boolean };
+  /** Gustav's settings at `?prefs=<tab>`, a view of v2's page (null in the panel). */
+  initialPrefsTab?: AssistantPrefsTab | null;
   /**
    * The person's own Code: whether they have any (unknown counts as yes, so their Code stays reachable), whether the
    * page opened on its list, and the list's first page when it did (null when Core could not list it).
@@ -432,8 +437,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
   // The approvals view replaces the chat like a Project does. Its first page comes from the server only while the page
   // still shows what it rendered; opened later, the list loads its current state.
   // The person's Code list replaces the chat the same way; only one of the two views is open at a time.
-  const [mainView, setMainView] = createSignal<"approvals" | "code" | null>(
-    props.approvals.open ? "approvals" : props.code?.open ? "code" : null,
+  const [mainView, setMainView] = createSignal<"approvals" | "code" | "prefs" | null>(
+    props.approvals.open ? "approvals" : props.code?.open ? "code" : props.initialPrefsTab ? "prefs" : null,
   );
   const approvalsOpen = () => mainView() === "approvals";
   const codeOpen = () => mainView() === "code";
@@ -460,6 +465,17 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     setCodeRendered(false);
     setMainView("code");
     navigate(codeHref, { scroll: "manual", viewTransition: false });
+  };
+  /** Gustav's settings at one tab, as v2's page shows them; the address keeps the tab for reload and Back. */
+  const [prefsTab, setPrefsTab] = createSignal<AssistantPrefsTab>(props.initialPrefsTab ?? "personalization");
+  const openPrefs = (tab: AssistantPrefsTab) => {
+    const href = assistantPrefsHref(basePath, tab);
+    if (mainView() === "prefs" && prefsTab() === tab) return;
+    navigationRequest++;
+    setProjectView(null);
+    setPrefsTab(tab);
+    setMainView("prefs");
+    navigate(href, { scroll: "manual", viewTransition: false });
   };
   const activeProject = () => {
     const projectId = projectView()?.projectId;
@@ -1529,6 +1545,14 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
         setProjectView(null);
         setCodeRendered(false);
         setMainView("code");
+        return;
+      }
+      // Gustav's settings on v2's page; the frame reads the tab from the address.
+      const prefs = props.embedded ? null : assistantPrefsTabFromHref(window.location.href);
+      if (prefs) {
+        setProjectView(null);
+        setPrefsTab(prefs);
+        setMainView("prefs");
         return;
       }
       setMainView(null);
@@ -3416,14 +3440,14 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     </>
   );
   /** The open Project: v1 draws it in the chat's place, v2's frame as its own panes (`frame`). */
-  const ProjectContent = (p: { view: NonNullable<ReturnType<typeof projectView>>; frame?: "v2" }) => (
+  const ProjectContent = (p: { view: NonNullable<ReturnType<typeof projectView>>; v2?: (parts: ProjectParts) => JSX.Element }) => (
     <Show when={projects().find((project) => project.id === p.view.projectId)}>
       {(project) => (
         <AssistantProjectView
           project={project()}
           initialPage={p.view.page}
           initialContext={p.view.context}
-          frame={p.frame}
+          v2={p.v2}
           composer={
             <div class="flex flex-col gap-2">
               <WaitingRow />
@@ -3699,6 +3723,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     sidebar,
     chat,
     mainView,
+    openPrefs,
+    prefsTab,
     projectView,
     ProjectContent,
     codeRendered,

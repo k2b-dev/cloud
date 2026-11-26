@@ -24,7 +24,7 @@ export default function AssistantPanelFrame(frame: { w: AssistantWorkspaceParts 
         renderedAt={w.props.renderedAt}
         doneCount={w.sidebar.data()?.doneCount ?? w.props.initialDoneCount}
         activeConversationId={w.chat.activeConversationId}
-        activeView={w.mainView() ?? "chat"}
+        activeView={((view) => (view === "prefs" || !view ? "chat" : view))(w.mainView())}
         projects={w.projects()}
         activeProjectId={w.activeProject()?.id ?? null}
         creatingConversation={() => w.newConversation.loading() || w.composerPicking() > 0}

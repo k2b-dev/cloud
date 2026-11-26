@@ -36,7 +36,7 @@ export type AssistantNavOptions = {
   timeZone: string;
   renderedAt: string;
   activeConversationId: Accessor<string | null>;
-  activeView: Accessor<"chat" | "approvals" | "code">;
+  activeView: Accessor<"chat" | "approvals" | "code" | "prefs">;
   activeProjectId: Accessor<string | null>;
   projects: Accessor<AiProject[]>;
   waitingCount: Accessor<number>;
@@ -313,7 +313,9 @@ export function createAssistantNav(options: AssistantNavOptions) {
       : [];
     return [{ items: top }, projects, ...chats, ...more, ...(folded.length > 0 ? [{ items: folded }] : [])];
   });
-  const foot = createMemo((): NavItem[] => [{ label: t().personalize, icon: "user-cog", onClick: () => void options.openPreferences() }]);
+  const foot = createMemo((): NavItem[] => [
+    { label: t().personalize, icon: "user-cog", current: options.activeView() === "prefs", onClick: () => void options.openPreferences() },
+  ]);
 
   return { groups, foot, search, chatMenu, label: () => t().assistant };
 }
