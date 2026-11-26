@@ -7,7 +7,7 @@ import { readFullWidth, setFullWidth } from "./settings/NotebookSettingsStore";
 
 type ViewMessages = Pick<
   ReturnType<typeof notebookWorkspaceMessages.resolve>["t"],
-  "fullWidthOnCommand" | "fullWidthOffCommand" | "fullWidthHint"
+  "fullWidthOnCommand" | "fullWidthOffCommand" | "fullWidthHint" | "fullWidthNarrow"
 >;
 
 /**
@@ -72,14 +72,14 @@ export const followFullWidth = (scroller: HTMLElement, keepPosition: () => (() =
     window.removeEventListener("focus", follow);
     document.removeEventListener("visibilitychange", follow);
   });
+  // The command is always there, as the view menu's entry is: the choice is personal; a narrow host says when it applies.
   createEffect(() => {
-    if (!wide()) return;
     const on = fullWidth();
     onCleanup(
       registerContextAwareCommand({
         id: "notebooks.view.fullWidth",
         title: on ? t().fullWidthOffCommand : t().fullWidthOnCommand,
-        description: t().fullWidthHint,
+        description: wide() ? t().fullWidthHint : t().fullWidthNarrow,
         icon: on ? "ti ti-viewport-narrow" : "ti ti-viewport-wide",
         action: () => changeFullWidth(!on),
       }),
