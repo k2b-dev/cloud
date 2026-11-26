@@ -132,3 +132,18 @@ test("a single day's point names its day and rating like the line", async () => 
     await page.close();
   }
 }, 30_000);
+
+test("a tap on a phone opens the rating's tooltip with its day, rating and count", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 1400 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
+  try {
+    await open(page, "en");
+    const line = '[data-chart-kind="line"]';
+    await page.locator(`${line} [data-chart-datum]`).first().tap();
+    const text = await tooltipText(page, line);
+    expect(text).toContain("Sep 26");
+    expect(text).toContain("Average rating: 4.3/5");
+    expect(text).toContain("Ratings: 1");
+  } finally {
+    await page.close();
+  }
+}, 30_000);

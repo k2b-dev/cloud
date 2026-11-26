@@ -732,6 +732,7 @@ function ScheduleArea(props: {
       <Section
         icon="clock"
         title={t().regularHours}
+        summary={words().hoursHint}
         count={props.settings.openingRules.length}
         actions={[{ label: t().newHours, icon: "plus", onClick: () => void addOpening() }]}
       >
@@ -783,6 +784,7 @@ function ScheduleArea(props: {
       <Section
         icon="calendar-exclamation"
         title={t().exceptions}
+        summary={words().exceptionsHint}
         count={upcoming().length}
         actions={[{ label: t().newException, icon: "plus", onClick: () => void addException() }]}
       >
@@ -802,6 +804,7 @@ function ScheduleArea(props: {
       <Section
         icon="users"
         title={t().shifts}
+        summary={words().shiftsHint}
         count={weekly().length}
         actions={[{ label: t().newShift, icon: "plus", onClick: () => void addShift() }]}
       >

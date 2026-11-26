@@ -281,12 +281,21 @@ describe("Venue on v2", () => {
     }
   }, 60_000);
 
-  test("on the phone the open shift is the page, with the way back to the schedule", async () => {
-    const { context, tab, errors } = await open(phone, `/app/venue/Cafe01/shifts?cv=mobile-month&cd=${SHIFT_DAY}&shift=${lunchId}`);
+  test("on the phone a tap on a shift opens it as the page, with its name and the way back to the schedule", async () => {
+    const { context, tab, errors } = await open(phone, `/app/venue/Cafe01/shifts?cv=mobile-month&cd=${SHIFT_DAY}`);
     try {
+      // a tap on the day's shift, as a finger opens it
+      await tab.getByText("Mittagstheke").first().tap();
+      await tab.waitForFunction(() => new URLSearchParams(location.search).has("shift"));
+      await settled(tab);
       await shoot(tab, "shift-open-390");
-      expect(await tab.getByRole("link", { name: "Schichtplan" }).first().isVisible()).toBe(true);
+      expect(await tab.getByText("Mittagstheke", { exact: true }).first().isVisible()).toBe(true);
+      const back = tab.getByRole("link", { name: "Schichtplan" }).first();
+      expect(await back.isVisible()).toBe(true);
       expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
+      // the way back is a tap too, and closes the shift
+      await back.tap();
+      await tab.waitForFunction(() => !new URLSearchParams(location.search).has("shift"));
       expect(errors).toEqual([]);
     } finally {
       await context.close();
