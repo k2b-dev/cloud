@@ -10,7 +10,7 @@ import { baseStoreMessages } from "../workspace/base-store-messages";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import { iconName } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
-import { baseColor, StoreChip } from "./store-state";
+import { baseColor, StoreChip, storeState } from "./store-state";
 
 export type OverviewScreenProps = {
   bases: PulseBase[];
@@ -36,6 +36,8 @@ export default function OverviewScreen(props: OverviewScreenProps) {
   const toast = useToast();
   const [query, setQuery] = createSignal(props.initialQuery);
   const [creating, setCreating] = createSignal(false);
+  // Only bases whose store does not take data are worth a word in the first row; healthy ones need none.
+  const troubled = () => props.bases.filter((base) => storeState(base.store, store()).status !== "ok").length;
   const shown = createMemo(() => props.bases.filter((base) => matches(base, query())));
   // k2b-ui gap: tables do not virtualize yet (lane MW); the list shows 100 rows at a time, so the page stays bounded.
   const [visible, setVisible] = createSignal(PAGE);
@@ -55,7 +57,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
     <Workspace
       head={
         <Bar
-          start={<Text type="body">{t().appName}</Text>}
           end={
             <>
               <Input
@@ -84,14 +85,17 @@ export default function OverviewScreen(props: OverviewScreenProps) {
       <Pane
         label={t().yourBases}
         scrollKey="pulse-bases"
+        // the first row speaks only when there is something to act on or a search found less than all
         status={
-          <StatusRow
-            lead={
-              query().trim()
-                ? words().matchesCount({ count: shown().length, total: props.bases.length })
-                : words().basesCount({ count: props.bases.length })
-            }
-          />
+          query().trim() || troubled() > 0 ? (
+            <StatusRow
+              lead={
+                query().trim()
+                  ? words().matchesCount({ count: shown().length, total: props.bases.length })
+                  : words().storeTrouble({ count: troubled() })
+              }
+            />
+          ) : undefined
         }
       >
         <Show
@@ -113,14 +117,13 @@ export default function OverviewScreen(props: OverviewScreenProps) {
               <For each={shown().slice(0, visible())}>
                 {(base) => (
                   <Row
-                    icon={iconName(base.icon)}
-                    color={baseColor(base.color)}
+                    mark={{ icon: iconName(base.icon), color: baseColor(base.color) }}
                     lines={[
                       base.name,
                       `${base.description ? `${base.description} · ` : ""}${words().retentionDays({ days: base.rawRetentionDays })}`,
                     ]}
                     meta={words().membersMeta({ count: base.memberCount })}
-                    end={<StoreChip store={base.store} t={store()} />}
+                    end={storeState(base.store, store()).status === "ok" ? undefined : <StoreChip store={base.store} t={store()} />}
                     href={baseHref(base)}
                   />
                 )}

@@ -1,6 +1,6 @@
 import AdminWorkspace from "@k2b/cloud/ssr/AdminWorkspace";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, type NavProps, Text } from "@k2b/ui/v2";
+import { Bar, Button, type NavProps } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Switch } from "solid-js";
 import type { AdminBasesPage, InternalTargetsPage, PulsePolicy } from "../../store/admin-contracts";
 import type { StoreConfig } from "../../store/contracts";
@@ -33,16 +33,16 @@ export default function AdminScreen(props: AdminScreenProps) {
     <AdminWorkspace
       nav={props.nav}
       head={
-        <Bar
-          start={<Text type="body">{`${t().pageTitle} · ${title()}`}</Text>}
-          end={
-            props.view === "targets" ? (
+        // The section stands as the open entry of the navigation; the head holds only what to do here.
+        props.view === "targets" ? (
+          <Bar
+            end={
               <Button variant="primary" icon="plus" onClick={add.onClick}>
                 {add.label}
               </Button>
-            ) : undefined
-          }
-        />
+            }
+          />
+        ) : undefined
       }
       primary={props.view === "targets" ? add : undefined}
     >

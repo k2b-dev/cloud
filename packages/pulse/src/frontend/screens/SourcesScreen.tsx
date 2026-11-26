@@ -10,6 +10,7 @@ import {
   Dialog,
   Empty,
   Facts,
+  Icon,
   Input,
   List,
   Menu,
@@ -56,8 +57,19 @@ const statusChip = (source: PulseSource, t: Words) => {
   const status = sourceStatus(source, t);
   const tone = { ok: "ok", warning: "warn", error: "bad", neutral: undefined } as const;
   const kind = tone[status.tone];
+  // A healthy source says so quietly; only what needs a look gets a chip, so the exceptions stand out.
+  if (kind === "ok")
+    return (
+      <Text tone="ok" weight="medium">
+        <Icon name="circle-check" /> {status.label}
+      </Text>
+    );
   return kind ? <Chip status={kind}>{status.label}</Chip> : <Chip>{status.label}</Chip>;
 };
+
+/** The mark of a source's kind: a scraped metrics endpoint and pushed events look different in every list. */
+export const sourceMark = (source: PulseSource) =>
+  source.kind === "metrics" ? { icon: "chart-dots", color: "#7c3aed" } : { icon: "webhook", color: "#0891b2" };
 
 const sourceLine = (source: PulseSource, t: Words) =>
   source.kind === "metrics"
@@ -276,20 +288,21 @@ export default function SourcesScreen(props: SourcesScreenProps) {
       <Pane.Split>
         <Pane
           label={words().sources}
-          width={{ min: 360, default: 720 }}
+          // beside an open source the list keeps a width of its own; alone it has the whole page
+          width={selected() ? { min: 360, default: 720 } : undefined}
           scrollKey="pulse-sources"
           status={
             <StatusRow
               lead={
                 search().trim()
                   ? words().matchesCount({ count: shown().length, total: sources().length })
-                  : words().sourcesCount({ count: sources().length })
+                  : failing()
+                    ? words().sourcesFailing({ count: failing() })
+                    : words().sourcesFine
               }
               loading={refreshing()}
-              facts={[
-                ...(failing() ? [{ value: failing(), after: words().failingAfter }] : []),
-                ...(paused() ? [{ value: paused(), after: words().pausedAfter }] : []),
-              ]}
+              // the number of sources stands on the tab; here only what differs
+              facts={paused() ? [{ value: paused(), after: words().pausedAfter }] : []}
             />
           }
         >
@@ -356,6 +369,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 : { icon: "search", text: words().noMatches, action: { label: words().clearSearch, onClick: () => changeSearch("") } }
             }
             phone={(source) => ({
+              mark: sourceMark(source),
               lines: [
                 source.name,
                 `${sourceStatus(source, t()).label} · ${source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet}`,
@@ -364,7 +378,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             columns={[
               {
                 title: t().source,
-                width: { min: 180, default: 250 },
+                width: { min: 200, default: 380 },
+                mark: sourceMark,
                 cell: (source) => ({ lines: [source.name, sourceLine(source, t())] }),
               },
               { title: words().sourceStatusColumn, width: { min: 110, default: 120 }, cell: (source) => statusChip(source, t()) },

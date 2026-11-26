@@ -6,6 +6,7 @@ import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
 import { FIXTURE_NOW, fixtureBase, fixtureBases, fixtureSources } from "./fixtures";
+import { renderPulseShell } from "./pulse-shell.browser-fixture";
 
 // The main paths of Pulse on v2 in Chromium (WebKit through the shared launcher): find and create a base, open,
 // add, edit and remove a source, run SQL, open a saved query, save settings, plus the layout rules at 1440 and
@@ -55,7 +56,10 @@ let browser: Browser;
 let css: string;
 let harness: string;
 let icons: { css: string; font: string };
+// Pictures show the screen inside the real Cloud shell; the tests without pictures keep the bare page.
+let shell: Awaited<ReturnType<typeof renderPulseShell>> | undefined;
 beforeAll(async () => {
+  if (shots) shell = await renderPulseShell();
   harness = await buildHarness();
   const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
   const iconCss = await Bun.file(fileURLToPath(iconCssUrl)).text();
@@ -74,14 +78,25 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
+  shell?.restore();
   await browser?.close();
 });
 
-const page = (variant: string) =>
-  `<!doctype html><html lang="de" class="light" data-variant="${variant}"><head><meta charset="utf-8">` +
-  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+const head = () =>
+  `<link rel="stylesheet" href="${origin}/ui/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style>`;
+const page = async (variant: string, address: string) => {
+  if (shell)
+    return (await shell.page(address))
+      .replace("<html", `<html data-variant="${variant}"`)
+      .replace("</head>", `${head()}</head>`)
+      .replace("</body>", '<script src="/harness.js"></script></body>');
+  return (
+    `<!doctype html><html lang="de" class="light" data-variant="${variant}"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">${head()}` +
+    `<style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
+    `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`
+  );
+};
 
 /** Pins only Date in the page, flowing from the fixture instant; timers and frames stay real. */
 const pinPageClock = (at: number) => {
@@ -176,8 +191,15 @@ const open = async (view: View, address: string, options: { variant?: string; ov
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
+    if (url.pathname === "/branding/logo") return route.fulfill({ path: resolve(ui, "../cloud/public/logo.svg") });
+    if (url.pathname.startsWith("/ui/")) return route.fulfill({ path: resolve(ui, "dist", url.pathname.slice(4)) });
     if (url.pathname.startsWith("/api/")) return answer(route, calls, options.override);
-    return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(options.variant ?? "normal") });
+    // the shell's own assets (its scripts and sheets) are not part of these pictures
+    if (/\.[a-z0-9]+$/.test(url.pathname)) return route.fulfill({ status: 404, body: "" });
+    return route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: await page(options.variant ?? "normal", `${url.pathname}${url.search}`),
+    });
   });
   await tab.goto(`${origin}${address}`);
   await tab.waitForSelector('body[data-ready="true"]');
@@ -198,7 +220,7 @@ describe("Pulse on v2", () => {
     try {
       await tab.getByRole("searchbox", { name: "Pulse-Basen durchsuchen" }).fill("web");
       await tab.waitForFunction(() => location.search === "?q=web");
-      expect(await tab.getByText("1 von 4").isVisible()).toBe(true);
+      expect(await tab.getByText("1 von 7").isVisible()).toBe(true);
       expect(await tab.getByText("Betrieb Werkstatt Nord").count()).toBe(0);
       await tab.getByRole("button", { name: "Neue Basis" }).first().click();
       const dialog = tab.getByRole("dialog");
@@ -228,7 +250,7 @@ describe("Pulse on v2", () => {
       const detail = tab.locator('[data-k2-part="Pane"][aria-label="Drucker Halle 2"]');
       expect(await detail.getByText("http://10.0.0.12:9100/metrics").isVisible()).toBe(true);
       await shoot(tab, "source-open-1440");
-      expect((await measureV2Layout(tab)).problems).toEqual([]);
+      expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
       await detail.getByRole("link", { name: "Quelldetails schließen" }).click();
       await tab.waitForURL(`${origin}/app/pulse/${baseId}`);
       expect(errors).toEqual([]);
@@ -243,7 +265,7 @@ describe("Pulse on v2", () => {
       await shoot(tab, "source-open-390");
       expect(await tab.getByRole("link", { name: "Quellen" }).first().isVisible()).toBe(true);
       expect(await tab.getByRole("button", { name: "Bearbeiten" }).isVisible()).toBe(true);
-      expect((await measureV2Layout(tab)).problems).toEqual([]);
+      expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -386,7 +408,7 @@ describe("Pulse on v2", () => {
         try {
           const name = `${address.replace(/^\/(app|admin)\/pulse\/?/, "").replace(/[^a-z0-9]+/gi, "-") || "bases"}-${view.width}`;
           await shoot(tab, name);
-          for (const problem of (await measureV2Layout(tab)).problems) found.push(`${name}: ${problem}`);
+          for (const problem of (await measureV2Layout(tab, { root: "#root" })).problems) found.push(`${name}: ${problem}`);
           found.push(...errors.map((error) => `${name}: ${error}`));
         } finally {
           await context.close();
@@ -403,7 +425,7 @@ describe("Pulse on v2", () => {
         try {
           const name = `worst-${address.replace(/[^a-z0-9]+/gi, "-")}-${view.width}`;
           await shoot(tab, name);
-          for (const problem of (await measureV2Layout(tab)).problems) found.push(`${name}: ${problem}`);
+          for (const problem of (await measureV2Layout(tab, { root: "#root" })).problems) found.push(`${name}: ${problem}`);
           const wide = await tab.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
           if (wide) found.push(`${name}: the page scrolls sideways`);
           found.push(...errors.map((error) => `${name}: ${error}`));

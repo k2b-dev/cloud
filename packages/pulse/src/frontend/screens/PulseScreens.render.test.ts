@@ -48,7 +48,7 @@ describe("Pulse pages on the server", () => {
     const page = render(() =>
       createComponent(OverviewScreen, { bases: fixtureBases, deletingBases: fixtureDeletingBases, initialQuery: "" }),
     );
-    expect(page.text).toContain("4 Basen");
+    expect(page.text).toContain("2 Speicher brauchen Aufmerksamkeit");
     expect(page.text).toContain("Betrieb Werkstatt Nord");
     expect(page.text).toContain("Schreiben gesperrt");
     expect(page.text).toContain("Wird gelöscht");
@@ -59,13 +59,13 @@ describe("Pulse pages on the server", () => {
     const page = render(() =>
       createComponent(OverviewScreen, { bases: [...worstBases, ...fixtureBases], deletingBases: [], initialQuery: "webshop" }),
     );
-    expect(page.text).toContain("1 von 8");
+    expect(page.text).toContain("1 von 11");
     expect(page.text).not.toContain("Archiv 2025");
   });
 
   test("sources show alerts, the table and the open source with its facts", () => {
     const page = render(() => createComponent(SourcesScreen, sourcesProps({ open: "s7Ee8Ff9" })));
-    expect(page.text).toContain("4 Quellen");
+    expect(page.text).toContain("1 Quelle meldet Fehler");
     expect(page.text).toContain("Braucht Aufmerksamkeit");
     expect(page.text).toContain("Alarm „CPU Werkstatt“ ausgelöst");
     expect(page.text).toContain("Drucker Halle 2");

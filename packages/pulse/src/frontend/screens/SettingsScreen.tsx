@@ -5,27 +5,24 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { text } from "@k2b/stdlib";
 import { DEFAULT_ICON_OPTIONS, useLocale } from "@k2b/ui";
 import {
-  Band,
   Bar,
   Button,
   Cells,
-  Choice,
   Dialog,
   Empty,
   Facts,
   Failed,
-  Field,
   Input,
   List,
   Nav,
-  type NavGroup,
   Notice,
   Pane,
-  Path,
   Row,
   Section,
   Select,
+  Setting,
   Tabs,
+  Text,
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
@@ -39,7 +36,7 @@ import { type BaseSettingsInput, createBaseController } from "../workspace/base-
 import { baseStoreMessages } from "../workspace/base-store-messages";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import type { PulseSettingsTab } from "../workspace/routes";
-import { baseHref, iconName } from "./BaseFrame";
+import { baseHref, baseNavGroups, iconName } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
 import { storeState } from "./store-state";
 
@@ -96,18 +93,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     refresh: refreshBase,
   });
 
-  const groups = (): NavGroup[] => [
-    { items: [{ label: words().allBases, icon: "layout-grid", href: "/app/pulse" }] },
-    {
-      label: words().bases,
-      items: props.bases.map((entry) => ({
-        label: entry.name,
-        icon: iconName(entry.icon),
-        href: baseHref(entry.id),
-        current: entry.id === props.base.id,
-      })),
-    },
-  ];
+  const groups = () => baseNavGroups(props.bases, props.base.id, words());
   const tabs = () =>
     (
       [
@@ -125,22 +111,10 @@ export default function SettingsScreen(props: SettingsScreenProps) {
       <Workspace
         sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={groups()} />}
         sidebarLabel={words().bases}
-        head={
-          <Bar
-            start={
-              <Path
-                label={words().settingsTabs}
-                items={[{ label: base().name, href: baseHref(props.base.id) }, { label: words().settings }]}
-              />
-            }
-          />
-        }
+        // The sidebar shows the base as the open entry; the head holds the areas of its settings.
+        head={<Bar start={<Tabs label={words().settingsTabs} items={tabs()} />} />}
       >
-        <Pane
-          label={words().settingsTitle({ base: base().name })}
-          head={<Tabs label={words().settingsTabs} items={tabs()} />}
-          scrollKey="pulse-settings"
-        >
+        <Pane label={words().settingsTitle({ base: base().name })} scrollKey="pulse-settings">
           <Show when={!props.canAdmin}>
             <Notice tone="note" icon="lock" title={t().settingsNotAdmin}>
               {props.admins.join(", ")}
@@ -238,48 +212,64 @@ function BaseForm(props: {
   });
   const [saved, setSaved] = createSignal(initial());
   const [draft, setDraft] = createSignal(initial());
-  const set = <K extends keyof BaseSettingsInput>(key: K, value: BaseSettingsInput[K]) => setDraft({ ...draft(), [key]: value });
+  // k2b-ui gap: a v2 Select cannot be disabled yet; for someone who only reads, a choice changes nothing.
+  const set = <K extends keyof BaseSettingsInput>(key: K, value: BaseSettingsInput[K]) => {
+    if (props.canAdmin) setDraft({ ...draft(), [key]: value });
+  };
   const changed = createMemo(() => (Object.keys(draft()) as (keyof BaseSettingsInput)[]).some((key) => draft()[key] !== saved()[key]));
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
-  const colorLabel = (value: (typeof BASE_COLORS)[number]) =>
-    ({
+  const colorLabel = (value: string) => {
+    const labels: Record<string, string> = {
       zinc: t().settingsColorGray,
       blue: t().settingsColorBlue,
       emerald: t().settingsColorGreen,
       amber: t().settingsColorAmber,
       red: t().settingsColorRed,
-    })[value];
+    };
+    return labels[value] ?? value;
+  };
   const save = async () => {
     const next = draft();
     if ((await props.save(next)) === "persisted") setSaved(next);
   };
+  // What a setting was before an unsaved change, so the page shows what saving changes.
+  const was = <K extends keyof BaseSettingsInput>(key: K, show: (value: BaseSettingsInput[K]) => string) =>
+    draft()[key] === saved()[key] ? undefined : show(saved()[key]) || "—";
+  const iconLabel = (value: string) => DEFAULT_ICON_OPTIONS.find((option) => option.value === value)?.label ?? value;
   const retention = (options: {
-    name: keyof BaseSettingsInput;
+    name: "rawRetentionDays" | "rollupRetentionDays" | "sensitiveRetentionHours";
     label: string;
     hint: string;
     presets: number[];
     max: number;
     unit: string;
   }) => {
-    const value = () => Number(draft()[options.name]);
+    const value = () => draft()[options.name];
+    const presets = () => options.presets.filter((preset) => preset <= options.max);
+    // "Genauer Wert" stays chosen once picked, also when the typed number happens to be a preset
+    const [exact, setExact] = createSignal(!presets().includes(value()));
+    const amount = (count: number) => `${number(count)} ${options.unit}`;
     return (
-      <Band>
-        <Field.Row>
-          <Field name={options.name} label={options.label} hint={options.hint}>
-            <Select
-              options={options.presets
-                .filter((preset) => preset <= options.max)
-                .map((preset) => ({ value: String(preset), label: `${number(preset)} ${options.unit}` }))}
-              value={options.presets.includes(value()) ? String(value()) : undefined}
-              placeholder={words().exactValue}
-              onChange={(next) => set(options.name, Number(next))}
-            />
-          </Field>
-          <Field
+      <>
+        <Setting name={options.name} label={options.label} hint={options.hint} was={was(options.name, amount)}>
+          <Select
+            options={[
+              ...presets().map((preset) => ({ value: String(preset), label: amount(preset) })),
+              { value: "exact", label: words().exactValue },
+            ]}
+            value={exact() ? "exact" : String(value())}
+            onChange={(next) => {
+              setExact(next === "exact");
+              if (next !== "exact") set(options.name, Number(next));
+            }}
+          />
+        </Setting>
+        <Show when={exact()}>
+          <Setting
             name={`${options.name}-exact`}
             label={words().exactValue}
-            optional={options.unit}
-            error={value() >= 1 && value() <= options.max ? undefined : `1 – ${number(options.max)}`}
+            hint={`1 – ${amount(options.max)}`}
+            error={value() >= 1 && value() <= options.max ? undefined : `1 – ${amount(options.max)}`}
           >
             <Input
               type="number"
@@ -287,11 +277,12 @@ function BaseForm(props: {
               max={options.max}
               value={String(value())}
               disabled={!props.canAdmin}
+              end={<Text type="meta">{options.unit}</Text>}
               onInput={(next) => set(options.name, Number(next))}
             />
-          </Field>
-        </Field.Row>
-      </Band>
+          </Setting>
+        </Show>
+      </>
     );
   };
   return (
@@ -299,7 +290,7 @@ function BaseForm(props: {
       <Show
         when={props.tab === "general"}
         fallback={
-          <>
+          <Section icon="clock-cog" title={words().retentionSection}>
             {retention({
               name: "rawRetentionDays",
               label: t().rawDataRetention,
@@ -324,38 +315,42 @@ function BaseForm(props: {
               max: 8760,
               unit: t().hours,
             })}
-          </>
+          </Section>
         }
       >
-        <Band>
-          <Field name="name" label={t().name} required error={draft().name.trim() ? undefined : t().nameRequired}>
+        <Section icon={iconName(draft().icon)} title={words().identity}>
+          <Setting
+            name="name"
+            label={t().name}
+            hint={words().nameHint}
+            was={was("name", (value) => value)}
+            error={draft().name.trim() ? undefined : t().nameRequired}
+          >
             <Input value={draft().name} disabled={!props.canAdmin} onInput={(value) => set("name", value)} />
-          </Field>
-          <Field name="color" label={t().settingsColor}>
-            <Choice
-              name="color"
+          </Setting>
+          <Setting name="color" label={t().settingsColor} hint={words().colorHint} was={was("color", colorLabel)}>
+            <Select
               options={BASE_COLORS.map((value) => ({ value, label: colorLabel(value) }))}
               value={draft().color}
-              disabled={!props.canAdmin}
               onChange={(value) => set("color", value)}
             />
-          </Field>
-          {/* k2b-ui gap: no icon picker in v2; a selection of the curated icons by name, the field shows the chosen one. */}
-          <Field name="icon" label={t().settingsIcon}>
+          </Setting>
+          {/* k2b-ui gap: no icon picker in v2; a selection of the curated icons by name, the section head shows the chosen one. */}
+          <Setting name="icon" label={t().settingsIcon} hint={words().iconHint} was={was("icon", iconLabel)}>
             <Select
               options={DEFAULT_ICON_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
               value={draft().icon}
               onChange={(value) => set("icon", value)}
             />
-          </Field>
-          <Field name="timezone" label={t().settingsTimezone} hint={t().settingsTimezoneHint}>
-            <Input value={draft().timezone} disabled={!props.canAdmin} onInput={(value) => set("timezone", value)} />
-          </Field>
-          <Field name="description" label={t().description} optional={words().optional}>
+          </Setting>
+          <Setting name="description" label={t().description} hint={words().descriptionHint} was={was("description", (value) => value)}>
             <Input multiline value={draft().description} disabled={!props.canAdmin} onInput={(value) => set("description", value)} />
-          </Field>
-        </Band>
-        <Section icon="id" title={t().settingsIdentifier} summary={t().settingsIdentifierHint}>
+          </Setting>
+        </Section>
+        <Section icon="world" title={words().timeAndIdentifier}>
+          <Setting name="timezone" label={t().settingsTimezone} hint={t().settingsTimezoneHint} was={was("timezone", (value) => value)}>
+            <Input value={draft().timezone} disabled={!props.canAdmin} onInput={(value) => set("timezone", value)} />
+          </Setting>
           <Facts items={[{ label: t().settingsIdentifier, value: props.base.shortId, mono: true, copy: props.base.shortId }]} />
         </Section>
       </Show>

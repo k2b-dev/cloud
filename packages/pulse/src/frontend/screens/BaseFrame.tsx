@@ -4,6 +4,7 @@ import type { JSX } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
 import { useScreenMessages } from "./messages";
+import { baseColor } from "./store-state";
 
 export type BaseView = "sources" | "sql" | "queries";
 
@@ -29,6 +30,30 @@ type Props = {
   children: JSX.Element;
 };
 
+/** How many bases the sidebar lists; "Alle Basen" leads to the rest, so a person with many bases keeps a short page. */
+const NAV_BASES = 50;
+
+/** The sidebar of a base's pages: all bases first, then the bases (the open one always among them). */
+export const baseNavGroups = (bases: PulseBase[], currentId: string, words: { allBases: string; bases: string }): NavGroup[] => {
+  const shown = bases.slice(0, NAV_BASES);
+  const current = bases.find((base) => base.id === currentId);
+  if (current && !shown.includes(current)) shown.push(current);
+  return [
+    { items: [{ label: words.allBases, icon: "layout-grid", href: "/app/pulse" }] },
+    {
+      label: words.bases,
+      items: shown.map((base) => ({
+        label: base.name,
+        icon: iconName(base.icon),
+        color: baseColor(base.color),
+        href: baseHref(base.id),
+        current: base.id === currentId,
+        dot: base.store.state === "failed" ? ("bad" as const) : undefined,
+      })),
+    },
+  ];
+};
+
 /**
  * The frame of one base: the bases are the places in the sidebar, the base's views (sources, SQL, saved queries)
  * are tabs in the head, and the rare deeds on the base (settings, Gustav) wait behind "…".
@@ -36,19 +61,7 @@ type Props = {
 export default function BaseFrame(props: Props) {
   const t = usePulseMessages();
   const words = useScreenMessages();
-  const groups = (): NavGroup[] => [
-    { items: [{ label: words().allBases, icon: "layout-grid", href: "/app/pulse" }] },
-    {
-      label: words().bases,
-      items: props.bases.map((base) => ({
-        label: base.name,
-        icon: iconName(base.icon),
-        href: baseHref(base.id),
-        current: base.id === props.baseId,
-        dot: base.store.state === "failed" ? ("bad" as const) : undefined,
-      })),
-    },
-  ];
+  const groups = () => baseNavGroups(props.bases, props.baseId, words());
   const name = () => props.bases.find((base) => base.id === props.baseId)?.name ?? t().appName;
   return (
     <>
