@@ -107,7 +107,7 @@ const worstRows = fixtures(
     ["製品開発ロードマップ 2027 – 第三四半期の計画と課題", "ti ti-map", 4, 230, 3, 0, 50],
     ["دليل الموظفين الجدد", "ti ti-book", 0, 0, 0, 0, 24 * 400],
     ["Alle Mitarbeitenden", "ti ti-users", 12480, 48213, 18000, 0, 0],
-    ["Ein Eintrag", null, 1, 1, 0, 0, null],
+    ["Ein Eintrag", null, 1, 1, 0, 0, 3],
   ],
   "9000",
 );
@@ -143,9 +143,16 @@ const detailOf = (row: Fixture | undefined): AdminNotebookDetail | undefined => 
     principal: principals[(index * 3 + place) % principals.length]!,
     permission: place === 0 ? "admin" : place % 2 ? "write" : "read",
   }));
-  const writers = row.changesPerDay.some((value) => value > 0)
-    ? people.slice(0, 4).map((person, place) => ({ ...person, changes: [42, 17, 6, 1][place]!, lastAt: hoursAgo([2, 5, 30, 200][place]!) }))
-    : [];
+  // a busy notebook has its regular writers; one with a single change (or none known) has one writer or none
+  const total = row.changesPerDay.reduce((sum, value) => sum + value, 0);
+  const writers =
+    total > 10
+      ? people
+          .slice(0, 4)
+          .map((person, place) => ({ ...person, changes: [42, 17, 6, 1][place]!, lastAt: hoursAgo([2, 5, 30, 200][place]!) }))
+      : total > 0
+        ? [{ ...people[1]!, changes: total, lastAt: row.lastActivityAt ?? hoursAgo(1) }]
+        : [];
   const notes = ["Wareneingang", "Schichtplan Dezember", "Inventur 2026", "Stapler-Einweisung"];
   return {
     shortId: row.shortId,
@@ -159,29 +166,24 @@ const detailOf = (row: Fixture | undefined): AdminNotebookDetail | undefined => 
     access,
     accessTotal: row.permissionCount,
     writers,
-    history: writers.length
-      ? [
-          ["note.edited", 0, 2],
-          ["comment.created", 1, 5],
-          ["note.created", 0, 26],
-          ["note.edited", 2, 30],
-          ["note.restored", 3, 200],
-        ].map(([action, who, hours], place) => ({
-          id: String(place),
-          actor: people[who as number]!,
-          action: action as string,
-          noteTitle: notes[place % notes.length]!,
-          at: hoursAgo(hours as number),
-        }))
-      : [
-          {
-            id: "0",
-            actor: people[4]!,
-            action: "note.edited",
-            noteTitle: notes[0]!,
-            at: row.lastActivityAt ?? hoursAgo(24 * 400),
-          },
-        ],
+    history:
+      writers.length > 1
+        ? [
+            ["note.edited", 0, 2],
+            ["comment.created", 1, 5],
+            ["note.created", 0, 26],
+            ["note.edited", 2, 30],
+            ["note.restored", 3, 200],
+          ].map(([action, who, hours], place) => ({
+            id: String(place),
+            actor: people[who as number]!,
+            action: action as string,
+            noteTitle: notes[place % notes.length]!,
+            at: hoursAgo(hours as number),
+          }))
+        : row.lastActivityAt === null
+          ? []
+          : [{ id: "0", actor: writers[0] ?? people[4]!, action: "note.edited", noteTitle: notes[0]!, at: row.lastActivityAt }],
   };
 };
 
