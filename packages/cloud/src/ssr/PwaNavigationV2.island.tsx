@@ -26,7 +26,7 @@ export type PwaNavigationV2Props = {
   settings: PwaNavEntry;
   /** The name of the tab bar. */
   tabsLabel: string;
-  /** Start and every part as tabs below 48rem: four, then "More" with the others; none without parts. */
+  /** Start and every part as tabs below 768 px: four, then "More" with the others; none without parts. */
   tabs: PwaNavEntry[];
   /** A screen of its own: the tab bar steps aside (`hidden`) and `setPwaScreen` brings it back in place. */
   screen?: boolean;
@@ -35,8 +35,8 @@ export type PwaNavigationV2Props = {
 };
 
 /**
- * The navigation of a v2 Cloud app page (`PwaLayout ui="v2"`): from 48rem a v2 `Rail` as Cloud's app bar, with the
- * installation's logo, Start, every part and Settings at the foot; below 48rem a `TabBar` of Start and the parts. A
+ * The navigation of a v2 Cloud app page (`PwaLayout ui="v2"`): from 768 px a v2 `Rail` as Cloud's app bar, with the
+ * installation's logo, Start, every part and Settings at the foot; below 768 px a `TabBar` of Start and the parts. A
  * part's badge is a count that calls for attention in both. One island for both, for the counts the browser reads; its
  * two parts take their places in the frame's grid.
  */

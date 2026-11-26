@@ -1,9 +1,9 @@
 /* The frame of a Cloud app page on v2 (`PwaLayout ui="v2"`), phone first. In global.css and in Core's v2.css alike.
 
-   Below 48rem the page fills the window: its content (a `Workspace`) above, the `TabBar` at the bottom, clear of the
+   Below 768 px the page fills the window: its content (a `Workspace`) above, the `TabBar` at the bottom, clear of the
    phone's safe areas; a page that is a screen of its own (`screen`, or `setPwaScreen` in place) has no tab bar. From
-   48rem the rail (a v2 `Rail`, as Cloud's app bar) stands on the canvas beside the page's workspace, and the tab bar
-   leaves. The sidebar
+   768 px the rail (a v2 `Rail`, as Cloud's app bar) stands on the canvas beside the page's workspace, and the tab bar
+   leaves. The rail
    and the tab bar are one island, whose element shows its contents only, so both are places of the frame's grid. */
 
 /* The page is the frame: the document never scrolls, so iOS has nothing to rubber-band; only the page's panes do. */
@@ -84,7 +84,7 @@ html[data-pwa-v2] body {
   gap: 4px;
 }
 
-@media (min-width: 48rem) {
+@media (min-width: 768px) {
   /* No tab bar takes the bottom inset here; the frame keeps clear of it. */
   .pwa-v2,
   .pwa-v2[data-tabs]:not([data-screen]) {
@@ -105,10 +105,6 @@ html[data-pwa-v2] body {
     padding-block: 8px;
   }
 
-  /* A head that would only name the open place, beside the rail that already shows it (see PwaLayoutV2). */
-  .pwa-v2[data-wide-head="none"] > .pwa-v2-main > [data-k2-ws] > .k2-ws-main > [data-slot="head"] {
-    display: none;
-  }
 
   .pwa-v2-main {
     grid-row: 1 / -1;

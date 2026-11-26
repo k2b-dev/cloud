@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import { PWA_CANVAS_COLORS, PWA_V2_HEAD_COLORS } from "../contracts/pwa";
 
 // The v2 runtime shares its work with the v1 one (`pwa-runtime.ts`, covered by PwaRuntime.behavior.test.tsx); here
 // only what it shows: v2 notices in the frame instead of toasts, and the status bar after a theme change.
@@ -43,7 +44,7 @@ const mount = (options: { keepalive: boolean; online?: boolean; renewedThisSessi
     },
   });
   if (options.renewedThisSession) dom.window.sessionStorage.setItem("cloud.pwa.renewed", "1");
-  dom.document.head.innerHTML = '<meta name="theme-color" content="#fafafa">';
+  dom.document.head.innerHTML = '<meta name="theme-color" content="#fafafa"><style data-cloud-canvas></style>';
   const frame = dom.document.createElement("div");
   frame.className = "k2-ui pwa-v2";
   dom.root.append(frame);
@@ -140,14 +141,21 @@ else {
     }
   });
 
-  test("gives the status bar the frame's canvas after a theme change", async () => {
+  test("after a theme change the status bar takes the head's colour on the phone and the canvas beside the rail", async () => {
     const restore = mockRenew([]);
     const page = mount({ keepalive: false });
     try {
-      page.frame.style.backgroundColor = "rgb(9, 13, 18)";
+      page.dom.document.documentElement.classList.add("dark");
       page.dom.window.dispatchEvent(new page.dom.window.Event("cloud:theme-preference"));
-      expect(page.dom.document.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe("rgb(9, 13, 18)");
-      expect(page.dom.document.documentElement.style.backgroundColor).toBe("rgb(9, 13, 18)");
+      const metas = [...page.dom.document.querySelectorAll('meta[name="theme-color"]')].map((meta) => [
+        meta.getAttribute("media"),
+        meta.getAttribute("content"),
+      ]);
+      expect(metas).toEqual([
+        ["not all and (min-width: 768px)", PWA_V2_HEAD_COLORS.dark],
+        ["(min-width: 768px)", PWA_CANVAS_COLORS.dark],
+      ]);
+      expect(page.dom.document.querySelector("style[data-cloud-canvas]")?.textContent).toContain(PWA_CANVAS_COLORS.dark);
     } finally {
       page.dispose();
       restore();

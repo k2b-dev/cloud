@@ -238,7 +238,7 @@ same. The page then loads Core's `/public/v2.css` in place of `global.css`, as
 [`MinimalLayout ui="v2"`](/en/docs/frontend/layout-and-navigation) does, and
 no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
 
-- Below 48 rem the page fills the window: its head at the top below the
+- Below 768 px the page fills the window: its head at the top below the
   status bar and the notch, in one colour with them, and the `TabBar` of
   `@k2b/ui/v2` at the bottom, above the home indicator. It holds Start and
   every part: up to five tabs, or four and **More**, which opens a sheet with
@@ -249,18 +249,18 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
   indicator itself; a part that opens or leaves such a screen in place calls
   `setPwaScreen(element, screen)` from `@k2b/cloud/browser/pwa-screen`, which
   also works when the page shows in the v1 frame beside an older Core.
-- From 48 rem a v2 `Rail` stands beside the page, as Cloud's app bar on
+- From 768 px a v2 `Rail` stands beside the page, as Cloud's app bar on
   every other Cloud page: the installation's logo, Start, every part in its
   app's colour, and Settings at its foot; each place's name shows as a hint.
   A part's badge is a count on its symbol; its summary stays on Start.
-- The frame owns the way to Settings: below 48 rem Start's head holds it,
+- The frame owns the way to Settings: below 768 px Start's head holds it,
   since Settings is no tab; beside the rail its foot leads there. A page
   never adds its own Settings button.
 - Beside the rail the head shows no title that only repeats the open place
   (such as "Start" or a part's name); a head left empty by that leaves there.
   The phone keeps its title.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
-  `back`, the title (`sidebarTitle` from 48 rem), and `actions` (kept on the
+  `back`, the title (`sidebarTitle` from 768 px), and `actions` (kept on the
   phone, where the app has no shell bar to take them), with one
   scrolling `Pane` and its `status` row. Write the content from v2 bands,
   sections, and rows. Give each row one signal, such as a count chip, not a

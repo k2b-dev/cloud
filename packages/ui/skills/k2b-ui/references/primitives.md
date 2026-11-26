@@ -480,6 +480,8 @@ lines instead of cutting a thing.
   order, named by its words, which show as a hint to its right. Below
   768 px it leaves; give the `TabBar` the same places. The platform sets its
   colours (`--k2-rail-*`); Cloud sets the shell's.
+- `Bar phone`: the head of the phone only; from 768 px the head that holds
+  it leaves, where a rail or a sidebar beside the page already says it.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above

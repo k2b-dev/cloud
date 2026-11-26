@@ -11,7 +11,7 @@ import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as watcher from "../_internal/runtime-watcher";
 import type { RuntimeAppMeta } from "../contracts/app";
-import { PWA_V2_HEAD_COLORS } from "../contracts/pwa";
+import { PWA_CANVAS_COLORS, PWA_V2_HEAD_COLORS } from "../contracts/pwa";
 import type { User } from "../contracts/shared";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
@@ -451,8 +451,9 @@ describe("PwaLayout ui v2 in a browser", () => {
   }, 60_000);
 
   for (const theme of ["light", "dark"] as const)
-    test(`on the phone the status bar, the notch and the head are one colour (${theme})`, async () => {
+    test(`on the phone the status bar, the notch and the head are one colour; beside the rail the canvas (${theme})`, async () => {
       const page = await open("/pwa/inventory", 390, "v2.css", { theme });
+      const wide = await open("/pwa/inventory", 1024, "v2.css", { theme });
       try {
         const result = await page.evaluate(() => {
           const swatch = document.createElement("i");
@@ -475,8 +476,26 @@ describe("PwaLayout ui v2 in a browser", () => {
         // the constant names v2's surface: a change of either fails here
         const head = rgb(PWA_V2_HEAD_COLORS[theme]);
         expect(result).toEqual({ themeColor: head, html: head, frame: head, head, colorScheme: theme });
+        // an iPad: the status bar and the document take the canvas the rail stands on
+        const canvas = rgb(PWA_CANVAS_COLORS[theme]);
+        const wideColors = await wide.evaluate(() => {
+          const swatch = document.createElement("i");
+          swatch.style.color = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')].find(
+            (meta) => !meta.media || matchMedia(meta.media).matches,
+          )!.content;
+          document.body.append(swatch);
+          const themeColor = getComputedStyle(swatch).color;
+          swatch.remove();
+          return {
+            themeColor,
+            html: getComputedStyle(document.documentElement).backgroundColor,
+            frame: getComputedStyle(document.querySelector(".pwa-v2")!).backgroundColor,
+          };
+        });
+        expect(wideColors).toEqual({ themeColor: canvas, html: canvas, frame: canvas });
       } finally {
         await page.close();
+        await wide.close();
       }
     }, 60_000);
 });

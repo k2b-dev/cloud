@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { escape, renderToString, ssr as ssrTemplate } from "solid-js/web";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
@@ -29,7 +29,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");
-const { Chip, Digest, Facts, Icon, Notice, Pane, Progress, Row, Section, StatusRow, Text } = await import("@k2b/ui/v2");
+const { Check, Chip, Digest, Facts, Icon, Notice, Pane, Progress, Row, Section, Text } = await import("@k2b/ui/v2");
 
 const { ssr } = defineApp({
   id: "inventory",
@@ -145,6 +145,31 @@ const forYou = () =>
     }),
   ]);
 
+// The rest of the week below today, so a wide column holds what comes and never ends in an empty half.
+const week = () =>
+  section({ icon: "calendar-week", color: "#15803d", title: "Diese Woche", count: 4 }, () => [
+    row({ avatar: { name: "Olena Koval", color: "#15803d" }, lines: ["Probe Kammermusik", "Mittwoch, 19:00 · Saal 2"], time: "Mi" }),
+    row({ avatar: { name: "Clara Weiß", color: "#0e7490" }, lines: ["Kasse übergeben", "Donnerstag, 9:00 · Foyer"], time: "Do" }),
+    row({
+      avatar: { name: "Ali Demir", color: "#b45309" },
+      lines: ["Werkstatt: Regale für das Lager", "Freitag, 14:00 · Werkraum"],
+      time: "Fr",
+    }),
+    row({
+      avatar: { name: "Dr. Henrike Vogt", color: "#7c3aed" },
+      lines: ["Lesung: Der Lindenhof 1960–2000", "Samstag, 18:30 · Saal 2"],
+      time: "Sa",
+    }),
+  ]);
+
+// Opened lately on this device: the way back into what one was doing, beside the activity of the others.
+const recent = () =>
+  section({ icon: "history", color: "#64748b", title: "Zuletzt geöffnet" }, () => [
+    row({ icon: "file-text", color: "#2563eb", lines: ["Programm Dezember.pdf", "Dateien · gestern"], href: "/pwa/files" }),
+    row({ icon: "layout-kanban", color: "#b45309", lines: ["Plakate Dezember", "Spaces · gestern"], href: "/pwa/spaces" }),
+    row({ icon: "notebook", color: "#7c3aed", lines: ["Protokolle Vorstand", "Notizbücher · Montag"], href: "/pwa/notebooks" }),
+  ]);
+
 const today = () => [
   section({ icon: "calendar", color: "#15803d", title: "Termine heute", count: 3 }, () => [
     row({ avatar: { name: "Mia Muster", color: "#be185d" }, lines: ["Teamrunde Programm", "10:00–10:45 · Saal 2"], time: "10:00" }),
@@ -204,7 +229,7 @@ const start = () =>
         createComponent(Pane, {
           label: "Start",
           get children() {
-            return [forYou(), ...today()];
+            return [forYou(), ...today(), week()];
           },
         }),
         createComponent(Pane, {
@@ -212,19 +237,25 @@ const start = () =>
           label: "Aktivität",
           width: { fixed: 320 },
           get children() {
-            return section({ icon: "activity", color: "#64748b", title: "Aktivität" }, () => [activity()]);
+            return [section({ icon: "activity", color: "#64748b", title: "Aktivität" }, () => [activity()]), recent()];
           },
         }),
       ];
     },
   });
 
-// the first line says what counts today, as the rows below show it
-const status = () => createComponent(StatusRow, { lead: "Heute: 15 ungelesen · 1 fällig" });
+/** A switch at a row's end, named by its row. k2b-ui gap: Setting (#4223) brings the row with its switch. */
+const toggle = (name: string, on: boolean) =>
+  createComponent(Check, {
+    switch: true,
+    checked: on,
+    // the row shows the name; the switch says it to assistive technology only
+    label: ssrTemplate(['<span class="k2-hidden-text">', "</span>"], escape(name)) as never,
+  });
 
-// This device first: its sign-out is the one deed a phone must reach without scrolling.
+// The sign-out of this device first, the one deed a phone must reach.
 const settingsMain = () => [
-  section({ icon: "device-mobile", color: "#64748b", title: "Dieses Gerät" }, () => [
+  section({ icon: "login", color: "#64748b", title: "Anmeldung" }, () => [
     row({
       icon: "device-mobile",
       color: "#64748b",
@@ -233,7 +264,8 @@ const settingsMain = () => [
     }),
   ]),
   // the account, the other devices and everything beyond this device live in Cloud's own settings: one clear way there
-  section({ icon: "cloud", color: "#be185d", title: "Lindenhof Cloud" }, () => [
+  // said once, where it leads on: this page sets this device only, Cloud's own settings the rest
+  section({ icon: "cloud", color: "#be185d", title: "Lindenhof Cloud", summary: "Hier stellst du nur dieses Gerät ein." }, () => [
     row({
       icon: "settings",
       color: "#be185d",
@@ -242,18 +274,13 @@ const settingsMain = () => [
       href: "/me",
     }),
   ]),
+  // each value beside its name, in one column of fixed width
   section({ icon: "palette", color: "#7c3aed", title: "Darstellung" }, () => [
-    row({
-      icon: "sun-moon",
-      color: "#7c3aed",
-      lines: ["Erscheinungsbild", "Folgt dem Gerät"],
-      end: createComponent(Text, { muted: true, children: "Automatisch" }),
-    }),
-    row({
-      icon: "language",
-      color: "#7c3aed",
-      lines: ["Sprache", "Wie im Browser"],
-      end: createComponent(Text, { muted: true, children: "Deutsch" }),
+    createComponent(Facts, {
+      items: [
+        { label: "Erscheinungsbild", value: "Automatisch, wie das Gerät" },
+        { label: "Sprache", value: "Deutsch, wie im Browser" },
+      ],
     }),
   ]),
   section({ icon: "bell", color: "#0e7490", title: "Mitteilungen", count: 5 }, () => [
@@ -261,41 +288,41 @@ const settingsMain = () => [
       icon: "messages",
       color: "#0e7490",
       lines: ["Chat", "Neue Nachrichten und Erwähnungen"],
-      end: createComponent(Text, { muted: true, children: "An" }),
+      end: toggle("Chat", true),
     }),
     row({
       icon: "mail",
       color: "#2563eb",
       lines: ["Mail", "Nur markierte Absender"],
-      end: createComponent(Text, { muted: true, children: "An" }),
+      end: toggle("Mail", true),
     }),
     row({
       icon: "layout-kanban",
       color: "#b45309",
       lines: ["Spaces", "Fällige Aufgaben am Morgen"],
-      end: createComponent(Text, { muted: true, children: "Aus" }),
+      end: toggle("Spaces", false),
     }),
     row({
       icon: "notebook",
       color: "#7c3aed",
       lines: ["Notizbücher", "Wenn dich jemand erwähnt"],
-      end: createComponent(Text, { muted: true, children: "An" }),
+      end: toggle("Notizbücher", true),
     }),
     row({
       icon: "folder",
       color: "#15803d",
       lines: ["Dateien", "Freigaben an dich"],
-      end: createComponent(Text, { muted: true, children: "Aus" }),
+      end: toggle("Dateien", false),
     }),
   ]),
 ];
 
 const settingsSide = () => [
-  section({ icon: "database", color: "#15803d", title: "Auf diesem Gerät" }, () => [
+  section({ icon: "database", color: "#15803d", title: "Speicher" }, () => [
     row({
       icon: "database",
       color: "#15803d",
-      lines: ["Speicher", "Skripte und Stile der Apps"],
+      lines: ["Apps", "Skripte und Stile"],
       end: createComponent(Progress, { value: 12, of: 16, label: "12/16 MB" }),
     }),
     row({
@@ -359,9 +386,6 @@ const server = new Hono<AuthContext>()
           ui: "v2",
           title: "Lindenhof Cloud",
           sidebarTitle: "Start",
-          get status() {
-            return status();
-          },
           get children() {
             return start();
           },
@@ -379,10 +403,6 @@ const server = new Hono<AuthContext>()
           title: "Einstellungen",
           // no part's place: a screen of its own with the way back to Start
           screen: true,
-          // what this page holds, in one line: this device only; "Alle Einstellungen" leads to the rest
-          get status() {
-            return createComponent(StatusRow, { lead: "Nur für dieses Gerät" });
-          },
           // beside the rail, its marked entry already says where the page stands
           back: { href: "/pwa/", label: "Start", withSidebar: false },
           get children() {

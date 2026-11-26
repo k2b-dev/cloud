@@ -1,6 +1,6 @@
-import { syncThemeColor, useLocale } from "@k2b/ui";
-import { Notice, NoticeStack, PageHosts } from "@k2b/ui/v2";
+import { Notice, NoticeStack, PageHosts, useLocale } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { pwaFrameColors } from "../contracts/pwa-frame-colors";
 import { pwaMessages } from "./pwa-messages";
 import { type PwaRuntimeProps, startPwaRuntime, THEME_PREFERENCE_EVENT } from "./pwa-runtime";
 
@@ -31,8 +31,21 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
         setNewVersion(false);
       },
     });
-    // The status bar takes the frame's canvas, as the page's head gave it.
-    const syncTheme = () => syncThemeColor(document.querySelector(".pwa-v2") ?? undefined);
+    // After a change of theme the status bar and the ground take the frame's colours again, as the page's head gave
+    // them: the head's on the phone, the canvas beside the rail.
+    const syncTheme = () => {
+      const { metas, css } = pwaFrameColors(document.documentElement.classList.contains("dark") ? "dark" : "light");
+      for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.remove();
+      for (const { media, content } of metas) {
+        const meta = document.createElement("meta");
+        meta.setAttribute("name", "theme-color");
+        meta.setAttribute("media", media);
+        meta.setAttribute("content", content);
+        document.head.append(meta);
+      }
+      const ground = document.querySelector("style[data-cloud-canvas]");
+      if (ground) ground.textContent = css;
+    };
     window.addEventListener(THEME_PREFERENCE_EVENT, syncTheme);
     onCleanup(() => {
       stop();

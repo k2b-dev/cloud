@@ -29,8 +29,8 @@ const iconName = (icon: string) => icon.replace(/^ti\s+ti-/, "");
 
 /**
  * `PwaLayout ui="v2"`: the frame of a Cloud app page built with `@k2b/ui/v2`, phone first. The page loads Core's
- * v2.css alone and no v1 shell code. Below 48rem the page fills the window with its head at the top and a tab bar of
- * Start and the first parts at the bottom, both clear of the phone's safe areas; from 48rem a v2 `Nav` with Start,
+ * v2.css alone and no v1 shell code. Below 768 px the page fills the window with its head at the top and a tab bar of
+ * Start and the first parts at the bottom, both clear of the phone's safe areas; from 768 px a v2 `Rail` with Start,
  * every part and Settings stands beside the page instead, a `Rail` as Cloud's app bar.
  * There the head shows no title that only names the open place, and a head left empty by that leaves. Without `bare` the frame puts the page's content in a
  * `Workspace` with the head (back, title, actions) and one scrolling `Pane`; with `bare` the page brings its own
@@ -70,6 +70,8 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
   const wideHeadEmpty = titleRepeats && (!back || back.withSidebar === false) && props.actions === undefined;
   const head = (
     <Bar
+      // beside the rail a head that would only name the open place leaves; the phone keeps it
+      phone={wideHeadEmpty && !props.bare}
       start={
         <span class="pwa-v2-title">
           <Show when={back}>
@@ -129,7 +131,6 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
         data-tabs={navigation ? "" : undefined}
         data-screen={props.screen ? "" : undefined}
         data-sidebar={user ? "" : undefined}
-        data-wide-head={wideHeadEmpty && !props.bare ? "none" : undefined}
       >
         <Show when={user}>
           <PwaNavigationV2

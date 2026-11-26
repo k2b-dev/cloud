@@ -613,7 +613,7 @@ describe("PwaLayout ui v2", () => {
     expect(document.querySelector(".pwa-v2-title .pwa-v2-phone-only")?.textContent).toBe("Shelf");
     expect(document.querySelector(".pwa-v2-title .pwa-v2-wide-only")?.textContent).toBe("Shelves");
     expect(document.querySelector(".pwa-v2-back")?.getAttribute("data-with-sidebar")).toBe("hide");
-    expect(document.querySelector(".pwa-v2")?.hasAttribute("data-wide-head")).toBe(false);
+    expect(document.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(false);
   });
 
   test("beside the rail no title repeats the open place, and a head left empty by that leaves; the phone keeps it", async () => {
@@ -622,14 +622,14 @@ describe("PwaLayout ui v2", () => {
     const repeats = (await render("/pwa/inventory?ui=v2&title=Inventory&noActions")).document;
     expect(repeats.querySelector(".pwa-v2-title .pwa-v2-phone-only")?.textContent).toBe("Inventory");
     expect(repeats.querySelector(".pwa-v2-title .pwa-v2-wide-only")).toBeNull();
-    expect(repeats.querySelector(".pwa-v2")?.getAttribute("data-wide-head")).toBe("none");
+    expect(repeats.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(true);
     // Start, titled with the installation's name on the phone and "Start" beside the rail
     const start = (await render("/pwa/?ui=v2&title=Example%20Cloud&sidebarTitle=Start&noActions")).document;
     expect(start.querySelector(".pwa-v2-title .pwa-v2-wide-only")).toBeNull();
-    expect(start.querySelector(".pwa-v2")?.getAttribute("data-wide-head")).toBe("none");
+    expect(start.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(true);
     // a head with the page's actions stays, without the repeated title
     const actions = (await render("/pwa/inventory?ui=v2&title=Inventory")).document;
-    expect(actions.querySelector(".pwa-v2")?.hasAttribute("data-wide-head")).toBe(false);
+    expect(actions.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(false);
   });
 
   test("without a person: no sidebar, no tabs, no keepalive and no timezone reload; builds reach the runtime", async () => {

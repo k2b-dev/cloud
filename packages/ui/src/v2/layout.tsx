@@ -609,6 +609,11 @@ export type BarProps = {
   start?: JSX.Element;
   /** The end place: buttons, a search, a person. */
   end?: JSX.Element;
+  /**
+   * The head of the phone only: from 768 px the head that holds this bar leaves, where a rail or a sidebar beside the
+   * page already says what it would say (a Start page titled with the installation's name).
+   */
+  phone?: boolean;
 };
 
 /**
@@ -655,7 +660,7 @@ export const Bar = (props: BarProps) => {
     onCleanup(() => changes.disconnect());
   });
   return (
-    <div class="k2-bar" data-k2-part="Bar" ref={bar}>
+    <div class="k2-bar" data-k2-part="Bar" data-phone={props.phone ? "" : undefined} ref={bar}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>

@@ -68,6 +68,7 @@ import { type AppInstallable, installableContains, validateInstallable } from ".
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
 import { type PlatformPermission, PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID, PWA_V2_HEAD_COLORS } from "../contracts/pwa";
+import { pwaFrameColors } from "../contracts/pwa-frame-colors";
 import { rememberedPwaAddress } from "../contracts/pwa-location";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { ScreenPreferences } from "../contracts/screen-preferences";
@@ -540,6 +541,13 @@ const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "basePath" | 
   return { ...panel, requiresRoles: panel.requiresRoles ? [...panel.requiresRoles] : undefined };
 };
 
+/** The status bar and ground of a v2 app page, before any stylesheet (`pwaFrameColors`). */
+const v2FrameColors = (theme: "light" | "dark" | undefined): string => {
+  const { metas, css } = pwaFrameColors(theme);
+  return `${metas.map((meta) => `<meta name="theme-color" media="${meta.media}" content="${meta.content}">`).join("\n    ")}
+    <style data-cloud-canvas>${css}</style>`;
+};
+
 export const defineApp = <
   const S extends AppSettingsMap = {},
   const N extends NotificationDefinitionMap = {},
@@ -635,8 +643,10 @@ export const defineApp = <
       // App pages paint the canvas before any stylesheet and give it to the
       // status bar. No status-bar style: `black-translucent` lays a blur band
       // over the top edge on iOS 26.
-      // A v2 app page (it links v2.css) gives the status bar the colour of its head instead.
-      const colors = pwa && sheets === "v2" ? PWA_V2_HEAD_COLORS : PWA_CANVAS_COLORS;
+      // A v2 app page (it links v2.css) gives the status bar the colour of its head instead; from 768 px, where the
+      // rail stands on the canvas, the canvas again (an iPad), so the bar and the frame are one colour at every width.
+      const v2Frame = pwa && sheets === "v2";
+      const colors = v2Frame ? PWA_V2_HEAD_COLORS : PWA_CANVAS_COLORS;
       const canvas = resolved ? colors[resolved] : undefined;
       const head = pageInstallable
         ? installableHead(pageInstallable, resolved)
@@ -645,15 +655,17 @@ export const defineApp = <
               // PwaLayout renders a MobileShell: the document says so from the first paint (see `observeMobileShell`).
               // Its v2 frame (the page links v2.css) is no MobileShell; the document says that it is one instead (it never
               // scrolls itself). A v2 page beside an older Core keeps the v1 frame and its mark.
-              html: ` ${sheets === "v2" ? "data-pwa-v2" : "data-k2b-mobile-shell"}=""${canvas ? ` style="background-color:${canvas}"` : ""}`,
+              html: ` ${sheets === "v2" ? "data-pwa-v2" : "data-k2b-mobile-shell"}=""${canvas && !v2Frame ? ` style="background-color:${canvas}"` : ""}`,
               viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
-              app: `${
-                canvas
-                  ? `<meta name="theme-color" content="${canvas}">`
-                  : `<meta name="theme-color" media="(prefers-color-scheme: light)" content="${colors.light}">
+              app: v2Frame
+                ? v2FrameColors(resolved)
+                : `${
+                    canvas
+                      ? `<meta name="theme-color" content="${canvas}">`
+                      : `<meta name="theme-color" media="(prefers-color-scheme: light)" content="${colors.light}">
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="${colors.dark}">
     <style data-cloud-canvas>html{background-color:${colors.light}}@media (prefers-color-scheme: dark){html{background-color:${colors.dark}}}</style>`
-              }
+                  }
     <link rel="manifest" href="${PWA_MANIFEST_PATH}">
     <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-title" content="${escapeHtml(pwa.name)}">`,
