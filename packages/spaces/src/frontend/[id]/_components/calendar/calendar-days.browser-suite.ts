@@ -731,7 +731,7 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     const monday = '.k2b-calendar-days__day[data-calendar-keys="2026-10-12"]';
     const before = await box(page, monday);
     viewRequests.splice(0);
-    // The filter bar under the head: "+ Filter", the field, then its value.
+    // The filter bar in the calendar's header: "+ Filter", the field, then its value.
     await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
     await page.getByRole("menuitem", { name: "Priorität" }).click();
     await page.getByRole("option", { name: "Hoch", exact: true }).click();

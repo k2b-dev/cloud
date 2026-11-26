@@ -451,7 +451,9 @@ const barControls = (page: Page) =>
       .filter((element) => element.getClientRects().length > 0)
       .map((element) => {
         const rect = element.getBoundingClientRect();
-        return { name: element.textContent?.trim(), x: Math.round(rect.left), y: Math.round(rect.top), width: Math.round(rect.width) };
+        // A symbol button, such as the colour choice, is named by its label.
+        const name = element.textContent?.trim() || element.getAttribute("aria-label") || "";
+        return { name, x: Math.round(rect.left), y: Math.round(rect.top), width: Math.round(rect.width) };
       }),
   );
 /** Controls of the bar and of the calendar's own header that reach past either one's edges. */
@@ -633,8 +635,9 @@ describe(`Spaces month view in ${browserName}`, () => {
         await alignedFirst(page, `${month}-01`);
         await settle(page);
         const after = await barControls(page);
-        expect(after.filter((control) => !/shown$/.test(control.name ?? ""))).toEqual(
-          before.filter((control) => !/shown$/.test(control.name ?? "")),
+        // The count, or "Nothing planned" for a month without entries, is the one part that follows the shown days.
+        expect(after.filter((control) => !/shown$|^Nothing planned$/.test(control.name ?? ""))).toEqual(
+          before.filter((control) => !/shown$|^Nothing planned$/.test(control.name ?? "")),
         );
       }
     } finally {
@@ -1171,10 +1174,11 @@ describe(`Spaces month view in ${browserName}`, () => {
         Array.from(document.querySelector(".k2b-content-calendar")!.children, (child) => child.className.split(" ")[0]),
       );
       expect(parts).toEqual(["k2b-calendar-header", "k2b-calendar-body"]);
-      // The filter bar is one line right above the calendar's header; its first button opens the sheet with every filter.
+      // The filter bar is one line inside the calendar's header; its first button opens the sheet with every filter.
       const bar = await box(page, '[data-k2-part="FilterBar"]');
+      const header = await box(page, ".k2b-calendar-header");
       expect(bar.height).toBeLessThanOrEqual(56);
-      expect(Math.abs((await box(page, ".k2b-calendar-header")).y - (bar.y + bar.height))).toBeLessThanOrEqual(2);
+      expect(bar.y >= header.y && bar.y + bar.height <= header.y + header.height).toBe(true);
       await filterBar(page)
         .locator("button:visible")
         .filter({ hasText: /^\s*Filter\s*\d*\s*$/ })
@@ -1275,7 +1279,7 @@ describe(`Spaces month view in ${browserName}`, () => {
     60_000,
   );
 
-  test("every view keeps the filter bar right above its own header; light screenshots of each on a desktop and a phone", async () => {
+  test("every view keeps the filter bar inside its own header; light screenshots of each on a desktop and a phone", async () => {
     for (const [name, view, locale, href] of [
       ["desktop-1440-de", desktop, "de", monthHref()],
       ["phone-390-de", phone, "de", monthHref()],
@@ -1293,9 +1297,9 @@ describe(`Spaces month view in ${browserName}`, () => {
         expect({
           name,
           oneRow: bar.height <= 56,
-          rightAbove: Math.abs(header.y - (bar.y + bar.height)) <= 2,
+          inside: bar.y >= header.y && bar.y + bar.height <= header.y + header.height,
           sideways: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
-        }).toEqual({ name, oneRow: true, rightAbove: true, sideways: 0 });
+        }).toEqual({ name, oneRow: true, inside: true, sideways: 0 });
         await shoot(page, name);
         if (!href.includes("cv=month")) continue;
         // The torn end of the setup bar, where it leaves its first week row.

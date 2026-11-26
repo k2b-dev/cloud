@@ -327,7 +327,7 @@ const openMenu = (page: Page) =>
         .length,
     };
   });
-/** The colour choice at the end of the page's filter bar: "Color by: Tag". */
+/** The colour choice at the end of the page's filter bar: a symbol named "Color by: Tag". */
 const colorMenu = (page: Page) => page.locator('[data-k2-part="FilterBar"]').getByRole("button", { name: /^(Color by|Farbe nach):/ });
 /** Opens the colour choice and picks a colour by its visible label; choosing closes the menu. */
 const chooseColor = async (page: Page, label: string) => {

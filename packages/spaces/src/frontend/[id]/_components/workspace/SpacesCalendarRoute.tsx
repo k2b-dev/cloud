@@ -275,36 +275,40 @@ export default function SpacesCalendarRoute(props: Props) {
             // (12 px) and the colour choice, so the page head has two rows (rule 9, design review 26.11.).
             // k2b-ui gap: FilterBar has no form for a host's toolbar; inside the calendar's header it keeps its own edge.
             toolbarContent={
-              <FilterBar
-                query={query()}
-                state={barState()}
-                base={base()}
-                onChange={(next) => controls()?.setFilter(calendarFilterOf(next, state().filter.colorBy))}
-                icons={{ ctype: "category", cassigned: "user", cpriority: "flag", ccolumns: "layout-kanban", ctags: "tag" }}
-                // No entry in the days shown: the count says how to plan one; New event stays the one button for it.
-                results={shownCount() > 0 ? t.shownCount({ count: shownCount() }) : t.emptyCalendarHint}
-                end={
-                  <Menu
-                    variant="ghost"
-                    items={[
-                      {
-                        title: t.colorBy,
-                        choice: state().filter.colorBy,
-                        onChoose: (value) => {
-                          const colorBy = (["tag", "status", "priority", "person"] as const).find((entry) => entry === value);
-                          if (colorBy) controls()?.setColorBy(colorBy);
+              // The bar takes the header's free width, so a count of other digits never moves the colour choice.
+              <div class="min-w-0 flex-1">
+                <FilterBar
+                  query={query()}
+                  state={barState()}
+                  base={base()}
+                  onChange={(next) => controls()?.setFilter(calendarFilterOf(next, state().filter.colorBy))}
+                  icons={{ ctype: "category", cassigned: "user", cpriority: "flag", ccolumns: "layout-kanban", ctags: "tag" }}
+                  // No entry in the days shown: the count says so; picking a time or New event (the one button) plans one.
+                  results={shownCount() > 0 ? t.shownCount({ count: shownCount() }) : t.emptyCalendarHint}
+                  end={
+                    // The colour choice is its symbol with its whole name, so a set filter keeps the row one line.
+                    <Menu
+                      variant="ghost"
+                      icon="palette"
+                      label={`${t.colorBy}: ${colorLabel(state().filter.colorBy)}`}
+                      items={[
+                        {
+                          title: t.colorBy,
+                          choice: state().filter.colorBy,
+                          onChoose: (value) => {
+                            const colorBy = (["tag", "status", "priority", "person"] as const).find((entry) => entry === value);
+                            if (colorBy) controls()?.setColorBy(colorBy);
+                          },
+                          items: (["tag", "status", "priority", "person"] as const).map((colorBy) => ({
+                            label: colorLabel(colorBy),
+                            value: colorBy,
+                          })),
                         },
-                        items: (["tag", "status", "priority", "person"] as const).map((colorBy) => ({
-                          label: colorLabel(colorBy),
-                          value: colorBy,
-                        })),
-                      },
-                    ]}
-                  >
-                    {`${t.colorBy}: ${colorLabel(state().filter.colorBy)}`}
-                  </Menu>
-                }
-              />
+                      ]}
+                    />
+                  }
+                />
+              </div>
             }
           />
         </div>
