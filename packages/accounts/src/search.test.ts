@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { UniversalSearchDataSchema, type User } from "@k2b/cloud/contracts";
 import { accountsCapabilities } from "./capabilities";
-import { searchAccounts } from "./search";
+import { searchAccounts, serviceAccountHref } from "./search";
 
 const user: User = {
   id: "user",
@@ -92,4 +92,13 @@ test("directory descriptions stay inside the shared search contract", async () =
   expect(UniversalSearchDataSchema.safeParse(result.data.data).success).toBe(true);
   expect(result.data.data[0]?.preview).toHaveLength(2000);
   expect(result.data.data[0]?.links[0]?.href).toBe("/app/accounts/groups/12345678-1234-4234-8234-123456789abc");
+});
+
+test("a found service account opens where it lives now: agent record, the person of a personal key, or the account list", () => {
+  const account = { id: "sa-1", name: "Export bot", delegatedUserId: null };
+  expect(serviceAccountHref({ ...account, kind: "agent" })).toBe("/app/accounts/users/sa-1");
+  expect(serviceAccountHref({ ...account, kind: "standalone" })).toBe("/app/accounts/users/sa-1");
+  expect(serviceAccountHref({ ...account, kind: "user_delegated", delegatedUserId: "u-7" })).toBe("/app/accounts/users/u-7");
+  expect(serviceAccountHref({ ...account, kind: "resource_bound" })).toBe("/app/accounts/users?q=Export+bot&kind=api-key");
+  expect(serviceAccountHref({ ...account, kind: "code" })).toBe("/app/accounts/users?q=Export+bot");
 });

@@ -9,7 +9,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import "../../../../ui/test/solid-ssr-preload";
-import { AGENT_ID, accountRequest, HUGE_TOTAL, hugeSources, KEY_IDS, OTHER_AGENT_ID, PERSON_ID, TOKEN } from "./keys-and-new-user.fixture";
+import { AGENT_ID, accountRequest, HUGE_TOTAL, hugeSources, KEY_IDS, PERSON_ID, TOKEN } from "./keys-and-new-user.fixture";
 
 // An administrator works with an account's API keys and directory access as sections of its record, with the list of
 // all keys while it still has its route, and creates a person's account (also from a request). The screens render from
@@ -20,7 +20,6 @@ const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS;
 
 type State =
   | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean; open?: string }
-  | { screen: "list"; rows?: "sample" | "worst" | "empty" }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
 const buildHarness = async (): Promise<string> => {
@@ -132,7 +131,6 @@ const api = (patch: Partial<Api> = {}): Api => ({
 const routes: Record<string, (url: URL) => State> = {
   // as the record's server: `?key=` is what the key section opens
   [`/app/accounts/users/${AGENT_ID}`]: (url) => ({ screen: "record", open: url.searchParams.get("key") ?? undefined }),
-  "/app/accounts/api-keys": () => ({ screen: "list" }),
   "/app/accounts/users/new": (url) => ({ screen: "new-user", request: url.searchParams.has("request") }),
 };
 
@@ -160,15 +158,6 @@ const open = async (view: View, address: string, answers: Api, state?: State) =>
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
-    if (url.pathname === "/api/admin/identity/service-accounts")
-      return route.fulfill({
-        json: {
-          items: [
-            { id: AGENT_ID, name: "Wochenbericht", kind: "agent" },
-            { id: OTHER_AGENT_ID, name: "Rechnungseingang", kind: "standalone" },
-          ].filter((item) => item.name.toLowerCase().includes((url.searchParams.get("search") ?? "").toLowerCase())),
-        },
-      });
     if (url.pathname === `/api/admin/identity/service-accounts/${AGENT_ID}/api-keys` && method === "GET") {
       const pageNumber = Number(url.searchParams.get("page") ?? 1);
       const perPage = Number(url.searchParams.get("perPage") ?? 100);
@@ -451,68 +440,6 @@ describe("an account's API keys and directory access as record sections", () => 
       await tab.getByRole("button", { name: "Verzeichniszugriff widerrufen: Ada Renz" }).click();
       await tab.getByText(/Keine Einträge freigegeben/).waitFor();
       expect(answers.deletes).toHaveLength(1);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 60_000);
-});
-
-describe("the list of all API keys while it has its route", () => {
-  test("keeps the v2 rules at 1440, 1024 and 390 px, with sample and worst-case rows", async () => {
-    for (const view of [wide, narrow, phone])
-      for (const rows of ["sample", "worst", "empty"] as const) {
-        const { context, tab, errors } = await open(view, "/app/accounts/api-keys", api(), { screen: "list", rows });
-        try {
-          await expectClean(tab);
-          await shoot(tab, `list-${rows}-light-${view.name}`);
-          expect(errors).toEqual([]);
-        } finally {
-          await context.close();
-        }
-      }
-  }, 120_000);
-
-  test("“Show” names the automatic app keys in the address, and directory access opens for a chosen agent", async () => {
-    const answers = api();
-    const { context, tab, errors } = await open(wide, "/app/accounts/api-keys?kind=agent", answers);
-    try {
-      await tab.getByRole("link", { name: "Anzeigen", exact: true }).click();
-      await tab.waitForFunction(() => new URL(location.href).search === "?kind=agent&automatic=1");
-      await tab.getByRole("button", { name: "Mehr", exact: true }).click();
-      await tab.getByRole("menuitem", { name: "Verzeichniszugriff" }).click();
-      await dialog(tab).getByRole("searchbox").fill("Woche");
-      await dialog(tab)
-        .getByRole("option", { name: /Wochenbericht/ })
-        .click();
-      await dialog(tab)
-        .getByText(/Keine Einträge freigegeben/)
-        .waitFor();
-      await shoot(tab, "list-directory-light-1440");
-      await dialog(tab).getByRole("button", { name: "Schließen" }).last().click();
-      await tab.waitForFunction(() => !document.querySelector("[data-k2-part=Dialog]"));
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 60_000);
-
-  test("a new key from the list asks for its agent first", async () => {
-    const answers = api();
-    const { context, tab, errors } = await open(wide, "/app/accounts/api-keys", answers);
-    try {
-      await tab.getByRole("button", { name: "API Key erstellen" }).first().click();
-      await dialog(tab).getByRole("textbox", { name: /Name/ }).fill("Abgleich");
-      await dialog(tab).getByRole("button", { name: "API Key erstellen" }).click();
-      await dialog(tab).getByText("Wähle einen Agenten.").waitFor();
-      expect(answers.posts).toHaveLength(0);
-      await dialog(tab).getByRole("searchbox").fill("Rech");
-      await dialog(tab)
-        .getByRole("option", { name: /Rechnungseingang/ })
-        .click();
-      await dialog(tab).getByRole("button", { name: "API Key erstellen" }).click();
-      await dialog(tab).getByText(TOKEN).waitFor();
-      expect(answers.posts[0]!.path).toBe(`/api/admin/identity/service-accounts/${OTHER_AGENT_ID}/api-keys`);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

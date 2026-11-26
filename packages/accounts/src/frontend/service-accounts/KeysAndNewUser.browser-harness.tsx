@@ -3,7 +3,6 @@ import { Bar, Pane, RecordHead, Workspace } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
 import AccountsNav from "../AccountsNav";
 import NewUserScreen from "../users/new/NewUserScreen";
-import ApiKeysScreen from "./ApiKeysScreen";
 import ApiKeysSection from "./ApiKeysSection";
 import { KEYS_PER_PAGE, toKeyPage } from "./account-keys";
 import DirectoryAccessSection from "./DirectoryAccessSection";
@@ -14,12 +13,9 @@ import {
   directoryPage,
   HUGE_TOTAL,
   hugeSources,
-  listRows,
   policy,
   worstKeys,
-  worstListRows,
 } from "./keys-and-new-user.fixture";
-import { apiKeysQuery, parseApiKeysAddress } from "./query";
 
 /**
  * The screens of lane C for a browser test; `<html data-state>` names the screen and its state, the test answers the
@@ -27,7 +23,6 @@ import { apiKeysQuery, parseApiKeysAddress } from "./query";
  */
 type State =
   | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean; open?: string }
-  | { screen: "list"; rows?: "sample" | "worst" | "empty" }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
 document.documentElement.dataset.start = String(performance.now());
@@ -61,32 +56,11 @@ const record = (props: Extract<State, { screen: "record" }>) => {
   );
 };
 
-const list = (props: Extract<State, { screen: "list" }>) => {
-  const address = parseApiKeysAddress(apiKeysQuery("de"), new URLSearchParams(location.search));
-  const rows = props.rows === "worst" ? worstListRows : props.rows === "empty" ? [] : listRows;
-  return (
-    <ApiKeysScreen
-      state={address.state}
-      page={1}
-      pages={1}
-      total={rows.length}
-      rows={rows}
-      hiddenAutomatic={address.state.filters.automatic === "1" ? null : 3}
-      modelsAvailable
-      timeZone="Europe/Berlin"
-      pendingRequests={1}
-      ignored={null}
-    />
-  );
-};
-
 render(
   () => (
     <LocaleProvider locale="de">
       {state.screen === "record" ? (
         record(state)
-      ) : state.screen === "list" ? (
-        list(state)
       ) : (
         <NewUserScreen
           categoryPolicy={policy}

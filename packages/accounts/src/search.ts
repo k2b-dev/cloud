@@ -4,6 +4,21 @@ import { err, fail, ok } from "@k2b/stdlib";
 
 import { accountsSearchMessages } from "./search-messages";
 
+type FoundServiceAccount = { id: string; name: string; kind: string; delegatedUserId: string | null };
+
+/**
+ * Where a found service account opens: an agent in its record, a person's own key at the person, an API key account
+ * (and any other kind) in the account list searched by its name.
+ */
+export const serviceAccountHref = (account: FoundServiceAccount): string => {
+  if (account.kind === "agent" || account.kind === "standalone") return `/app/accounts/users/${encodeURIComponent(account.id)}`;
+  if (account.kind === "user_delegated" && account.delegatedUserId)
+    return `/app/accounts/users/${encodeURIComponent(account.delegatedUserId)}`;
+  const params = new URLSearchParams({ q: account.name });
+  if (account.kind === "resource_bound") params.set("kind", "api-key");
+  return `/app/accounts/users?${params}`;
+};
+
 export const searchAccounts = async (
   input: UniversalSearchInput,
   context: Pick<CapabilityExecutionContext, "actor" | "locale">,
@@ -44,7 +59,7 @@ export const searchAccounts = async (
       preview: item.serviceAccount.status,
       icon: "ti ti-user-key",
       priority: 4,
-      links: [{ rel: "open", href: `/app/accounts/api-keys?search=${encodeURIComponent(item.serviceAccount.name)}` }],
+      links: [{ rel: "open", href: serviceAccountHref(item.serviceAccount) }],
     };
   });
   return ok({ data });

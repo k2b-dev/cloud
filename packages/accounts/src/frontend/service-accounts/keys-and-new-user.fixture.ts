@@ -1,12 +1,11 @@
-// Invented sample data for the browser test of the API key sections, the API key list and the new-user page. Dates are
+// Invented sample data for the browser test of the API key and directory access sections and the new-user page. Dates are
 // formatted text as the server sends them; ids are fixed.
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import type { AccountRequestView } from "../users/new/create-user";
-import type { AccountKey, ApiKeyRow } from "./api-key-row";
+import type { AccountKey } from "./api-key-row";
 import type { DirectoryPage } from "./DirectoryAccessSection";
 
 export const AGENT_ID = "5a1b0000-0000-4000-8000-000000000001";
-export const OTHER_AGENT_ID = "5a1b0000-0000-4000-8000-000000000002";
 export const PERSON_ID = "7c2d0000-0000-4000-8000-000000000001";
 export const KEY_IDS = [
   "4e3f0000-0000-4000-8000-000000000001",
@@ -112,43 +111,6 @@ export const directoryPage: DirectoryPage = {
   page: 1,
   perPage: 20,
 };
-
-const row = (key: AccountKey, patch: Partial<ApiKeyRow>): ApiKeyRow => ({
-  ...key,
-  kind: "agent",
-  owner: { kind: "agent", name: "Wochenbericht", href: `/app/accounts/agents/${AGENT_ID}` },
-  ...patch,
-});
-
-export const listRows: ApiKeyRow[] = [
-  row(agentKeys[0]!, {}),
-  row(agentKeys[1]!, {}),
-  row(
-    { ...agentKeys[2]!, id: "4e3f0000-0000-4000-8000-000000000009", name: "Persönlicher CLI-Schlüssel", expired: false, expires: null },
-    {
-      kind: "user_delegated",
-      owner: { kind: "user", name: "Jana Berger", detail: "jana.berger@kramer-lager.example", href: `/app/accounts/users/${PERSON_ID}` },
-    },
-  ),
-  row(
-    { ...agentKeys[0]!, id: "4e3f0000-0000-4000-8000-000000000010", name: "Postfach Einkauf", lastUsed: null },
-    { kind: "resource_bound", owner: { kind: "resource", name: "mail", detail: "mailbox · einkauf" } },
-  ),
-];
-
-export const worstListRows: ApiKeyRow[] = worstKeys.map((key, index) =>
-  row(key, {
-    owner:
-      index === 0
-        ? {
-            kind: "user",
-            name: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach",
-            detail: "maximiliane.alexandra.von.hohenzollern-sigmaringen@sehr-lange-domain-ohne-ende.example",
-            href: `/app/accounts/users/${PERSON_ID}`,
-          }
-        : { kind: "agent", name: "Wochenbericht", href: `/app/accounts/agents/${AGENT_ID}` },
-  }),
-);
 
 export const policy = DEFAULT_ACCOUNT_CATEGORY_POLICY;
 

@@ -4,7 +4,7 @@ import { createSignal, Show } from "solid-js";
 import { z } from "zod";
 import { apiClient } from "@/api/client";
 import { type AccountsMessages, useAccountsMessages } from "../messages";
-import type { AccountKey, ApiKeyRow } from "./api-key-row";
+import type { AccountKey } from "./api-key-row";
 import { type ApiKeyMessages, useApiKeyMessages } from "./messages";
 
 /** Revokes one key through the Accounts API; a refusal carries the server's sentence, anything else `fallback`. */
@@ -14,9 +14,6 @@ export const revokeCredential = async (credentialId: string, fallback: string): 
   const body = z.object({ message: z.string() }).safeParse(await response?.json().catch(() => null));
   throw new Error(body.success ? body.data.message : fallback);
 };
-
-export const kindLabel = (t: AccountsMessages, kind: ApiKeyRow["kind"]) =>
-  kind === "user_delegated" ? t.userBound : kind === "agent" ? t.agent : t.resourceBound;
 
 export const accessLabel = (t: AccountsMessages, access: AccountKey["access"]) =>
   access === "models" ? t.modelsOnlyKey : access === "legacy" ? t.legacyLimitedKey : t.fullKeyAccess;
@@ -36,20 +33,18 @@ export const keyMark = (entry: AccountKey): { icon: string; color: string } =>
           ? { icon: "lock", color: "#b45309" }
           : { icon: "key", color: "#2563eb" };
 
-export const ownerName = (t: AccountsMessages, row: ApiKeyRow) => row.owner.name || t.resource;
-
-export const statusChip = (t: AccountsMessages, row: AccountKey) =>
+const statusChip = (t: AccountsMessages, row: AccountKey) =>
   row.active ? <Chip status="ok">{t.active}</Chip> : <Chip status="bad">{t.revoked}</Chip>;
 
 /**
  * One key opened from the list (on the phone the only way to its deeds): its facts, and "Replace" and "Revoke" while
  * it is active. A deed closes this dialog first and opens its own, so no dialog stands on another.
  */
-export function KeyDialog<K extends AccountKey & Partial<Pick<ApiKeyRow, "kind" | "owner">>>(props: {
-  entry: K | null;
+export function KeyDialog(props: {
+  entry: AccountKey | null;
   close: () => void;
-  revoke: (entry: K) => void;
-  replace: (entry: K, serviceAccountId: string) => void;
+  revoke: (entry: AccountKey) => void;
+  replace: (entry: AccountKey, serviceAccountId: string) => void;
 }) {
   const t = useAccountsMessages();
   const words = useApiKeyMessages();
@@ -79,7 +74,6 @@ export function KeyDialog<K extends AccountKey & Partial<Pick<ApiKeyRow, "kind" 
         >
           <Facts
             items={[
-              ...owned(t(), entry()),
               { label: words().access, value: accessLabel(t(), entry().access) },
               { label: words().prefix, value: entry().prefix, mono: true },
               { label: t().status, value: statusChip(t(), entry()) },
@@ -96,17 +90,6 @@ export function KeyDialog<K extends AccountKey & Partial<Pick<ApiKeyRow, "kind" 
     </Show>
   );
 }
-
-/** The owner and kind of a key in the list of all keys; an account's record names neither again. */
-const owned = (t: AccountsMessages, entry: AccountKey & Partial<Pick<ApiKeyRow, "kind" | "owner">>) => {
-  const { kind, owner } = entry;
-  return kind && owner
-    ? [
-        { label: t.owner, value: owner.name || t.resource },
-        { label: t.type, value: kindLabel(t, kind) },
-      ]
-    : [];
-};
 
 /** The one question before a key is revoked; it resolves whether the key is gone. */
 export const confirmRevoke = async (t: AccountsMessages, words: ApiKeyMessages, entry: AccountKey) =>

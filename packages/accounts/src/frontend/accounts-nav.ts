@@ -1,15 +1,6 @@
 import type { AccountsMessages } from "./messages";
 
-export type AccountsNavActiveKey =
-  | "dashboard"
-  | "users"
-  | "duplicate-emails"
-  | "groups"
-  | "requests"
-  | "api-keys"
-  | "agents"
-  | "activity"
-  | null;
+export type AccountsNavActiveKey = "dashboard" | "users" | "duplicate-emails" | "groups" | "requests" | "agents" | "activity" | null;
 
 type NavProps = { active: AccountsNavActiveKey; pendingRequests: number };
 
@@ -46,12 +37,6 @@ export const accountsNavItems = (
       active: props.active === "duplicate-emails",
     },
     { href: "/app/accounts/agents", icon: "ti ti-robot", label: messages().agents, active: props.active === "agents" },
-    {
-      href: "/app/accounts/api-keys",
-      icon: "ti ti-user-key",
-      label: messages().serviceAccounts,
-      active: props.active === "api-keys",
-    },
     // the audit log, notifications, reminders and deleted accounts are kinds of one list
     { href: "/app/accounts/activity", icon: "ti ti-activity", label: messages().activity, active: props.active === "activity" },
   ],
