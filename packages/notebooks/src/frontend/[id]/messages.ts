@@ -422,8 +422,6 @@ export const notebookWorkspaceMessages = i18n.define({
       commentDeleted: "Comment deleted",
       loadingActivity: "Loading activity...",
       you: "You",
-      editedAt: "edited",
-      editedAtStart: "Edited",
       offline: "Offline",
       lastSaved: "last saved",
       lockedSince: ({ time }: { time: string }) => `Locked since ${time}`,
@@ -484,6 +482,9 @@ export const notebookWorkspaceMessages = i18n.define({
       access: "Access",
       accessLoadFailed: "Who has access could not be loaded.",
       noteDetails: "Note details",
+      noteKeyFacts: "Key facts of the note",
+      createdMeta: ({ date, name, self }: { date: string; name: string; self: boolean }) =>
+        self ? `Created ${date} by you` : name ? `Created ${date} by ${name}` : `Created ${date}`,
       automatic: "Automatic",
       roleRead: "Can view",
       roleWrite: "Can edit",
@@ -495,7 +496,8 @@ export const notebookWorkspaceMessages = i18n.define({
       edited: "Edited",
       extent: "Length",
       size: "Size",
-      words: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} word`, other: `${count} words` }),
+      words: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `${count} word`, other: `${count.toLocaleString("en")} words` }),
       readingMinutes: ({ count }: { count: number }) => `about ${count} min to read`,
       sizeWithAttachments: ({ text, count, attachments }: { text: string; count: number; attachments: string }) =>
         count > 0 ? `${text} · ${i18n.plural(count, "en", { one: "1 attachment", other: `${count} attachments` })}, ${attachments}` : text,
@@ -989,8 +991,6 @@ export const notebookWorkspaceMessages = i18n.define({
       commentDeleted: "Kommentar gelöscht",
       loadingActivity: "Aktivitäten werden geladen…",
       you: "Du",
-      editedAt: "bearbeitet",
-      editedAtStart: "Bearbeitet",
       offline: "Offline",
       lastSaved: "zuletzt gespeichert",
       lockedSince: ({ time }) => `Gesperrt seit ${time}`,
@@ -1051,6 +1051,9 @@ export const notebookWorkspaceMessages = i18n.define({
       access: "Zugriff",
       accessLoadFailed: "Wer Zugriff hat, konnte nicht geladen werden.",
       noteDetails: "Notizdetails",
+      noteKeyFacts: "Eckdaten der Notiz",
+      createdMeta: ({ date, name, self }) =>
+        self ? `Erstellt am ${date} von dir` : name ? `Erstellt am ${date} von ${name}` : `Erstellt am ${date}`,
       automatic: "Automatisch",
       roleRead: "Ansehen",
       roleWrite: "Bearbeiten",
@@ -1062,7 +1065,7 @@ export const notebookWorkspaceMessages = i18n.define({
       edited: "Bearbeitet",
       extent: "Umfang",
       size: "Größe",
-      words: ({ count }) => i18n.plural(count, "de", { one: `${count} Wort`, other: `${count} Wörter` }),
+      words: ({ count }) => i18n.plural(count, "de", { one: `${count} Wort`, other: `${count.toLocaleString("de")} Wörter` }),
       readingMinutes: ({ count }) => `etwa ${count} Min. Lesezeit`,
       sizeWithAttachments: ({ text, count, attachments }) =>
         count > 0 ? `${text} · ${i18n.plural(count, "de", { one: "1 Anhang", other: `${count} Anhänge` })}, ${attachments}` : text,

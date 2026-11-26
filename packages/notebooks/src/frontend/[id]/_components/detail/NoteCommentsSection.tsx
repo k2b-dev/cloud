@@ -37,6 +37,8 @@ type Props = {
   dateConfig: DateContext;
   /** Without a connection a new comment cannot be sent; the action stays in place, disabled, with the reason. */
   offline?: boolean;
+  /** Hears the number of comments whenever it changes, for the note's key facts in the details head. */
+  onTotal?: (total: number) => void;
 };
 
 const PER_PAGE = 30;
@@ -111,6 +113,7 @@ export default function NoteCommentsSection(props: Props) {
       .reverse();
     return { ...last, items, total: Math.max(first.total, last.total) };
   });
+  createEffect(() => props.onTotal?.(commentsPage().total));
 
   createEffect(() => {
     void source();
@@ -361,11 +364,18 @@ export default function NoteCommentsSection(props: Props) {
             const isEditing = () => editingId() === comment.id;
             return (
               <Band>
+                {/* Two lines, the time on the second: in a row of one line the "…" of an own comment would stand on it. */}
                 <Row
                   avatar={person(comment)}
-                  lines={[isOwn() ? t().you : comment.authorDisplayName]}
-                  meta={comment.updatedAt !== comment.createdAt ? t().editedLower : undefined}
-                  time={dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
+                  lines={[
+                    isOwn() ? t().you : comment.authorDisplayName,
+                    [
+                      dates.formatDateTimeRelative(comment.createdAt, props.dateConfig),
+                      comment.updatedAt !== comment.createdAt ? t().editedLower : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  ]}
                   end={
                     props.canWrite && isOwn() && !isEditing() && (comment.canEdit || comment.canDelete) ? (
                       <Menu label={t().commentActions} items={commentMenu(comment)} />
