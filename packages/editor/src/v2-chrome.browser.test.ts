@@ -645,10 +645,10 @@ test("on a phone, after a menu opened by a touch, keys open it again with the fo
   }
 }, 30_000);
 
-// k2b-ui gap: core's menu has no initial focus "none", so a touch opener's focus visits the menu for a frame before
-// `keepFocus` takes it back; the note blurs once, which on an iPhone may close its keyboard. This test states the goal
-// and fails until core offers it (then `test.failing` turns red and this becomes a plain test).
-test.failing("on a phone the note never loses its focus while a toolbar menu opens by a touch", async () => {
+// k2b-ui gap (#4285): core's menu has no initial focus "none", so a touch opener's focus visits the menu for a frame
+// before `keepFocus` takes it back. This pins today's behaviour: the note blurs once, then has its focus and caret
+// again. When core offers the initial focus "none", the note never blurs, and this test expects 0.
+test("on a phone the note loses its focus once while a toolbar menu opens by a touch, and gets it back with its caret", async () => {
   const { context, page } = await openPhone();
   try {
     const note = page.locator('[data-editor="shared"] .cm-content');
@@ -662,7 +662,9 @@ test.failing("on a phone the note never loses its focus while a toolbar menu ope
     await page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]').tap();
     await page.locator(".k2-menu").waitFor();
     await settled(page);
-    expect(await page.evaluate(() => Reflect.get(window, "__k2Blurs"))).toBe(0);
+    expect(await page.evaluate(() => Reflect.get(window, "__k2Blurs"))).toBe(1);
+    expect(await noteFocused(page)).toBe(true);
+    expect(await caretLine(page)).toContain("Familie Oswald");
   } finally {
     await context.close();
   }

@@ -85,9 +85,10 @@ export type MenuProps = TriggerProps & {
   items: readonly MenuEntry[];
   /**
    * Opened by a touch, the menu gives the focus back to where it was, such as a note whose keyboard should stay open on
-   * a phone; its entries are then pressed. Only a touch: opened with keys, a mouse or a screen reader (VoiceOver) the
-   * menu takes the focus as usual. The focus visits the menu for a moment before it comes back, so an iPhone may still
-   * close its keyboard (k2b-ui gap: core's menu has no initial focus "none").
+   * a phone; its entries are then pressed. Only a touch: opened with keys, a mouse or VoiceOver on a Mac the menu
+   * takes the focus as usual (VoiceOver on a phone may tap as a touch). The focus visits the menu for a moment before
+   * it comes back, so an iPhone may still close its keyboard (k2b-ui gap #4285: core's menu has no initial focus
+   * "none").
    */
   keepFocus?: boolean;
   /** Where the focus goes when the menu closes from inside, such as the note of a toolbar; its button by default. */
@@ -351,9 +352,9 @@ const MenuRoot = (props: MenuProps) => {
       if (open) setAlign(alignTo(trigger));
       const before = owner;
       owner = null;
-      // k2b-ui gap: core's menu has no initial focus "none" (only a final focus), so a touch opener's focus visits the
-      // menu and is pulled back one frame later
-      if (open && props.keepFocus && before instanceof HTMLElement)
+      // k2b-ui gap #4285: core's menu has no initial focus "none" (only a final focus), so a touch opener's focus
+      // visits the menu and is pulled back one frame later; a page without a focused element has nothing to get back
+      if (open && props.keepFocus && before instanceof HTMLElement && before !== document.body)
         requestAnimationFrame(() => {
           if (before.isConnected) before.focus({ preventScroll: true });
         });

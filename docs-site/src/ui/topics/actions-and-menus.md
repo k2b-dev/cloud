@@ -43,7 +43,7 @@ The one button: `primary` once per page, framed by default, `ghost` and `text` f
 
 ### Menu
 
-More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles. Beside a text that is being written, such as in an editor's toolbar, `keepFocus` gives the focus back to the text when a finger opened the menu, and `returnFocus` gives it back when the menu closes. It acts on touch only: opened with keys, a mouse or a screen reader, the menu takes the focus as usual. The focus visits the menu for a moment first, so an iPhone may still close its keyboard; a menu that never takes the focus needs an initial focus "none" that the behaviour layer does not offer yet.
+More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles. Beside a text that is being written, such as in an editor's toolbar, `keepFocus` gives the focus back to the text when a finger opened the menu, and `returnFocus` gives it back when the menu closes. It acts on touch only: opened with keys, a mouse or VoiceOver on a Mac, the menu takes the focus as usual (VoiceOver on a phone may tap as a touch). The focus visits the menu for a moment first, so an iPhone may still close its keyboard; a menu that never takes the focus needs an initial focus "none" that the behaviour layer does not offer yet.
 
 <Props of="Menu MenuItem MenuSection" />
 
