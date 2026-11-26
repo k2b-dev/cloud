@@ -162,6 +162,11 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   /** The groups that get through, as words; a client without one says so quietly (its state says the rest). */
   const groupLine = (client: ClientRow) =>
     client.groups.length === 0 ? t().noGroups : client.groups.map((group) => group.label).join(", ");
+  /** The groups in one short line: the first, then how many more; the open client lists them all. */
+  const groupShort = (client: ClientRow) =>
+    client.groups.length <= 1
+      ? groupLine(client)
+      : t().groupAndMore({ name: client.groups[0]!.label, count: number(client.groups.length - 1) });
 
   /** A figure in the person's number format. */
   const number = (value: number) => value.toLocaleString(locale());
@@ -209,9 +214,9 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           icon="users-group"
           label={t().allowedGroups}
           value={number(client.groups.length)}
-          meta={client.groups.length === 0 ? t().chooseGroups : groupLine(client)}
+          meta={client.groups.length === 0 ? t().chooseGroups : groupShort(client)}
         />
-        <Cells.Cell icon="calendar" label={t().created} value={client.created} meta={client.description ?? ""} />
+        <Cells.Cell icon="calendar" label={t().created} value={client.created} />
       </Cells>
       <Section icon="link" title={t().verifyUrl} summary={t().verifySummary}>
         <Row
@@ -227,7 +232,13 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       </Section>
       {/* what Traefik and an administrator need to copy; created and description stand in the strip above */}
       <Section icon="code" title={t().technique}>
-        <Facts items={[{ label: t().clientId, value: client.clientId, mono: true, copy: client.clientId }]} />
+        <Facts
+          items={[
+            { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
+            // the description in full, where it has room
+            ...(client.description ? [{ label: t().description, value: client.description }] : []),
+          ]}
+        />
       </Section>
     </Pane>
   );
@@ -282,7 +293,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           }
           // two lines on the phone: the name, then its groups and since when
           phone={(client) => ({
-            lines: [client.name, `${groupLine(client)} · ${client.created}`],
+            lines: [client.name, `${groupShort(client)} · ${client.created}`],
             marks: client.groups.length === 0 ? blocked() : undefined,
           })}
           // one line per client; colour only for the state that needs a look

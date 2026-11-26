@@ -21,7 +21,7 @@ const client = (index: number, name: string, description: string | null, groups:
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
-    .slice(0, 60)}`,
+    .slice(0, 60) || String(index)}`,
   name,
   description,
   allowedGroups: groups.map(group),
@@ -54,6 +54,9 @@ const WORST: ProxyAuthClient[] = [
     Array.from({ length: 9 }, (_, index) => `werkstatt-nord-schicht-${index + 1}`),
   ),
   client(101, "X", null, []),
+  // a name with an emoji and one in another script
+  client(150, "🖨️ Druckerverwaltung", null, ["werkstatt-nord-schicht-1"]),
+  client(151, "設備管理システム（第二工場）", "生産ラインの設備点検と保守記録", ["standort-1", "standort-2"]),
   ...Array.from({ length: 38 }, (_, index) =>
     client(102 + index, `Standort ${String(index + 1).padStart(3, "0")} · Kasse`, index % 3 ? `Kasse am Standort ${index + 1}` : null, [
       `standort-${index + 1}`,

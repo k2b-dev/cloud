@@ -152,6 +152,8 @@ describe("Proxy Auth in the Cloud shell", () => {
       ["worst-case", "", "worst"],
       ["suche", "?search=Standort%2001", "worst"],
       ["worst-case-offen", "?client=00000000-0000-4000-8000-000000000100", "worst"],
+      // another script, opened
+      ["worst-case-schrift", "?client=00000000-0000-4000-8000-000000000151", "worst"],
     ];
     for (const [name, search, data] of cases) {
       const html = await pages(data).html(search);
