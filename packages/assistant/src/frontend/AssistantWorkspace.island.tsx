@@ -3762,6 +3762,7 @@ export default function AssistantWorkspace(props: Props) {
                   onJump={(question) => void jumpToQuestion(question)}
                   initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
                   timeZone={props.timeZone}
+                  total={() => waiting().total}
                 />
               )
             : null

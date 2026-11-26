@@ -198,8 +198,9 @@ export const FIXTURE_APPROVAL = {
   createdAt: at(12),
   expiresAt: at(-1440),
 };
+// The server counts every open question, the two automations below too; its first page lists the three newest others.
 export const FIXTURE_QUESTIONS = {
-  count: 3,
+  count: 5,
   items: [
     {
       id: "req-berger",

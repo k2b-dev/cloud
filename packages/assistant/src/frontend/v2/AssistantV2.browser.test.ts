@@ -437,6 +437,11 @@ describe("Assistant on v2", () => {
         expect(await layoutProblems(page)).toEqual([]);
         expect(await page.getByText("Version 2 von „Lagerliste exportieren“ einschalten").count()).toBe(1);
         expect(await page.getByRole("button", { name: "Chat wiederherstellen" }).count()).toBe(1);
+        // One count of what waits: the sidebar's badge and the page's statement say the same.
+        if (view === wide) {
+          expect(await page.locator('[data-k2-part="Nav"] a[href="/app/assistant?approvals=1"] .k2-ni-count').textContent()).toBe("5");
+          expect(await page.locator('[data-k2-part="StatusRow"]').textContent()).toContain("5 offen");
+        }
         if (view === wide) {
           await page.getByRole("button", { name: "Rückfrage zu Rechnung 2026-118 an Frau Berger senden" }).click();
           await until(() => posted.some((entry) => entry.path.startsWith("/api/approvals/")));

@@ -15,14 +15,14 @@ import { iconName } from "./assistant-nav";
  * about, and the person's automations that need them, each a section of rows with the one way to act. The same state
  * as the v1 view (`createWaitingPage`), so the row above the field, its count and this page agree.
  */
-export default function AssistantWaitingV2(props: AssistantApprovalsViewProps) {
+export default function AssistantWaitingV2(props: AssistantApprovalsViewProps & { total: () => number }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const a = () => automationMessages.resolve([locale()]).t;
   const toast = useToast();
   const page = createWaitingPage(props);
-  const total = () =>
-    (page.approvals()?.count ?? 0) + page.secrets().length + page.versions().length + (page.shownAutomations()?.length ?? 0);
+  // The one count of what waits, the same as the sidebar's badge and the row above the field.
+  const total = () => props.total();
   const [restoring, setRestoring] = createSignal<string | null>(null);
   const restore = async (chat: { id: string; title: string }) => {
     if (restoring()) return;
