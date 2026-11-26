@@ -86,7 +86,6 @@ packages/cloud/src/ssr/LayoutHelp.tsx | untitled | t().articleCopied
 packages/cloud/src/ssr/LayoutHelp.tsx | untitled | t().copyFailed({ message: articleClipboard.error()?.message ?? t().copyFallback })
 packages/cloud/src/ssr/LayoutHelp.tsx | untitled | t().helpCopied
 packages/cloud/src/ssr/PwaRuntime.island.tsx | untitled | t().newVersion({ cloud: props.cloud })
-packages/cloud/src/ssr/PwaRuntime.island.tsx | untitled | t().otherAccount({ cloud: props.cloud, name: otherAccount.name })
 packages/cloud/src/ssr/RailEditor.tsx | untitled | t.failedClosed
 packages/cloud/src/ssr/global-search-host.tsx | untitled | resourceSearchMessages.resolve([locale]).t.searchFailed
 packages/cloud/src/ssr/layout-help-panel-menu.tsx | untitled | message

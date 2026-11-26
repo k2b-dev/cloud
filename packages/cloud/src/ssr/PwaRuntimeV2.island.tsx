@@ -46,7 +46,7 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
       </Show>
       <Show when={otherAccount()}>
         {(name) => (
-          <Notice tone="warn" actions={[{ label: t().hide, onClick: () => setOtherAccount(undefined) }]}>
+          <Notice tone="warn" title={t().otherAccountTitle} actions={[{ label: t().hide, onClick: () => setOtherAccount(undefined) }]}>
             {t().otherAccount({ cloud: props.cloud, name: name() })}
           </Notice>
         )}
