@@ -1,33 +1,38 @@
 import { files as fileTools, images as imageTools } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
+import { ColorInput, Slider, suppressTextSelection, useLocale } from "@k2b/ui";
 import {
-  AppWorkspace,
+  Band,
+  Bar,
   Button,
-  ColorInput,
-  DetailPanel,
-  Dropdown,
-  FileDropTarget,
-  IconButton,
-  NoticeCard,
-  NumberInput,
-  prompts,
+  Canvas,
+  Check,
+  Choice,
+  Dialog,
+  Empty,
+  type Fact,
+  Facts,
+  Field,
+  Inline,
+  Input,
+  Menu,
+  type MenuEntry,
+  Notice,
+  Pane,
+  Progress,
   Section,
-  SegmentedControl,
-  Select,
-  Slider,
-  Switch,
-  suppressTextSelection,
-  Tooltip,
-  useLocale,
-  watchAppHostWidth,
-} from "@k2b/ui";
+  Tabs,
+  Text,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
+import { LiveStatus } from "../tools-status";
 import { IMAGE_ACCEPT } from "./image-intake/formats";
 import { disposeHeifDecoder, ImageIntakeError, type ImageIntakeFailure, type ImageIntakeStage, prepareImage } from "./image-intake/intake";
 import { imageIntakeMessages } from "./image-intake/messages";
 import { DEFAULT_ADJ, PRESETS } from "./image-processor/constants";
 import { type CropHandle, createCropRect, moveCropRect, resizeCropRect, toPixelCropRect } from "./image-processor/crop-geometry";
-import { buildImagePipeline, makePreviewSource, rotatedImageDimensions } from "./image-processor/image-processing";
+import { buildImagePipeline, makePreviewSource, makeThumbnail, rotatedImageDimensions } from "./image-processor/image-processing";
 import MarkupOverlay from "./image-processor/MarkupOverlay";
 import { composeCropBounds, FULL_CROP_BOUNDS, restoreMarkupFromCrop, transformMarkupForCrop } from "./image-processor/markup";
 import { commitMarkupHistory, redoMarkupHistory, undoMarkupHistory } from "./image-processor/markup-history";
@@ -42,6 +47,7 @@ import type {
   MarkupPoint,
   MarkupShapeKind,
   MarkupTool,
+  Preset,
 } from "./image-processor/types";
 
 let nextId = 0;
@@ -49,6 +55,9 @@ const uid = () => `images-${++nextId}`;
 const MIN_PREVIEW_ZOOM = 0.25;
 const MAX_PREVIEW_ZOOM = 4;
 const PREVIEW_ZOOM_STEP = 1.2;
+/** The stage before the browser has measured its pane, and its floor: a photo needs room to be seen. */
+const STAGE_HEIGHT = 560;
+const STAGE_MIN = 320;
 type SizedMarkupTool = "pen" | "highlighter" | "shape" | "text";
 type MarkupSelection = { imageId: string; elementId: string };
 const MARKUP_COLORS = [
@@ -59,6 +68,39 @@ const MARKUP_COLORS = [
   { value: "#3b82f6", labelKey: "colorBlue" },
   { value: "#ffffff", labelKey: "colorWhite" },
 ] as const;
+const CROP_ASPECTS: readonly CropAspect[] = ["free", "1:1", "4:3", "16:9", "3:2"];
+const EXPORT_FORMATS: readonly ExportFormat[] = ["webp", "jpeg", "png"];
+const ADJUSTMENT_KEYS = ["brightness", "contrast", "saturation", "hueRotate", "blur", "sepia", "vignette", "grain"] as const;
+
+/** The CSS filter of a look: the preview of an adjustment while it is set, and the face of each preset. */
+const filterOf = (a: Pick<Adjustments, "brightness" | "contrast" | "saturation" | "hueRotate" | "blur" | "sepia">) => {
+  const parts: string[] = [];
+  if (a.brightness !== 1) parts.push(`brightness(${a.brightness})`);
+  if (a.contrast !== 1) parts.push(`contrast(${a.contrast})`);
+  if (a.saturation !== 1) parts.push(`saturate(${a.saturation})`);
+  if (a.hueRotate !== 0) parts.push(`hue-rotate(${a.hueRotate}deg)`);
+  if (a.blur > 0) parts.push(`blur(${a.blur}px)`);
+  if (a.sepia > 0) parts.push(`sepia(${a.sepia})`);
+  return parts.join(" ") || "none";
+};
+
+const sameLook = (a: Adjustments, preset: Preset) => ADJUSTMENT_KEYS.every((key) => Math.abs(a[key] - preset[key]) < 1e-9);
+
+// k2b-ui gap: the last step of a head's Path does not give way to the head's actions (a long name cut the export
+// button at 1024 px); a file name is cut in its middle here, so its start and its extension stay.
+const shortName = (name: string, max = 40) => (name.length <= max ? name : `${name.slice(0, max - 15)}…${name.slice(-14)}`);
+
+/** A limit in pixels from a field: empty is no limit, anything else must be a whole positive number. */
+const pixels = (value: string): number | null | undefined => {
+  if (!value.trim()) return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : undefined;
+};
+/** A quality in percent from a field, 10 to 100, or not valid. */
+const percent = (value: string): number | undefined => {
+  const number = Number(value);
+  return value.trim() && Number.isFinite(number) && number >= 10 && number <= 100 ? number / 100 : undefined;
+};
 
 // ====================================
 // Component
@@ -90,7 +132,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const [previewBusy, setPreviewBusy] = createSignal(false);
   const [previewZoom, setPreviewZoom] = createSignal(1);
   const [previewViewportSize, setPreviewViewportSize] = createSignal({ width: 1, height: 1 });
-  const [inspectorOpen, setInspectorOpen] = createSignal(true);
+  const [stageHeight, setStageHeight] = createSignal(STAGE_HEIGHT);
+  const [phone, setPhone] = createSignal(false);
+  const [draggingFiles, setDraggingFiles] = createSignal(false);
+  /** The last thing done, for the live region, such as "4 Bilder offen" after a load. */
+  const [announcement, setAnnouncement] = createSignal<string>();
 
   // --- Editor mode + markup ---
   const [editorMode, setEditorMode] = createSignal<"edit" | "markup">(props.initialEditorMode ?? "edit");
@@ -104,6 +150,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     text: 32,
   });
   const [markupSelection, setMarkupSelection] = createSignal<MarkupSelection | null>(null);
+  const [textDraft, setTextDraft] = createSignal<{ position: MarkupPoint; imageId: string; text: string } | null>(null);
 
   // --- Clipboard for copy/paste edits ---
   const [clipboard, setClipboard] = createSignal<Adjustments | null>(null);
@@ -123,19 +170,12 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
   let previewRequest = 0;
   let previewViewportRef: HTMLDivElement | undefined;
+  let stageRef: HTMLDivElement | undefined;
 
   // --- Derived ---
   const activeImage = createMemo(() => images()[activeIndex()] ?? null);
   const hasImages = createMemo(() => images().length > 0);
   const adj = createMemo(() => activeImage()?.adj ?? DEFAULT_ADJ);
-  const activeImageSubtitle = () => {
-    const image = activeImage();
-    if (!image) return t().noImageSelected;
-    const { width, height } = image.source;
-    return image.file
-      ? t().subtitleDimensionsSize({ width, height, kb: (image.file.size / 1024).toFixed(0) })
-      : t().subtitleDimensions({ width, height });
-  };
   const selectedMarkupId = createMemo(() => {
     const image = activeImage();
     const selection = markupSelection();
@@ -148,17 +188,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   };
 
   // CSS filter — reactive, instant preview
-  const cssFilter = createMemo(() => {
-    const a = adj();
-    const parts: string[] = [];
-    if (a.brightness !== 1) parts.push(`brightness(${a.brightness})`);
-    if (a.contrast !== 1) parts.push(`contrast(${a.contrast})`);
-    if (a.saturation !== 1) parts.push(`saturate(${a.saturation})`);
-    if (a.hueRotate !== 0) parts.push(`hue-rotate(${a.hueRotate}deg)`);
-    if (a.blur > 0) parts.push(`blur(${a.blur}px)`);
-    if (a.sepia > 0) parts.push(`sepia(${a.sepia})`);
-    return parts.join(" ") || "none";
-  });
+  const cssFilter = createMemo(() => filterOf(adj()));
 
   const cssTransform = createMemo(() => {
     const a = adj();
@@ -205,6 +235,22 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     });
   };
 
+  // k2b-ui gap: a Canvas has a fixed height or its drawing's; none fills the rest of its pane. The stage measures it:
+  // beside the inspector it reaches the pane's end, on the phone (where the panes stack) it takes most of the window.
+  const measureStage = () => {
+    const stage = stageRef;
+    if (!stage) return;
+    const pane = stage.closest('[data-k2-part="Pane"]');
+    const wide = typeof matchMedia === "function" && matchMedia("(min-width: 768px)").matches;
+    setPhone(!wide);
+    // on the phone the stage fills the rest of the first view; the tools follow below it
+    const room =
+      wide && pane
+        ? pane.getBoundingClientRect().bottom - stage.getBoundingClientRect().top
+        : window.innerHeight - stage.getBoundingClientRect().top - window.scrollY;
+    setStageHeight(Math.max(STAGE_MIN, Math.floor(room)));
+  };
+
   const setClampedPreviewZoom = (next: number) => {
     const viewport = previewViewportRef;
     const centerX = viewport ? (viewport.scrollLeft + viewport.clientWidth / 2) / Math.max(1, viewport.scrollWidth) : 0.5;
@@ -228,12 +274,6 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   // File Loading
   // ====================================
 
-  // Below the desktop width the inspector covers the canvas, where the failure notice lives; step aside to show it.
-  let wideAppHost = false;
-  const revealLoadFailures = () => {
-    if (!wideAppHost) setInspectorOpen(false);
-  };
-
   let loadingFiles: File[] = [];
   const loadMutation = mutations.create<void, File[]>({
     mutation: async (files, { abortSignal }) => {
@@ -254,7 +294,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             });
             const source = await imageTools.create(prepared.source);
             const previewSource = await makePreviewSource(source);
-            const thumbUrl = await imageTools.presets.thumbnail(prepared.source, 64, "#000", "jpeg");
+            const thumbUrl = await makeThumbnail(previewSource);
             abortSignal.throwIfAborted();
             entries.push({
               id: uid(),
@@ -276,7 +316,6 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             abortSignal.throwIfAborted();
             const reason = loadError instanceof ImageIntakeError ? loadError.reason : "decode-failed";
             setLoadFailures((current) => [...current, { file, reason }]);
-            revealLoadFailures();
           }
         }
         abortSignal.throwIfAborted();
@@ -294,6 +333,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     onFinally: () => {
       loadingFiles = [];
       setCurrentLoad(null);
+      setAnnouncement(t().photosOpen({ count: images().length }));
     },
   });
 
@@ -301,7 +341,6 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     if (files.length === 0) return;
     if (cropActive() || cropBusy()) {
       setLoadFailures((current) => [...current, ...files.map((file) => ({ file, reason: "crop-active" as const }))]);
-      revealLoadFailures();
       return;
     }
     if (loadMutation.loading()) {
@@ -438,7 +477,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       };
       const cropped = await imageTools.crop(sourceCrop.x, sourceCrop.y, sourceCrop.w, sourceCrop.h)(entry.source);
       const croppedPreview = await imageTools.crop(previewCrop.x, previewCrop.y, previewCrop.w, previewCrop.h)(entry.previewSource);
-      const thumbUrl = await imageTools.presets.thumbnail(croppedPreview.canvas, 64, "#000", "jpeg");
+      const thumbUrl = await makeThumbnail(croppedPreview);
       const sizeScale = Math.min(entry.source.width, entry.source.height) / Math.min(cropped.width, cropped.height);
       setImages((prev) =>
         prev.map((image) =>
@@ -477,7 +516,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     setCropBusy(true);
     setError("");
     try {
-      const thumbUrl = await imageTools.presets.thumbnail(entry.originalPreviewSource.canvas, 64, "#000", "jpeg");
+      const thumbUrl = await makeThumbnail(entry.originalPreviewSource);
       const sizeScale =
         Math.min(entry.source.width, entry.source.height) / Math.min(entry.originalSource.width, entry.originalSource.height);
       setImages((prev) =>
@@ -627,35 +666,27 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     mutateMarkup(imageId, () => markup);
   };
 
-  const addMarkupText = async (position: MarkupPoint, imageId: string) => {
-    const color = markupColor();
-    const size = markupSizes().text / 1_000;
-    const result = await prompts.form({
-      title: t().addTextTitle,
-      icon: "ti ti-text-resize",
-      confirmText: t().addTextAction,
-      fields: {
-        text: {
-          type: "text" as const,
-          label: t().textFieldLabel,
-          required: true,
-        },
-      },
-    });
-    const text = String(result?.text ?? "").trim();
-    const image = images().find((entry) => entry.id === imageId);
-    if (!text || !image) return;
+  // A click with the text tool asks for the words in a dialog; the colour and size are those set when it was asked.
+  const askMarkupText = (position: MarkupPoint, imageId: string) => setTextDraft({ position, imageId, text: "" });
+
+  const addMarkupText = () => {
+    const draft = textDraft();
+    const text = draft?.text.trim() ?? "";
+    if (!draft || !text) return;
+    setTextDraft(null);
+    const image = images().find((entry) => entry.id === draft.imageId);
+    if (!image) return;
     const element: MarkupElement = {
       id: crypto.randomUUID(),
       kind: "text",
-      position,
+      position: draft.position,
       text,
-      color,
-      size,
+      color: markupColor(),
+      size: markupSizes().text / 1_000,
     };
-    mutateMarkup(imageId, (markup) => [...markup, element]);
-    if (activeImage()?.id === imageId) {
-      selectMarkup(element.id, imageId);
+    mutateMarkup(draft.imageId, (markup) => [...markup, element]);
+    if (activeImage()?.id === draft.imageId) {
+      selectMarkup(element.id, draft.imageId);
       setMarkupTool("select");
     }
   };
@@ -699,11 +730,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const clearMarkup = async () => {
     const image = activeImage();
     if (!image || image.markup.length === 0) return;
-    const confirmed = await prompts.confirm(t().clearMarkupConfirm, {
+    const confirmed = await Dialog.confirm({
       title: t().clearMarkup,
-      icon: "ti ti-eraser",
-      confirmText: t().clearMarkupAction,
-      variant: "danger",
+      description: t().clearMarkupConfirm,
+      confirm: t().clearMarkupAction,
+      cancel: t().cancel,
     });
     if (!confirmed) return;
     replaceMarkup([], image.id);
@@ -711,140 +742,73 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   };
 
   // ====================================
-  // Export Modal
+  // Export
   // ====================================
 
-  const showExportModal = async (mode: "single" | "all") => {
-    const count = mode === "all" ? images().length : 1;
+  const [exportOpen, setExportOpen] = createSignal(false);
+  const [exportScope, setExportScope] = createSignal<"single" | "all">("single");
+  const [exportFormat, setExportFormat] = createSignal<ExportFormat>("webp");
+  // The fields keep what was typed; a value that is not valid says so at its field and holds the export.
+  const [qualityText, setQualityText] = createSignal("80");
+  const [widthText, setWidthText] = createSignal("");
+  const [heightText, setHeightText] = createSignal("");
+  const exportQuality = () => percent(qualityText()) ?? 0.8;
+  const exportWidth = () => pixels(widthText()) ?? null;
+  const exportHeight = () => pixels(heightText()) ?? null;
+  const qualityError = () => (exportFormat() !== "png" && percent(qualityText()) === undefined ? t().qualityInvalid : undefined);
+  const widthError = () => (pixels(widthText()) === undefined ? t().pixelsInvalid : undefined);
+  const heightError = () => (pixels(heightText()) === undefined ? t().pixelsInvalid : undefined);
+  const exportInvalid = () => Boolean(qualityError() || widthError() || heightError());
+  const [exportProgress, setExportProgress] = createSignal<number | null>(null);
+  const [exporting, setExporting] = createSignal(false);
+  const [exportError, setExportError] = createSignal("");
+  const exportCount = () => (exportScope() === "all" ? images().length : 1);
 
-    await prompts.dialog<void>(
-      (close) => {
-        const [fmt, setFmt] = createSignal<ExportFormat>("webp");
-        const [qual, setQual] = createSignal(0.8);
-        const [mw, setMw] = createSignal<number | null>(null);
-        const [mh, setMh] = createSignal<number | null>(null);
-        const [progress, setProgress] = createSignal<number | null>(null);
-        const [exporting, setExporting] = createSignal(false);
-        const [exportError, setExportError] = createSignal("");
+  const openExport = () => {
+    setExportScope("single");
+    setExportProgress(null);
+    setExportError("");
+    setExportOpen(true);
+  };
 
-        const doExport = async () => {
-          if (exporting()) return;
-          setExporting(true);
-          setExportError("");
-          let completed = 0;
-          try {
-            const active = activeImage();
-            const entries = mode === "all" ? images() : active ? [active] : [];
-            if (entries.length === 0) throw new Error(t().noImageToExport);
+  const doExport = async () => {
+    if (exporting() || exportInvalid()) return;
+    setExporting(true);
+    setExportError("");
+    const count = exportCount();
+    let completed = 0;
+    try {
+      const active = activeImage();
+      const entries = exportScope() === "all" ? images() : active ? [active] : [];
+      if (entries.length === 0) throw new Error(t().noImageToExport);
 
-            setProgress(0);
-            for (let i = 0; i < entries.length; i++) {
-              if (left) return;
-              setProgress((i + 0.5) / entries.length);
-              const entry = entries[i]!;
-              const blob = await buildImagePipeline(entry, mw() ?? undefined, mh() ?? undefined).then(imageTools.toBlob(fmt(), qual()));
-              const name = entry.name.replace(/\.[^.]+$/, "") + `.${fmt()}`;
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = name;
-              a.click();
-              window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-              completed = i + 1;
-              setProgress((i + 1) / entries.length);
-              if (entries.length > 1) await new Promise((resolve) => setTimeout(resolve, 200));
-            }
-            close();
-          } catch (exportFailure) {
-            const reason = exportFailure instanceof Error ? exportFailure.message : t().unknownExportError;
-            setExportError(completed > 0 ? `${t().exportStopped({ completed, count })} ${reason}` : reason);
-          } finally {
-            setExporting(false);
-          }
-        };
-
-        return (
-          <div class="flex flex-col gap-4 min-w-70">
-            <Select
-              label={t().formatLabel}
-              icon="ti ti-file-type-jpg"
-              value={fmt}
-              onValueChange={(v) => setFmt(v as ExportFormat)}
-              options={[
-                { id: "webp", label: "WebP" },
-                { id: "jpeg", label: "JPEG" },
-                { id: "png", label: "PNG" },
-              ]}
-            />
-            <Show when={fmt() !== "png"}>
-              <Slider
-                label={t().qualityLabel}
-                value={qual}
-                onValueChange={setQual}
-                min={0.1}
-                max={1}
-                step={0.05}
-                showValue
-                formatValue={(v) => `${Math.round(v * 100)}%`}
-              />
-            </Show>
-            <div class="grid grid-cols-2 gap-2">
-              <NumberInput
-                name="image-export-max-width"
-                label={t().maxWidth}
-                placeholder={t().autoPlaceholder}
-                value={mw}
-                onValueChange={setMw}
-                min={1}
-                allowNegative={false}
-                showSteppers={false}
-              />
-              <NumberInput
-                name="image-export-max-height"
-                label={t().maxHeight}
-                placeholder={t().autoPlaceholder}
-                value={mh}
-                onValueChange={setMh}
-                min={1}
-                allowNegative={false}
-                showSteppers={false}
-              />
-            </div>
-            <p class="text-xs text-dimmed">{t().keepOriginalSize}</p>
-
-            <Show when={exportError()}>
-              <NoticeCard tone="danger">{exportError()}</NoticeCard>
-            </Show>
-
-            <Show when={progress() !== null}>
-              <div class="flex flex-col gap-1">
-                <div class="w-full h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
-                  <div
-                    class="h-full bg-blue-500 rounded-full transition-all"
-                    style={{ width: `${Math.round((progress() ?? 0) * 100)}%` }}
-                  />
-                </div>
-                <p class="text-xs text-dimmed text-center">{Math.round((progress() ?? 0) * 100)}%</p>
-              </div>
-            </Show>
-
-            <div class="flex gap-2 justify-end">
-              <Button variant="secondary" size="sm" onClick={() => close()} disabled={exporting()}>
-                {t().cancel}
-              </Button>
-              <Button size="sm" onClick={doExport} loading={exporting()} loadingLabel={t().exporting}>
-                <i class="ti ti-download" />
-                {mode === "all" ? t().exportCountAction({ count }) : t().exportAction}
-              </Button>
-            </div>
-          </div>
+      setExportProgress(0);
+      for (let i = 0; i < entries.length; i++) {
+        if (left) return;
+        setExportProgress((i + 0.5) / entries.length);
+        const entry = entries[i]!;
+        const format = exportFormat();
+        const blob = await buildImagePipeline(entry, exportWidth() ?? undefined, exportHeight() ?? undefined).then(
+          imageTools.toBlob(format, exportQuality()),
         );
-      },
-      {
-        title: mode === "all" ? t().exportImagesTitle({ count }) : t().exportImageTitle,
-        icon: "ti ti-download",
-      },
-    );
+        const name = entry.name.replace(/\.[^.]+$/, "") + `.${format}`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+        completed = i + 1;
+        setExportProgress((i + 1) / entries.length);
+        if (entries.length > 1) await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      setExportOpen(false);
+    } catch (exportFailure) {
+      const reason = exportFailure instanceof Error ? exportFailure.message : t().unknownExportError;
+      setExportError(completed > 0 ? `${t().exportStopped({ completed, count })} ${reason}` : reason);
+    } finally {
+      setExporting(false);
+    }
   };
 
   // ====================================
@@ -907,7 +871,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     target.closest("button, a, input, textarea, select, [role='button'], [role='slider'], [role='tab']") !== null;
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.defaultPrevented || e.altKey || isEditableTarget(e.target)) return;
+    if (e.defaultPrevented || e.altKey || isEditableTarget(e.target) || exportOpen() || textDraft()) return;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && editorMode() === "markup") {
       if (e.shiftKey) redoMarkup();
       else undoMarkup();
@@ -956,212 +920,387 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   onMount(() => {
     if (props.initialImages?.length) void rebuildBasePreview();
     measurePreviewViewport();
-    const previewObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measurePreviewViewport);
-    if (previewViewportRef) {
-      onCleanup(
-        watchAppHostWidth(previewViewportRef, 64, (wide) => {
-          wideAppHost = wide;
-          if (wide) setInspectorOpen(true);
-        }),
-      );
-    }
-    if (previewViewportRef) previewObserver?.observe(previewViewportRef);
-    if (!previewObserver) window.addEventListener("resize", measurePreviewViewport);
+    measureStage();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            measureStage();
+            measurePreviewViewport();
+          });
+    const watch = () => {
+      observer?.disconnect();
+      if (previewViewportRef) observer?.observe(previewViewportRef);
+      const pane = stageRef?.closest('[data-k2-part="Pane"]');
+      if (pane) observer?.observe(pane);
+    };
+    watch();
+    const onResize = () => {
+      measureStage();
+      measurePreviewViewport();
+    };
+    window.addEventListener("resize", onResize);
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("pointermove", onCropPointerMove, { passive: false });
     document.addEventListener("pointerup", onCropPointerUp);
     document.addEventListener("pointercancel", onCropPointerUp);
 
+    // k2b-ui gap: v2 has no file drop target; the page takes dropped images itself and the status row says so.
+    let depth = 0;
+    const carriesFiles = (event: DragEvent) => Boolean(event.dataTransfer?.types.includes("Files"));
+    const enter = (event: DragEvent) => {
+      if (!carriesFiles(event)) return;
+      depth += 1;
+      setDraggingFiles(true);
+    };
+    const leave = (event: DragEvent) => {
+      if (!carriesFiles(event)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDraggingFiles(false);
+    };
+    const over = (event: DragEvent) => {
+      if (carriesFiles(event)) event.preventDefault();
+    };
+    const dropped = (event: DragEvent) => {
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length === 0) return;
+      event.preventDefault();
+      depth = 0;
+      setDraggingFiles(false);
+      loadFiles(files);
+    };
+    // Open photos and their edits live only in this page: leaving it (reload, closing the tab) asks first.
+    const leaving = (event: BeforeUnloadEvent) => {
+      if (images().length === 0) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", leaving);
+    onCleanup(() => window.removeEventListener("beforeunload", leaving));
+    document.addEventListener("dragenter", enter);
+    document.addEventListener("dragleave", leave);
+    document.addEventListener("dragover", over);
+    document.addEventListener("drop", dropped);
+
     onCleanup(() => {
-      previewObserver?.disconnect();
-      if (!previewObserver) window.removeEventListener("resize", measurePreviewViewport);
+      observer?.disconnect();
+      window.removeEventListener("resize", onResize);
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("pointermove", onCropPointerMove);
       document.removeEventListener("pointerup", onCropPointerUp);
       document.removeEventListener("pointercancel", onCropPointerUp);
+      document.removeEventListener("dragenter", enter);
+      document.removeEventListener("dragleave", leave);
+      document.removeEventListener("dragover", over);
+      document.removeEventListener("drop", dropped);
     });
   });
 
-  const SectionLabel = (props: { label: string }) => <span class="section-label mb-0">{props.label}</span>;
-
-  const MarkupSettings = () => (
-    <div class="flex flex-col gap-[var(--ui-space-section)]">
-      <Show when={markupTool() === "shape"}>
-        <div class="flex min-w-0 flex-col gap-2">
-          <SectionLabel label={t().shape} />
-          <div class="max-w-full overflow-x-auto scrollbar">
-            <SegmentedControl<MarkupShapeKind>
-              options={[
-                { value: "rectangle", label: t().shapeRectangle, icon: "ti ti-rectangle" },
-                { value: "circle", label: t().shapeCircle, icon: "ti ti-circle" },
-                { value: "arrow", label: t().shapeArrow, icon: "ti ti-arrow-up-right" },
-              ]}
-              value={markupShape}
-              onValueChange={setMarkupShape}
-              aria-label={t().shapeType}
-            />
-          </div>
-        </div>
-      </Show>
-
-      <Show when={isSizedMarkupTool(markupTool())}>
-        <div class="flex flex-col gap-2">
-          <SectionLabel label={t().color} />
-          <div class="flex flex-wrap items-center gap-2">
-            <For each={MARKUP_COLORS}>
-              {(color) => (
-                <button
-                  type="button"
-                  class="h-8 w-8 rounded border border-black/15 dark:border-white/20"
-                  classList={{ "ring-2 ring-blue-500 ring-offset-1": markupColor() === color.value }}
-                  style={{ "background-color": color.value }}
-                  onClick={() => setMarkupColor(color.value)}
-                  aria-label={t().useColor({ color: t()[color.labelKey] })}
-                  aria-pressed={markupColor() === color.value}
-                />
-              )}
-            </For>
-            <Tooltip.Anchor content={t().customColor}>
-              <ColorInput compact label={t().customColor} value={markupColor} onValueChange={setMarkupColor} />
-            </Tooltip.Anchor>
-          </div>
-        </div>
-
-        <Slider
-          label={markupTool() === "text" ? t().textSize : t().size}
-          value={markupSize}
-          onValueChange={setMarkupSize}
-          min={markupSizeRange().min}
-          max={markupSizeRange().max}
-          step={1}
-          showValue
-        />
-      </Show>
-    </div>
-  );
+  // The stage comes with the first image; it measures its place and its viewport once it is there.
+  const stageMounted = (element: HTMLDivElement) => {
+    stageRef = element;
+    queueMicrotask(() => {
+      // a stage that left again before this turn (the page went) has nothing to measure
+      if (!element.isConnected) return;
+      measureStage();
+      measurePreviewViewport();
+    });
+  };
 
   // ====================================
   // Render
   // ====================================
 
-  return (
-    <>
-      <AppWorkspace.Main class="tools-main" scroll={false}>
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col" role="region" aria-label={t().canvasLabel}>
-          <FileDropTarget label={t().dropToAdd} accept={IMAGE_ACCEPT} onDrop={loadFiles} />
-          <div class="relative min-h-0 flex-1">
-            <div
-              ref={previewViewportRef}
-              class="relative h-full min-h-75 min-w-0 overflow-auto bg-[var(--ui-surface)] p-[var(--ui-space-shell)]"
-            >
-              <Show when={!inspectorOpen()}>
-                <Tooltip.Anchor content={t().openImageControls}>
-                  <IconButton
-                    label={t().openImageControls}
-                    class="absolute right-[var(--ui-space-shell)] top-[var(--ui-space-shell)] z-10 @min-[64rem]/k2b-app-area:hidden"
-                    onClick={() => setInspectorOpen(true)}
-                  >
-                    <i class="ti ti-adjustments-horizontal" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              </Show>
+  const busy = () => loadMutation.loading() || previewBusy() || cropBusy();
+  /** What is happening now, on the stage: a photo being opened, or photos being dragged over the page. */
+  const happening = () => {
+    const load = currentLoad();
+    if (load) return intakeT().loadingFile({ ...load, stage: intakeT()[load.stage] });
+    return draggingFiles() ? t().dropToAdd : undefined;
+  };
+  /** What the open photo is: its size, its file and where it stands among the open ones (the inspector's first facts). */
+  const facts = (): Fact[] => {
+    const image = activeImage();
+    if (!image) return [];
+    const { width, height } = image.source;
+    return [
+      { label: t().factName, value: image.name },
+      { label: t().factSize, value: `${width} × ${height} px` },
+      ...(image.file ? [{ label: t().factFile, value: `${(image.file.size / 1024).toFixed(0)} KB` }] : []),
+      ...(images().length > 1
+        ? [{ label: t().factPosition, value: t().positionOf({ index: activeIndex() + 1, count: images().length }) }]
+        : []),
+    ];
+  };
+  const imageDeeds = (index: number): MenuEntry[] => [
+    {
+      label: t().removeImage,
+      icon: "trash",
+      danger: true,
+      disabled: cropActive() || cropBusy(),
+      onClick: () => removeImage(index),
+    },
+  ];
+  const markupTools = (): { value: MarkupTool; label: string; icon: string }[] => [
+    { value: "select", label: t().toolSelect, icon: "pointer" },
+    { value: "pen", label: t().toolPen, icon: "pencil" },
+    { value: "highlighter", label: t().toolHighlight, icon: "highlight" },
+    { value: "redact", label: t().toolRedact, icon: "square" },
+    { value: "shape", label: t().toolShape, icon: "shape" },
+    { value: "text", label: t().toolText, icon: "text-resize" },
+    { value: "eraser", label: t().toolEraser, icon: "eraser" },
+  ];
+  const aspectLabel = (aspect: CropAspect) => (aspect === "free" ? t().aspectFree : aspect);
+  // The failures say per file what went wrong and how to go on; each can be put away on its own.
+  const failureNotices = () => (
+    <For each={loadFailures()}>
+      {(failure) => (
+        <Notice
+          tone="bad"
+          title={`${failure.file.name}: ${failure.reason === "crop-active" ? t().applyOrCancelCrop : intakeT()[`${failure.reason}Title`]}`}
+          actions={[
+            {
+              label: t().dismissFailure({ name: failure.file.name }),
+              onClick: () => setLoadFailures((current) => current.filter((other) => other !== failure)),
+            },
+          ]}
+        >
+          {failure.reason === "crop-active" ? t().cropRefusalHint : intakeT()[`${failure.reason}Hint`]}
+        </Notice>
+      )}
+    </For>
+  );
 
-              {/* Loading overlay */}
-              <Show when={loadMutation.loading() || previewBusy() || cropBusy()}>
-                <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/50 dark:bg-black/50">
-                  <i class="ti ti-loader-2 animate-spin text-2xl text-dimmed" aria-hidden="true" />
-                  <Show when={currentLoad()}>
-                    {(current) => (
-                      <p class="max-w-full truncate px-4 text-sm text-primary" aria-live="polite">
-                        {intakeT().loadingFile({ ...current(), stage: intakeT()[current().stage] })}
+  return (
+    <ToolsScreen
+      tool="image"
+      item={activeImage() ? shortName(activeImage()!.name) : undefined}
+      primary={
+        hasImages()
+          ? { label: t().exportAction, icon: "download", onClick: openExport, disabled: cropActive() || cropBusy() }
+          : { label: t().addImages, icon: "photo-plus", onClick: () => void selectFiles() }
+      }
+      end={
+        <>
+          <Button icon="photo-plus" onClick={() => void selectFiles()} disabled={cropActive() || cropBusy()}>
+            {t().addImages}
+          </Button>
+          <Show when={hasImages()}>
+            <Button variant="primary" icon="download" onClick={openExport} disabled={cropActive() || cropBusy()}>
+              {t().exportAction}
+            </Button>
+            <Menu label={t().moreImageActions} items={imageDeeds(activeIndex())} />
+          </Show>
+        </>
+      }
+    >
+      <Pane.Split>
+        <Pane label={t().canvasLabel}>
+          <Canvas label={t().statusLabel}>
+            <LiveStatus text={happening() ?? announcement()} />
+          </Canvas>
+          <Show
+            when={hasImages()}
+            fallback={
+              <>
+                {failureNotices()}
+                <Empty
+                  icon="photo-plus"
+                  text={loadMutation.loading() ? (happening() ?? t().addingImages) : t().emptyText}
+                  action={{ label: t().addImages, icon: "photo-plus", onClick: () => void selectFiles() }}
+                />
+                <Band>
+                  <Text type="meta" muted>
+                    {t().staysInBrowser}
+                  </Text>
+                </Band>
+              </>
+            }
+          >
+            {/* The stage: the photo with its look, markup and crop, and the strip of every open image under it. */}
+            <Canvas label={t().canvasLabel} height={stageHeight()}>
+              <div
+                ref={stageMounted}
+                style={{ display: "flex", "flex-direction": "column", height: "100%", background: "var(--k2-canvas)" }}
+              >
+                {/* What is happening floats at the stage's top left, the zoom at its top right; both stay while the photo
+                    scrolls under them. */}
+                <div style={{ position: "relative", flex: "1 1 auto", "min-height": "0", display: "flex" }}>
+                  <Show when={happening()}>
+                    {(text) => (
+                      <p
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          top: "12px",
+                          left: "12px",
+                          "z-index": "20",
+                          // the zoom group takes about 200 px at the stage's top right; the statement stays left of it
+                          "max-width": "calc(100% - 220px)",
+                          margin: "0",
+                          padding: "6px 10px",
+                          "border-radius": "10px",
+                          background: "var(--k2-surface)",
+                          "box-shadow": "var(--k2-float)",
+                          font: "400 13px/20px var(--k2-font)",
+                          color: "var(--k2-text)",
+                          overflow: "hidden",
+                          "text-overflow": "ellipsis",
+                          "white-space": "nowrap",
+                        }}
+                      >
+                        {text()}
                       </p>
                     )}
                   </Show>
-                </div>
-              </Show>
-
-              {/* Empty state */}
-              <Show when={!hasImages() && !loadMutation.loading()}>
-                <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-dimmed">
-                  <i class="ti ti-photo text-4xl" />
-                  <p class="text-sm font-medium">{t().noImageSelected}</p>
-                </div>
-              </Show>
-
-              <Show when={basePreview()}>
-                <Show when={previewLayout()}>
-                  {(layout) => (
-                    <div class="flex min-h-full min-w-full">
+                  <div
+                    role="group"
+                    aria-label={t().zoom}
+                    style={{
+                      position: "absolute",
+                      top: "12px",
+                      right: "12px",
+                      "z-index": "20",
+                      display: "flex",
+                      "align-items": "center",
+                      gap: "2px",
+                      padding: "2px 4px",
+                      "border-radius": "10px",
+                      background: "var(--k2-surface)",
+                      "box-shadow": "var(--k2-float)",
+                      font: "500 12px/1 var(--k2-font)",
+                      color: "var(--k2-muted)",
+                      "font-variant-numeric": "tabular-nums",
+                    }}
+                  >
+                    <Button
+                      variant="ghost"
+                      icon="minus"
+                      label={t().zoomOut}
+                      onClick={() => setClampedPreviewZoom(previewZoom() / PREVIEW_ZOOM_STEP)}
+                      disabled={previewZoom() <= MIN_PREVIEW_ZOOM}
+                    />
+                    <span style={{ "min-width": "40px", "text-align": "center" }}>{`${Math.round(previewZoom() * 100)} %`}</span>
+                    <Button
+                      variant="ghost"
+                      icon="plus"
+                      label={t().zoomIn}
+                      onClick={() => setClampedPreviewZoom(previewZoom() * PREVIEW_ZOOM_STEP)}
+                      disabled={previewZoom() >= MAX_PREVIEW_ZOOM}
+                    />
+                    <Button variant="ghost" icon="focus-centered" label={t().fitImage} onClick={fitPreview} />
+                  </div>
+                  <div
+                    ref={previewViewportRef}
+                    style={{ position: "relative", flex: "1 1 auto", "min-width": "0", overflow: "auto", padding: "20px" }}
+                  >
+                    <Show when={busy()}>
                       <div
-                        class="relative m-auto shrink-0"
-                        style={{ width: `${layout().stageWidth}px`, height: `${layout().stageHeight}px` }}
-                      >
-                        <div class="absolute inset-0 flex items-center justify-center">
-                          <div
-                            class="relative shrink-0"
-                            style={{
-                              width: `${layout().imageWidth}px`,
-                              height: `${layout().imageHeight}px`,
-                              transform: cropActive() || editorMode() === "markup" ? "none" : cssTransform(),
-                            }}
-                          >
-                            <img
-                              ref={imgRef}
-                              src={basePreview()}
-                              alt={t().previewAlt}
-                              class="block h-full w-full object-fill thumbnail"
-                              style={{ filter: cssFilter() }}
-                              draggable={false}
-                            />
-
-                            <Show when={adj().vignette > 0}>
+                        aria-hidden="true"
+                        data-stage-busy=""
+                        style={{
+                          position: "absolute",
+                          inset: "0",
+                          "z-index": "10",
+                          background: "color-mix(in srgb, var(--k2-surface) 45%, transparent)",
+                        }}
+                      />
+                    </Show>
+                    <Show when={basePreview()}>
+                      <Show when={previewLayout()}>
+                        {(layout) => (
+                          <div style={{ display: "flex", "min-width": "100%", "min-height": "100%" }}>
+                            <div
+                              style={{
+                                position: "relative",
+                                margin: "auto",
+                                "flex-shrink": "0",
+                                width: `${layout().stageWidth}px`,
+                                height: `${layout().stageHeight}px`,
+                              }}
+                            >
                               <div
-                                class="absolute inset-0 pointer-events-none rounded"
                                 style={{
-                                  background: `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,${adj().vignette}) 100%)`,
+                                  position: "absolute",
+                                  inset: "0",
+                                  display: "flex",
+                                  "align-items": "center",
+                                  "justify-content": "center",
                                 }}
-                              />
-                            </Show>
-
-                            <Show when={adj().grain > 0}>
-                              <div
-                                class="absolute inset-0 pointer-events-none rounded mix-blend-overlay"
-                                style={{
-                                  opacity: adj().grain * 2,
-                                  "background-image": `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-                                  "background-size": "128px 128px",
-                                }}
-                              />
-                            </Show>
-
-                            <Show when={activeImage()}>
-                              {(entry) => (
-                                <MarkupOverlay
-                                  imageId={entry().id}
-                                  width={entry().previewSource.width}
-                                  height={entry().previewSource.height}
-                                  elements={entry().markup}
-                                  active={editorMode() === "markup" && !cropActive()}
-                                  tool={markupTool()}
-                                  shape={markupShape()}
-                                  color={markupColor()}
-                                  size={markupSize() / 1_000}
-                                  selectedId={selectedMarkupId()}
-                                  onCommit={replaceMarkup}
-                                  onSelect={selectMarkup}
-                                  onText={addMarkupText}
-                                />
-                              )}
-                            </Show>
-
-                            {/* Crop overlay */}
-                            <Show when={cropActive()}>
-                              <div class="absolute inset-0 touch-none">
-                                {/* Dark mask with hole via clip-path */}
+                              >
                                 <div
-                                  class="absolute inset-0 bg-black/50"
                                   style={{
-                                    "clip-path": `polygon(
+                                    position: "relative",
+                                    "flex-shrink": "0",
+                                    width: `${layout().imageWidth}px`,
+                                    height: `${layout().imageHeight}px`,
+                                    transform: cropActive() || editorMode() === "markup" ? "none" : cssTransform(),
+                                    "box-shadow": "0 1px 2px rgb(0 0 0 / 0.12), 0 8px 24px rgb(0 0 0 / 0.10)",
+                                  }}
+                                >
+                                  <img
+                                    ref={imgRef}
+                                    src={basePreview()}
+                                    alt={t().previewAlt}
+                                    style={{ display: "block", width: "100%", height: "100%", "object-fit": "fill", filter: cssFilter() }}
+                                    draggable={false}
+                                  />
+
+                                  <Show when={adj().vignette > 0}>
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        inset: "0",
+                                        "pointer-events": "none",
+                                        background: `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,${adj().vignette}) 100%)`,
+                                      }}
+                                    />
+                                  </Show>
+
+                                  <Show when={adj().grain > 0}>
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        inset: "0",
+                                        "pointer-events": "none",
+                                        "mix-blend-mode": "overlay",
+                                        opacity: adj().grain * 2,
+                                        "background-image": `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+                                        "background-size": "128px 128px",
+                                      }}
+                                    />
+                                  </Show>
+
+                                  <Show when={activeImage()}>
+                                    {(entry) => (
+                                      <MarkupOverlay
+                                        imageId={entry().id}
+                                        width={entry().previewSource.width}
+                                        height={entry().previewSource.height}
+                                        elements={entry().markup}
+                                        active={editorMode() === "markup" && !cropActive()}
+                                        tool={markupTool()}
+                                        shape={markupShape()}
+                                        color={markupColor()}
+                                        size={markupSize() / 1_000}
+                                        selectedId={selectedMarkupId()}
+                                        onCommit={replaceMarkup}
+                                        onSelect={selectMarkup}
+                                        onText={askMarkupText}
+                                      />
+                                    )}
+                                  </Show>
+
+                                  {/* Crop overlay */}
+                                  <Show when={cropActive()}>
+                                    <div style={{ position: "absolute", inset: "0", "touch-action": "none" }}>
+                                      {/* Dark mask with hole via clip-path */}
+                                      <div
+                                        style={{
+                                          position: "absolute",
+                                          inset: "0",
+                                          background: "rgb(0 0 0 / 0.5)",
+                                          "clip-path": `polygon(
                           0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%,
                           ${cropRect().x * 100}% ${cropRect().y * 100}%,
                           ${cropRect().x * 100}% ${(cropRect().y + cropRect().h) * 100}%,
@@ -1169,550 +1308,659 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           ${(cropRect().x + cropRect().w) * 100}% ${cropRect().y * 100}%,
                           ${cropRect().x * 100}% ${cropRect().y * 100}%
                         )`,
-                                  }}
-                                />
-                                {/* Crop border + handles */}
-                                <div
-                                  class="absolute border-2 border-white cursor-move"
-                                  style={{
-                                    left: `${cropRect().x * 100}%`,
-                                    top: `${cropRect().y * 100}%`,
-                                    width: `${cropRect().w * 100}%`,
-                                    height: `${cropRect().h * 100}%`,
-                                  }}
-                                  onPointerDown={(e) => startCropDrag("move", e)}
-                                >
-                                  <div class="absolute inset-0 pointer-events-none">
-                                    <div class="absolute left-1/3 top-0 bottom-0 w-px bg-white/30" />
-                                    <div class="absolute left-2/3 top-0 bottom-0 w-px bg-white/30" />
-                                    <div class="absolute top-1/3 left-0 right-0 h-px bg-white/30" />
-                                    <div class="absolute top-2/3 left-0 right-0 h-px bg-white/30" />
-                                  </div>
-                                  {(["nw", "ne", "sw", "se"] as const).map((h) => (
-                                    <div
-                                      class={`absolute h-6 w-6 ${h.includes("n") ? "-top-3" : "-bottom-3"} ${
-                                        h.includes("w") ? "-left-3" : "-right-3"
-                                      } ${h === "nw" || h === "se" ? "cursor-nwse-resize" : "cursor-nesw-resize"} z-10`}
-                                      onPointerDown={(e) => startCropDrag(h, e)}
-                                    >
-                                      <div class="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-zinc-400 bg-white" />
+                                        }}
+                                      />
+                                      {/* Crop border + handles */}
+                                      <div
+                                        data-crop-frame=""
+                                        style={{
+                                          position: "absolute",
+                                          border: "2px solid #fff",
+                                          cursor: "move",
+                                          left: `${cropRect().x * 100}%`,
+                                          top: `${cropRect().y * 100}%`,
+                                          width: `${cropRect().w * 100}%`,
+                                          height: `${cropRect().h * 100}%`,
+                                        }}
+                                        onPointerDown={(e) => startCropDrag("move", e)}
+                                      >
+                                        <div
+                                          style={{
+                                            position: "absolute",
+                                            inset: "0",
+                                            "pointer-events": "none",
+                                            "background-image":
+                                              "linear-gradient(90deg, transparent calc(33.33% - 0.5px), rgb(255 255 255 / 0.3) calc(33.33% - 0.5px), rgb(255 255 255 / 0.3) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), rgb(255 255 255 / 0.3) calc(66.66% - 0.5px), rgb(255 255 255 / 0.3) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px)), linear-gradient(180deg, transparent calc(33.33% - 0.5px), rgb(255 255 255 / 0.3) calc(33.33% - 0.5px), rgb(255 255 255 / 0.3) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), rgb(255 255 255 / 0.3) calc(66.66% - 0.5px), rgb(255 255 255 / 0.3) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px))",
+                                          }}
+                                        />
+                                        {(["nw", "ne", "sw", "se"] as const).map((h) => (
+                                          <div
+                                            data-crop-handle={h}
+                                            style={{
+                                              position: "absolute",
+                                              width: "24px",
+                                              height: "24px",
+                                              "z-index": "10",
+                                              [h.includes("n") ? "top" : "bottom"]: "-12px",
+                                              [h.includes("w") ? "left" : "right"]: "-12px",
+                                              cursor: h === "nw" || h === "se" ? "nwse-resize" : "nesw-resize",
+                                            }}
+                                            onPointerDown={(e) => startCropDrag(h, e)}
+                                          >
+                                            <div
+                                              style={{
+                                                position: "absolute",
+                                                left: "6px",
+                                                top: "6px",
+                                                width: "12px",
+                                                height: "12px",
+                                                "border-radius": "2px",
+                                                border: "1px solid #a1a1aa",
+                                                background: "#fff",
+                                              }}
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
-                                  ))}
+                                  </Show>
                                 </div>
                               </div>
-                            </Show>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </Show>
-              </Show>
-            </div>
+                        )}
+                      </Show>
+                    </Show>
+                  </div>
+                </div>
 
-            <Show when={loadFailures().length > 0}>
-              <NoticeCard
-                tone="danger"
-                role="region"
-                aria-label={intakeT().failuresLabel}
-                class="absolute inset-x-[var(--ui-space-shell)] bottom-[var(--ui-space-shell)] z-20 max-h-[40%] overflow-auto"
-                title={intakeT().failuresLabel}
-                meta={
-                  <IconButton label={intakeT().dismissFailures} size="xs" class="h-6 w-6 text-current" onClick={() => setLoadFailures([])}>
-                    <i class="ti ti-x" aria-hidden="true" />
-                  </IconButton>
-                }
-              >
-                <ul class="flex flex-col gap-2" aria-live="polite">
-                  <For each={loadFailures()}>
-                    {(failure) => (
-                      <li class="min-w-0">
-                        {/* Only the name is cut short; the reason and the hint always wrap, so the recovery stays readable. */}
-                        <p class="truncate font-medium text-primary" title={failure.file.name}>
-                          {failure.file.name}
-                        </p>
-                        <p class="text-primary">
-                          {failure.reason === "crop-active" ? t().applyOrCancelCrop : intakeT()[`${failure.reason}Title`]}
-                        </p>
-                        <Show when={failure.reason !== "crop-active" && failure.reason}>
-                          {(reason) => <p class="text-dimmed">{intakeT()[`${reason()}Hint`]}</p>}
-                        </Show>
-                      </li>
+                {/* Every open image as its own picture; the open one carries the blue ring.
+                    k2b-ui gap: no v2 picture tile (Tiles media, #4208) or swatch; the strip, its add tile, the presets
+                    and the colour swatches are drawn here, with the focus ring of app.css ([data-tools-tile]). */}
+                <Show when={images().length > 0}>
+                  <nav
+                    aria-label={t().filmstripLabel}
+                    style={{
+                      display: "flex",
+                      "flex-shrink": "0",
+                      gap: "8px",
+                      // on the phone the floating main action stands at the end of the strip: no photo under it
+                      padding: phone() ? "10px 88px 10px 20px" : "10px 20px",
+                      "overflow-x": "auto",
+                      "border-top": "1px solid var(--k2-line)",
+                      background: "var(--k2-surface)",
+                      "scrollbar-width": "thin",
+                    }}
+                  >
+                    <For each={images()}>
+                      {(image, index) => (
+                        <Menu.Context items={imageDeeds(index())}>
+                          <button
+                            type="button"
+                            data-tools-tile=""
+                            onClick={() => switchImage(index())}
+                            disabled={cropActive()}
+                            aria-label={t().openImage({ name: image.name })}
+                            aria-current={activeIndex() === index() ? "true" : undefined}
+                            title={image.name}
+                            style={{
+                              width: "52px",
+                              height: "52px",
+                              "flex-shrink": "0",
+                              padding: "0",
+                              overflow: "hidden",
+                              "border-radius": "6px",
+                              border: "1px solid var(--k2-line)",
+                              background: "var(--k2-canvas)",
+                              cursor: cropActive() ? "default" : "pointer",
+                              opacity: cropActive() && activeIndex() !== index() ? "0.5" : "1",
+                              "box-shadow": activeIndex() === index() ? "0 0 0 2px var(--k2-surface), 0 0 0 4px var(--k2-blue)" : "none",
+                            }}
+                          >
+                            <img
+                              src={image.thumbUrl}
+                              alt=""
+                              draggable={false}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                height: "100%",
+                                "object-fit": "cover",
+                                filter: filterOf(image.adj),
+                              }}
+                            />
+                          </button>
+                        </Menu.Context>
+                      )}
+                    </For>
+                    {/* the way to more photos stays on the stage, also on the phone where the head gives way */}
+                    <button
+                      type="button"
+                      data-tools-tile=""
+                      onClick={() => void selectFiles()}
+                      disabled={cropActive() || cropBusy()}
+                      aria-label={t().addImages}
+                      title={t().addImages}
+                      style={{
+                        width: "52px",
+                        height: "52px",
+                        "flex-shrink": "0",
+                        display: "grid",
+                        "place-items": "center",
+                        "border-radius": "6px",
+                        border: "1px dashed var(--k2-line-control, var(--k2-line))",
+                        background: "transparent",
+                        color: "var(--k2-muted)",
+                        cursor: cropActive() ? "default" : "pointer",
+                        "font-size": "20px",
+                      }}
+                    >
+                      <i class="ti ti-photo-plus" aria-hidden="true" />
+                    </button>
+                  </nav>
+                </Show>
+              </div>
+            </Canvas>
+          </Show>
+        </Pane>
+
+        <Show when={hasImages()}>
+          <Pane
+            label={t().imageControls}
+            width={{ min: 288, default: 340 }}
+            scrollKey="tools-image-inspector"
+            head={
+              <Tabs
+                label={t().editorMode}
+                items={[
+                  {
+                    label: t().editMode,
+                    icon: "adjustments-horizontal",
+                    current: editorMode() === "edit",
+                    onClick: () => changeEditorMode("edit"),
+                  },
+                  {
+                    label: t().markupMode,
+                    icon: "pencil",
+                    count: activeImage()?.markup.length || undefined,
+                    current: editorMode() === "markup",
+                    onClick: () => changeEditorMode("markup"),
+                  },
+                ]}
+              />
+            }
+          >
+            <Show when={error()}>
+              {(message) => (
+                <Notice tone="bad" title={t().somethingFailed} actions={[{ label: t().dismissError, onClick: () => setError("") }]}>
+                  {message()}
+                </Notice>
+              )}
+            </Show>
+            {failureNotices()}
+
+            <Show when={editorMode() === "markup"}>
+              <Section icon="pencil" title={t().tool} summary={t().markupHint}>
+                <Inline>
+                  <For each={markupTools()}>
+                    {(tool) => (
+                      <Button
+                        variant="ghost"
+                        icon={tool.icon}
+                        label={tool.label}
+                        pressed={markupTool() === tool.value}
+                        onClick={() => chooseMarkupTool(tool.value)}
+                      />
                     )}
                   </For>
-                </ul>
-              </NoticeCard>
-            </Show>
-          </div>
-
-          <Show when={images().length > 1}>
-            <nav
-              class="flex flex-none items-center gap-2 overflow-x-auto bg-[var(--ui-surface-subtle)] px-[var(--ui-space-shell)] py-[var(--ui-space-section)] scrollbar"
-              aria-label={t().filmstripLabel}
-            >
-              <For each={images()}>
-                {(image, index) => (
-                  <button
-                    type="button"
-                    class="h-12 w-12 shrink-0 overflow-hidden rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] p-0.5"
-                    classList={{ "ring-2 ring-blue-500": activeIndex() === index() }}
-                    onClick={() => switchImage(index())}
-                    disabled={cropActive()}
-                    aria-label={t().openImage({ name: image.name })}
-                    aria-current={activeIndex() === index() ? "true" : undefined}
-                    title={image.name}
-                  >
-                    <img src={image.thumbUrl} alt="" class="h-full w-full rounded-sm object-cover" draggable={false} />
-                  </button>
-                )}
-              </For>
-            </nav>
-          </Show>
-        </div>
-      </AppWorkspace.Main>
-
-      <AppWorkspace.Detail
-        id="image-processor-inspector"
-        onOpen={() => setInspectorOpen(true)}
-        onClose={() => setInspectorOpen(false)}
-        open={inspectorOpen()}
-        width="md"
-        minWidth={288}
-        viewTransitionName="tools-image-inspector"
-      >
-        <DetailPanel>
-          <DetailPanel.Header
-            title={activeImage()?.name ?? t().imageControls}
-            subtitle={activeImageSubtitle()}
-            actions={
-              <IconButton
-                label={t().showImageCanvas}
-                size="sm"
-                class="h-8 w-8 shrink-0 @min-[64rem]/k2b-app-area:hidden"
-                onClick={() => setInspectorOpen(false)}
-              >
-                <i class="ti ti-x" aria-hidden="true" />
-              </IconButton>
-            }
-            primaryActions={
-              <Show
-                when={hasImages()}
-                fallback={
-                  <Button size="sm" class="w-full" onClick={selectFiles} loading={loadMutation.loading()} loadingLabel={t().addingImages}>
-                    <i class="ti ti-photo-plus" aria-hidden="true" /> {t().addImages}
-                  </Button>
-                }
-              >
-                <SegmentedControl<"edit" | "markup">
-                  options={[
-                    { value: "edit", label: t().editMode, icon: "ti ti-adjustments-horizontal" },
-                    { value: "markup", label: t().markupMode, icon: "ti ti-pencil" },
-                  ]}
-                  value={editorMode}
-                  onValueChange={changeEditorMode}
-                  aria-label={t().editorMode}
-                />
-                <Dropdown.Root
-                  align="end"
-                  label={t().moreImageActions}
-                  items={[
-                    {
-                      label: t().addImages,
-                      icon: "ti ti-photo-plus",
-                      action: () => void selectFiles(),
-                      disabled: loadMutation.loading() || cropActive(),
-                    },
-                    {
-                      label: t().removeImage,
-                      icon: "ti ti-trash",
-                      variant: "danger",
-                      action: () => removeImage(activeIndex()),
-                      disabled: cropActive() || cropBusy(),
-                    },
-                  ]}
-                >
-                  <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreImageActions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </Show>
-            }
-          />
-
-          <DetailPanel.Body>
-            <Show when={error()}>
-              <NoticeCard tone="danger" role="alert" bodyClass="flex items-start gap-2">
-                <span class="min-w-0 flex-1">{error()}</span>
-                <IconButton label={t().dismissError} size="xs" class="h-6 w-6 shrink-0 text-current" onClick={() => setError("")}>
-                  <i class="ti ti-x" aria-hidden="true" />
-                </IconButton>
-              </NoticeCard>
-            </Show>
-
-            <Show when={hasImages()}>
-              <DetailPanel.Summary
-                title={t().previewTitle}
-                actions={<span class="text-xs tabular-nums text-dimmed">{Math.round(previewZoom() * 100)}%</span>}
-              >
-                <div class="flex items-center gap-1">
-                  <Tooltip.Anchor content={t().zoomOut}>
-                    <IconButton
-                      label={t().zoomOut}
-                      size="sm"
-                      class="h-8 w-8"
-                      onClick={() => setClampedPreviewZoom(previewZoom() / PREVIEW_ZOOM_STEP)}
-                      disabled={previewZoom() <= MIN_PREVIEW_ZOOM}
-                    >
-                      <i class="ti ti-minus" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                  <Tooltip.Anchor content={t().zoomIn}>
-                    <IconButton
-                      label={t().zoomIn}
-                      size="sm"
-                      class="h-8 w-8"
-                      onClick={() => setClampedPreviewZoom(previewZoom() * PREVIEW_ZOOM_STEP)}
-                      disabled={previewZoom() >= MAX_PREVIEW_ZOOM}
-                    >
-                      <i class="ti ti-plus" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                  <Tooltip.Anchor content={t().fitImage}>
-                    <IconButton label={t().fitImage} size="sm" class="h-8 w-8" onClick={fitPreview}>
-                      <i class="ti ti-focus-centered" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                </div>
-              </DetailPanel.Summary>
-
-              <Show when={editorMode() === "markup"}>
-                <DetailPanel.Group label={t().markupControls}>
-                  <Section title={t().tool}>
-                    <div class="flex flex-col gap-2">
-                      <div class="grid grid-cols-7 gap-1">
-                        <For
-                          each={[
-                            { value: "select" as const, label: t().toolSelect, icon: "ti-selector" },
-                            { value: "pen" as const, label: t().toolPen, icon: "ti-pencil" },
-                            { value: "highlighter" as const, label: t().toolHighlight, icon: "ti-highlight" },
-                            { value: "redact" as const, label: t().toolRedact, icon: "ti-square" },
-                            { value: "shape" as const, label: t().toolShape, icon: "ti-shape" },
-                            { value: "text" as const, label: t().toolText, icon: "ti-text-resize" },
-                            { value: "eraser" as const, label: t().toolEraser, icon: "ti-eraser" },
-                          ]}
-                        >
-                          {(tool) => (
-                            <Tooltip.Anchor content={tool.label}>
-                              <IconButton
-                                label={tool.label}
-                                size="sm"
-                                class="h-9 w-full"
-                                onClick={() => chooseMarkupTool(tool.value)}
-                                aria-pressed={markupTool() === tool.value}
-                              >
-                                <i class={`ti ${tool.icon}`} />
-                              </IconButton>
-                            </Tooltip.Anchor>
-                          )}
-                        </For>
-                      </div>
-                      <div class="flex items-center gap-1">
-                        <Tooltip.Anchor content={t().undo}>
-                          <IconButton label={t().undoMarkup} size="sm" class="h-8 w-8" onClick={undoMarkup} disabled={!canUndoMarkup()}>
-                            <i class="ti ti-arrow-back-up" />
-                          </IconButton>
-                        </Tooltip.Anchor>
-                        <Tooltip.Anchor content={t().redo}>
-                          <IconButton label={t().redoMarkup} size="sm" class="h-8 w-8" onClick={redoMarkup} disabled={!canRedoMarkup()}>
-                            <i class="ti ti-arrow-forward-up" />
-                          </IconButton>
-                        </Tooltip.Anchor>
-                        <Tooltip.Anchor content={t().deleteSelectedMarkup}>
-                          <IconButton
-                            label={t().deleteSelectedMarkup}
-                            size="sm"
-                            class="h-8 w-8 text-red-600 dark:text-red-400"
-                            onClick={deleteSelectedMarkup}
-                            disabled={!selectedMarkupId()}
-                          >
-                            <i class="ti ti-trash" />
-                          </IconButton>
-                        </Tooltip.Anchor>
-                        <Tooltip.Anchor content={t().clearMarkup}>
-                          <IconButton
-                            label={t().clearMarkup}
-                            size="sm"
-                            class="h-8 w-8 text-red-600 dark:text-red-400"
-                            onClick={clearMarkup}
-                            disabled={(activeImage()?.markup.length ?? 0) === 0}
-                          >
-                            <i class="ti ti-trash-x" />
-                          </IconButton>
-                        </Tooltip.Anchor>
-                      </div>
-                    </div>
-                  </Section>
-                  <Show when={markupTool() === "shape" || isSizedMarkupTool(markupTool())}>
-                    <Section title={t().style}>
-                      <MarkupSettings />
-                    </Section>
+                </Inline>
+              </Section>
+              <Section icon="history" title={t().history} count={activeImage()?.markup.length ?? 0}>
+                <Inline>
+                  <Button icon="arrow-back-up" label={t().undoMarkup} title={t().undo} onClick={undoMarkup} disabled={!canUndoMarkup()} />
+                  <Button
+                    icon="arrow-forward-up"
+                    label={t().redoMarkup}
+                    title={t().redo}
+                    onClick={redoMarkup}
+                    disabled={!canRedoMarkup()}
+                  />
+                  <Button icon="trash" label={t().deleteSelectedMarkup} onClick={deleteSelectedMarkup} disabled={!selectedMarkupId()} />
+                  <Button
+                    icon="trash-x"
+                    label={t().clearMarkup}
+                    onClick={() => void clearMarkup()}
+                    disabled={(activeImage()?.markup.length ?? 0) === 0}
+                  />
+                </Inline>
+              </Section>
+              <Show when={isSizedMarkupTool(markupTool())}>
+                <Section icon="palette" title={t().style}>
+                  <Show when={markupTool() === "shape"}>
+                    <Field label={t().shape}>
+                      <Choice
+                        name="image-markup-shape"
+                        value={markupShape()}
+                        onChange={(value) => setMarkupShape(value === "circle" || value === "arrow" ? value : "rectangle")}
+                        options={[
+                          { value: "rectangle", label: t().shapeRectangle },
+                          { value: "circle", label: t().shapeCircle },
+                          { value: "arrow", label: t().shapeArrow },
+                        ]}
+                      />
+                    </Field>
                   </Show>
-                </DetailPanel.Group>
-              </Show>
-
-              <Show when={editorMode() === "edit"}>
-                <>
-                  <DetailPanel.Group label={t().geometry}>
-                    {/* Crop */}
-                    <Section title={t().crop}>
-                      <div class="flex flex-col gap-2">
-                        <div class="flex gap-2">
-                          <Show
-                            when={cropActive()}
-                            fallback={
-                              <Button variant="secondary" size="sm" class="flex-1" onClick={startCrop} disabled={cropBusy()}>
-                                <i class="ti ti-crop" /> {t().crop}
-                              </Button>
-                            }
-                          >
-                            <Button size="sm" class="flex-1" onClick={applyCrop} loading={cropBusy()} loadingLabel={t().applying}>
-                              <i class="ti ti-check" /> {t().apply}
-                            </Button>
-                          </Show>
-                          <Dropdown.Root
-                            position="bottom-left"
-                            items={(
-                              [
-                                ["free", t().aspectFree],
-                                ["1:1", "1:1"],
-                                ["4:3", "4:3"],
-                                ["16:9", "16:9"],
-                                ["3:2", "3:2"],
-                              ] as const
-                            ).map(([id, label]) => ({
-                              label,
-                              icon: cropAspect() === id ? "ti ti-check" : undefined,
-                              action: () => selectCropAspect(id),
-                            }))}
-                          >
-                            <Dropdown.Trigger variant="secondary" size="sm">
-                              {cropAspect() === "free" ? t().aspectFree : cropAspect()} <i class="ti ti-chevron-down text-[10px]" />
-                            </Dropdown.Trigger>
-                          </Dropdown.Root>
-                          <Show when={!cropActive() && activeImage()?.cropped}>
-                            <IconButton
-                              label={t().resetCrop}
-                              size="sm"
-                              onClick={resetCrop}
-                              loading={cropBusy()}
-                              loadingLabel={t().resettingCrop}
-                            >
-                              <i class="ti ti-arrow-back-up" />
-                            </IconButton>
-                          </Show>
-                        </div>
-                        <Show when={cropActive()}>
-                          <Button variant="secondary" size="sm" class="w-full" onClick={cancelCrop} disabled={cropBusy()}>
-                            {t().cancel}
-                          </Button>
-                        </Show>
-                      </div>
-                    </Section>
-
-                    {/* Transform */}
-                    <Section title={t().transform}>
-                      <div class="flex flex-col gap-2">
-                        <Slider
-                          label={t().rotation}
-                          value={() => adj().freeRotation}
-                          onValueChange={(v) => setAdj("freeRotation", v)}
-                          defaultValue={DEFAULT_ADJ.freeRotation}
-                          min={-180}
-                          max={180}
-                          step={0.5}
-                          center
-                          showValue
-                          formatValue={(v) => `${v > 0 ? "+" : ""}${v}\u00b0`}
-                        />
-                        <div class="grid grid-cols-2 gap-2">
-                          <Switch label={t().flipH} value={() => adj().flipH} onValueChange={(v) => setAdj("flipH", v)} />
-                          <Switch label={t().flipV} value={() => adj().flipV} onValueChange={(v) => setAdj("flipV", v)} />
-                        </div>
-                      </div>
-                    </Section>
-                  </DetailPanel.Group>
-
-                  <DetailPanel.Group label={t().appearance}>
-                    {/* Adjustments */}
-                    <Section
-                      title={t().adjustments}
-                      actions={
-                        <Button variant="ghost" size="xs" onClick={resetAdjustments}>
-                          {t().reset}
-                        </Button>
-                      }
-                    >
-                      <div class="flex flex-col gap-2">
-                        <Slider
-                          label={t().brightness}
-                          value={() => adj().brightness}
-                          onValueChange={(v) => setAdj("brightness", v)}
-                          defaultValue={DEFAULT_ADJ.brightness}
-                          min={0.5}
-                          max={1.5}
-                          step={0.01}
-                          center
-                          showValue
-                          formatValue={(v) => `${Math.round(v * 100)}%`}
-                        />
-                        <Slider
-                          label={t().contrast}
-                          value={() => adj().contrast}
-                          onValueChange={(v) => setAdj("contrast", v)}
-                          defaultValue={DEFAULT_ADJ.contrast}
-                          min={0.5}
-                          max={2}
-                          step={0.01}
-                          center
-                          showValue
-                          formatValue={(v) => `${Math.round(v * 100)}%`}
-                        />
-                        <Slider
-                          label={t().saturation}
-                          value={() => adj().saturation}
-                          onValueChange={(v) => setAdj("saturation", v)}
-                          defaultValue={DEFAULT_ADJ.saturation}
-                          min={0}
-                          max={2}
-                          step={0.01}
-                          center
-                          showValue
-                          formatValue={(v) => `${Math.round(v * 100)}%`}
-                        />
-                        <Slider
-                          label={t().hue}
-                          value={() => adj().hueRotate}
-                          onValueChange={(v) => setAdj("hueRotate", v)}
-                          defaultValue={DEFAULT_ADJ.hueRotate}
-                          min={0}
-                          max={360}
-                          step={1}
-                          showValue
-                          formatValue={(v) => `${v}\u00b0`}
-                        />
-                        <Slider
-                          label={t().blur}
-                          value={() => adj().blur}
-                          onValueChange={(v) => setAdj("blur", v)}
-                          defaultValue={DEFAULT_ADJ.blur}
-                          min={0}
-                          max={10}
-                          step={0.1}
-                          showValue
-                          formatValue={(v) => `${v.toFixed(1)}px`}
-                        />
-                        <Slider
-                          label={t().sepia}
-                          value={() => adj().sepia}
-                          onValueChange={(v) => setAdj("sepia", v)}
-                          defaultValue={DEFAULT_ADJ.sepia}
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          showValue
-                          formatValue={(v) => `${Math.round(v * 100)}%`}
-                        />
-                        <Slider
-                          label={t().vignette}
-                          value={() => adj().vignette}
-                          onValueChange={(v) => setAdj("vignette", v)}
-                          defaultValue={DEFAULT_ADJ.vignette}
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          showValue
-                          formatValue={(v) => `${Math.round(v * 100)}%`}
-                        />
-                        <Slider
-                          label={t().grain}
-                          value={() => adj().grain}
-                          onValueChange={(v) => setAdj("grain", v)}
-                          defaultValue={DEFAULT_ADJ.grain}
-                          min={0}
-                          max={0.5}
-                          step={0.01}
-                          showValue
-                          formatValue={(v) => `${Math.round(v * 200)}%`}
-                        />
-                      </div>
-                    </Section>
-
-                    {/* Presets */}
-                    <Section title={t().presets}>
-                      <div class="grid grid-cols-4 gap-1">
-                        <For each={Object.keys(PRESETS)}>
-                          {(key) => (
-                            <Button variant="secondary" size="sm" onClick={() => applyPreset(key)}>
-                              {presetLabel(key)}
-                            </Button>
+                  {/* k2b-ui gap: no v2 colour picker or slider (lane Y); the swatches, the picker and the size are drawn here. */}
+                  <Canvas label={t().color}>
+                    <div style={{ display: "flex", "flex-direction": "column", gap: "12px", padding: "4px 20px 8px" }}>
+                      <div
+                        role="group"
+                        aria-label={t().color}
+                        style={{ display: "flex", "flex-wrap": "wrap", "align-items": "center", gap: "8px" }}
+                      >
+                        <For each={MARKUP_COLORS}>
+                          {(color) => (
+                            <button
+                              type="button"
+                              data-tools-tile=""
+                              onClick={() => setMarkupColor(color.value)}
+                              aria-label={t().useColor({ color: t()[color.labelKey] })}
+                              aria-pressed={markupColor() === color.value}
+                              title={t()[color.labelKey]}
+                              style={{
+                                width: "28px",
+                                height: "28px",
+                                padding: "0",
+                                "border-radius": "999px",
+                                cursor: "pointer",
+                                border: "1px solid rgb(0 0 0 / 0.15)",
+                                "background-color": color.value,
+                                "box-shadow":
+                                  markupColor() === color.value ? "0 0 0 2px var(--k2-surface), 0 0 0 4px var(--k2-blue)" : "none",
+                              }}
+                            />
                           )}
                         </For>
+                        <ColorInput compact label={t().customColor} value={markupColor} onValueChange={setMarkupColor} />
                       </div>
-                    </Section>
-
-                    {/* Copy / Paste Edits */}
-                    <Section title={t().edits}>
-                      <div class="grid grid-cols-3 gap-1">
-                        <Button variant="secondary" size="sm" onClick={copyEdits} title={t().copyAdjustmentsTitle}>
-                          <i class="ti ti-copy" /> {t().copy}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={pasteEdits}
-                          disabled={!clipboard()}
-                          title={t().pasteAdjustmentsTitle}
-                        >
-                          <i class="ti ti-clipboard" /> {t().paste}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={pasteEditsAll}
-                          disabled={!clipboard()}
-                          title={t().pasteAdjustmentsAllTitle}
-                        >
-                          <i class="ti ti-clipboard-check" /> {t().pasteAll}
-                        </Button>
-                      </div>
-                    </Section>
-                  </DetailPanel.Group>
-                </>
+                      <Slider
+                        label={markupTool() === "text" ? t().textSize : t().size}
+                        value={markupSize}
+                        onValueChange={setMarkupSize}
+                        min={markupSizeRange().min}
+                        max={markupSizeRange().max}
+                        step={1}
+                        showValue
+                      />
+                    </div>
+                  </Canvas>
+                </Section>
               </Show>
             </Show>
-          </DetailPanel.Body>
 
-          <Show when={hasImages()}>
-            <footer class="flex flex-none flex-col gap-2">
-              <Button size="sm" class="w-full" onClick={() => showExportModal("single")} disabled={cropActive() || cropBusy()}>
-                <i class="ti ti-download" /> {t().exportImage}
-              </Button>
-              <Show when={images().length > 1}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  class="w-full"
-                  onClick={() => showExportModal("all")}
-                  disabled={cropActive() || cropBusy()}
-                >
-                  <i class="ti ti-download" /> {t().exportAll({ count: images().length })}
-                </Button>
-              </Show>
-            </footer>
-          </Show>
-        </DetailPanel>
-      </AppWorkspace.Detail>
-    </>
+            <Show when={editorMode() === "edit"}>
+              <Section icon="photo" title={t().factsTitle}>
+                <Facts items={facts()} />
+              </Section>
+              {/* The crop button names the group itself; a heading "Zuschneiden" above it would say the word twice. */}
+              <Band label={t().crop}>
+                <Inline>
+                  <Show
+                    when={cropActive()}
+                    fallback={
+                      <Button icon="crop" onClick={startCrop} disabled={cropBusy()}>
+                        {t().crop}
+                      </Button>
+                    }
+                  >
+                    <Button icon="check" onClick={() => void applyCrop()} busy={cropBusy()}>
+                      {t().apply}
+                    </Button>
+                    <Button variant="ghost" onClick={cancelCrop} disabled={cropBusy()}>
+                      {t().cancel}
+                    </Button>
+                  </Show>
+                  <Menu
+                    variant="ghost"
+                    label={t().aspectLabel({ aspect: aspectLabel(cropAspect()) })}
+                    disabled={cropBusy()}
+                    items={[
+                      {
+                        title: t().aspect,
+                        choice: cropAspect(),
+                        onChoose: (value) => {
+                          const aspect = CROP_ASPECTS.find((each) => each === value);
+                          if (aspect) selectCropAspect(aspect);
+                        },
+                        items: CROP_ASPECTS.map((aspect) => ({ label: aspectLabel(aspect), value: aspect })),
+                      },
+                    ]}
+                  >
+                    {aspectLabel(cropAspect())}
+                  </Menu>
+                  <Show when={!cropActive() && activeImage()?.cropped}>
+                    <Button variant="ghost" icon="arrow-back-up" onClick={() => void resetCrop()} busy={cropBusy()}>
+                      {t().resetCrop}
+                    </Button>
+                  </Show>
+                </Inline>
+                <Show when={cropActive() ? t().cropHint : activeImage()?.cropped ? t().croppedHint : undefined}>
+                  {(hint) => (
+                    <Text type="meta" muted>
+                      {hint()}
+                    </Text>
+                  )}
+                </Show>
+              </Band>
+
+              <Section icon="rotate" title={t().transform}>
+                {/* k2b-ui gap: no v2 slider (lane Y); the rotation keeps its slider, drawn here. */}
+                <Canvas label={t().rotation}>
+                  <div style={{ padding: "0 20px 4px" }}>
+                    <Slider
+                      label={t().rotation}
+                      value={() => adj().freeRotation}
+                      onValueChange={(v) => setAdj("freeRotation", v)}
+                      defaultValue={DEFAULT_ADJ.freeRotation}
+                      min={-180}
+                      max={180}
+                      step={0.5}
+                      center
+                      showValue
+                      formatValue={(v) => `${v > 0 ? "+" : ""}${v}°`}
+                    />
+                  </div>
+                </Canvas>
+                <Check switch label={t().flipH} checked={adj().flipH} onChange={(v) => setAdj("flipH", v)} />
+                <Check switch label={t().flipV} checked={adj().flipV} onChange={(v) => setAdj("flipV", v)} />
+              </Section>
+
+              <Section
+                icon="adjustments"
+                title={t().adjustments}
+                actions={[{ label: t().reset, icon: "restore", onClick: resetAdjustments }]}
+              >
+                {/* k2b-ui gap: no v2 slider (lane Y); each adjustment keeps its slider, drawn here. */}
+                <Canvas label={t().adjustments}>
+                  <div style={{ display: "flex", "flex-direction": "column", gap: "8px", padding: "0 20px 4px" }}>
+                    <Slider
+                      label={t().brightness}
+                      value={() => adj().brightness}
+                      onValueChange={(v) => setAdj("brightness", v)}
+                      defaultValue={DEFAULT_ADJ.brightness}
+                      min={0.5}
+                      max={1.5}
+                      step={0.01}
+                      center
+                      showValue
+                      formatValue={(v) => `${Math.round(v * 100)}%`}
+                    />
+                    <Slider
+                      label={t().contrast}
+                      value={() => adj().contrast}
+                      onValueChange={(v) => setAdj("contrast", v)}
+                      defaultValue={DEFAULT_ADJ.contrast}
+                      min={0.5}
+                      max={2}
+                      step={0.01}
+                      center
+                      showValue
+                      formatValue={(v) => `${Math.round(v * 100)}%`}
+                    />
+                    <Slider
+                      label={t().saturation}
+                      value={() => adj().saturation}
+                      onValueChange={(v) => setAdj("saturation", v)}
+                      defaultValue={DEFAULT_ADJ.saturation}
+                      min={0}
+                      max={2}
+                      step={0.01}
+                      center
+                      showValue
+                      formatValue={(v) => `${Math.round(v * 100)}%`}
+                    />
+                    <Slider
+                      label={t().hue}
+                      value={() => adj().hueRotate}
+                      onValueChange={(v) => setAdj("hueRotate", v)}
+                      defaultValue={DEFAULT_ADJ.hueRotate}
+                      min={0}
+                      max={360}
+                      step={1}
+                      showValue
+                      formatValue={(v) => `${v}°`}
+                    />
+                    <Slider
+                      label={t().blur}
+                      value={() => adj().blur}
+                      onValueChange={(v) => setAdj("blur", v)}
+                      defaultValue={DEFAULT_ADJ.blur}
+                      min={0}
+                      max={10}
+                      step={0.1}
+                      showValue
+                      formatValue={(v) => `${v.toFixed(1)}px`}
+                    />
+                    <Slider
+                      label={t().sepia}
+                      value={() => adj().sepia}
+                      onValueChange={(v) => setAdj("sepia", v)}
+                      defaultValue={DEFAULT_ADJ.sepia}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      showValue
+                      formatValue={(v) => `${Math.round(v * 100)}%`}
+                    />
+                    <Slider
+                      label={t().vignette}
+                      value={() => adj().vignette}
+                      onValueChange={(v) => setAdj("vignette", v)}
+                      defaultValue={DEFAULT_ADJ.vignette}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      showValue
+                      formatValue={(v) => `${Math.round(v * 100)}%`}
+                    />
+                    <Slider
+                      label={t().grain}
+                      value={() => adj().grain}
+                      onValueChange={(v) => setAdj("grain", v)}
+                      defaultValue={DEFAULT_ADJ.grain}
+                      min={0}
+                      max={0.5}
+                      step={0.01}
+                      showValue
+                      formatValue={(v) => `${Math.round(v * 200)}%`}
+                    />
+                  </div>
+                </Canvas>
+              </Section>
+
+              <Section icon="wand" title={t().presets}>
+                {/* Each preset shows itself on the open photo; the one that matches the current look is pressed. */}
+                <Canvas label={t().presets}>
+                  <div style={{ display: "grid", "grid-template-columns": "repeat(4, minmax(0, 1fr))", gap: "8px", padding: "0 20px 4px" }}>
+                    <For each={Object.keys(PRESETS)}>
+                      {(key) => (
+                        <button
+                          type="button"
+                          data-tools-tile=""
+                          onClick={() => applyPreset(key)}
+                          aria-pressed={sameLook(adj(), PRESETS[key]!)}
+                          style={{
+                            display: "flex",
+                            "flex-direction": "column",
+                            gap: "4px",
+                            "min-width": "0",
+                            padding: "0",
+                            border: "0",
+                            background: "none",
+                            color: "var(--k2-text)",
+                            font: "inherit",
+                            "font-size": "12px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <img
+                            src={activeImage()?.thumbUrl}
+                            alt=""
+                            draggable={false}
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              "aspect-ratio": "1",
+                              "object-fit": "cover",
+                              "border-radius": "6px",
+                              filter: filterOf(PRESETS[key]!),
+                              "box-shadow": sameLook(adj(), PRESETS[key]!)
+                                ? "0 0 0 2px var(--k2-surface), 0 0 0 4px var(--k2-blue)"
+                                : "0 0 0 1px var(--k2-line)",
+                            }}
+                          />
+                          <span style={{ overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
+                            {presetLabel(key)}
+                          </span>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Canvas>
+              </Section>
+
+              <Section icon="copy" title={t().edits} summary={images().length > 1 ? t().editsHint : undefined}>
+                <Inline>
+                  <Button icon="copy" title={t().copyAdjustmentsTitle} onClick={copyEdits}>
+                    {t().copy}
+                  </Button>
+                  <Button icon="clipboard" title={t().pasteAdjustmentsTitle} onClick={pasteEdits} disabled={!clipboard()}>
+                    {t().paste}
+                  </Button>
+                  <Show when={images().length > 1}>
+                    <Button icon="clipboard-check" title={t().pasteAdjustmentsAllTitle} onClick={pasteEditsAll} disabled={!clipboard()}>
+                      {t().pasteAll}
+                    </Button>
+                  </Show>
+                </Inline>
+              </Section>
+            </Show>
+          </Pane>
+        </Show>
+      </Pane.Split>
+
+      <Dialog
+        title={exportScope() === "all" ? t().exportImagesTitle({ count: images().length }) : t().exportImageTitle}
+        open={exportOpen()}
+        onOpenChange={(open) => {
+          if (!exporting()) setExportOpen(open);
+        }}
+        foot={
+          <>
+            <Button onClick={() => setExportOpen(false)} disabled={exporting()}>
+              {t().cancel}
+            </Button>
+            <Button variant="primary" icon="download" busy={exporting()} disabled={exportInvalid()} onClick={() => void doExport()}>
+              {exportCount() > 1 ? t().exportCountAction({ count: exportCount() }) : t().exportAction}
+            </Button>
+          </>
+        }
+      >
+        <Show when={images().length > 1}>
+          <Field label={t().exportWhat}>
+            <Choice
+              name="image-export-scope"
+              value={exportScope()}
+              disabled={exporting()}
+              onChange={(value) => setExportScope(value === "all" ? "all" : "single")}
+              options={[
+                { value: "single", label: activeImage()?.name ?? t().exportThis },
+                { value: "all", label: t().exportAllImages({ count: images().length }) },
+              ]}
+            />
+          </Field>
+        </Show>
+        <Field label={t().formatLabel}>
+          <Choice
+            name="image-export-format"
+            value={exportFormat()}
+            disabled={exporting()}
+            onChange={(value) => setExportFormat(EXPORT_FORMATS.find((each) => each === value) ?? "webp")}
+            options={[
+              { value: "webp", label: "WebP" },
+              { value: "jpeg", label: "JPEG" },
+              { value: "png", label: "PNG" },
+            ]}
+          />
+        </Field>
+        <Show when={exportFormat() !== "png"}>
+          {/* k2b-ui gap: no v2 slider (lane Y); the quality is a number in percent, as in the converter. */}
+          <Field label={t().qualityLabel} optional="%" error={qualityError()}>
+            <Input type="number" min={10} max={100} value={qualityText()} disabled={exporting()} onInput={setQualityText} />
+          </Field>
+        </Show>
+        <Field.Row>
+          <Field label={t().maxWidth} optional="px" hint={t().keepOriginalSize} error={widthError()}>
+            <Input
+              type="number"
+              min={1}
+              name="image-export-max-width"
+              placeholder={t().autoPlaceholder}
+              value={widthText()}
+              disabled={exporting()}
+              onInput={setWidthText}
+            />
+          </Field>
+          <Field label={t().maxHeight} optional="px" error={heightError()}>
+            <Input
+              type="number"
+              min={1}
+              name="image-export-max-height"
+              placeholder={t().autoPlaceholder}
+              value={heightText()}
+              disabled={exporting()}
+              onInput={setHeightText}
+            />
+          </Field>
+        </Field.Row>
+        <Show when={exportError()}>
+          {(message) => (
+            <Notice tone="bad" title={t().exportFailed}>
+              {message()}
+            </Notice>
+          )}
+        </Show>
+        <Show when={exportProgress() !== null}>
+          <Bar start={<Progress value={Math.round((exportProgress() ?? 0) * 100)} of={100} label={t().exporting} />} />
+        </Show>
+      </Dialog>
+
+      <Dialog
+        title={t().addTextTitle}
+        open={textDraft() !== null}
+        onOpenChange={(open) => {
+          if (!open) setTextDraft(null);
+        }}
+        foot={
+          <>
+            <Button onClick={() => setTextDraft(null)}>{t().cancel}</Button>
+            <Button variant="primary" icon="text-resize" disabled={!textDraft()?.text.trim()} onClick={addMarkupText}>
+              {t().addTextAction}
+            </Button>
+          </>
+        }
+      >
+        <Field label={t().textFieldLabel} required>
+          <Input
+            value={textDraft()?.text ?? ""}
+            onInput={(text) => setTextDraft((draft) => draft && { ...draft, text })}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.isComposing) addMarkupText();
+            }}
+          />
+        </Field>
+      </Dialog>
+    </ToolsScreen>
   );
 }
 

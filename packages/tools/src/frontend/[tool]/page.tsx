@@ -31,7 +31,6 @@ const toolComponents: Record<
 > = {
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
-  image: () => <ImageProcessor />,
   speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
   webhooks: (props) => <WebhookTester initialState={props.webhookState} baseHref={props.baseHref} />,
 };
@@ -39,6 +38,7 @@ const toolComponents: Record<
 /** The tools on v2; each island renders the whole Tools screen with its own panes. */
 const v2Tools: Partial<Record<string, () => JSX.Element>> = {
   "image-converter": () => <ImageConverter />,
+  image: () => <ImageProcessor />,
   password: () => <PasswordGenerator />,
   uuid: () => <UuidGenerator />,
   lorem: () => <LoremIpsumGenerator />,
@@ -63,7 +63,7 @@ export default ssr<AuthContext>(async (c) => {
   const speedtestConfig = tool.id === "speedtest" ? await readSpeedtestConfig() : undefined;
   const webhookState = tool.id === "webhooks" ? parseWebhookTesterState(new URL(c.req.url)) : undefined;
   const breadcrumbs = [{ title: labels.home, href: "/" }, { title: labels.appName, href: "/tools" }, { title: tool.name }];
-  const regionLayout = tool.id === "image" || tool.id === "image-converter" || tool.id === "webhooks";
+  const regionLayout = tool.id === "webhooks";
   // A tool rebuilt on v2 is its own whole screen (the Tools frame comes with it); the others keep the v1 frame until
   // they move too.
   const v2 = v2Tools[tool.id];

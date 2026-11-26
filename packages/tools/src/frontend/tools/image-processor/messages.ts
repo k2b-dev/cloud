@@ -6,7 +6,30 @@ export const imageProcessorMessages = i18n.define({
     en: {
       // Canvas and filmstrip
       canvasLabel: "Image processor canvas",
-      openImageControls: "Open image controls",
+      factsTitle: "Image",
+      factName: "Name",
+      statusLabel: "Status",
+      photosOpen: ({ count }: { count: number }) => (count === 1 ? "1 image open" : `${count} images open`),
+      factSize: "Size",
+      factFile: "File",
+      factPosition: "Position",
+      emptyText: "Drop photos here or add them. They are edited in this browser and never uploaded.",
+      staysInBrowser: "Photos stay in this browser: editing and export happen here, nothing is uploaded.",
+      positionOf: ({ index, count }: { index: number; count: number }) => `Image ${index} of ${count}`,
+      dismissFailure: ({ name }: { name: string }) => `Hide ${name}`,
+      cropRefusalHint: "The crop of the open image is still running. Apply or cancel it, then add the images again.",
+      somethingFailed: "Something did not work",
+      markupHint: "Draw on the photo. Select moves and resizes what is drawn; Delete removes it.",
+      history: "Markup",
+      cropHint: "Drag the frame or its corners, then apply. Escape cancels.",
+      croppedHint: "Cropped. The reset brings the whole photo back.",
+      aspect: "Aspect ratio",
+      aspectLabel: ({ aspect }: { aspect: string }) => `Aspect ratio: ${aspect}`,
+      editsHint: "Copy the look of this image and paste it onto another one or all.",
+      exportWhat: "Images",
+      exportThis: "This image",
+      exportAllImages: ({ count }: { count: number }) => `All ${count} images`,
+      exportFailed: "Export failed",
       noImageSelected: "No image selected",
       previewAlt: "Preview",
       filmstripLabel: "Images",
@@ -14,11 +37,6 @@ export const imageProcessorMessages = i18n.define({
       markupCanvas: "Image markup canvas",
 
       // Loading and file errors
-      fileDecodeFailed: "The file could not be decoded",
-      couldNotLoadFile: ({ name, reason }: { name: string; reason: string }) => `Could not load "${name}": ${reason}`,
-      selectedFilesDecodeFailed: "The selected files could not be decoded",
-      noImagesLoaded: ({ detail }: { detail: string }) => `No images could be loaded. ${detail}`,
-      someImagesLoadFailed: ({ count, detail }: { count: number; detail: string }) => `${count} images could not be loaded. ${detail}`,
       applyOrCancelCrop: "Apply or cancel the crop before adding images",
       pickerFailed: "Could not open the image picker",
       dropToAdd: "Drop to add the images",
@@ -28,26 +46,23 @@ export const imageProcessorMessages = i18n.define({
 
       // Panel header
       imageControls: "Image controls",
-      subtitleDimensions: ({ width, height }: { width: number; height: number }) => `${width} × ${height} px`,
       subtitleDimensionsSize: ({ width, height, kb }: { width: number; height: number; kb: string }) =>
         `${width} × ${height} px · ${kb} KB`,
       addImages: "Add images",
       addingImages: "Adding images",
       removeImage: "Remove image",
-      showImageCanvas: "Show image canvas",
       moreImageActions: "More image actions",
       editMode: "Edit",
       markupMode: "Markup",
       editorMode: "Editor mode",
 
       // Preview controls
-      previewTitle: "Preview",
+      zoom: "Zoom",
       zoomOut: "Zoom out",
       zoomIn: "Zoom in",
       fitImage: "Fit image",
 
       // Markup controls
-      markupControls: "Markup controls",
       tool: "Tool",
       toolSelect: "Select",
       toolPen: "Pen",
@@ -69,7 +84,6 @@ export const imageProcessorMessages = i18n.define({
       shapeRectangle: "Rectangle",
       shapeCircle: "Circle",
       shapeArrow: "Arrow",
-      shapeType: "Shape type",
       color: "Color",
       useColor: ({ color }: { color: string }) => `Use ${color}`,
       customColor: "Custom color",
@@ -98,14 +112,11 @@ export const imageProcessorMessages = i18n.define({
       resizeText: "Resize text",
 
       // Geometry
-      geometry: "Geometry",
       crop: "Crop",
       apply: "Apply",
-      applying: "Applying",
       cancel: "Cancel",
       aspectFree: "Free",
       resetCrop: "Reset crop",
-      resettingCrop: "Resetting crop",
       croppingFailed: "Cropping failed",
       resetCropFailed: "Resetting the crop failed",
       transform: "Transform",
@@ -114,7 +125,6 @@ export const imageProcessorMessages = i18n.define({
       flipV: "Flip V",
 
       // Appearance
-      appearance: "Appearance",
       adjustments: "Adjustments",
       reset: "Reset",
       brightness: "Brightness",
@@ -143,7 +153,6 @@ export const imageProcessorMessages = i18n.define({
       pasteAdjustmentsAllTitle: "Paste adjustments to all images",
 
       // Export
-      exportImage: "Export image",
       exportAll: ({ count }: { count: number }) => `Export all (${count})`,
       exportImageTitle: "Export Image",
       exportImagesTitle: ({ count }: { count: number }) => `Export ${count} Images`,
@@ -156,6 +165,8 @@ export const imageProcessorMessages = i18n.define({
       maxWidth: "Max width",
       maxHeight: "Max height",
       keepOriginalSize: "Leave empty to keep original size",
+      qualityInvalid: "Enter a quality from 10 to 100.",
+      pixelsInvalid: "Enter a whole number from 1, or leave it empty.",
       noImageToExport: "No image is available to export",
       unknownExportError: "Unknown export error",
       exportStopped: ({ completed, count }: { completed: number; count: number }) =>
@@ -164,7 +175,30 @@ export const imageProcessorMessages = i18n.define({
     de: {
       // Canvas and filmstrip
       canvasLabel: "Zeichenfläche der Bildbearbeitung",
-      openImageControls: "Bildwerkzeuge öffnen",
+      factsTitle: "Bild",
+      factName: "Name",
+      statusLabel: "Status",
+      photosOpen: ({ count }) => (count === 1 ? "1 Bild offen" : `${count} Bilder offen`),
+      factSize: "Größe",
+      factFile: "Datei",
+      factPosition: "Position",
+      emptyText: "Leg Fotos hier ab oder füge sie hinzu. Sie werden in diesem Browser bearbeitet und nie hochgeladen.",
+      staysInBrowser: "Fotos bleiben in diesem Browser: Bearbeitung und Export passieren hier, nichts wird hochgeladen.",
+      positionOf: ({ index, count }) => `Bild ${index} von ${count}`,
+      dismissFailure: ({ name }) => `${name} ausblenden`,
+      cropRefusalHint: "Der Zuschnitt des offenen Bildes läuft noch. Wende ihn an oder brich ihn ab und füge die Bilder dann erneut hinzu.",
+      somethingFailed: "Etwas hat nicht geklappt",
+      markupHint: "Zeichne auf dem Foto. Auswählen verschiebt und ändert Gezeichnetes; Entf löscht es.",
+      history: "Markierungen",
+      cropHint: "Zieh den Rahmen oder seine Ecken und wende den Zuschnitt dann an. Escape bricht ab.",
+      croppedHint: "Zugeschnitten. Zurücksetzen holt das ganze Foto zurück.",
+      aspect: "Seitenverhältnis",
+      aspectLabel: ({ aspect }) => `Seitenverhältnis: ${aspect}`,
+      editsHint: "Kopiere den Look dieses Bildes und füge ihn in ein anderes oder alle ein.",
+      exportWhat: "Bilder",
+      exportThis: "Dieses Bild",
+      exportAllImages: ({ count }) => `Alle ${count} Bilder`,
+      exportFailed: "Export fehlgeschlagen",
       noImageSelected: "Kein Bild ausgewählt",
       previewAlt: "Vorschau",
       filmstripLabel: "Bilder",
@@ -172,11 +206,6 @@ export const imageProcessorMessages = i18n.define({
       markupCanvas: "Zeichenfläche für Markierungen",
 
       // Loading and file errors
-      fileDecodeFailed: "Die Datei konnte nicht dekodiert werden",
-      couldNotLoadFile: ({ name, reason }) => `„${name}“ konnte nicht geladen werden: ${reason}`,
-      selectedFilesDecodeFailed: "Die ausgewählten Dateien konnten nicht dekodiert werden",
-      noImagesLoaded: ({ detail }) => `Es konnten keine Bilder geladen werden. ${detail}`,
-      someImagesLoadFailed: ({ count, detail }) => `${count} Bilder konnten nicht geladen werden. ${detail}`,
       applyOrCancelCrop: "Schließe den Zuschnitt ab oder brich ihn ab, bevor du Bilder hinzufügst",
       pickerFailed: "Die Bildauswahl konnte nicht geöffnet werden",
       dropToAdd: "Ablegen, um die Bilder hinzuzufügen",
@@ -186,25 +215,22 @@ export const imageProcessorMessages = i18n.define({
 
       // Panel header
       imageControls: "Bildwerkzeuge",
-      subtitleDimensions: ({ width, height }) => `${width} × ${height} px`,
       subtitleDimensionsSize: ({ width, height, kb }) => `${width} × ${height} px · ${kb} KB`,
       addImages: "Bilder hinzufügen",
       addingImages: "Bilder werden hinzugefügt",
       removeImage: "Bild entfernen",
-      showImageCanvas: "Zeichenfläche anzeigen",
       moreImageActions: "Weitere Aktionen für Bilder",
       editMode: "Bearbeiten",
       markupMode: "Markieren",
       editorMode: "Editormodus",
 
       // Preview controls
-      previewTitle: "Vorschau",
+      zoom: "Zoom",
       zoomOut: "Verkleinern",
       zoomIn: "Vergrößern",
       fitImage: "Bild einpassen",
 
       // Markup controls
-      markupControls: "Markierungswerkzeuge",
       tool: "Werkzeug",
       toolSelect: "Auswählen",
       toolPen: "Stift",
@@ -226,7 +252,6 @@ export const imageProcessorMessages = i18n.define({
       shapeRectangle: "Rechteck",
       shapeCircle: "Kreis",
       shapeArrow: "Pfeil",
-      shapeType: "Formtyp",
       color: "Farbe",
       useColor: ({ color }) => `${color} verwenden`,
       customColor: "Eigene Farbe",
@@ -255,14 +280,11 @@ export const imageProcessorMessages = i18n.define({
       resizeText: "Textgröße ändern",
 
       // Geometry
-      geometry: "Geometrie",
       crop: "Zuschneiden",
       apply: "Anwenden",
-      applying: "Wird angewendet",
       cancel: "Abbrechen",
       aspectFree: "Frei",
       resetCrop: "Zuschnitt zurücksetzen",
-      resettingCrop: "Zuschnitt wird zurückgesetzt…",
       croppingFailed: "Zuschneiden fehlgeschlagen",
       resetCropFailed: "Der Zuschnitt konnte nicht zurückgesetzt werden",
       transform: "Transformation",
@@ -271,7 +293,6 @@ export const imageProcessorMessages = i18n.define({
       flipV: "Vertikal spiegeln",
 
       // Appearance
-      appearance: "Darstellung",
       adjustments: "Anpassungen",
       reset: "Zurücksetzen",
       brightness: "Helligkeit",
@@ -300,7 +321,6 @@ export const imageProcessorMessages = i18n.define({
       pasteAdjustmentsAllTitle: "Anpassungen auf alle Bilder anwenden",
 
       // Export
-      exportImage: "Bild exportieren",
       exportAll: ({ count }) => `Alle exportieren (${count})`,
       exportImageTitle: "Bild exportieren",
       exportImagesTitle: ({ count }) => `${count} Bilder exportieren`,
@@ -313,6 +333,8 @@ export const imageProcessorMessages = i18n.define({
       maxWidth: "Maximale Breite",
       maxHeight: "Maximale Höhe",
       keepOriginalSize: "Leer lassen, um die Originalgröße zu behalten",
+      qualityInvalid: "Gib eine Qualität von 10 bis 100 ein.",
+      pixelsInvalid: "Gib eine ganze Zahl ab 1 ein oder lass das Feld leer.",
       noImageToExport: "Kein Bild zum Exportieren verfügbar",
       unknownExportError: "Das Bild konnte nicht exportiert werden",
       exportStopped: ({ completed, count }) => `Export nach ${completed} von ${count} Bildern gestoppt.`,
