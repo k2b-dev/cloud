@@ -13,15 +13,19 @@ import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
 import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { proxyAuthService } from "../service";
+import { fixtureClients, type ProxyAuthFixtureData } from "./_components/proxy-auth-fixture-data";
 
 // The real page in the Cloud shell, from invented clients: its first HTML with the shell's own stylesheets, fonts
-// (Plex) and icons keeps the v2 layout rules at 1440 and 390 px. `CLOUD_PROXY_AUTH_SHELL_SHOTS=<dir>` also saves
-// light pictures.
+// (Plex) and icons keeps the v2 layout rules at 1440 and 390 px, with its own entry current in the admin navigation; its
+// dialogs open in the same frame. `CLOUD_PROXY_AUTH_SHELL_SHOTS=<dir>` also saves light pictures.
 const root = mkdtempSync(join(tmpdir(), "proxy-auth-shell-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
+// after the compiler is registered: the navigation module renders JSX
+const { adminNavigation } = await import("@k2b/cloud/ssr");
 const shots = process.env.CLOUD_PROXY_AUTH_SHELL_SHOTS;
+const ui = resolve(import.meta.dir, "../../../ui");
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -43,46 +47,91 @@ const user = {
   managesGroupIds: [],
 } satisfies User;
 
-const group = (id: number, name: string) => ({
-  id: `00000000-0000-4000-8000-0000000000${String(id).padStart(2, "0")}`,
-  name,
-  provider: "local" as const,
-});
-const CLIENTS = {
-  normal: [
-    ["Grafana", "Dashboards der Werkstatt", [group(1, "betrieb"), group(2, "leitung")]],
-    ["Paperless", "Belegablage", [group(3, "buchhaltung")]],
-    ["Home Assistant", null, [group(4, "haustechnik")]],
-    ["Uptime Kuma", "Erreichbarkeit der Dienste", []],
+// This app as the registry lists it, so the admin navigation has its entry and marks it current.
+const runtime = {
+  apps: [
+    {
+      id: "proxy-auth",
+      name: "Proxy Auth",
+      icon: "ti ti-load-balancer",
+      description: "",
+      presentation: { baseLocale: "en", translations: { de: { name: "Proxy-Authentifizierung" } } },
+      adminHref: "/admin/proxy-auth",
+      routes: ["/admin/proxy-auth"],
+    },
   ],
-  worst: [
-    [
-      "Kunden & Aufträge (Werkstatt Nord) – interne Zeiterfassung und Materialbestellung",
-      "Schützt die interne Zeiterfassung, die Materialbestellung und das Auftragsarchiv der Werkstatt Nord vor Zugriffen von außen",
-      Array.from({ length: 9 }, (_, index) => group(10 + index, `werkstatt-nord-schicht-${index + 1}`)),
-    ],
-    ["X", null, []],
-  ],
-  empty: [],
-} as const;
+} as unknown as CloudRuntime;
 
-const clients = (data: keyof typeof CLIENTS) =>
-  CLIENTS[data].map(([name, description, groups], index) => ({
-    id: `00000000-0000-4000-8000-00000000000${index + 1}`,
-    clientId: `pa_${name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .slice(0, 60)}`,
-    name,
-    description,
-    allowedGroups: [...groups],
-    createdAt: `2026-11-${10 + index}T08:00:00.000Z`,
-  }));
+const pages = (data: ProxyAuthFixtureData) => {
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user });
+    c.set("user", user);
+    c.set("runtime", runtime);
+    await next();
+  });
+  app.get("/admin/proxy-auth", async (c, next) => {
+    if (c.req.query("nav") === "") return c.json(adminNavigation(c));
+    await next();
+  });
+  app.get("/admin/proxy-auth", ...handler);
+  const spies = () => [
+    stubRailSnapshot(),
+    spyOn(services, "get").mockResolvedValue("cloud.example.test" as never),
+    spyOn(proxyAuthService.client, "list").mockResolvedValue({ items: fixtureClients(data) } as never),
+  ];
+  return {
+    /** The first HTML of an address, as the page renders it for invented clients. */
+    html: async (search: string) => {
+      const stubs = spies();
+      try {
+        return await (await app.request(`/admin/proxy-auth${search}`, { headers: { "Accept-Language": "de" } })).text();
+      } finally {
+        for (const stub of stubs) stub.mockRestore();
+      }
+    },
+    /** The admin navigation the page got, for the screen a harness renders into it. */
+    nav: async () => await (await app.request("/admin/proxy-auth?nav", { headers: { "Accept-Language": "de" } })).text(),
+  };
+};
+
+/** The screen's shell harness: the fixture rendered into the real page's island. */
+const buildShellHarness = async (): Promise<string> => {
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "_components/ProxyAuthScreen.shell-harness.tsx")],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "solid-proxy-auth-shell",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!build.success) throw new AggregateError(build.logs, "Proxy Auth shell harness build failed");
+  return build.outputs[0]!.text();
+};
 
 let browser: Browser;
 let assets: ShellAssets;
+let harness: string;
 beforeAll(async () => {
   assets = await loadShellAssets({ id: "proxy-auth", css: resolve(import.meta.dir, "../styles/app.css") });
+  harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -90,45 +139,25 @@ afterAll(async () => {
   await browser?.close();
 });
 
-/** The first HTML of an address, as the page renders it for invented clients. */
-const firstHtml = async (search: string, data: keyof typeof CLIENTS) => {
-  const spies = [
-    stubRailSnapshot(),
-    spyOn(services, "get").mockResolvedValue("cloud.example.test" as never),
-    spyOn(proxyAuthService.client, "list").mockResolvedValue({ items: clients(data) } as never),
-  ];
-  try {
-    const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
-    app.use("*", async (c, next) => {
-      c.set("actor", { kind: "user", user });
-      c.set("user", user);
-      c.set("runtime", { apps: [] });
-      await next();
-    });
-    app.get("/admin/proxy-auth", ...handler);
-    return await (await app.request(`/admin/proxy-auth${search}`, { headers: { "Accept-Language": "de" } })).text();
-  } finally {
-    for (const spy of spies) spy.mockRestore();
-  }
-};
-
 describe("Proxy Auth in the Cloud shell", () => {
   test("the first picture keeps the v2 rules at 1440 and 390 px: list, open client, setup, empty and worst case", async () => {
-    const cases: [string, string, keyof typeof CLIENTS][] = [
+    const cases: [string, string, ProxyAuthFixtureData][] = [
       ["liste", "", "normal"],
       ["client-offen", "?client=00000000-0000-4000-8000-000000000004", "normal"],
       ["einrichtung", "?tab=setup", "normal"],
       ["leer", "", "empty"],
       ["worst-case", "", "worst"],
-      ["worst-case-offen", "?client=00000000-0000-4000-8000-000000000001", "worst"],
+      ["worst-case-offen", "?client=00000000-0000-4000-8000-000000000100", "worst"],
     ];
     for (const [name, search, data] of cases) {
-      const html = await firstHtml(search, data);
+      const html = await pages(data).html(search);
       for (const width of [1440, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/proxy-auth${search}`, html, width });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
           expect({ name, width, problems: layout.problems }).toEqual({ name, width, problems: [] });
+          // the page's own entry is the current one in the admin navigation, not the overview
+          if (width === 1440) expect(await tab.locator('[aria-current="page"]').first().innerText()).toMatch(/^Proxy/);
           if (shots) await tab.screenshot({ path: join(shots, `${name}-${width}.png`) });
           expect(errors).toEqual([]);
         } finally {
@@ -137,4 +166,41 @@ describe("Proxy Auth in the Cloud shell", () => {
       }
     }
   }, 300_000);
+
+  test("creating a client opens its dialog in the shell's frame and shows the verify address once", async () => {
+    const page = pages("normal");
+    const html = await page.html("");
+    const nav = (await page.nav()).replaceAll("<", "\\u003c");
+    for (const width of [1440, 390]) {
+      const { context, tab, errors } = await openShellPage(browser, assets, {
+        path: "/admin/proxy-auth",
+        html,
+        width,
+        extra: {
+          html: `<script type="application/json" id="shell-nav">${nav}</script><script src="/__shell-harness.js"></script>`,
+          files: {
+            "/__shell-harness.js": { type: "text/javascript; charset=utf-8", body: harness },
+            "/api/accounts/entities": {
+              type: "application/json",
+              body: JSON.stringify({ items: [{ kind: "group", group: { id: "g-ops", name: "betrieb" } }] }),
+            },
+            "/api/proxy-auth": { type: "application/json", body: JSON.stringify({ clientId: "pa_wiki" }) },
+          },
+        },
+      });
+      try {
+        await tab.getByRole("button", { name: "Neuer Client" }).first().click();
+        const dialog = tab.getByRole("dialog");
+        await dialog.getByRole("textbox", { name: "Clientname" }).fill("Wiki");
+        await dialog.getByRole("option", { name: "Betrieb" }).click();
+        if (shots) await tab.screenshot({ path: join(shots, `dialog-neuer-client-${width}.png`) });
+        await dialog.getByRole("button", { name: "Erstellen" }).click();
+        await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_wiki").waitFor();
+        if (shots) await tab.screenshot({ path: join(shots, `dialog-client-angelegt-${width}.png`) });
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 120_000);
 });

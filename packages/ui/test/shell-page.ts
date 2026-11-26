@@ -68,11 +68,15 @@ export const loadShellAssets = async (app: { id: string; css: string }): Promise
 /**
  * Opens the first HTML of a page in the shell at one width, light. The islands stay as the server drew them (their
  * scripts answer empty), so the picture is the first one a person sees; every other request is refused.
+ *
+ * `extra` puts a test's own script into the real page, such as a harness that renders the app's screen from invented
+ * data into its island, so a dialog opens inside the shell's frame: `html` goes before `</body>`, and `files` answer
+ * their paths (a script, or what an API returns for any method). The page then waits for `body[data-ready]`.
  */
 export const openShellPage = async (
   browser: Browser,
   assets: ShellAssets,
-  page: { path: string; html: string; width: number },
+  page: { path: string; html: string; width: number; extra?: { html: string; files: Record<string, { type: string; body: string }> } },
 ): Promise<{ context: BrowserContext; tab: Page; errors: string[] }> => {
   const phone = page.width < 600;
   const context = await browser.newContext({
@@ -83,11 +87,14 @@ export const openShellPage = async (
     reducedMotion: "reduce",
     colorScheme: "light",
   });
+  const html = page.extra ? page.html.replace("</body>", `${page.extra.html}</body>`) : page.html;
   await context.route("**", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== SHELL_ORIGIN) return route.abort("blockedbyclient");
     if (url.pathname === new URL(page.path, SHELL_ORIGIN).pathname)
-      return route.fulfill({ contentType: "text/html; charset=utf-8", body: page.html });
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+    const file = page.extra?.files[url.pathname];
+    if (file) return route.fulfill({ contentType: file.type, body: file.body });
     if (await assets.serve(route, url)) return;
     if (route.request().resourceType() === "script") return route.fulfill({ contentType: "text/javascript", body: "" });
     return route.fulfill({ status: 404, body: "" });
@@ -95,6 +102,7 @@ export const openShellPage = async (
   const tab = await context.newPage();
   const errors = pageErrors(tab);
   await tab.goto(`${SHELL_ORIGIN}${page.path}`);
+  if (page.extra) await tab.waitForSelector("body[data-ready]");
   await tab.evaluate(() => window.document.fonts.ready);
   await settled(tab);
   return { context, tab, errors };

@@ -85,10 +85,9 @@ test("the clients render on v2 with their figures, one open beside the list, and
     const text = read(html);
     expect(text).toContain("1 Client ist bis zur Konfiguration gesperrt");
     expect(text).toContain("Uptime Kuma");
-    // the lead says once that a client without a group is blocked; chip and figure name what is missing
+    // the lead says once that a client without a group is blocked; only that client's row marks it
     expect(text.split("bis zur Konfiguration gesperrt")).toHaveLength(2);
-    expect(text).toContain("Gruppe fehlt");
-    expect(text).toContain("Gruppe zuweisen");
+    expect(text).toContain("Ohne Gruppen");
     // the open client names its verify address with this Cloud's public address
     expect(text).toContain("https://cloud.example.test/proxy-auth/verify/pa_grafana");
     const setup = read(await (await app.request("/admin/proxy-auth?tab=setup", { headers: { "Accept-Language": "de" } })).text());

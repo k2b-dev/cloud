@@ -170,10 +170,27 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       detail
       label={client.name}
       back={{ label: t().backToClients, href: LIST }}
-      head={<Bar start={<Text type="lead">{client.name}</Text>} end={<Button variant="ghost" icon="x" label={t().close} href={LIST} />} />}
+      head={
+        <Bar
+          start={<Text type="lead">{client.name}</Text>}
+          end={
+            <>
+              <Button icon="trash" onClick={() => void remove(client)}>
+                {t().delete}
+              </Button>
+              <Button icon="pencil" onClick={() => start(client)}>
+                {t().edit}
+              </Button>
+              <Button variant="ghost" icon="x" label={t().close} href={LIST} />
+            </>
+          }
+        />
+      }
     >
       <Show when={client.groups.length === 0}>
-        <Notice tone="warn">{t().blockedUntilConfigured}</Notice>
+        <Notice tone="warn" icon="lock">
+          {t().blockedNotice}
+        </Notice>
       </Show>
       <Facts
         items={[
@@ -183,18 +200,6 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           { label: t().allowedGroups, value: <>{groupChips(client)}</> },
           { label: t().created, value: client.created },
         ]}
-      />
-      <Bar
-        end={
-          <>
-            <Button icon="trash" onClick={() => void remove(client)}>
-              {t().delete}
-            </Button>
-            <Button icon="pencil" onClick={() => start(client)}>
-              {t().edit}
-            </Button>
-          </>
-        }
       />
     </Pane>
   );
@@ -207,27 +212,23 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         scrollKey="proxy-auth-clients"
         status={
           <StatusRow
-            lead={props.figures.withoutGroups > 0 ? t().blockedLead({ count: props.figures.withoutGroups }) : t().allGatedLead}
-            filters={
-              props.figures.withoutGroups > 0 ? (
-                <Chip status="warn" icon="lock">
-                  {t().groupMissing}
-                </Chip>
-              ) : undefined
+            lead={
+              props.clients.length === 0
+                ? t().emptyLead
+                : props.figures.withoutGroups > 0
+                  ? t().blockedLead({ count: props.figures.withoutGroups })
+                  : t().allGatedLead
             }
           />
         }
       >
-        <Cells>
-          <Cells.Cell icon="shield-half" label={t().clients} value={number(props.clients.length)} meta={t().registered} />
-          <Cells.Cell icon="users-group" label={t().allowedGroups} value={number(props.figures.groups)} meta={t().acrossClients} />
-          <Cells.Cell
-            icon={props.figures.withoutGroups > 0 ? "alert-triangle" : "check"}
-            label={t().noGroups}
-            value={props.figures.withoutGroups > 0 ? <Text tone="warn">{number(props.figures.withoutGroups)}</Text> : "0"}
-            meta={props.figures.withoutGroups > 0 ? t().assignGroup : t().allGated}
-          />
-        </Cells>
+        {/* the figures say what the lead does not: nothing to count before the first client */}
+        <Show when={props.clients.length > 0}>
+          <Cells>
+            <Cells.Cell icon="shield-half" label={t().clients} value={number(props.clients.length)} meta={t().registered} />
+            <Cells.Cell icon="users-group" label={t().allowedGroups} value={number(props.figures.groups)} meta={t().acrossClients} />
+          </Cells>
+        </Show>
         <Table
           label={t().clients}
           rows={props.clients}

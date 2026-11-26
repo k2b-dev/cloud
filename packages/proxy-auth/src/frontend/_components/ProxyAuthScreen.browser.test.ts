@@ -5,6 +5,7 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { loadShellAssets, type ShellAssets } from "../../../../ui/test/shell-page";
+import { fixtureClients } from "./proxy-auth-fixture-data";
 
 // Proxy Auth on v2, from invented clients: the screen keeps the v2 layout rules at desktop, tablet and phone width with
 // normal, worst-case and no data; a client opens beside the list, and creating, editing and deleting ask and report.
@@ -133,8 +134,8 @@ describe("Proxy Auth on v2", () => {
       ["empty", "", desktop],
       ["normal", "?tab=setup", desktop],
       ["normal", "?tab=setup", phone],
-      ["normal", "?client=00000000-0000-4000-8000-000000000003", desktop],
-      ["worst", "?client=00000000-0000-4000-8000-00000000000a", phone],
+      ["normal", "?client=00000000-0000-4000-8000-000000000004", desktop],
+      ["worst", "?client=00000000-0000-4000-8000-000000000100", phone],
     ];
     for (const [state, search, view] of cases) {
       const name = `proxy-auth${search.includes("client=") ? "-record" : search.includes("tab=setup") ? "-setup" : ""}-${state}-${view.width}`;
@@ -189,7 +190,7 @@ describe("Proxy Auth on v2", () => {
       await tab.getByRole("button", { name: "Löschen" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
       await tab.waitForURL((url) => !url.search.includes("client="));
-      expect(calls).toEqual(["DELETE /api/proxy-auth/00000000-0000-4000-8000-000000000000"]);
+      expect(calls).toEqual(["DELETE /api/proxy-auth/00000000-0000-4000-8000-000000000001"]);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -197,7 +198,7 @@ describe("Proxy Auth on v2", () => {
   }, 60_000);
 
   test("editing sends the description and the groups, the name stays", async () => {
-    const { context, tab, errors, calls, bodies } = await open(desktop, "/admin/proxy-auth?client=00000000-0000-4000-8000-000000000001");
+    const { context, tab, errors, calls, bodies } = await open(desktop, "/admin/proxy-auth?client=00000000-0000-4000-8000-000000000002");
     try {
       await tab.getByRole("button", { name: "Bearbeiten" }).click();
       const dialog = tab.getByRole("dialog");
@@ -206,8 +207,11 @@ describe("Proxy Auth on v2", () => {
       await dialog.getByRole("option", { name: "Betrieb" }).click();
       await dialog.getByRole("button", { name: "Speichern" }).click();
       await tab.waitForFunction(() => !window.document.querySelector('[role="dialog"]'));
-      expect(calls).toEqual(["PUT /api/proxy-auth/00000000-0000-4000-8000-000000000001"]);
-      expect(bodies[0]).toEqual({ description: "Belege und Rechnungen", allowedGroupIds: ["group-1-0", "g-ops"] });
+      expect(calls).toEqual(["PUT /api/proxy-auth/00000000-0000-4000-8000-000000000002"]);
+      expect(bodies[0]).toEqual({
+        description: "Belege und Rechnungen",
+        allowedGroupIds: [fixtureClients("normal")[1]!.allowedGroups[0]!.id, "g-ops"],
+      });
       expect(errors).toEqual([]);
     } finally {
       await context.close();
