@@ -51,7 +51,9 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
   with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
-  line.
+  line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
+  limits, Enter back to the default) move the width; a reload starts at the
+  default again. The sidebar's grip works the same.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -221,7 +223,7 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, grip in the head), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -413,6 +415,9 @@ lines instead of cutting a thing.
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+- Counts of `Nav` and `Tabs`: a number is written in the page's language and
+  in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
+  you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
@@ -433,16 +438,21 @@ lines instead of cutting a thing.
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`; leave on the phone),
   `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  becomes the bar of what can be done with them; the count stands in 14 px
+  600; from five deeds on the first three stand and the rest wait in
+  "Mehr", so give the deeds in their order of use).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
-  From five places on, the places between the first and the last two fold
-  into a menu "…" in their order, the same on the server and in the browser.
-  Where room runs out, the place before the page shortens with "…" first,
-  then the page; their whole names show on hover. The deeds at the end keep
-  their words before the path does.
+  From five places on, the first place and the page stand and every place
+  between folds into a menu "…" in its order, the same on the server and in
+  the browser. The page keeps its whole name: where room runs out the places
+  between shorten with "…" first, then the first place, the page only when
+  nothing else is left; whole names show on hover. The deeds at the end keep
+  their words before the path does. In an `Inline` with a chip (a folder's
+  sharing) the path behaves the same, and on the phone it gives way there
+  too while the chip stays.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
@@ -546,7 +556,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the way out), `secondary` (a second, quieter way out after it, as a
+  text button, such as "Filter zurücksetzen" and "Ganzes Notizbuch
+  zeigen"; the first stays the one a focus that comes to the state reaches).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.
