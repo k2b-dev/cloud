@@ -23,13 +23,13 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (width: number, run: (page: Page) => Promise<void>, { dark = false } = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"${dark ? ' class="dark"' : ""}><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -59,8 +59,9 @@ for (const width of [1440, 390]) {
         const word = label.getBoundingClientRect();
         return {
           text: label.textContent,
-          // the word in the colour of its line
-          inkOfLine: getComputedStyle(label).fill === getComputedStyle(line).stroke,
+          // the line in the accent, the word in the accent's ink, which reads on the surface
+          line: getComputedStyle(line).stroke,
+          ink: getComputedStyle(label).fill,
           atNow: Math.abs(line.getBoundingClientRect().left - running.getBoundingClientRect().right),
           thin: line.getBoundingClientRect().width <= 1.5,
           whole: word.left >= box.left && word.right <= box.right && word.top >= box.top,
@@ -80,7 +81,8 @@ for (const width of [1440, 390]) {
         };
       }, svg);
       expect(look.text).toBe("Jetzt");
-      expect(look.inkOfLine).toBe(true);
+      expect(look.line).toBe("rgb(37, 99, 235)");
+      expect(look.ink).toBe("rgb(29, 78, 216)");
       expect(look.atNow).toBeLessThanOrEqual(1);
       expect(look.thin).toBe(true);
       expect(look.whole).toBe(true);
@@ -124,6 +126,7 @@ for (const width of [1440, 390]) {
             name: rect.closest("[aria-label]")?.getAttribute("aria-label") ?? "",
             stroke: style.stroke,
             dashed: style.strokeDasharray !== "none",
+            outline: style.strokeWidth,
             faint: Number(style.fillOpacity) < 0.2,
           };
         });
@@ -133,6 +136,7 @@ for (const width of [1440, 390]) {
         expect(run.name.endsWith(", Steht an, geplant")).toBe(true);
         expect(run.stroke).toBe("rgb(100, 116, 139)");
         expect(run.dashed).toBe(true);
+        expect(run.outline).toBe("1.5px");
         expect(run.faint).toBe(true);
       }
       // a run that happened stays filled
@@ -150,3 +154,36 @@ for (const width of [1440, 390]) {
     });
   });
 }
+
+test("in dark, the word of now reads at 4.5:1 or more on the chart's surface", async () => {
+  await withPage(
+    1440,
+    async (page) => {
+      const contrast = await page.evaluate((selector) => {
+        const label = document.querySelector<SVGTextElement>(`${selector} .stdlib-chart-state-now-label`)!;
+        const rgb = (color: string) => (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+        // the surface it stands on: the first ancestor with a background of its own
+        let surface = "rgb(255, 255, 255)";
+        for (let element: Element | null = label; element; element = element.parentElement) {
+          const background = getComputedStyle(element).backgroundColor;
+          if (background && !background.startsWith("rgba(0, 0, 0, 0)") && background !== "transparent") {
+            surface = background;
+            break;
+          }
+        }
+        const luminance = (color: string) => {
+          const [r, g, b] = rgb(color).map((value) => {
+            const channel = value / 255;
+            return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+        };
+        const [light, dark] = [luminance(getComputedStyle(label).fill), luminance(surface)].sort((a, b) => b - a);
+        return { ratio: (light! + 0.05) / (dark! + 0.05), fill: getComputedStyle(label).fill, surface };
+      }, svg);
+      expect(contrast.surface).not.toBe("rgb(255, 255, 255)");
+      expect(contrast.ratio).toBeGreaterThanOrEqual(4.5);
+    },
+    { dark: true },
+  );
+});

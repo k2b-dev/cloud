@@ -121,9 +121,19 @@ describe("state timeline: now, runs of seconds, planned runs", () => {
     const planned = rect(svg, 1);
     expect(planned).toContain("data-planned");
     expect(planned).toContain('stroke-dasharray="3 2"');
-    expect(planned).toContain('style="stroke:var(--stdlib-chart-c2)"');
+    expect(planned).toContain('style="stroke:var(--stdlib-chart-c2);stroke-width:1.5"');
     expect(planned).toContain('fill-opacity="0.12"');
-    expect(svg).toContain('aria-label="Morgenbericht, Geplant, geplant"');
+    // the state already says it: no "Geplant, geplant"
+    expect(svg).toContain('aria-label="Morgenbericht, Geplant"');
+    // a state whose words do not say it gets the word
+    expect(
+      day({
+        states: [
+          { state: "ok", label: "Erfolgreich" },
+          { state: "scheduled", label: "Steht an" },
+        ],
+      }),
+    ).toContain('aria-label="Morgenbericht, Steht an, geplant"');
     // the run that happened stays filled
     expect(rect(svg, 0)).not.toContain("data-planned");
   });

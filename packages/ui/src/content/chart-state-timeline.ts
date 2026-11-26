@@ -196,17 +196,22 @@ export const renderStateTimelineSvg = (
       const narrow = x2 - x < MIN_REGION;
       const left = narrow ? Math.max(plotLeft, Math.min(plotRight - MIN_REGION, x - MIN_REGION / 2)) : x;
       const regionWidth = narrow ? MIN_REGION : x2 - x;
-      // a planned start: an outline in its state's colour over a faint fill (the stroke as a style, which wins over
-      // the white edge every region has)
+      // a planned start: an outline of 1.5 in its state's colour over a faint fill (stroke and width as a style, which
+      // wins over the white edge of 1 every region has)
       const planned = interval.planned
         ? ` data-planned="" fill-opacity="0.12" stroke-dasharray="3 2" style="stroke:${
             style?.color ? escapeXml(style.color) : `var(--stdlib-chart-c${(stateIndex % 8) + 1})`
-          }"`
+          };stroke-width:1.5"`
         : "";
       const rect = `<rect ${seriesPaint(style?.color, stateIndex, "stdlib-chart-state-region")}${planned} x="${fmt(
         left,
       )}" y="${fmt(y + 3)}" width="${fmt(regionWidth)}" height="${ROW_HEIGHT - 6}" rx="${narrow ? 1 : 3}"/>`;
       const stateLabel = style?.label ?? interval.state;
+      // "geplant" only where the state's own words do not say it already ("Geplant, geplant")
+      const plannedWord =
+        interval.planned && opts.plannedLabel && !stateLabel.toLocaleLowerCase().includes(opts.plannedLabel.toLocaleLowerCase())
+          ? opts.plannedLabel
+          : undefined;
       body.push(
         interactiveGroup(
           chartDatumSvg(
@@ -230,7 +235,7 @@ export const renderStateTimelineSvg = (
           ),
           interval.href,
           interval.tooltip ?? interval.label,
-          [row.label, interval.label, stateLabel, interval.planned ? opts.plannedLabel : undefined].filter(Boolean).join(", "),
+          [row.label, interval.label, stateLabel, plannedWord].filter(Boolean).join(", "),
         ),
       );
     }

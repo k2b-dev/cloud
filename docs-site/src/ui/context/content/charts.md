@@ -213,13 +213,18 @@ Pass `now` to mark the present moment: a thin line in the accent over the
 lanes, with "Jetzt" on the time axis at that time (axis labels close to it
 give way; the band above the lanes belongs to the zoom controls). The chart reads no clock of its own, so give it
 the time the server answered with; the server and the first picture in the
-browser then draw the same line. Without `now` there is no line.
+browser then draw the same line. Without `now` there is no line. Give `now` in
+the unit and base of your `domain` and `from`/`to` (Unix milliseconds for
+instants); a day that a clock change shortens or lengthens is yours to lay
+out in `domain`.
 
 An interval of a few seconds on a day is still drawn 3 units wide, centred on
 its start, and keeps its link and tooltip. Mark a start still to come with
 `planned: true`: it is an outline in its state's colour over a faint fill,
-not a filled region, its accessible name ends with "geplant", and the legend
-adds "Geplant".
+not a filled region, its accessible name ends with "geplant" (unless the
+state's own label says so), and the legend adds "Geplant". Give a planned
+state a dark or neutral colour, such as slate: its thin outline must stand
+out from the surface.
 
 ```tsx
 <Chart kind="stateTimeline" legend interactive style={{ height: "100%" }} now={requestTime}
