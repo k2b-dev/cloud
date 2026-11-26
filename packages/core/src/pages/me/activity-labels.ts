@@ -22,7 +22,7 @@ export const activityWords = (t: AccountMessages): Record<string, string> => ({
 });
 
 /** Whether the attempt was refused or failed: then its outcome stands beside it as a chip. */
-export const activityRefused = (entry: Pick<AccountActivity, "outcome">): boolean => entry.outcome !== "allowed";
+const activityRefused = (entry: Pick<AccountActivity, "outcome">): boolean => entry.outcome !== "allowed";
 
 /**
  * The app's own words for an activity it knows; the audit label for any other. A sign-in that did not go through is

@@ -34,13 +34,16 @@ export default ssr<AuthContext>(async (c) => {
   // An unknown or malformed app filter shows every app instead of an error page.
   const app = ApprovalListQuerySchema.shape.app.safeParse(c.req.query("app")).data;
   const page = parsePositiveInt(c.req.query("page"), 1);
+  const now = new Date();
   const appsById = () => new Map(getLocalizedRuntimeContext(c).apps.map((entry) => [entry.id, entry]));
 
   const loadContent = async (): Promise<ActivityScreenProps["content"]> => {
     if (kind === "open") return { kind, app, approvals: await loadPendingApprovals(c, app ? { app } : {}) };
     if (kind === "deliveries") {
       const status = deliveryStatusOf(state);
-      // the failures of every page, not only this one's; one count when the filter already names them
+      // The failures of every page, not only this one's. With a state filter the lead speaks only of that range: filtered
+      // to "failed" it counts them (the page's total), filtered to any other state it says nothing, as none of those
+      // entries failed; only without a filter does a second count read all failures.
       const [history, failed] = await Promise.all([
         notifications.user.history.list({ userId: user.id, page, perPage: 25, status, locale }),
         status === undefined
@@ -56,7 +59,8 @@ export default ssr<AuthContext>(async (c) => {
         pages: history.totalPages,
         rows: history.items.map((item) => ({
           id: item.id,
-          time: dates.formatDateTime(item.createdAt, { locale }),
+          // relative to the time of this answer, so the server and the first paint agree; short enough for the phone
+          time: dates.formatDateTimeRelative(item.createdAt, { locale, base: now }),
           title: item.title,
           href: item.targetHref,
           source: `${apps.get(item.appId)?.name ?? item.appId} · ${item.label} · ${notificationChannelMeta(item.channel, locale).label}`,
@@ -88,7 +92,7 @@ export default ssr<AuthContext>(async (c) => {
       pages: Math.max(1, Math.ceil(activity.total / 25)),
       rows: activity.items.map((entry) => ({
         id: String(entry.id),
-        time: dates.formatDateTime(entry.createdAt, { locale }),
+        time: dates.formatDateTimeRelative(entry.createdAt, { locale, base: now }),
         title: activityLabel(entry, t),
         href: null,
         source: entry.context || t.accountContext,

@@ -10,7 +10,7 @@ Notifications collects account and app events in one history. The delivery chann
 
 ## Check the notification history {icon="bell"}
 
-- Open **Profile settings → Notifications → Delivery history** to review recent entries. Do not rely only on a short toast or an email.
+- Open **Profile settings → Activity → Deliveries** to review recent entries. Do not rely only on a short toast or an email.
 - Filter the history by delivery status: **Delivered**, **Pending**, **Failed**, or **Not sent**.
 - Open the related app or record from the notification when it has a link.
 - The history contains delivery metadata, not the message text of the notification.

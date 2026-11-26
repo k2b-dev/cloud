@@ -1,4 +1,3 @@
-import { Approvals } from "@k2b/cloud/approvals/ui";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { swapPage } from "@k2b/ssr/nav";
 import { Bar, Button, Canvas, Chip, Empty, FilterBar, List, Pane, Row, StatusRow, Text } from "@k2b/ui/v2";
@@ -7,6 +6,7 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import AccountWorkspace, { useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
 import { type ActivityKind, activityPageHref, activityQueryFor, kindOfState } from "./activity-query";
+import PendingApprovals from "./PendingApprovals";
 
 /** One entry of the deliveries or the sign-in activity, as the server formatted it: words, not codes. */
 export type ActivityRow = {
@@ -109,6 +109,7 @@ export default function ActivityScreen(props: ActivityScreenProps) {
 
             {/* with nothing to show the empty state speaks alone, so the lead never says it a second time */}
             <Show when={needsYou()}>
+              {/* k2b-ui gap: once `FilterBar end` (#4223) shows `results`, the count leaves these facts (said once) */}
               <StatusRow lead={lead()} facts={[{ value: count() }]} />
             </Show>
           </>
@@ -116,10 +117,9 @@ export default function ActivityScreen(props: ActivityScreenProps) {
       >
         <Show when={open()}>
           {(approvals) => (
-            // k2b-ui gap: the platform's approval list (`@k2b/cloud/approvals/ui`, shared by several apps) is still v1; it
-            // stands in a Canvas until a v2 list exists (platform lane PS).
+            // k2b-ui gap: the platform's approval list is still v1; it is a drawing in a Canvas until #4200
             <Canvas label={t().openApprovals}>
-              <Approvals app={approvals().app} initial={approvals().approvals} />
+              <PendingApprovals app={approvals().app} initial={approvals().approvals} />
             </Canvas>
           )}
         </Show>

@@ -10,7 +10,7 @@ Im Zustellverlauf prüfst du die Zustellversuche von Cloud und deinen Apps. Welc
 
 ## Zustellverlauf prüfen {icon="bell"}
 
-- Öffne **Profileinstellungen → Benachrichtigungen → Zustellverlauf**, um aktuelle Zustellversuche zu prüfen. Verlass dich nicht nur auf kurz eingeblendete Meldungen oder E-Mails.
+- Öffne **Profileinstellungen → Aktivität → Zustellungen**, um aktuelle Zustellversuche zu prüfen. Verlass dich nicht nur auf kurz eingeblendete Meldungen oder E-Mails.
 - Filtere nach Zustellstatus: **Zugestellt**, **Ausstehend**, **Fehlgeschlagen** oder **Nicht gesendet**.
 - Öffne die verknüpfte App oder den zugehörigen Eintrag, wenn die Benachrichtigung einen Link hat.
 - Der Verlauf enthält Zustellmetadaten, nicht den Inhalt der Benachrichtigung.

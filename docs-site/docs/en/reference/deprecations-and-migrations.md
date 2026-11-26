@@ -954,7 +954,7 @@ Cloud app sessions receive `403 BROWSER_SIGN_IN_REQUIRED` for those writes.
 An older browser sign-in receives `403 REAUTHENTICATE`.
 
 Automation that created personal API keys using an OAuth token or another API
-key must stop doing so. Create the key in **Developer → API keys**
+key must stop doing so. Create the key in **Security & devices → API keys**
 (`/me/security`) after signing in again in the browser, then provide it to the
 integration through its credential store. Resource and standalone
 service-account keys keep their existing rules.
