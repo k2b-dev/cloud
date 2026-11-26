@@ -10,6 +10,9 @@ import { accountsMessages } from "../messages";
 import RequestsScreen from "./RequestsScreen.island";
 import { parseRequestStatus, parseRequestsPage, REQUESTS_PER_PAGE } from "./requests-url";
 
+/** A request that waits longer than this is named in the status row. */
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Account requests on v2: the status is a view in the address (`status`, pending by default), paged with `page`. */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -28,6 +31,11 @@ export default ssr<AuthContext>(async (c) => {
       filter: status === "all" ? { scope: "all" } : { status },
     }),
   ]);
+  // what waits: the oldest pending request of this page and how many have waited longer than a week
+  const now = Date.now();
+  const pending = requestsPage.items.filter((request) => request.status === "pending").map((request) => Date.parse(request.createdAt));
+  const oldest = pending.length > 0 ? dates.formatDate(new Date(Math.min(...pending)), { locale, timeZone }) : null;
+  const overdue = pending.filter((time) => now - time > WEEK_MS).length;
   const requests = requestsPage.items.map((request) => ({
     id: request.id,
     name: request.displayName || `${request.firstName} ${request.lastName}`,
@@ -53,6 +61,8 @@ export default ssr<AuthContext>(async (c) => {
         page={requestsPage.page}
         pages={Math.max(1, Math.ceil(requestsPage.total / REQUESTS_PER_PAGE))}
         freeIpaEnabled={freeIpaEnabled}
+        oldest={oldest}
+        overdue={overdue}
         pendingRequests={pendingRequests}
       />
     </Layout>

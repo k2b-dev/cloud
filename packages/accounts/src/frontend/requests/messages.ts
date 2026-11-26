@@ -8,6 +8,9 @@ export const requestMessages = i18n.define({
   messages: {
     en: {
       optional: "optional",
+      oldestBefore: "oldest from",
+      overdue: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 waits over a week", other: `${count} wait over a week` }),
       emptyPending: "No request is waiting for a decision.",
       createFor: ({ name }: { name: string }) => `Create an account for ${name}`,
       denyFor: ({ name }: { name: string }) => `Deny the request from ${name}`,
@@ -19,6 +22,8 @@ export const requestMessages = i18n.define({
     },
     de: {
       optional: "optional",
+      oldestBefore: "älteste vom",
+      overdue: ({ count }) => i18n.plural(count, "de", { one: "1 wartet über eine Woche", other: `${count} warten über eine Woche` }),
       emptyPending: "Keine Anfrage wartet auf eine Entscheidung.",
       createFor: ({ name }) => `Konto für ${name} anlegen`,
       denyFor: ({ name }) => `Anfrage von ${name} ablehnen`,

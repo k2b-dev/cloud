@@ -3,16 +3,15 @@ import {
   Avatar,
   Bar,
   Button,
+  Chip,
   type Column,
   Facts,
   FilterBar,
   Inline,
   Input,
-  ListOrder,
   Notice,
   Pane,
   Section,
-  StatusRow,
   Table,
   Text,
   Workspace,
@@ -21,7 +20,6 @@ import { createMemo, createSignal, Show } from "solid-js";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../AccountsNav";
 import { kindHref } from "../activity/kind";
-import { useActivityMessages } from "../activity/messages";
 import { useListMessages } from "../list-messages";
 import { type AccountsMessages, useAccountsMessages } from "../messages";
 import { useDeletedMessages } from "./messages";
@@ -56,6 +54,10 @@ export type DeletedAccountsScreenProps = {
   pendingRequests: number;
 };
 
+/** What happened to the account as a state: gone is bad, demoted to a guest a warning; the reason stands beside it. */
+const reasonChip = (t: AccountsMessages, demoted: string, reason: string) =>
+  reason.endsWith("_deleted") || reason === "manual_delete" ? <Chip status="bad">{t.deleted}</Chip> : <Chip status="warn">{demoted}</Chip>;
+
 const reasonLabel = (t: AccountsMessages, reason: string): string =>
   ({
     ipa_expired_demoted: t.deletedReasonIpaDemoted,
@@ -77,12 +79,10 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
   const t = useAccountsMessages();
   const d = useDeletedMessages();
   const words = useListMessages();
-  const activity = useActivityMessages();
   const { showChanges, openPage } = usePageSwap();
   const query = createMemo(() => deletedQuery(locale()));
   const [state, setState] = createSignal<DeletedState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
-  const [refreshing, setRefreshing] = createSignal(false);
   const changed = () => query().serialize(state()).toString() !== query().serialize(query().reset()).toString();
   const href = (entry?: string) => deletedHref(query(), state(), props.page, entry);
   const providerLabel = (value: string | null) => (value === "ipa" ? "FreeIPA" : value === "local" ? t().local : value);
@@ -94,7 +94,6 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
     // another kind is another list: it opens with its own filters, none of these
     if (next.filters.kind !== "deleted") return void openPage(kindHref(next.filters.kind), { replace: true });
     setState(next);
-    setRefreshing(true);
     const params = new URLSearchParams(location.search);
     params.delete("page");
     params.delete("entry");
@@ -104,7 +103,6 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
   const search = (text: string) => {
     const next = query().set(state(), "q", text.trim());
     if (next) {
-      setRefreshing(true);
       void openPage(deletedHref(query(), next));
     }
   };
@@ -114,7 +112,8 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
       sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
-          start={<Text type="body">{activity().activity}</Text>}
+          // k2b-ui gap: head rows (lane DP). The statement stands in the head, the filters below: two rows.
+          start={<Text weight="strong">{t().deletedAccountCount({ count: props.total })}</Text>}
           end={
             <Input
               type="search"
@@ -141,20 +140,13 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
           label={t().deletedAccounts}
           scrollKey="accounts-deleted"
           status={
-            <>
-              <FilterBar
-                query={query()}
-                state={state()}
-                onChange={change}
-                icons={{ kind: "activity", reason: "filter" }}
-                results={t().deletedAccountCount({ count: props.total })}
-              />
-              <StatusRow
-                lead={t().deletedAccountCount({ count: props.total })}
-                loading={refreshing()}
-                filters={<ListOrder query={query()} state={state()} onChange={change} />}
-              />
-            </>
+            <FilterBar
+              query={query()}
+              state={state()}
+              onChange={change}
+              icons={{ kind: "activity", reason: "filter" }}
+              results={t().deletedAccountCount({ count: props.total })}
+            />
           }
         >
           <Show when={ignored()}>
@@ -181,7 +173,12 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
                   }
                 : { icon: "user-off", text: t().noDeletedAccounts }
             }
-            phone={(row) => ({ lines: [row.name, reasonLabel(t(), row.reason)], avatar: { name: row.name }, time: row.deleted })}
+            phone={(row) => ({
+              lines: [row.name, reasonLabel(t(), row.reason)],
+              avatar: { name: row.name },
+              time: row.deleted,
+              marks: reasonChip(t(), d().demoted, row.reason),
+            })}
             columns={(
               [
                 {
@@ -197,7 +194,11 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
                     ],
                   }),
                 },
-                { title: t().reason, width: { min: 180, default: 280 }, cell: (row) => reasonLabel(t(), row.reason) },
+                {
+                  title: t().reason,
+                  width: { min: 220, default: 320 },
+                  cell: (row) => ({ lines: [reasonChip(t(), d().demoted, row.reason), reasonLabel(t(), row.reason)] }),
+                },
                 { title: t().deleted, width: { min: 160, default: 170 }, cell: (row) => row.deleted, drop: true },
                 { title: t().email, width: { min: 160, default: 220 }, cell: (row) => row.mail || "–", drop: true },
                 { title: t().accountType, cell: (row) => kind(row), drop: true },

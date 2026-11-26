@@ -15,6 +15,16 @@ const api = coreClient.admin.identity["directory-shares"];
 export const DIRECTORY_PER_PAGE = 20;
 type ExactPrincipal = Exclude<Principal, { type: "authenticated" } | { type: "public" }>;
 
+/** The mark of a shared group or account, in the colour of its kind; a person shows as their avatar. */
+const entryMark = (entry: DirectoryEntry): { icon: string; color: string } =>
+  entry.principal.type === "group"
+    ? { icon: "users-group", color: "#0d9488" }
+    : entry.serviceAccountKind === "resource_bound"
+      ? { icon: "plug-connected", color: "#0891b2" }
+      : entry.serviceAccountKind === "user_delegated"
+        ? { icon: "user-key", color: "#2563eb" }
+        : { icon: "robot", color: "#4f46e5" };
+
 /** One shared entry as `directoryShares.list` returns it. */
 export type DirectoryEntry = {
   id: string;
@@ -131,9 +141,16 @@ export default function DirectoryAccessSection(props: DirectoryAccessSectionProp
                 <For each={snapshot().items}>
                   {(entry) => (
                     <Row
-                      lines={[principalLabel({ principal: entry.principal, displayName: entry.label }, locale())]}
-                      meta={entry.principal.type === "service_account" ? kindWord(entry.serviceAccountKind) : undefined}
-                      icon={entry.principal.type === "group" ? "users-group" : entry.principal.type === "user" ? "user" : "robot"}
+                      lines={[
+                        principalLabel({ principal: entry.principal, displayName: entry.label }, locale()),
+                        entry.principal.type === "service_account"
+                          ? kindWord(entry.serviceAccountKind)
+                          : entry.principal.type === "group"
+                            ? words().entryGroup
+                            : words().entryPerson,
+                      ]}
+                      avatar={entry.principal.type === "user" ? { name: entry.label } : undefined}
+                      mark={entry.principal.type === "user" ? undefined : entryMark(entry)}
                       end={
                         <Button
                           variant="ghost"

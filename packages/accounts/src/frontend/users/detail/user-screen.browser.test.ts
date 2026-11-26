@@ -84,11 +84,33 @@ const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
+/**
+ * The Cloud shell around the app card, as the pictures must show it: the tinted page in the app's colour, the icon rail
+ * and the white card with its rounded edge; on the phone the card fills the screen. Only the test page draws it, the
+ * Layout draws the real one.
+ */
+const shell =
+  "html,body{height:100%;margin:0}" +
+  "#frame{position:fixed;inset:0;display:flex;gap:8px;padding:8px 8px 8px 0;background:linear-gradient(135deg,#e6e8fd,#f1f2fb)}" +
+  "#rail{width:56px;flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:4px}" +
+  "#rail i{width:36px;height:36px;display:grid;place-items:center;font-size:19px;color:#52525b;border-radius:8px}" +
+  "#rail i.on{background:#fff;color:#4f46e5;box-shadow:0 0 0 1px rgb(9 9 11/.07)}" +
+  "#rail b{width:32px;height:32px;border-radius:8px;background:#09090b;margin-bottom:14px}" +
+  "#root{flex:1;min-width:0;display:flex;position:relative;overflow:hidden;background:#fff;border-radius:14px;box-shadow:0 0 0 1px rgb(9 9 11/.07),0 1px 3px rgb(9 9 11/.05)}" +
+  "@media (max-width:767px){#frame{padding:0}#rail{display:none}#root{border-radius:0;box-shadow:none}}";
+const rail = [
+  "<b></b>",
+  ...["home", "mail", "calendar", "files", "users-group", "settings"].map(
+    (icon) => `<i class="ti ti-${icon}${icon === "users-group" ? " on" : ""}"></i>`,
+  ),
+].join("");
+
 const html = (fixture: FixtureName) =>
   `<!doctype html><html lang="de" class="light" data-fixture="${fixture}"><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+  `<style>${css}</style><style>${shell}</style></head>` +
+  `<body class="k2b-ui k2-ui"><div id="frame"><nav id="rail" aria-hidden="true">${rail}</nav><div id="root"></div></div>` +
+  `<script src="/harness.js"></script></body></html>`;
 
 /** What the API answered: each deed's request, and the statuses to answer next (200 when none is queued). */
 type Seen = {

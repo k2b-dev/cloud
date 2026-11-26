@@ -1,4 +1,4 @@
-import { Bar, Button, Chip, Dialog, Field, Inline, Input, Notice, Pane, StatusRow, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Dialog, Field, Inline, Input, Notice, Pane, StatusRow, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { usePageSwap } from "@/frontend/lib/page-swap";
@@ -27,6 +27,9 @@ export type RequestsScreenProps = {
   pages: number;
   /** Creating an account from a request needs FreeIPA, as before v2. */
   freeIpaEnabled: boolean;
+  /** Of the pending requests on this page: when the oldest came, formatted, and how many wait longer than a week. */
+  oldest: string | null;
+  overdue: number;
   pendingRequests: number;
 };
 
@@ -54,6 +57,7 @@ export default function RequestsScreen(props: RequestsScreenProps) {
                 label: statusLabel(value),
                 href: requestsHref(value),
                 current: value === props.status,
+                count: value === "pending" && props.pendingRequests > 0 ? props.pendingRequests : undefined,
               }))}
             />
           }
@@ -80,7 +84,19 @@ export default function RequestsScreen(props: RequestsScreenProps) {
       <Pane
         label={t().requests}
         scrollKey="accounts-requests"
-        status={<StatusRow lead={r().lead({ count: props.total, status: props.status })} />}
+        status={
+          <StatusRow
+            lead={r().lead({ count: props.total, status: props.status })}
+            facts={props.oldest ? [{ before: r().oldestBefore, value: props.oldest }] : undefined}
+            filters={
+              props.overdue > 0 ? (
+                <Chip status="warn" icon="clock-exclamation">
+                  {r().overdue({ count: props.overdue })}
+                </Chip>
+              ) : undefined
+            }
+          />
+        }
       >
         {/* k2b-ui gap: virtualized list (lane MW). Until it lands the page bounds the rows to 100 per page. */}
         <Table
@@ -95,38 +111,63 @@ export default function RequestsScreen(props: RequestsScreenProps) {
           // k2b-ui gap: on the phone an address without a break point runs a few signs past the edge of the second line.
           phone={(request) => ({
             lines: [request.name, `${request.email} · ${request.requested}`],
-            marks: <Chip status={statusTone[request.status]}>{statusLabel(request.status)}</Chip>,
+            avatar: { name: request.name },
+            // one status view says the state already; only "Alle" names it per request
+            marks: props.status === "all" ? <Chip status={statusTone[request.status]}>{statusLabel(request.status)}</Chip> : undefined,
           })}
           columns={[
-            { title: t().request, width: { min: 160, default: 200 }, cell: (request) => <Text weight="strong">{request.name}</Text> },
-            { title: t().email, width: { min: 160, default: 240 }, cell: (request) => request.email, drop: true },
             {
-              title: t().status,
-              width: { min: 110, default: 120 },
-              cell: (request) => <Chip status={statusTone[request.status]}>{statusLabel(request.status)}</Chip>,
+              title: t().request,
+              width: { min: 180, default: 200 },
+              cell: (request) => (
+                <Inline>
+                  <Avatar name={request.name} decorative />
+                  <Text weight="strong">{request.name}</Text>
+                </Inline>
+              ),
             },
+            { title: t().email, width: { min: 160, default: 220 }, cell: (request) => request.email, drop: true },
+            ...(props.status === "all"
+              ? [
+                  {
+                    title: t().status,
+                    width: { min: 140, default: 150 },
+                    cell: (request: RequestRow) => <Chip status={statusTone[request.status]}>{statusLabel(request.status)}</Chip>,
+                  },
+                ]
+              : []),
             { title: t().requested, width: { min: 100, default: 120 }, cell: (request) => request.requested, drop: true },
-            { title: t().comment, width: { min: 140, default: 240 }, cell: (request) => request.comment || "–", drop: true },
-            {
-              title: t().actions,
-              width: { min: 210, default: 220 },
-              cell: (request) =>
-                request.status === "pending" ? (
-                  <Inline>
-                    <Show when={props.freeIpaEnabled}>
-                      <Button variant="text" icon="user-plus" href={requestHref(request.id)} title={r().createFor({ name: request.name })}>
-                        {t().create}
-                      </Button>
-                    </Show>
-                    <Button variant="text" icon="x" onClick={() => setDenying(request)} title={r().denyFor({ name: request.name })}>
-                      {t().deny}
-                    </Button>
-                  </Inline>
-                ) : (
-                  "–"
-                ),
-              drop: true,
-            },
+            { title: t().comment, width: { min: 140, default: 220 }, cell: (request) => request.comment || "–", drop: true },
+            // only pending requests have deeds: the views of decided ones leave the column out
+            ...(props.status === "pending" || props.status === "all"
+              ? [
+                  {
+                    title: t().actions,
+                    width: { min: 210, default: 220 },
+                    cell: (request: RequestRow) =>
+                      request.status === "pending" ? (
+                        <Inline>
+                          <Show when={props.freeIpaEnabled}>
+                            <Button
+                              variant="text"
+                              icon="user-plus"
+                              href={requestHref(request.id)}
+                              title={r().createFor({ name: request.name })}
+                            >
+                              {t().create}
+                            </Button>
+                          </Show>
+                          <Button variant="text" icon="x" onClick={() => setDenying(request)} title={r().denyFor({ name: request.name })}>
+                            {t().deny}
+                          </Button>
+                        </Inline>
+                      ) : (
+                        "–"
+                      ),
+                    drop: true,
+                  },
+                ]
+              : []),
           ]}
         />
         <Show when={props.pages > 1}>

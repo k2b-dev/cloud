@@ -19,7 +19,6 @@ import RemindersScreen from "../reminders/RemindersScreen.island";
 import { activityKindOf } from "./kind";
 import { activityMessages } from "./messages";
 
-
 /**
  * The activity of Accounts on v2: the audit log, the notification batches, the reminders and the deleted accounts as one
  * list whose kind is a required filter (`kind`, the audit log by default). Each kind has its own filters and columns and

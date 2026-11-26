@@ -1,24 +1,10 @@
 import { useLocale } from "@k2b/ui";
-import {
-  Bar,
-  Button,
-  Chip,
-  FilterBar,
-  Icon,
-  Inline,
-  Input,
-  ListOrder,
-  Notice,
-  Pane,
-  StatusRow,
-  Table,
-  Text,
-  Workspace,
-} from "@k2b/ui/v2";
+import { Bar, Button, Chip, FilterBar, Inline, Input, ListOrder, Mark, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
+import { groupTags, markOf } from "./group-mark";
 import NewGroupDialog from "./NewGroupDialog";
 import { useGroupCreated } from "./new-group";
 import { GROUPS_PAGE_PATH, type GroupScope, type GroupsState, groupsHref, groupsQuery } from "./query";
@@ -31,6 +17,8 @@ export type GroupListEntry = {
   provider: "ipa" | "local";
   posix: boolean;
   managed: boolean;
+  /** A personal Linux group that belongs to one user. */
+  personal?: boolean;
   href: string;
 };
 
@@ -175,7 +163,8 @@ export default function GroupsScreen(props: GroupsScreenProps) {
           }
           phone={(group) => ({
             lines: [group.name, group.description || t().noDescription],
-            marks: group.managed ? <Chip>{t().managed}</Chip> : undefined,
+            mark: markOf(group),
+            marks: group.managed ? <Chip yours>{t().managed}</Chip> : undefined,
           })}
           columns={[
             {
@@ -183,7 +172,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
               width: { min: 180, default: 260 },
               cell: (group) => (
                 <Inline>
-                  <Icon name={group.managed ? "user-edit" : "users-group"} />
+                  <Mark icon={markOf(group).icon} color={markOf(group).color} />
                   <Text weight="strong">{group.name}</Text>
                 </Inline>
               ),
@@ -192,7 +181,14 @@ export default function GroupsScreen(props: GroupsScreenProps) {
             {
               title: t().managedBy,
               width: { min: 110, default: 130 },
-              cell: (group) => <Chip>{group.provider === "ipa" ? "FreeIPA" : t().local}</Chip>,
+              cell: (group) =>
+                group.provider === "ipa" ? (
+                  <Chip tag icon={groupTags.ipa.icon} color={groupTags.ipa.color}>
+                    FreeIPA
+                  </Chip>
+                ) : (
+                  <Chip>{t().local}</Chip>
+                ),
               drop: true,
             },
             {
@@ -201,10 +197,12 @@ export default function GroupsScreen(props: GroupsScreenProps) {
               cell: (group) => (
                 <Inline>
                   <Show when={group.managed}>
-                    <Chip>{t().managed}</Chip>
+                    <Chip yours>{t().managed}</Chip>
                   </Show>
                   <Show when={group.posix}>
-                    <Chip>POSIX</Chip>
+                    <Chip tag icon={groupTags.posix.icon} color={groupTags.posix.color}>
+                      POSIX
+                    </Chip>
                   </Show>
                 </Inline>
               ),

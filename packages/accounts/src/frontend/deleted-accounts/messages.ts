@@ -8,12 +8,14 @@ export const deletedMessages = i18n.define({
   messages: {
     en: {
       searchLabel: "Name, UID or email",
+      demoted: "Demoted",
       newestFirst: "Newest first",
       noMatches: "No deleted account matches these filters.",
       entryGone: "This entry is not on this page any more. Open it again from the list.",
     },
     de: {
       searchLabel: "Name, UID oder E-Mail",
+      demoted: "Herabgestuft",
       newestFirst: "Neueste zuerst",
       noMatches: "Kein gelöschtes Konto passt zu diesen Filtern.",
       entryGone: "Dieser Eintrag steht nicht mehr auf dieser Seite. Öffne ihn erneut aus der Liste.",

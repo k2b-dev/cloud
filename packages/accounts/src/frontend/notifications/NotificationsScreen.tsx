@@ -1,13 +1,27 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, type Column, Failed, FilterBar, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
-import { createMemo, createSignal, Show } from "solid-js";
+import {
+  Bar,
+  Button,
+  Chip,
+  type Column,
+  Failed,
+  FilterBar,
+  Inline,
+  Mark,
+  Notice,
+  Pane,
+  Progress,
+  Table,
+  Text,
+  Workspace,
+} from "@k2b/ui/v2";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { BATCH_PATH, kindHref } from "../activity/kind";
-import { useActivityMessages } from "../activity/messages";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
 import { useAccountsMessages } from "../messages";
-import { type BatchStatus, batchChip } from "./chips";
+import { BATCH_MARK, type BatchStatus, batchChip } from "./chips";
 import { useNotificationMessages } from "./messages";
 import NewBatchPane from "./NewBatchPane";
 import { type BatchesState, batchesHref, batchesQuery, batchStatusLabel } from "./query";
@@ -21,6 +35,10 @@ export type BatchRow = {
   status: BatchStatus;
   recipients: string;
   sent: string;
+  /** Delivered so far and deliverable in all, for the delivery bar. */
+  sentCount: number;
+  deliverableCount: number;
+  deliverable: string;
   errors: string;
   hasErrors: boolean;
   created: string;
@@ -50,10 +68,8 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
   const list = useListMessages();
   const { showChanges, openPage } = usePageSwap();
   const query = createMemo(() => batchesQuery(locale()));
-  const activity = useActivityMessages();
   const [state, setState] = createSignal<BatchesState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
-  const [refreshing, setRefreshing] = createSignal(false);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const changed = () => state().filters.status !== undefined;
   const listHref = kindHref("notifications");
@@ -65,7 +81,6 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
     // another kind is another list: it opens with its own filters, none of these
     if (next.filters.kind !== "notifications") return void openPage(kindHref(next.filters.kind), { replace: true });
     setState(next);
-    setRefreshing(true);
     const params = new URLSearchParams(location.search);
     if (params.has("page")) {
       params.delete("page");
@@ -74,6 +89,25 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
     void showChanges();
   };
   const newHref = () => href({ page: 1, creating: true });
+  /**
+   * What needs a look: batches that run, and batches with errors, each a chip that filters to them. The numbers count
+   * when every batch stands on this page; with more pages the chips filter without a number.
+   */
+  const attention = () => {
+    const rows = props.pages === 1 ? (props.rows ?? []) : null;
+    const count = (statuses: readonly BatchStatus[]) => rows?.filter((row) => statuses.includes(row.status)).length;
+    const base = query().reset();
+    const chip = (value: BatchStatus, status: "warn" | "bad", statuses: readonly BatchStatus[], label: string) => {
+      const n = count(statuses);
+      const next = query().set({ ...base, filters: { ...base.filters, kind: "notifications" } }, "status", value);
+      if (n === 0 || !next) return [];
+      return [{ value, status, label: n === undefined ? label : `${number(n)} ${label}`, href: batchesHref(query(), next) }];
+    };
+    return [
+      ...chip("running", "warn", ["running", "ready"], words().runningNow),
+      ...chip("completed_with_errors", "bad", ["completed_with_errors", "failed"], words().withErrorsNow),
+    ];
+  };
 
   return (
     <Workspace
@@ -81,7 +115,19 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
       detail={props.creating ? 400 : undefined}
       head={
         <Bar
-          start={<Text type="body">{activity().activity}</Text>}
+          // k2b-ui gap: head rows (lane DP). The statement and its chips stand in the head, the filters below: two rows.
+          start={
+            <Inline>
+              <Text weight="strong">{props.rows ? words().batches({ count: number(props.total) }) : words().loadFailed}</Text>
+              <For each={attention()}>
+                {(chip) => (
+                  <Chip status={chip.status} href={chip.href} pressed={state().filters.status === chip.value}>
+                    {chip.label}
+                  </Chip>
+                )}
+              </For>
+            </Inline>
+          }
           // while the form is open, it stands for the deed; on the phone it is the page and keeps its own buttons
           end={
             props.creating ? undefined : (
@@ -99,16 +145,13 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
           label={t().notifications}
           scrollKey="accounts-notifications"
           status={
-            <>
-              <FilterBar
-                query={query()}
-                state={state()}
-                onChange={change}
-                icons={{ kind: "activity", status: "circle-check" }}
-                results={words().batches({ count: number(props.total) })}
-              />
-              <StatusRow lead={props.rows ? words().batches({ count: number(props.total) }) : words().loadFailed} loading={refreshing()} />
-            </>
+            <FilterBar
+              query={query()}
+              state={state()}
+              onChange={change}
+              icons={{ kind: "activity", status: "circle-check" }}
+              results={words().batches({ count: number(props.total) })}
+            />
           }
         >
           <Show when={ignored()}>
@@ -141,19 +184,43 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
                       }
                 }
                 phone={(row) => ({
-                  lines: [row.subject, `${row.recipients} · ${row.created}`],
+                  mark: BATCH_MARK,
+                  lines: [row.subject, `${words().sentOf({ sent: row.sent, total: row.deliverable })} · ${row.created}`],
                   marks: batchChip(row.status, batchStatusLabel(t(), row.status)),
                 })}
                 columns={(
                   [
-                    { title: t().subject, width: { min: 200, default: 300 }, cell: (row) => ({ lines: [row.subject, row.note] }) },
+                    {
+                      title: t().subject,
+                      width: { min: 220, default: 320 },
+                      cell: (row) => ({
+                        lines: [
+                          <Inline>
+                            <Mark {...BATCH_MARK} />
+                            <Text>{row.subject}</Text>
+                          </Inline>,
+                          row.note,
+                        ],
+                      }),
+                    },
                     {
                       title: t().status,
                       width: { min: 140, default: 150 },
                       cell: (row) => batchChip(row.status, batchStatusLabel(t(), row.status)),
                     },
-                    { title: t().recipients, width: { min: 140, default: 170 }, cell: (row) => row.recipients, drop: true },
-                    { title: t().sent, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.sent, drop: true },
+                    {
+                      title: t().sent,
+                      width: { min: 170, default: 200 },
+                      // how far the delivery got: sent of the deliverable recipients, as a bar
+                      cell: (row) => (
+                        <Progress
+                          value={row.sentCount}
+                          of={row.deliverableCount}
+                          label={words().sentOf({ sent: row.sent, total: row.deliverable })}
+                        />
+                      ),
+                      drop: true,
+                    },
                     {
                       title: t().errors,
                       width: { min: 80, default: 90 },

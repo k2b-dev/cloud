@@ -11,7 +11,7 @@ describe("the addresses of the pages the activity page replaced", () => {
     expect(legacyAuditHref(params(""))).toBe("/app/accounts/activity");
     expect(
       legacyAuditHref(params("search=Runtime&actor=Ada&outcome=denied&days=7&serviceAccountId=a-1&automatic=1&page=3&extra=keep")),
-    ).toBe("/app/accounts/activity?actor=Ada&outcome=denied&days=7&serviceAccountId=a-1&automatic=1&page=3&extra=keep&q=Runtime");
+    ).toBe("/app/accounts/activity?actor=Ada&outcome=denied&days=7&serviceAccountId=a-1&automatic=yes&page=3&extra=keep&q=Runtime");
     // a q that is already there wins over the old search
     expect(legacyAuditHref(params("search=old&q=new"))).toBe("/app/accounts/activity?q=new");
   });

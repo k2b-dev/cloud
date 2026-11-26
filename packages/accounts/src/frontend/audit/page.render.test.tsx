@@ -107,41 +107,38 @@ test("without a kind the activity is the audit log, 30 days back, and an address
     expect(list.mock.calls.at(-1)?.[0]?.filter?.days).toBe(30);
     const old = await app.request("/app/accounts/audit?search=Runtime&outcome=failed&days=90&automatic=1&page=2");
     expect(old.status).toBe(302);
-    expect(old.headers.get("location")).toBe("/app/accounts/activity?outcome=failed&days=90&automatic=1&page=2&q=Runtime");
+    expect(old.headers.get("location")).toBe("/app/accounts/activity?outcome=failed&days=90&automatic=yes&page=2&q=Runtime");
   });
 });
 
-test("automatic app entries stay hidden with a way to show them, and the way back keeps every filter", async () => {
-  const filters = "q=Runtime&actor=Ada&outcome=allowed&days=7&extra=keep";
+test("automatic app entries stay hidden with a chip that shows them, every filter kept, and an old address still shows them", async () => {
+  const filters = "actor=Ada&outcome=allowed&days=7&q=Runtime";
   for (const locale of ["en", "de"]) {
     await withAudit(page(7, 32), async (app, list) => {
       const hidden = await app.request(`/app/accounts/activity?${filters}&page=1`, { headers: { "Accept-Language": locale } });
       const html = await hidden.text();
       expect(list.mock.calls.at(-1)?.[0]?.filter?.automatic).toBe("hide");
-      expect(html).toContain(locale === "de" ? "32 automatische App-Einträge sind ausgeblendet." : "32 automatic app entries are hidden.");
-      const show = hrefs(html).find((href) => href.includes("automatic=1"));
+      const show = hrefs(html).find((href) => href.includes("automatic=yes"));
       expect(show).toBeDefined();
       const shownParams = new URL(show!, "https://example.test").searchParams;
-      expect(Object.fromEntries(shownParams)).toEqual({ ...Object.fromEntries(new URLSearchParams(filters)), automatic: "1" });
+      expect(Object.fromEntries(shownParams)).toEqual({ ...Object.fromEntries(new URLSearchParams(filters)), automatic: "yes" });
 
       const shown = await app.request(`/app/accounts/activity?${shownParams}`, { headers: { "Accept-Language": locale } });
       const shownHtml = await shown.text();
       expect(list.mock.calls.at(-1)?.[0]?.filter?.automatic).toBe("include");
-      expect(shownHtml).toContain(locale === "de" ? "Automatische App-Einträge sind sichtbar." : "Automatic app entries are visible.");
-      expect(shownHtml).toContain(locale === "de" ? "Ausblenden" : "Hide");
-      const hide = hrefs(shownHtml).find((href) => href.startsWith("/app/accounts/activity?q=Runtime") && !href.includes("automatic"));
-      expect(Object.fromEntries(new URL(hide!, "https://example.test").searchParams)).toEqual(
-        Object.fromEntries(new URLSearchParams(filters)),
-      );
-      // a part of the address that is no filter is named, not silently dropped
-      expect(shownHtml).toContain("extra=keep");
+      // shown, it is a statement of the filter bar, whose × hides them again
+      expect(shownHtml).toContain(locale === "de" ? "Automatische App-Einträge" : "Automatic app entries");
+      expect(shownHtml).toContain(locale === "de" ? "angezeigt" : "shown");
+
+      // the former `automatic=1` still shows them
+      await app.request(`/app/accounts/activity?${filters}&automatic=1`, { headers: { "Accept-Language": locale } });
+      expect(list.mock.calls.at(-1)?.[0]?.filter?.automatic).toBe("include");
     });
   }
   await withAudit(page(7, 0), async (app) => {
     const html = await (await app.request("/app/accounts/activity", { headers: { "Accept-Language": "en" } })).text();
-    // nothing hidden, nothing shown: no word about automatic entries
-    expect(html).not.toContain("Automatic app entries");
-    expect(html).not.toContain("automatic app entries are hidden");
+    // nothing hidden: no chip that shows automatic entries
+    expect(hrefs(html).some((href) => href.includes("automatic=yes"))).toBe(false);
   });
 });
 

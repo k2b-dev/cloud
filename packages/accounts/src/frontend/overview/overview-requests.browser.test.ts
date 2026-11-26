@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
@@ -13,6 +14,8 @@ import { REQUESTS } from "./overview-requests.fixture-data";
 // places that replaced the old pages, and a request is denied in a v2 dialog. The test stands in for the server.
 const ui = resolve(import.meta.dir, "../../../../ui");
 const origin = "https://cloud.example.test";
+// Accounts' appearance as its declaration gives it (`src/config.ts`), so the canvas has the colour of the real page.
+const ACCOUNTS_CANVAS = appAppearanceStyle({ accent: "#4f46e5", background: { from: "#6366f1" } }) ?? "";
 // a relative folder is read from the package, so a run on another machine can bring the pictures back
 const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS ? resolve(import.meta.dir, "../../..", process.env.CLOUD_ACCOUNTS_V2_SHOTS) : undefined;
 
@@ -79,8 +82,24 @@ type State = { admin?: boolean; worst?: boolean; huge?: boolean; full?: boolean;
 const page = (state: State) =>
   `<!doctype html><html lang="de" class="light" data-state='${JSON.stringify(state)}'><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{display:flex;flex:1;min-height:0;min-width:0}</style></head>` +
+  `<body class="k2b-ui">${shellFrame('<div id="root"></div>')}<script src="/harness.js"></script></body></html>`;
+
+/**
+ * The Cloud shell around the screen, as Layout draws it: the tinted canvas in Accounts' colour, the icon rail with
+ * Accounts open, and on the phone the shell's bar. Only the frame: its menus and search are the shell's own tests.
+ */
+const RAIL = ["home", "mail", "layout-kanban", "folders", "table", "notebook", "users-group", "settings"];
+const shellFrame = (content: string) =>
+  `<div class="cloud-app-canvas relative flex w-full min-h-dvh md:h-dvh md:overflow-hidden" data-layout-authenticated data-layout-full-page="true" style="${ACCOUNTS_CANVAS}">` +
+  `<aside class="layout-rail w-14 shrink-0 flex-col max-md:hidden md:flex" aria-label="Apps">` +
+  `<div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center"><span class="rail-item"><i class="ti ti-cloud text-xl"></i></span></div>` +
+  `<nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1">${RAIL.map(
+    (icon) => `<span class="rail-item${icon === "users-group" ? " rail-item-active" : ""}"><i class="ti ti-${icon} text-xl"></i></span>`,
+  ).join("")}</nav></aside>` +
+  `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col" data-cloud-app-area>` +
+  `<header class="layout-header paper min-h-[2.875rem] shrink-0 items-center max-md:px-2 max-md:py-1.5 md:px-3 md:py-2 max-md:flex md:hidden" style="box-shadow:var(--ui-shadow-surface)"><span class="layout-header-title truncate font-semibold">Zugänge</span></header>` +
+  `<main class="layout-content-main min-h-0 min-w-0 flex-1 flex flex-col k2-ui">${content}</main></div></div>`;
 
 type Seen = { pages: string[]; denied: { id: string; body: unknown }[] };
 

@@ -131,6 +131,8 @@ export default ssr<AuthContext>(async (c) => {
           deliverable: number(batch.deliverableCount),
           skipped: number(batch.skippedCount),
           sent: number(batch.sentCount),
+          sentCount: batch.sentCount,
+          deliverableCount: batch.deliverableCount,
           errors: number(batch.errorCount),
           errorCount: batch.errorCount,
           selection: { userIds, groupIds },

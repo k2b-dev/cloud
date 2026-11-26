@@ -115,10 +115,12 @@ export const auditQuery = (locale: string, lookups?: AuditLookups) => {
           { value: "ipa", label: "FreeIPA" },
         ],
       }),
+      // entries of rotating app keys; hidden unless the address shows them
+      automatic: field.bool({ label: words.automatic, labels: { yes: words.shown, no: words.hidden } }),
     },
     search: { label: t.searchAudit },
     sort: { fixed: { field: "time", direction: "desc", label: words.newestFirst } },
-    pageParams: ["page", "automatic"],
+    pageParams: ["page"],
   });
 };
 
@@ -129,7 +131,10 @@ export type AuditState = ListQueryStateOf<AuditQuery>;
 export type AuditAddress = { state: AuditState; page: number; automatic: boolean; issues: readonly ListQueryIssue[] };
 
 /** Reads an address with the declaration and holds every value to the list's bounds. Never throws. */
-export const parseAuditAddress = (query: AuditQuery, params: URLSearchParams): AuditAddress => {
+export const parseAuditAddress = (query: AuditQuery, input: URLSearchParams): AuditAddress => {
+  // the former `automatic=1` (before the field) means shown
+  const params = new URLSearchParams(input);
+  if (params.get("automatic") === "1") params.set("automatic", "yes");
   const parsed = query.parse(params);
   const issues: ListQueryIssue[] = [...parsed.issues];
   let state = parsed.state;
@@ -152,7 +157,7 @@ export const parseAuditAddress = (query: AuditQuery, params: URLSearchParams): A
   const page = pageRaw === null ? 1 : Number(pageRaw);
   const valid = Number.isSafeInteger(page) && page >= 1 && page <= AUDIT_PAGE_MAX;
   if (!valid) issues.push({ code: "invalid", param: "page", value: pageRaw ?? "" });
-  return { state, page: valid ? page : 1, automatic: params.get("automatic") === "1", issues };
+  return { state, page: valid ? page : 1, automatic: state.filters.automatic === true, issues };
 };
 
 /** The days a state reaches back. */
@@ -175,14 +180,17 @@ export const auditFilterOf = (state: AuditState, automatic: boolean): AuditListF
   days: auditDays(state),
 });
 
-/** The address of a state, with its page and whether automatic entries show. */
-export const auditHref = (query: AuditQuery, state: AuditState, extra: { page?: number; automatic?: boolean } = {}): string => {
+/** The address of a state, with its page. */
+export const auditHref = (query: AuditQuery, state: AuditState, extra: { page?: number } = {}): string => {
   const params = query.serialize(state);
-  if (extra.automatic) params.set("automatic", "1");
   if (extra.page && extra.page > 1) params.set("page", String(extra.page));
   const text = params.toString();
   return text ? `${AUDIT_PAGE_PATH}?${text}` : AUDIT_PAGE_PATH;
 };
 
 /** The activity address for an address of the former audit page (`/app/accounts/audit`), every filter carried over. */
-export const legacyAuditHref = (params: URLSearchParams): string => legacyListHref("audit", params);
+export const legacyAuditHref = (params: URLSearchParams): string => {
+  const next = new URLSearchParams(params);
+  if (next.get("automatic") === "1") next.set("automatic", "yes");
+  return legacyListHref("audit", next);
+};

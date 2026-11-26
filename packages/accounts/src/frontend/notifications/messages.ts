@@ -8,6 +8,9 @@ export const notificationMessages = i18n.define({
   messages: {
     en: {
       required: "Required.",
+      runningNow: "running",
+      noErrors: "No errors",
+      withErrorsNow: "with errors",
       audienceRequired: "Choose at least one user or group.",
       audienceHint: "Search people and groups. Members of chosen groups and of their nested groups get the message too.",
       batches: ({ count }: { count: string }) => `${count} batches`,
@@ -27,6 +30,9 @@ export const notificationMessages = i18n.define({
     },
     de: {
       required: "Pflichtfeld.",
+      runningNow: "laufen",
+      noErrors: "Keine Fehler",
+      withErrorsNow: "mit Fehlern",
       audienceRequired: "Wähle mindestens einen Benutzer oder eine Gruppe.",
       audienceHint: "Suche Personen und Gruppen. Mitglieder gewählter Gruppen und ihrer Untergruppen bekommen die Nachricht auch.",
       batches: ({ count }) => `${count} Läufe`,

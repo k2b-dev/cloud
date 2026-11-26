@@ -1,27 +1,26 @@
 import { useLocale } from "@k2b/ui";
 import {
-  Avatar,
   Bar,
   Button,
   Chip,
+  Digest,
+  Empty,
   Failed,
   FilterBar,
-  Icon,
   Inline,
   Input,
-  ListOrder,
+  Mark,
   Notice,
   Pane,
-  StatusRow,
-  Table,
+  Popover,
+  Section,
   Text,
   Workspace,
 } from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { kindHref } from "../activity/kind";
-import { useActivityMessages } from "../activity/messages";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
 import { useAccountsMessages } from "../messages";
@@ -55,7 +54,6 @@ export default function AuditScreen(props: AuditScreenProps) {
   const t = useAccountsMessages();
   const words = useAuditMessages();
   const list = useListMessages();
-  const activity = useActivityMessages();
   const { showChanges, openPage } = usePageSwap();
   const query = createMemo(() =>
     auditQuery(locale(), {
@@ -66,17 +64,15 @@ export default function AuditScreen(props: AuditScreenProps) {
   );
   const [state, setState] = createSignal<AuditState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
-  const [refreshing, setRefreshing] = createSignal(false);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const changed = () => query().serialize(state()).toString() !== query().serialize(query().reset()).toString();
-  const href = (next: AuditState, page = 1) => auditHref(query(), next, { page, automatic: props.automatic.shown });
+  const href = (next: AuditState, page = 1) => auditHref(query(), next, { page });
 
   /** The bar wrote the address; a new filter starts at page 1, and the server shows the log for it. */
   const change = (next: AuditState) => {
     // another kind is another list: it opens with its own filters, none of these
     if (next.filters.kind !== "audit") return void openPage(kindHref(next.filters.kind), { replace: true });
     setState(next);
-    setRefreshing(true);
     const params = new URLSearchParams(location.search);
     if (params.has("page")) {
       params.delete("page");
@@ -87,7 +83,6 @@ export default function AuditScreen(props: AuditScreenProps) {
   const search = (text: string) => {
     const next = query().set(state(), "q", text.trim());
     if (next) {
-      setRefreshing(true);
       void openPage(href(next));
     }
   };
@@ -96,27 +91,80 @@ export default function AuditScreen(props: AuditScreenProps) {
     const next = query().set(state(), "actor", userId);
     return next ? href(next) : undefined;
   };
-  const outcome = (row: AuditRow) =>
-    row.outcome === "allowed" ? (
-      <Chip status="ok">{t().allowed}</Chip>
-    ) : row.outcome === "denied" ? (
-      <Chip status="warn">{t().denied}</Chip>
-    ) : (
-      <Chip status="bad">{t().failed}</Chip>
-    );
+  /** The address of the log narrowed to one more filter, for the chips that say what needs a look. */
+  const narrowed = (key: "outcome", value: "failed") => {
+    const next = query().set(state(), key, value);
+    return next ? href(next) : undefined;
+  };
+  /** Events grouped by their day, in the order the server sent them (newest first). */
+  const days = createMemo(() => {
+    const groups: { day: string; rows: AuditRow[] }[] = [];
+    for (const row of props.rows ?? []) {
+      const last = groups.at(-1);
+      if (last?.day === row.day) last.rows.push(row);
+      else groups.push({ day: row.day, rows: [row] });
+    }
+    return groups;
+  });
+  /** The event as a sentence: who, what, and the thing it was done to with its mark; a refusal or failure says so. */
+  const sentence = (row: AuditRow) => (
+    <>
+      {row.actor.userId ? (
+        <Text weight="strong" href={byActor(row.actor.userId)}>
+          {row.actor.label}
+        </Text>
+      ) : (
+        <Text weight="strong">{row.actor.label}</Text>
+      )}
+      {": "}
+      {row.action.label}
+      <Show when={row.target.label !== "–"}>
+        {" · "}
+        <Mark {...targetMark(row.target.type)} />
+        {row.target.href ? (
+          <Text weight="strong" href={row.target.href}>
+            {row.target.label}
+          </Text>
+        ) : (
+          <Text weight="strong">{row.target.label}</Text>
+        )}
+      </Show>
+      <Show when={row.outcome !== "allowed"}>
+        {" "}
+        {row.outcome === "denied" ? <Chip status="warn">{t().denied}</Chip> : <Chip status="bad">{t().failed}</Chip>}
+      </Show>
+    </>
+  );
+  // the days stand in the filter bar ("Zeitraum letzte 30 Tage"); the head says how many and what needs a look
+  const lead = () => (props.rows ? words().events({ count: number(props.total) }) : words().loadFailed);
 
   return (
     <Workspace
       sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
+      // k2b-ui gap: head rows (lane DP). The statement and its chips stand in the head, the filters below: two rows.
       head={
         <Bar
-          start={<Text type="body">{activity().activity}</Text>}
+          start={
+            <Inline>
+              <Text weight="strong">{lead()}</Text>
+              <Chip status="bad" href={narrowed("outcome", "failed")} pressed={state().filters.outcome === "failed"}>
+                {words().failedOnes}
+              </Chip>
+              <Show when={!props.automatic.shown && props.automatic.hidden > 0}>
+                <Popover tip={words().automaticHiddenHint({ count: number(props.automatic.hidden) })}>
+                  <Chip icon="robot" href={props.automatic.href}>
+                    {words().automaticHidden({ count: number(props.automatic.hidden) })}
+                  </Chip>
+                </Popover>
+              </Show>
+            </Inline>
+          }
           end={
             <Input
               type="search"
               icon="search"
               label={t().searchAudit}
-              placeholder={t().searchAudit}
+              placeholder={words().searchShort}
               value={state().search ?? ""}
               onKeyDown={(event) => {
                 if (event.isComposing) return;
@@ -136,31 +184,25 @@ export default function AuditScreen(props: AuditScreenProps) {
         label={t().auditLog}
         scrollKey="accounts-audit"
         status={
-          <>
-            <FilterBar
-              query={query()}
-              state={state()}
-              onChange={change}
-              icons={{
-                kind: "activity",
-                days: "calendar",
-                outcome: "circle-check",
-                action: "bolt",
-                actor: "user-search",
-                target: "target",
-                serviceAccountId: "user-key",
-                actionGroup: "category",
-                provider: "building",
-              }}
-              names={props.names}
-              results={words().events({ count: number(props.total) })}
-            />
-            <StatusRow
-              lead={props.rows ? words().events({ count: number(props.total) }) : words().loadFailed}
-              loading={refreshing()}
-              filters={<ListOrder query={query()} state={state()} onChange={change} />}
-            />
-          </>
+          <FilterBar
+            query={query()}
+            state={state()}
+            onChange={change}
+            icons={{
+              kind: "activity",
+              days: "calendar",
+              outcome: "circle-check",
+              action: "bolt",
+              actor: "user-search",
+              target: "target",
+              serviceAccountId: "user-key",
+              actionGroup: "category",
+              provider: "building",
+              automatic: "robot",
+            }}
+            names={props.names}
+            results={lead()}
+          />
         }
       >
         <Show when={ignored()}>
@@ -170,78 +212,39 @@ export default function AuditScreen(props: AuditScreenProps) {
             </Notice>
           )}
         </Show>
-        <Show when={props.automatic.shown || props.automatic.hidden > 0}>
-          <Notice
-            tone="note"
-            icon="robot"
-            actions={[{ label: props.automatic.shown ? t().hideAutomatic : t().showAutomatic, href: props.automatic.href }]}
-          >
-            {props.automatic.shown ? t().automaticAppAuditShown : t().automaticAppAuditHidden({ count: props.automatic.hidden })}
-          </Notice>
-        </Show>
         {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the list (at most one page of rows in the DOM). */}
         <Show when={props.rows} fallback={<Failed text={words().loadFailed} onRetry={() => void showChanges()} />}>
-          {(rows) => (
-            <Table
-              label={t().auditLog}
-              rows={rows()}
-              rowKey={(row) => row.id}
-              sticky
-              empty={
-                changed() || state().search
-                  ? {
-                      icon: "filter-off",
-                      text: words().noMatches,
-                      action: { label: list().resetFilters, icon: "filter-off", href: AUDIT_PAGE_PATH },
-                    }
-                  : { icon: "clipboard-list", text: t().noAuditEvents }
-              }
-              phone={(row) => ({
-                // k2b-ui gap: a phone row's second line wraps and lets an unbroken word run past the edge; it stays one short name
-                lines: [row.action.label, row.actor.label],
-                avatar: row.actor.userId ? { name: row.actor.label } : undefined,
-                time: row.time,
-                marks: outcome(row),
-              })}
-              columns={[
-                { title: t().time, width: { min: 160, default: 170 }, cell: (row) => row.time },
-                {
-                  title: t().actor,
-                  width: { min: 150, default: 190 },
-                  cell: (row) => {
-                    // a person shows their initials; the system (no person) its own sign
-                    const name = row.actor.userId ? (
-                      <Inline>
-                        <Avatar name={row.actor.label} decorative />
-                        <Text href={byActor(row.actor.userId)}>{row.actor.label}</Text>
-                      </Inline>
-                    ) : (
-                      <Inline>
-                        <Icon name="settings-automation" />
-                        <Text>{row.actor.label}</Text>
-                      </Inline>
-                    );
-                    return row.actor.provider ? { lines: [name, row.actor.provider] } : name;
-                  },
-                },
-                {
-                  title: t().action,
-                  width: { min: 180, default: 240 },
-                  cell: (row) => ({ lines: [row.action.label, row.action.code] }),
-                },
-                {
-                  title: t().target,
-                  width: { min: 150, default: 200 },
-                  cell: (row) => ({
-                    lines: [row.target.href ? <Text href={row.target.href}>{row.target.label}</Text> : row.target.label, row.target.kind],
-                  }),
-                  drop: true,
-                },
-                { title: t().outcome, width: { min: 140, default: 150 }, cell: outcome },
-                { title: t().reason, cell: (row) => row.reason ?? "–", drop: true },
-              ]}
-            />
-          )}
+          <Show
+            when={days().length > 0}
+            fallback={
+              changed() || state().search ? (
+                <Empty
+                  icon="filter-off"
+                  text={words().noMatches}
+                  action={{ label: list().resetFilters, icon: "filter-off", href: AUDIT_PAGE_PATH }}
+                />
+              ) : (
+                <Empty icon="clipboard-list" text={t().noAuditEvents} />
+              )
+            }
+          >
+            <For each={days()}>
+              {(group) => (
+                <Section title={group.day} count={number(group.rows.length)}>
+                  <Digest
+                    label={group.day}
+                    activity={group.rows.map((row) => ({
+                      person: row.actor.userId ? { name: row.actor.label } : { name: row.actor.label, initials: "S", color: "#475569" },
+                      text: sentence(row),
+                      // why it was refused or failed, else the action's code for whoever searches the log by it
+                      place: row.reason ?? row.action.code,
+                      time: row.time,
+                    }))}
+                  />
+                </Section>
+              )}
+            </For>
+          </Show>
         </Show>
         <Show when={props.pages > 1}>
           <Bar
@@ -262,3 +265,15 @@ export default function AuditScreen(props: AuditScreenProps) {
     </Workspace>
   );
 }
+
+/** The mark of what an event was done to, in the colour of its kind: a person, a group, an agent, an approval. */
+const targetMark = (type: string | null): { icon: string; color?: string } =>
+  type === "user"
+    ? { icon: "user", color: "#2563eb" }
+    : type === "group"
+      ? { icon: "users-group", color: "#7c3aed" }
+      : type === "service_account" || type === "service_account_credential"
+        ? { icon: "robot", color: "#0e7490" }
+        : type === "ai_approval"
+          ? { icon: "checks", color: "#8e1b6f" }
+          : { icon: "target" };

@@ -24,6 +24,19 @@ export type GroupMember = {
   image?: string;
 };
 
+/** A face: a person, an agent with its robot, or a group (which shows its mark). */
+export type GroupPerson = { name: string; image?: string };
+
+/** One change of the group, as a sentence: who did what, to whom, when. */
+export type GroupActivity = {
+  id: string;
+  action: "create" | "update" | "posix" | "member.add" | "member.remove" | "manager.add" | "manager.remove";
+  actor: GroupPerson;
+  subject: { kind: "user" | "group" | "agent"; name: string } | null;
+  /** Formatted on the server, relative to the time of the answer. */
+  time: string;
+};
+
 /** The entity a list key names, as the membership API takes it. */
 export const entityOf = (key: string): { type: EntityType; id: string } | null => {
   const at = key.indexOf(":");

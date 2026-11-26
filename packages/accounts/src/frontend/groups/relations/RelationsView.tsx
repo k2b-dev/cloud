@@ -1,10 +1,11 @@
 import type { GroupRelations } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
-import { Bar, Canvas, Empty, Failed, Lookup, Menu, Notice, Pane, Popover, Row, Section, Text } from "@k2b/ui/v2";
+import { Canvas, Empty, Failed, Lookup, Menu, Notice, Pane, Popover, Row, Section, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { usePageSwap } from "../../lib/page-swap";
 import { loadEntities } from "../detail/group-screen";
+import { groupMark } from "../group-mark";
 import RelationLevels from "./RelationLevels";
 import RelationTree from "./RelationTree";
 import { relationsMessages } from "./relations-messages";
@@ -28,7 +29,7 @@ const sideWidth = { min: 280, default: 320 };
 export default function RelationsView(props: RelationsViewProps) {
   const locale = useLocale();
   const t = createMemo(() => relationsMessages.resolve([locale()]).t);
-  const { openPage, showChanges } = usePageSwap();
+  const { showChanges } = usePageSwap();
   const initial = props.relations && props.relations !== "none" ? props.relations : null;
   // What the tree loaded since the page came: the details and the top groups.
   const [loaded, setLoaded] = createSignal(initial);
@@ -39,11 +40,6 @@ export default function RelationsView(props: RelationsViewProps) {
   onCleanup(() => pending?.abort());
 
   const href = (change: Partial<RecordRelationsState> = {}) => relationsHref(props.state, change, props.context);
-  // The tree changes the selection in the URL without a new page; a control starts from the URL as it is now.
-  const go = (change: Partial<RecordRelationsState>) => {
-    const now = parseRelationsUrl((name) => new URLSearchParams(window.location.search).get(name) ?? undefined);
-    void openPage(relationsHref({ ...now, focus: props.state.focus }, change, props.context));
-  };
 
   /** Reads the details of one group (and, with `all`, every top group) for the tree, in place. */
   const reload = async (id: string | undefined, all: boolean) => {
@@ -90,9 +86,7 @@ export default function RelationsView(props: RelationsViewProps) {
       {(shown) => (
         <Section title={label}>
           <Show when={shown().total > 0} fallback={<Text muted>{t().none}</Text>}>
-            <For each={shown().ids}>
-              {(id) => <Row icon="users-group" lines={[name(id)]} href={pickHref(id)} onOpen={pickInPlace(id)} />}
-            </For>
+            <For each={shown().ids}>{(id) => <Row mark={groupMark} lines={[name(id)]} href={pickHref(id)} onOpen={pickInPlace(id)} />}</For>
             <Show when={shown().total > shown().ids.length}>
               <Text type="meta">{t().andMore({ count: shown().total - shown().ids.length })}</Text>
             </Show>
@@ -134,83 +128,7 @@ export default function RelationsView(props: RelationsViewProps) {
               </Notice>
             </Show>
             <Pane.Split>
-              <Pane
-                label={t().relations}
-                scrollKey="accounts-group-relations"
-                status={
-                  <Bar
-                    start={
-                      <Text>
-                        {`${t().groupCount({ count: relations().groupCount })} · ${
-                          !relations().cyclesComplete
-                            ? t().cyclesIncomplete
-                            : relations().cycles.first
-                              ? t().cycles({ count: relations().cycles.count })
-                              : t().noCycles
-                        }`}
-                      </Text>
-                    }
-                    end={
-                      <>
-                        <Popover
-                          icon="search"
-                          label={t().searchLabel}
-                          title={t().searchLabel}
-                          content={
-                            <Lookup
-                              label={t().relations}
-                              value={[]}
-                              onChange={(values) => {
-                                const id = values[0]?.slice("group:".length);
-                                if (!id) return;
-                                go(props.state.view === "list" ? { sel: id } : { focus: id, sel: undefined, expand: [] });
-                              }}
-                              load={loadEntities({ kinds: ["group"], exclude: { users: [], groups: [], agents: [] } }, { agent: "" })}
-                            />
-                          }
-                        />
-                        <Menu
-                          variant="ghost"
-                          items={[
-                            {
-                              title: t().view,
-                              choice: props.state.view,
-                              onChoose: (view) => go({ view: view === "list" ? "list" : "graph" }),
-                              items: [
-                                { label: t().graph, icon: "affiliate", value: "graph" },
-                                { label: t().tree, icon: "list-tree", value: "list" },
-                              ],
-                            },
-                            ...(props.state.view === "graph"
-                              ? [
-                                  {
-                                    title: t().depth,
-                                    choice: String(props.state.depth),
-                                    onChoose: (depth: string) => go({ depth: Number(depth), expand: [] }),
-                                    items: [1, 2, 3, 4].map((depth) => ({ label: String(depth), value: String(depth) })),
-                                  },
-                                ]
-                              : []),
-                            {
-                              title: t().show,
-                              items: [
-                                {
-                                  label: t().managers,
-                                  icon: "user-star",
-                                  checked: props.state.managers,
-                                  onClick: () => go({ managers: !props.state.managers }),
-                                },
-                              ],
-                            },
-                          ]}
-                        >
-                          {props.state.view === "graph" ? `${t().graph} · ${t().depthValue({ depth: props.state.depth })}` : t().tree}
-                        </Menu>
-                      </>
-                    }
-                  />
-                }
-              >
+              <Pane label={t().relations} scrollKey="accounts-group-relations">
                 <Show
                   when={props.state.view === "graph"}
                   fallback={
@@ -296,5 +214,92 @@ export default function RelationsView(props: RelationsViewProps) {
         )}
       </Show>
     </Show>
+  );
+}
+
+/**
+ * The relations view's line in the record's tab bar: how many groups and cycles, the group search, and one menu for the
+ * display (graph or tree, depth, managers). Every control opens the address it names.
+ */
+export function RelationsTools(props: RelationsViewProps) {
+  const locale = useLocale();
+  const t = createMemo(() => relationsMessages.resolve([locale()]).t);
+  const { openPage } = usePageSwap();
+  // The tree changes the selection in the URL without a new page; a control starts from the URL as it is now.
+  const go = (change: Partial<RecordRelationsState>) => {
+    const now = parseRelationsUrl((name) => new URLSearchParams(window.location.search).get(name) ?? undefined);
+    void openPage(relationsHref({ ...now, focus: props.state.focus }, change, props.context));
+  };
+  const relations = () => (props.relations && props.relations !== "none" ? props.relations : null);
+  return (
+    <>
+      <Show when={relations()}>
+        {(shown) => (
+          <Text type="meta">
+            {`${t().groupCount({ count: shown().groupCount })} · ${
+              !shown().cyclesComplete
+                ? t().cyclesIncomplete
+                : shown().cycles.first
+                  ? t().cycles({ count: shown().cycles.count })
+                  : t().noCycles
+            }`}
+          </Text>
+        )}
+      </Show>
+      <Popover
+        icon="search"
+        label={t().searchLabel}
+        title={t().searchLabel}
+        content={
+          <Lookup
+            label={t().relations}
+            value={[]}
+            onChange={(values) => {
+              const id = values[0]?.slice("group:".length);
+              if (!id) return;
+              go(props.state.view === "list" ? { sel: id } : { focus: id, sel: undefined, expand: [] });
+            }}
+            load={loadEntities({ kinds: ["group"], exclude: { users: [], groups: [], agents: [] } }, { agent: "" })}
+          />
+        }
+      />
+      <Menu
+        variant="ghost"
+        items={[
+          {
+            title: t().view,
+            choice: props.state.view,
+            onChoose: (view) => go({ view: view === "list" ? "list" : "graph" }),
+            items: [
+              { label: t().graph, icon: "affiliate", value: "graph" },
+              { label: t().tree, icon: "list-tree", value: "list" },
+            ],
+          },
+          ...(props.state.view === "graph"
+            ? [
+                {
+                  title: t().depth,
+                  choice: String(props.state.depth),
+                  onChoose: (depth: string) => go({ depth: Number(depth), expand: [] }),
+                  items: [1, 2, 3, 4].map((depth) => ({ label: String(depth), value: String(depth) })),
+                },
+              ]
+            : []),
+          {
+            title: t().show,
+            items: [
+              {
+                label: t().managers,
+                icon: "user-star",
+                checked: props.state.managers,
+                onClick: () => go({ managers: !props.state.managers }),
+              },
+            ],
+          },
+        ]}
+      >
+        {props.state.view === "graph" ? `${t().graph} · ${t().depthValue({ depth: props.state.depth })}` : t().tree}
+      </Menu>
+    </>
   );
 }

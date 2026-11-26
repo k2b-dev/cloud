@@ -406,7 +406,7 @@ describe("an agent's API keys on v2", () => {
       await tab.getByText(t.pageOf({ page: 1, pages: 13 })).waitFor();
       await tab.getByRole("link", { name: t.next }).click();
       await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}?page=2`);
-      await tab.getByText("Kasse 101", { exact: true }).waitFor();
+      await tab.getByText("Kasse 101", { exact: true }).first().waitFor();
       await expectClean(tab);
       await shoot(tab, "detail-huge-1280");
       expect(errors).toEqual([]);

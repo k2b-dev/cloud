@@ -1,14 +1,19 @@
 import type { GroupRelations } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
 import {
-  Band,
+  Avatar,
   Bar,
   Button,
+  Cells,
+  Chip,
   Dialog,
+  Digest,
   Empty,
   Facts,
+  Inline,
   Input,
   List,
+  Mark,
   Menu,
   type MenuEntry,
   Notice,
@@ -26,15 +31,16 @@ import AccountsNav from "../../AccountsNav";
 import { usePageSwap } from "../../lib/page-swap";
 import { useListMessages } from "../../list-messages";
 import { useAccountsMessages } from "../../messages";
-import RelationsView from "../relations/RelationsView";
+import { groupMark, groupTags, personalGroupMark } from "../group-mark";
+import RelationsView, { RelationsTools } from "../relations/RelationsView";
 import { relationsMessages } from "../relations/relations-messages";
 import type { RecordRelationsState } from "../relations/relations-view";
 import { AddEntriesDialog, DescriptionDialog } from "./GroupDialogs";
 import { groupDeeds } from "./group-deeds";
-import { entityOf, type GroupMember, type GroupTab, loadEntities } from "./group-screen";
+import { entityOf, type GroupActivity, type GroupMember, type GroupPerson, type GroupTab, loadEntities } from "./group-screen";
 import { useGroupDetailMessages } from "./messages";
 
-export type { GroupMember, GroupTab } from "./group-screen";
+export type { GroupActivity, GroupMember, GroupTab } from "./group-screen";
 
 export type GroupView = {
   id: string;
@@ -49,6 +55,12 @@ export type GroupView = {
   owner: { id: string; name: string } | null;
   parents: number;
   managedGroups: number;
+  /** Direct members by kind: people, agents, and the groups it contains. */
+  people: number;
+  agents: number;
+  subGroups: number;
+  /** How many manage it, and the first of them for their faces. */
+  managers: { total: number; faces: GroupPerson[] };
 };
 
 export type GroupScreenProps = {
@@ -85,6 +97,8 @@ export type GroupScreenProps = {
   pendingRequests: number;
   /** The relations view (administrators, tab `relations`): its state, the relations, and the list context it keeps. */
   relations?: { state: RecordRelationsState; data: GroupRelations | "none" | null; context: string };
+  /** The last changes, for administrators; empty for everyone else or when there are none. */
+  activity: GroupActivity[];
 };
 
 const TAB_ICONS: Record<GroupTab, string> = {
@@ -330,6 +344,52 @@ export default function GroupScreen(props: GroupScreenProps) {
     };
   };
 
+  /** How many each tab holds, where the page knows it. */
+  const tabCount = (tab: GroupTab) =>
+    tab === "members"
+      ? props.group.people + props.group.agents + props.group.subGroups
+      : tab === "managers"
+        ? props.group.managers.total
+        : tab === "member-of"
+          ? props.group.parents
+          : undefined;
+  /** The entries of the page in their kinds, each under its own head: people, groups, agents. */
+  const sections = () => {
+    const of = (kinds: GroupMember["kind"][]) => props.rows.filter((member) => kinds.includes(member.kind));
+    return [
+      { key: "people", title: t().people, rows: of(["user"]) },
+      { key: "groups", title: props.tab === "members" ? t().subGroups : t().groups, rows: of(["group"]) },
+      { key: "agents", title: t().agentsTitle, rows: of(["agent", "user-bound", "resource-bound"]) },
+    ].filter((section) => section.rows.length > 0);
+  };
+  const tabHref = (tab: GroupTab) => props.tabs.find((entry) => entry.tab === tab)?.href;
+  const mark = () => (props.group.owner ? personalGroupMark : groupMark);
+  /** One change as a sentence: the actor in bold, the verb, and whom it concerned (a group with its mark). */
+  const sentence = (entry: GroupActivity) => {
+    const words = {
+      create: t().activityCreate,
+      update: t().activityUpdate,
+      posix: t().activityPosix,
+      "member.add": t().activityMemberAdd,
+      "member.remove": t().activityMemberRemove,
+      "manager.add": t().activityManagerAdd,
+      "manager.remove": t().activityManagerRemove,
+    }[entry.action];
+    const [before, after = ""] = words.split("{subject}");
+    return (
+      <>
+        <Text weight="strong">{entry.actor.name}</Text> {before}
+        <Show when={words.includes("{subject}")}>
+          <Show when={entry.subject?.kind === "group"}>
+            <Mark icon={groupMark.icon} color={groupMark.color} />
+          </Show>
+          <Text weight="strong">{entry.subject?.name ?? t().someone}</Text>
+          {after}
+        </Show>
+      </>
+    );
+  };
+
   return (
     <Workspace
       sidebar={<AccountsNav active="groups" pendingRequests={props.pendingRequests} isAdmin={props.isAdmin} />}
@@ -338,14 +398,9 @@ export default function GroupScreen(props: GroupScreenProps) {
           start={
             <>
               <Button variant="ghost" icon="arrow-left" label={a().backToGroups} href={props.links.list} />
+              <Mark icon={mark().icon} color={mark().color} />
               <RecordHead
                 name={props.group.name}
-                kinds={[
-                  providerWord(props.group.provider),
-                  ...(props.group.gid !== null ? ["POSIX"] : []),
-                  // the owner's name stands in the facts: a long name would not fit a kind
-                  ...(props.group.owner ? [t().personal] : []),
-                ]}
                 ids={props.group.gid !== null ? [{ label: a().gid, value: String(props.group.gid), copy: true }] : []}
               />
             </>
@@ -413,14 +468,38 @@ export default function GroupScreen(props: GroupScreenProps) {
       <Pane
         label={props.group.name}
         head={
-          <Tabs
-            label={a().groupDetailSections}
-            items={props.tabs.map((entry) => ({
-              label: tabLabel(entry.tab),
-              icon: TAB_ICONS[entry.tab],
-              href: entry.href,
-              current: entry.tab === props.tab,
-            }))}
+          <Bar
+            start={
+              <Tabs
+                label={a().groupDetailSections}
+                items={props.tabs.map((entry) => ({
+                  label: tabLabel(entry.tab),
+                  count: tabCount(entry.tab),
+                  icon: TAB_ICONS[entry.tab],
+                  href: entry.href,
+                  current: entry.tab === props.tab,
+                }))}
+              />
+            }
+            end={
+              <Show
+                when={props.tab === "relations" && props.relations}
+                fallback={
+                  <>
+                    <Show when={props.search}>
+                      <Text type="meta">{countText()}</Text>
+                    </Show>
+                    <Show when={showMenu().length > 0}>
+                      <Menu variant="ghost" icon="adjustments-horizontal" items={showMenu()}>
+                        {t().show}
+                      </Menu>
+                    </Show>
+                  </>
+                }
+              >
+                {(view) => <RelationsTools state={view().state} relations={view().data} context={view().context} />}
+              </Show>
+            }
           />
         }
       >
@@ -456,126 +535,191 @@ export default function GroupScreen(props: GroupScreenProps) {
         <Show
           when={props.tab === "relations" && props.relations}
           fallback={
-            <Pane.Split>
-              <Pane
-                label={tabLabel(props.tab)}
-                scrollKey={`accounts-group-${props.tab}`}
-                status={
-                  <Bar
-                    start={<Text>{countText()}</Text>}
-                    end={
-                      <Show when={showMenu().length > 0}>
-                        <Menu variant="ghost" icon="adjustments-horizontal" items={showMenu()}>
-                          {t().show}
-                        </Menu>
+            <>
+              <Cells>
+                {/* what the group is, in its colours: where it is managed, POSIX, personal */}
+                <Cells.Cell
+                  icon={mark().icon}
+                  color={mark().color}
+                  label={t().kind}
+                  value={
+                    <Inline>
+                      <Show when={props.group.provider === "ipa"}>
+                        <Chip tag icon={groupTags.ipa.icon} color={groupTags.ipa.color}>
+                          FreeIPA
+                        </Chip>
                       </Show>
-                    }
-                  />
-                }
-              >
-                <Show when={props.tab === "managers" && props.group.provider === "local"}>
-                  <Band>
-                    <Text>{a().machineManagementHint}</Text>
-                  </Band>
-                </Show>
-                <Show
-                  when={props.total > 0}
-                  fallback={
-                    <Empty
-                      icon={props.search ? "search-off" : TAB_ICONS[props.tab]}
-                      text={emptyText()}
-                      action={props.search ? { label: t().clearSearch, icon: "x", href: props.links.clearSearch } : add()}
-                    />
+                      <Show
+                        when={props.group.owner}
+                        fallback={
+                          <Show
+                            when={props.group.gid !== null}
+                            fallback={
+                              <Show when={props.group.provider !== "ipa"}>
+                                <Text>{a().standardGroup}</Text>
+                              </Show>
+                            }
+                          >
+                            <Chip tag icon={groupTags.posix.icon} color={groupTags.posix.color}>
+                              POSIX
+                            </Chip>
+                          </Show>
+                        }
+                      >
+                        <Chip tag icon={groupTags.personal.icon} color={groupTags.personal.color}>
+                          {t().personal}
+                        </Chip>
+                      </Show>
+                    </Inline>
                   }
-                >
-                  {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the entries, 100 at a time. */}
-                  <List label={tabLabel(props.tab)}>
-                    <For each={props.rows}>
-                      {(member) => (
-                        <Row
-                          lines={[member.name, second(member)]}
-                          avatar={member.kind === "group" ? undefined : { name: member.name, image: member.image }}
-                          icon={member.kind === "group" ? "users-group" : undefined}
-                          meta={member.direct ? undefined : a().indirect}
-                          href={member.href ?? undefined}
-                          end={
-                            removable(member) ? (
-                              <Button
-                                variant="ghost"
-                                icon="x"
-                                label={removeLabel(member)}
-                                busy={busy() === member.key}
-                                onClick={() => void remove(member)}
-                              />
-                            ) : undefined
-                          }
-                        />
+                  meta={[
+                    providerWord(props.group.provider),
+                    props.group.owner && props.group.gid !== null ? "POSIX" : null,
+                    props.group.gid !== null ? `GID ${props.group.gid}` : null,
+                    canEdit() && props.group.gid === null && props.group.provider === "local" && !props.linuxEnabled
+                      ? a().localPosixUnavailable
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                />
+                <Cells.Cell
+                  icon="users"
+                  color="#2563eb"
+                  label={a().members}
+                  value={String(props.group.people + props.group.agents)}
+                  meta={t().memberMix({ people: props.group.people, agents: props.group.agents })}
+                  href={props.tab === "members" ? undefined : tabHref("members")}
+                />
+                <Cells.Cell
+                  icon="user-cog"
+                  color="#7c3aed"
+                  label={a().managers}
+                  value={String(props.group.managers.total)}
+                  meta={
+                    props.group.managers.faces.length > 0 ? <Avatar.Stack people={props.group.managers.faces} max={4} /> : t().noManagers
+                  }
+                  href={props.tab === "managers" ? undefined : tabHref("managers")}
+                />
+                <Cells.Cell
+                  icon={groupMark.icon}
+                  color={groupMark.color}
+                  label={t().subGroups}
+                  value={String(props.group.subGroups)}
+                  meta={t().subGroupsMeta}
+                />
+              </Cells>
+              <Pane.Split>
+                <Pane label={tabLabel(props.tab)} scrollKey={`accounts-group-${props.tab}`}>
+                  <Show when={props.tab === "managers" && props.agents && props.group.provider === "local"}>
+                    <Notice tone="note" icon="robot">
+                      {a().machineManagementHint}
+                    </Notice>
+                  </Show>
+                  <Show
+                    when={props.total > 0}
+                    fallback={
+                      <Empty
+                        icon={props.search ? "search-off" : TAB_ICONS[props.tab]}
+                        text={emptyText()}
+                        action={props.search ? { label: t().clearSearch, icon: "x", href: props.links.clearSearch } : add()}
+                      />
+                    }
+                  >
+                    {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the entries, 100 at a time. */}
+                    <For each={sections()}>
+                      {(section) => (
+                        <Section title={section.title} count={section.rows.length}>
+                          <List label={section.title}>
+                            <For each={section.rows}>
+                              {(member) => (
+                                <Row
+                                  lines={[member.name, second(member)]}
+                                  avatar={member.kind === "group" ? undefined : { name: member.name, image: member.image }}
+                                  mark={member.kind === "group" ? groupMark : undefined}
+                                  meta={member.direct ? undefined : a().indirect}
+                                  href={member.href ?? undefined}
+                                  end={
+                                    removable(member) ? (
+                                      <Button
+                                        variant="ghost"
+                                        icon="x"
+                                        label={removeLabel(member)}
+                                        busy={busy() === member.key}
+                                        onClick={() => void remove(member)}
+                                      />
+                                    ) : undefined
+                                  }
+                                />
+                              )}
+                            </For>
+                          </List>
+                        </Section>
                       )}
                     </For>
-                  </List>
-                </Show>
-                <Show when={props.pages > 1}>
-                  <Bar
-                    start={<Text type="meta">{list().pageOf({ page: props.page, pages: props.pages })}</Text>}
-                    end={
-                      <>
-                        <Button icon="chevron-left" href={props.links.previous ?? undefined} disabled={!props.links.previous}>
-                          {list().previous}
-                        </Button>
-                        <Button href={props.links.next ?? undefined} disabled={!props.links.next} forward>
-                          {list().next}
-                        </Button>
-                      </>
-                    }
-                  />
-                </Show>
-              </Pane>
-              <Pane side label={t().details} width={{ min: 280, default: 340 }}>
-                <Section
-                  title={t().details}
-                  actions={canEdit() ? [{ label: a().edit, icon: "pencil", onClick: () => setDialog("describe") }] : undefined}
-                >
-                  <Facts
-                    items={[
-                      { label: a().provider, value: providerWord(props.group.provider) },
-                      {
-                        label: a().description,
-                        value: props.group.description ? props.group.description : <Text muted>{a().noDescription}</Text>,
-                      },
-                      {
-                        label: a().groupType,
-                        value: props.group.gid !== null ? a().posixGroup : a().standardGroup,
-                        hint:
-                          canEdit() && props.group.gid === null && props.group.provider === "local" && !props.linuxEnabled
-                            ? a().localPosixUnavailable
-                            : undefined,
-                      },
-                      props.group.gid !== null
-                        ? { label: a().gid, value: String(props.group.gid), mono: true, copy: String(props.group.gid) }
-                        : { label: a().gid, value: <Text muted>{a().notSet}</Text> },
-                      ...(props.group.owner
-                        ? [
-                            {
-                              label: t().ownedBy,
-                              value: props.isAdmin ? (
-                                <Text href={`/app/accounts/users/${encodeURIComponent(props.group.owner.id)}`}>
-                                  {props.group.owner.name}
-                                </Text>
-                              ) : (
-                                props.group.owner.name
-                              ),
-                            },
-                          ]
-                        : []),
-                      { label: a().parentGroups, value: String(props.group.parents) },
-                      { label: a().managedGroups, value: String(props.group.managedGroups) },
-                      { label: a().access, value: props.canManage ? a().canManageMembers : a().readOnly },
-                      { label: a().mutations, value: props.canMutate ? a().available : a().unavailableWithoutIpa },
-                    ]}
-                  />
-                </Section>
-              </Pane>
-            </Pane.Split>
+                  </Show>
+                  <Show when={props.pages > 1}>
+                    <Bar
+                      start={<Text type="meta">{list().pageOf({ page: props.page, pages: props.pages })}</Text>}
+                      end={
+                        <>
+                          <Button icon="chevron-left" href={props.links.previous ?? undefined} disabled={!props.links.previous}>
+                            {list().previous}
+                          </Button>
+                          <Button href={props.links.next ?? undefined} disabled={!props.links.next} forward>
+                            {list().next}
+                          </Button>
+                        </>
+                      }
+                    />
+                  </Show>
+                </Pane>
+                <Pane side label={t().details} width={{ min: 280, default: 340 }}>
+                  <Section
+                    title={t().details}
+                    actions={canEdit() ? [{ label: a().edit, icon: "pencil", onClick: () => setDialog("describe") }] : undefined}
+                  >
+                    <Facts
+                      items={[
+                        {
+                          label: a().description,
+                          value: props.group.description ? props.group.description : <Text muted>{a().noDescription}</Text>,
+                        },
+                        ...(props.group.owner
+                          ? [
+                              {
+                                label: t().ownedBy,
+                                value: props.isAdmin ? (
+                                  <Text href={`/app/accounts/users/${encodeURIComponent(props.group.owner.id)}`}>
+                                    {props.group.owner.name}
+                                  </Text>
+                                ) : (
+                                  props.group.owner.name
+                                ),
+                              },
+                            ]
+                          : []),
+                        { label: a().managedGroups, value: String(props.group.managedGroups) },
+                        { label: a().access, value: props.canManage ? a().canManageMembers : a().readOnly },
+                        { label: a().mutations, value: props.canMutate ? a().available : a().unavailableWithoutIpa },
+                      ]}
+                    />
+                  </Section>
+                  <Show when={props.activity.length > 0}>
+                    <Section title={t().activity}>
+                      <Digest
+                        label={t().activity}
+                        activity={props.activity.map((entry) => ({
+                          person: entry.actor,
+                          text: sentence(entry),
+                          time: entry.time,
+                        }))}
+                      />
+                    </Section>
+                  </Show>
+                </Pane>
+              </Pane.Split>
+            </>
           }
         >
           {(view) => <RelationsView state={view().state} relations={view().data} context={view().context} />}

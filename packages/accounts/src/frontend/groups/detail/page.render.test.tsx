@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BaseGroup, CloudRuntime, GroupRelations, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { accountsAppService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
+import { accountsAppService, audit, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import type { EntityListItem } from "@/contracts";
 import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
@@ -45,6 +45,10 @@ const person = {
 const groupId = "22222222-2222-4222-8222-222222222222";
 const finance: BaseGroup = { id: groupId, name: "finance", provider: "local", description: null, gidnumber: null, personalOwner: null };
 const empty = { items: [], page: 1, perPage: 100, total: 0, hasNext: false };
+const ada: EntityListItem = {
+  kind: "user",
+  user: { ...admin, id: "11111111-1111-4111-8111-0000000000ad", uid: "ada", displayName: "Ada Renz" },
+};
 const memberGroup = (index: number): EntityListItem => ({
   kind: "group",
   group: {
@@ -99,13 +103,24 @@ const withGroup = async (
     total: number;
     entities?: (page: number, perPage: number) => EntityListItem[];
     relations?: () => ReturnType<typeof accountsAppService.group.relations>;
+    /** The group's audit events, newest first. */
+    audit?: Awaited<ReturnType<typeof audit.list>>["items"];
+    /** The group's direct members by kind. */
+    direct?: { type: "user" | "group" | "service_account"; id: string }[];
   },
   run: (
     app: Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>,
-    calls: { pages: number[]; entity: unknown[]; relations: unknown[] },
+    calls: { pages: number[]; entity: unknown[]; relations: unknown[]; managers: number; audit: number; names: unknown[] },
   ) => Promise<void>,
 ) => {
-  const calls = { pages: [] as number[], entity: [] as unknown[], relations: [] as unknown[] };
+  const calls = {
+    pages: [] as number[],
+    entity: [] as unknown[],
+    relations: [] as unknown[],
+    managers: 0,
+    audit: 0,
+    names: [] as unknown[],
+  };
   const viewer = options.viewer ?? admin;
   const spies = [
     stubRailSnapshot(),
@@ -121,7 +136,11 @@ const withGroup = async (
     spyOn(accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
     spyOn(accountsAppService.group.parent, "list").mockResolvedValue(empty),
     spyOn(accountsAppService.group.managedGroup, "list").mockResolvedValue(empty),
-    spyOn(accountsAppService.group.member, "list").mockResolvedValue(empty),
+    spyOn(accountsAppService.group.member, "list").mockResolvedValue({ ...empty, items: options.direct ?? [] } as never),
+    spyOn(audit, "list").mockImplementation(async () => {
+      calls.audit += 1;
+      return { items: options.audit ?? [], page: 1, perPage: 10, total: options.audit?.length ?? 0, hasNext: false };
+    }),
     spyOn(accountsAppService.group.manager, "list").mockResolvedValue(empty),
     // Like the service: a page past the end is empty, but the total still counts every entry.
     spyOn(accountsAppService.group, "relations").mockImplementation(async (input) => {
@@ -129,6 +148,15 @@ const withGroup = async (
       return options.relations ? options.relations() : { ok: true, data: relationsAround };
     }),
     spyOn(accountsAppService.entity, "list").mockImplementation(async (input) => {
+      // the managers' faces of the key figures, and the names in the activity, are reads of their own
+      if (input.managerOfGroupId && input.pagination?.perPage === 4) {
+        calls.managers += 1;
+        return { items: [ada], page: 1, perPage: 4, total: 3, hasNext: false };
+      }
+      if (input.userIds || input.groupIds || input.serviceAccountIds) {
+        calls.names.push(input);
+        return { items: [ada, memberGroup(7)], page: 1, perPage: 10, total: 2, hasNext: false };
+      }
       calls.entity.push(input);
       const page = input.pagination?.page ?? 1;
       const perPage = input.pagination?.perPage ?? 100;
@@ -190,6 +218,8 @@ test("the members tab reads the search, the indirect members and the agents from
     await open(app, "?tab=managers&indirect=true");
     expect(calls.entity[1]).toMatchObject({ managerOfGroupId: groupId, kinds: ["user", "group"] });
     expect(calls.entity[1]).not.toHaveProperty("recursive");
+    // the managers' faces are a read of their own, once per page
+    expect(calls.managers).toBe(2);
   });
 });
 
@@ -349,5 +379,63 @@ test("a group without relations to show and a failed read each say so in place; 
     expect(calls.relations).toEqual([]);
     expect(html.match(/<nav[^>]*data-k2-part="Tabs"[^>]*>[\s\S]*?<\/nav>/)?.[0]).not.toContain("tab=relations");
     expect(html).toContain("This group has no members.");
+  });
+});
+
+const event = (id: number, action: string, target: string, metadata: Record<string, unknown> = {}) => ({
+  id,
+  createdAt: "2026-11-25T09:42:00.000Z",
+  action,
+  outcome: "allowed" as const,
+  actor: { userId: ada.kind === "user" ? ada.user.id : null, uid: "ada", provider: "local", roles: ["admin"] },
+  target: { type: "group", id: target, label: "finance", provider: "local" },
+  reason: null,
+  errorCode: null,
+  errorMessage: null,
+  requestId: null,
+  metadata,
+});
+
+test("the first row counts the direct members by kind, the managers with their faces, the sub-groups and the parents", async () => {
+  const direct = [
+    { type: "user" as const, id: "u1" },
+    { type: "user" as const, id: "u2" },
+    { type: "service_account" as const, id: "a1" },
+    { type: "group" as const, id: "g1" },
+  ];
+  await withGroup({ total: 3, direct }, async (app, calls) => {
+    const html = await (await open(app, "")).text();
+    expect(html).toContain('data-k2-part="Cells"');
+    expect(html).toContain("2 people · 1 agent");
+    expect(html).toContain(">Sub-groups<");
+    // three managers, the first of them with a face
+    expect(html).toMatch(/data-k2-part="Avatar.Stack"[^>]*aria-label="Ada Renz"/);
+    expect(calls.managers).toBe(1);
+  });
+});
+
+test("administrators read the group's last changes as sentences; others never read the audit log", async () => {
+  const adaId = ada.kind === "user" ? ada.user.id : "";
+  const audited = [
+    event(3, "accounts.group.member.add", groupId, { userId: adaId }),
+    event(2, "accounts.group.member.add", "33333333-3333-4333-8333-000000000099", { userId: adaId }),
+    event(1, "accounts.group.update", groupId),
+  ];
+  await withGroup({ total: 3, audit: audited }, async (app, calls) => {
+    const html = await (await open(app, "")).text();
+    expect(html).toContain(">Activity<");
+    expect(html).toContain("changed the description");
+    // the actor in bold, the verb, and whom it concerned
+    expect(html.replace(/<!--[^>]*-->/g, "")).toMatch(/>Ada Renz<\/span> added <span[^>]*>Ada Renz</);
+    // the event of another group with a similar name stays out
+    expect(html.match(/changed the description|added /g)?.length).toBe(2);
+    expect(calls.audit).toBe(1);
+    expect(calls.names).toHaveLength(1);
+    expect(calls.names[0]).toMatchObject({ userIds: [adaId] });
+  });
+  await withGroup({ viewer: person, total: 3, audit: audited }, async (app, calls) => {
+    const html = await (await open(app, "")).text();
+    expect(calls.audit).toBe(0);
+    expect(html).not.toContain(">Activity<");
   });
 });

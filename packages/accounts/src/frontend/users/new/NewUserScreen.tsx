@@ -2,10 +2,10 @@ import type { AccountCategory, AccountCategoryPolicy } from "@k2b/cloud/contract
 import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import {
-  Band,
   Bar,
   Button,
   Check,
+  Chip,
   Choice,
   Dialog,
   Facts,
@@ -15,6 +15,7 @@ import {
   Pane,
   Path,
   Prose,
+  Row,
   Section,
   Text,
   Workspace,
@@ -49,6 +50,13 @@ export type NewUserScreenProps = {
 };
 
 const USERS_PATH = "/app/accounts/users";
+
+/** Each account type's mark, so a type looks the same wherever it stands. */
+const categoryMark: Record<AccountCategory, { icon: string; color: string }> = {
+  freeipa: { icon: "building", color: "#7c3aed" },
+  login: { icon: "key", color: "#2563eb" },
+  guest: { icon: "user-question", color: "#d97706" },
+};
 
 /**
  * A new account on v2, a page of its own: the account type, the person's name and address, administration and the
@@ -159,16 +167,22 @@ export default function NewUserScreen(props: NewUserScreenProps) {
     if (event.key === "Enter" && !event.isComposing) void create();
   };
 
+  /** What creating does for the chosen type, as facts: access, password, welcome mail. */
   const outcome = () => {
     const current = form();
     if (current.category === "freeipa")
-      return [t().ipaAccessAfterCreation, t().ipaPasswordHelp, current.welcome ? t().ipaDeliveryHelp : t().ipaNoDeliveryHelp];
-    if (withoutEmail()) return [t().localWithoutEmailHelp];
+      return [
+        { label: words().factAccess, value: t().ipaAccessAfterCreation },
+        { label: words().factPassword, value: t().ipaPasswordHelp },
+        { label: words().factWelcome, value: current.welcome ? t().ipaDeliveryHelp : t().ipaNoDeliveryHelp },
+      ];
+    if (withoutEmail()) return [{ label: words().factSignIn, value: t().localWithoutEmailHelp }];
     return [
-      t().localLoginHelp({ loginLabel: props.categoryPolicy.login.label }),
-      current.welcome ? t().localDeliveryHelp : t().localNoDeliveryHelp,
+      { label: words().factSignIn, value: t().localLoginHelp({ loginLabel: props.categoryPolicy.login.label }) },
+      { label: words().factWelcome, value: current.welcome ? t().localDeliveryHelp : t().localNoDeliveryHelp },
     ];
   };
+  const requesterName = (open: AccountRequestView) => open.displayName || `${open.firstName} ${open.lastName}`;
 
   return (
     <Workspace
@@ -181,207 +195,241 @@ export default function NewUserScreen(props: NewUserScreenProps) {
               items={[{ label: t().users, href: USERS_PATH }, { label: created() ? t().accountCreated : t().newUser }]}
             />
           }
+          end={
+            <Show
+              when={created()}
+              fallback={
+                <>
+                  <Button onClick={() => void cancel()} disabled={busy()}>
+                    {t().cancel}
+                  </Button>
+                  <Button variant="primary" icon="user-plus" busy={busy()} disabled={categories.length === 0} onClick={() => void create()}>
+                    {t().createAccount}
+                  </Button>
+                </>
+              }
+            >
+              {(result) => (
+                <>
+                  <Button href={USERS_PATH}>{t().close}</Button>
+                  <Button variant="primary" icon="user" href={`${USERS_PATH}/${result().data.id}`}>
+                    {t().viewAccount}
+                  </Button>
+                </>
+              )}
+            </Show>
+          }
         />
       }
+      primary={
+        created()
+          ? { label: t().viewAccount, icon: "user", href: `${USERS_PATH}/${created()?.data.id}` }
+          : { label: t().createAccount, icon: "user-plus", onClick: () => void create(), disabled: categories.length === 0 }
+      }
     >
-      <Pane label={t().newUser} scrollKey="accounts-user-new">
-        <Show
-          when={created()}
-          fallback={
-            <>
-              <Show when={request}>
-                {(open) => (
-                  <Section
-                    title={t().freeIpaAccessRequest}
-                    icon="user-plus"
-                    summary={t().requestCompletesOnCreate}
-                    actions={[{ label: t().denyRequest, icon: "x", onClick: () => setDenying(true), disabled: busy() }]}
-                  >
+      <Pane.Split>
+        <Pane label={t().newUser} scrollKey="accounts-user-new">
+          <Show
+            when={created()}
+            fallback={
+              <>
+                <Show when={categories.length === 0}>
+                  <Notice tone="warn">{t().noAllowedAccountTypes}</Notice>
+                </Show>
+                {/* k2b-ui gap: Setting (label and hint at the left, the control at a fixed width beside it) is not in v2 yet;
+                    until it lands each group is a Section of Fields. */}
+                <Show when={categories.length > 0}>
+                  <Section title={words().account} icon="id-badge-2">
+                    <Field
+                      name="category"
+                      label={t().accountType}
+                      hint={categoryHint(form().category)}
+                      error={missing()?.category ? t().chooseAccountType : undefined}
+                      required
+                    >
+                      <Choice
+                        name="category"
+                        value={form().category}
+                        disabled={busy()}
+                        options={categories.map((category) => ({ value: category, label: categoryLabel(category) }))}
+                        onChange={(value) => {
+                          if (value === "freeipa" || value === "login" || value === "guest") update({ category: value });
+                        }}
+                      />
+                    </Field>
+                  </Section>
+                </Show>
+                <Section title={words().person} icon="user">
+                  <Field.Row>
+                    <Field
+                      name="givenname"
+                      label={t().firstName}
+                      error={missing()?.givenname ? t().firstNameRequired : lengthError("givenname")}
+                      required
+                    >
+                      {/* k2b-ui gap: Input has no autocomplete (given-name, family-name, email). */}
+                      <Input
+                        value={form().givenname}
+                        disabled={busy()}
+                        onInput={(value) => update({ givenname: value })}
+                        onKeyDown={submitOnEnter}
+                      />
+                    </Field>
+                    <Field name="sn" label={t().lastName} error={missing()?.sn ? t().lastNameRequired : lengthError("sn")} required>
+                      <Input value={form().sn} disabled={busy()} onInput={(value) => update({ sn: value })} onKeyDown={submitOnEnter} />
+                    </Field>
+                  </Field.Row>
+                  <Field.Row>
+                    <Field
+                      name="email"
+                      label={t().email}
+                      optional={optionalEmail() ? words().optional : undefined}
+                      hint={optionalEmail() ? t().emailOptionalHelp : undefined}
+                      error={missing()?.email ? t().emailRequired : undefined}
+                      required={!optionalEmail()}
+                    >
+                      <Input
+                        type="email"
+                        value={form().email}
+                        placeholder="name@example.com"
+                        disabled={busy()}
+                        onInput={(value) => update({ email: value })}
+                        onKeyDown={submitOnEnter}
+                      />
+                    </Field>
+                    <Field
+                      name="displayName"
+                      label={t().displayName}
+                      optional={words().optional}
+                      hint={t().displayNameHelp}
+                      error={lengthError("displayName")}
+                    >
+                      <Input
+                        value={form().displayName}
+                        disabled={busy()}
+                        onInput={(value) => {
+                          setDisplayNameTouched(true);
+                          update({ displayName: value });
+                        }}
+                        onKeyDown={submitOnEnter}
+                      />
+                    </Field>
+                  </Field.Row>
+                </Section>
+                <Section title={words().access} icon="lock-access">
+                  <Show when={form().category === "login"}>
+                    <Check
+                      name="admin"
+                      label={t().grantAdminAccess}
+                      checked={form().admin}
+                      disabled={busy()}
+                      onChange={(value) => update({ admin: value })}
+                    />
+                    <Text type="meta">{t().adminAccessDescription}</Text>
+                  </Show>
+                  <Check
+                    name="welcome"
+                    label={t().sendWelcomeAutomatically}
+                    checked={form().welcome && !withoutEmail()}
+                    disabled={busy() || withoutEmail()}
+                    onChange={(value) => update({ welcome: value })}
+                  />
+                  <Text type="meta">
+                    {withoutEmail()
+                      ? t().localWithoutEmailHelp
+                      : form().category === "freeipa"
+                        ? t().ipaWelcomeDescription
+                        : t().localWelcomeDescription}
+                  </Text>
+                </Section>
+                <Show when={error()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
+              </>
+            }
+          >
+            {(result) => {
+              const { payload, data } = result();
+              const ipa = payload.provider === "ipa";
+              const category = ipa ? "freeipa" : payload.profile === "guest" ? "guest" : "login";
+              const sentence = data.notificationSent
+                ? ipa
+                  ? t().ipaWelcomeSent
+                  : t().localWelcomeSent
+                : !ipa && !payload.email
+                  ? t().createdWithoutEmail
+                  : t().welcomeNotSent;
+              return (
+                <>
+                  <Section title={ipa ? t().ipaAccountCreated : t().localAccountCreated} icon="user-check" summary={sentence}>
+                    <Row
+                      avatar={{ name: [payload.givenname, payload.sn].join(" ") }}
+                      lines={[payload.displayName ?? [payload.givenname, payload.sn].join(" "), payload.email ?? data.uid]}
+                      marks={<Chip status="ok">{t().accountCreated}</Chip>}
+                      href={`${USERS_PATH}/${data.id}`}
+                    />
                     <Facts
                       items={[
-                        { label: t().name, value: open().displayName || `${open().firstName} ${open().lastName}` },
-                        { label: t().email, value: open().email },
-                        ...(open().phone ? [{ label: t().phone, value: open().phone ?? "" }] : []),
-                        ...(open().comment ? [{ label: t().requesterNote, value: open().comment ?? "" }] : []),
+                        { label: "UID", value: data.uid, mono: true, copy: data.uid },
+                        { label: t().accountType, value: categoryLabel(category) },
+                        ...(data.accountExpires
+                          ? [{ label: t().accountExpires, value: dates.formatDate(data.accountExpires, { locale: locale() }) }]
+                          : []),
                       ]}
                     />
                   </Section>
-                )}
-              </Show>
-              <Show when={categories.length === 0}>
-                <Notice tone="warn">{t().noAllowedAccountTypes}</Notice>
-              </Show>
-              <Band>
-                <Show when={categories.length > 0}>
-                  <Field
-                    name="category"
-                    label={t().accountType}
-                    hint={categoryHint(form().category)}
-                    error={missing()?.category ? t().chooseAccountType : undefined}
-                    required
-                  >
-                    <Choice
-                      name="category"
-                      value={form().category}
-                      disabled={busy()}
-                      options={categories.map((category) => ({ value: category, label: categoryLabel(category) }))}
-                      onChange={(value) => {
-                        if (value === "freeipa" || value === "login" || value === "guest") update({ category: value });
-                      }}
-                    />
-                  </Field>
-                </Show>
-                <Field.Row>
-                  <Field
-                    name="givenname"
-                    label={t().firstName}
-                    error={missing()?.givenname ? t().firstNameRequired : lengthError("givenname")}
-                    required
-                  >
-                    {/* k2b-ui gap: Input has no autocomplete (given-name, family-name, email). */}
-                    <Input
-                      value={form().givenname}
-                      disabled={busy()}
-                      onInput={(value) => update({ givenname: value })}
-                      onKeyDown={submitOnEnter}
-                    />
-                  </Field>
-                  <Field name="sn" label={t().lastName} error={missing()?.sn ? t().lastNameRequired : lengthError("sn")} required>
-                    <Input value={form().sn} disabled={busy()} onInput={(value) => update({ sn: value })} onKeyDown={submitOnEnter} />
-                  </Field>
-                </Field.Row>
-                <Field
-                  name="email"
-                  label={t().email}
-                  optional={optionalEmail() ? words().optional : undefined}
-                  hint={optionalEmail() ? t().emailOptionalHelp : undefined}
-                  error={missing()?.email ? t().emailRequired : undefined}
-                  required={!optionalEmail()}
-                >
-                  <Input
-                    type="email"
-                    value={form().email}
-                    placeholder="name@example.com"
-                    disabled={busy()}
-                    onInput={(value) => update({ email: value })}
-                    onKeyDown={submitOnEnter}
-                  />
-                </Field>
-                <Field
-                  name="displayName"
-                  label={t().displayName}
-                  optional={words().optional}
-                  hint={t().displayNameHelp}
-                  error={lengthError("displayName")}
-                >
-                  <Input
-                    value={form().displayName}
-                    disabled={busy()}
-                    onInput={(value) => {
-                      setDisplayNameTouched(true);
-                      update({ displayName: value });
-                    }}
-                    onKeyDown={submitOnEnter}
-                  />
-                </Field>
-              </Band>
-              <Band>
-                <Show when={form().category === "login"}>
-                  <Check
-                    name="admin"
-                    label={t().grantAdminAccess}
-                    checked={form().admin}
-                    disabled={busy()}
-                    onChange={(value) => update({ admin: value })}
-                  />
-                  <Text type="meta">{t().adminAccessDescription}</Text>
-                </Show>
-                <Check
-                  name="welcome"
-                  label={t().sendWelcomeAutomatically}
-                  checked={form().welcome && !withoutEmail()}
-                  disabled={busy() || withoutEmail()}
-                  onChange={(value) => update({ welcome: value })}
-                />
-                <Show when={form().category}>
-                  <Text type="meta">{form().category === "freeipa" ? t().ipaWelcomeDescription : t().localWelcomeDescription}</Text>
-                </Show>
-              </Band>
-              <Show when={form().category}>
-                <Notice tone="note" icon="info-circle" title={t().creationOutcome}>
-                  {outcome().join(" ")}
-                </Notice>
-              </Show>
-              <Show when={error()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
-              <Bar
-                end={
-                  <>
-                    <Button onClick={() => void cancel()} disabled={busy()}>
-                      {t().cancel}
-                    </Button>
-                    <Button
-                      variant="primary"
-                      icon="user-plus"
-                      busy={busy()}
-                      disabled={categories.length === 0}
-                      onClick={() => void create()}
-                    >
-                      {t().createAccount}
-                    </Button>
-                  </>
-                }
-              />
-            </>
-          }
-        >
-          {(result) => {
-            const { payload, data } = result();
-            const ipa = payload.provider === "ipa";
-            const sentence = data.notificationSent
-              ? ipa
-                ? t().ipaWelcomeSent
-                : t().localWelcomeSent
-              : !ipa && !payload.email
-                ? t().createdWithoutEmail
-                : t().welcomeNotSent;
-            return (
-              <>
-                <Section title={ipa ? t().ipaAccountCreated : t().localAccountCreated} icon="user-check" summary={sentence}>
-                  <Facts
-                    items={[
-                      { label: "UID", value: data.uid, mono: true, copy: data.uid },
-                      { label: t().accountType, value: categoryLabel(ipa ? "freeipa" : payload.profile === "guest" ? "guest" : "login") },
-                      ...(data.accountExpires
-                        ? [{ label: t().accountExpires, value: dates.formatDate(data.accountExpires, { locale: locale() }) }]
-                        : []),
-                    ]}
-                  />
-                </Section>
-                <Show when={data.creationNotice?.markdown}>
-                  {(markdown) => (
-                    <Notice tone="note">
-                      <Prose markdown={markdown()} />
+                  <Show when={data.creationNotice?.markdown}>
+                    {(markdown) => (
+                      <Notice tone="note">
+                        <Prose markdown={markdown()} />
+                      </Notice>
+                    )}
+                  </Show>
+                  <Show when={data.creationNotice?.failed}>
+                    <Notice tone="warn">{t().creationNoticeFailed}</Notice>
+                  </Show>
+                </>
+              );
+            }}
+          </Show>
+        </Pane>
+        <Pane side label={words().aside} width={{ min: 300, default: 380 }}>
+          <Show when={request}>
+            {(open) => (
+              <Section
+                title={t().freeIpaAccessRequest}
+                icon="user-plus"
+                summary={t().requestCompletesOnCreate}
+                actions={created() ? undefined : [{ label: t().deny, icon: "x", onClick: () => setDenying(true), disabled: busy() }]}
+              >
+                <Row avatar={{ name: requesterName(open()) }} lines={[requesterName(open()), open().email]} />
+                <Show when={open().phone}>{(phone) => <Facts items={[{ label: t().phone, value: phone() }]} />}</Show>
+                <Show when={open().comment}>
+                  {(comment) => (
+                    <Notice tone="note" title={t().requesterNote} meta={requesterName(open())}>
+                      {comment()}
                     </Notice>
                   )}
                 </Show>
-                <Show when={data.creationNotice?.failed}>
-                  <Notice tone="warn">{t().creationNoticeFailed}</Notice>
-                </Show>
-                <Bar
-                  end={
-                    <>
-                      <Button href={USERS_PATH}>{t().close}</Button>
-                      <Button variant="primary" icon="user" href={`${USERS_PATH}/${data.id}`}>
-                        {t().viewAccount}
-                      </Button>
-                    </>
-                  }
-                />
-              </>
-            );
-          }}
-        </Show>
-      </Pane>
+              </Section>
+            )}
+          </Show>
+          <Show
+            when={form().category}
+            fallback={
+              <Section title={words().types} icon="id-badge-2" count={categories.length}>
+                {categories.map((category) => (
+                  <Row mark={categoryMark[category]} lines={[categoryLabel(category), categoryHint(category)]} />
+                ))}
+              </Section>
+            }
+          >
+            {(category) => (
+              <Section title={t().creationOutcome} icon={categoryMark[category()].icon}>
+                <Facts items={outcome()} />
+              </Section>
+            )}
+          </Show>
+        </Pane>
+      </Pane.Split>
       <Show when={denying() && request}>
         {(open) => (
           <DenyRequestDialog

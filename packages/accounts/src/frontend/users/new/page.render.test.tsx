@@ -95,7 +95,7 @@ test("an open request fills the form for FreeIPA and can be denied; a closed one
     expect(html).toContain("FreeIPA-Kontoanfrage");
     expect(html).toContain("ida.berg@kramer-lager.example");
     expect(html).toContain("Ich fange am 1. Dezember an.");
-    expect(html).toContain("Anfrage ablehnen");
+    expect(html).toContain(">Ablehnen<");
     expect(html).toContain('value="Ida"');
     expect(html).not.toContain(">Login<");
   });
@@ -103,7 +103,7 @@ test("an open request fills the form for FreeIPA and can be denied; a closed one
     const html = await (
       await app.request(`/app/accounts/users/new?request=${REQUEST_ID}`, { headers: { "Accept-Language": "de" } })
     ).text();
-    expect(html).not.toContain("Anfrage ablehnen");
+    expect(html).not.toContain("FreeIPA-Kontoanfrage");
     expect(html).not.toContain('value="Ida"');
   });
 });

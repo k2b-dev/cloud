@@ -43,3 +43,44 @@ export const AUDIT_EVENTS: AuditEvent[] = [
   base(7, { action: "ai.approval.remember", target: { type: "ai_approval", id: "approval-7", label: null, provider: null } }),
   base(6, { action: "external.provider.sync", target: { type: null, id: null, label: null, provider: null } }),
 ];
+
+// A working day of an administration: real people, real deeds, a few refused or failed.
+const PEOPLE = [
+  ["55555555-5555-4555-8555-000000000011", "ada.renz"],
+  ["55555555-5555-4555-8555-000000000012", "felix.thal"],
+  ["55555555-5555-4555-8555-000000000013", "lena.hartwig"],
+  ["55555555-5555-4555-8555-000000000014", "sami.yilmaz"],
+] as const;
+const DEEDS: [string, "user" | "group" | "service_account" | "ai_approval", string, "allowed" | "denied" | "failed", string | null][] = [
+  ["accounts.user.create", "user", "jonas.kern", "allowed", null],
+  ["accounts.group.member.add", "group", "werkstatt", "allowed", null],
+  ["accounts.user.password_reset", "user", "mira.solberg", "denied", "Nur Administratoren dürfen Passwörter zurücksetzen."],
+  ["service_account_credential.create", "service_account", "Backup-Agent", "allowed", null],
+  ["accounts.user.send_login_link", "user", "tom.oswald", "failed", "SMTP: connection refused"],
+  ["accounts.group.manager.add", "group", "lager-nord", "allowed", null],
+  ["ai.approval.remember", "ai_approval", "Rechnungen buchen", "allowed", null],
+  ["accounts.user.set_expiry", "user", "jana.berger", "allowed", null],
+  ["accounts.group.member.remove", "group", "personal", "allowed", null],
+  ["service_account_credential.revoke", "service_account", "Rechnungs-Import", "allowed", null],
+  ["accounts.user.update", "user", "lena.hartwig", "allowed", null],
+  ["accounts.request.deny", "user", "k.wagner@gmail.example", "allowed", "Kein Vertrag mit der Werkstatt."],
+];
+/** A dense log: `length` events, one every 47 minutes back from `now`, by four people and the system. */
+export const denseAuditEvents = (now: Date, length = 28): AuditEvent[] =>
+  Array.from({ length }, (_, index) => {
+    const [action, type, label, outcome, reason] = DEEDS[index % DEEDS.length]!;
+    const [userId, uid] = PEOPLE[index % PEOPLE.length]!;
+    return {
+      ...AUDIT_EVENTS[0]!,
+      id: 500 - index,
+      createdAt: new Date(now.getTime() - index * 47 * 60 * 1000).toISOString(),
+      action,
+      outcome,
+      actor:
+        index % 9 === 4
+          ? { userId: null, uid: null, provider: null, roles: [] }
+          : { userId, uid, provider: index % 3 ? "local" : "ipa", roles: ["user"] },
+      target: { type, id: `55555555-5555-4555-8555-${String(100 + index).padStart(12, "0")}`, label, provider: "local" },
+      reason,
+    };
+  });

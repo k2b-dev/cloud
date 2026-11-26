@@ -9,7 +9,7 @@ import { usePageSwap } from "../lib/page-swap";
 import { useAccountsMessages } from "../messages";
 import { KEYS_PER_PAGE, type KeyOwner, type KeyPage, toKeyPage } from "./account-keys";
 import type { AccountKey } from "./api-key-row";
-import { accessLabel, confirmRevoke, KeyDialog, ReplaceKeyDialog, revokeCredential } from "./credential-dialogs";
+import { accessLabel, confirmRevoke, KeyDialog, keyMark, ReplaceKeyDialog, revokeCredential } from "./credential-dialogs";
 import MachineKeyDialog from "./MachineKeyDialog";
 import { useApiKeyMessages } from "./messages";
 import { shortName } from "./short-name";
@@ -119,18 +119,15 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
     ...(entry.replace ? [{ label: t().replaceKey, icon: "replace", onClick: () => replace(entry, entry.replace!.serviceAccountId) }] : []),
     { label: t().revoke, icon: "key-off", danger: true, onClick: () => void revoke(entry) },
   ];
-  const second = (entry: AccountKey) =>
-    words().keyLine({
-      prefix: entry.prefix,
-      access: accessLabel(t(), entry.access),
-      used: !entry.active
-        ? words().createdOn({ when: entry.created })
-        : entry.expired
-          ? words().expiredOn({ when: entry.expires ?? "" })
-          : entry.lastUsed
-            ? words().usedOn({ when: entry.lastUsed })
-            : words().neverUsed,
-    });
+  /** The quiet sentence under the name: when the key was last used, or since when it works no more. */
+  const used = (entry: AccountKey) =>
+    !entry.active
+      ? words().createdOn({ when: entry.created })
+      : entry.expired
+        ? words().expiredOn({ when: entry.expires ?? "" })
+        : entry.lastUsed
+          ? words().usedOn({ when: entry.lastUsed })
+          : words().neverUsed;
 
   return (
     <>
@@ -171,8 +168,8 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
                   {(entry) => (
                     <Row
                       // k2b-ui gap: Row has no title for its full text; a long name is shortened in the middle, the open key shows it whole.
-                      lines={[shortName(entry.name), second(entry)]}
-                      icon={entry.expired || !entry.active ? "key-off" : "key"}
+                      lines={[shortName(entry.name), `${accessLabel(t(), entry.access)} · ${used(entry)}`]}
+                      mark={keyMark(entry)}
                       onOpen={() => setOpened(entry)}
                       end={
                         <>

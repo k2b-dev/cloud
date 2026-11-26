@@ -5,6 +5,7 @@ import { listMessages } from "../list-messages";
 import { accountsMessages } from "../messages";
 import type { AuditScreenProps } from "./AuditScreen";
 import { actionLabel } from "./audit-labels";
+import { auditMessages } from "./messages";
 import { AUDIT_PAGE_PATH, AUDIT_PER_PAGE, auditFilterOf, auditHref, auditQuery, parseAuditAddress } from "./query";
 import { auditRows } from "./rows";
 
@@ -16,7 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export const loadAudit = async (
   url: URL,
-  context: { locale: string; timeZone: string; pendingRequests: number },
+  context: { locale: string; timeZone: string; pendingRequests: number; now?: Date },
 ): Promise<{ redirect: string } | { props: AuditScreenProps }> => {
   const { locale, timeZone } = context;
   const { t } = accountsMessages.resolve([locale]);
@@ -28,7 +29,7 @@ export const loadAudit = async (
     .catch(() => null);
   // A page past the end, from an old link or after a narrower filter, opens the last page with the same filters.
   const pages = Math.max(1, Math.ceil((eventsPage?.total ?? 0) / AUDIT_PER_PAGE));
-  if (eventsPage && address.page > pages) return { redirect: auditHref(query, state, { page: pages, automatic: address.automatic }) };
+  if (eventsPage && address.page > pages) return { redirect: auditHref(query, state, { page: pages }) };
 
   // Chosen identities are named even when no event on this page carries them; some writers record only the actor's
   // user ID, so those actors are named in the same batch.
@@ -78,11 +79,15 @@ export const loadAudit = async (
       : [],
     action: action ? [{ value: action, label: actionLabel(action, t) }] : [],
   };
+  const auditWords = auditMessages.resolve([locale]).t;
   const rows = eventsPage
     ? auditRows(eventsPage.items, {
         t,
         locale,
         timeZone,
+        now: context.now ?? new Date(),
+        today: auditWords.today,
+        yesterday: auditWords.yesterday,
         names: named.flatMap((entry) =>
           entry.principal.type === "user" && entry.displayName !== undefined
             ? [{ userId: entry.principal.userId, name: entry.displayName }]
@@ -91,11 +96,8 @@ export const loadAudit = async (
       })
     : null;
 
-  // Showing or hiding automatic app entries keeps every other part of the address and starts at the first page.
-  const toggle = new URLSearchParams(url.searchParams);
-  toggle.delete("page");
-  if (address.automatic) toggle.delete("automatic");
-  else toggle.set("automatic", "1");
+  // Showing automatic app entries keeps every filter of the address and starts at the first page.
+  const shown = query.set(state, "automatic", true);
 
   const words = listMessages.resolve([locale]).t;
   const ignored =
@@ -115,7 +117,7 @@ export const loadAudit = async (
       automatic: {
         shown: address.automatic,
         hidden: eventsPage?.hiddenAutomaticCount ?? 0,
-        href: toggle.size ? `${AUDIT_PAGE_PATH}?${toggle}` : AUDIT_PAGE_PATH,
+        href: shown ? auditHref(query, shown) : AUDIT_PAGE_PATH,
       },
       ignored,
       pendingRequests: context.pendingRequests,

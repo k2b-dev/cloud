@@ -21,6 +21,21 @@ export const kindLabel = (t: AccountsMessages, kind: ApiKeyRow["kind"]) =>
 export const accessLabel = (t: AccountsMessages, access: AccountKey["access"]) =>
   access === "models" ? t.modelsOnlyKey : access === "legacy" ? t.legacyLimitedKey : t.fullKeyAccess;
 
+/**
+ * The mark of a key: its purpose in its colour (full access, AI models only, an agent's legacy key); a key that works
+ * no more keeps the symbol of a closed key in the colour of its state.
+ */
+export const keyMark = (entry: AccountKey): { icon: string; color: string } =>
+  !entry.active
+    ? { icon: "key-off", color: "#dc2626" }
+    : entry.expired
+      ? { icon: "key-off", color: "#d97706" }
+      : entry.access === "models"
+        ? { icon: "sparkles", color: "#7c3aed" }
+        : entry.access === "legacy"
+          ? { icon: "lock", color: "#b45309" }
+          : { icon: "key", color: "#2563eb" };
+
 export const ownerName = (t: AccountsMessages, row: ApiKeyRow) => row.owner.name || t.resource;
 
 export const statusChip = (t: AccountsMessages, row: AccountKey) =>

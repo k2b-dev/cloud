@@ -1,25 +1,9 @@
 import { useLocale } from "@k2b/ui";
-import {
-  Avatar,
-  Bar,
-  Button,
-  Chip,
-  FilterBar,
-  Inline,
-  Input,
-  ListOrder,
-  Notice,
-  Pane,
-  StatusRow,
-  Table,
-  Text,
-  Workspace,
-} from "@k2b/ui/v2";
-import { createMemo, createSignal, Show } from "solid-js";
+import { Avatar, Bar, Button, Chip, FilterBar, Inline, Input, Notice, Pane, Table, Text, Workspace } from "@k2b/ui/v2";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../AccountsNav";
 import { kindHref } from "../activity/kind";
-import { useActivityMessages } from "../activity/messages";
 import { useListMessages } from "../list-messages";
 import { useAccountsMessages } from "../messages";
 import { useReminderMessages } from "./messages";
@@ -61,12 +45,10 @@ export default function RemindersScreen(props: RemindersScreenProps) {
   const t = useAccountsMessages();
   const r = useReminderMessages();
   const words = useListMessages();
-  const activity = useActivityMessages();
   const { showChanges, openPage } = usePageSwap();
   const query = createMemo(() => remindersQuery(locale()));
   const [state, setState] = createSignal<RemindersState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
-  const [refreshing, setRefreshing] = createSignal(false);
   const changed = () => query().serialize(state()).toString() !== query().serialize(query().reset()).toString();
   const name = (row: ReminderRow) => row.name ?? `(${t().deletedUser})`;
   const statusLabel = (status: string) => (status === "pending" ? t().pending : status === "sent" ? t().sent : t().error);
@@ -77,7 +59,6 @@ export default function RemindersScreen(props: RemindersScreenProps) {
     // another kind is another list: it opens with its own filters, none of these
     if (next.filters.kind !== "reminders") return void openPage(kindHref(next.filters.kind), { replace: true });
     setState(next);
-    setRefreshing(true);
     const params = new URLSearchParams(location.search);
     if (params.has("page")) {
       params.delete("page");
@@ -85,10 +66,25 @@ export default function RemindersScreen(props: RemindersScreenProps) {
     }
     void showChanges();
   };
+  /** Reminders that failed or still wait, as chips that filter to them; counted when every reminder is on this page. */
+  const attention = () => {
+    const base = query().reset();
+    return (
+      [
+        ["error", "bad", t().error],
+        ["pending", "warn", t().pending],
+      ] as const
+    ).flatMap(([value, status, label]) => {
+      const n = props.pages === 1 ? props.rows.filter((row) => row.status === value).length : undefined;
+      const next = query().set({ ...base, filters: { ...base.filters, kind: "reminders" } }, "status", value);
+      return n === 0 || !next
+        ? []
+        : [{ value, status, href: remindersHref(query(), next), label: n === undefined ? label : `${n} ${label}` }];
+    });
+  };
   const search = (text: string) => {
     const next = query().set(state(), "q", text.trim());
     if (next) {
-      setRefreshing(true);
       void openPage(remindersHref(query(), next));
     }
   };
@@ -98,7 +94,19 @@ export default function RemindersScreen(props: RemindersScreenProps) {
       sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
-          start={<Text type="body">{activity().activity}</Text>}
+          // k2b-ui gap: head rows (lane DP). The statement and its chips stand in the head, the filters below: two rows.
+          start={
+            <Inline>
+              <Text weight="strong">{t().entryCount({ count: props.total })}</Text>
+              <For each={attention()}>
+                {(item) => (
+                  <Chip status={item.status} href={item.href} pressed={state().filters.status === item.value}>
+                    {item.label}
+                  </Chip>
+                )}
+              </For>
+            </Inline>
+          }
           end={
             <Input
               type="search"
@@ -124,20 +132,13 @@ export default function RemindersScreen(props: RemindersScreenProps) {
         label={t().reminderHistory}
         scrollKey="accounts-reminders"
         status={
-          <>
-            <FilterBar
-              query={query()}
-              state={state()}
-              onChange={change}
-              icons={{ kind: "activity", status: "circle-dot" }}
-              results={t().entryCount({ count: props.total })}
-            />
-            <StatusRow
-              lead={t().entryCount({ count: props.total })}
-              loading={refreshing()}
-              filters={<ListOrder query={query()} state={state()} onChange={change} />}
-            />
-          </>
+          <FilterBar
+            query={query()}
+            state={state()}
+            onChange={change}
+            icons={{ kind: "activity", status: "circle-dot" }}
+            results={t().entryCount({ count: props.total })}
+          />
         }
       >
         <Show when={ignored()}>

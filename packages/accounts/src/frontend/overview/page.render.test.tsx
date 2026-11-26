@@ -100,11 +100,12 @@ test("an administrator sees their account, the groups and the administration, li
   expect(html).toContain("Your account");
   // the account expired: its date stands as a bad state
   expect(html).toContain("Expired Jan 31, 2026");
-  for (const label of ["Managed by me", "My groups", "All groups", "Administration", "Run health", "Recent activity"]) {
+  for (const label of ["Your account", "Your groups", "All groups", "Requests", "Run health", "Activity"]) {
     expect(html).toContain(label);
   }
-  // the groups cells keep the group list's address of each scope
-  expect(html).toContain('href="/app/accounts/groups?scope=managed"');
+  // the groups section leads to all groups, the cells to the requests and the accounts
+  // an administrator's groups start at all groups, so the address names no scope
+  expect(html).toContain('href="/app/accounts/groups"');
   expect(html).toContain('href="/app/accounts/requests"');
   expect(html).toContain('href="/app/accounts/users"');
   // the audit log, reminders and deleted accounts live on the activity page now (the shared sidebar is not this page's)
@@ -121,6 +122,7 @@ test("everyone else sees only their account and their groups; the administration
   const { html, dashboardCalls, activityCalls } = await render(person(["user"]));
   expect(html).toContain("Your account");
   expect(html).toContain("My groups");
+  expect(html).toContain('href="/app/accounts/groups?scope=managed"');
   expect(html).not.toContain("Administration");
   expect(html).not.toContain("Run health");
   expect(html).not.toContain("/admin/observability/logs");

@@ -8,7 +8,7 @@ import { formatNumber } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
 import AuditScreen from "../audit/AuditScreen";
 import { auditQuery, parseAuditAddress } from "../audit/query";
-import { AUDIT_EVENTS } from "../audit/render-fixture";
+import { AUDIT_EVENTS, denseAuditEvents } from "../audit/render-fixture";
 import { auditRows } from "../audit/rows";
 import DeletedAccountsScreen from "../deleted-accounts/DeletedAccountsScreen";
 import { deletedQuery, parseDeletedAddress } from "../deleted-accounts/query";
@@ -16,7 +16,7 @@ import { accountsMessages } from "../messages";
 import NotificationScreen from "../notifications/NotificationScreen";
 import NotificationsScreen from "../notifications/NotificationsScreen";
 import { batchesQuery, parseListAddress, recipientsQuery } from "../notifications/query";
-import { BATCH_ID, BATCHES, batch, RECIPIENTS, recipient } from "../notifications/render-fixture";
+import { BATCH_ID, batch, recipient } from "../notifications/render-fixture";
 import { parseRemindersAddress, remindersQuery } from "../reminders/query";
 import RemindersScreen from "../reminders/RemindersScreen";
 import { activityKindOf, BATCH_PATH } from "./kind";
@@ -40,11 +40,14 @@ const worstEvents = (length = 24) =>
     reason: index % 3 ? `${LONG}: ${UNBROKEN}` : null,
   }));
 
+/** The page's clock: the samples' "today" is 20 Nov 2026. */
+const NOW = new Date("2026-11-20T15:30:00.000Z");
+
 export const AuditFixture = (props: { worst?: boolean; huge?: boolean }) => {
   const query = auditQuery(locale);
   const address = parseAuditAddress(query, new URLSearchParams(location.search));
   const outcome = address.state.filters.outcome;
-  const events = (props.huge ? worstEvents(100) : props.worst ? worstEvents() : AUDIT_EVENTS).filter(
+  const events = (props.huge ? denseAuditEvents(NOW, 100) : props.worst ? worstEvents() : denseAuditEvents(NOW)).filter(
     (event) => !outcome || event.outcome === outcome,
   );
   return (
@@ -53,9 +56,9 @@ export const AuditFixture = (props: { worst?: boolean; huge?: boolean }) => {
       page={1}
       pages={props.huge ? 125 : props.worst ? 3 : 1}
       total={props.huge ? 12_480 : props.worst ? 2_480 : events.length}
-      rows={auditRows(events, { t, locale, timeZone, names: [{ userId: "55555555-5555-4555-8555-000000000001", name: "Ada Renz" }] })}
+      rows={auditRows(events, { t, locale, timeZone, names: [], now: NOW, today: "Heute", yesterday: "Gestern" })}
       names={{ actor: [], target: [], serviceAccountId: [], action: [] }}
-      automatic={{ shown: false, hidden: 32, href: `${location.pathname}?automatic=1` }}
+      automatic={{ shown: address.automatic, hidden: 32, href: `${location.pathname}?automatic=yes` }}
       ignored={null}
       pendingRequests={2}
     />
@@ -65,7 +68,7 @@ export const AuditFixture = (props: { worst?: boolean; huge?: boolean }) => {
 const batchRows = (worst: boolean, length = 18) =>
   (worst
     ? Array.from({ length }, (_, index) => batch(index, { subject: `${LONG} ${index + 1}`, lastError: index % 2 ? UNBROKEN : null }))
-    : BATCHES
+    : Array.from({ length: 12 }, (_, index) => batch(index))
   ).map((entry) => ({
     id: entry.id,
     subject: entry.subject,
@@ -73,6 +76,9 @@ const batchRows = (worst: boolean, length = 18) =>
     status: entry.status,
     recipients: t.deliverableRatio({ deliverable: number(entry.deliverableCount), total: number(entry.targetCount) }),
     sent: number(entry.sentCount),
+    sentCount: entry.sentCount,
+    deliverableCount: entry.deliverableCount,
+    deliverable: number(entry.deliverableCount),
     errors: number(entry.errorCount),
     hasErrors: entry.errorCount > 0,
     created: when(entry.createdAt),
@@ -110,7 +116,14 @@ export const NotificationFixture = (props: { status?: "draft" | "running" | "com
             error: `${UNBROKEN} ${LONG}`,
           }),
         )
-      : RECIPIENTS;
+      : Array.from({ length: 24 }, (_, index) => {
+          const status = (["sent", "sent", "sent", "error", "sent", "pending", "sent", "skipped"] as const)[index % 8]!;
+          return recipient(
+            index,
+            status,
+            status === "sent" ? (index % 5 === 0 ? "bounced" : "sent") : status === "error" ? "failed" : null,
+          );
+        });
   const recipients = source.filter((entry) => !filter || entry.status === filter);
   const current = batch(0, { status, subject: props.worst ? LONG : "Wartungsfenster heute Nacht", errorCount: status === "draft" ? 0 : 2 });
   return (
@@ -124,6 +137,8 @@ export const NotificationFixture = (props: { status?: "draft" | "running" | "com
         deliverable: number(current.deliverableCount),
         skipped: number(current.skippedCount),
         sent: number(current.sentCount),
+        sentCount: current.sentCount,
+        deliverableCount: current.deliverableCount,
         errors: number(current.errorCount),
         errorCount: current.errorCount,
         selection: { userIds: ["33333333-3333-4333-8333-000000000100"], groupIds: ["33333333-3333-4333-8333-000000000001"] },

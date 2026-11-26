@@ -1,16 +1,19 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/services";
-import { getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
+import { getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ssr } from "../config";
 import AccountsNavigation from "./AccountsNavigation.island";
 import { accountsNavigationItems } from "./accounts-nav";
-import { buildGroupsUrl } from "./lib/url-state";
+import { buildGroupDetailUrl, buildGroupsUrl } from "./lib/url-state";
 import { accountsMessages } from "./messages";
-import type { OverviewAdmin, OverviewLogLink } from "./overview/OverviewScreen";
+import type { OverviewAdmin, OverviewGroup, OverviewLogLink } from "./overview/OverviewScreen";
 import OverviewScreen from "./overview/OverviewScreen.island";
+
+/** How many of the person's groups the overview shows; the list behind "All groups" has the rest. */
+const MY_GROUPS = 6;
 
 const LOG_LINKS: OverviewLogLink[] = [
   { href: "/admin/observability/logs?source=auth:ipa:sync", label: "syncLogs" },
@@ -34,14 +37,27 @@ export default ssr<AuthContext>(async (c) => {
   const [summary, activity, managedGroups, memberGroups, allGroups] = await Promise.all([
     isAdmin ? accountsService.dashboard.get() : Promise.resolve(null),
     isAdmin ? accountsService.dashboard.activity() : Promise.resolve([]),
-    accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { userId: user.id, mode: "managed" } }),
-    accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { userId: user.id, mode: "member" } }),
+    accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "managed" } }),
+    accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "member" } }),
     accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { mode: "all" } }),
   ]);
 
   const now = new Date();
   const groupsHref = (scope: "managed" | "member" | "all") =>
     buildGroupsUrl({ search: "", page: 1, provider: "", scope }, { defaultScope: defaultGroupScope });
+  // the person's own groups: the managed ones first, then the others they belong to, a handful in all
+  const listState = { search: "", page: 1, provider: "" as const, scope: "member" as const };
+  const managedIds = new Set(managedGroups.items.map((group) => group.id));
+  const myGroups: OverviewGroup[] = [...managedGroups.items, ...memberGroups.items.filter((group) => !managedIds.has(group.id))]
+    .slice(0, MY_GROUPS)
+    .map((group) => ({
+      id: group.id,
+      name: groupDisplayName(group.name, locale),
+      description: group.description,
+      provider: group.provider === "ipa" ? "ipa" : "local",
+      managed: managedIds.has(group.id),
+      href: buildGroupDetailUrl(group.id, listState, { defaultScope: defaultGroupScope }),
+    }));
   const admin: OverviewAdmin | null =
     isAdmin && summary
       ? {
@@ -50,9 +66,8 @@ export default ssr<AuthContext>(async (c) => {
             freeIpa: summary.ipaAccountsTotal,
             local: summary.localAccountsTotal,
           },
-          groups: { total: summary.groupsTotal, freeIpa: summary.ipaGroupsTotal, local: summary.localGroupsTotal },
           openRequests: summary.openRequests,
-          expiring: summary.ipaExpiring30d + summary.localUserExpiring30d + summary.localGuestExpiring30d,
+          expiring: { freeIpa: summary.ipaExpiring30d, local: summary.localUserExpiring30d, guests: summary.localGuestExpiring30d },
           lastSync: summary.lastSync ? dates.formatDateTimeRelative(summary.lastSync.createdAt, { locale, timeZone, base: now }) : null,
           health: [
             ...(freeIpaEnabled
@@ -97,6 +112,7 @@ export default ssr<AuthContext>(async (c) => {
           member: { count: memberGroups.total, href: groupsHref("member") },
           all: { count: allGroups.total, href: groupsHref("all") },
         }}
+        myGroups={myGroups}
         isAdmin={isAdmin}
         admin={admin}
         pendingRequests={summary?.openRequests ?? 0}

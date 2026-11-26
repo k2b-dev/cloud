@@ -163,7 +163,9 @@ const expectClean = async (tab: Page) => {
   expect(layout.problems).toEqual([]);
 };
 
-const rows = (tab: Page) => tab.locator("[data-k2-part=Table] tbody tr").count();
+/** The entries a list shows: table rows, or the sentences of the audit log. */
+const ENTRY = '[data-k2-part=Table] tbody tr, [data-k2-part="Digest.Entry"]';
+const rows = (tab: Page) => tab.locator(ENTRY).count();
 
 describe("the activity page on v2", () => {
   test("every screen keeps the v2 rules at 1440, 1024 and 390 px, also with worst-case data", async () => {
@@ -202,7 +204,7 @@ describe("the activity page on v2", () => {
       const { context, tab, errors } = await open(wide, address, { huge: true });
       try {
         await tab
-          .locator("[data-k2-part=Table] tbody tr")
+          .locator(ENTRY)
           .first()
           .waitFor({ state: "attached" })
           .catch(async () => {
@@ -235,9 +237,9 @@ describe("the activity page on v2", () => {
       await tab.getByRole("menuitem", { name: /Ergebnis/ }).click();
       await tab.getByRole("option", { name: /Abgelehnt/ }).click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("outcome") === "denied");
-      await tab.waitForFunction((count) => document.querySelectorAll("[data-k2-part=Table] tbody tr").length < count, all);
+      await tab.waitForFunction(([selector, count]) => document.querySelectorAll(selector).length < count, [ENTRY, all] as const);
       expect(seen.pages.at(-1)).toContain("outcome=denied");
-      expect(await tab.locator("[data-k2-part=Table] tbody").textContent()).toContain("Abgelehnt");
+      expect(await tab.locator("[data-k2-part=Digest]").first().textContent()).toContain("Abgelehnt");
       expect(errors).toEqual([]);
     } finally {
       await context.close();

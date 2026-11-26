@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AppAppearance } from "@k2b/cloud/contracts";
+import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
@@ -80,11 +82,25 @@ const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
+/** Accounts' appearance (`config.ts`): its accent and the canvas it tints the page with, as in the Cloud shell. */
+const ACCOUNTS_APPEARANCE: AppAppearance = { accent: "#4f46e5", background: { from: "#6366f1" } };
+/**
+ * The shell's frame as Mail's v2 harness draws it: the place of the 56 px rail and an 8 px card inset on the tinted page
+ * from 768 px, the phone bar of 52 px below. The rail's own buttons belong to Cloud's Layout, which this DOM harness
+ * does not render; its place and the page tint are what a screen is measured in.
+ */
+const frame = `html,body{margin:0;height:100%}
+.cloud-app-canvas{position:fixed;inset:0}
+.v2-shell{position:fixed;inset:8px 8px 8px 56px;display:flex}
+.v2-shell>main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}
+@media (max-width:767px){.v2-shell{inset:52px 0 0 0}}`;
+
 const html = (state: State) =>
   `<!doctype html><html lang="de" class="light" data-state='${JSON.stringify(state)}'><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+  `<style>${css}</style><style>${frame}</style></head>` +
+  `<body class="k2b-ui app-accent-scope" data-theme="light"><div class="cloud-app-canvas" style="${appAppearanceStyle(ACCOUNTS_APPEARANCE)}">` +
+  `<div class="v2-shell"><main id="root" class="k2-ui"></main></div></div><script src="/harness.js"></script></body></html>`;
 
 /** What the test's API answers, in order, and what it received. */
 type Api = {
@@ -487,7 +503,7 @@ describe("a new account on v2", () => {
     const answers = api({ user: [409] });
     const { context, tab, errors } = await open(wide, "/app/accounts/users/new", answers);
     try {
-      await tab.getByRole("button", { name: "Konto erstellen" }).click();
+      await tab.getByRole("button", { name: "Konto erstellen" }).first().click();
       await tab.getByText("Kontotyp auswählen").first().waitFor();
       expect(answers.posts).toHaveLength(0);
       await tab.getByRole("radio", { name: "Login" }).check();
@@ -500,12 +516,12 @@ describe("a new account on v2", () => {
       await tab.getByRole("radio", { name: "Gast" }).check();
       await tab.getByRole("radio", { name: "Login" }).check();
       expect(await tab.getByRole("checkbox", { name: /Administrationszugriff/ }).isChecked()).toBe(false);
-      await tab.getByRole("button", { name: "Konto erstellen" }).click();
+      await tab.getByRole("button", { name: "Konto erstellen" }).first().click();
       await tab.getByText("Diese Adresse gibt es schon.").waitFor();
       expect(await tab.getByRole("textbox", { name: /E-Mail/ }).inputValue()).toBe("ada@kramer-lager.example");
-      await tab.getByRole("button", { name: "Konto erstellen" }).click();
-      await tab.getByRole("link", { name: "Konto anzeigen" }).waitFor();
-      expect(await tab.getByRole("link", { name: "Konto anzeigen" }).getAttribute("href")).toBe(`/app/accounts/users/${PERSON_ID}`);
+      await tab.getByRole("button", { name: "Konto erstellen" }).first().click();
+      await tab.getByRole("link", { name: "Konto anzeigen" }).first().waitFor();
+      expect(await tab.getByRole("link", { name: "Konto anzeigen" }).first().getAttribute("href")).toBe(`/app/accounts/users/${PERSON_ID}`);
       expect(await tab.textContent("body")).toContain("Arbeitsplatz");
       expect(answers.posts.map((post) => post.body)).toEqual([
         expect.objectContaining({ provider: "local", profile: "user", admin: false, email: "ada@kramer-lager.example", givenname: "Ada" }),
@@ -525,7 +541,7 @@ describe("a new account on v2", () => {
     try {
       expect(await tab.getByRole("radio", { name: "FreeIPA" }).isChecked()).toBe(true);
       expect(await tab.getByRole("textbox", { name: /Vorname/ }).inputValue()).toBe("Ida");
-      await tab.getByRole("button", { name: "Anfrage ablehnen" }).first().click();
+      await tab.getByRole("button", { name: "Ablehnen", exact: true }).first().click();
       await dialog(tab).getByRole("textbox").fill("Bitte über die Personalabteilung.");
       await shoot(tab, "new-user-deny-light-1440");
       await dialog(tab).getByRole("button", { name: "Anfrage ablehnen" }).click();

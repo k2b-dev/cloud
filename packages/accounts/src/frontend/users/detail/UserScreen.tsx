@@ -93,6 +93,8 @@ export default function UserScreen(props: Props) {
   const href = (tab: UserTab, recursive = false) => userRecordHref(user().id, props.list, { tab, recursive });
   const [dialog, setDialog] = createSignal<Dialogs>({ kind: "none" });
   const [busy, setBusy] = createSignal<string | null>(null);
+  /** Why the last deed failed, in the server's words: it stays at the top of the record until it is dismissed. */
+  const [failure, setFailure] = createSignal<string | null>(null);
   const [shown, setShown] = createSignal({ memberships: REVEAL, managed: REVEAL });
   /** "Show more" at the end of a list that holds more rows than it shows. */
   const moreOf = (list: "memberships" | "managed", total: number) => {
@@ -121,10 +123,11 @@ export default function UserScreen(props: Props) {
     if (busy()) return;
     if (question && !(await Dialog.confirm(question))) return;
     setBusy(key);
+    setFailure(null);
     try {
       await run();
     } catch (cause) {
-      toast(cause instanceof Error ? cause.message : r().deedFailed, { status: "bad" });
+      setFailure(cause instanceof Error ? cause.message : r().deedFailed);
     } finally {
       setBusy(null);
     }
@@ -325,8 +328,7 @@ export default function UserScreen(props: Props) {
     const key = `group:${group.id}`;
     return (
       <Row
-        icon="users-group"
-        color={area.groups}
+        mark={{ icon: "users-group", color: area.groups }}
         lines={[name, group.description || r().noDescription]}
         meta={removable ? `${providerName(group)} · ${group.direct ? r().direct : r().inherited}` : providerName(group)}
         href={`/app/accounts/groups/${group.id}`}
@@ -513,8 +515,7 @@ export default function UserScreen(props: Props) {
         <For each={record().keys}>
           {(entry) => (
             <Row
-              icon="key"
-              color={area.keys}
+              mark={{ icon: "key", color: area.keys }}
               lines={[
                 entry.name,
                 [
@@ -577,8 +578,7 @@ export default function UserScreen(props: Props) {
               <For each={list()}>
                 {(device) => (
                   <Row
-                    icon="device-mobile"
-                    color={area.devices}
+                    mark={{ icon: "device-mobile", color: area.devices }}
                     lines={[
                       device.name,
                       [r().pairedOn({ date: device.paired }), device.assisted ? t().pairedWithAdmin : null].filter(Boolean).join(" · "),
@@ -636,8 +636,7 @@ export default function UserScreen(props: Props) {
               <For each={list()}>
                 {(device) => (
                   <Row
-                    icon={device.platform === "other" ? "device-tablet" : "device-mobile"}
-                    color={area.devices}
+                    mark={{ icon: device.platform === "other" ? "device-tablet" : "device-mobile", color: area.devices }}
                     lines={[device.name, [platformName(device.platform), r().pairedOn({ date: device.paired })].join(" · ")]}
                     time={r().usedOn({ date: device.lastUsed })}
                     end={
@@ -722,6 +721,13 @@ export default function UserScreen(props: Props) {
           />
         }
       >
+        <Show when={failure()}>
+          {(message) => (
+            <Notice tone="bad" icon="alert-circle" actions={[{ label: t().close, onClick: () => setFailure(null) }]}>
+              {message()}
+            </Notice>
+          )}
+        </Show>
         {areas[props.tab]()}
       </Pane>
       {/* each dialog starts fresh: it exists only while it is open */}
@@ -734,7 +740,7 @@ export default function UserScreen(props: Props) {
           open
           close={(sent) => {
             setDialog({ kind: "none" });
-            if (sent) toast(sent, { status: "ok" });
+            if (sent) toast(r().notified, { status: "ok" });
           }}
         />
       </Show>

@@ -38,6 +38,12 @@ const SUBJECTS = [
   "Inventur am Samstag",
   "Umzug des Lagers nach Halle 3",
   "Jahresabschluss: Belege bis Freitag",
+  "Neue Schichtpläne für Dezember",
+  "Erste-Hilfe-Kurs am 4. Dezember",
+  "Weihnachtsfeier: Anmeldung offen",
+  "Sicherheitsunterweisung Halle 2",
+  "Urlaubsplanung 2027 beginnt",
+  "Neues Zeiterfassungs-Terminal",
 ];
 const STATUSES: NotificationBatch["status"][] = ["running", "completed", "completed_with_errors", "draft", "failed", "cancelled"];
 
@@ -69,7 +75,20 @@ export const batch = (index: number, patch: Partial<NotificationBatch> = {}): No
 
 export const BATCHES = Array.from({ length: 6 }, (_, index) => batch(index));
 
-const NAMES = ["Milan Horvat", "Ada Renz", "Petra Lindqvist", "Jonas Wehrle", "Mira Kaya", "Lea Brandner"];
+const NAMES = [
+  "Milan Horvat",
+  "Ada Renz",
+  "Petra Lindqvist",
+  "Jonas Wehrle",
+  "Mira Kaya",
+  "Lea Brandner",
+  "Felix Thal",
+  "Sami Yilmaz",
+  "Jana Berger",
+  "Tom Oswald",
+  "Lena Hartwig",
+  "Nora Petersen",
+];
 
 export const recipient = (
   index: number,

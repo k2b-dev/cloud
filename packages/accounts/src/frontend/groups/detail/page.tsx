@@ -2,9 +2,10 @@ import { cloudAvatarImage } from "@k2b/cloud/account/ui";
 import type { GroupRelations } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
+import { accountsAppService as accountsService, audit, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { canManageGroup, getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
+import { dates } from "@k2b/stdlib";
 import { z } from "zod";
 import type { EntityListItem } from "@/contracts";
 import { ssr } from "../../../config";
@@ -21,10 +22,12 @@ import {
   getVisibleGroupDetailTabs,
   parseGroupDetailTab,
 } from "./group-detail-url";
-import type { GroupMember } from "./group-screen";
+import type { GroupActivity, GroupMember, GroupPerson } from "./group-screen";
 
 /** Entries per page of each tab, as before v2. */
 const PER_PAGE = 100;
+/** How many managers show their face in the key figures before "+n". */
+const MANAGER_FACES = 4;
 
 /**
  * The relations around a group, read by the one admin-checked service: `none` when it has none to show (the service
@@ -57,6 +60,85 @@ const readRelations = async (
  * facts beside them. The address holds the tab, the search, the page and the two display choices (`indirect`,
  * `service_accounts`), and the group list it was opened from (`list_*`), so the way back keeps that list.
  */
+/** The audit actions a group's activity tells, by their short code. */
+const ACTIVITY_ACTIONS: Record<string, GroupActivity["action"]> = {
+  "accounts.group.create": "create",
+  "accounts.group.update": "update",
+  "accounts.group.make_posix": "posix",
+  "accounts.group.member.add": "member.add",
+  "accounts.group.member.remove": "member.remove",
+  "accounts.group.manager.add": "manager.add",
+  "accounts.group.manager.remove": "manager.remove",
+};
+/** How many changes the side column tells. */
+const ACTIVITY_SIZE = 5;
+
+const ids = (values: unknown[]) => [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))];
+
+/**
+ * The last changes of a group as sentences (administrators, who may read the audit log): who did what to whom. One read
+ * of the audit log and one read of the directory that names the people and groups in it; a failure leaves it out.
+ */
+const readActivity = async (actor: ReturnType<typeof toAccountsActor>, groupId: string, locale: string): Promise<GroupActivity[]> => {
+  try {
+    const page = await audit.list({ pagination: { page: 1, perPage: ACTIVITY_SIZE * 2 }, filter: { target: groupId, outcome: "allowed" } });
+    const events = page.items.filter((event) => event.target.id === groupId && ACTIVITY_ACTIONS[event.action]).slice(0, ACTIVITY_SIZE);
+    if (events.length === 0) return [];
+    const meta = (key: string) => events.map((event) => event.metadata[key]);
+    const userIds = ids([...events.map((event) => event.actor.userId), ...meta("userId")]);
+    const groupIds = ids(meta("groupId"));
+    const serviceAccountIds = ids(meta("serviceAccountId"));
+    // one read names them all; a kind without ids is left out, so it is not read whole
+    const kinds = [
+      ...(userIds.length ? (["user"] as const) : []),
+      ...(groupIds.length ? (["group"] as const) : []),
+      ...(serviceAccountIds.length ? (["service_account"] as const) : []),
+    ];
+    const named =
+      kinds.length === 0
+        ? { items: [] }
+        : await accountsService.entity.list({
+            actor,
+            pagination: { page: 1, perPage: userIds.length + groupIds.length + serviceAccountIds.length },
+            userIds: userIds.length ? userIds : undefined,
+            groupIds: groupIds.length ? groupIds : undefined,
+            serviceAccountIds: serviceAccountIds.length ? serviceAccountIds : undefined,
+            kinds: [...kinds],
+          });
+    const people = new Map<string, GroupPerson & { kind: "user" | "group" | "agent" }>();
+    for (const item of named.items) {
+      if (item.kind === "user")
+        people.set(item.user.id, {
+          kind: "user",
+          name: item.user.displayName || item.user.uid,
+          image: cloudAvatarImage({ kind: "user", userId: item.user.id, avatarHash: item.user.avatarHash }),
+        });
+      else if (item.kind === "group") people.set(item.group.id, { kind: "group", name: groupDisplayName(item.group.name, locale) });
+      else
+        people.set(item.serviceAccount.id, {
+          kind: "agent",
+          name: item.serviceAccount.name,
+          image: cloudAvatarImage({ kind: "service_account", userId: item.serviceAccount.id }),
+        });
+    }
+    const now = new Date();
+    return events.map((event) => {
+      const subjectId = ids([event.metadata.userId, event.metadata.groupId, event.metadata.serviceAccountId])[0];
+      const subject = subjectId ? people.get(subjectId) : undefined;
+      const by = event.actor.userId ? people.get(event.actor.userId) : undefined;
+      return {
+        id: String(event.id),
+        action: ACTIVITY_ACTIONS[event.action]!,
+        actor: { name: by?.name ?? event.actor.uid ?? "?", image: by?.image },
+        subject: subject ? { kind: subject.kind, name: subject.name } : null,
+        time: dates.formatDateTimeRelative(event.createdAt, { locale, base: now }),
+      };
+    });
+  } catch {
+    return [];
+  }
+};
+
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = accountsMessages.resolve([locale]);
@@ -99,30 +181,41 @@ export default ssr<AuthContext>(async (c) => {
 
   const relationsState = tab === "relations" ? { ...parseRelationsUrl((name) => c.req.query(name)), focus: groupId } : null;
   const noEntries = { items: [] as EntityListItem[], total: 0 };
-  const [pendingRequests, parentGroupIdsPage, managedGroupIdsPage, entries, direct, relations] = await Promise.all([
-    isAdmin ? accountsService.accountRequest.countPending() : Promise.resolve(0),
-    accountsService.group.parent.list({ id: groupId }),
-    accountsService.group.managedGroup.list({ id: groupId }),
-    tab === "relations"
-      ? Promise.resolve(noEntries)
-      : accountsService.entity.list({
-          actor: accountsActor,
-          pagination: { page, perPage: PER_PAGE },
-          search: search || undefined,
-          ...(tab === "members"
-            ? { memberOfGroupId: groupId, recursive: indirect, kinds }
-            : tab === "managers"
-              ? { managerOfGroupId: groupId, kinds }
-              : { parentGroupId: groupId, kinds: ["group" as const] }),
-        }),
-    // Who stands in the group directly: the add dialog leaves them out, and only they can be removed.
-    tab === "members"
-      ? accountsService.group.member.list({ id: groupId, recursive: false }).then((result) => result.items)
-      : tab === "managers"
-        ? accountsService.group.manager.list({ id: groupId }).then((result) => result.items)
-        : Promise.resolve([]),
-    relationsState ? readRelations(accountsActor, relationsState, c.req.raw.signal) : Promise.resolve(null),
-  ]);
+  const [pendingRequests, parentGroupIdsPage, managedGroupIdsPage, entries, direct, relations, directMembers, managers, activity] =
+    await Promise.all([
+      isAdmin ? accountsService.accountRequest.countPending() : Promise.resolve(0),
+      accountsService.group.parent.list({ id: groupId }),
+      accountsService.group.managedGroup.list({ id: groupId }),
+      tab === "relations"
+        ? Promise.resolve(noEntries)
+        : accountsService.entity.list({
+            actor: accountsActor,
+            pagination: { page, perPage: PER_PAGE },
+            search: search || undefined,
+            ...(tab === "members"
+              ? { memberOfGroupId: groupId, recursive: indirect, kinds }
+              : tab === "managers"
+                ? { managerOfGroupId: groupId, kinds }
+                : { parentGroupId: groupId, kinds: ["group" as const] }),
+          }),
+      // Who manages the group directly: the add dialog leaves them out, and only they can be removed.
+      tab === "managers" ? accountsService.group.manager.list({ id: groupId }).then((result) => result.items) : Promise.resolve([]),
+      relationsState ? readRelations(accountsActor, relationsState, c.req.raw.signal) : Promise.resolve(null),
+      // The direct members by kind, for the key figures on every tab (and the exclusions of the members tab).
+      tab === "relations"
+        ? Promise.resolve([])
+        : accountsService.group.member.list({ id: groupId, recursive: false }).then((result) => result.items),
+      // The first managers and how many there are, for the managers' faces in the key figures.
+      tab === "relations"
+        ? Promise.resolve(noEntries)
+        : accountsService.entity.list({
+            actor: accountsActor,
+            pagination: { page: 1, perPage: MANAGER_FACES },
+            managerOfGroupId: groupId,
+            kinds: ["user", "group", "service_account"],
+          }),
+      isAdmin && tab !== "relations" ? readActivity(accountsActor, groupId, locale) : Promise.resolve([]),
+    ]);
 
   // A page past the end, from an old link or after the last entries of a page were removed, opens the last page instead
   // of an empty one that reads as "no members". The URL then names the page shown, so a reload or Back shows it again.
@@ -136,7 +229,21 @@ export default ssr<AuthContext>(async (c) => {
 
   const parentGroupIds = parentGroupIdsPage.items;
   const directIds = (type: "user" | "group" | "service_account") =>
-    tab === "member-of" ? (type === "group" ? parentGroupIds : []) : direct.filter((entry) => entry.type === type).map((entry) => entry.id);
+    tab === "member-of"
+      ? type === "group"
+        ? parentGroupIds
+        : []
+      : (tab === "members" ? directMembers : direct).filter((entry) => entry.type === type).map((entry) => entry.id);
+  const count = (type: "user" | "group" | "service_account") => directMembers.filter((entry) => entry.type === type).length;
+  const face = (item: EntityListItem): GroupPerson =>
+    item.kind === "user"
+      ? {
+          name: item.user.displayName || item.user.uid,
+          image: cloudAvatarImage({ kind: "user", userId: item.user.id, avatarHash: item.user.avatarHash }),
+        }
+      : item.kind === "group"
+        ? { name: groupDisplayName(item.group.name, locale) }
+        : { name: item.serviceAccount.name, image: cloudAvatarImage({ kind: "service_account", userId: item.serviceAccount.id }) };
 
   const rows: GroupMember[] = entries.items.map((item): GroupMember => {
     const isDirect = tab === "member-of" || item.relation?.direct !== false;
@@ -221,7 +328,12 @@ export default ssr<AuthContext>(async (c) => {
           owner: group.personalOwner ? { id: group.personalOwner.id, name: group.personalOwner.displayName } : null,
           parents: parentGroupIds.length,
           managedGroups: managedGroupIdsPage.items.length,
+          people: count("user"),
+          agents: count("service_account"),
+          subGroups: count("group"),
+          managers: { total: managers.total, faces: managers.items.map(face) },
         }}
+        activity={activity}
         tab={tab}
         tabs={getVisibleGroupDetailTabs(isAdmin).map((entry) => ({
           tab: entry,

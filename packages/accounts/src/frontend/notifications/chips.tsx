@@ -14,3 +14,9 @@ export const batchChip = (status: BatchStatus, label: string) =>
   ) : (
     <Chip>{label}</Chip>
   );
+
+/** The mark of a notification batch: a sent mail in the blue of the administration. */
+export const BATCH_MARK = { icon: "mail-share", color: "#0284c7" };
+
+/** The mark of a group, in the violet of groups across Accounts. */
+export const GROUP_MARK = { icon: "users-group", color: "#7c3aed" };

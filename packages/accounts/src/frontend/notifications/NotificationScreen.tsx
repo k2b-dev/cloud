@@ -4,6 +4,7 @@ import {
   Avatar,
   Bar,
   Button,
+  Cells,
   Check,
   Chip,
   Dialog,
@@ -12,14 +13,15 @@ import {
   Failed,
   FilterBar,
   Inline,
+  Mark,
   Menu,
   Notice,
   Pane,
+  Progress,
   Prose,
   RecordHead,
   Row,
   Section,
-  StatusRow,
   Table,
   Text,
   useToast,
@@ -32,7 +34,7 @@ import { kindHref } from "../activity/kind";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
 import { useAccountsMessages } from "../messages";
-import { type BatchStatus, batchChip } from "./chips";
+import { BATCH_MARK, type BatchStatus, batchChip, GROUP_MARK } from "./chips";
 import { useNotificationMessages } from "./messages";
 import { batchHref, batchStatusLabel, type RecipientsState, recipientStatusLabel, recipientsQuery } from "./query";
 
@@ -45,6 +47,9 @@ export type BatchView = {
   matched: string;
   deliverable: string;
   skipped: string;
+  /** Sent and deliverable as numbers, for the delivery bar. */
+  sentCount: number;
+  deliverableCount: number;
   sent: string;
   errors: string;
   errorCount: number;
@@ -131,7 +136,6 @@ export default function NotificationScreen(props: NotificationScreenProps) {
   const { showChanges, openPage } = usePageSwap();
   const query = createMemo(() => recipientsQuery(locale()));
   const [state, setState] = createSignal<RecipientsState>(props.state);
-  const [refreshing, setRefreshing] = createSignal(false);
   const [busy, setBusy] = createSignal<"finalize" | "retry" | "delete" | null>(null);
   const [preview, setPreview] = createSignal<Preview | null>(null);
   const [errorOf, setErrorOf] = createSignal<RecipientRow | null>(null);
@@ -141,10 +145,14 @@ export default function NotificationScreen(props: NotificationScreenProps) {
   // k2b-ui gap: a v2 toast has no description line for the server's reason (baseline in toast-copy).
   const fail = (error: unknown) => toast(error instanceof Error ? error.message : String(error), { status: "bad" });
 
+  const errorsHref = () => {
+    const next = query().set(query().reset(), "status", "error");
+    return next ? batchHref(query(), props.batch.id, next) : undefined;
+  };
+
   /** The bar wrote the address; a new filter starts at page 1, and the server shows the recipients for it. */
   const change = (next: RecipientsState) => {
     setState(next);
-    setRefreshing(true);
     const params = new URLSearchParams(location.search);
     if (params.has("page")) {
       params.delete("page");
@@ -219,7 +227,13 @@ export default function NotificationScreen(props: NotificationScreenProps) {
       sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
-          start={<RecordHead name={props.batch.subject} kinds={[statusLabel()]} />}
+          // k2b-ui gap: RecordHead takes an avatar, no mark; the batch's mark stands before it
+          start={
+            <>
+              <Mark {...BATCH_MARK} />
+              <RecordHead name={props.batch.subject} kinds={[statusLabel()]} />
+            </>
+          }
           end={
             <>
               <Show when={draft()}>
@@ -252,29 +266,54 @@ export default function NotificationScreen(props: NotificationScreenProps) {
           label={t().recipients}
           scrollKey="accounts-notification-recipients"
           status={
-            draft() ? (
-              <StatusRow lead={t().recipientsSnapshotted} />
-            ) : (
-              <>
-                <FilterBar
-                  query={query()}
-                  state={state()}
-                  onChange={change}
-                  icons={{ status: "circle-check" }}
-                  results={t().recipientCount({ count: number(props.total) })}
-                />
-                <StatusRow
-                  lead={props.recipients ? t().recipientCount({ count: number(props.total) }) : words().recipientsFailed}
-                  loading={refreshing()}
-                  facts={[
-                    { value: props.batch.sent, after: t().sent },
-                    ...(props.batch.errorCount > 0 ? [{ value: props.batch.errors, after: t().errors }] : []),
-                  ]}
-                />
-              </>
+            draft() ? undefined : (
+              <FilterBar
+                query={query()}
+                state={state()}
+                onChange={change}
+                icons={{ status: "circle-check" }}
+                results={t().recipientCount({ count: number(props.total) })}
+              />
             )
           }
         >
+          {/* what matters first: how far the delivery got, the errors, who it was for */}
+          <Show when={!draft()}>
+            <Cells>
+              <Cells.Cell
+                icon="send"
+                color="#0284c7"
+                label={t().sent}
+                value={
+                  <Progress
+                    value={props.batch.sentCount}
+                    of={props.batch.deliverableCount}
+                    label={words().sentOf({ sent: props.batch.sent, total: props.batch.deliverable })}
+                  />
+                }
+                meta={t().skippedCount({ count: props.batch.skipped })}
+              />
+              <Cells.Cell
+                icon="alert-circle"
+                color={props.batch.errorCount > 0 ? "#dc2626" : undefined}
+                label={t().errors}
+                value={
+                  props.batch.errorCount > 0 ? (
+                    <Chip status="bad">{words().errorsCount({ count: props.batch.errors })}</Chip>
+                  ) : (
+                    <Chip status="ok">{words().noErrors}</Chip>
+                  )
+                }
+                href={props.batch.errorCount > 0 ? errorsHref() : undefined}
+              />
+              <Cells.Cell
+                icon="users"
+                label={t().recipients}
+                value={t().recipientCount({ count: props.batch.matched })}
+                meta={`${props.batch.deliverable} ${t().deliverable}`}
+              />
+            </Cells>
+          </Show>
           <Show when={props.blocked}>
             {(reason) => (
               <Notice tone="warn" icon="alert-triangle">
@@ -398,13 +437,6 @@ export default function NotificationScreen(props: NotificationScreenProps) {
               items={[
                 { label: t().status, value: batchChip(props.batch.status, statusLabel()) },
                 { label: t().created, value: props.batch.created },
-                { label: t().matched, value: props.batch.matched },
-                { label: t().deliverable, value: props.batch.deliverable, hint: t().skippedCount({ count: props.batch.skipped }) },
-                { label: t().sent, value: props.batch.sent },
-                {
-                  label: t().errors,
-                  value: props.batch.errorCount > 0 ? <Text tone="bad">{props.batch.errors}</Text> : props.batch.errors,
-                },
               ]}
             />
           </Section>
@@ -424,9 +456,9 @@ export default function NotificationScreen(props: NotificationScreenProps) {
               </Show>
               <Show when={props.audience.moreUsers}>{(more) => <Row icon="dots" lines={[more()]} />}</Show>
             </Show>
-            <Show when={props.audience.groups.length > 0} fallback={<Row icon="users-group" lines={[t().noSelectedGroups]} />}>
+            <Show when={props.audience.groups.length > 0} fallback={<Row mark={GROUP_MARK} lines={[t().noSelectedGroups]} />}>
               {props.audience.groups.map((group) => (
-                <Row icon="users-group" lines={[group.name]} href={`/app/accounts/groups/${group.id}`} />
+                <Row mark={GROUP_MARK} lines={[group.name]} href={`/app/accounts/groups/${group.id}`} />
               ))}
             </Show>
             <Show when={props.audience.moreGroups}>{(more) => <Row icon="dots" lines={[more()]} />}</Show>

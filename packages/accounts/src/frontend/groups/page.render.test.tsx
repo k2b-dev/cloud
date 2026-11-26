@@ -89,9 +89,7 @@ test("a group opened from a paged, filtered list carries the list state only as 
     expect(response.status).toBe(200);
     // The relations are a view inside each group's record; the list no longer links a relations page.
     expect(html).not.toContain('href="/app/accounts/groups/relations"');
-    const detailHrefs = [...html.matchAll(/href="(\/app\/accounts\/groups\/[^"]+)"/g)].map((match) =>
-      match[1]!.replaceAll("&amp;", "&"),
-    );
+    const detailHrefs = [...html.matchAll(/href="(\/app\/accounts\/groups\/[^"]+)"/g)].map((match) => match[1]!.replaceAll("&amp;", "&"));
     expect(detailHrefs.length).toBeGreaterThan(0);
     for (const href of detailHrefs) {
       const params = new URL(href, "https://local.invalid").searchParams;

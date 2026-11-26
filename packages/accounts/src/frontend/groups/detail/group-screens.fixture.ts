@@ -1,6 +1,7 @@
 import type { GroupRelations } from "@k2b/cloud/contracts";
+import type { GroupListEntry } from "../GroupsScreen";
 import { parseRelationsUrl } from "../relations/relations-view";
-import type { GroupMember, GroupScreenProps, GroupTab, GroupView } from "./GroupScreen";
+import type { GroupActivity, GroupMember, GroupScreenProps, GroupTab, GroupView } from "./GroupScreen";
 
 // Invented, frozen data for the group record's browser test: the test keeps a `GroupDb` as its server and answers each
 // page with the props `propsFor` builds from the address, as `page.tsx` builds them from the services.
@@ -101,6 +102,7 @@ export type GroupDb = {
   parents: GroupMember[];
   viewer: { isAdmin: boolean; canManage: boolean; canMutate: boolean; linuxEnabled: boolean };
   relations: GroupRelations | "none" | null;
+  activity: GroupActivity[];
 };
 
 export const sampleDb = (): GroupDb => ({
@@ -113,20 +115,49 @@ export const sampleDb = (): GroupDb => ({
     description: "Entwicklung, Betrieb und Bereitschaft",
     owner: null,
     parents: 1,
-    managedGroups: 0,
+    managedGroups: 2,
+    // counted by `propsFor` from the members, as the server counts them
+    people: 0,
+    agents: 0,
+    subGroups: 0,
+    managers: { total: 0, faces: [] },
   },
   members: [
     user(1, "Milan Horvat"),
     user(2, "Ada Renz"),
     user(3, "Jana Berger", "guest"),
-    group(PLATFORM, "Platform", "Plattform-Team"),
+    group(PLATFORM, "Platform", "Plattform-Team: Kubernetes, Datenbanken, Netz"),
+    group(ONCALL, "On call", "Bereitschaft am Wochenende"),
     agent(AGENT, "Nightly helper"),
+    user(5, "Felix Thal"),
+    user(6, "Lena Hartwig"),
+    user(7, "Sami Yilmaz"),
+    user(8, "Mira Solberg"),
+    user(9, "Tom Oswald", "guest"),
+    user(10, "Jonas Kern"),
+    user(11, "Petra Lindqvist"),
+    user(12, "Karim Haddad"),
+    user(13, "Nele Brückner"),
+    user(14, "Ida Sørensen"),
     user(4, "Ole Brandt", "user", false),
   ],
-  managers: [user(2, "Ada Renz"), agent(AGENT, "Nightly helper")],
+  managers: [user(2, "Ada Renz"), user(1, "Milan Horvat"), user(8, "Mira Solberg"), agent(AGENT, "Nightly helper")],
   parents: [group(ALL, "All staff", "Alle Beschäftigten")],
   viewer: { isAdmin: true, canManage: true, canMutate: true, linuxEnabled: true },
   relations: graph,
+  activity: [
+    { id: "5", action: "member.add", actor: { name: "Ada Renz" }, subject: { kind: "user", name: "Ida Sørensen" }, time: "vor 12 Min." },
+    { id: "4", action: "manager.add", actor: { name: "Ada Renz" }, subject: { kind: "user", name: "Mira Solberg" }, time: "vor 2 Std." },
+    { id: "3", action: "member.add", actor: { name: "Milan Horvat" }, subject: { kind: "group", name: "On call" }, time: "gestern, 16:40" },
+    {
+      id: "2",
+      action: "member.remove",
+      actor: { name: "Milan Horvat" },
+      subject: { kind: "user", name: "Paul Weber" },
+      time: "Mo., 09:12",
+    },
+    { id: "1", action: "update", actor: { name: "Ada Renz" }, subject: null, time: "12. Nov." },
+  ],
 });
 
 /** The worst case of break-ui: very long names, an unbreakable address, a guest, many members over two pages. */
@@ -191,8 +222,16 @@ export const propsFor = (db: GroupDb, url: URL): GroupScreenProps => {
   const pages = Math.max(1, Math.ceil(shown.length / 100));
   const page = Math.min(Math.max(1, Number(query("page")) || 1), pages);
   const ids = (kind: string) => all.filter((entry) => entry.direct && entry.key.startsWith(`${kind}:`)).map((entry) => entry.id);
+  const direct = db.members.filter((entry) => entry.direct);
   return {
-    group: db.group,
+    group: {
+      ...db.group,
+      people: direct.filter((entry) => entry.kind === "user").length,
+      agents: direct.filter((entry) => entry.kind === "agent").length,
+      subGroups: direct.filter((entry) => entry.kind === "group").length,
+      managers: { total: db.managers.length, faces: db.managers.slice(0, 4).map((entry) => ({ name: entry.name, image: entry.image })) },
+    },
+    activity: admin ? db.activity : [],
     tab,
     tabs: tabs.map((entry) => ({ tab: entry, href: href({ tab: entry }) })),
     rows: shown.slice((page - 1) * 100, page * 100),
@@ -231,3 +270,30 @@ export const propsFor = (db: GroupDb, url: URL): GroupScreenProps => {
         : undefined,
   };
 };
+
+/** The group list of an administrator: dense, real names, managed in both places, POSIX and personal groups among them. */
+export const groupList: GroupListEntry[] = (
+  [
+    ["Alle Beschäftigten", "Alle Konten mit Login, für Freigaben an alle", "local", true, false, false],
+    ["Buchhaltung", "Rechnungen, Belege, Monatsabschluss", "ipa", true, true, false],
+    ["Engineering", "Entwicklung, Betrieb und Bereitschaft", "local", true, true, false],
+    ["Geschäftsführung", null, "ipa", false, false, false],
+    ["Lager Nord", "Bestand, Einlieferungen, Inventur", "local", false, true, false],
+    ["On call", "Bereitschaft am Wochenende", "ipa", true, false, false],
+    ["Personal", "Urlaub, Schichten und Schulungen", "local", false, false, false],
+    ["Platform", "Plattform-Team: Kubernetes, Datenbanken, Netz", "ipa", true, true, false],
+    ["Presse-Team", "Mitteilungen und Anfragen der Presse", "local", false, false, false],
+    ["qdt", "Persönliche Gruppe von Quinn Doe", "local", true, false, true],
+    ["Vertrieb", "Angebote, Pipeline und Kundenbetreuung", "ipa", false, true, false],
+    ["Werkstatt", "Aufträge, Ersatzteile und Termine", "local", true, false, false],
+  ] as const
+).map(([name, description, provider, posix, managed, personal], index) => ({
+  id: id(100 + index),
+  name,
+  description,
+  provider,
+  posix,
+  managed,
+  personal,
+  href: `/app/accounts/groups/${id(100 + index)}`,
+}));

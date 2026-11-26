@@ -106,11 +106,36 @@ type Log = { writes: { method: string; path: string; body: unknown }[]; searches
 type Answers = { statuses: number[] };
 
 const page = (db: GroupDb, url: URL) => htmlPage(JSON.stringify({ screen: "group", locale: "en", props: propsFor(db, url) }));
+/**
+ * The Cloud shell around the screen, from the shell's own classes and stylesheet: the icon rail (from 768 px, as in the
+ * app) and the canvas tinted with Accounts' colours. The rail's entries are static here; the real rail is an island of
+ * the shell that needs the running platform.
+ */
+const rail = [
+  ["layout-dashboard", "Start"],
+  ["mail", "Mail"],
+  ["calendar", "Kalender"],
+  ["folder", "Dateien"],
+  ["table", "Grids"],
+  ["users-group", "Konten"],
+  ["settings", "Verwaltung"],
+]
+  .map(
+    ([icon, label]) =>
+      `<a class="rail-item relative shrink-0${label === "Konten" ? " rail-item-active" : ""}" href="#${label}"><i class="ti ti-${icon} text-xl" aria-hidden="true"></i><span class="rail-item-label">${label}</span></a>`,
+  )
+  .join("");
+const shellStyle =
+  "--app-accent:#4f46e5;--app-ink-light:#4338ca;--app-canvas-from:#6366f1;--app-canvas-via:#ffffff;--app-canvas-to:#6366f1;--app-canvas-angle:135deg;--app-canvas-strength:20%;--k2-app:#4f46e5";
 const htmlPage = (state: string) =>
   `<!doctype html><html lang="en" class="light" data-state='${state.replaceAll("'", "&#39;")}'><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+  `<style>${css}</style><style>html,body{height:100%;margin:0}</style></head>` +
+  `<body class="k2b-ui" style="${shellStyle}"><div class="cloud-app-canvas flex" data-layout-authenticated="true" data-layout-full-page="true">` +
+  `<aside class="layout-rail w-14 shrink-0 flex-col max-md:hidden md:flex"><div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center"><i class="ti ti-cloud text-xl" aria-hidden="true"></i></div>` +
+  `<div class="flex w-full flex-col items-center gap-1">${rail}</div></aside>` +
+  `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main k2-ui flex min-h-0 min-w-0 flex-1" id="root"></main></div>` +
+  `</div><script src="/harness.js"></script></body></html>`;
 
 /** Changes the server's group after a write that went through, as the services would. */
 const apply = (db: GroupDb, method: string, path: string, body: { type?: string; id?: string } | null) => {
@@ -153,7 +178,7 @@ const open = async (view: View, address: string, db: GroupDb, answers: Answers =
       return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(db, url) });
     }
     if (path === "/app/accounts/groups")
-      return route.fulfill({ contentType: "text/html; charset=utf-8", body: "<!doctype html><title>Groups</title><p>Group list</p>" });
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: htmlPage(JSON.stringify({ screen: "groups", locale: "en" })) });
     if (path === "/new-group")
       return route.fulfill({
         contentType: "text/html; charset=utf-8",
@@ -237,6 +262,8 @@ const expectClean = async (tab: Page) => {
 };
 
 const record = `/app/accounts/groups/${GROUP}`;
+/** A tab of the record by its name; its count follows the name. */
+const tabLink = (tab: Page, name: string) => tab.locator("[data-k2-part='Tabs']").getByRole("link", { name: new RegExp(`^${name}`) });
 
 describe("a group's record on v2", () => {
   test("every tab, the relations and the worst case keep the v2 rules at 1440, 1024 and 390 px", async () => {
@@ -249,6 +276,7 @@ describe("a group's record on v2", () => {
         ["relations", `${record}?tab=relations`, sampleDb()],
         ["relations-tree", `${record}?tab=relations&view=list`, sampleDb()],
         ["worst", record, worstDb()],
+        ["list", "/app/accounts/groups", sampleDb()],
       ] as const) {
         const { context, tab, errors } = await open(view, address, db);
         try {
@@ -328,7 +356,7 @@ describe("a group's record on v2", () => {
       expect(search.searchParams.has("service_account_kinds")).toBe(false);
       expect(search.searchParams.has("service_account_status")).toBe(false);
       // no administrator: no tab for parent groups or relations, and no group deeds
-      expect(await tab.getByRole("link", { name: a.memberOf }).count()).toBe(0);
+      expect(await tabLink(tab, a.memberOf).count()).toBe(0);
       expect(await tab.getByRole("button", { name: a.groupActions }).count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {
@@ -356,8 +384,8 @@ describe("a group's record on v2", () => {
         body: { type: "service_account", id: AGENT },
       });
       // an indirect member cannot be removed here
-      await tab.getByRole("link", { name: a.members }).click();
-      await tab.getByText("Milan Horvat").waitFor();
+      await tabLink(tab, a.members).click();
+      await tab.locator("[data-k2-part='Row']", { hasText: "Milan Horvat" }).first().waitFor();
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -440,7 +468,7 @@ describe("a group's record on v2", () => {
         body: { description: "Neue Beschreibung" },
       });
 
-      await tab.getByRole("link", { name: a.memberOf }).click();
+      await tabLink(tab, a.memberOf).click();
       await tab.getByText("All staff").waitFor();
       await tab.getByRole("button", { name: a.addToGroup }).first().click();
       await dialog.getByRole("option", { name: /sales/i }).click();
