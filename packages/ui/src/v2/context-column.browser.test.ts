@@ -85,7 +85,8 @@ const expectBelow = async (where: string, page: Page, mainBox: Box, sideBox: Box
   if (!split) throw new Error(`${where}: the split is missing`);
   expect([where, sideBox.x, sideBox.width]).toEqual([where, mainBox.x, mainBox.width]);
   expect([where, mainBox.width]).toEqual([where, split.width]);
-  expect([where, sideBox.y >= mainBox.y + mainBox.height]).toEqual([where, true]);
+  // right under the main column and its line: no empty band between them, also when the main column is short
+  expect([where, sideBox.y - (mainBox.y + mainBox.height)]).toEqual([where, 1]);
   // nothing is hidden: the column scrolls in one piece, and at its end the context column is in view
   await page.locator(side).scrollIntoViewIfNeeded();
   const after = await boxOf(page, side);
@@ -94,10 +95,19 @@ const expectBelow = async (where: string, page: Page, mainBox: Box, sideBox: Box
   expect([where, await page.locator(".k2-split[data-context] > .k2-seam .k2-grip").locator("visible=true").count()]).toEqual([where, 0]);
 };
 
+/** The split that holds the context column: how far it scrolls and how far its content reaches. */
+const scrollOf = (page: Page) =>
+  page.evaluate(() => {
+    const split = document.querySelector('section[aria-label="Kontext"]')?.parentElement;
+    if (!split) throw new Error("no split");
+    return { top: split.scrollTop, height: split.scrollHeight, client: split.clientHeight, bottom: split.getBoundingClientRect().bottom };
+  });
+
 const cases: { kind: Kind; width: number; beside: boolean }[] = [
   { kind: "form", width: 1024, beside: false },
   { kind: "form", width: 1440, beside: true },
   { kind: "form", width: 1920, beside: true },
+  { kind: "short", width: 1024, beside: false },
   { kind: "table", width: 1024, beside: false },
   { kind: "table", width: 1440, beside: false },
   { kind: "table", width: 1920, beside: true },
@@ -127,4 +137,59 @@ describe("a context column stands beside its main column only where there is roo
       // the server's page and the live one put the columns in the same places
       expect(seen[1]).toEqual(seen[0]);
     }, 30_000);
+
+  test("side by side, a wheel over the line scrolls nothing: the split is no scroller there", async () => {
+    await withPage(1440, "form", true, async (page) => {
+      const seam = await boxOf(page, ".k2-split[data-context] > .k2-seam");
+      if (!seam) throw new Error("no line");
+      await page.mouse.move(seam.x, seam.y + 200);
+      await page.mouse.wheel(0, 2000);
+      await settled(page);
+      const scroll = await scrollOf(page);
+      expect([scroll.top, scroll.height <= scroll.client]).toEqual([0, true]);
+    });
+  }, 30_000);
+
+  test("given way, the split scrolls to the end of its content and no further", async () => {
+    await withPage(1024, "form", true, async (page) => {
+      await page.evaluate(() => {
+        const split = document.querySelector('section[aria-label="Kontext"]')?.parentElement;
+        if (split) split.scrollTop = 1_000_000;
+      });
+      await settled(page);
+      const scroll = await scrollOf(page);
+      const context = await boxOf(page, side);
+      expect(scroll.top).toBe(scroll.height - scroll.client);
+      // the end of the context column is the end of the scroller: no empty run below it
+      expect(Math.abs((context?.y ?? 0) + (context?.height ?? 0) - scroll.bottom) <= 1).toBe(true);
+    });
+  }, 30_000);
+
+  test("a column a grip made wider never makes the context wrap above its room; columns shrink as in every split", async () => {
+    await withPage(1400, "form", true, async (page) => {
+      await page.locator(".k2-split[data-context] > .k2-seam .k2-grip").focus();
+      await page.keyboard.press("End");
+      await settled(page);
+      await page.setViewportSize({ width: 1320, height: 800 });
+      await settled(page);
+      const mainBox = await boxOf(page, mainOf("form"));
+      const sideBox = await boxOf(page, side);
+      expect([sideBox?.y, (sideBox?.x ?? 0) >= (mainBox?.x ?? 0) + (mainBox?.width ?? 0)]).toEqual([mainBox?.y, true]);
+    });
+  }, 30_000);
+
+  test("a list, its reader and an info column stay as every split: beside each other, no rule of its own", async () => {
+    for (const width of [1024, 1440])
+      await withPage(width, "three", true, async (page) => {
+        const where = `three ${width} px`;
+        expect([where, await page.locator(".k2-split[data-context]").count(), await page.locator("style[data-k2-rule]").count()]).toEqual([
+          where,
+          0,
+          0,
+        ]);
+        const reader = await boxOf(page, 'section[aria-label="Haupt"]');
+        const info = await boxOf(page, side);
+        expect([where, info?.y, (info?.x ?? 0) >= (reader?.x ?? 0) + (reader?.width ?? 0)]).toEqual([where, reader?.y, true]);
+      });
+  }, 30_000);
 });

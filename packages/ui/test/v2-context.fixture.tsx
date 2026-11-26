@@ -11,7 +11,10 @@ import { Bar, Button, Facts, Nav, Pane, Row, Section, Table, Text, Workspace } f
 //   400 + 320 = 720 px of the detail, from a window of ~1680 px.
 // The test sets the window like Cloud's shell (66 px beside the workspace) and reads where the columns stand.
 
-export type Kind = "form" | "table" | "detail";
+// - `short`: `form` with two rows only, so the split has room left below when the context column gives way;
+// - `three`: a list, its reader and an info column (`Pane side`): not a main column with its context, so it stays as
+//   every split is: three columns beside each other, the info column counted in the workspace's room.
+export type Kind = "form" | "short" | "table" | "detail" | "three";
 
 const items = [
   { icon: "plug", label: "Quellen", href: "#quellen" },
@@ -24,10 +27,10 @@ const rows = Array.from({ length: 14 }, (_, index) => ({
   seen: `09:${String(40 - index).padStart(2, "0")}`,
 }));
 
-const Sources = () => (
+const Sources = (props: { few?: boolean }) => (
   <Table
     label="Quellen"
-    rows={rows}
+    rows={props.few ? rows.slice(0, 2) : rows}
     rowKey={(row) => row.id}
     columns={[
       { title: "Quelle", width: { min: 160, default: 240 }, cell: (row) => row.name },
@@ -87,10 +90,22 @@ export function Fixture(props: { kind: Kind }) {
               </Pane.Split>
             </Pane>
           </Pane.Split>
+        ) : props.kind === "three" ? (
+          <Pane.Split>
+            <Pane label="Liste" width={{ min: 280, default: 360 }}>
+              <Text>Nachrichten</Text>
+            </Pane>
+            <Pane label="Haupt">
+              <Sources />
+            </Pane>
+            <Pane side label="Kontext" width={{ min: 240, default: 300 }}>
+              <Context />
+            </Pane>
+          </Pane.Split>
         ) : (
           <Pane.Split>
             <Pane label="Haupt">
-              <Sources />
+              <Sources few={props.kind === "short"} />
             </Pane>
             <Pane side={props.kind === "table" ? { from: 1400 } : true} label="Kontext" width={{ min: 280, default: 340 }}>
               <Context />
