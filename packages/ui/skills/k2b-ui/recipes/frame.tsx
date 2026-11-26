@@ -161,7 +161,7 @@ export default function WorkshopOrders(props: Props) {
           groups={[
             {
               items: [
-                { label: "Aufträge", icon: "clipboard-list", current: true, count: rows.length, href: "#auftraege" },
+                { label: "Aufträge", icon: "clipboard-list", current: true, href: "#auftraege" },
                 { label: "Termine", icon: "calendar", count: 3, dot: "warn", href: "#termine" },
                 { label: "Kunden", icon: "users", href: "#kunden" },
               ],
@@ -223,8 +223,6 @@ export default function WorkshopOrders(props: Props) {
           status={
             <StatusRow
               lead={ready && rows.length > 0 ? "3 heute fällig" : "Offene Aufträge"}
-              // one fact in a 400 px column: more of them run into the filter (k2b-ui gap)
-              facts={ready && rows.length > 0 ? [{ value: rows.length, after: "offen" }] : []}
               filters={ready && rows.length > 0 ? <Chip status="bad">1 überfällig</Chip> : undefined}
             />
           }

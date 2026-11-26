@@ -78,7 +78,7 @@ export default function SourcesScreen(props: Props) {
           groups={[
             {
               items: [
-                { label: "Quellen", icon: "plug", current: true, count: sources.length, dot: "bad" },
+                { label: "Quellen", icon: "plug", current: true, dot: "bad" },
                 { label: "Ereignisse", icon: "list", href: "#ereignisse" },
                 { label: "Regeln", icon: "route", count: 14, href: "#regeln" },
               ],
@@ -101,7 +101,7 @@ export default function SourcesScreen(props: Props) {
             <Tabs
               label="Ansichten"
               items={[
-                { label: "Alle", count: sources.length, current: true },
+                { label: "Alle", current: true },
                 { label: "Gestört", count: 1, href: "#gestoert" },
                 { label: "Wartet", count: 1, href: "#wartet" },
               ]}
@@ -122,9 +122,8 @@ export default function SourcesScreen(props: Props) {
           width={{ min: 320, default: 400 }}
           status={
             <StatusRow
-              lead={props.loading ? "Wird geladen" : "3.920 Ereignisse heute"}
-              facts={props.loading ? [] : [{ value: sources.length, after: "Quellen" }]}
-              filters={props.loading ? undefined : <Chip status="bad">1 gestört</Chip>}
+              // the troubled ones are counted once, in the views above
+              lead={props.loading ? "Wird geladen" : `${sources.length} Quellen`}
             />
           }
         >
@@ -196,7 +195,6 @@ function SourceDetail(props: { source: Source }) {
         <Facts
           items={[
             { label: "Art", value: "Abruf alle 5 Minuten" },
-            { label: "Zustand", value: <Chip status={open.state}>{stateLabel[open.state]}</Chip> },
             {
               label: "Zuständig",
               value: (

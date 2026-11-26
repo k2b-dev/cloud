@@ -59,8 +59,9 @@ group with `tree`: the storages with their `color` (so each leads with its
 `Mark`), their folders with counts and a `dot` ("Küche Lindqvist" is
 `current`, so the way to it is open; closed folders are `branch` and load
 on the first open; "Fotoarchiv" has `more`), and the storage's `quota`.
-A head `Bar` with the `Path`, a search and the one primary; a `Pane` with
-a `StatusRow` that says what waits, and a `Table` with `tree`: folders and
+A head `Bar` with the `Path`, a search and the one create action, a primary
+`Menu` ("Dateien hochladen", "Neuer Ordner"); a `Pane` with a `StatusRow`
+that says what waits, and a `Table` with `tree`: folders and
 files as rows in levels, each with the mark of its kind (`Column mark`),
 its owner (`Column avatar`) and how it is shared (symbol and word, or a
 status chip when it waits for someone); the open file is `current`, so
@@ -77,8 +78,8 @@ its folder starts open.
 ![list with detail at 390 px](../images/list-detail-390.png)
 
 `Workspace` with `Nav`, a head `Bar` with `Tabs` and the main action;
-`Pane.Split` with the list (`StatusRow` with what counts today and a
-toned chip, `List` of two-line `Row`s with the mark of their kind, a state
+`Pane.Split` with the list (`StatusRow` with the count; the troubled ones
+are counted once, in the `Tabs`; `List` of two-line `Row`s with the mark of their kind, a state
 chip only where something is wrong, the open one `current`) and a
 `Pane detail` (head `Bar` with mark, name and actions, `Notice tone="bad"`
 with a way out, `Cells` with a `trend`, `Facts` with the person in
@@ -125,8 +126,8 @@ width), a multiline `Input`, and `Check`s, one of them `disabled` with the
 reason in its words. Its footer `Bar` holds the page's one primary,
 "Termin anlegen".
 
-- While the form is open it holds the one primary; the head's "Neuer
-  Termin" is a default button then.
+- While the form is open, "Termin anlegen" is the one create action:
+  neither the head nor the phone offers "Neuer Termin" beside it.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
 
@@ -135,7 +136,8 @@ reason in its words. Its footer `Bar` holds the page's one primary,
 ![pairing at 1440 px](../images/pairing-1440.png)
 ![pairing at 390 px](../images/pairing-390.png)
 
-The paired devices as a `Table`: the device with the mark of its kind,
+The head holds the views as `Tabs` (the place is the open `Nav` entry);
+the paired devices as a `Table`: the device with the mark of its kind,
 its person with an avatar, when it was last seen, a chip only where a
 device is off, and an icon button that removes the device after
 `Dialog.confirm({ …, danger: true })`. "Gerät koppeln" opens a
@@ -222,7 +224,8 @@ and lists with their marks.
 
 Three-line `Row`s (sender, subject, preview) with the sender's `avatar`,
 `unread`, `meta` count, `time` and `marks`; mailboxes and shared mailboxes
-in the `Nav` with their colours; `StatusRow` with select-all. The reader: head `Bar`
+in the `Nav` with their colours and the unread count; `StatusRow` with
+select-all and what it takes. The reader: head `Bar`
 with the subject as `Text type="lead"` and actions; a `Bar` with `Inline`
 chips; `Notice tone="ai"` for the summary; one `Band` per message with a
 sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles` with the
@@ -307,8 +310,8 @@ The head says "1 Änderung" and saves the page as a whole.
 ![table at 390 px](../images/table-390.png)
 
 A `Nav` with the app's places and accounts; `StatusRow` with the lead
-("33.000,20 € offen"), a count as fact and toned chips at the end (overdue,
-reminders due); `Table` with widths, the invoice's `Mark` before its
+("33.000,20 € offen") and toned chips at the end (overdue, reminders
+due); the count stands once, in the current tab; `Table` with widths, the invoice's `Mark` before its
 number (`Column mark`), the person in charge as `Avatar`,
 a status `Chip`, an amount column `align: "end"`, a quiet icon button with
 its name only where the deed is due, `drop` on the columns that matter
@@ -367,8 +370,8 @@ star and a "…" `Menu` with the same entries in its `end`. The offer the addres
 ![the invitation dialog open at 1440 px](../images/dialogs-dialog-1440.png)
 ![the invitation dialog open at 390 px](../images/dialogs-dialog-390.png)
 
-Members of a space (its `Mark` in the head, the spaces with theirs in the
-`Nav`) as rows with avatars, the role and the last activity in the
+Members of a space (the spaces with their marks in the `Nav`, the open
+one current; the space's views as `Tabs` in the head) as rows with avatars, the role and the last activity in the
 second line and a "…" menu at the end (on the phone too); open
 invitations as rows with the initials of the address. "Einladen" opens a `Dialog` with
 `Field`s and its own primary in the foot (a sheet on the phone);

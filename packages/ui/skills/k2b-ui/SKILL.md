@@ -41,7 +41,8 @@ screen, recipe, test screen and documentation example:
    for the exception; the usual state stays a plain word, not a chip in
    every row). A limit gets a `Progress` bar, a short history a `Spark`.
 4. **Space structures; lines only separate groups.** Group heads are text
-   (title and count), not grey bands; no line under the last row.
+   (title and count), not grey bands; no line under the last row, never two
+   lines at one edge (a group head line under a row line).
 5. **No empty half.** A detail pane only while something is open; a side
    column only when it is full of useful things (activity, rules, people).
 6. **People are visible:** avatars, `Avatar.Stack` with "+n", and
@@ -49,13 +50,15 @@ screen, recipe, test screen and documentation example:
    (`Digest activity`).
 7. **Four type sizes, dense.** 12 meta, 13 row, 14 title, 18 statement,
    set by the primitives; more information per screen than a classic
-   admin page. Dense is not busy and never says a thing twice.
+   admin page. Dense is not busy: each fact once (a count in the tab, not
+   again in the status row), no statement without something to act on.
 8. **Real dense sample data** in recipes, fixtures and tests: German
    names, colours, people, states, ten rows and more. Never "Tabelle 1",
    never four rows on a white page.
-9. **The page head has at most two full-width rows** above list and
-   detail: path or views with the actions, then `FilterBar` with count,
-   order and view at its `end`. Never four rows of head.
+9. **The page head is one block** of at most two rows, one line under it:
+   path or views with the search and ONE create action (a `Menu` when there
+   are several ways), then `FilterBar` with count, order and view at its
+   `end`. The open place is the `Nav` entry, not repeated in the head.
 10. **Settings are `Setting` rows, not a form letter:** label and hint on
     the left, the value at a fixed width beside it, its current state
     visible at a glance; never full-width fields stacked one under the other.
@@ -102,12 +105,10 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 - A screen is a component that returns one `Workspace`.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
-- On the phone a screen has one search place and no empty head row. A host
-  whose bar holds a search (Cloud's shell) sets `data-k2-host-search` and
-  calls `focusPageSearch()` from its search button: the head's search gives
-  way to it, and a head with nothing else to show takes no room. A detail
-  `Pane` always has `back`: on the phone it is a page of its own with its way
-  back and its title, never the list's views.
+- On the phone a screen has one search place: a host whose bar holds one
+  sets `data-k2-host-search` and calls `focusPageSearch()` from it. A detail
+  `Pane` always has `back`: on the phone it is a page with its way back and
+  title, never the list's views.
 
 ## What to use for what
 
@@ -127,7 +128,7 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`, [list queries](references/list-queries.md); the address holds the state), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
 | files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
 | a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
@@ -157,7 +158,7 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
 | data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
-| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
+| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only; a connection that retries says so in the `StatusRow`, a fault a person must fix is a `Notice` naming the deed | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
 | more deeds behind "…" or a button; the same on a right-click | `Menu` with `items` (submenus, ticks, `danger`); `Menu.Context` around the `Row` | `actions.tsx` |
@@ -195,8 +196,8 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
 without a head action has its "Save" as the one primary in its footer
-`Bar`; while a form is open beside a list, it holds the one primary and
-the head's "New" turns default. An open dialog or sheet is a surface of its own
+`Bar`; while a form is open beside a list, it holds the one create action
+and the head offers no "New" beside it. An open dialog or sheet is a surface of its own
 and has its own one primary (such as "Erstellen").
 
 What a list has open belongs in the address: render the `Pane detail` only
@@ -204,20 +205,12 @@ while the address names an entry, give its `back` an `href` to the list
 without that entry, and make rows open with `href` (plus `onNavigate` to
 open in place). Reload, back and forward then show the same page.
 
-"Erneut versuchen" belongs to one place only: `Failed`, standing where data
-that failed to load once would stand. A connection that retries on its own
-says so in the `StatusRow` without a button; something a person must fix is
-a `Notice` that names the deed.
-
 ## Primitives
 
 Every part with its props and place: [primitives](references/primitives.md).
 Not there yet (write a `k2b-ui gap` comment, never a replacement): the mail
 and chat composer and a Markdown editor (from `@k2b/editor`), a code block
 with highlighting, a full image or video viewer, an assistant answer card.
-
-Filters, sorts and groups: `defineListQuery`, `FilterBar`, `ListOrder`;
-the address holds the state ([list queries](references/list-queries.md)).
 
 ## See what you built
 

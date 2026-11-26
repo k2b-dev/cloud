@@ -12,10 +12,8 @@ import {
   Digest,
   Disclosure,
   ImageInput,
-  Inline,
   Nav,
   Pane,
-  Path,
   Section,
   Select,
   Setting,
@@ -71,12 +69,8 @@ export default function SignInPageSettings(props: Props) {
       }
       head={
         <Bar
-          start={
-            <Inline>
-              <Path label="Ort" items={[{ label: "Sicherheit", href: "#anmeldung" }, { label: "Anmeldeseite" }]} />
-              {changes > 0 && <Chip yours>{`${changes} Änderungen`}</Chip>}
-            </Inline>
-          }
+          // the page is the sidebar's open entry; the head says only what is unsaved
+          start={changes > 0 ? <Chip yours>{`${changes} Änderungen`}</Chip> : undefined}
           end={
             <>
               <Button href="#" disabled={changes === 0}>

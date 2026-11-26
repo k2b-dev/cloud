@@ -290,7 +290,7 @@ export default function FilteredOrders(props: Props) {
             {
               items: [
                 { label: "Heute", icon: "sun", href: "#heute" },
-                { label: "Aufträge", icon: "clipboard-list", count: 34, current: true },
+                { label: "Aufträge", icon: "clipboard-list", current: true },
                 { label: "Termine", icon: "calendar", count: 9, href: "#termine" },
                 { label: "Material", icon: "package", href: "#material", dot: "warn" },
               ],
@@ -312,7 +312,7 @@ export default function FilteredOrders(props: Props) {
             <Tabs
               label="Ansichten"
               items={[
-                { label: "Alle", count: 34, current: true, href: "?" },
+                { label: "Alle", current: true, href: "?" },
                 { label: "Diese Woche", count: 6, href: "?view=week" },
               ]}
             />

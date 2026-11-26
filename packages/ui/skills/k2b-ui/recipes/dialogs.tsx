@@ -8,10 +8,8 @@ import {
   Choice,
   Dialog,
   Field,
-  Inline,
   Input,
   List,
-  Mark,
   Menu,
   type MenuEntry,
   Nav,
@@ -19,6 +17,7 @@ import {
   Row,
   Section,
   StatusRow,
+  Tabs,
   Text,
   useToast,
   Workspace,
@@ -138,11 +137,16 @@ export default function SpaceMembers() {
       }
       head={
         <Bar
+          // the open Space is the sidebar's open entry; the head holds its views
           start={
-            <Inline>
-              <Mark {...space.north} />
-              <Text type="lead">Werkstatt Nord</Text>
-            </Inline>
+            <Tabs
+              label="Werkstatt Nord"
+              items={[
+                { label: "Aufgaben", href: "#aufgaben" },
+                { label: "Mitglieder", current: true },
+                { label: "Einstellungen", href: "#einstellungen" },
+              ]}
+            />
           }
           end={
             <Button variant="primary" icon="user-plus" onClick={() => setInviting(true)}>
@@ -154,29 +158,20 @@ export default function SpaceMembers() {
     >
       <Pane
         label="Mitglieder"
-        status={
-          <StatusRow
-            lead={`${list().length} Mitglieder`}
-            facts={[{ value: 6, after: "heute aktiv" }]}
-            filters={<Chip status="warn">1 Einladung kommt nicht an</Chip>}
-          />
-        }
+        status={<StatusRow lead={`${list().length} Personen`} filters={<Chip status="warn">1 Einladung kommt nicht an</Chip>} />}
       >
-        <Section icon="users" title="Mitglieder">
-          {/* one line per member: the face and name, the role as a chip, when they were here, their deeds */}
-          {/* one row per member: the face, the role and when they were here in the second line, their deeds at the end */}
-          <List label="Mitglieder">
-            <For each={list()}>
-              {(member) => (
-                <Row
-                  avatar={{ name: member.name, initials: member.initials, color: member.color }}
-                  lines={[member.name, `${member.role} · ${last[member.id] ?? ""}`]}
-                  end={<Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />}
-                />
-              )}
-            </For>
-          </List>
-        </Section>
+        {/* one row per member: the face, the role and when they were here in the second line, their deeds at the end */}
+        <List label="Mitglieder">
+          <For each={list()}>
+            {(member) => (
+              <Row
+                avatar={{ name: member.name, initials: member.initials, color: member.color }}
+                lines={[member.name, `${member.role} · ${last[member.id] ?? ""}`]}
+                end={<Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />}
+              />
+            )}
+          </For>
+        </List>
         <Section icon="mail" title="Offene Einladungen" count={invitations.length}>
           <List label="Offene Einladungen">
             <For each={invitations}>

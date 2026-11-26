@@ -81,7 +81,7 @@ export default function NewAppointment(props: Props) {
               items: [
                 { label: "Heute", icon: "sun", href: "#heute" },
                 { label: "Aufträge", icon: "clipboard-list", count: 34, href: "#auftraege" },
-                { label: "Termine", icon: "calendar", count: appointments.length, current: true },
+                { label: "Termine", icon: "calendar", current: true },
                 { label: "Material", icon: "package", href: "#material" },
               ],
             },
@@ -108,23 +108,13 @@ export default function NewAppointment(props: Props) {
               ]}
             />
           }
-          // while the form is open it is the task of the page: its "Termin anlegen" is the one primary, the head
-          // offers "Neuer Termin" again only once the form is closed
-          end={
-            <Button icon="plus" href="#neu">
-              Neuer Termin
-            </Button>
-          }
         />
       }
-      primary={{ label: "Neuer Termin", icon: "plus", href: "#neu" }}
+      // while the form is open it is the task of the page: its "Termin anlegen" is the one create action, so neither
+      // the head nor the phone offers "Neuer Termin" beside it
     >
       <Pane.Split>
-        <Pane
-          label="Termine"
-          width={{ min: 320, default: 400 }}
-          status={<StatusRow lead="2 heute" facts={[{ value: appointments.length, after: "diese Woche" }]} />}
-        >
+        <Pane label="Termine" width={{ min: 320, default: 400 }} status={<StatusRow lead="2 heute" />}>
           <List label="Termine">
             {appointments.map((appointment) => (
               <Row

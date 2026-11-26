@@ -110,7 +110,7 @@ export default function OpenInvoices(props: Props) {
             {
               items: [
                 { label: "Übersicht", icon: "layout-dashboard", href: "#" },
-                { label: "Rechnungen", icon: "file-invoice", count: 12, current: true },
+                { label: "Rechnungen", icon: "file-invoice", current: true },
                 { label: "Angebote", icon: "file-description", count: 5, href: "#angebote" },
                 { label: "Belege", icon: "receipt", count: 23, href: "#belege", dot: "warn" },
               ],
@@ -156,7 +156,6 @@ export default function OpenInvoices(props: Props) {
         status={
           <StatusRow
             lead={props.failed ? "Nicht geladen" : props.loading ? "Wird geladen" : ready() ? "33.000,20 € offen" : "Alles bezahlt"}
-            facts={ready() ? [{ value: rows().length, after: "Rechnungen" }] : []}
             filters={
               ready() ? (
                 <>

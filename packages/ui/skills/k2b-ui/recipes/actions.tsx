@@ -180,7 +180,7 @@ export default function OfferActions(props: Props) {
           groups={[
             {
               items: [
-                { label: "Angebote", icon: "file-invoice", count: list().length, current: true },
+                { label: "Angebote", icon: "file-invoice", current: true },
                 { label: "Aufträge", icon: "clipboard-list", count: 34, href: "#auftraege" },
                 { label: "Kunden", icon: "users", count: 412, href: "#kunden" },
               ],
@@ -248,13 +248,7 @@ export default function OfferActions(props: Props) {
         <Pane
           label="Angebote"
           width={{ min: 320, default: 420 }}
-          status={
-            <StatusRow
-              lead="30.885,50 € offen"
-              facts={[{ value: list().length, after: "Angebote" }]}
-              filters={<Chip status="warn">2 laufen bald ab</Chip>}
-            />
-          }
+          status={<StatusRow lead="30.885,50 € offen" filters={<Chip status="warn">2 laufen bald ab</Chip>} />}
         >
           <List label="Offene Angebote">
             <For each={list()}>

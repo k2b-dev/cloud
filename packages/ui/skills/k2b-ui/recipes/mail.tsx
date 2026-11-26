@@ -146,7 +146,7 @@ export default function MailScreen() {
             <Tabs
               label="Ansichten"
               items={[
-                { label: "Alle", count: 42, current: true },
+                { label: "Alle", current: true },
                 { label: "Handlungsbedarf", count: 5 },
               ]}
             />
@@ -167,8 +167,8 @@ export default function MailScreen() {
           status={
             <StatusRow
               select={{ label: "Alle auswählen" }}
-              lead="7 ungelesen"
-              facts={[{ before: "Heute", value: 12, after: "erledigt" }]}
+              // what "Alle auswählen" takes; the unread ones are counted once, in the sidebar
+              lead="42 Nachrichten"
             />
           }
         >

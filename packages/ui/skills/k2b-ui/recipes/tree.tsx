@@ -2,7 +2,7 @@
 // count; the table shows the open folder's content as rows in levels, each with the mark of its kind, its owner and how
 // it is shared. Both load a folder's children the first time it opens and page a long level.
 // The open folder comes from the address: its way stands open in the tree, on the server's page too.
-import { Bar, Button, Chip, Icon, Inline, Input, Nav, type NavTreeNode, Pane, Path, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Chip, Icon, Inline, Input, Menu, Nav, type NavTreeNode, Pane, Path, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
 export const app = { name: "Dateien", color: "#2563eb", icon: "files" };
@@ -274,9 +274,17 @@ export default function FilesTree() {
           end={
             <>
               <Input type="search" icon="search" label="In diesem Ordner" placeholder="In diesem Ordner" />
-              <Button variant="primary" icon="upload">
-                Hochladen
-              </Button>
+              {/* one create action: a menu, since a folder takes files and folders */}
+              <Menu
+                variant="primary"
+                icon="plus"
+                items={[
+                  { label: "Dateien hochladen", icon: "upload" },
+                  { label: "Neuer Ordner", icon: "folder-plus" },
+                ]}
+              >
+                Neu
+              </Menu>
             </>
           }
         />
@@ -285,13 +293,7 @@ export default function FilesTree() {
     >
       <Pane
         label="Küche Lindqvist"
-        status={
-          <StatusRow
-            lead="1 Angebot wartet auf Unterschrift"
-            facts={[{ value: 13, after: "Einträge" }, { value: "186 MB" }]}
-            filters={<Chip status="warn">Unterschreiben</Chip>}
-          />
-        }
+        status={<StatusRow lead="1 Angebot wartet auf Unterschrift" facts={[{ value: 13, after: "Einträge" }, { value: "186 MB" }]} />}
       >
         <Table
           label="Inhalt von Küche Lindqvist"

@@ -14,7 +14,7 @@ A new source with required fields, a range limit, an option and a switch. The se
 
 ## A form beside a list
 
-A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so the week's appointments stay in view while it is filled in. The page keeps that one primary, so the form saves with a default button in its own footer. On the phone the form is the page, with one way back to the list. A form that opens over the page is a `Dialog`; see [Dialogs and overlays](/en/ui/v2/dialogs-and-overlays).
+A new appointment as a `Pane detail`, so the week's appointments stay in view while it is filled in. While it is open, its "Termin anlegen" is the one create action: neither the head nor the phone offers "Neuer Termin" beside it. On the phone the form is the page, with one way back to the list. A form that opens over the page is a `Dialog`; see [Dialogs and overlays](/en/ui/v2/dialogs-and-overlays).
 
 <Example recipe="form-detail" height="640" default="Filled" />
 

@@ -9,12 +9,12 @@ Screens that are technically clean but bare (grey text between lines, a white pa
 1. **Each thing carries its sign:** its `Mark` (symbol on its colour, or a thumbnail) or a person's `Avatar` leads every row, card and sidebar entry. Without a colour of its own a thing takes its kind's.
 2. **The first line says what counts today:** a statement with a number and chips with a tone. A count is quiet meta text.
 3. **A state is colour, sign and word;** a value with a limit gets a bar, a short history a `Spark`.
-4. **Space structures; lines only separate groups.** Group heads are text, no line under the last row.
+4. **Space structures; lines only separate groups.** Group heads are text, no line under the last row, never two lines at one edge.
 5. **No empty half:** a detail only while something is open, a side column only when it is full.
 6. **People are visible:** avatars, stacks with "+n", activity as a sentence with the thing's mark.
-7. **Four type sizes, dense:** 12, 13, 14 and 18 px, set by the parts; more information per screen, never the same thing twice.
+7. **Four type sizes, dense:** 12, 13, 14 and 18 px, set by the parts; more information per screen, each fact once, no statement without something to act on.
 8. **Real dense sample data:** names, colours, people and states, ten rows and more; never "Tabelle 1".
-9. **At most two full-width head rows** above list and detail: views or path with the actions, then filters with count and order.
+9. **The head is one block** of at most two rows with one line under it: views or path with the search and one create action, then filters with count and order. The open place is the sidebar entry, not repeated.
 10. **Settings are rows:** label and hint on the left, the value at a fixed width beside it, its state visible at a glance.
 
 Each example stands in the frame of its host (a tinted page with a rail of apps), as people see it. Compare your own screen with it at 1440 and 390 px before you show it.

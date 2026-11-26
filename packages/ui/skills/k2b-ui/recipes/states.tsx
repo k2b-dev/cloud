@@ -230,7 +230,7 @@ export default function IncomingGoods(props: Props) {
           groups={[
             {
               items: [
-                { label: "Wareneingang", icon: "truck-delivery", current: true, count: 9 },
+                { label: "Wareneingang", icon: "truck-delivery", current: true },
                 { label: "Bestand", icon: "packages", href: "#bestand", dot: "warn" },
                 { label: "Inventur", icon: "list-check", href: "#inventur" },
               ],
@@ -270,14 +270,9 @@ export default function IncomingGoods(props: Props) {
         label="Wareneingang"
         status={
           <StatusRow
-            lead={props.loading || props.failed ? "Heute" : `${rows().length} angekommen`}
-            facts={
-              props.reconnecting
-                ? [{ value: "Verbindung unterbrochen", after: "· verbindet neu …" }]
-                : props.loading || props.failed || rows().length === 0
-                  ? []
-                  : [{ value: rows().filter((row) => row.state === "bad").length, after: "beschädigt" }]
-            }
+            lead={props.failed ? "Nicht geladen" : props.loading ? "Wird geladen" : `${rows().length} angekommen`}
+            // the damaged delivery says so in its own row; the row above says only what the rows cannot
+            facts={props.reconnecting ? [{ value: "Verbindung unterbrochen", after: "· verbindet neu …" }] : []}
             filters={
               props.filtered ? (
                 <Chip icon="filter" pressed href="#heute">

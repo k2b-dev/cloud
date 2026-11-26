@@ -15,11 +15,11 @@ import {
   Nav,
   Notice,
   Pane,
-  Path,
   QrCode,
   Section,
   StatusRow,
   Table,
+  Tabs,
   Text,
   Workspace,
 } from "@k2b/ui/v2";
@@ -85,7 +85,7 @@ export default function PairDevice(props: Props) {
                 { label: "Übersicht", icon: "layout-dashboard", href: "#uebersicht" },
                 { label: "Apps", icon: "apps", count: 14, href: "#apps" },
                 { label: "Anmeldung", icon: "login", href: "#anmeldung" },
-                { label: "Geräte", icon: "devices", count: list().length, current: true },
+                { label: "Geräte", icon: "devices", current: true },
                 { label: "Speicher", icon: "database", href: "#speicher" },
                 { label: "Ausgehende Mail", icon: "mail-forward", dot: "bad", href: "#mail" },
               ],
@@ -95,7 +95,16 @@ export default function PairDevice(props: Props) {
       }
       head={
         <Bar
-          start={<Path label="Ort" items={[{ label: "Anmeldung", href: "#anmeldung" }, { label: "Geräte" }]} />}
+          // the place is the sidebar's open entry; the head holds the views
+          start={
+            <Tabs
+              label="Ansichten"
+              items={[
+                { label: "Alle", current: true },
+                { label: "Still", count: 1, href: "#still" },
+              ]}
+            />
+          }
           end={
             <Button variant="primary" icon="plus" href="#koppeln">
               Gerät koppeln
@@ -105,16 +114,7 @@ export default function PairDevice(props: Props) {
       }
       primary={{ label: "Gerät koppeln", icon: "plus", href: "#koppeln" }}
     >
-      <Pane
-        label="Geräte"
-        status={
-          <StatusRow
-            lead={props.paired ? "15 Geräte gekoppelt" : "14 Geräte gekoppelt"}
-            facts={[{ value: 9, after: "heute aktiv" }]}
-            filters={<Chip status="warn">1 seit 41 Tagen still</Chip>}
-          />
-        }
-      >
+      <Pane label="Geräte" status={<StatusRow lead={props.paired ? "15 Geräte gekoppelt" : "14 Geräte gekoppelt"} />}>
         <Pane.Split>
           <Pane label="Gekoppelte Geräte">
             {/* one line per device: its kind, its person, when it was last seen, its state and the deed */}
