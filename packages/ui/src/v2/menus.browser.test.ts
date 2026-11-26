@@ -401,6 +401,37 @@ test("popover: a panel of 280 px under the start of its button with a title; Esc
   });
 });
 
+// A panel behind a button without words in a head keeps the menu's phone contract: the button stays beside the "…",
+// and its panel is a sheet from the bottom, the whole width (#4151). On a wide screen it is the floating panel.
+for (const width of [1440, 390])
+  test(`popover in a head at ${width}: ${width < 768 ? "the button stays and the panel is a sheet" : "the floating panel"}`, async () => {
+    await withPage(
+      async (page) => {
+        const trigger = page.getByRole("button", { name: "Vorschau" });
+        expect(await trigger.isVisible()).toBe(true);
+        expect(await headMenu(page).isVisible()).toBe(true);
+        await (width < 768 ? trigger.tap() : trigger.click());
+        const panel = page.locator(".k2-pop");
+        await panel.waitFor();
+        await settled(page);
+        const p = await box(panel);
+        if (width < 768) {
+          expect(await panel.getAttribute("data-presentation")).toBe("sheet");
+          expect([p.x, p.width, Math.round(p.y + p.height)]).toEqual([0, 390, 900]);
+          // as high as its content (title and box), never squeezed to a sliver
+          expect(p.height).toBeGreaterThan(80);
+        } else {
+          expect(await panel.getAttribute("data-presentation")).not.toBe("sheet");
+          expect(p.width).toBe(280);
+        }
+        await page.getByRole("checkbox", { name: "Bilder zeigen" }).waitFor();
+        await page.keyboard.press("Escape");
+        await closed(page, ".k2-pop");
+      },
+      width < 768 ? { width, touch: true } : { width },
+    );
+  });
+
 test("tip: hovering the button shows its hint above it after a moment; the button keeps its own name", async () => {
   await withPage(async (page) => {
     const button = page.getByRole("button", { name: "Aktualisieren" });
