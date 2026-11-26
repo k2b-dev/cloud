@@ -89,7 +89,8 @@
 }
 /* The notebook sidebar's own frame. In the v2 workspace's sidebar it keeps the v2 Nav's gutter (12 px beside and
    below), so the switcher, the search field, the chips and the rows start on one edge and none touches the sidebar's
-   edge; the v1 sidebar (`SidebarDesktop`) brings its own padding. */
+   edge; the v1 sidebar (`SidebarDesktop`) brings its own padding. It goes, with the v1 bodies, once v2 Nav has a tree
+   (k2b-ui gap: Nav tree, #4283). */
 .notebook-sidebar-frame {
   display: flex;
   flex: 1 1 auto;
