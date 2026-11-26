@@ -547,15 +547,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     // How far the page can still move a control up: what its scrollers (and the page) have left to scroll down. A control
     // that scrolling lifts above the button (the end of a column keeps that room free) is reached; only one that stays
     // under it is covered.
+    // Only scrolling that moves the control past the button counts: a scroller that holds the button too moves both.
     const lift = (control: Element) => {
       let left = 0;
       for (let node = control.parentElement; node; node = node.parentElement) {
         const overflow = getComputedStyle(node).overflowY;
-        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 1)
+        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 1 && !node.contains(fab))
           left += node.scrollHeight - node.clientHeight - node.scrollTop;
       }
       const page = document.scrollingElement;
-      if (page) left += page.scrollHeight - page.clientHeight - page.scrollTop;
+      if (page && getComputedStyle(fab).position === "fixed") left += page.scrollHeight - page.clientHeight - page.scrollTop;
       return left;
     };
     const covered = [...root.querySelectorAll(".k2-btn, input:not(.k2-mark-input), select, textarea")].filter((control) => {

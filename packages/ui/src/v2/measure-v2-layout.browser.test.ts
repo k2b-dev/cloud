@@ -757,6 +757,89 @@ describe("text a person cannot read", () => {
     TEST_TIMEOUT,
   );
 
+  // Codex review of #4209: text a control covers whole is lost as well; only a control named in `covers` may lie over
+  // the page on purpose.
+  test(
+    "red: a figure hidden whole under an opaque button; green: the same button named as a cover on purpose",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row" style="position:relative;height:40px"><span class="k2-t-row" style="position:absolute;left:24px;top:10px">321</span><button type="button" aria-label="Live" data-probe="live" style="position:absolute;left:12px;top:4px;width:80px;height:32px;background:white;border:0"></button></div>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).overlap).toEqual([expect.stringContaining('text "321"')]);
+        expect((await measureV2Layout(page, { covers: "[data-probe='live']" })).overlap).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: amounts of en-US and ar-EG cut in a cell that is not marked numeric",
+    async () => {
+      const amounts = [
+        new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(12345678.9),
+        new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP" }).format(12345678.9),
+      ];
+      const found = await measure(
+        `<table class="k2-table" data-sized style="width:70px"><colgroup><col style="width:70px"></colgroup><tbody>${amounts
+          .map((amount) => `<tr><td><span class="k2-cell-line">${amount}</span></td></tr>`)
+          .join("")}</tbody></table>`,
+      );
+      expect(found.number.length).toBe(2);
+      // an ID is no number: cut with "…" it is the table's own way
+      const id = await measure(
+        '<table class="k2-table" data-sized style="width:70px"><colgroup><col style="width:70px"></colgroup><tbody><tr><td><span class="k2-cell-line">RE-2611-0042-NACHLASS</span></td></tr></tbody></table>',
+      );
+      expect(id.number).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: text a machine wrote stands in a type role, its line breaks kept",
+    async () => {
+      const found = await measure('<p class="k2-text" data-mono>Error: boom\n    at handler (rows.ts:80)</p>');
+      expect(found.type).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: identifiers of a record head cut through a sign where the head has no room; green: cut with an ellipsis",
+    async () => {
+      const found = await measure(
+        '<div data-slot="head"><div class="k2-bar" style="width:520px"><div class="k2-bar-start"><h1 class="k2-record-name">Nachlassverwaltung Oberhauser</h1><span class="k2-chip"><span class="k2-chip-text">Gewerblich</span></span><span class="k2-record-id" title="Kunde K-1042">Kunde <b>K-1042</b></span><span class="k2-record-id" title="USt-IdNr. DE123456789">USt-IdNr. <b>DE123456789</b></span></div></div></div>',
+      );
+      expect(found.clip.filter((line) => line.includes("Kunde") || line.includes("USt-IdNr."))).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Codex review of #4209: a scroller that holds the control and the floating button moves both; scrolling it lifts
+  // nothing.
+  test(
+    "red: a control under the floating main action that scrolls together with it",
+    async () => {
+      const page = await open(
+        `<div data-k2-workspace data-k2-part="Workspace" style="width:390px;height:300px;overflow-y:auto;position:relative">` +
+          `<div style="height:240px"></div><div data-k2-part="Bar" style="height:40px;display:flex;justify-content:flex-end"><button type="button" class="k2-btn">Weiter</button></div>` +
+          `<div style="height:400px"></div>` +
+          `<button type="button" class="k2-btn k2-fab" style="position:absolute;right:16px;top:236px;height:48px">Neu</button></div>`,
+        { width: 390 },
+      );
+      try {
+        expect(await describeV2Page(page, "#app")).toContain('the floating main action "Neu" covers "Weiter"');
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   // Spaces at 1024 px (W3, 26.11.): a narrow status row keeps the symbol of ListOrder and hides its words with a clip;
   // the words stay its name, so the label is not cut. A label that has room to show and is cut still is.
   test(

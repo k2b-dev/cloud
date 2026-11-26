@@ -13,7 +13,7 @@
 export type V2TextResult = { overlap: string[]; number: string[]; clip: string[] };
 
 /** Runs in the page: closes over nothing. */
-export function measureTextInPage(options: { root: string; skip: string; controls: string }): V2TextResult {
+export function measureTextInPage(options: { root: string; skip: string; controls: string; covers: string }): V2TextResult {
   const result: V2TextResult = { overlap: [], number: [], clip: [] };
   const root = document.querySelector(options.root);
   if (!root) return result;
@@ -32,6 +32,15 @@ export function measureTextInPage(options: { root: string; skip: string; control
     bottom: Math.min(a.bottom, b.bottom),
   });
   const size = (box: Box) => ({ width: box.right - box.left, height: box.bottom - box.top });
+  // A box in the top layer (an open dialog, a popover) or fixed to the window is not cut by the boxes it stands in.
+  const escapes = (element: Element) => {
+    if (getComputedStyle(element).position === "fixed") return true;
+    try {
+      return element.matches(":modal, :popover-open");
+    } catch {
+      return false;
+    }
+  };
 
   // What a person sees inside an element: the viewport, cut by the element itself and every ancestor that clips or
   // scrolls (content scrolled away is not seen now).
@@ -39,7 +48,8 @@ export function measureTextInPage(options: { root: string; skip: string; control
   const seenIn = (element: Element): Box => {
     const known = seen.get(element);
     if (known) return known;
-    let box: Box = element.parentElement ? seenIn(element.parentElement) : { left: 0, right: innerWidth, top: 0, bottom: innerHeight };
+    const window_: Box = { left: 0, right: innerWidth, top: 0, bottom: innerHeight };
+    let box: Box = element.parentElement && !escapes(element) ? seenIn(element.parentElement) : window_;
     const style = getComputedStyle(element);
     if (style.display !== "contents") {
       const r = element.getBoundingClientRect();
@@ -63,6 +73,7 @@ export function measureTextInPage(options: { root: string; skip: string; control
           else cut = { ...cut, left: Math.max(cut.left, r.left) };
         }
       }
+      if (escapes(node)) break;
       if (node === root) break;
     }
     return cut;
@@ -103,12 +114,9 @@ export function measureTextInPage(options: { root: string; skip: string; control
     const own = layer(control);
     for (const run of runs) {
       if (control.contains(run.node) || layer(run.parent) !== own) continue;
-      // A control laid over text whole on purpose (the search of a phone head opens over its tabs) hides it; text a
-      // control covers only in part is what a person sees cut.
-      const area = (box: Box) => Math.max(0, size(box).width) * Math.max(0, size(box).height);
-      const total = run.seen.reduce((sum, part) => sum + area(part), 0);
-      const covered = run.seen.reduce((sum, part) => sum + area(meet(part, box)), 0);
-      if (total > 0 && covered >= total * 0.99) continue;
+      // Text under a control is lost, whole or in part; only a control named as laid over the page on purpose
+      // (`covers`: the search of a phone head opens over its tabs while it has the focus) may hide it.
+      if (options.covers && control.matches(options.covers)) continue;
       for (const part of run.seen) {
         const both = size(meet(part, box));
         if (both.width <= 2 || both.height <= 2) continue;
@@ -124,7 +132,12 @@ export function measureTextInPage(options: { root: string; skip: string; control
   }
 
   // number
-  const numberLike = /^[\s+\-−±~≈]*\d[\d\s.,:'’/\-−]*(?:\s?(?:%|‰|[\p{L}€$£¥]{1,4}\.?))?$/u;
+  // A number in any locale: figures of any script (Arabic-Indic too), the separators locales use (also the Arabic
+  // ones and thin or no-break spaces), a sign, a currency or short unit before or after it ("$12,345,678.90",
+  // "12.345.678,90 €", Arabic-Indic figures with Arabic separators), and the direction marks a formatter puts around it
+  // (format characters, \p{Cf}). A word before the number stands apart ("CHF 1’234.50"); an ID ("RE-2611") is no number.
+  const numberLike =
+    /^[\s\p{Cf}\p{Sm}]*(?:(?:\p{Sc}|\p{L}{1,3}\p{Sc}|\p{L}{1,3}\.)[\s\p{Cf}]*|\p{L}{2,3}\s+)?[\p{Sm}\p{Pd}\p{Cf}]*\p{Nd}[\p{Nd}\s\p{Cf}.,:'/\p{Pd}\p{Sm}\p{Po}\p{Pf}]*(?:[\s\p{Cf}]*(?:\p{Po}|\p{Sc}|[\p{L}.]{1,6}))?[\s\p{Cf}]*$/u;
   const oneLine =
     ".k2-table td .k2-cell-line, .k2-row-time, .k2-row-meta, .k2-cell-value, .k2-chip-text, .k2-digest-date, .k2-fact-value, .k2-sh-count, .k2-gh-count, .k2-tab-count, .k2-ni-count";
   for (const element of Array.from(root.querySelectorAll(oneLine))) {

@@ -70,6 +70,11 @@ export type V2LayoutOptions = {
   figure?: string;
   /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
+  /**
+   * Controls laid over the page on purpose, which may hide text under them: the search of a phone head opens over its
+   * tabs while it has the focus. Any other control over text is a finding.
+   */
+  covers?: string;
 };
 
 export type V2GripMeasure = {
@@ -759,6 +764,7 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
     untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
+    covers: options.covers ?? ".k2-input[data-search]:focus-within input",
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
     // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
@@ -820,7 +826,12 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     if (JSON.stringify(now) !== JSON.stringify(then))
       grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
   }
-  const text = await page.evaluate(measureTextInPage, { root: limits.root, skip: limits.skip, controls: limits.controls });
+  const text = await page.evaluate(measureTextInPage, {
+    root: limits.root,
+    skip: limits.skip,
+    controls: limits.controls,
+    covers: limits.covers,
+  });
   const problems = [
     ...dom.pseudo,
     ...dom.edge,
