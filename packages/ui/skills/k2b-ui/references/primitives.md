@@ -278,8 +278,8 @@ lines instead of cutting a thing.
   it, the fields that may stay empty say "optional". After a failed save a
   required field shows `error="Pflichtfeld."`.
 - `Input`: `value`, `placeholder`, `type`, `icon`, `multiline` (shows
-  `rows` lines at least, 3 by default, and grows with its words up to ten
-  lines, then scrolls), `min`, `max`, `onInput`; `label` when it stands without a `Field` (a search).
+  `rows` lines at least, 3 by default, or the lines of its value from the
+  server's page on, and grows with its words up to ten lines, then scrolls), `min`, `max`, `onInput`; `label` when it stands without a `Field` (a search).
   `onKeyDown` (Enter to search, Escape to clear; while
   `event.isComposing`, Enter belongs to the input method and must not
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
@@ -290,7 +290,8 @@ lines instead of cutting a thing.
 - `DateInput`: `value`, `onInput`, `placeholder`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed), `description` (a quiet line under the
-  words, such as what turning it on does; it describes the box).
+  words, such as what turning it on does; it describes the box and is no
+  part of its name).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is

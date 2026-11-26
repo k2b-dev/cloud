@@ -40,8 +40,24 @@ afterAll(async () => {
   rmSync(temp, { recursive: true, force: true });
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
+/**
+ * `fallback`: the browser sizes no text field to its words (`field-sizing` off, as in browsers without it), so the
+ * page's own sizing runs. `beforeClient` reads the page as the server sent it, before the client starts.
+ */
+type PageOptions = { fallback?: boolean; beforeClient?: (page: Page) => Promise<void> };
+
+const withPage = async (run: (page: Page) => Promise<void>, width = 1440, options: PageOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
+  if (options.fallback)
+    await page.addInitScript(() => {
+      const supports = CSS.supports.bind(CSS);
+      CSS.supports = ((...query: [string, string?]) =>
+        query[0] === "field-sizing"
+          ? false
+          : query.length === 2
+            ? supports(query[0], query[1]!)
+            : supports(query[0])) as typeof CSS.supports;
+    });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   const consoleErrors: string[] = [];
@@ -50,8 +66,9 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
   });
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style>${options.fallback ? "<style>.k2-ui textarea { field-sizing: fixed !important; }</style>" : ""}</head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
     );
+    await options.beforeClient?.(page);
     // what the server sent, kept to compare with the page once it is live
     await page.evaluate(() => {
       window.__k2Sent = document.getElementById("root")!.cloneNode(true);
@@ -221,6 +238,28 @@ test("a multi-line field shows its value in what the server sent, and keeps what
     expect(await note.inputValue()).toBe("Neu");
   });
 });
+
+// A browser without `field-sizing` shows a field of several lines as high as its lines from the server's page on, so
+// it does not grow when the page comes alive (8 lines: 160 px of text, not 3 lines and then 8).
+for (const fallback of [false, true])
+  test(`a multi-line field with a long value has its height from the server's page on${fallback ? ", without field-sizing" : ""}`, async () => {
+    const height = (page: Page) =>
+      page.getByRole("textbox", { name: "Lange Antwort" }).evaluate((area) => Math.round(area.getBoundingClientRect().height));
+    let sent = 0;
+    await withPage(
+      async (page) => {
+        expect(await height(page)).toBe(sent);
+        expect(sent).toBe(8 * 20);
+      },
+      1440,
+      {
+        fallback,
+        beforeClient: async (page) => {
+          sent = await height(page);
+        },
+      },
+    );
+  });
 
 test("controls without a handler keep their own state, and the shape shows it", async () => {
   await withPage(async (page) => {

@@ -40,3 +40,14 @@ test("a multi-line field sends its value as the text of its textarea, leading bl
   // no value: an empty textarea
   expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz" }))).toContain(">\n</textarea>");
 });
+
+// Without CSS `field-sizing` a field of several lines is as high as its rows: the server gives it the lines of its value
+// (at least its `rows`, at most ten), so it does not grow when the page comes alive.
+test("a multi-line field asks for the lines of its value on the server, from its rows up to ten", () => {
+  const rows = (props: { value?: string; rows?: number }) =>
+    /<textarea[^>]*\brows="(\d+)"/.exec(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", ...props })))?.[1];
+  expect(rows({ value: "Eine Zeile" })).toBe("3");
+  expect(rows({ value: "1\n2\n3\n4\n5\n6\n7\n8" })).toBe("8");
+  expect(rows({ value: Array.from({ length: 14 }, (_, line) => `Zeile ${line}`).join("\n") })).toBe("10");
+  expect(rows({ value: "Eine Zeile", rows: 5 })).toBe("5");
+});

@@ -72,7 +72,9 @@ for (const width of [1440, 390])
 
 test("a check's description stands under its words and describes the box", async () => {
   await withPage(1440, async (page) => {
-    const box = page.getByRole("checkbox", { name: "Öffentlich zeigen" });
+    // named by its words only: the description describes it, it is no part of its name
+    const box = page.getByRole("checkbox", { name: "Öffentlich zeigen", exact: true });
+    expect(await box.count()).toBe(1);
     const described = await box.evaluate((input) =>
       (input.getAttribute("aria-describedby") ?? "")
         .split(" ")

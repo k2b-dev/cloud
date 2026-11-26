@@ -200,6 +200,13 @@ export type InputProps = {
   disabled?: boolean;
 };
 
+/**
+ * The rows a text of several lines asks for: the lines of its value, at least its `rows` (3) and at most ten. Where
+ * the browser cannot size it to its words, these rows give it its height from the server's page on, so a long value
+ * does not make it grow when the page comes alive; lines that wrap are added by `followText` then.
+ */
+const rowsFor = (value: string | undefined, rows = 3) => Math.max(rows, Math.min(10, (value ?? "").split("\n").length));
+
 /** Whether the browser sizes a text of several lines to its words itself (CSS `field-sizing`, as v2.css asks). */
 const sizesToText = () => typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
 
@@ -295,7 +302,7 @@ export const Input = (props: InputProps) => {
             one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
-          rows={props.rows ?? 3}
+          rows={rowsFor(props.value, props.rows)}
           ref={(element) => {
             forwardRef(props.ref, element);
             if (!sizesToText()) followText(element, () => props.value);
@@ -468,7 +475,9 @@ export const Check = (props: CheckProps) => {
   // With `onChange` the caller holds the state; without, the box keeps it, so the mark always shows what is set.
   const checked = () => (props.onChange ? props.checked : own());
   const set = () => checked() === true || checked() === "mixed";
-  const described = `${createUniqueId()}-description`;
+  const id = createUniqueId();
+  const described = `${id}-description`;
+  const named = `${id}-label`;
   return (
     <label
       class="k2-choice"
@@ -484,6 +493,8 @@ export const Check = (props: CheckProps) => {
           name={props.name ?? field?.name}
           checked={checked() === true}
           ref={(input) => mixed(input, () => checked() === "mixed")}
+          // with a description inside the label, the box takes its name from its words alone: the line describes it
+          aria-labelledby={props.description ? named : undefined}
           aria-describedby={[field?.described, props.description ? described : undefined].filter(Boolean).join(" ") || undefined}
           required={field?.required || undefined}
           disabled={props.disabled}
@@ -506,12 +517,14 @@ export const Check = (props: CheckProps) => {
         </Show>
       </span>
       <span class="k2-choice-text">
-        {props.label}
-        <Show when={props.description}>
+        <Show when={props.description} fallback={props.label}>
           {(text) => (
-            <span class="k2-choice-description" id={described}>
-              {text()}
-            </span>
+            <>
+              <span id={named}>{props.label}</span>
+              <span class="k2-choice-description" id={described}>
+                {text()}
+              </span>
+            </>
           )}
         </Show>
       </span>
