@@ -712,8 +712,8 @@ test("the states of an entry stand whole under its lines and wrap; rows without 
           };
         });
         // without states the rows keep their heights: 44 for one line that leads with a mark, 52 for two (in a section
-        // no line between rows); on the phone a row of one line takes its 60
-        expect(found.heights).toEqual(width === 1440 ? [44, 52] : [60, 52]);
+        // no line between rows); on the phone a row that leads with a mark takes 56 (the mockup's 56 with a mark of 40)
+        expect(found.heights).toEqual(width === 1440 ? [44, 52] : [56, 56]);
         expect(found.edge).toBe(0);
         expect(found.under).toBe(true);
         expect(found.whole).toBe(true);
@@ -1370,7 +1370,8 @@ test("a bar that ends a section draws no line of its own: one line parts it from
               Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) <= 1,
           };
         });
-        expect(initial).toEqual({ text: "W", size: [initial.symbol, "600"], symbol: "18px", centred: true });
+        // in a row's mark of 32 (40 on the phone) the symbol is 18 (22 on the phone), and the letter takes its size
+        expect(initial).toEqual({ text: "W", size: [initial.symbol, "600"], symbol: width === 390 ? "22px" : "18px", centred: true });
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },
@@ -1468,4 +1469,47 @@ test("small tiles in a narrow pane stand two by two, never one per row: names on
       },
       width,
     );
+});
+
+test("on the phone a row that leads with a mark is 56 px with a mark of 40; a row without a mark keeps its 60 px", async () => {
+  await withPage(
+    "states",
+    async (page) => {
+      const rows = await page.locator(".k2-row[data-mark]").evaluateAll((elements) =>
+        elements.map((row) => {
+          const mark = row.querySelector(":scope > .k2-row-lead > .k2-mk")!.getBoundingClientRect();
+          return { height: Math.round(row.getBoundingClientRect().height), mark: `${mark.width}x${mark.height}` };
+        }),
+      );
+      expect(rows.length).toBe(4);
+      expect([...new Set(rows.map((row) => row.mark))]).toEqual(["40x40"]);
+      // a row of one line is exactly 56; one with more lines or states grows from there
+      expect(rows[0]!.height).toBe(56);
+      expect(rows.every((row) => row.height >= 56)).toBe(true);
+    },
+    390,
+  );
+  await withPage(
+    "selection",
+    async (page) => {
+      const plain = await page
+        .locator(".k2-row:not([data-mark])")
+        .first()
+        .evaluate((row) => Math.round(row.getBoundingClientRect().height));
+      expect(plain).toBe(60);
+    },
+    390,
+  );
+  // beside the phone the mark is 32 again
+  await withPage(
+    "list",
+    async (page) => {
+      const mark = await page
+        .locator(".k2-row[data-mark] > .k2-row-lead > .k2-mk")
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().width);
+      expect(mark).toBe(32);
+    },
+    1024,
+  );
 });

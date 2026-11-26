@@ -5369,6 +5369,24 @@
     padding: 6px 0;
   }
 }
+/* On the phone a row that leads with a thing's mark is 56 px with a mark of 40 (the mockup's phone lists of files and
+   folders), still above the touch target of 44; a row without a mark keeps its 60 px. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-row[data-mark],
+  .k2-ui .k2-row[data-mark][data-lines="1"] {
+    min-height: 56px;
+    padding-block: 8px;
+  }
+  .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+  .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-icon {
+    font-size: 22px;
+  }
+}
+
 
 /* ── Narrow column: below 480 px of its pane, by the pane's own width (a side panel on the desktop too) ─────────
    What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
