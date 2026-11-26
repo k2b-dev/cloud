@@ -270,6 +270,9 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
                     tabIndex={0}
                     style={{
                       margin: 0,
+                      // the text stands on the pane's 20 px edge, as every row and field does
+                      padding: "0 20px",
+                      "box-sizing": "border-box",
                       height: "100%",
                       overflow: "auto",
                       "white-space": "pre-wrap",
