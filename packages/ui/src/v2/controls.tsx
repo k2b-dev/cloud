@@ -167,7 +167,14 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string }; setting?: boo
   );
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
-    <div class="k2-field" data-k2-part={part} data-setting={setting} data-action={props.action ? "" : undefined} role="group" aria-labelledby={label}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      role="group"
+      aria-labelledby={label}
+    >
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
