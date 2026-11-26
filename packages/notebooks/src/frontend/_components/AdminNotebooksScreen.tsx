@@ -3,7 +3,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import { Bar, Button, Chip, Icon, Input, Menu, Pane, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
-import { Show } from "solid-js";
+import { onCleanup, Show } from "solid-js";
 import { notebooksAdminMessages } from "../admin-messages";
 import { openNotebooksAppSettings } from "./AdminNotebooksAppSettings";
 import { deleteNotebook, openPermissionDialog } from "./admin-notebook-actions";
@@ -28,6 +28,9 @@ export type AdminNotebooksScreenProps = {
   permissions: number;
 };
 
+/** A notebook's sign: its own icon, or the notebooks' one; it stands in the app's colour (notebooks have none of their own). */
+const notebookSign = (row: AdminNotebookRow) => (row.icon ?? "ti ti-notebook").replace(/^ti ti-/, "");
+
 /** The address of a page of the notebooks, with the search. */
 const pageHref = (search: string, page: number) => {
   const params = new URLSearchParams();
@@ -46,6 +49,9 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
   const locale = useLocale();
   const t = () => notebooksAdminMessages.resolve([locale()]).t;
   const toast = useToast();
+  // an access list still loading when the page goes opens no dialog over another page
+  const leaving = new AbortController();
+  onCleanup(() => leaving.abort());
   /** A notebook's deeds: its access (the platform's dialog) and deleting it after asking. */
   const actions = (row: AdminNotebookRow) => (
     <Menu
@@ -54,9 +60,9 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
         {
           label: t().permissions,
           icon: "shield",
-          // the menu stays busy while the access loads; a failure says why
+          // the menu stays busy while the access loads and closes as the dialog opens; a failure says why
           onClick: () =>
-            openPermissionDialog({ notebookId: row.shortId, notebookName: row.name }, locale(), new AbortController().signal).catch(
+            openPermissionDialog({ notebookId: row.shortId, notebookName: row.name }, locale(), leaving.signal).catch(
               (error: Error) => void toast(error.message, { status: "bad" }),
             ),
         },
@@ -64,7 +70,8 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
           label: t().delete,
           icon: "trash",
           danger: true,
-          onClick: () => deleteNotebook({ notebookId: row.shortId, notebookName: row.name }, locale(), toast),
+          // the menu closes before the question; the question and the toast say the rest
+          onClick: () => void deleteNotebook({ notebookId: row.shortId, notebookName: row.name }, locale(), toast),
         },
       ]}
     />
@@ -101,12 +108,15 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
       <Pane
         label={t().notebooks}
         status={
+          // k2b-ui gap: StatusRow takes no toned chip, and its facts leave on the phone; the notebooks nobody can reach
+          // therefore stand in the lead, which stays. Nothing found has no figures to state.
           <StatusRow
-            lead={t().statusNotebooks({ count: props.total })}
-            facts={[
-              { value: props.orphaned, after: t().factNoAccess },
-              { value: props.permissions, after: t().factAccessEntries },
-            ]}
+            lead={
+              props.orphaned > 0
+                ? t().statusNoAccess({ count: props.total, orphaned: props.orphaned })
+                : t().statusNotebooks({ count: props.total })
+            }
+            facts={props.total > 0 ? [{ value: props.permissions, after: t().factAccessEntries }] : undefined}
           />
         }
       >
@@ -119,7 +129,7 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
               title: t().notebook,
               cell: (row) => (
                 <>
-                  <Icon name={(row.icon ?? "ti ti-notebook").replace(/^ti ti-/, "")} /> {row.name}
+                  <Icon name={notebookSign(row)} tone="app" /> {row.name}
                 </>
               ),
               width: { min: 200, default: 280 },
@@ -136,13 +146,18 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
                 ),
             },
             {
-              title: t().settings,
+              title: t().actions,
               align: "end",
               cell: (row) => actions(row),
             },
           ]}
           phone={(row) => ({
-            lines: [row.name, row.description || t().noDescription],
+            lines: [
+              <>
+                <Icon name={notebookSign(row)} tone="app" /> {row.name}
+              </>,
+              row.description || t().noDescription,
+            ],
             // the phone's rows have no columns, so the deeds stand among their marks
             marks: (
               <>

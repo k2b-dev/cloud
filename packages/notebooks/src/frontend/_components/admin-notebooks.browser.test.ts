@@ -9,6 +9,7 @@ const ui = `${resolve(import.meta.dir, "../../../../ui")}/`;
 let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 const deletes: string[] = [];
+const accessLoads: string[] = [];
 beforeAll(async () => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
@@ -67,6 +68,12 @@ beforeAll(async () => {
           ? Response.json({ message: "Das Notizbuch ist gesperrt." }, { status: 409 })
           : new Response(null, { status: 204 });
       }
+      // a notebook's access, as the platform's dialog shows it
+      const access = /^\/api\/notebooks\/(\w+)\/access$/.exec(url.pathname);
+      if (access && request.method === "GET") {
+        accessLoads.push(access[1]!);
+        return Response.json([]);
+      }
       if (url.pathname.startsWith("/api/")) return new Response("Not found", { status: 404 });
       return new Response(
         `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" class="k2-ui" style="position:fixed;inset:0;display:flex"></div><script type="module" src="/harness.js"></script></body></html>`,
@@ -108,13 +115,17 @@ for (const width of [1440, 390]) {
       expect(outline.includes("Problems (") ? outline : "").toBe("");
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      // the first row states the numbers
-      expect(await page.locator('[data-k2-part="StatusRow"]').textContent()).toContain("48 Notizbücher");
+      // the first row states the numbers, and the notebooks nobody can reach stay in it on the phone
+      expect(await page.locator('[data-k2-part="StatusRow"] .k2-status-lead').textContent()).toBe("24 Notizbücher, 1 ohne Zugriff");
+      expect(await page.locator('[data-k2-part="StatusRow"]').getByText("1 ohne Zugriff").isVisible()).toBe(true);
       // the one nobody can reach stands out
-      expect(await page.locator('[data-k2-part="Chip"][data-status="bad"]').count()).toBeGreaterThan(0);
+      expect(await page.locator('[data-k2-part="Chip"][data-status="bad"]').filter({ visible: true }).count()).toBe(1);
+      // every notebook carries its sign in the app's colour, also in the phone's rows
+      const signs = page.locator('[data-k2-part="Pane"] [data-k2-part="Icon"][data-tone="app"]').filter({ visible: true });
+      expect(await signs.count()).toBeGreaterThanOrEqual(10);
       if (width > 600) {
-        expect(await page.locator('[data-k2-part="Table"] tbody tr').count()).toBe(8);
-        expect(await page.getByText("Seite 1 von 6").isVisible()).toBe(true);
+        expect(await page.locator('[data-k2-part="Table"] tbody tr').count()).toBe(24);
+        expect(await page.getByRole("columnheader", { name: "Aktionen" }).count()).toBe(1);
       }
     } finally {
       await page.close();
@@ -135,6 +146,8 @@ test("the search goes into the address, and an empty result says so", async () =
   const empty = await open("/admin/notebooks?empty=1&search=Zeppelin");
   try {
     await empty.getByText("Keine Notizbücher passen zu „Zeppelin“.").waitFor();
+    // nothing found has no figures to state
+    expect((await empty.locator('[data-k2-part="StatusRow"]').textContent())?.trim()).toBe("0 Notizbücher");
   } finally {
     await empty.close();
   }
@@ -149,11 +162,40 @@ test("a row's menu deletes after asking, and a refused delete names the reason",
     // nothing happens before the question is answered
     await page.getByRole("alertdialog").waitFor();
     expect(deletes).toEqual([]);
+    // the menu has closed: the question stands alone
+    expect(await page.getByRole("menu").filter({ visible: true }).count()).toBe(0);
     await page.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
     await page.locator('[data-k2-part="Toast"]').getByText("Das Notizbuch ist gesperrt.").waitFor();
     expect(deletes).toEqual(["nb0004"]);
   } finally {
     deletes.length = 0;
+    await page.close();
+  }
+}, 60_000);
+
+test("more notebooks than one page holds go on with Weiter", async () => {
+  const page = await open("/admin/notebooks?pages=2");
+  try {
+    expect(await page.getByText("Seite 1 von 2").isVisible()).toBe(true);
+    expect(await page.getByRole("link", { name: "Weiter" }).getAttribute("href")).toBe("/admin/notebooks?page=2");
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("Berechtigungen loads the notebook's access, closes the menu and opens the access dialog", async () => {
+  const page = await open("/admin/notebooks");
+  try {
+    const row = page.locator('[data-k2-part="Table"] tbody tr', { hasText: "Handbuch Lager" });
+    await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).click();
+    await page.getByRole("menuitem", { name: "Berechtigungen" }).click();
+    await page.getByRole("dialog").filter({ hasText: "Handbuch Lager" }).waitFor();
+    expect(accessLoads).toEqual(["nb0000"]);
+    // the menu closed once the access had loaded; it does not wait busy behind the dialog
+    expect(await page.getByRole("menu").filter({ visible: true }).count()).toBe(0);
+    expect(await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).getAttribute("aria-busy")).not.toBe("true");
+  } finally {
+    accessLoads.length = 0;
     await page.close();
   }
 }, 60_000);

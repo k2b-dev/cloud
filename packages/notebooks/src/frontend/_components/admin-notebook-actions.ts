@@ -22,7 +22,10 @@ const readErrorMessage = async (response: Pick<Response, "json">, fallback: stri
   return fallback;
 };
 
-/** Opens the notebook's access, as stored now; a failure to load it throws its reason. */
+/**
+ * Loads the notebook's access, as stored now, and opens its dialog. Resolves once the dialog opens, not when it closes,
+ * so the menu that asked closes; a failure to load throws its reason.
+ */
 export const openPermissionDialog = async (props: AdminNotebookActionsProps, locale: string, signal: AbortSignal) => {
   const t = notebooksAdminMessages.resolve([locale]).t;
   const response = await apiClient[":id"].access.$get({ param: { id: props.notebookId } }, { init: { signal } });
@@ -30,7 +33,7 @@ export const openPermissionDialog = async (props: AdminNotebookActionsProps, loc
   const initialEntries = (await response.json()) as AccessEntry[];
   // The page may have changed while the list loaded; never open the dialog over another page.
   if (signal.aborted) return;
-  await openAccessDialog({
+  void openAccessDialog({
     target: { type: "notebooks.notebook", id: props.notebookId },
     resourceName: props.notebookName,
     subtitle: t.accessDialogSubtitle,
