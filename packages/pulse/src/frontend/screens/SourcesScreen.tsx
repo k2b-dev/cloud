@@ -40,7 +40,6 @@ import { launchPulseOverviewAssistant, launchPulseSqlAssistant } from "../worksp
 import { buildPulseWorkspaceHref } from "../workspace/routes";
 import { createSourceController } from "../workspace/source-controller";
 import { sourceStatus } from "../workspace/source-helpers";
-import { SOURCES_PAGE } from "../workspace/source-page";
 import { installStoreRecheck } from "../workspace/store-recheck";
 import type { PulseWorkspaceProps } from "../workspace/types";
 import { createPulseWorkspaceQueries } from "../workspace/workspace-queries";
@@ -84,8 +83,6 @@ const sourceLine = (source: PulseSource, t: Words) =>
         " · ",
       )
     : `${t.httpIngest} · ${t.tokenIngestEndpoint}`;
-
-const _PAGE = SOURCES_PAGE;
 
 const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
   -H "Authorization: Bearer <api-key>" \\
@@ -304,7 +301,11 @@ export default function SourcesScreen(props: SourcesScreenProps) {
           // a search says what it found; the base's state stands in the figures below
           status={
             search().trim() ? (
-              <StatusRow lead={words().matchesFound({ count: shown().length, more: queries.baseData.hasMore() })} loading={refreshing()} />
+              <StatusRow
+                // while new words are asked for, the old count stands as loading, not as the answer
+                lead={words().matchesFound({ count: shown().length, more: queries.baseData.hasMore() })}
+                loading={refreshing() || queries.baseData.stale()}
+              />
             ) : undefined
           }
         >
@@ -466,7 +467,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               }
               end={
                 <Button icon="chevrons-down" busy={queries.baseData.loadingMore()} onClick={() => void queries.baseData.loadMore()}>
-                  {words().showMore}
+                  {words().loadMore}
                 </Button>
               }
             />

@@ -266,6 +266,28 @@ describe("pulse CLI", () => {
     expect(lines).toEqual([`Revoked access for ${accessId} on Test (Base01).`]);
   });
 
+  test("finds a source past the first full page, reading the list page by page until a short page", async () => {
+    const filler = Array.from({ length: 500 }, (_, index) => ({
+      ...source,
+      id: `f${String(index).padStart(7, "0")}`,
+      name: `Filler ${index}`,
+    }));
+    const { ctx, calls } = createContext(["source-tokens", "list", baseId, "docker"], {}, [
+      jsonResponse(base),
+      jsonResponse(filler),
+      jsonResponse([source]),
+      jsonResponse([sourceToken]),
+    ]);
+
+    await pulseCli.run(ctx);
+
+    expect(calls.map((call) => call.path).slice(0, 3)).toEqual([
+      `/api/pulse/bases/${baseId}`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=0`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=500`,
+    ]);
+  });
+
   test("lists source ingest tokens with explicit source-token command naming", async () => {
     const { ctx, calls, tables } = createContext(["source-tokens", "list", baseId, "docker"], {}, [
       jsonResponse(base),

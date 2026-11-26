@@ -217,7 +217,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
               }
               end={
                 <Button icon="chevrons-down" onClick={() => setVisible(visible() + PAGE)}>
-                  {words().showMore}
+                  {words().showMore({ count: Math.min(PAGE, shown().length - visible()) })}
                 </Button>
               }
             />

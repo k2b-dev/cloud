@@ -4,7 +4,7 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { accessScopeFor } from "./access-control";
-import { countSources, sourceFigures } from "./source-management";
+import { countSources, listSources, sourceFigures } from "./source-management";
 
 const suite = databaseSuite();
 suite("Pulse source count", () => {
@@ -64,5 +64,27 @@ suite("Pulse source count", () => {
     expect(figures.data).toMatchObject({ total: 4, active: 3, failingCount: 2, series: 0, today: null });
     expect(figures.data.failing.map((source) => source.name)).toEqual(["Printer", "Shop"]);
     expect((await sourceFigures(baseId, scope(strangerId))).ok).toBe(false);
+  });
+
+  test("the list searches names literally, with % and _ as plain signs, and pages by offset", async () => {
+    const added: string[] = [];
+    for (const name of ["Load 50%_A", "Load 5000B", "Load 50%_C"]) {
+      const [row] = await sql<{ id: string }[]>`INSERT INTO pulse.sources(short_id, base_id, kind, name)
+        VALUES (${newShortId()}, ${baseId}::uuid, 'metrics', ${name}) RETURNING id`;
+      added.push(row!.id);
+    }
+    try {
+      const matching = await listSources(baseId, scope(memberId), { query: "50%_" });
+      if (!matching.ok) throw new Error("The list is not readable");
+      expect(matching.data.map((source) => source.name).sort()).toEqual(["Load 50%_A", "Load 50%_C"]);
+      const first = await listSources(baseId, scope(memberId), { query: "50%_", limit: 1 });
+      const second = await listSources(baseId, scope(memberId), { query: "50%_", limit: 1, offset: 1 });
+      if (!first.ok || !second.ok) throw new Error("The pages are not readable");
+      expect(first.data).toHaveLength(1);
+      expect(second.data).toHaveLength(1);
+      expect(second.data[0]!.id).not.toBe(first.data[0]!.id);
+    } finally {
+      await sql`DELETE FROM pulse.sources WHERE id = ANY(${sql.array(added, "UUID")})`;
+    }
   });
 });

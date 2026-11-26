@@ -5,7 +5,16 @@ import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
-import { FIXTURE_NOW, figuresOf, fixtureApiKeys, fixtureBase, fixtureBases, fixtureScrapesFor, fixtureSources } from "./fixtures";
+import {
+  FIXTURE_NOW,
+  figuresOf,
+  fixtureApiKeys,
+  fixtureBase,
+  fixtureBases,
+  fixtureScrapesFor,
+  fixtureSources,
+  manySources,
+} from "./fixtures";
 import { type Crumb, renderPulseShell } from "./pulse-shell.browser-fixture";
 
 // The main paths of Pulse on v2 in Chromium (WebKit through the shared launcher): find and create a base, open,
@@ -158,13 +167,13 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
   if (call.path === base && call.method === "GET")
     return route.fulfill({ json: { ...fixtureBases[0], outage: { unavailable: false, since: null } } });
   if (call.path === base && call.method === "PATCH") return route.fulfill({ json: { ...fixtureBases[0], ...(call.body as object) } });
-  if (call.path === `${base}/sources/figures`) return route.fulfill({ json: figuresOf(fixtureSources) });
+  if (call.path === `${base}/sources/figures`) return route.fulfill({ json: figuresOf(allSources()) });
   // the list endpoint as the server answers it: searched by name, one page from the offset
   if (call.path === `${base}/sources` && call.method === "GET") {
     const words = url.searchParams.get("q")?.toLowerCase() ?? "";
     const offset = Number(url.searchParams.get("offset") ?? 0);
     const limit = Number(url.searchParams.get("limit") ?? 500);
-    const matching = fixtureSources.filter((source) => source.name.toLowerCase().includes(words));
+    const matching = allSources().filter((source) => source.name.toLowerCase().includes(words));
     return route.fulfill({ json: matching.slice(offset, offset + limit) });
   }
   if (call.path === `${base}/sources` && call.method === "POST")
@@ -218,7 +227,11 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
   return route.fulfill({ status: 404, json: { message: "Not found" } });
 };
 
+/** The sources the API answers with: the page's variant decides, as the harness does for the first picture. */
+let variant = "normal";
+const allSources = () => (variant === "huge" ? manySources(1000) : fixtureSources);
 const open = async (view: View, address: string, options: { variant?: string; override?: Parameters<typeof answer>[2] } = {}) => {
+  variant = options.variant ?? "normal";
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -261,6 +274,20 @@ const shoot = async (tab: Page, name: string) => {
 const writes = (calls: Call[]) => calls.filter((call) => call.method !== "GET");
 
 describe("Pulse on v2", () => {
+  test("a base with more sources than a page loads the next page by offset and counts all of them", async () => {
+    const { context, tab, errors, calls } = await open(desktop, `/app/pulse/${baseId}`, { variant: "huge" });
+    try {
+      expect(await tab.getByText("50 von 1.000 Zeilen sichtbar").isVisible()).toBe(true);
+      await tab.getByRole("button", { name: "Weitere laden" }).click();
+      await tab.locator('[data-k2-part="Table"]').getByText("Quelle 100", { exact: true }).waitFor();
+      expect(calls.some((call) => call.path.endsWith("/sources") && call.query?.get("offset") === "50")).toBe(true);
+      expect(await tab.getByText("100 von 1.000 Zeilen sichtbar").isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("the sources search asks the server, keeps the words in the address and the figures cover all sources", async () => {
     const { context, tab, errors, calls } = await open(desktop, `/app/pulse/${baseId}`);
     try {
