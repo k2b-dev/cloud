@@ -1,7 +1,7 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Check, Field, Input, Notice } from "@k2b/ui/v2";
+import { Band, Button, Check, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, createUniqueId, Show } from "solid-js";
 import { signInAgainHref } from "../sign-out-others";
 import { FormActions } from "./FormActions";
@@ -59,6 +59,7 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
             autofocus
           />
         </Field>
+        <Text href={signInAgainHref(props.redirectTo)}>{t().backToSignIn}</Text>
       </Band>
       <Show when={requiresRecovery()}>
         <Notice tone="warn" title={t().restoreLoginTitle}>
@@ -67,11 +68,6 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
       </Show>
       <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
       <FormActions
-        start={
-          <Button variant="ghost" icon="arrow-left" href={signInAgainHref(props.redirectTo)}>
-            {t().backToSignIn}
-          </Button>
-        }
         end={
           <Button
             variant="primary"

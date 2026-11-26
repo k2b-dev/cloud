@@ -1,7 +1,7 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, CodeFigure, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, CodeFigure, Field, Inline, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
@@ -146,7 +146,7 @@ export default function AppLoginForm(props: {
   // The password or email form for the same account, beside the form's own action; not while a request starts.
   const fallbackButton = () =>
     !busy() && props.fallback ? (
-      <Button variant="ghost" href={props.fallback.href} onClick={clear}>
+      <Button variant="text" href={props.fallback.href} onClick={clear}>
         {props.fallback.label}
       </Button>
     ) : undefined;
@@ -197,9 +197,9 @@ export default function AppLoginForm(props: {
                     autofocus
                   />
                 </Field>
+                <Inline>{fallbackButton()}</Inline>
               </Band>
               <FormActions
-                start={fallbackButton()}
                 end={
                   <Button variant="primary" type="submit" form={formId} busy={busy()} disabled={!identifier().trim()}>
                     {t().signIn}
@@ -217,9 +217,9 @@ export default function AppLoginForm(props: {
                   <Text muted>{t().waiting}</Text>
                   <CodeFigure value={request().comparison} label={t().comparison} />
                 </div>
+                <Inline>{fallbackButton()}</Inline>
               </Band>
               <FormActions
-                start={fallbackButton()}
                 end={
                   <Button
                     disabled={busy()}

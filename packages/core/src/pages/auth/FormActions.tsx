@@ -1,14 +1,15 @@
-import { Band, Bar, Inline } from "@k2b/ui/v2";
+import { Band, Bar } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
 
 /**
- * The action line of a visitor form: the other way (use the app, back to sign-in) at the start, the form's own action
- * at the end. In the flow of the column, so on a narrow phone the end wraps below the start instead of being cut.
+ * The action line of a visitor form: its own deed at the end, in the flow of the column (a band that holds only its
+ * bar stands as high as the bar). The other ways (back to sign-in, the app, the password) are links of the form, in
+ * its band, so this line never wraps on a phone.
  */
-export function FormActions(props: { start?: JSX.Element; end: JSX.Element }) {
+export function FormActions(props: { end: JSX.Element }) {
   return (
     <Band>
-      <Bar start={<Inline>{props.start}</Inline>} end={props.end} />
+      <Bar end={props.end} />
     </Band>
   );
 }

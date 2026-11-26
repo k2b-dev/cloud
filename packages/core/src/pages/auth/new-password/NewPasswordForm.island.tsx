@@ -1,7 +1,7 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Facts, Field, Input, Notice } from "@k2b/ui/v2";
+import { Band, Button, Facts, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, createUniqueId, Show } from "solid-js";
 import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
 import { FormActions } from "../FormActions";
@@ -120,14 +120,10 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
               onNewPasswordChange={setNewPassword}
               onConfirmPasswordChange={setConfirmPassword}
             />
+            <Text href={signInAgainHref(props.redirectTo)}>{t().backToSignIn}</Text>
           </Band>
           <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
           <FormActions
-            start={
-              <Button variant="ghost" icon="arrow-left" href={signInAgainHref(props.redirectTo)}>
-                {t().backToSignIn}
-              </Button>
-            }
             end={
               <Button variant="primary" type="submit" form={formId} icon="lock-check" busy={mutation.loading()}>
                 {mutation.loading() ? t().updatingPassword : t().setPassword}
