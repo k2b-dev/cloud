@@ -17,13 +17,13 @@
   min-width: 0;
 }
 
-/* Top legends share the caller's height with the plot. Geometry remains SVG-owned:
- * inspection uses real SVG transforms and axis bounds, including this vertical offset. */
-:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="top-start"] {
+/* HTML legends (above a line or area chart, below a state timeline) share the caller's height with the plot.
+ * Geometry remains SVG-owned: inspection uses real SVG transforms and axis bounds, including this vertical offset. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement] {
   display: flex;
   flex-direction: column;
 }
-:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="top-start"] > .k2b-chart__svg {
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement] > .k2b-chart__svg {
   flex: 1 1 auto;
   min-height: 0;
   height: auto;
@@ -42,6 +42,10 @@
   padding: 6px 0 2px;
   font-size: 12px;
   line-height: 18px;
+}
+/* A state is told by its colour and its word together, so every state stays in view while the data keeps 60%. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="bottom-start"] > .k2b-chart__legend {
+  max-height: 40%;
 }
 :is(.k2b-ui, .k2-ui) .k2b-chart__legend-item {
   display: inline-flex;

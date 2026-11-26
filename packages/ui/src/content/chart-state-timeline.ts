@@ -1,4 +1,13 @@
-import { chartDatumSvg, computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "../charts/core/svg-renderers";
+import {
+  chartDatumSvg,
+  computeDomain,
+  escapeXml,
+  extendDomainToNice,
+  mapRange,
+  niceStep,
+  seriesPaint,
+  svgRoot,
+} from "../charts/core/svg-renderers";
 
 export type StateTimelineDomain = readonly [number, number];
 
@@ -97,9 +106,6 @@ const fmt = (value: number): string => (Number.isInteger(value) ? String(value) 
 
 const safeHref = (href: string | undefined): string | null => (href && href.startsWith("/") && !href.startsWith("//") ? href : null);
 
-const truncate = (value: string, maxChars: number): string =>
-  value.length <= maxChars ? value : `${value.slice(0, Math.max(1, maxChars - 1))}…`;
-
 const interactiveGroup = (body: string, href: string | undefined, tooltip: string | undefined, ariaLabel: string): string => {
   const safe = safeHref(href);
   const attrs = [`aria-label="${escapeXml(ariaLabel)}"`, tooltip ? `data-chart-tooltip="${escapeXml(tooltip)}"` : ""]
@@ -134,16 +140,21 @@ export const renderStateTimelineSvg = (
   const stateKeys = opts.states?.map((state) => state.state) ?? [...new Set(rows.flatMap((row) => row.intervals.map((i) => i.state)))];
   const stateIndexes = new Map(stateKeys.map((state, index) => [state, index]));
   const body: string[] = [];
-  const maxLabelChars = Math.max(4, Math.floor((gutter - 18) / 6.3));
+  const lanes: string[] = [];
+  // A host stretches the drawing to its box while text keeps its pixel size, so the room a lane name has in pixels is
+  // known only in the browser. Each name starts at the left edge and the gutter cuts it off with a short fade: in the
+  // drawing's own units, the cut scales with the box and always ends before the plot. The full name stays in the
+  // link's title and accessible name. Equal geometry gives equal ids, so two charts never disagree about a shared id.
+  const labelRight = Math.max(8, plotLeft - 8);
+  const lanesId = `stdlib-chart-lanes-${fmt(labelRight)}-${fmt(height)}`;
 
   rows.forEach((row, rowIndex) => {
     const y = TOP + rowIndex * ROW_HEIGHT;
     if (y + ROW_HEIGHT > rowsBottom + 1) return;
-    const label = truncate(row.label, maxLabelChars);
-    const labelBody = `<text class="stdlib-chart-state-label" x="${fmt(plotLeft - 8)}" y="${fmt(
+    const labelBody = `<text class="stdlib-chart-state-label" x="0" y="${fmt(
       y + ROW_HEIGHT / 2,
-    )}" text-anchor="end" dominant-baseline="middle">${escapeXml(label)}</text>`;
-    body.push(interactiveGroup(labelBody, row.href, row.tooltip ?? row.label, row.label));
+    )}" text-anchor="start" dominant-baseline="middle">${escapeXml(row.label)}</text>`;
+    lanes.push(interactiveGroup(labelBody, row.href, row.tooltip ?? row.label, row.label));
 
     for (const [index, interval] of row.intervals.entries()) {
       if (!Number.isFinite(interval.from) || !Number.isFinite(interval.to)) continue;
@@ -156,8 +167,7 @@ export const renderStateTimelineSvg = (
       const x2 = mapRange(to, viewport, [plotLeft, plotRight]);
       const style = stateStyles.get(interval.state);
       const stateIndex = style?.index ?? stateIndexes.get(interval.state) ?? 0;
-      const color = style?.color ? ` fill="${escapeXml(style.color)}"` : "";
-      const rect = `<rect class="stdlib-chart-state-region stdlib-chart-series-${stateIndex % 8}"${color} x="${fmt(
+      const rect = `<rect ${seriesPaint(style?.color, stateIndex, "stdlib-chart-state-region")} x="${fmt(
         x,
       )}" y="${fmt(y + 3)}" width="${fmt(Math.max(2, x2 - x))}" height="${ROW_HEIGHT - 6}" rx="3"/>`;
       const stateLabel = style?.label ?? interval.state;
@@ -190,6 +200,19 @@ export const renderStateTimelineSvg = (
     }
   });
 
+  if (lanes.length > 0) {
+    const fadeFrom = Math.max(0, labelRight - 16);
+    body.unshift(
+      `<defs><linearGradient id="${lanesId}-fade" gradientUnits="userSpaceOnUse" x1="${fmt(fadeFrom)}" y1="0" x2="${fmt(
+        labelRight,
+      )}" y2="0"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
+        `<mask id="${lanesId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}">` +
+        `<rect x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}" fill="url(#${lanesId}-fade)"/></mask>` +
+        `<clipPath id="${lanesId}-clip"><rect x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}"/></clipPath></defs>`,
+      `<g class="stdlib-chart-state-labels" mask="url(#${lanesId})" clip-path="url(#${lanesId}-clip)">${lanes.join("")}</g>`,
+    );
+  }
+
   const tickTarget = Math.max(2, Math.min(8, Math.floor((plotRight - plotLeft) / 110)));
   const ticks = extendDomainToNice(viewport[0], viewport[1], niceStep(viewport[1] - viewport[0], tickTarget)).ticks;
   const format = opts.xAxis?.format ?? ((value: number) => fmt(value));
@@ -217,10 +240,9 @@ export const renderStateTimelineSvg = (
     let x = plotLeft;
     const y = height - 9;
     for (const [index, state] of (opts.states ?? []).entries()) {
-      const color = state.color ? ` fill="${escapeXml(state.color)}"` : "";
       const label = state.label ?? state.state;
       body.push(
-        `<rect class="stdlib-chart-series-${index % 8}"${color} x="${fmt(x)}" y="${y - 8}" width="8" height="8" rx="2"/>`,
+        `<rect ${seriesPaint(state.color, index)} x="${fmt(x)}" y="${y - 8}" width="8" height="8" rx="2"/>`,
         `<text class="stdlib-chart-heatmap-label" x="${fmt(x + 12)}" y="${y}" text-anchor="start">${escapeXml(label)}</text>`,
       );
       x += 20 + label.length * 6.2;

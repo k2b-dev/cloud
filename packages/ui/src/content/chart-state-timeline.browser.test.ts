@@ -33,7 +33,7 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
     );
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
-    await page.locator(".k2b-chart svg.stdlib-chart").waitFor();
+    await page.locator(".k2b-chart__svg > svg").waitFor();
     await settled(page);
     await run(page);
     expect(errors).toEqual([]);
@@ -46,12 +46,14 @@ for (const width of [1440, 390])
   test(`at ${width}: a state's own colour fills its regions and its swatch in the legend`, async () => {
     await withPage(width, async (page) => {
       const fills = await page.evaluate(() => {
-        const chart = document.querySelector(".k2b-chart svg.stdlib-chart")!;
+        const chart = document.querySelector(".k2b-chart__svg > svg")!;
         const region = (state: string) =>
           [...chart.querySelectorAll(".stdlib-chart-state-region")].find((rect) =>
             rect.closest("[aria-label]")?.getAttribute("aria-label")?.endsWith(state),
           );
-        const swatches = [...chart.querySelectorAll(".stdlib-chart-legend rect")].map((rect) => getComputedStyle(rect).fill);
+        const swatches = [...chart.closest(".k2b-chart")!.querySelectorAll(".stdlib-chart-legend rect, .k2b-chart__legend rect")].map(
+          (rect) => getComputedStyle(rect).fill,
+        );
         return {
           failed: region("Fehlgeschlagen") ? getComputedStyle(region("Fehlgeschlagen")!).fill : "none",
           ok: region("Erfolgreich") ? getComputedStyle(region("Erfolgreich")!).fill : "none",
@@ -70,21 +72,53 @@ for (const width of [1440, 390])
       const found = await page.evaluate(() => {
         const host = document.querySelector(".k2b-chart")!;
         const box = host.getBoundingClientRect();
-        const svg = host.querySelector("svg.stdlib-chart")!;
-        const outside = [...svg.querySelectorAll("text")]
+        const svg = host.querySelector(".k2b-chart__svg > svg")!;
+        const at = (rect: DOMRect) =>
+          `${Math.round(rect.left - box.left)}..${Math.round(rect.right - box.left)} of ${Math.round(box.width)}`;
+        const plotLeft = Math.min(
+          ...[...svg.querySelectorAll(".stdlib-chart-state-region")].map((rect) => rect.getBoundingClientRect().left),
+        );
+        // The right edge of what a lane name paints: its own end, or the clip of the group it stands in.
+        const paintedRight = (text: Element) => {
+          let right = text.getBoundingClientRect().right;
+          for (let node = text.parentElement; node && node !== svg; node = node.parentElement) {
+            const id = /url\(#([^)]+)\)/.exec(node.getAttribute("clip-path") ?? "")?.[1];
+            const shape = id ? svg.querySelector<SVGRectElement>(`[id="${id}"] rect`) : null;
+            const matrix = node instanceof SVGGraphicsElement ? node.getScreenCTM() : null;
+            if (shape && matrix)
+              right = Math.min(right, new DOMPoint(shape.x.baseVal.value + shape.width.baseVal.value, 0).matrixTransform(matrix).x);
+          }
+          return right;
+        };
+        const lanes = [...svg.querySelectorAll(".stdlib-chart-state-label")];
+        const lanesOutside = lanes
+          .filter((text) => text.getBoundingClientRect().left < box.left - 0.5 || paintedRight(text) > plotLeft + 0.5)
+          .map(
+            (text) =>
+              `${text.textContent} ${at(text.getBoundingClientRect())}, painted to ${Math.round(paintedRight(text) - box.left)}, plot from ${Math.round(plotLeft - box.left)}`,
+          );
+        const outside = [...svg.querySelectorAll("text:not(.stdlib-chart-state-label)")]
           .map((text) => ({ text: text.textContent ?? "", rect: text.getBoundingClientRect() }))
           .filter(({ rect }) => rect.width > 0 && (rect.left < box.left - 0.5 || rect.right > box.right + 0.5))
-          .map(
-            ({ text, rect }) =>
-              `${text} ${Math.round(rect.left - box.left)}..${Math.round(rect.right - box.left)} of ${Math.round(box.width)}`,
-          );
-        return {
-          outside,
-          lanes: svg.querySelectorAll(".stdlib-chart-state-label").length,
-          legend: svg.querySelectorAll(".stdlib-chart-legend text").length,
-        };
+          .map(({ text, rect }) => `${text} ${at(rect)}`);
+        // The legend's entries, wherever the chart draws them, each whole in the chart and in view.
+        const legend = [...host.querySelectorAll(".k2b-chart__legend-item, .stdlib-chart-legend text")];
+        const scrollport = host.querySelector(".k2b-chart__legend")?.getBoundingClientRect() ?? box;
+        const legendOutside = legend
+          .map((entry) => ({ text: entry.textContent ?? "", rect: entry.getBoundingClientRect() }))
+          .filter(
+            ({ rect }) =>
+              rect.left < box.left - 0.5 ||
+              rect.right > box.right + 0.5 ||
+              rect.top < scrollport.top - 0.5 ||
+              rect.bottom > Math.min(scrollport.bottom, box.bottom) + 0.5,
+          )
+          .map(({ text, rect }) => `${text} ${at(rect)}`);
+        return { lanesOutside, outside, legendOutside, lanes: lanes.length, legend: legend.length };
       });
+      expect(found.lanesOutside).toEqual([]);
       expect(found.outside).toEqual([]);
+      expect(found.legendOutside).toEqual([]);
       expect(found.lanes).toBe(6);
       expect(found.legend).toBe(8);
     });

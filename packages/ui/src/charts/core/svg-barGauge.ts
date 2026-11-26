@@ -9,7 +9,7 @@ import {
   normalizeMinMax,
   renderHeader,
   svgRoot,
-  thresholdFillAttr,
+  seriesPaint,
   thresholdForIndex,
   thresholdIndexForValue,
 } from "./svg-common";
@@ -50,7 +50,7 @@ export const barGauge = (opts: BarGaugeOptions): string => {
       `<rect class="stdlib-chart-bar-gauge-track" x="${fmt(trackX)}" y="${fmt(y + 7)}" width="${fmt(trackW)}" height="${fmt(trackH)}" rx="2"/>`,
     );
     body.push(
-      `<rect class="stdlib-chart-bar-gauge-fill stdlib-chart-series-${thresholdIdx % 8}"${thresholdFillAttr(thresholdColor)} x="${fmt(trackX)}" y="${fmt(y + 7)}" width="${fmt(trackW * pct)}" height="${fmt(trackH)}" rx="2"/>`,
+      `<rect ${seriesPaint(thresholdColor, thresholdIdx, "stdlib-chart-bar-gauge-fill")} x="${fmt(trackX)}" y="${fmt(y + 7)}" width="${fmt(trackW * pct)}" height="${fmt(trackH)}" rx="2"/>`,
     );
     body.push(
       `<text class="stdlib-chart-bar-gauge-value" x="${fmt(width - 12)}" y="${fmt(y + 12)}" text-anchor="end" dominant-baseline="middle">${escapeXml(formatNumberValue(d.value, opts.format, unit))}</text>`,

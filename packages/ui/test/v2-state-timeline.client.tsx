@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { Chart } from "../src/content/Chart";
+import Chart from "../src/content/Chart";
 import { Bar, Button, Canvas, Nav, Pane, Section, StatusRow, Workspace } from "../src/v2";
 
 // The runs of an operations app on a v2 screen, at their worst: job lanes with long names beside a short one, and

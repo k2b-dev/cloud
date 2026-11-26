@@ -5,7 +5,7 @@ section: Contributing
 order: 1312
 description: Verify chart drawing, interaction and consumer compatibility during the SVG core migration.
 tags: [contributing, testing, ui, charts]
-updated: 2026-11-06
+updated: 2026-11-26
 ---
 
 # Chart renderer parity
@@ -16,6 +16,12 @@ pre-port drawings in `packages/ui/test/charts/legacy-svg.json`, captured from
 stdlib 0.30.0 and the UI adapters at B1 commit `2016c0dd5e`. Only incremental
 sparkline gradient IDs are normalized. Runtime renderer code never generates the
 expected output during a test.
+
+A frozen drawing changes only with a fix for a defect that the drawing itself
+recorded, and the fix names it. The state timeline and threshold bar gauge
+drawings changed this way: a mark with its own colour also had a series class,
+and the class's CSS `fill` hid that colour; the state timeline's lane names
+could also run out of a stretched box.
 
 Covered means the named proof exists and the compatibility drawing matches its
 frozen SVG. It does not mean every browser or consumer proof ran locally.
