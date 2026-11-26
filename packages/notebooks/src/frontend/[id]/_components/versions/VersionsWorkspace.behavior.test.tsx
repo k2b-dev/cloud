@@ -273,39 +273,106 @@ describe("version history restore", () => {
     expect(navigateTo).toHaveBeenCalledWith(buildNoteUrl("Book01", "Copy01"));
   });
 
-  test("the comparison reaches the newest 100 versions, also ones the list has not loaded", async () => {
-    respond = async (request) => {
-      const url = new URL(request.url);
-      if (url.pathname.endsWith("/versions"))
-        return Response.json({
-          data: [
-            { id: "Version01", noteId: "Note01", createdBy: null, createdAt: "2026-08-11T10:00:00.000Z" },
-            { id: "Older01", noteId: "Note01", createdBy: null, createdAt: "2026-07-01T10:00:00.000Z" },
-          ],
-          pagination: { page: 1, per_page: 100, total: 2, total_pages: 1, has_next: false },
-        });
-      return Response.json({ contentMd: "Saved content", yjsSnapshot: "" });
+  describe("the comparison", () => {
+    const PAGE_100 = "100";
+    /** The newest 100 hold an older version that the paged list (only Version01) has not loaded. */
+    const hundred = () =>
+      Response.json({
+        data: [
+          { id: "Version01", noteId: "Note01", createdBy: null, createdAt: "2026-08-11T10:00:00.000Z" },
+          { id: "Older01", noteId: "Note01", createdBy: null, createdAt: "2026-07-01T10:00:00.000Z" },
+        ],
+        pagination: { page: 1, per_page: 100, total: 2, total_pages: 1, has_next: false },
+      });
+    const content = (url: URL) =>
+      Response.json({
+        contentMd: url.pathname.includes("/Older01/") ? "Old line" : "Saved content",
+        yjsSnapshot: "",
+      });
+    const hundredRequests = () => requests.filter((request) => new URL(request.url).searchParams.get("per_page") === PAGE_100);
+    /** The open comparison menu's entries: radios for the versions, and plain entries after them. */
+    const openMenu = async () => {
+      button("Change")!.click();
+      await waitFor(() =>
+        [...dom.document.querySelectorAll('[role="menuitemradio"]')].some((entry) => entry.textContent?.includes("Current note")),
+      );
+      const live = [...dom.document.querySelectorAll('[role="menuitemradio"]')].find((entry) =>
+        entry.textContent?.includes("Current note"),
+      )!;
+      return live.closest<HTMLElement>('[role="menu"]')!;
     };
-    mount();
-    await select();
-    button("Changes")!.click();
-    await waitFor(() => requests.some((request) => new URL(request.url).searchParams.get("per_page") === "100"));
-    const list = requests.find((request) => new URL(request.url).searchParams.get("per_page") === "100")!;
-    expect(new URL(list.url).pathname).toBe("/api/notebooks/Book01/notes/Note01/versions");
-    expect(new URL(list.url).searchParams.get("page")).toBe("1");
-    await flush();
-    button("Change")!.click();
-    // the comparison is one choice, so its entries are radios
-    await waitFor(() => dom.document.querySelectorAll('[role="menuitemradio"]').length > 0);
-    // the live note and the older version; the open one is not offered against itself
-    const live = [...dom.document.querySelectorAll('[role="menuitemradio"]')].find((entry) => entry.textContent?.includes("Current note"))!;
-    const entries = [...live.closest('[role="menu"]')!.querySelectorAll('[role="menuitemradio"]')].map((entry) => entry.textContent ?? "");
-    expect(entries).toHaveLength(2);
-    expect(entries[0]).toContain("Current note");
-    // choosing the older one closes the menu and compares with it, older first
-    live.closest('[role="menu"]')!.querySelectorAll<HTMLElement>('[role="menuitemradio"]')[1]!.click();
-    await waitFor(() => !dom.root.textContent?.includes("Current note"));
-    await flush();
+    const radios = (menu: HTMLElement) => [...menu.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+
+    test("reaches a version of the newest 100 that the list has not loaded, and compares with it", async () => {
+      respond = async (request) => {
+        const url = new URL(request.url);
+        return url.pathname.endsWith("/versions") ? hundred() : content(url);
+      };
+      mount();
+      await select();
+      button("Changes")!.click();
+      await waitFor(() => hundredRequests().length === 1);
+      const list = new URL(hundredRequests()[0]!.url);
+      expect(list.pathname).toBe("/api/notebooks/Book01/notes/Note01/versions");
+      expect(list.searchParams.get("page")).toBe("1");
+      const menu = await openMenu();
+      // the live note and the older version; the open one is not offered against itself
+      const entries = radios(menu).map((entry) => entry.textContent ?? "");
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toContain("Current note");
+      expect(entries[1]).toContain("2026");
+      radios(menu)[1]!.click();
+      // older first: the older version's line was removed, the open version's line added
+      await waitFor(() => dom.root.textContent?.includes("Old line") ?? false);
+      expect(dom.root.textContent).toContain("+1 −1");
+      expect(dom.root.querySelector('[data-diff="removed"]')?.textContent).toContain("Old line");
+      expect(dom.root.querySelector('[data-diff="added"]')?.textContent).toContain("Saved content");
+    });
+
+    test("a failed load says so in the menu, and Retry brings the versions", async () => {
+      let fail = true;
+      respond = async (request) => {
+        const url = new URL(request.url);
+        if (!url.pathname.endsWith("/versions")) return content(url);
+        return fail ? Response.json({ message: "Unavailable" }, { status: 503 }) : hundred();
+      };
+      mount();
+      await select();
+      button("Changes")!.click();
+      await waitFor(() => hundredRequests().length === 1);
+      await flush();
+      let menu = await openMenu();
+      // the live note stays to choose, and the failure stands after it with its retry
+      expect(radios(menu)).toHaveLength(1);
+      const entries = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+      expect(entries.map((entry) => entry.textContent?.trim())).toEqual(["Failed to load saved versions.", "Retry"]);
+      expect(entries[0]!.getAttribute("aria-disabled")).toBe("true");
+      fail = false;
+      entries[1]!.click();
+      await waitFor(() => hundredRequests().length === 2);
+      await flush();
+      menu = await openMenu();
+      expect(radios(menu)).toHaveLength(2);
+      radios(menu)[0]!.click();
+      await flush();
+    });
+
+    test("switching between Content and Changes loads the 100 once", async () => {
+      respond = async (request) => {
+        const url = new URL(request.url);
+        return url.pathname.endsWith("/versions") ? hundred() : content(url);
+      };
+      mount();
+      await select();
+      button("Changes")!.click();
+      await waitFor(() => hundredRequests().length === 1);
+      button("Content")!.click();
+      await flush();
+      button("Changes")!.click();
+      await flush();
+      await flush();
+      expect(hundredRequests()).toHaveLength(1);
+    });
   });
 
   test("a version opens from its row into the address, and back closes it", async () => {
