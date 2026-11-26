@@ -342,12 +342,10 @@ describe("PwaLayout ui v2 in a browser", () => {
           stack.innerHTML = markup;
           const bar = document.querySelector(".k2-tabbar");
           return {
-            tabBar: stack.hasAttribute("data-tab-bar"),
             stack: stack.getBoundingClientRect().bottom,
             bar: bar && bar.getClientRects().length > 0 ? bar.getBoundingClientRect().top : undefined,
           };
         }, notice);
-        expect(result.tabBar).toBe(true);
         if (above === "bar") expect(Math.round(result.stack)).toBe(Math.round(result.bar! - 12));
         else {
           expect(result.bar).toBeUndefined();

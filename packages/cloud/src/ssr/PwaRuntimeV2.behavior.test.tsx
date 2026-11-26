@@ -54,7 +54,6 @@ const mount = (options: { keepalive: boolean; online?: boolean; renewedThisSessi
         locale: "en",
         get children() {
           return createComponent(PwaRuntimeV2, {
-            tabBar: true,
             keepalive: options.keepalive,
             accountId: "mia",
             builds: { inventory: "old" },

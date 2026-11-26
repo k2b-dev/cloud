@@ -49,3 +49,23 @@ test("a separator of one dash makes a table, and a long fence closes only on a r
     { line: 15, message: "the row has 1 cells, its table's head 2" },
   ]);
 });
+
+test("a tilde run inside a backtick fence, and a backtick run with words after it, close nothing", () => {
+  const source = [
+    "```md",
+    "~~~",
+    "| inside | a |",
+    "| - | - |",
+    "| x |",
+    "``` not a closing run",
+    "| still | inside |",
+    "| - | - |",
+    "| y |",
+    "```",
+    "",
+    "| E | F |",
+    "| - | - |",
+    "| 5 |",
+  ].join("\n");
+  expect(findInMarkdown(source)).toEqual([{ line: 14, message: "the row has 1 cells, its table's head 2" }]);
+});
