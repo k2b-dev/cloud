@@ -1,12 +1,16 @@
 import { Avatar, Cells, Chip, Digest, List, Mark, Nav, Pane, Row, Section, Table, Text, Tiles, Workspace } from "../src/v2";
 
-// teams of 4, 8 and 30 people in a column of 90 px: the stack shows what it holds whole and counts the rest
+// teams of 4, 8 and 30 people in a column of 90 px: the stack shows what it holds whole and counts the rest; teams of
+// 2 and 3 show everyone
 const names = ["Felix Thal", "Jonas Kern", "Mira Solberg", "Tom Oswald", "Sami Yilmaz", "Lena Hartwig", "Ada Renz", "Jana Berger"];
 const crew = (count: number) => Array.from({ length: count }, (_, index) => ({ name: `${names[index % names.length]} ${index + 1}` }));
 export const teams = [
   { name: "Montage", people: crew(4), orders: 12 },
   { name: "Werkstatt", people: crew(8), orders: 41 },
   { name: "Alle Monteure und Aushilfen der Saison", people: crew(30), orders: 1284 },
+  // everyone shows: the stack ends at its last face, without room for a count it does not need (W3)
+  { name: "Büro", people: [{ name: "Charles Augustus Montgomery III" }, { name: "🦊 Fuchs Bau" }], orders: 3 },
+  { name: "Lager", people: crew(3), orders: 7 },
 ];
 
 // Things with a face and people beside what they did: marks by place (sidebar, rows of one and two lines, tiles, a

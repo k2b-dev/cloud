@@ -147,6 +147,7 @@ test("menu entries in their data colour: a dot or the symbol, readable on the me
             mark: mark ? (mark.classList.contains("k2-mi-dot") ? "dot" : "icon") : "none",
             contrast: mark ? Math.round(ratio(rgb(getComputedStyle(mark).color), surface) * 10) / 10 : 0,
             style: lead.getAttribute("style") ?? "",
+            colored: lead.hasAttribute("data-color"),
           };
         });
       });
@@ -155,14 +156,15 @@ test("menu entries in their data colour: a dot or the symbol, readable on the me
         ["Kunden", "dot"],
         ["Einkauf", "icon"],
         ["Archiv", "dot"],
-        ["Ohne Farbe", "dot"],
+        ["Ohne Farbe", "none"],
       ]);
       // a hex colour keeps 3:1 on the menu, also the pale one
       for (const entry of found.slice(0, 3))
         expect({ theme, entry: entry.label, ok: entry.contrast >= 3 }).toEqual({ theme, entry: entry.label, ok: true });
-      // a value that is no colour reaches no style and stays neutral
+      // a value that is no colour reaches no style and stays neutral: no dot, no colour
       expect(found[4]!.style).not.toContain("position");
       expect(found[4]!.style).not.toContain("#008f4c");
+      expect(found[4]!.colored).toBe(false);
       await page.keyboard.press("Escape");
       await settled(page);
     }
