@@ -8,6 +8,7 @@ import * as services from "@k2b/cloud/services";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
+import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
 import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
@@ -130,7 +131,9 @@ let browser: Browser;
 let assets: ShellAssets;
 let harness: string;
 beforeAll(async () => {
-  assets = await loadShellAssets({ id: "proxy-auth", css: resolve(import.meta.dir, "../styles/app.css") });
+  assets = await loadShellAssets(
+    await cloudShellSheets({ id: "proxy-auth", css: resolve(import.meta.dir, "../styles/app.css") }, import.meta.dir),
+  );
   harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
@@ -151,7 +154,7 @@ describe("Proxy Auth in the Cloud shell", () => {
     ];
     for (const [name, search, data] of cases) {
       const html = await pages(data).html(search);
-      for (const width of [1440, 390]) {
+      for (const width of [1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/proxy-auth${search}`, html, width });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
@@ -171,7 +174,7 @@ describe("Proxy Auth in the Cloud shell", () => {
     const page = pages("normal");
     const html = await page.html("");
     const nav = (await page.nav()).replaceAll("<", "\\u003c");
-    for (const width of [1440, 390]) {
+    for (const width of [1440, 1024, 390]) {
       const { context, tab, errors } = await openShellPage(browser, assets, {
         path: "/admin/proxy-auth",
         html,

@@ -197,8 +197,9 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         items={[
           { label: t().verifyUrl, value: verifyUrl(client.clientId), mono: true, copy: verifyUrl(client.clientId) },
           { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
-          { label: t().description, value: client.description || t().noDescription },
-          { label: t().allowedGroups, value: <>{groupChips(client)}</> },
+          // an empty description says nothing, and a client without a group says so in its notice above
+          ...(client.description ? [{ label: t().description, value: client.description }] : []),
+          ...(client.groups.length > 0 ? [{ label: t().allowedGroups, value: <>{groupChips(client)}</> }] : []),
           { label: t().created, value: client.created },
         ]}
       />
@@ -226,8 +227,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         {/* the figures say what the lead does not: nothing to count before the first client */}
         <Show when={props.clients.length > 0}>
           <Cells>
-            <Cells.Cell icon="shield-half" label={t().clients} value={number(props.clients.length)} meta={t().registered} />
-            <Cells.Cell icon="users-group" label={t().allowedGroups} value={number(props.figures.groups)} meta={t().acrossClients} />
+            <Cells.Cell icon="shield-half" label={t().clients} value={number(props.clients.length)} />
+            <Cells.Cell icon="users-group" label={t().allowedGroups} value={number(props.figures.groups)} />
           </Cells>
         </Show>
         <Table
@@ -248,7 +249,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             {
               title: t().client,
               width: { min: 200, default: 320 },
-              cell: (client) => ({ lines: [client.name, client.description || t().noDescription] }),
+              cell: (client) => (client.description ? { lines: [client.name, client.description] } : client.name),
             },
             {
               title: t().allowedGroups,
@@ -278,8 +279,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   /** The Traefik setup: the verify address of a client, an example and the headers the app receives. */
   const setup = () => (
     <Pane label={t().setupTitle} scrollKey="proxy-auth-setup">
-      <Section icon="route" title={t().setupTitle} summary={t().setupDescription}>
-        <Facts items={[{ label: t().verifyUrlPattern, value: `${props.baseUrl}/proxy-auth/verify/<client-id>`, mono: true }]} />
+      <Section icon="link" title={t().verifyUrl} summary={t().setupDescription}>
+        <Facts items={[{ label: t().pattern, value: `${props.baseUrl}/proxy-auth/verify/<client-id>`, mono: true }]} />
       </Section>
       <Section icon="file-code" title={t().exampleConfiguration}>
         <Prose
