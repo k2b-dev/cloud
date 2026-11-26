@@ -9,8 +9,7 @@ import FilesScreen from "../src/frontend/FilesScreen.island";
 import FileThumbnail from "../src/frontend/FileThumbnail";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
 import Inventory from "../src/frontend/Inventory";
-import Workspace from "../src/frontend/Workspace.island";
-import { chain, current, entry, gone } from "./history-fixtures";
+import { chain, current, entry, gone, live, page } from "./history-fixtures";
 
 describe("Filesv2 server-rendered feedback", () => {
   test("an old folder SSR snapshot shows its move without a false loading error", () => {
@@ -27,7 +26,7 @@ describe("Filesv2 server-rendered feedback", () => {
     const moved = entry({ action: "item.move", before: gone("team/Old"), after: current("team/New") });
     const html = renderToString(() => (
       <LocaleProvider locale="en">
-        <Workspace
+        <FilesScreen
           timeZone="Europe/Berlin"
           initial={{
             source: `/app/filesv2?base=${encodeURIComponent(base.id)}&path=Old`,
@@ -47,8 +46,102 @@ describe("Filesv2 server-rendered feedback", () => {
       </LocaleProvider>
     ));
     expect(html).toContain("This folder has moved");
+    expect(html).toContain('data-k2-part="Workspace"');
     expect(html).not.toContain("Files could not be loaded");
     expect(html).not.toContain("Try again");
+    expect(html).not.toContain('data-k2-part="Loading"');
+  });
+
+  const team = {
+    id: "cloud:groups:vertrieb",
+    area: "cloud" as const,
+    kind: "groups" as const,
+    name: "Vertrieb",
+    status: "existing" as const,
+    reason: null,
+    indexEnabled: true,
+    versioningEnabled: true,
+  };
+  const home = { ...team, id: "cloud:users:valentin", kind: "users" as const, name: "valentin" };
+  const screen = (source: string, extra: Record<string, unknown>) =>
+    renderToString(() => (
+      <LocaleProvider locale="en">
+        <FilesScreen
+          timeZone="Europe/Berlin"
+          initial={{
+            source,
+            bases: { items: [home, team], issues: [], editor: null },
+            selectedId: null,
+            directory: null,
+            errorCode: null,
+            now: "2026-10-20T12:30:00.000Z",
+            ...extra,
+          }}
+        />
+      </LocaleProvider>
+    ));
+
+  test("all storage, Activity and the shares render on v2 with their data and no loading state on the first picture", () => {
+    const upload = entry({
+      action: "file.upload",
+      actor: { kind: "user", userId: "valentin", name: "Valentin Kolb" },
+      after: live("vertrieb/Angebote/Angebot 2026-118.pdf", { directory: false }),
+    });
+    const favorite = {
+      base: { id: team.id, name: team.name, kind: team.kind, area: team.area },
+      entry: { name: "Preise.xlsx", path: "Preise.xlsx", directory: false, size: 1, modified: "2026-10-19T10:00:00.000Z" },
+      markedAt: "2026-10-19T10:00:00.000Z",
+    };
+    const overview = screen("/app/filesv2", {
+      favoritesPreview: { items: [favorite], more: false },
+      recentByYou: { page: page([upload]), opened: [] },
+    });
+    for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf", "2 storage locations"])
+      expect(overview).toContain(text);
+    expect(overview).toContain('data-variant="card"');
+    expect(overview).toContain('data-k2-part="Digest"');
+    expect(overview).not.toContain('data-k2-part="Loading"');
+
+    const activity = screen("/app/filesv2?view=activity&who=me", {
+      activity: { filters: { actor: "me" }, page: page([upload]) },
+      marks: [],
+    });
+    expect(activity).toContain("Angebot 2026-118.pdf");
+    expect(activity).toContain('data-k2-part="FilterBar"');
+    expect(activity).toContain('data-k2-part="List"');
+    expect(activity).toContain("1 changes");
+    expect(activity).not.toContain('data-k2-part="Loading"');
+
+    const shares = screen("/app/filesv2?view=shares", {
+      shares: {
+        items: [
+          {
+            passwordProtected: true,
+            id: "s1",
+            kind: "download",
+            url: null,
+            title: "Unterlagen Lindqvist",
+            note: null,
+            publicNote: null,
+            base: { id: team.id, name: team.name, kind: team.kind },
+            scope: "Angebote",
+            items: ["Angebote/Angebot 2026-118.pdf"],
+            createdBy: "Valentin Kolb",
+            createdAt: "2026-10-18T10:00:00.000Z",
+            expiresAt: "2026-12-15T10:00:00.000Z",
+            state: "active",
+            accessCount: 3,
+            lastAccessedAt: null,
+            maxFileSize: 0,
+            maxTotalSize: 0,
+            showUploadNames: false,
+          },
+        ],
+        next: null,
+      },
+    });
+    for (const text of ["Unterlagen Lindqvist", "1 active link", "Revoke", "3 accesses"]) expect(shares).toContain(text);
+    expect(shares).not.toContain('data-k2-part="Loading"');
   });
 
   test("all inventory states have readable localized labels independent of color", () => {

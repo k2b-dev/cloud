@@ -70,7 +70,7 @@ if (!isServer) {
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    return { Workspace: (await import("../src/frontend/Workspace.island")).default };
+    return { Workspace: (await import("../src/frontend/FilesScreen.island")).default };
   } finally {
     dom.cleanup();
   }
@@ -116,11 +116,21 @@ describe("Files history in the workspace", () => {
     return;
   }
   let cleanup = () => {};
-  beforeEach(() => setSystemTime(new Date(NOW)));
+  // v2 overlays read the phone query at once; the DOM harness has no global matchMedia, so a desktop answers.
+  const media = Object.getOwnPropertyDescriptor(globalThis, "matchMedia");
+  beforeEach(() => {
+    setSystemTime(new Date(NOW));
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      value: (value: string) => ({ media: value, matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    });
+  });
   afterEach(() => {
     cleanup();
     apiRequests.length = 0;
     setSystemTime();
+    if (media) Object.defineProperty(globalThis, "matchMedia", media);
+    else Reflect.deleteProperty(globalThis, "matchMedia");
   });
   const mount = (initial: WorkspaceSnapshot) => {
     const dom = createDomTestHarness();
@@ -145,19 +155,25 @@ describe("Files history in the workspace", () => {
     const dom = mount(snapshotOf({ source, activity: { filters: { baseId: home.id }, page: page([moved]) } }));
     await flush();
     expect(apiRequests.filter((request) => request.kind !== "entries")).toHaveLength(0);
-    const main = () => dom.root.querySelector(".k2b-app-workspace__main")!;
+    const main = () => dom.root.querySelector('[data-k2-part="Pane"]')!;
     expect(main().textContent).toContain("Lukas Pohl");
     expect(main().textContent).toContain("Messe 2026");
-    // Activity is one of the places across all storage, above the storage tree, and marked as the current view.
-    const activityLink = button(dom.root.querySelector(".k2b-app-workspace__sidebar-section")!, "Activity");
+    // Activity is one of the places across all storage, above the storage list, and marked as the current view.
+    const activityLink = [...dom.root.querySelectorAll<HTMLAnchorElement>('[data-k2-part="Nav"] a')].find((link) =>
+      link.textContent?.includes("Activity"),
+    );
     expect(activityLink?.getAttribute("href")).toBe(source);
+    expect(activityLink?.getAttribute("aria-current")).toBe("page");
 
     // Resetting the filters writes the address at once and leads back to "Me"; the list reloads in place.
-    main().querySelector<HTMLButtonElement>(".filesv2-history-head__filters > .filesv2-history-link")!.click();
+    button(dom.root.querySelector('[data-k2-part="FilterBar"]')!, "Reset")!.click();
     await flush();
     expect(dom.window.location.search).toBe("?view=activity&who=me");
+    pending("bases").resolve(Response.json(bases));
+    await flush();
     expect(pending("activity").input).toEqual({ query: { actor: "me" } });
     pending("activity").resolve(Response.json(page([])));
+    pending("recent").resolve(Response.json([]));
     await flush();
     expect(main().textContent).toContain("No activity of yours yet");
 
@@ -184,8 +200,19 @@ describe("Files history in the workspace", () => {
           action: "file.overwrite",
           after: { ...raw, source: sourceKind, publicBaseId: home.id, revision: "revision-3" },
         });
+        const { toast } = await import("@k2b/ui");
+        const reported: string[] = [];
+        const report = spyOn(toast, "error").mockImplementation((message: unknown) => {
+          reported.push(String(message));
+          return { dismiss: () => {}, update: () => {} };
+        });
         const source = "/app/filesv2?view=activity";
         const dom = mount(snapshotOf({ source, activity: { filters: {}, page: page([changed]) } }));
+        const close = cleanup;
+        cleanup = () => {
+          close();
+          report.mockRestore();
+        };
         await flush();
         expect(pending("entry-by-id").input).toEqual({ param: { id: `n:${home.id}:${itemId}` } });
         const file: FileEntry = {
@@ -223,7 +250,7 @@ describe("Files history in the workspace", () => {
         });
         pending("version-restore").resolve(Response.json({ code: "revision_conflict", message: "The file changed" }, { status: 409 }));
         await flush();
-        expect(dom.root.textContent).toContain("The file changed");
+        expect(reported).toEqual(["The file changed"]);
         expect(apiRequests.some((item) => item.kind === "activity")).toBe(false);
       });
 
@@ -237,24 +264,25 @@ describe("Files history in the workspace", () => {
       await flush();
       pending("entry-by-id").resolve(Response.json({ code: "unavailable", message: "Evidence unavailable" }, { status }));
       await flush();
-      expect(dom.root.querySelector(".filesv2-history-row__error") !== null).toBe(status === 503);
+      expect(dom.root.textContent?.includes("Evidence unavailable")).toBe(status === 503);
       expect(button(dom.root, "Try again") !== undefined).toBe(status === 503);
       expect(apiRequests.some((request) => request.kind === "versions")).toBe(false);
     });
 
-  test("a failed Activity load keeps its filters beside Try again, and an empty page with more pages claims nothing", async () => {
+  test("a failed Activity read keeps its filters beside Try again, and an empty page with more pages claims nothing", async () => {
     const source = `/app/filesv2?view=activity&base=${encodeURIComponent(home.id)}&when=7`;
-    const dom = mount(snapshotOf({ source }));
+    // The server could not read the first page: the view says so in its place, with its filters.
+    const dom = mount(snapshotOf({ source, activity: null }));
     await flush();
-    const main = () => dom.root.querySelector(".k2b-app-workspace__main")!;
-    expect(query(pending("activity")).baseId).toBe(home.id);
-    expect(query(pending("activity")).from).toBe("2026-10-13T12:30:00.000Z");
-    pending("activity").resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
-    await flush();
+    const main = () => dom.root.querySelector('[data-k2-part="Pane"]')!;
     expect(main().textContent).toContain("The activity could not be loaded");
     expect(dom.window.location.search).toContain("when=7");
-    button(main(), "Try again")!.click();
+    button(main(), "Retry")!.click();
     await flush();
+    pending("bases").resolve(Response.json(bases));
+    await flush();
+    expect(query(pending("activity")).baseId).toBe(home.id);
+    expect(query(pending("activity")).from).toBe("2026-10-13T12:30:00.000Z");
     pending("activity").resolve(Response.json(page([], "cursor-2")));
     await flush();
     // Nothing visible on this page proves nothing about older pages.
@@ -310,15 +338,28 @@ describe("Files history in the workspace", () => {
     });
   }
 
-  test("restoring a trashed hit goes through the recovery endpoint and shows a refusal beside the action", async () => {
+  test("restoring a trashed hit goes through the recovery endpoint and says why the server refused", async () => {
+    const { toast } = await import("@k2b/ui");
+    const reported: string[] = [];
+    const report = spyOn(toast, "error").mockImplementation((message: unknown) => {
+      reported.push(String(message));
+      return { dismiss: () => {}, update: () => {} };
+    });
+    cleanup = () => report.mockRestore();
     const trashed = entry({
       action: "item.trash",
       before: gone("vertrieb/Kunden/Angebote 2025", { directory: true, publicBaseId: home.id }),
     });
     const source = "/app/filesv2?view=activity&q=Angebote+2025";
+    const unmount = cleanup;
     const dom = mount(snapshotOf({ source, selectedId: null, activity: { filters: { q: "Angebote 2025" }, page: page([trashed]) } }));
+    const close = cleanup;
+    cleanup = () => {
+      close();
+      unmount();
+    };
     await flush();
-    const main = () => dom.root.querySelector(".k2b-app-workspace__main")!;
+    const main = () => dom.root.querySelector('[data-k2-part="Pane"]')!;
     expect(pending("recovery").input).toEqual({ param: { activityId: trashed.id } });
     expect(button(main(), "Restore")).toBeUndefined();
     const trash = { baseId: home.id, id: "33333333-3333-4333-8333-333333333333", canRestore: true };
@@ -329,11 +370,13 @@ describe("Files history in the workspace", () => {
     expect(pending("restore").input).toEqual({ param: { activityId: trashed.id }, json: {} });
     pending("restore").resolve(Response.json({ code: "forbidden", message: "You may not write to Kunden." }, { status: 403 }));
     await flush();
-    expect(main().querySelector('[role="alert"]')?.textContent).toContain("You may not write to Kunden.");
+    expect(reported).toEqual(["You may not write to Kunden."]);
     // The trash of the storage the server named stays one step away.
     button(main(), "Show in trash")!.click();
     await flush();
     pending("bases").resolve(Response.json(bases));
+    await flush();
+    pending("trash").resolve(Response.json({ entries: [], next: null }));
     await flush();
     expect(dom.window.location.search).toBe(`?base=${encodeURIComponent(home.id)}&view=trash`);
   });

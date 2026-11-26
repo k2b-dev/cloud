@@ -9,11 +9,15 @@ import "../../../ui/test/solid-ssr-preload";
 import {
   FIXTURE_NOW,
   type FixtureCase,
+  fixtureActivity,
   fixtureBase,
+  fixtureBases,
   fixtureFavorites,
   fixtureListing,
+  fixtureMarkdown,
   fixturePage,
   fixtureSearch,
+  fixtureShares,
   fixtureTrash,
 } from "./files-screen.fixture";
 
@@ -130,9 +134,15 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
         return route.fulfill({ json: { url: `${origin}/content`, method: "GET", expires: "2026-11-25T13:00:00.000Z" } });
       if (url.pathname.endsWith("/delete"))
         return route.fulfill({ json: { results: (body.paths ?? []).map((path) => ({ path, ok: true })) } });
+      if (url.pathname.endsWith("/revoke")) {
+        const id = url.pathname.split("/").at(-2);
+        const share = fixtureShares(fixture).items.find((item) => item.id === id);
+        return route.fulfill({ json: { ...share, state: "revoked" } });
+      }
+      if (url.pathname === `${api}/bases/demo/editor`) return route.fulfill({ json: fixtureMarkdown(origin) });
       return route.fulfill({ status: 404, json: { code: "not_found", message: "Nicht gefunden" } });
     }
-    if (url.pathname === `${api}/bases`) return route.fulfill({ json: { items: [fixtureBase], issues: [], editor: null } });
+    if (url.pathname === `${api}/bases`) return route.fulfill({ json: { items: fixtureBases, issues: [], editor: null } });
     if (url.pathname === `${api}/bases/demo/entries`) {
       const items = fixtureListing(fixture, url.searchParams.get("path") ?? "", {
         sort: url.searchParams.get("sort") ?? "name",
@@ -162,8 +172,11 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     }
     if (url.pathname === `${api}/bases/demo/trash`) return route.fulfill({ json: fixtureTrash });
     if (url.pathname === `${api}/favorites`) return route.fulfill({ json: fixtureFavorites });
-    if (url.pathname === `${api}/activity`) return route.fulfill({ json: emptyHistory });
-    if (url.pathname === `${api}/shares`) return route.fulfill({ json: { items: [], next: null } });
+    // An item's own history stays empty; Activity answers with the day of the fixture.
+    if (url.pathname === `${api}/activity`)
+      return route.fulfill({ json: url.searchParams.get("scope") ? emptyHistory : fixtureActivity(fixture) });
+    if (url.pathname === `${api}/shares`) return route.fulfill({ json: fixtureShares(fixture) });
+    if (url.pathname === `${api}/recent`) return route.fulfill({ json: [] });
     if (url.pathname.startsWith(`${api}/bases/demo/preview`)) return route.fulfill({ status: 404, body: "" });
     if (url.pathname === "/content")
       return route.fulfill({
@@ -414,4 +427,177 @@ describe("a folder of Files on v2", () => {
       await context.close();
     }
   });
+});
+
+describe("the views beside the folders on v2", () => {
+  test("Activity, the shares and all storage open in place from the sidebar, each with its data, and the way back is Back", async () => {
+    const { context, tab, errors, seen } = await open(wide, "/app/filesv2?base=demo");
+    try {
+      const nav = tab.locator("[data-k2-part=Nav]");
+      await nav.getByRole("link", { name: "Aktivität" }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "activity");
+      await tab.getByText("Ansicht Front Eiche.jpg").first().waitFor();
+      // "Me" is where Activity starts; six photos of one person at one time read as one line.
+      expect(new URL(tab.url()).searchParams.get("who")).toBe("me");
+      expect(await tab.locator("[data-k2-part=List]").innerText()).toContain("6 Dateien hochgeladen");
+      await shoot(tab, "12-activity-1440");
+      await expectClean(tab);
+
+      await nav.getByRole("link", { name: "Freigaben" }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "shares");
+      await tab.getByText("Unterlagen Lindqvist").first().waitFor();
+      await shoot(tab, "13-shares-1440");
+      await expectClean(tab);
+
+      await nav.getByRole("link", { name: "Alle Ablagen" }).click();
+      await tab.waitForFunction(() => !new URL(location.href).search);
+      await tab.locator("[data-k2-part=Tiles][data-variant=card]").waitFor();
+      expect(await tab.locator("[data-k2-part=Digest]").innerText()).toContain("Ansicht Front Eiche.jpg");
+      await shoot(tab, "14-overview-1440");
+      await expectClean(tab);
+
+      await tab.goBack();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "shares");
+      await tab.goBack();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "activity");
+      await tab.getByText("Ansicht Front Eiche.jpg").first().waitFor();
+      // Every step stayed on the first page load.
+      expect(seen.pages).toHaveLength(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Activity's search finds a vanished file in the address, and a link is revoked after a question", async () => {
+    const { context, tab, errors, seen } = await open(wide, "/app/filesv2?view=activity");
+    try {
+      const field = tab.getByRole("searchbox").first();
+      await field.fill("Alter Entwurf");
+      await field.press("Enter");
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Alter Entwurf");
+      await tab.getByText("Alter Entwurf.pdf").first().waitFor();
+      expect(seen.api.some((request) => request.startsWith("GET /activity") && request.includes("q=Alter"))).toBe(true);
+      await shoot(tab, "15-activity-search-1440");
+      await expectClean(tab);
+
+      await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Freigaben" }).click();
+      await tab.getByText("Unterlagen Lindqvist").first().waitFor();
+      await tab.getByRole("button", { name: "Widerrufen" }).first().click();
+      await tab.getByRole("alertdialog").getByRole("button", { name: "Widerrufen" }).click();
+      await tab.waitForFunction(() => document.body.textContent?.includes("Freigabe widerrufen."));
+      expect(seen.posts.at(-1)?.path).toMatch(/^\/shares\/.+\/revoke$/);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("an editor with unsaved changes asks before the sidebar leads away, and staying keeps the draft", async () => {
+    const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo&file=Notizen.md&view=edit");
+    try {
+      const editor = tab.locator("textarea, [contenteditable=true]").first();
+      await editor.waitFor();
+      await tab.getByText("Alles gespeichert").first().waitFor();
+      await shoot(tab, "16-editor-1440");
+      await expectClean(tab);
+      await editor.click();
+      await tab.keyboard.type(" Neu.");
+      await tab.getByText("Ungespeicherte Änderungen").first().waitFor();
+      await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Favoriten" }).click();
+      const question = tab.getByRole("dialog").or(tab.getByRole("alertdialog")).last();
+      await question.waitFor();
+      await question.getByRole("button", { name: /Abbrechen/ }).click();
+      expect(new URL(tab.url()).searchParams.get("view")).toBe("edit");
+      await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Favoriten" }).click();
+      await tab
+        .getByRole("dialog")
+        .or(tab.getByRole("alertdialog"))
+        .last()
+        .getByRole("button", { name: /Bestätigen/ })
+        .click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "favorites");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("an old folder address says where its folder went instead of not found", async () => {
+    const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo&path=Alte+Angebote");
+    try {
+      await tab.getByText("Dieser Ordner ist umgezogen", { exact: false }).first().waitFor();
+      expect(await tab.getByRole("link", { name: /Verlauf ansehen/ }).count()).toBeGreaterThan(0);
+      await shoot(tab, "17-moved-1440");
+      await expectClean(tab);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const address of [
+    "/app/filesv2?view=activity&who=me",
+    "/app/filesv2?view=shares",
+    "/app/filesv2",
+    "/app/filesv2?base=demo&file=Notizen.md&view=edit",
+  ])
+    test(`${address} fits the phone`, async () => {
+      const { context, tab, errors } = await open(phone, address);
+      try {
+        await shoot(tab, `18-${new URL(address, origin).searchParams.get("view") ?? "overview"}-390`);
+        await expectClean(tab);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+  for (const view of [wide, narrow, phone])
+    for (const address of ["/app/filesv2?view=activity", "/app/filesv2?view=shares"])
+      test(`worst-case ${new URL(address, origin).searchParams.get("view")} keeps the layout whole at ${view.name}px`, async () => {
+        const { context, tab, errors } = await open(view, address, "worst");
+        try {
+          await shoot(tab, `19-worst-${new URL(address, origin).searchParams.get("view")}-${view.name}`);
+          await expectClean(tab);
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      });
+
+  for (const address of ["/app/filesv2?view=activity", "/app/filesv2?view=shares"])
+    test(`${address} of 1,000 entries keeps only the rows in view and scrolls to its end`, async () => {
+      const started = performance.now();
+      const { context, tab, errors } = await open(wide, address, "huge");
+      try {
+        const ready = performance.now() - started;
+        const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
+        const rows = await tab.locator("[data-k2-part=Row], [data-k2-part=Table] tbody tr").count();
+        await shoot(tab, `20-huge-${new URL(address, origin).searchParams.get("view")}-1440`);
+        // Scroll the column to its end: the last entries come into the page, the first ones leave it.
+        await tab.evaluate(async () => {
+          const column = [...document.querySelectorAll<HTMLElement>(".k2-scroll")].find(
+            (element) => element.scrollHeight > element.clientHeight,
+          );
+          if (!column) throw new Error("no scrolling column");
+          for (let step = 0; step < 40; step++) {
+            column.scrollTop += column.clientHeight;
+            await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+          }
+          column.scrollTop = column.scrollHeight;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        });
+        const after = await tab.evaluate(() => document.querySelectorAll("*").length);
+        const end = await tab.evaluate(() => document.body.textContent ?? "");
+        console.info(`${address} huge: ready in ${Math.round(ready)} ms, ${rows} rows and ${nodes} nodes; ${after} nodes at the end`);
+        expect(rows).toBeLessThan(200);
+        expect(after).toBeLessThan(nodes * 2);
+        expect(address.includes("activity") ? end.includes("Beleg 1000.pdf") : end.includes("Aufmaß Oswald")).toBe(true);
+        expect(ready).toBeLessThan(5000);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
 });

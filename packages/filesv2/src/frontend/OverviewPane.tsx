@@ -11,7 +11,7 @@ import {
   StatusRow,
   Tiles,
 } from "@k2b/ui/v2";
-import { createMemo, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
 import { activityDays } from "./activity-lines";
@@ -66,18 +66,6 @@ export default function OverviewPane(props: {
   const h = useHistoryMessages();
   const locale = useLocale();
   const labels = createMemo(() => props.bases.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) })));
-  // Files are uploaded inside a storage; a file dropped here is refused rather than opened by the browser.
-  onMount(() => {
-    const refuse = (event: DragEvent) => {
-      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
-    };
-    addEventListener("dragover", refuse);
-    addEventListener("drop", refuse);
-    onCleanup(() => {
-      removeEventListener("dragover", refuse);
-      removeEventListener("drop", refuse);
-    });
-  });
   const unreachable = () => props.bases.filter((base) => base.status !== "existing").length;
   // The opened files are this person's own; their name comes from their own changes, else "Me".
   const me = () => props.recent?.page.items.find((entry) => entry.actor.kind === "user" && entry.actor.name)?.actor.name ?? h().whoMe;

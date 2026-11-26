@@ -23,6 +23,8 @@ if (!isServer) {
     },
   }));
 }
+const buttonNamed = (root: ParentNode, label: string) =>
+  [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === label);
 const flush = async () => {
   for (let index = 0; index < 16; index++) await Promise.resolve();
 };
@@ -93,7 +95,7 @@ describe("Filesv2 office editing", () => {
     dom.window.HTMLFormElement.prototype.submit = function (this: HTMLFormElement) {
       submitted.push(this.action);
     };
-    const { default: Editor } = await import("../src/frontend/Editor");
+    const { default: Editor } = await import("../src/frontend/OfficePane");
     const backs: number[] = [];
     const dispose = render(() => createComponent(Editor, { launch, onBack: () => backs.push(1) }), dom.root);
     cleanup = () => {
@@ -136,7 +138,7 @@ describe("Filesv2 office editing", () => {
     dom.window.HTMLFormElement.prototype.submit = function (this: HTMLFormElement) {
       submitted.push({ action: this.action, fields: [...this.querySelectorAll("input")].map((input) => input.name) });
     };
-    const { default: Editor } = await import("../src/frontend/Editor");
+    const { default: Editor } = await import("../src/frontend/OfficePane");
     let dispose = () => {};
     cleanup = () => {
       dispose();
@@ -162,7 +164,7 @@ describe("Filesv2 office editing", () => {
       expect(dom.root.textContent).toContain("Editor wird geladen");
     }
   });
-  test("the editor explains external-write limitations once per browser for writable unmanaged files", async () => {
+  test("the editor explains external-write limitations once per browser for writable unmanaged files, beside the document", async () => {
     const dom = createDomTestHarness();
     delegateEvents(["click"]); // Solid binds delegated clicks to the document that existed at first import.
     const submit = dom.window.HTMLFormElement.prototype.submit;
@@ -176,7 +178,7 @@ describe("Filesv2 office editing", () => {
         setItem: (key: string, value: string) => storage.set(key, value),
       },
     });
-    const { default: Editor } = await import("../src/frontend/Editor");
+    const { default: Editor } = await import("../src/frontend/OfficePane");
     let dispose = () => {};
     cleanup = () => {
       dispose();
@@ -185,31 +187,25 @@ describe("Filesv2 office editing", () => {
       else delete (globalThis as { localStorage?: unknown }).localStorage;
       dom.cleanup();
     };
-    // Dialogs mount on the next animation frame.
-    const settle = async () => {
-      await flush();
-      await new Promise((resolve) => dom.window.requestAnimationFrame(() => resolve(undefined)));
-      await flush();
-    };
     const open = async (current: EditorLaunch) => {
       dispose();
       dispose = render(() => createComponent(Editor, { launch: current, onBack: () => {} }), dom.root);
-      await settle();
-      return dom.document.querySelector("dialog");
+      await flush();
+      return [...dom.root.querySelectorAll<HTMLElement>('[data-k2-part="Notice"]')].find((notice) =>
+        notice.textContent?.includes("Editing outside this editor"),
+      );
     };
-    const dialog = await open({ ...launch, managed: false });
-    expect(dialog?.textContent).toContain("Editing outside this editor");
-    expect(dialog?.textContent).toContain("Avoid editing this file in other applications at the same time");
-    expect(dom.root.textContent).not.toContain("atomic conflict checks");
+    // A notice beside the document, not a dialog in front of it: the document loads while it is read.
+    const notice = await open({ ...launch, managed: false });
+    expect(notice?.textContent).toContain("Avoid editing this file in other applications at the same time");
     expect(storage.size).toBe(0);
-    dialog!.querySelector<HTMLButtonElement>(".k2b-dialog__actions button")!.click();
-    await settle();
+    buttonNamed(notice!, "Understood")!.click();
+    await flush();
     expect(storage.get("filesv2-editor-external-writes")).toBe("1");
-    expect(dom.document.querySelector("dialog")).toBeNull();
-    expect(await open({ ...launch, managed: false })).toBeNull();
+    expect(await open({ ...launch, managed: false })).toBeUndefined();
     storage.clear();
-    expect(await open({ ...launch, managed: true })).toBeNull();
-    expect(await open({ ...launch, managed: false, canWrite: false })).toBeNull();
+    expect(await open({ ...launch, managed: true })).toBeUndefined();
+    expect(await open({ ...launch, managed: false, canWrite: false })).toBeUndefined();
     expect(storage.size).toBe(0);
   });
 });

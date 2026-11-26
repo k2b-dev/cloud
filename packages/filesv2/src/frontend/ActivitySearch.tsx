@@ -466,6 +466,10 @@ function MissingHit(props: {
             {h().chainFailed}
           </Notice>
         </Show>
+        {/* Deeds that need the server's current answer appear once it arrived. */}
+        <Show when={needsRecovery() && !recovery.data() && !recovery.error()}>
+          <Row icon="shield-check" lines={[h().recoveryChecking]} />
+        </Show>
         <Show when={needsRecovery() && recovery.error()}>
           <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void recovery.refresh() }]}>
             {h().recoveryFailed}
@@ -517,5 +521,18 @@ function ChainRow(props: {
     const count = result ? Math.max(0, result.visibleCount - 1) : props.loadBatch ? 0 : props.loadedOthers;
     return count ? (result?.complete ? h().withOthers : h().withAtLeastOthers).replace("{count}", String(count)) : undefined;
   };
-  return <ActivityRow row={props.row} env={props.env} actions={props.actions} mode="all" context="chain" dated note={others()} deedless />;
+  const note = () => (batch.loading() ? h().batchLoading : batch.error() ? h().batchFailed : others());
+  return (
+    <ActivityRow
+      row={props.row}
+      env={props.env}
+      actions={props.actions}
+      mode="all"
+      context="chain"
+      dated
+      note={note()}
+      deedless
+      deed={batch.error() ? { label: h().retry, icon: "refresh", onClick: () => void batch.refresh() } : undefined}
+    />
+  );
 }

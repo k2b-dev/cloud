@@ -46,7 +46,7 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   globalThis.fetch = Object.assign(async () => new Response("hello", { headers: { etag: '"loaded-revision"' } }), {
     preconnect: originalFetch.preconnect,
   });
-  const { default: MarkdownDocument } = await import("../src/frontend/MarkdownDocument");
+  const { default: MarkdownDocument } = await import("../src/frontend/MarkdownPane");
   let guard: (() => Promise<boolean>) | null = null;
   const dispose = render(
     () =>

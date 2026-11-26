@@ -97,7 +97,11 @@ export function createFolderActions(ctx: FolderContext) {
   onCleanup(() => {
     mounted = false;
   });
-  const folderLabel = (path: string) => path.split("/").at(-1) || baseLabel(ctx.base(), b(), locale());
+  // Outside a storage (all storage, the shares of every storage) the window names Files itself.
+  const folderLabel = (path: string) => {
+    const base: BaseSummary | undefined = ctx.base();
+    return path.split("/").at(-1) || (base ? baseLabel(base, b(), locale()) : b().allStorage);
+  };
 
   const download = mutation.create({
     mutation: async (items: readonly FileEntry[], { abortSignal }) => {

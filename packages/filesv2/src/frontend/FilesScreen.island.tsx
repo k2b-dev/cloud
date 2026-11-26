@@ -379,6 +379,8 @@ export default function FilesScreen(props: {
     onCleanup(() => removeEventListener("popstate", mark, { capture: true }));
     onCleanup(
       listenPopState(async ({ url }) => {
+        // Deeds that belong to the page shown (a contact, a lookup) end with it.
+        workspace.cancelNavigationActions();
         if (!ownsAddress(url)) return window.location.reload();
         const target = `${url.pathname}${url.search}`;
         if (target === workspace.committedSource() && !workspace.pending()) return;

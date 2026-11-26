@@ -1,4 +1,5 @@
-import type { BaseSummary, FileEntry, MarkedEntry } from "../contracts";
+import type { ActivityEntry, ActivityPage, ActivitySide } from "../activity-contracts";
+import type { BaseSummary, FileEntry, MarkdownLaunch, MarkedEntry, SharePage, ShareView } from "../contracts";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 // Invented folders for the v2 folder screen's browser test and design review: a fixed "now", no real people or files.
@@ -104,7 +105,7 @@ export const fixtureDirectory = (path: string, items: FileEntry[], search?: stri
 
 export const fixtureSnapshot = (source: string, directory: DirectoryView): WorkspaceSnapshot => ({
   source,
-  bases: { items: [fixtureBase], issues: [], editor: null },
+  bases: { items: fixtureBases, issues: [], editor: null },
   selectedId: fixtureBase.id,
   directory,
   errorCode: null,
@@ -140,3 +141,170 @@ export const fixtureFavorites: MarkedEntry[] = [
     markedAt: hoursAgo(9),
   },
 ];
+
+/** The own home beside the workshop, so all storage has two places to show. */
+export const fixtureHome: BaseSummary = { ...fixtureBase, id: "home", name: "mira", kind: "users" };
+export const fixtureBases = [fixtureHome, fixtureBase];
+
+// ── Activity ─────────────────────────────────────────────────────────────────────────────────────────────────────
+const PEOPLE = [
+  { userId: "10000000-0000-4000-8000-000000000001", name: "Mira Sommer" },
+  { userId: "10000000-0000-4000-8000-000000000002", name: "Felix Thal" },
+  { userId: "10000000-0000-4000-8000-000000000003", name: "Jana Krüger" },
+  { userId: "10000000-0000-4000-8000-000000000004", name: "Sven Yilmaz" },
+];
+const side = (path: string, directory = false): ActivitySide => ({
+  visibility: "full",
+  source: "current",
+  name: path.split("/").at(-1)!,
+  path: `groups/werkstatt/${path}`,
+  root: "groups",
+  baseId: "20000000-0000-4000-8000-000000000001",
+  publicBaseId: fixtureBase.id,
+  relativePath: path,
+  itemId: null,
+  directory,
+  size: null,
+  revision: null,
+});
+const gone = (path: string, directory = false): ActivitySide => ({
+  visibility: "disappearance",
+  name: path.split("/").at(-1)!,
+  path: `groups/werkstatt/${path}`,
+  directory,
+  publicBaseId: fixtureBase.id,
+  relativePath: path,
+});
+let serial = 0;
+const change = (
+  action: ActivityEntry["action"],
+  minutes: number,
+  person: number,
+  sides: { before?: ActivitySide; after?: ActivitySide },
+  patch: Partial<ActivityEntry> = {},
+): ActivityEntry => {
+  serial += 1;
+  const time = new Date(Date.parse(FIXTURE_NOW) - minutes * 60_000).toISOString();
+  return {
+    id: `30000000-0000-4000-8000-${String(serial).padStart(12, "0")}`,
+    action,
+    state: "done",
+    time,
+    startedAt: time,
+    finishedAt: time,
+    actor: { kind: "user", ...PEOPLE[person % PEOPLE.length]! },
+    via: "web",
+    before: sides.before ?? { visibility: "hidden" },
+    after: sides.after ?? { visibility: "hidden" },
+    batchId: null,
+    ...patch,
+  };
+};
+
+/** A working day in the workshop: uploads, edits, a move, a rename, a link, the trash, and a run of photos. */
+const plainActivity = (): ActivityEntry[] => [
+  change("file.upload", 18, 1, { after: side("Projekte/Küche Lindqvist/Ansicht Front Eiche.jpg") }),
+  change("file.edit", 51, 0, { after: side("Projekte/Küche Lindqvist/Notizen Kundentermin.md") }),
+  change("share.create", 89, 0, { after: side("Angebote/Angebot 2026-118.pdf") }),
+  change("item.move", 140, 2, {
+    before: side("Eingang/Aufmaß Küche Lindqvist.dxf"),
+    after: side("Projekte/Küche Lindqvist/Aufmaß Küche Lindqvist.dxf"),
+  }),
+  change("item.rename", 190, 3, { before: side("Materialliste alt.xlsx"), after: side("Materialliste.xlsx") }),
+  change("item.trash", 260, 1, { before: gone("Angebote/Alter Entwurf.pdf") }),
+  ...Array.from({ length: 6 }, (_, index) =>
+    change("file.upload", 1_500 + index * 0.2, 2, { after: side(`Fotos/Baustelle/IMG_${4021 + index}.jpg`) }),
+  ),
+  change("file.overwrite", 1_620, 3, { after: side("Budget 2027.xlsx") }),
+  change("folder.create", 2_900, 0, { after: side("Projekte/Treppe Winter", true) }),
+  change("item.copy", 4_400, 1, { after: side("Vorlagen/Angebot Vorlage.docx") }),
+];
+
+/** What break-ui feeds a history: endless names, one-letter ones, other scripts, emoji, unknown accounts and states. */
+const worstActivity = (): ActivityEntry[] => [
+  change("file.upload", 5, 0, { after: side(`${"Sehr-langer-Ordnername-ohne-Leerzeichen-".repeat(3)}/${"x".repeat(160)}.pdf`) }),
+  change("file.edit", 9, 1, { after: side("b") }, { actor: { kind: "user", userId: null, name: null } }),
+  change("item.move", 20, 2, { before: side("文件夹/长文件名示例文档.docx"), after: side("مستند/مستند طويل جدا للاختبار.pdf") }),
+  change("item.rename", 31, 3, { before: side("📁 Ablage 🗂️/Alt.md"), after: side("📁 Ablage 🗂️/Neu 🎉.md") }),
+  change("file.upload", 45, 0, { after: side("Eingang/Scan.pdf") }, { state: "unclear" }),
+  change("file.upload", 46, 1, { after: side("Eingang/Scan 2.pdf") }, { state: "failed" }),
+  change("item.missing", 80, 0, { before: gone("Archiv/Verschwunden.zip") }, { actor: { kind: "observed", userId: null, name: null } }),
+  change("file.upload", 99, 2, { after: side("Eingang/Rechnung.pdf") }, { actor: { kind: "visitor", userId: null, name: null } }),
+];
+
+/** A long history: 1,000 changes of four people over several weeks. */
+const hugeActivity = (): ActivityEntry[] =>
+  Array.from({ length: 1000 }, (_, index) =>
+    change(index % 3 === 0 ? "file.edit" : "file.upload", 37 + index * 41, index, {
+      after: side(`Belege/${2026 - Math.floor(index / 400)}/Beleg ${String(index + 1).padStart(4, "0")}.pdf`),
+    }),
+  );
+
+export function fixtureActivity(fixture: FixtureCase): ActivityPage {
+  const items = fixture === "worst" ? worstActivity() : fixture === "huge" ? hugeActivity() : plainActivity();
+  return {
+    items,
+    next: null,
+    visibleCount: items.length,
+    batches: [],
+    exhausted: true,
+    scanLimitReached: false,
+    searchLimitReached: false,
+  };
+}
+
+// ── Shares ───────────────────────────────────────────────────────────────────────────────────────────────────────
+const link = (index: number, patch: Partial<ShareView> = {}): ShareView => ({
+  passwordProtected: index % 3 === 0,
+  id: `40000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  kind: index % 4 === 3 ? "inbox" : "download",
+  url: null,
+  title: ["Unterlagen Lindqvist", "Fotos Baustelle", "Angebot Stadtwerke", "Belege Steuerbüro", "Aufmaß Oswald"][index % 5]!,
+  note: null,
+  publicNote: null,
+  base: { id: fixtureBase.id, name: fixtureBase.name, kind: fixtureBase.kind },
+  scope: ["Projekte/Küche Lindqvist", "Fotos", "Angebote", "Eingang", "Projekte/Bad Oswald"][index % 5]!,
+  items: index % 4 === 3 ? [] : Array.from({ length: (index % 5) + 1 }, (_, item) => `Angebote/Datei ${item + 1}.pdf`),
+  createdBy: PEOPLE[index % PEOPLE.length]!.name,
+  createdAt: new Date(Date.parse(FIXTURE_NOW) - index * 86_400_000).toISOString(),
+  expiresAt: index % 2 ? new Date(Date.parse(FIXTURE_NOW) + (20 - index) * 86_400_000).toISOString() : null,
+  state: index % 7 === 5 ? "revoked" : index % 6 === 4 ? "expired" : "active",
+  accessCount: (index * 7) % 23,
+  lastAccessedAt: null,
+  maxFileSize: 0,
+  maxTotalSize: 0,
+  showUploadNames: false,
+  ...patch,
+});
+
+export function fixtureShares(fixture: FixtureCase): SharePage {
+  if (fixture === "huge") return { items: Array.from({ length: 1000 }, (_, index) => link(index)), next: null };
+  if (fixture === "worst")
+    return {
+      items: [
+        link(0, { title: `${"Ein sehr langer Linkname ohne Ende ".repeat(4)}`, scope: `${"Unterordner/".repeat(12)}Ziel` }),
+        link(1, { title: "x", createdBy: `${"Sehr-langer-Name-".repeat(5)}`, accessCount: 98_765_432 }),
+        link(2, { title: "共享链接的长名称示例", createdByKind: "agent" }),
+        link(3, { title: "رابط مشاركة طويل جدا", state: "expired" }),
+        link(4, { title: "🎉 Fotos 📸", state: "revoked" }),
+      ],
+      next: null,
+    };
+  return { items: Array.from({ length: 8 }, (_, index) => link(index)), next: null };
+}
+
+/** A Markdown file in its editor; the test answers its content from `/content`. */
+export const fixtureMarkdown = (origin: string): MarkdownLaunch => ({
+  kind: "markdown",
+  managed: false,
+  canWrite: true,
+  url: `${origin}/content`,
+  base: fixtureBase,
+  entry: plain[7]!,
+});
+
+/** All storage: the favorites, and what this person did last. */
+export const fixtureRecent = () => ({
+  page: { ...fixtureActivity("plain"), items: fixtureActivity("plain").items.slice(0, 5) },
+  opened: [],
+});

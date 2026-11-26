@@ -11,7 +11,7 @@ const load = async () => {
   const dom = createDomTestHarness();
   try {
     return {
-      Workspace: (await import("./Workspace.island")).default,
+      Workspace: (await import("./FilesScreen.island")).default,
       toast: (await import("@k2b/ui")).toast,
       registerCommandHandler: (await import("@k2b/cloud/browser/commands")).registerCommandHandler,
     };
@@ -23,6 +23,11 @@ const modules = isServer ? undefined : await load();
 
 if (modules) {
   const { Workspace, toast, registerCommandHandler } = modules;
+  // v2 overlays read the phone query at once; the DOM harness has no global matchMedia, so a desktop answers.
+  Object.defineProperty(globalThis, "matchMedia", {
+    configurable: true,
+    value: (media: string) => ({ media, matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+  });
   test("Message actor reports unavailable Chat and retries with only the UUID through the public command", async () => {
     setSystemTime(new Date("2026-10-20T12:30:00.000Z"));
     const dom = createDomTestHarness();

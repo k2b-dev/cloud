@@ -21,11 +21,11 @@ export function createEditorFill() {
   };
   onMount(() => {
     measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(document.documentElement);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(document.documentElement);
     addEventListener("resize", measure);
     onCleanup(() => {
-      observer.disconnect();
+      observer?.disconnect();
       removeEventListener("resize", measure);
     });
   });

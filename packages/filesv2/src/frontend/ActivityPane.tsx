@@ -80,11 +80,11 @@ export default function ActivityPane(props: ActivityPaneProps) {
   const entries = createMemo(() => pages().flatMap((page) => page.items));
   const mine = () => props.filters.actor === "me";
   const mode = () => (mine() ? ("me" as const) : ("all" as const));
-  // Scoped views name one place; opened files then belong to no filter and stay out.
+  // Opened files belong to "Me" only; scoped views name one place, so opened files belong to no filter and stay out.
   const narrowed = () => !!(props.filters.baseId || props.filters.action || props.filters.when || props.filters.q);
   const filtered = () => !!(props.filters.baseId || props.filters.path || !mine() || props.filters.action || props.filters.when);
   const days = createMemo(() =>
-    activityDays(historyRows(entries(), { batches: true, merge: true }), narrowed() ? [] : (props.marks ?? []), {
+    activityDays(historyRows(entries(), { batches: true, merge: true }), !mine() || narrowed() ? [] : (props.marks ?? []), {
       complete: !next(),
       locale: locale(),
       t: h(),
@@ -169,6 +169,8 @@ export default function ActivityPane(props: ActivityPaneProps) {
             query={props.query}
             state={props.state}
             onChange={props.onChange}
+            // "Zurücksetzen" leads back to where Activity starts: "Me".
+            base={props.query.parse("view=activity&who=me").state}
             icons={FILTER_ICONS}
             names={props.who ? { who: [props.who] } : undefined}
             timeZone={props.env.timeZone}

@@ -76,6 +76,13 @@ export function SentenceText(props: { parts: readonly Part[]; mark?: { name: str
   );
 }
 
+/** The innermost folder of the last place a sentence names, when the reader resolved it as current. */
+const folderOf = (parts: readonly Part[]) =>
+  parts
+    .filter((part): part is Extract<Part, { kind: "place" }> => part.kind === "place")
+    .map((part) => part.hrefs?.at(-1) ?? undefined)
+    .at(-1) ?? undefined;
+
 /** Where the first current thing of a sentence is now; the row opens it. */
 const hrefOf = (parts: readonly Part[]) =>
   parts.find((part): part is Extract<Part, { kind: "name" }> => part.kind === "name" && !!part.href)?.href;
@@ -159,10 +166,13 @@ function moreDeeds(
   h: HistoryMessages,
   env: HistoryEnvironment,
   actions?: HistoryActions,
+  folder?: string,
 ): MenuEntry[] {
   const run = entry.execution ? env.executionHref?.(entry) : null;
   const person = actor.person;
   return [
+    // The folder of a current thing, as the sentence's place led there on v1; the row itself opens the thing.
+    ...(folder ? [{ label: h.v2OpenFolder, icon: "folder", href: folder, onNavigate: env.onNavigate }] : []),
     ...(run ? [{ label: h.viewExecution, icon: "player-play", href: run }] : []),
     ...(actions?.onContact && person?.userId && entry.actor.name
       ? [
@@ -194,8 +204,10 @@ export type ActivityRowProps = {
   context?: "chain";
   /** One more quiet fact, such as the other members of its batch. */
   note?: string;
-  /** The row shows its facts only; the deed belongs to what it stands under. */
+  /** The row shows its facts only; the deed belongs to what it stands under … */
   deedless?: boolean;
+  /** … or this deed stands in its place, such as reading the row's context again. */
+  deed?: Action;
 };
 
 /**
@@ -245,15 +257,30 @@ export function ActivityRow(props: ActivityRowProps) {
     metaParts(props.row, h(), locale(), props.env, { context: props.context ?? "activity", dated: !props.dated, actions: actions() }),
   );
   const state = () => stateOf(meta());
-  const deed = createMemo(() =>
-    props.deedless
-      ? undefined
-      : deedOf(rowAction(props.row, h(), actions() ?? {}, { links: true }), h(), props.actions?.onRestoreTrash, props.onChanged),
+  const deed = createMemo(
+    () =>
+      props.deed ??
+      (props.deedless
+        ? undefined
+        : versions.error()
+          ? { label: h().retry, icon: "refresh", onClick: () => void versions.refresh() }
+          : deedOf(rowAction(props.row, h(), actions() ?? {}, { links: true }), h(), props.actions?.onRestoreTrash, props.onChanged)),
   );
-  const more = createMemo(() => moreDeeds(entry(), actor(), h(), props.env, props.actions));
+  const more = createMemo(() => moreDeeds(entry(), actor(), h(), props.env, props.actions, folderOf(linked())));
   const time = () => (props.dated ? formatWhen(entry().time, locale(), h(), props.env) : formatTime(entry().time, locale(), props.env));
+  // Version evidence is extra: when it cannot be read the row says so and offers to read it again.
+  const versionFailure = () => {
+    const error = versions.error();
+    return error ? (error instanceof Error && error.message ? error.message : h().historyFailed) : "";
+  };
   const facts = () =>
-    [state()?.label, factsText(meta()), props.note, props.toggle ? h().itemsCount.replace("{count}", String(props.toggle.count)) : ""]
+    [
+      state()?.label,
+      factsText(meta()),
+      versionFailure(),
+      props.note,
+      props.toggle ? h().itemsCount.replace("{count}", String(props.toggle.count)) : "",
+    ]
       .filter(Boolean)
       .join(" · ");
   return (
