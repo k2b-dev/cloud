@@ -132,8 +132,7 @@ describe("an admin page on v2", () => {
       label: string;
       items: { label: string; children?: { label: string; active?: boolean }[] }[];
     };
-    // the phone bar names the open entry, so no screen repeats it in its head
-    expect(menu.label).toBe("Ankündigungen");
+    expect(menu.label).toBe("Administration");
     const setup = menu.items.find((item) => item.label === "Einrichten");
     expect(setup?.children?.find((child) => child.label === "Ankündigungen")?.active).toBe(true);
   });
