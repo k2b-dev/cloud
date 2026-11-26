@@ -27,6 +27,7 @@ Orders with two active filters: "Status ist Offen oder In Arbeit" and "Betrag ab
 - **"+ Filter"** lists the fields, the common ones first. A field without a value is a dashed statement that applies once it has one. **"Zurücksetzen"** returns to the current view in one step.
 - **Sort and group** stand in words in the status row: "⇅ Fällig ↑" and "Nach Status", each a menu with one choice.
 - **On the phone** the bar is one line that scrolls sideways. Every tap opens the filter sheet: every field with its value, sort and group, and "Zurücksetzen" and "9 Aufträge zeigen" at the foot.
+- **A period of its own.** A `dateRange` or `timeRange` editor lists its presets, then "Von …" and "Bis …" with their values. Each opens a `DatePicker` beside the editor, like a submenu (ArrowRight opens it, Escape closes only it; to the left where the right has no room). A picked day applies at once; a point in time adds hour and minute and applies with "Übernehmen". A day that does not fit ("Von" after "Bis", an hour the clocks skip) says why under the calendar, which stays open. On the phone the calendar is the sheet's next step.
 - **Values that load.** A `lookup` field opens `Lookup`: a search that waits 200 ms, aborts an older search, shows placeholder rows while it loads, and says "Erneut versuchen" when it fails. `Lookup` also works in a form.
 
 The field kinds: `choice` (a listbox with ticks, counts with `counts: true`), `lookup`, `numberRange` ("Preis ab 500 €"), `dateRange` and `timeRange` ("Eingang letzte 30 Tage", read in the `timeZone` you pass, "UTC" by default), `bool` and `text`.
@@ -42,7 +43,7 @@ The field kinds: `choice` (a listbox with ticks, counts with `counts: true`), `l
 ### Search field
 
 - One text is enough: a name, a number.
-- `Input type="search"` in the head `Bar`; declare it as the query's `search`, so it lives in the address as well.
+- `Input type="search"` in the head `Bar`; declare it as the query's `search`, so it lives in the address as well. Give it `name="q"` and `send={{ action, params, onSearch }}`: without JavaScript the field is a GET form and Enter loads the page with `q` and the rest of the address (`params`: the query's state without its search); where JavaScript runs, `onSearch` searches in place. Never wrap it in a `<form>` of your own, which breaks the head's rules, and never put it inside another `<form>`: forms do not nest, the browser drops the inner one. `describeV2` reports both.
 - No statements, no views.
 
 ## Parts

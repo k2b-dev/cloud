@@ -140,8 +140,8 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
 // The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open
 // on-screen keyboard, on the toast region, so a toast stays above the keyboard); the page or the platform sets the one
 // colour of its app, and the platform may set its readable ink. v2.css may read them, never define them.
-// Set from outside the sheet: by core, by the platform (the app colour), or by script on the document (`NoticeStack`
-// measures itself, so the panes keep their room).
+// the ui-sdk core writes the colour of a colour picker and the gradients of its surface and slider on their parts;
+// `NoticeStack` measures itself and sets its height on the document, so the panes keep their room
 const foreignVariables = new Set([
   "--anchor-width",
   "--available-height",
@@ -149,6 +149,9 @@ const foreignVariables = new Set([
   "--k2-app",
   "--k2-app-ink",
   "--k2-notice-stack",
+  "--color-picker-color",
+  "--color-area-background",
+  "--color-slider-background",
 ]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {

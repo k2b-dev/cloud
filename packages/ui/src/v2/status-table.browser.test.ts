@@ -9,9 +9,9 @@ import { measureV2Layout } from "./testing";
 import { textEdge } from "./tokens";
 
 // A filtered list as an operations log draws it (test/v2-status-table.client.tsx): the status row measures its own
-// column, drops its key figures below 760 px so the order controls keep their words, and holds a place for its loading
-// mark; the large table with a sticky first column starts body, head and group rows on one text edge; a phone row ends
-// in the state of its entry.
+// column, lets its key figures and then its lead give way so the order controls keep their words, folds those controls
+// to their symbols below 600 px, and holds a place for its loading mark; the large table with a sticky first column
+// starts body, head and group rows on one text edge; a phone row ends in the state of its entry.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -26,15 +26,26 @@ afterAll(async () => {
   await browser?.close();
 });
 
-/** Opens the fixture in a window of `width`; the column (the root) is `column` wide, so it narrows without the window. */
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, column = width }: { width?: number; column?: number } = {}) => {
+/**
+ * Opens the fixture in a window of `width`; the column (the root) is `column` wide, so it narrows without the window.
+ * `host` marks the v2 scope as a host's that offers the page's search in a bar of its own (`data-k2-host-search`);
+ * `path` gives the head a `Path` instead of its views.
+ */
+const withPage = async (
+  run: (page: Page) => Promise<void>,
+  { width = 1440, column = width, host = false, path = false }: { width?: number; column?: number; host?: boolean; path?: boolean } = {},
+) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root" style="width: ${column}px"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${host ? " data-k2-host-search" : ""}><div id="root" style="width: ${column}px"></div></body></html>`,
     );
+    if (path)
+      await page.evaluate(() => {
+        window.__k2PathHead = true;
+      });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     // the column is the width of its rows: the frame of the workspace around them takes its own pixels
@@ -91,27 +102,42 @@ const statusRow = () => {
     gaps: [before, ...seen.map((figure) => figure.shape)].flatMap((shape, index, shapes) =>
       index === 0 ? [] : [Math.round(shape.left - shapes[index - 1]!.right)],
     ),
-    controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => ({
+    // the buttons and the switches at the end (a switch is a `Check` in a `.k2-choice`)
+    controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end :is(.k2-btn, .k2-choice)")].map((button) => ({
       name: button.textContent?.trim(),
       inside: button.getBoundingClientRect().right <= inner + 0.5,
       whole: button.scrollWidth <= button.clientWidth,
       clear: button.getBoundingClientRect().left >= lead.right,
     })),
+    /** The lead: whether its words are cut, and whether a cut ends in "…" instead of running on. */
+    lead: (() => {
+      const element = row.querySelector<HTMLElement>(".k2-status-lead")!;
+      const style = getComputedStyle(element);
+      return {
+        cut: element.scrollWidth > element.clientWidth + 0.5,
+        ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+        // a cut lead keeps about a word (4.5 em) or all of it, never a letter and "…"
+        word: element.clientWidth >= Math.min(4.5 * Number.parseFloat(style.fontSize), element.scrollWidth) - 0.5,
+      };
+    })(),
+    /** The words of each control in sight (a folded control keeps them only as its name). */
+    words: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => {
+      const label = button.querySelector(".k2-btn-label")?.getBoundingClientRect();
+      return label !== undefined && label.width > 1 && label.height > 1;
+    }),
   };
 };
 
 /**
- * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls keep their words.
- * Below 600 px this fixture's lead and worded controls do not fit beside each other at all; there only the figures
- * and the controls themselves are checked.
+ * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls stay whole within
+ * the row and clear of the lead; a lead that does not fit is cut with "…".
  */
-const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>) => {
+const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>, word = true) => {
   expect(found.wrong).toBe(0);
   expect(found.shown).toEqual(found.shown.map((_, index) => index < found.shown.filter(Boolean).length));
   for (const gap of found.gaps) expect(gap).toBe(16);
-  const beside = found.width >= 600;
-  for (const control of found.controls)
-    expect({ ...control, clear: beside ? control.clear : true }).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+  for (const control of found.controls) expect(control).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+  if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: word ? true : found.lead.word });
 };
 
 // Figures give way only where they do not fit before the controls, never by the row's width alone (#4149).
@@ -143,6 +169,64 @@ for (const column of [1440, 1024, 900, 760, 400])
       { column },
     );
   });
+
+// A lead and worded controls that do not fit beside each other: the lead is cut with "…" first, the controls keep
+// their words; below 600 px the controls keep only their symbols and the words stay their names (#4166).
+for (const long of [false, true])
+  for (const column of [760, 600, 400, 320])
+    test(`a status row ${column} px wide with a ${long ? "long" : "short"} lead: lead and controls never overlap`, async () => {
+      await withPage(
+        async (page) => {
+          if (long) await page.evaluate(() => window.__k2LongLead?.());
+          await settled(page);
+          const found = await page.evaluate(statusRow);
+          expect(found.width).toBe(column);
+          expectHeld(found);
+          const folded = column <= 600;
+          expect(found.words).toEqual([!folded, !folded]);
+          if (long && !folded) expect(found.lead.cut).toBe(true);
+          for (const name of ["Neueste zuerst", "Nach Minute"])
+            expect(await page.getByRole("button", { name, exact: true }).isVisible()).toBe(true);
+        },
+        { column },
+      );
+    });
+
+// The operations log (break-ui finding 21): large counts, live as a toggle with a symbol and the short label "Live",
+// and sort and grouping as framed menus in words. Live is on, or blocked (until now, first page): then the toggle is
+// disabled and the reason is a figure. At every width, also the narrow list column beside an open entry, the figures
+// give way before they reach a control, the lead keeps about a word and is cut before a control, and no control is cut
+// or pushed past the row's edge. In a window of 1024 px, where the finding was seen, the list column is about 760 px
+// beside the sidebar and 520 px with an entry open.
+for (const live of ["on", "until-now", "first-page"] as const)
+  for (const [width, column] of [
+    [1440, 1440],
+    [1440, 1024],
+    [1024, 760],
+    [1024, 520],
+    [1440, 600],
+    [1440, 400],
+    [1440, 320],
+  ] as const)
+    test(`a status row ${column} px wide in a window of ${width} px as the operations log draws it, live ${live}: nothing overlaps`, async () => {
+      await withPage(
+        async (page) => {
+          await page.evaluate((state) => window.__k2Logs?.(state), live);
+          await settled(page);
+          const found = await page.evaluate(statusRow);
+          expect(found.width).toBe(column);
+          // at 320 px three folded controls (two of them menus with their chevron) leave the lead less than a word
+          expectHeld(found, column > 320);
+          expect(found.controls.map((control) => control.name)).toEqual(["Live", "Eingang ↓", "Keine Gruppen"]);
+          expect(found.words).toEqual(column <= 600 ? [false, false, false] : [true, true, true]);
+          if (column >= 1024) expect(found.shown.slice(0, 2)).toEqual([true, true]);
+          const toggle = page.getByRole("button", { name: "Live", exact: true });
+          expect(await toggle.isDisabled()).toBe(live !== "on");
+          expect(await toggle.getAttribute("aria-pressed")).toBe(live === "on" ? "true" : "false");
+        },
+        { width, column },
+      );
+    });
 
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
@@ -293,6 +377,104 @@ test("390 px: Escape folds the open search of the head back and keeps its words,
       expect(await width()).toBeGreaterThan(300);
     },
     { width: 390 },
+  );
+});
+
+// The Cloud shell offers the page's search in its phone bar (as the mockup draws Mail): the head keeps its tabs, and the
+// field opens over the head when the host focuses it.
+test("390 px in a host's bar: the folded search leaves the head to its tabs, opens over the head on focus, Escape folds it away", async () => {
+  await withPage(
+    async (page) => {
+      const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+      const state = () =>
+        page.evaluate(() => {
+          const bar = document.querySelector('[data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+          const field = document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect();
+          const tabs = [...document.querySelectorAll<HTMLElement>('[data-slot="head"] .k2-tabs > .k2-tab')]
+            .filter((tab) => tab.getClientRects().length > 0 && getComputedStyle(tab).visibility !== "hidden")
+            .map((tab) => tab.firstChild?.textContent ?? "");
+          const menu = document.querySelector('[data-slot="head"] .k2-tabs-nav > :not(.k2-tabs)')?.textContent?.trim();
+          return { tabs, menu, field: [Math.round(field.width), Math.round(field.left - bar.left), Math.round(bar.right - field.right)] };
+        });
+      const folded = await state();
+      // every view keeps its tab beside the menu of further views; none joins that menu for the search's sake
+      expect([folded.tabs, folded.menu]).toEqual([["Alle", "Fehler", "Warn"], "Weitere+2"]);
+      expect(folded.field[0]).toBeLessThanOrEqual(1);
+      // the host focuses the field (the shell's phone bar does it on a tap): it opens over the head
+      await search.focus();
+      await settled(page);
+      expect((await state()).field).toEqual([390 - 2 * textEdge.phone, textEdge.phone, textEdge.phone]);
+      await page.keyboard.type("Zeitüberschreitung");
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
+      expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      expect(await state()).toEqual(folded);
+    },
+    { width: 390, host: true },
+  );
+});
+
+// The host's bar is the one way into the folded search: the Tab key passes it by, the host's focus still reaches it.
+test("390 px in a host's bar: the folded search is out of the Tab key's order, and the host still focuses it", async () => {
+  await withPage(
+    async (page) => {
+      const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+      expect(await search.evaluate((input) => input.tabIndex)).toBe(-1);
+      const reached: string[] = [];
+      for (let step = 0; step < 8; step += 1) {
+        await page.keyboard.press("Tab");
+        reached.push(
+          await page.evaluate(
+            () => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim() ?? "",
+          ),
+        );
+      }
+      expect(reached).not.toContain("Durchsuchen");
+      await search.focus();
+      expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
+    },
+    { width: 390, host: true },
+  );
+});
+
+test("1440 px in a host's page: the search of the head stays in the Tab key's order", async () => {
+  await withPage(
+    async (page) => {
+      expect(await page.getByRole("searchbox", { name: "Durchsuchen" }).evaluate((input) => input.tabIndex)).toBe(0);
+    },
+    { host: true },
+  );
+});
+
+// A head with a path gives way on the phone; its search opens over the content's first row, so nothing below moves.
+test("390 px in a host's bar with a path: the search opens over the status row and nothing below the head moves", async () => {
+  await withPage(
+    async (page) => {
+      const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+      const state = () =>
+        page.evaluate(() => {
+          const head = document.querySelector('[data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+          const status = document.querySelector('[data-k2-part="StatusRow"]')!.getBoundingClientRect();
+          const field = document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect();
+          const hit = document.elementFromPoint(field.left + field.width / 2, field.top + field.height / 2);
+          return {
+            head: Math.round(head.height),
+            status: Math.round(status.top),
+            field: [Math.round(field.width), Math.round(field.left), Math.round(field.top - status.top)],
+            onTop: hit?.closest('[data-k2-part="Input"]') !== null,
+          };
+        });
+      const folded = await state();
+      expect({ head: folded.head, status: folded.status }).toEqual({ head: 0, status: 0 });
+      await search.focus();
+      await settled(page);
+      expect(await state()).toEqual({ head: 0, status: 0, field: [390 - 2 * textEdge.phone, textEdge.phone, 8], onTop: true });
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect({ ...(await state()), field: [], onTop: false }).toEqual({ head: 0, status: 0, field: [], onTop: false });
+    },
+    { width: 390, host: true, path: true },
   );
 });
 
