@@ -466,12 +466,16 @@ export default function HostsScreen(props: HostsScreenProps) {
         />
       }
     >
-      <Facts
-        items={[
-          ...(group.description ? [{ label: t().description, value: group.description }] : []),
-          ...(group.hostgroups.length > 0 ? [{ label: t().nested, value: group.hostgroups.join(", ") }] : []),
-        ]}
-      />
+      <Show when={group.description || group.hostgroups.length > 0}>
+        <Section icon="settings" title={t().details}>
+          <Facts
+            items={[
+              ...(group.description ? [{ label: t().description, value: group.description }] : []),
+              ...(group.hostgroups.length > 0 ? [{ label: t().nested, value: group.hostgroups.join(", ") }] : []),
+            ]}
+          />
+        </Section>
+      </Show>
       <Section icon="server" title={t().hostsOfGroup} count={number(group.hostTotal)}>
         <Show when={group.hostDetails.length > 0} fallback={<Empty icon="server-off" text={t().noHostsInGroup} />}>
           <List label={t().hostsOfGroup}>
