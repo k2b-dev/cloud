@@ -18,8 +18,8 @@ export type BookHeadProps = {
 };
 
 /**
- * Book's head: the notebook's name, the note's views (Bearbeiten, Lesen, Buch) for writers, the view menu and the
- * note's open comments. The reader moves between notes without a new page, so the head follows each note's snapshot:
+ * Book's head, as the note's head: the note's views (Bearbeiten, Lesen, Buch) for writers or the notebook's name for
+ * readers, the view menu and the note's open comments. The reader moves between notes without a new page, so the head follows each note's snapshot:
  * its views and comments always belong to the note shown. The note's own title is the article's first heading.
  */
 export default function BookHead(props: BookHeadProps) {
@@ -42,22 +42,20 @@ export default function BookHead(props: BookHeadProps) {
   return (
     <Bar
       start={
-        <>
-          <Text weight="strong">{shown().notebookName}</Text>
-          {/* Readers stay in Book: only writers get the way into the workspace. */}
-          <Show when={shown().canWrite}>
-            <Tabs
-              label={t().view}
-              items={[
-                ...(shown().selectedNoteId && !shown().locked
-                  ? [{ label: t().openAsEdit, icon: "pencil", href: workspaceHref("write") }]
-                  : []),
-                { label: t().openAsRead, icon: "eye", href: workspaceHref("readonly") },
-                { label: book().book, icon: "book", current: true, href: withPresentationMode(shown().href, "book") },
-              ]}
-            />
-          </Show>
-        </>
+        // Readers stay in Book: only writers get the way into the workspace, as the note's head offers it. A reader's
+        // head names the notebook; the note's own title is the article's first heading.
+        <Show when={shown().canWrite} fallback={<Text weight="strong">{shown().notebookName}</Text>}>
+          <Tabs
+            label={t().view}
+            items={[
+              ...(shown().selectedNoteId && !shown().locked
+                ? [{ label: t().openAsEdit, icon: "pencil", href: workspaceHref("write") }]
+                : []),
+              { label: t().openAsRead, icon: "eye", href: workspaceHref("readonly") },
+              { label: book().book, icon: "book", current: true, href: withPresentationMode(shown().href, "book") },
+            ]}
+          />
+        </Show>
       }
       end={
         <>

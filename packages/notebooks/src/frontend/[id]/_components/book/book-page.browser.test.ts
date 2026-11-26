@@ -60,8 +60,8 @@ const second = {
   openComments: 2,
 };
 
-/** The page as the server renders it; the cookie says whether the person hid the sidebar. */
-const pageMarkup = (sidebarCollapsed: boolean) =>
+/** The page as the server renders it; the cookies say whether the person hid the sidebar or reads in full width. */
+const pageMarkup = (sidebarCollapsed: boolean, fullWidth: boolean, reader: boolean) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "de",
@@ -78,10 +78,12 @@ const pageMarkup = (sidebarCollapsed: boolean) =>
               tags: [{ tag: "lager", count: 3 }],
               currentHref: "/app/notebooks/book01/notes/note01?mode=book",
               navigationHidden: false,
-              fullWidth: false,
+              fullWidth,
               html: OVERVIEW,
               noteTitle: "Überblick",
-              canWrite: true,
+              canWrite: !reader,
+              // a reader of a note with open comments
+              openComments: reader ? 2 : undefined,
               locked: false,
               historyIncomplete: false,
               cursor: null,
@@ -150,10 +152,12 @@ beforeAll(async () => {
       if (url.pathname === "/api/notebooks/book01/book" && url.searchParams.get("href")?.includes("/notes/note02"))
         return Response.json(second);
       if (url.pathname.startsWith("/api/")) return new Response("Not found", { status: 404 });
-      const collapsed = /(?:^|;\s*)book-sidebar=hidden/.test(request.headers.get("cookie") ?? "");
+      const cookie = request.headers.get("cookie") ?? "";
+      const collapsed = /(?:^|;\s*)book-sidebar=hidden/.test(cookie);
+      const fullWidth = decodeURIComponent(cookie).includes('"fullWidth":true');
       return new Response(
         `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head>` +
-          `<body class="k2b-ui" style="margin:0"><div id="root" class="k2-ui" style="position:fixed;inset:0;display:flex">${pageMarkup(collapsed)}</div>` +
+          `<body class="k2b-ui" style="margin:0"><div id="root" class="k2-ui" style="position:fixed;inset:0;display:flex">${pageMarkup(collapsed, fullWidth, url.searchParams.has("reader"))}</div>` +
           // what a full page load would lose, and the article the server sent
           `<script>window.bookPageMarker = "first load"; window.serverArticle = document.getElementById("notebook-book-content");</script>` +
           `<script type="module" src="/harness.js"></script></body></html>`,
@@ -178,13 +182,18 @@ const ready = async (page: Page) => {
   await page.evaluate(() => document.fonts.ready);
   await settled(page);
 };
-const open = async (width: number, path = "/app/notebooks/book01/notes/note01?mode=book", javaScriptEnabled = true) => {
+const open = async (width: number, path = "/app/notebooks/book01/notes/note01?mode=book", javaScriptEnabled = true, fullWidth = false) => {
   const context = await browser.newContext({
     viewport: { width, height: width < 600 ? 844 : 900 },
     isMobile: width < 600,
     hasTouch: width < 1024,
     javaScriptEnabled,
   });
+  // the person's full-width preference, as the settings cookie keeps it
+  if (fullWidth)
+    await context.addCookies([
+      { name: "settings-app-notebooks", value: encodeURIComponent(JSON.stringify({ fullWidth: true })), url: server.url.href },
+    ]);
   const page = await context.newPage();
   // an error in the page fails the test that opened it (a view transition a navigation cuts short is the browser's)
   page.on("pageerror", (error) => {
@@ -197,6 +206,26 @@ const open = async (width: number, path = "/app/notebooks/book01/notes/note01?mo
 const close = (page: Page) => page.context().close();
 const tabs = (page: Page) => page.locator('[data-k2-part="Tabs"] a');
 const main = ".notebook-book-main";
+/** Where the character at `share` of a block's text sits below the top of Book's scroll port: the line being read. */
+const lineAt = (block: Locator, share: number) =>
+  block.evaluate(
+    (element, [port, at]) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      let rest = Math.floor((element.textContent?.length ?? 0) * (at as number));
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const length = node.textContent?.length ?? 0;
+        if (rest < length) {
+          const range = document.createRange();
+          range.setStart(node, rest);
+          range.setEnd(node, rest + 1);
+          return Math.round(range.getBoundingClientRect().top - document.querySelector(port as string)!.getBoundingClientRect().top);
+        }
+        rest -= length;
+      }
+      throw new Error("The block has no text at that share.");
+    },
+    [main, share] as const,
+  );
 /** Where an element sits below the top of Book's scroll port. */
 const offset = (target: Locator) =>
   target.evaluate(
@@ -212,7 +241,8 @@ for (const width of [1440, 390]) {
       // the article is plain markup, in no island; the head and the navigation stand in theirs
       expect(await page.locator("solid-island #notebook-book-content").count()).toBe(0);
       expect(await page.locator('solid-island[data-file="BookHead.island.tsx"] [data-k2-part="Tabs"]').count()).toBe(1);
-      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).toContain("Handbuch Lager");
+      // a writer's head holds the views, as the note's head does; the sidebar names the notebook beside it
+      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).not.toContain("Handbuch Lager");
       expect((await page.locator(main).boundingBox())!.height).toBeGreaterThan(400);
     } finally {
       await close(page);
@@ -263,6 +293,26 @@ for (const width of [1440, 390]) {
   }, 60_000);
 }
 
+for (const width of [1440, 390]) {
+  test(`${width}: a reader stays in Book and reaches the note's open comments from the head`, async () => {
+    const page = await open(width, "/app/notebooks/book01/notes/note01?mode=book&reader=1");
+    try {
+      // no views into the workspace; the head names the notebook, the article its note
+      expect(await tabs(page).count()).toBe(0);
+      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).toContain("Handbuch Lager");
+      // the comments: their sign and number in sight, named in words, also on the phone
+      const comments = page.locator('[data-k2-workspace] a[title="2 offene Kommentare"]');
+      expect(await comments.isVisible()).toBe(true);
+      expect(await comments.locator(".ti-message-circle").count()).toBe(1);
+      expect((await comments.textContent())?.trim()).toBe("2");
+      expect(await comments.getAttribute("href")).toBe("/app/notebooks/book01/notes/note01?mode=readonly&annotation=first");
+      expect((await measureV2Layout(page, { root: '[data-k2-workspace] [data-k2-part="Bar"]' })).problems).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 60_000);
+}
+
 test("an address with an anchor opens at its heading, and mounting the islands keeps it there", async () => {
   const page = await open(1440, "/app/notebooks/book01/notes/note01?mode=book#heading-ablauf");
   try {
@@ -293,26 +343,29 @@ test("a reload returns to where the reader was", async () => {
 }, 60_000);
 
 test("the sidebar hides and shows with its button and keys, the text being read stays in place, and the next page comes hidden", async () => {
-  // a window where the column, not the reading width, bounds the article, so hiding the sidebar rewraps it
-  const page = await open(1024);
+  // in full width the column bounds the article, so hiding the sidebar rewraps it
+  const page = await open(1024, undefined, true, true);
   try {
     const workspace = page.locator("[data-k2-workspace]");
     const article = page.locator("#notebook-book-content");
-    // the reader is far into a long step, where a rewrap moves the text furthest
+    // the reader is near the end of a long step, where a rewrap moves the text furthest; the browser's own scroll
+    // anchoring keeps only the step's top in place
     const step = article.locator("p", { hasText: "Schritt 13:" });
     await step.evaluate((element, port) => {
       const scroller = document.querySelector(port)!;
-      scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + element.clientHeight / 2;
+      scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + element.clientHeight * 0.85;
     }, main);
     await settled(page);
-    const reading = await offset(step);
+    const line = await step.evaluate((element) => Number.parseFloat(getComputedStyle(element).lineHeight));
+    const reading = await lineAt(step, 0.85);
     const narrow = (await article.boundingBox())!.width;
 
     await page.getByRole("button", { name: "Seitenleiste ausblenden" }).click();
     expect(await workspace.getAttribute("data-collapsed")).toBe("");
     await settled(page);
     expect((await article.boundingBox())!.width).toBeGreaterThan(narrow);
-    expect(Math.abs((await offset(step)) - reading)).toBeLessThanOrEqual(2);
+    // the line being read stays at the top, give or take the line the rewrap moved it into
+    expect(Math.abs((await lineAt(step, 0.85)) - reading)).toBeLessThanOrEqual(line);
     expect(await page.evaluate(() => document.cookie)).toContain("book-sidebar=hidden");
 
     // the server renders the next page with the sidebar hidden, so it comes with the right width

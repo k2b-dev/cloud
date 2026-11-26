@@ -110,7 +110,8 @@ describe("Book on v2", () => {
       "BookMermaid.island.tsx",
       "BookCharts.island.tsx",
     ]);
-    expect((await selectHtml(html, '[data-slot="head"]'))[0]?.text).toContain("Company handbook");
+    expect((await selectHtml(render(), '[data-slot="head"]'))[0]?.text).toContain("Company handbook");
+    expect((await selectHtml(html, '[data-slot="head"]'))[0]?.text).not.toContain("Company handbook");
   });
   test("the sidebar can be hidden, and a page renders it hidden as the person left it", async () => {
     expect(await selectHtml(render(), "[data-k2-workspace][data-collapsible]:not([data-collapsed])")).toHaveLength(1);

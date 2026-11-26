@@ -60,19 +60,23 @@ export const followBookReadingPosition = (article: HTMLElement, scroller: HTMLEl
   let restore = keepBookReadingPosition(article, scroller);
   let width = article.getBoundingClientRect().width;
   let frame = 0;
+  // Whoever sees a new width first puts the text back from the position read before it: a layout forced right after
+  // the change lets the browser's scroll anchoring move the port, and its scroll can arrive before the observer does.
   const read = () => {
     frame = 0;
+    const next = article.getBoundingClientRect().width;
+    // a note that loads or a diagram that renders changes the height only
+    if (Math.abs(next - width) >= 1) {
+      width = next;
+      restore();
+    }
     restore = keepBookReadingPosition(article, scroller);
   };
   const onScroll = () => {
     frame ||= requestAnimationFrame(read);
   };
   const sizes = new ResizeObserver(() => {
-    const next = article.getBoundingClientRect().width;
-    // a note that loads or a diagram that renders changes the height only
-    if (Math.abs(next - width) < 1) return;
-    width = next;
-    restore();
+    if (Math.abs(article.getBoundingClientRect().width - width) < 1) return;
     cancelAnimationFrame(frame);
     read();
   });
