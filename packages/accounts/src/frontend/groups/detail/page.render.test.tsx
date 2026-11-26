@@ -107,10 +107,12 @@ const withGroup = async (
     audit?: Awaited<ReturnType<typeof audit.list>>["items"];
     /** The group's direct members by kind. */
     direct?: { type: "user" | "group" | "service_account"; id: string }[];
+    /** Who manages the group directly. */
+    managers?: { type: "user" | "group" | "service_account"; id: string }[];
   },
   run: (
     app: Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>,
-    calls: { pages: number[]; entity: unknown[]; relations: unknown[]; managers: number; audit: number; names: unknown[] },
+    calls: { pages: number[]; entity: unknown[]; relations: unknown[]; audit: number; names: unknown[] },
   ) => Promise<void>,
 ) => {
   const calls = {
@@ -141,18 +143,14 @@ const withGroup = async (
       calls.audit += 1;
       return { items: options.audit ?? [], page: 1, perPage: 10, total: options.audit?.length ?? 0, hasNext: false };
     }),
-    spyOn(accountsAppService.group.manager, "list").mockResolvedValue(empty),
+    spyOn(accountsAppService.group.manager, "list").mockResolvedValue({ ...empty, items: options.managers ?? [] } as never),
     // Like the service: a page past the end is empty, but the total still counts every entry.
     spyOn(accountsAppService.group, "relations").mockImplementation(async (input) => {
       calls.relations.push(input);
       return options.relations ? options.relations() : { ok: true, data: relationsAround };
     }),
     spyOn(accountsAppService.entity, "list").mockImplementation(async (input) => {
-      // the managers' faces of the key figures, and the names in the activity, are reads of their own
-      if (input.managerOfGroupId && input.pagination?.perPage === 4) {
-        calls.managers += 1;
-        return { items: [ada], page: 1, perPage: 4, total: 3, hasNext: false };
-      }
+      // the names of the managers' faces and of the activity are one read of their own
       if (input.userIds || input.groupIds || input.serviceAccountIds) {
         calls.names.push(input);
         return { items: [ada, memberGroup(7)], page: 1, perPage: 10, total: 2, hasNext: false };
@@ -218,8 +216,8 @@ test("the members tab reads the search, the indirect members and the agents from
     await open(app, "?tab=managers&indirect=true");
     expect(calls.entity[1]).toMatchObject({ managerOfGroupId: groupId, kinds: ["user", "group"] });
     expect(calls.entity[1]).not.toHaveProperty("recursive");
-    // the managers' faces are a read of their own, once per page
-    expect(calls.managers).toBe(2);
+    // nobody to name: no read besides the tab's own
+    expect(calls.names).toEqual([]);
   });
 });
 
@@ -403,14 +401,24 @@ test("the first row counts the direct members by kind, the managers with their f
     { type: "service_account" as const, id: "a1" },
     { type: "group" as const, id: "g1" },
   ];
-  await withGroup({ total: 3, direct }, async (app, calls) => {
+  const managers = [
+    { type: "user" as const, id: ada.kind === "user" ? ada.user.id : "" },
+    { type: "group" as const, id: "33333333-3333-4333-8333-000000000007" },
+    { type: "user" as const, id: "11111111-1111-4111-8111-0000000000ff" },
+  ];
+  await withGroup({ total: 3, direct, managers }, async (app, calls) => {
     const html = await (await open(app, "")).text();
     expect(html).toContain('data-k2-part="Cells"');
     expect(html).toContain("2 people · 1 agent");
     expect(html).toContain(">Sub-groups<");
-    // three managers, the first of them with a face
-    expect(html).toMatch(/data-k2-part="Avatar.Stack"[^>]*aria-label="Ada Renz"/);
-    expect(calls.managers).toBe(1);
+    // three managers; the ones the directory names show their faces, read once for all of them
+    expect(html).toMatch(/data-k2-part="Avatar.Stack"[^>]*aria-label="Ada Renz, team-7"/);
+    expect(calls.names).toHaveLength(1);
+  });
+  // the managers tab names its managers from its own rows: no further read
+  await withGroup({ total: 3, managers: [managers[1]!], entities: () => [memberGroup(7)] }, async (app, calls) => {
+    await open(app, "?tab=managers");
+    expect(calls.names).toEqual([]);
   });
 });
 

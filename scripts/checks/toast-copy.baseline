@@ -1,7 +1,6 @@
 # Toasts that do not follow the @k2b/ui toast contract yet: short title, the message as description, the icon from the tone.
 # One occurrence per line: <file> | <title|untitled|tone-icon> | <expression>.
 # The rule never adds lines; `bun scripts/check.ts toast-copy --fix` removes resolved findings. This list only shrinks.
-packages/accounts/src/frontend/action-notice.tsx | untitled | messages.creationNoticeFailed
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
