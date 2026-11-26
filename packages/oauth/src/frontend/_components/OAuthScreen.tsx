@@ -14,6 +14,7 @@ import {
   Field,
   Input,
   Lookup,
+  Menu,
   type NavProps,
   Notice,
   Pane,
@@ -52,6 +53,9 @@ export type OAuthScreenProps = {
 };
 
 const PATH = "/admin/oauth";
+
+/** What every sign-in asks for: a row does not repeat them. */
+const USUAL_SCOPES: ReadonlySet<OAuthScope> = new Set(["openid", "profile", "email"]);
 
 /** Every scope a managed client may request, in the order the editor offers them, with its sign. */
 const SCOPES = [
@@ -178,12 +182,14 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     );
   /** The scopes as chips; in a row only two and "+n", which the open client lists whole. */
   const scopeChips = (client: OAuthClient, row = false) => {
-    const shown = row ? client.scopes.slice(0, 2) : client.scopes;
+    // a row marks only what a sign-in does not usually ask for; the open client lists every scope
+    const listed = row ? client.scopes.filter((scope) => !USUAL_SCOPES.has(scope)) : client.scopes;
+    const shown = row ? listed.slice(0, 2) : listed;
     return (
       <>
         <For each={shown}>{(scope) => <Chip>{scope}</Chip>}</For>
-        <Show when={client.scopes.length > shown.length}>
-          <Chip>{`+${number(client.scopes.length - shown.length)}`}</Chip>
+        <Show when={listed.length > shown.length}>
+          <Chip>{`+${number(listed.length - shown.length)}`}</Chip>
         </Show>
       </>
     );
@@ -337,15 +343,21 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           start={<Text type="lead">{client.name}</Text>}
           end={
             <>
-              <Show when={client.registrationKind !== "first_party"}>
-                <Button icon="trash" keep={client.registrationKind === "dynamic"} onClick={() => void remove(client)}>
-                  {client.registrationKind === "dynamic" ? t().revokeAction : t().deleteAction}
+              {/* a self-registered client has one deed, revoking; a managed one keeps the rarer ones in "…", which the
+                  phone shows as well */}
+              <Show when={client.registrationKind === "dynamic"}>
+                <Button icon="trash" keep onClick={() => void remove(client)}>
+                  {t().revokeAction}
                 </Button>
               </Show>
-              <Show when={client.registrationKind === "managed" && !client.isPublic}>
-                <Button icon="key" onClick={() => void regenerate(client)}>
-                  {t().regenerate}
-                </Button>
+              <Show when={client.registrationKind === "managed"}>
+                <Menu
+                  label={t().moreActions}
+                  items={[
+                    ...(client.isPublic ? [] : [{ label: t().regenerate, icon: "key", onClick: () => void regenerate(client) }]),
+                    { label: t().deleteAction, icon: "trash", danger: true, onClick: () => void remove(client) },
+                  ]}
+                />
               </Show>
               <Show when={client.registrationKind === "managed"}>
                 <Button icon="pencil" keep onClick={() => start(client)}>
@@ -439,7 +451,8 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                 text: t().noMatch({ query: props.search }),
                 action: { label: t().resetSearch, href: href({ search: "" }) },
               }
-            : { icon: "key", text: t().noClients, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
+            : // "Neuer Client" stands in the head (on the phone it floats): the empty state does not repeat it
+              { icon: "key", text: t().noClients }
         }
         phone={(client) => ({
           lines: [client.name, client.description || client.clientId],
@@ -495,14 +508,12 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     const address = (label: string, path: string) => ({ label, value: at(path), mono: true, copy: at(path) });
     return (
       <Pane label={t().endpoints} scrollKey="oauth-endpoints">
-        <Section icon="world" title={t().discoveryEndpoints}>
-          <Facts
-            items={[address(t().openIdConfiguration, "/.well-known/openid-configuration"), address("JWKS", "/.well-known/jwks.json")]}
-          />
-        </Section>
+        {/* one list of addresses, so they share one label column */}
         <Section icon="route" title={t().oauthEndpoints}>
           <Facts
             items={[
+              address(t().openIdConfiguration, "/.well-known/openid-configuration"),
+              address("JWKS", "/.well-known/jwks.json"),
               address(t().authorizationEndpoint, "/oauth/authorize"),
               address(t().tokenEndpoint, "/oauth/token"),
               address(t().dynamicRegistrationEndpoint, "/oauth/register"),

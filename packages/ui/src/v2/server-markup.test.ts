@@ -14,6 +14,8 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
+const { Button } = await import("./button");
+const { Empty } = await import("./states");
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -72,4 +74,33 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+// A page of one task (a code to enter) focuses its field before any script runs; a field elsewhere does not.
+test("a text field takes the focus from the server's markup only when it says so, and sends a form it does not stand in", () => {
+  const input = (props: { autofocus?: boolean; form?: string }) =>
+    renderToString(() => createComponent(Input, { label: "Code", name: "user_code", ...props })).match(/<input[^>]*>/)?.[0] ?? "";
+  expect(input({ autofocus: true, form: "code-form" })).toMatch(/autofocus/);
+  expect(input({ autofocus: true, form: "code-form" })).toContain('form="code-form"');
+  expect(input({})).not.toMatch(/autofocus|form=/);
+});
+
+test("a submit button sends the form and the answer it names; a link carries none of them", () => {
+  const button = renderToString(() =>
+    createComponent(Button, { type: "submit", form: "decision", name: "decision", value: "deny", children: "Ablehnen" }),
+  );
+  for (const attribute of ['type="submit"', 'form="decision"', 'name="decision"', 'value="deny"']) expect(button).toContain(attribute);
+  const link = renderToString(() =>
+    createComponent(Button, { href: "/", form: "decision", name: "decision", value: "deny", children: "Start" }),
+  );
+  expect(link).not.toMatch(/form=|name=|value=/);
+});
+
+// role=status from the server is read as the page opens; assistive technology announces only a change of it.
+test("an empty state that is a result is a status region with a toned sign; a plain one is neither", () => {
+  const result = renderToString(() => createComponent(Empty, { icon: "circle-check", text: "Gerät verbunden", live: true, tone: "ok" }));
+  expect(result).toContain('role="status"');
+  expect(result).toContain('class="k2-sign" data-tone="ok"');
+  const plain = renderToString(() => createComponent(Empty, { icon: "inbox", text: "Noch nichts." }));
+  expect(plain).toContain('<div class="k2-state" data-k2-part="Empty"><span class="k2-sign"><');
 });

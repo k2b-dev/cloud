@@ -246,14 +246,25 @@ describe("OAuth authorization pages in a browser", () => {
           const page = await tab.evaluate(() => {
             const box = document.querySelector("[data-k2-workspace]")!.getBoundingClientRect();
             const field = document.querySelector('input[name="user_code"]:not([type="hidden"])')?.getBoundingClientRect();
-            return { left: box.left, right: box.right, view: document.documentElement.clientWidth, field: field?.left ?? null };
+            return {
+              left: box.left,
+              right: box.right,
+              view: document.documentElement.clientWidth,
+              field: field?.left ?? null,
+              page: getComputedStyle(document.querySelector(".minimal-layout")!).backgroundColor,
+              card: getComputedStyle(document.querySelector("[data-k2-workspace]")!).backgroundColor,
+              footer: document.querySelector("footer")?.getAttribute("data-ui") ?? null,
+            };
           });
           const name = `${state} at ${width} px`;
           if (width === 1440) {
             expect(page.right - page.left, name).toBeLessThanOrEqual(560);
             // centred: as much room on the left as on the right
             expect(Math.abs(page.left - (page.view - page.right)), name).toBeLessThanOrEqual(1);
+            // the real v2 frame: a card on the tinted page, the v2 footer below
+            expect(page.page, name).not.toBe(page.card);
           } else expect({ left: page.left, right: page.right }, name).toEqual({ left: 0, right: page.view });
+          expect(page.footer, name).toBe("v2");
           // the code field stands on the text edge, not at the pane's border
           if (page.field !== null) expect(page.field - page.left, name).toBeGreaterThanOrEqual(16);
         } finally {

@@ -70,7 +70,7 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
         {(view) => (
           <Switch>
             <Match when={view().outcome === "approved"}>
-              <Outcome icon="circle-check" body={t().deviceApprovedBody} />
+              <Outcome icon="circle-check" ok body={t().deviceApprovedBody} />
             </Match>
             <Match when={view().outcome === "denied"}>
               <Outcome icon="circle-x" body={t().deviceDeniedBody} />

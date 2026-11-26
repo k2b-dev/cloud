@@ -314,10 +314,12 @@ describe("OAuth on v2", () => {
       failures: [{ request: `DELETE ${API}/${GRAFANA}`, times: 1 }],
     });
     try {
-      await managed.tab.getByRole("button", { name: "Löschen" }).click();
+      await managed.tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await managed.tab.getByRole("menuitem", { name: "Löschen" }).click();
       await managed.tab.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
       expect(managed.calls).toEqual([]);
-      await managed.tab.getByRole("button", { name: "Löschen" }).click();
+      await managed.tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await managed.tab.getByRole("menuitem", { name: "Löschen" }).click();
       await managed.tab.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
       await managed.tab.getByRole("button", { name: "Erneut versuchen" }).click();
       await managed.tab.waitForURL((url) => url.pathname === "/admin/oauth" && !url.searchParams.has("client"));
@@ -344,13 +346,28 @@ describe("OAuth on v2", () => {
     }
   }, 60_000);
 
+  test("on the phone the head keeps Edit and the menu with Delete and Renew within reach", async () => {
+    const { context, tab, errors } = await open(phone, `/admin/oauth?client=${GRAFANA}`);
+    try {
+      expect(await tab.getByRole("button", { name: "Bearbeiten" }).isVisible()).toBe(true);
+      await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      for (const deed of ["Neu erzeugen", "Löschen"]) expect(await tab.getByRole("menuitem", { name: deed }).isVisible(), deed).toBe(true);
+      await shoot(tab, "oauth-record-menu-390");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("renewing a secret asks first and shows the new one once; Cloud's own client has no deeds", async () => {
     const { context, tab, errors, calls } = await open(desktop, `/admin/oauth?client=${GRAFANA}`);
     try {
-      await tab.getByRole("button", { name: "Neu erzeugen" }).click();
+      await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await tab.getByRole("menuitem", { name: "Neu erzeugen" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
       expect(calls).toEqual([]);
-      await tab.getByRole("button", { name: "Neu erzeugen" }).click();
+      await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await tab.getByRole("menuitem", { name: "Neu erzeugen" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Neu erzeugen" }).click();
       const secret = tab.getByRole("dialog", { name: "Secret neu erzeugt" });
       await secret.getByText(FAKE_SECRET).waitFor();
@@ -365,7 +382,7 @@ describe("OAuth on v2", () => {
 
     const own = await open(desktop, "/admin/oauth?client=00000000-0000-4000-8000-000000000001");
     try {
-      for (const deed of ["Bearbeiten", "Neu erzeugen", "Löschen", "Widerrufen"])
+      for (const deed of ["Bearbeiten", "Weitere Aktionen", "Widerrufen"])
         expect(await own.tab.getByRole("button", { name: deed }).count(), deed).toBe(0);
     } finally {
       await own.context.close();

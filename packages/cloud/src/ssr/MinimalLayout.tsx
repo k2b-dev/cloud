@@ -32,7 +32,8 @@ export type MinimalLayoutProps = {
    */
   ui?: "v2";
   /**
-   * With `ui="v2"`: the page is one task to read and decide, such as a consent or a code to enter. Its workspace stands
+   * With `ui="v2"`: the page is one task to read and decide, such as a consent or a code to enter. Its one child, the
+   * workspace, stands
    * as a column of 560 px, centred on the page background, so its words and its buttons stay together; on a phone it
    * takes the whole width. (Beside a Core older than its v2.css the page keeps the whole width.)
    */

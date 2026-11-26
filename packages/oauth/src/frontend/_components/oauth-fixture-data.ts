@@ -31,7 +31,12 @@ export const fixtureClient = (index: number, values: Partial<OAuthClient> & { na
   allowDeviceGrant: false,
   createdAt: `2026-11-${String(10 + (index % 15)).padStart(2, "0")}T08:00:00.000Z`,
   createdBy: null,
-  created: `${10 + (index % 15)}.11.2026`,
+  // the date as the page words it (`formatDate`, German)
+  created: new Date(`2026-11-${String(10 + (index % 15)).padStart(2, "0")}T08:00:00.000Z`).toLocaleDateString("de-DE", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }),
   ...values,
 });
 

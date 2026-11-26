@@ -93,8 +93,8 @@ export function DecisionForm(props: { action: string; request: string; userCode?
 }
 
 /** The final state of a decision: its sign, one sentence and, where there is one, the way on; read as a status. */
-export function Outcome(props: { icon: string; body: string; action?: { label: string; href: string } }) {
-  return <Empty icon={props.icon} text={props.body} action={props.action} live />;
+export function Outcome(props: { icon: string; body: string; ok?: boolean; action?: { label: string; href: string } }) {
+  return <Empty icon={props.icon} text={props.body} action={props.action} tone={props.ok ? "ok" : undefined} live />;
 }
 
 /**

@@ -228,6 +228,13 @@ describe("OAuth authorization pages", () => {
     expect(text(failed)).toContain("Error code access_denied");
     expect(linkTo(failed, "Back to home")).toBe("/");
 
+    // a German page says it in German, from the error code; the description its sender wrote stays a detail
+    const german = await renderAuthorizationState("error", "de");
+    expect(heading(german)).toBe("Autorisierung fehlgeschlagen");
+    expect(text(german)).toContain("Der Zugriff wurde nicht erlaubt.");
+    expect(text(german)).toContain("Details Your account is not allowed to use this application.");
+    expect(text(failed)).toMatch(/^.*Access was not allowed\..*Details Your account is not allowed/);
+
     const blocked = await renderAuthorizationState("blocked", "en");
     expect(heading(blocked)).toBe("Authorization failed");
     expect(text(blocked)).toContain("The Cloud app cannot grant access to other applications.");

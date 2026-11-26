@@ -31,7 +31,8 @@
 }
 
 /* A page with a measure (`MinimalLayout ui="v2" measure`): from 768 px one task to read and decide stands as a column
-   of 560 px, centred on the page background, as a card with the one hairline and the card radius. Below, it is the
+   of 560 px, centred on the page background, as a card with the one hairline and the card radius (the page's one
+   child, its workspace). Below, it is the
    page without a measure: the workspace fills the window above the footer, flat, and scrolls inside. */
 @media (min-width: 768px) {
   .minimal-layout[data-ui="v2"]:has(> .minimal-layout-main[data-measure]) {
@@ -42,7 +43,7 @@
     align-items: flex-start;
     padding: 48px 16px 24px;
   }
-  .minimal-layout-main[data-measure] > * {
+  .minimal-layout-main[data-measure] > :only-child {
     flex: 0 1 560px;
     min-width: 0;
     height: auto;
