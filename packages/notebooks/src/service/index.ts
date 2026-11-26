@@ -155,6 +155,8 @@ export const notebooksService = {
   template: {
     list: templates.list,
     get: templates.get,
+    outline: templates.outline,
+    welcomeOutline: templates.welcomeOutline,
     instantiate: templates.instantiate,
   },
   note: {

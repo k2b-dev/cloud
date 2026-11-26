@@ -123,6 +123,20 @@ test("Notebooks opens the first notebook when the one used last is gone, no long
   }
 });
 
+test("the address names the open way to start, so a reload shows its pages", async () => {
+  list.mockResolvedValue({ items: [], total: 0, page: 1, perPage: 1, hasNext: false });
+  const [first] = notebooksService.template.list("de");
+  const response = await openNotebooks(undefined, `?template=${first?.id}`);
+  const html = await response.text();
+  const [detail] = await selectHtml(html, '[data-k2-part="Pane"][data-detail]');
+  const pages = notebooksService.template.outline(first?.id ?? "", "de") ?? [];
+  expect(pages.length).toBeGreaterThan(0);
+  expect(detail?.text).toContain(first?.name ?? "-");
+  for (const page of pages.slice(0, 3)) expect(detail?.text).toContain(page.title);
+  // its one main action stands in its head
+  expect(await selectHtml(html, '[data-k2-part="Pane"][data-detail] [data-slot="head"] button')).toHaveLength(1);
+});
+
 test("without a notebook, Notebooks offers the ways to start as rows, read from the notebooks alone", async () => {
   list.mockResolvedValue({ items: [], total: 0, page: 1, perPage: 1, hasNext: false });
   const recent = spyOn(notebooksService.note, "recentForUser");
@@ -138,16 +152,18 @@ test("without a notebook, Notebooks offers the ways to start as rows, read from 
   const purpose = "Ein Notizbuch sammelt Notizen zu einem Thema, mit eigenem Zugriff und eigenen Einstellungen.";
   expect(html.split(purpose)).toHaveLength(2);
   // a blank notebook first, then every template with what it holds, each a row that opens
-  const rows = await selectHtml(html, '[data-k2-part="Row"]');
+  const ways = await selectHtml(html, '[data-k2-part="List"] > [data-k2-part="Row"], [data-k2-part="List"] > * > [data-k2-part="Row"]');
   const templates = notebooksService.template.list("de");
-  expect(rows.map((row) => row.text.trim())).toEqual([
+  expect(ways.map((row) => row.text.trim())).toEqual([
     "Leeres NotizbuchLeer, mit einer Willkommensseite",
     ...templates.map((template) => `${template.name}${template.description}`),
   ]);
-  expect(await selectHtml(html, '[data-k2-part="Row"] button.k2-row-open')).toHaveLength(rows.length);
-  // no head that only repeats the rows; the phone's floating main action makes a blank one
-  expect(await selectHtml(html, '[data-slot="head"]')).toHaveLength(0);
-  expect((await selectHtml(html, ".k2-fab"))[0]?.text).toContain("Neues Notizbuch");
+  // none is open yet: the detail's place says how to go on (the phone keeps the list)
+  expect(await selectHtml(html, '[data-k2-part="Pane"][data-detail]')).toHaveLength(0);
+  expect(html).toContain("Wähle, womit dein Notizbuch beginnt");
+  // no workspace head that only repeats the rows, and no floating action that repeats "Leeres Notizbuch"
+  expect(await selectHtml(html, '[data-k2-ws-main] > [data-slot="head"], .k2-ws-main > [data-slot="head"]')).toHaveLength(0);
+  expect(await selectHtml(html, ".k2-fab")).toHaveLength(0);
   expect(recent).not.toHaveBeenCalled();
   expect(activity).not.toHaveBeenCalled();
 });

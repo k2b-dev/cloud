@@ -1,28 +1,55 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { openNewNotebookDialog } from "../../create-notebook-dialog";
-import type { TemplateSummary } from "./NewNotebookDialog";
-import NotebooksStart from "./NotebooksStart";
+import NotebooksStart, { type StartPage, type StartTemplate } from "./NotebooksStart";
 
 // Test harness only (never shipped). `?data=` picks the templates: the demo pair (default), `worst` (the longest real
 // built-in names and descriptions in both languages plus a plausible longer one from a future language), `empty` (no
 // template at all) or `one`; `?lang=en` renders in English.
-const demo: TemplateSummary[] = [
-  { id: "meeting", name: "Besprechungen", description: "Protokolle mit Aufgaben und Beschlüssen", icon: "ti ti-users" },
-  { id: "handbook", name: "Handbuch", description: "Kapitel, Abläufe und Ansprechpersonen", icon: "ti ti-book" },
+const pages = (...titles: string[]): StartPage[] =>
+  titles.map((title) => {
+    const [parent, own] = title.includes(" › ") ? title.split(" › ") : [null, title];
+    return { title: own ?? title, parent };
+  });
+const demo: StartTemplate[] = [
+  {
+    id: "meeting",
+    name: "Besprechungen",
+    description: "Protokolle mit Aufgaben und Beschlüssen",
+    icon: "ti ti-users",
+    pages: pages("Besprechungen", "Offene Aufgaben", "Beschlüsse", "2027", "2027 › KW 02 Teamrunde", "2027 › KW 04 Teamrunde"),
+  },
+  {
+    id: "handbook",
+    name: "Handbuch",
+    description: "Kapitel, Abläufe und Ansprechpersonen",
+    icon: "ti ti-book",
+    pages: pages("Handbuch", "Wareneingang", "Wareneingang › Annahme prüfen", "Versand", "Ansprechpersonen"),
+  },
 ];
-const worst: TemplateSummary[] = [
+const blankPages = pages("Welcome!");
+const worst: StartTemplate[] = [
   {
     id: "recipes",
     name: "Rezepte und Vorräte",
     description: "Rezepte, Vorratsbestand, Einkaufsliste und Anregungen für den Einstieg.",
     icon: "ti ti-chef-hat",
+    pages: pages("Rezepte und Vorräte", "Rezepte", "Vorrat", "Einkaufsliste"),
   },
   {
     id: "daily",
     name: "Tagebuch",
     description: "Tägliche Notizen, Posteingang, Gewohnheiten, Aufgaben und Wochenrückblicke.",
     icon: "ti ti-calendar",
+    pages: pages(
+      "Tagebuch",
+      "Eingang",
+      "2026",
+      ...Array.from(
+        { length: 60 },
+        (_, day) => `2026 › 2026-11-${String((day % 30) + 1).padStart(2, "0")} Übergabe- und Störungsprotokoll der Frühschicht Halle 7`,
+      ),
+    ),
   },
   {
     id: "handover",
@@ -30,8 +57,13 @@ const worst: TemplateSummary[] = [
     description:
       "Projektübersicht, Übergaben je Schicht, offene Punkte, Ansprechpersonen, Störungsverlauf und Lessons Learned – 引き継ぎ記録",
     icon: "ti ti-clipboard-list",
+    pages: pages(
+      "Projektdokumentation",
+      "引き継ぎ記録 🛠️",
+      "https://intranet.nordwerk-instandhaltung.example.com/wiki/uebergabe/halle-7/fruehschicht",
+    ),
   },
-  { id: "j", name: "J", description: "", icon: "ti ti-notebook" },
+  { id: "j", name: "J", description: "", icon: "ti ti-notebook", pages: [] },
 ];
 const url = new URL(window.location.href);
 const data = url.searchParams.get("data");
@@ -55,7 +87,7 @@ if (root) {
     render(
       () => (
         <LocaleProvider locale={lang}>
-          <NotebooksStart templates={templates} />
+          <NotebooksStart templates={templates} blankPages={blankPages} open={url.searchParams.get("template")} />
         </LocaleProvider>
       ),
       root,

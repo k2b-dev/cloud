@@ -39,7 +39,10 @@ export default function NewNotebookDialog(props: {
   const [description, setDescription] = createSignal("");
   const [templateId, setTemplateId] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  // a refusal without a field stands under the fields; what is wrong with a field stands at that field
   const [failed, setFailed] = createSignal<string | null>(null);
+  const [nameError, setNameError] = createSignal<string | undefined>();
+  const [descriptionError, setDescriptionError] = createSignal<string | undefined>();
   // a new start opens empty, on the template it was opened for
   createEffect(() => {
     const source = props.source;
@@ -47,6 +50,8 @@ export default function NewNotebookDialog(props: {
     setName("");
     setDescription("");
     setFailed(null);
+    setNameError(undefined);
+    setDescriptionError(undefined);
     setTemplateId(source.kind === "template" ? (source.templateId ?? props.templates[0]?.id ?? "") : "");
   });
   const fromTemplate = () => props.source?.kind === "template";
@@ -59,17 +64,17 @@ export default function NewNotebookDialog(props: {
     const chosen = template();
     if (fromTemplate() && !chosen) return;
     if (!fromTemplate() && !name().trim()) {
-      setFailed(t().nameRequired);
+      setNameError(t().nameRequired);
       return;
     }
     // the server keeps at most 100 characters of a name and 500 of a description (api/index.ts); say so here instead
     // of a refusal. k2b-ui gap: the v2 Input takes no maxLength.
     if (name().trim().length > NAME_MAX) {
-      setFailed(t().nameTooLong({ max: NAME_MAX }));
+      setNameError(t().nameTooLong({ max: NAME_MAX }));
       return;
     }
     if (!fromTemplate() && description().trim().length > DESCRIPTION_MAX) {
-      setFailed(t().descriptionTooLong({ max: DESCRIPTION_MAX }));
+      setDescriptionError(t().descriptionTooLong({ max: DESCRIPTION_MAX }));
       return;
     }
     const fallback = chosen ? t().createFromTemplateFailed : t().createFailed;
@@ -136,13 +141,14 @@ export default function NewNotebookDialog(props: {
           </Field>
         </Show>
       </Show>
-      <Field name="name" label={t().name} required={!fromTemplate()}>
+      <Field name="name" label={t().name} required={!fromTemplate()} error={nameError()}>
         <Input
           value={name()}
           placeholder={template()?.name ?? t().notebookName}
           disabled={busy()}
           onInput={(value) => {
             setName(value);
+            setNameError(undefined);
             setFailed(null);
           }}
           onKeyDown={(event) => {
@@ -151,8 +157,17 @@ export default function NewNotebookDialog(props: {
         />
       </Field>
       <Show when={!fromTemplate()}>
-        <Field name="description" label={t().description}>
-          <Input multiline value={description()} placeholder={t().optionalDescription} disabled={busy()} onInput={setDescription} />
+        <Field name="description" label={t().description} error={descriptionError()}>
+          <Input
+            multiline
+            value={description()}
+            placeholder={t().optionalDescription}
+            disabled={busy()}
+            onInput={(value) => {
+              setDescription(value);
+              setDescriptionError(undefined);
+            }}
+          />
         </Field>
       </Show>
       <Show when={failed()}>

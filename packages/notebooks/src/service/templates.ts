@@ -1,5 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import * as Y from "yjs";
+import { deriveNoteTitle } from "../lib/note-title";
 import {
   getTemplate,
   materializeTemplate,
@@ -8,6 +9,7 @@ import {
   type TemplateNoteContentContext,
   templates,
 } from "../templates";
+import helloMd from "./hello.md" with { type: "text" };
 import { notebookServiceMessages } from "./messages";
 import type { Notebook } from "./notebooks";
 import * as notebooks from "./notebooks";
@@ -63,6 +65,57 @@ export const list = (locale = "en"): TemplateSummary[] =>
     const materialized = materializeTemplate(template, new Date(), locale);
     return { id: template.id, name: materialized.name, description: materialized.description, icon: materialized.icon };
   });
+
+/** One page a template makes: its title, and the title of the page it stands under. */
+export type TemplatePage = { title: string; parent: string | null };
+
+/**
+ * The pages a template makes, in their order, with the titles they get (the first heading, as on save) in the person's
+ * language: what a person sees before choosing it. Links read as their words; nothing is written. Bounded by the
+ * template itself.
+ */
+export const outline = (id: string, locale = "en"): TemplatePage[] | null => {
+  const template = getTemplate(id);
+  if (!template) return null;
+  const now = new Date();
+  const materialized = materializeTemplate(template, now, locale);
+  const stamp = now.toISOString();
+  const notebook: Notebook = {
+    id: template.id,
+    shortId: template.id,
+    name: materialized.notebookName,
+    description: materialized.notebookDescription ?? null,
+    icon: materialized.icon,
+    homepageNoteId: null,
+    homepageNoteShortId: null,
+    defaultPresentationMode: "write",
+    defaultNoteTitleTemplate: "",
+    noteDeletePermission: "write",
+    createdBy: null,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+  const ctx: TemplateNoteContentContext = {
+    now,
+    locale,
+    notebook,
+    notes: new Map(),
+    link: (_key, label) => label,
+    noteId: (key) => key,
+  };
+  const titles = new Map<string, string>();
+  for (const item of materialized.notes) {
+    const content = item.content === undefined ? "" : typeof item.content === "function" ? item.content(ctx) : item.content;
+    titles.set(item.key, deriveNoteTitle(content));
+  }
+  return materialized.notes.map((item) => ({
+    title: titles.get(item.key) ?? "",
+    parent: item.parentKey ? (titles.get(item.parentKey) ?? null) : null,
+  }));
+};
+
+/** The one page a blank notebook starts with. */
+export const welcomeOutline = (): TemplatePage[] => [{ title: deriveNoteTitle(helloMd), parent: null }];
 
 export const get = (id: string, locale = "en"): TemplateSummary | null => {
   const template = getTemplate(id);

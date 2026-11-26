@@ -35,10 +35,16 @@ export default ssr<AuthContext>(async (c) => {
     query.delete("recent");
     return c.redirect(`/app/notebooks/${target}${query.size > 0 ? `?${query}` : ""}`);
   }
-  const templates = notebooksService.template.list(getLocale(c));
+  // the ways to start with the pages each makes; the open one comes from the address, so a reload shows the same
+  const locale = getLocale(c);
+  const templates = notebooksService.template
+    .list(locale)
+    .map((template) => ({ ...template, pages: notebooksService.template.outline(template.id, locale) ?? [] }));
+  const blankPages = notebooksService.template.welcomeOutline();
+  const open = c.req.query("template") ?? null;
   return () => (
     <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
-      <NotebooksStart templates={templates} />
+      <NotebooksStart templates={templates} blankPages={blankPages} open={open} />
     </Layout>
   );
 });

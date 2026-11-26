@@ -121,7 +121,15 @@ const open = async (width = 1440, path = "/app/notebooks"): Promise<Page> => {
   await settled(page);
   return page;
 };
-const row = (page: Page, name: string) => page.locator('[data-k2-part="Row"]').filter({ hasText: name }).getByRole("button");
+const row = (page: Page, name: string) =>
+  page.locator('[data-k2-part="List"] [data-k2-part="Row"]').filter({ hasText: name }).getByRole("button");
+const detail = (page: Page) => page.locator('[data-k2-part="Pane"][data-detail]');
+/** Wide screens: a way to start opens beside the list, and its one main action opens the dialog. */
+const start = async (page: Page, name: string) => {
+  await row(page, name).click();
+  await detail(page).locator('[data-slot="head"]').getByText(name).first().waitFor();
+  await detail(page).getByRole("button", { name: "Erstellen" }).click();
+};
 
 for (const width of [1440, 1024, 390]) {
   test(`${width}: without a notebook the page offers the ways to start as rows, a clean v2 workspace`, async () => {
@@ -131,13 +139,16 @@ for (const width of [1440, 1024, 390]) {
       expect(outline.includes("Problems (") ? outline : "").toBe("");
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      // a blank notebook, then each template with what it holds; no head that only repeats them
-      const rows = page.locator('[data-k2-part="Row"]');
+      // a blank notebook, then each template with what it holds; the rows are the actions, so no head and no
+      // floating action repeat them
+      const rows = page.locator('[data-k2-part="List"] [data-k2-part="Row"]');
       expect(await rows.count()).toBe(3);
       expect(await rows.nth(1).innerText()).toContain("Protokolle mit Aufgaben und Beschlüssen");
-      expect(await page.locator('[data-slot="head"]').count()).toBe(0);
-      // the phone's main action floats; wider screens start from the rows
-      expect(await page.locator(".k2-fab").isVisible()).toBe(width < 768);
+      expect(await page.locator('.k2-ws-main > [data-slot="head"]').count()).toBe(0);
+      expect(await page.locator(".k2-fab").count()).toBe(0);
+      // none is open yet: beside the list its place says how to go on; the phone keeps only the list
+      expect(await detail(page).count()).toBe(0);
+      expect(await page.getByText("Wähle, womit dein Notizbuch beginnt").isVisible()).toBe(width >= 768);
     } finally {
       await page.close();
     }
@@ -147,7 +158,7 @@ for (const width of [1440, 1024, 390]) {
 test("the blank row makes a notebook after asking its name, and opens it", async () => {
   const page = await open();
   try {
-    await row(page, "Leeres Notizbuch").click();
+    await start(page, "Leeres Notizbuch");
     const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     await dialog.waitFor();
     // without a name nothing is made
@@ -166,7 +177,7 @@ test("the blank row makes a notebook after asking its name, and opens it", async
 test("a name or description longer than the server keeps says so in the dialog and sends nothing", async () => {
   const page = await open();
   try {
-    await row(page, "Leeres Notizbuch").click();
+    await start(page, "Leeres Notizbuch");
     const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     await dialog.getByRole("textbox", { name: "Name" }).fill("Ü".repeat(101));
     await dialog.getByRole("button", { name: "Erstellen" }).click();
@@ -184,7 +195,7 @@ test("a name or description longer than the server keeps says so in the dialog a
 test("a template's row opens the dialog on that template, which keeps its name when none is given", async () => {
   const page = await open();
   try {
-    await row(page, "Handbuch").click();
+    await start(page, "Handbuch");
     const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     await dialog.waitFor();
     expect(await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").isVisible()).toBe(true);
@@ -205,7 +216,7 @@ for (const [answer, says] of [
     const page = await open();
     try {
       server.creation = answer;
-      await row(page, "Besprechungen").click();
+      await start(page, "Besprechungen");
       const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       await dialog.getByText(says).waitFor();
@@ -216,6 +227,48 @@ for (const [answer, says] of [
       await page.close();
     }
   }, 60_000);
+
+test("a way to start opens beside the list, stays in the address, and comes back on reload", async () => {
+  const page = await open();
+  try {
+    await row(page, "Handbuch").click();
+    await detail(page).getByText("Annahme prüfen").waitFor();
+    // the open row is the current one, and its pages name the page they stand under
+    expect(await row(page, "Handbuch").locator("xpath=..").getAttribute("data-current")).toBe("");
+    expect(new URL(page.url()).searchParams.get("template")).toBe("handbook");
+    await page.reload();
+    await detail(page).getByText("Annahme prüfen").waitFor();
+    expect(created).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("on the phone a way to start opens the dialog right away", async () => {
+  const page = await open(390);
+  try {
+    await row(page, "Handbuch").click();
+    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
+    await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
+    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await page.waitForURL((url) => url.pathname === "/app/notebooks/fromtemplate");
+    expect(created).toEqual([{ path: "/api/notebooks/templates/handbook", body: {} }]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("on the phone a shared address opens the way to start as a page, with its way back and its main action", async () => {
+  const page = await open(390, "/app/notebooks?template=handbook");
+  try {
+    await detail(page).getByText("Annahme prüfen").waitFor();
+    expect(await page.getByRole("link", { name: "Notizbücher" }).getAttribute("href")).toBe("/app/notebooks");
+    await detail(page).getByRole("button", { name: "Erstellen" }).click();
+    await page.getByRole("dialog", { name: "Neues Notizbuch" }).getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
+  } finally {
+    await page.close();
+  }
+}, 60_000);
 
 test("the switcher of a page that is not v2 opens the same dialog, which loads the templates and makes one", async () => {
   const page = await open(1440, "/app/notebooks?switcher");
