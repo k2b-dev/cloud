@@ -33,7 +33,7 @@ suite("Pulse read users hold the tenant boundary over HTTP", () => {
       store = fixtureStore();
     // Using a named collection needs a NAMED COLLECTION grant on its name, whether or not it exists; the fixture
     // admin cannot create one (named_collection_control is off by default), so the attack names one that may exist.
-    const _collection = `${bases[0]!.database}_collection`;
+    const collection = `${bases[0]!.database}_collection`;
     try {
       for (const base of bases) {
         await createBaseLifecycle(store)(base.id);
@@ -51,7 +51,7 @@ suite("Pulse read users hold the tenant boundary over HTTP", () => {
           await createBaseLifecycle(store)(base.id);
           const credentials = await store.readUserCredentials(base.id),
             own = q(base.database),
-            _other = q(bases[1 - index]!.database);
+            other = q(bases[1 - index]!.database);
           // Twice the profile's 4 MiB result limit, so ClickHouse's own refusal is what the limit attacks observe.
           const run = (query: string, settings?: QueryOptions["settings"], timeoutMs = 45_000) =>
             clickhouseQuery({ ...fixtureConnection(), ...credentials, query, settings, timeoutMs, maxResponseBytes: 8 * 1024 * 1024 });
