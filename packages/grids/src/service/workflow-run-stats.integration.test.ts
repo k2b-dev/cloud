@@ -1,8 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import type { GridsWorkflowRunStats } from "../workflows/contracts";
+import { maxSeriesPoints } from "./workflow-run-series";
 import { getWorkflowRunStats } from "./workflow-runs";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
@@ -140,7 +143,89 @@ describe("workflow run statistics integration", () => {
       avgDurationMs: null,
       p99DurationMs: null,
       lastRunAt: null,
+      series: { bucket: "1d", points: [] },
       byWorkflow: [],
     });
+  });
+
+  postgresTest("charts the window in zero-filled buckets on the viewer's clock, in one statement", async () => {
+    const baseId = uuid();
+    const workflowId = uuid();
+    const hiddenWorkflowId = uuid();
+    // India keeps +05:30 all year: its midnight and its hours never fall on a UTC hour.
+    const timeZone = "Asia/Kolkata";
+    const offsetMs = (5 * 60 + 30) * 60_000;
+    const dayMs = 24 * 60 * 60_000;
+    try {
+      await sql`
+        INSERT INTO grids.bases (id, short_id, name)
+        VALUES (${baseId}::uuid, ${testShortId()}, 'Workflow run series integration')
+      `;
+      await insertTestWorkflow({ id: workflowId, baseId, name: "Charted", shortId: testShortId(), enabled: true });
+      await insertTestWorkflow({ id: hiddenWorkflowId, baseId, name: "Not visible", shortId: testShortId(), enabled: true });
+      const now = Date.now();
+      // Kolkata midnight three days ago: one run a minute before it, two a minute after.
+      const midnight = Math.floor((now + offsetMs) / dayMs) * dayMs - offsetMs - 3 * dayMs;
+      await insertTestWorkflowRun({ workflowId, baseId, state: "succeeded", createdAt: new Date(midnight - 60_000) });
+      await insertTestWorkflowRun({ workflowId, baseId, state: "failed", createdAt: new Date(midnight + 60_000) });
+      await insertTestWorkflowRun({ workflowId, baseId, state: "needs_attention", createdAt: new Date(midnight + 120_000) });
+      // Older than the window, and a workflow outside the caller's scope.
+      await insertTestWorkflowRun({ workflowId, baseId, state: "failed", createdAt: new Date(now - 8 * dayMs) });
+      await insertTestWorkflowRun({ workflowId: hiddenWorkflowId, baseId, state: "failed", createdAt: new Date(midnight + 60_000) });
+
+      const meter = await meterSql();
+      let week: GridsWorkflowRunStats | undefined;
+      let day: GridsWorkflowRunStats | undefined;
+      try {
+        const statements = await meter.during(async () => {
+          week = await getWorkflowRunStats(baseId, [workflowId], { window: "7d", timeZone });
+        });
+        expect(statements).toHaveLength(1);
+        day = await getWorkflowRunStats(baseId, [workflowId], { window: "24h", timeZone });
+      } finally {
+        await meter.close();
+      }
+
+      const points = week!.series.points;
+      expect(week!.series.bucket).toBe("1d");
+      // Without daylight saving: the partial day the window starts in, six whole days, today.
+      expect(points).toHaveLength(8);
+      expect(points.length).toBeLessThanOrEqual(maxSeriesPoints("7d"));
+      // Every bucket is there, oldest first, a Kolkata day apart; empty days count zero.
+      for (const [index, point] of points.entries()) {
+        expect((Date.parse(point.start) + offsetMs) % dayMs).toBe(0);
+        if (index > 0) expect(Date.parse(point.start) - Date.parse(points[index - 1]!.start)).toBe(dayMs);
+      }
+      expect(Date.parse(points[0]!.start)).toBeGreaterThan(now - 8 * dayMs);
+      expect(Date.parse(points.at(-1)!.start)).toBeLessThanOrEqual(now);
+      expect(points.find((point) => point.start === new Date(midnight - dayMs).toISOString())).toEqual({
+        start: new Date(midnight - dayMs).toISOString(),
+        total: 1,
+        failed: 0,
+      });
+      expect(points.find((point) => point.start === new Date(midnight).toISOString())).toEqual({
+        start: new Date(midnight).toISOString(),
+        total: 2,
+        failed: 2,
+      });
+      expect(points.filter((point) => point.total === 0)).toHaveLength(points.length - 2);
+      // The series breaks down exactly the runs the counts cover.
+      expect(points.reduce((sum, point) => sum + point.total, 0)).toBe(week!.total);
+      expect(week!.total).toBe(3);
+
+      // Hour buckets start on Kolkata hours: half past a UTC hour.
+      expect(day!.series.bucket).toBe("1h");
+      expect(day!.series.points).toHaveLength(25);
+      expect(day!.series.points.every((point) => new Date(point.start).getUTCMinutes() === 30)).toBe(true);
+      expect(day!.series.points.every((point) => point.total === 0)).toBe(true);
+
+      const hour = await getWorkflowRunStats(baseId, [workflowId], { window: "1h", timeZone });
+      expect(hour.series.bucket).toBe("5m");
+      expect(hour.series.points).toHaveLength(13);
+      expect(Date.parse(hour.series.points[1]!.start) - Date.parse(hour.series.points[0]!.start)).toBe(5 * 60_000);
+    } finally {
+      await deleteTestWorkflowScope(baseId);
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
   });
 });

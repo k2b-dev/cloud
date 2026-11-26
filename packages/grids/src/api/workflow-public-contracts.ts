@@ -4,6 +4,7 @@ import {
   GRIDS_WORKFLOW_CHANNELS,
   type GridsWorkflow,
   GridsWorkflowLauncherConfigSchema,
+  GridsWorkflowRunSeriesBucketSchema,
   GridsWorkflowRunStatsWindowSchema,
   GridsWorkflowRunStatusSchema,
   GridsWorkflowStepStatusSchema,
@@ -50,7 +51,10 @@ export const WorkflowRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
-export const WorkflowRunStatsQuerySchema = z.object({ window: GridsWorkflowRunStatsWindowSchema.optional() });
+export const WorkflowRunStatsQuerySchema = z.object({
+  window: GridsWorkflowRunStatsWindowSchema.optional(),
+  workflowId: ShortIdSchema.optional(),
+});
 
 export const WorkflowEmailDeliveriesQuerySchema = WorkflowRunsQuerySchema.pick({
   workflowId: true,
@@ -287,6 +291,20 @@ export const PublicGridsWorkflowRunStatsSchema = z
     p99DurationMs: z.number().int().nonnegative().nullable(),
     lastRunAt: z.string().datetime().nullable(),
     failedLast24h: z.number().int().nonnegative(),
+    series: z
+      .object({
+        bucket: GridsWorkflowRunSeriesBucketSchema,
+        points: z.array(
+          z
+            .object({
+              start: z.string().datetime(),
+              total: z.number().int().nonnegative(),
+              failed: z.number().int().nonnegative(),
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
     byWorkflow: z.array(
       PublicWorkflowRunStatsCountsSchema.extend({
         workflowId: ShortIdSchema,

@@ -15,6 +15,7 @@
 
 import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
+import { normalizeTimeZone } from "@k2b/cloud/shared";
 import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import {
   createWorkflowRun,
@@ -25,6 +26,7 @@ import {
   type WorkflowStepSummary,
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import type { SQLQuery } from "bun";
 import type {
   GridsWorkflowChannel,
   GridsWorkflowLauncherKind,
@@ -45,6 +47,7 @@ import { lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
 import { workflowConflict } from "./workflow-errors";
 import { canExecuteWorkflow } from "./workflow-execution-authorization";
 import { getWorkflow } from "./workflow-read";
+import { SERIES_BUCKETS, STATS_WINDOW_SECONDS } from "./workflow-run-series";
 import { workflowServiceText } from "./workflow-service-messages";
 
 /** The kernel partitions by app and scope; for Grids a scope is a base. */
@@ -57,14 +60,6 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const MAX_DETAIL_STEPS = 500;
 const DEFAULT_STATS_WINDOW: GridsWorkflowRunStatsWindow = "24h";
-const STATS_WINDOW_SECONDS: Record<GridsWorkflowRunStatsWindow, number> = {
-  "10m": 10 * 60,
-  "1h": 60 * 60,
-  "12h": 12 * 60 * 60,
-  "24h": 24 * 60 * 60,
-  "7d": 7 * 24 * 60 * 60,
-  "30d": 30 * 24 * 60 * 60,
-};
 
 const toIsoString = (value: Date | string): string => (value instanceof Date ? value.toISOString() : new Date(value).toISOString());
 
@@ -548,13 +543,34 @@ const statsCounts = (row: StatsSqlRow | undefined) => {
 export const getWorkflowRunStats = async (
   baseId: string,
   workflowIds: string[],
-  options: { window?: GridsWorkflowRunStatsWindow | null } = {},
+  options: { window?: GridsWorkflowRunStatsWindow | null; timeZone?: string | null } = {},
 ): Promise<GridsWorkflowRunStats> => {
   const window = options.window ?? DEFAULT_STATS_WINDOW;
-  if (workflowIds.length === 0) return { window, ...statsCounts(undefined), failedLast24h: 0, byWorkflow: [] };
+  const { bucket, stepSeconds } = SERIES_BUCKETS[window];
+  // Without a workflow in scope there is nothing to chart, and no statement to spend on it.
+  if (workflowIds.length === 0) {
+    return { window, ...statsCounts(undefined), failedLast24h: 0, series: { bucket, points: [] }, byWorkflow: [] };
+  }
   const ids = toPgUuidArray(workflowIds);
   const windowSeconds = STATS_WINDOW_SECONDS[window];
-  const [row] = await sql<Array<StatsSqlRow & { by_workflow: unknown }>>`
+  const timeZone = normalizeTimeZone(options.timeZone, "UTC");
+  const since = sql`(now() - (${windowSeconds} * interval '1 second'))`;
+  const localMidnight = sql`(date_trunc('day', now() AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`;
+  // Day buckets follow the viewer's calendar, so a day across a daylight-saving
+  // switch has 23 or 25 hours. Shorter buckets bin absolute time from the
+  // viewer's midnight: no hour repeats or disappears.
+  const bucketStart = (at: SQLQuery) =>
+    bucket === "1d"
+      ? sql`(date_trunc('day', ${at} AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`
+      : sql`date_bin(${stepSeconds} * interval '1 second', ${at}, ${localMidnight})`;
+  const seriesBuckets =
+    bucket === "1d"
+      ? sql`SELECT local_day AT TIME ZONE ${timeZone} AS start
+            FROM generate_series(date_trunc('day', ${since} AT TIME ZONE ${timeZone}),
+                                 date_trunc('day', now() AT TIME ZONE ${timeZone}), interval '1 day') AS local_day`
+      : sql`SELECT start
+            FROM generate_series(${bucketStart(since)}, ${bucketStart(sql`now()`)}, ${stepSeconds} * interval '1 second') AS start`;
+  const [row] = await sql<Array<StatsSqlRow & { by_workflow: unknown; series_points: unknown }>>`
     WITH scoped AS (
       SELECT id, workflow_id::text AS workflow_id, state, created_at, started_at, finished_at
       FROM workflows.run
@@ -570,7 +586,7 @@ export const getWorkflowRunStats = async (
                ELSE NULL
              END AS duration_ms
       FROM scoped
-      WHERE created_at >= now() - (${windowSeconds} * interval '1 second')
+      WHERE created_at >= ${since}
     ),
     active AS (
       SELECT workflow_id, count(*)::int AS active
@@ -640,12 +656,26 @@ export const getWorkflowRunStats = async (
              windowed.latest_status
       FROM window_per_workflow windowed
       FULL JOIN active ON active.workflow_id = windowed.workflow_id
+    ),
+    series_buckets AS (${seriesBuckets}),
+    series_counts AS (
+      SELECT ${bucketStart(sql`created_at`)} AS start,
+             count(*)::int AS total,
+             count(*) FILTER (WHERE state IN ('failed', 'needs_attention'))::int AS failed
+      FROM filtered
+      GROUP BY 1
     )
     SELECT overall.*,
            COALESCE((SELECT sum(active.active)::int FROM active), 0)::int AS active,
            failed_24h.failed_last_24h,
            COALESCE((SELECT jsonb_agg(to_jsonb(per_workflow) ORDER BY per_workflow.last_run_at DESC, per_workflow.workflow_id)
-                     FROM per_workflow), '[]'::jsonb) AS by_workflow
+                     FROM per_workflow), '[]'::jsonb) AS by_workflow,
+           COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                              'start', to_char(b.start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                              'total', COALESCE(c.total, 0),
+                              'failed', COALESCE(c.failed, 0)) ORDER BY b.start)
+                     FROM series_buckets b
+                     LEFT JOIN series_counts c ON c.start = b.start), '[]'::jsonb) AS series_points
     FROM overall
     CROSS JOIN failed_24h
   `;
@@ -654,10 +684,15 @@ export const getWorkflowRunStats = async (
     ...statsCounts(item),
     latestStatus: item.latest_status,
   }));
+  const points = parseJsonbRow<Array<{ start: string; total: number; failed: number }>>(row?.series_points, []);
   return {
     window,
     ...statsCounts(row),
     failedLast24h: count(row?.failed_last_24h),
+    series: {
+      bucket,
+      points: points.map((point) => ({ start: toIsoString(point.start), total: count(point.total), failed: count(point.failed) })),
+    },
     byWorkflow,
   };
 };
