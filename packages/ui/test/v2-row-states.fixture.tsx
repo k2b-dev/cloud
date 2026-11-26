@@ -518,7 +518,12 @@ export const FactsScreen = () => (
             { label: "Mitglieder", value: "12" },
             { label: "Erstellt", value: "03.11.2026" },
             { label: "Ablage", value: "Werkstatt / Projekte / 2026 / Kunden / Lindqvist / Küche / Angebote und Aufmaß" },
-            { label: "Kennung", value: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C", mono: true, copy: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C" },
+            {
+              label: "Kennung",
+              value: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C",
+              mono: true,
+              copy: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C",
+            },
             { label: "Sichtbar", value: "Alle im Team", hint: "Standard" },
           ]}
         />

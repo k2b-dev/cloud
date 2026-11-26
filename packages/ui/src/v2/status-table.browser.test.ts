@@ -95,9 +95,9 @@ const statusRow = () => {
   });
   const contentRight = (button: HTMLElement) => {
     if (button.dataset.variant !== "ghost" && button.dataset.variant !== "text") return button.getBoundingClientRect().right;
-    const range = document.createRange();
-    range.selectNodeContents(button);
-    return range.getBoundingClientRect().right;
+    // what is in sight of it: its symbols and words, not words kept only as its name (taken out of the flow)
+    const shown = [...button.children].filter((part) => getComputedStyle(part).position !== "absolute");
+    return Math.max(...shown.map((part) => part.getBoundingClientRect().right));
   };
   const seen = figures.filter((figure) => figure.seen);
   const before = row.querySelector(".k2-status-busy")?.getBoundingClientRect() ?? lead;

@@ -6131,6 +6131,9 @@
   }
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:not([data-menu]):has(> .k2-icon:first-child) {
     width: var(--k2-h-control);
+    /* no room beside the symbol: a ghost button at the end gives back only its unseen frame */
+    --k2-btn-pad: 0px;
+    --k2-btn-pad-end: 0px;
     padding: 0;
   }
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn[data-variant="text"]:not([data-menu]):has(> .k2-icon:first-child) {
