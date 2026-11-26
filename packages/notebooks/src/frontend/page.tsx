@@ -3,13 +3,14 @@ import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/serv
 import { Layout } from "@k2b/cloud/ssr";
 import { notebooksService } from "@/service";
 import { ssr } from "../config";
+import NotebooksHome from "./_components/overview/NotebooksHome.island";
 import { parseLastNotebookId, parsePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
 import { projectNotebook } from "./[id]/page-data";
 import { notebooksPageMessages } from "./messages";
-import NotebooksOverview from "./NotebooksOverview.island";
 
 /**
- * Notebooks list page - shows all notebooks the user has access to
+ * The home of Notebooks on v2: the notebooks this person reaches, the notes they edited last and the activity across
+ * them, all read here so the first picture has no loader. `?recent=true` opens the notebook used last instead.
  */
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
@@ -22,11 +23,8 @@ export default ssr<AuthContext>(async (c) => {
     notebooksService.note.recentForUser({ userId: user.id, limit: 12 }),
     notebooksService.activity
       .list({ userId: user.id, limit: 30 })
-      .then((page) => ({ page, error: null }))
-      .catch((error: unknown) => ({
-        page: { items: [], nextCursor: null },
-        error: error instanceof Error ? error.message : t.activityLoadFailed,
-      })),
+      .then((page) => ({ page, failed: false }))
+      .catch(() => ({ page: { items: [], nextCursor: null }, failed: true })),
   ]);
   const notebooks = notebookPage.items;
 
@@ -46,8 +44,8 @@ export default ssr<AuthContext>(async (c) => {
   );
 
   return () => (
-    <Layout printHint={t.printHint} c={c} title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
-      <NotebooksOverview
+    <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
+      <NotebooksHome
         notebooks={notebooks.map((notebook) => {
           const { id, name, description, icon } = projectNotebook(notebook);
           const stats = overviewStats.get(notebook.id);
@@ -77,7 +75,7 @@ export default ssr<AuthContext>(async (c) => {
           })),
           nextCursor: activityResult.page.nextCursor,
         }}
-        initialActivityError={activityResult.error}
+        initialActivityFailed={activityResult.failed}
         initialPinnedNotebookIds={parsePinnedNotebookIds(cookieHeader)}
         dateConfig={getDateConfig(c)}
         now={new Date().toISOString()}
