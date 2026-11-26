@@ -21,6 +21,7 @@ import {
   fixtureOpened,
   fixturePage,
   fixtureSearch,
+  fixtureSearchHistory,
   fixtureShareAccess,
   fixtureShares,
   fixtureStorageFacts,
@@ -234,7 +235,7 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
           ? emptyHistory
           : url.searchParams.get("actor") === "me"
             ? fixtureMine(Number(url.searchParams.get("limit")) || undefined)
-            : searched(fixtureActivity(fixture), url.searchParams.get("q")),
+            : searched(fixtureActivity(fixture), url.searchParams.get("q"), fixture === "plain" ? fixtureSearchHistory() : []),
       });
     // the detail asks for the links of its file; the overview of links asks without a path
     if (url.pathname === `${api}/shares`)
@@ -284,12 +285,16 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
 };
 
 /** A search answers as the server does: only changes whose current or earlier name or place holds the words. */
-const searched = (page: ActivityPage, q: string | null): ActivityPage => {
+/** The reader's answer to a search: the matching changes, with the older history only a search reaches, newest first. */
+const searched = (page: ActivityPage, q: string | null, older: ActivityPage["items"] = []): ActivityPage => {
   const words = q?.trim().toLocaleLowerCase();
   if (!words) return page;
   const sides = (item: ActivityPage["items"][number]) =>
     [item.before, item.after].map((side) => ("path" in side && side.path ? side.path : "").toLocaleLowerCase());
-  return { ...page, items: page.items.filter((item) => sides(item).some((path) => path.includes(words))) };
+  const items = [...page.items, ...older]
+    .filter((item) => sides(item).some((path) => path.includes(words)))
+    .sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
+  return { ...page, items, visibleCount: items.length };
 };
 
 /** The names of the rows the folder shows, in order. */
@@ -527,8 +532,10 @@ describe("a folder of Files on v2", () => {
         await path.getByText("Alte Stände").waitFor();
         // the places between fold into one "…" menu; the first place and the last two stand
         if (view !== phone) expect(await path.getByRole("button", { name: "Übergeordnete Ebenen" }).count()).toBe(1);
-        // the empty folder says it once and offers no button of its own: "+" is the one create action
-        expect(await tab.locator("[data-k2-part=FilterBar]").innerText()).not.toContain("0 Einträge");
+        // the empty folder says it once and offers no button of its own: "+" is the one create action; with nothing in it
+        // there is nothing to filter, sort or show otherwise, so no filter row stands over it
+        await tab.locator("[data-k2-part=Empty]").waitFor();
+        expect(await tab.locator("[data-k2-part=FilterBar]").count()).toBe(0);
         expect(await tab.locator("[data-k2-part=Empty]").getByRole("button").count()).toBe(0);
         await shoot(tab, `22-deep-folder-${view.name}`);
         await expectClean(tab);
@@ -773,11 +780,15 @@ describe("the views beside the folders on v2", () => {
     const { context, tab, errors, seen } = await open(wide, "/app/filesv2?view=activity");
     try {
       const field = tab.getByRole("searchbox").first();
-      await field.fill("Alter Entwurf");
+      await field.fill("Entwurf");
       await field.press("Enter");
-      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Alter Entwurf");
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Entwurf");
       await tab.getByText("Alter Entwurf.pdf").first().waitFor();
-      expect(seen.api.some((request) => request.startsWith("GET /activity") && request.includes("q=Alter"))).toBe(true);
+      expect(seen.api.some((request) => request.startsWith("GET /activity") && request.includes("q=Entwurf"))).toBe(true);
+      // the vanished draft's history over its days, the other draft below it, and who, where and what over all of them
+      expect(await tab.locator("[data-k2-part=List][aria-label^='Verlauf'] .k2-list-head").count()).toBeGreaterThan(1);
+      await tab.getByText("Entwurf Treppe.pdf").first().waitFor();
+      expect(await tab.locator("[data-k2-part=List][aria-label='Im Überblick'] [data-k2-part=Avatar]").count()).toBeGreaterThan(1);
       await shoot(tab, "15-activity-search-1440");
       await expectClean(tab);
 
@@ -881,9 +892,6 @@ describe("the views beside the folders on v2", () => {
               .getByRole("link", { name: /Werkstatt/ })
               .isVisible(),
           ).toBe(true);
-          // the head gives way on the phone: the bar of the way back names the file
-          expect(await tab.locator("[data-k2-part=Back] .k2-pane-back-meta").textContent()).toBe("Notizen.md");
-          expect(await tab.locator("[data-k2-part=Back] .k2-pane-back-meta").isVisible()).toBe(true);
           expect(await tab.locator("[data-k2-part=Pane] [data-slot=status]").count()).toBe(0);
         }
         await expectClean(tab);

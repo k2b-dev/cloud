@@ -690,13 +690,7 @@ export default function FilesScreen(props: {
     const launch = snapshot().editor;
     if (!launch) return undefined;
     const folderPath = parentPath(launch.entry.path);
-    // on the phone the head gives way: the bar of the way back names the file after it ("‹ Werkstatt  Notizen.md")
-    return {
-      label: folderName(folderPath),
-      meta: launch.entry.name,
-      href: filesUrl(launch.base.id, folderPath, null, launch.entry.path),
-      onNavigate,
-    };
+    return { label: folderName(folderPath), href: filesUrl(launch.base.id, folderPath, null, launch.entry.path), onNavigate };
   };
   const editorBack = () => {
     const launch = snapshot().editor;
@@ -722,6 +716,9 @@ export default function FilesScreen(props: {
     entry.facts?.links ? b().v2Links({ count: entry.facts.links }) : selected()?.kind === "groups" ? b().v2Team : b().onlyYou;
   const fresh = () => actions.fresh();
   const rows = createMemo((): FolderRow[] => entries().map((entry) => ({ key: entry.path, entry, fresh: fresh().has(entry.path) })));
+  // an empty folder has nothing to filter, sort or show otherwise: no filter row over it, unless a filter made it empty
+  const folderBarState = () =>
+    rows().length > 0 || !!directory()?.next || Object.keys(address().state.filters).length > 0 ? folderState() : undefined;
   // Previews of the open folder share one signal: leaving the folder cancels those still waiting, so the next folder
   // and an opened file's large preview do not queue behind them.
   const previews = createMemo(
@@ -1253,7 +1250,9 @@ export default function FilesScreen(props: {
                     when={chosenEntries().length}
                     fallback={
                       <>
-                        <Show when={folderState()}>
+                        {/* an empty folder has nothing to filter, sort or show otherwise: no row over its empty state;
+                            with a filter set the row stays, so the filter can be taken back */}
+                        <Show when={folderBarState()}>
                           {(state) => (
                             <FilterBar
                               query={queries().folder}

@@ -250,6 +250,16 @@ const plainActivity = (): ActivityEntry[] => [
   change("item.copy", 4_400, 1, { after: side("Vorlagen/Angebot Vorlage.docx") }),
 ];
 
+/**
+ * What Activity's search finds beyond the day: the vanished draft's earlier steps on other days, by other people, and a
+ * second draft that went to the trash before it. Only the search answers with them, so Activity's day stays as it is.
+ */
+export const fixtureSearchHistory = (): ActivityEntry[] => [
+  change("file.edit", 1_450, 3, { after: gone("Angebote/Alter Entwurf.pdf") }),
+  change("item.trash", 2_950, 0, { before: gone("Projekte/Treppe Winter/Entwurf Treppe.pdf") }),
+  change("file.upload", 4_300, 2, { after: gone("Angebote/Alter Entwurf.pdf") }),
+];
+
 /** People break-ui feeds a list of changes: long and compound names, one letter, RTL, emoji, CJK. */
 const WORST_PEOPLE = [
   "Aleksandra Wiśniewska-Kowalczyk",

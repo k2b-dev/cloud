@@ -149,8 +149,10 @@ describe("Filesv2 server-rendered feedback", () => {
         next: null,
       },
     });
-    for (const text of ["Unterlagen Lindqvist", "1 link · 1 active", "Actions for Unterlagen Lindqvist", "3 accesses"])
-      expect(shares).toContain(text);
+    for (const text of ["Unterlagen Lindqvist", "1 link", "Actions for Unterlagen Lindqvist"]) expect(shares).toContain(text);
+    // the lead names only exceptions, and a phone row has two lines: what and who, not how often it was opened
+    for (const text of ["1 active", "3 accesses"]) expect(shares).not.toContain(text);
+    expect(shares).toContain("1 entry · Valentin Kolb");
     expect(shares).not.toContain('data-k2-part="Loading"');
   });
 

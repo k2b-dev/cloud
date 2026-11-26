@@ -172,6 +172,9 @@ function moreDeeds(
   return [...(run ? [{ label: h.viewExecution, icon: "player-play", href: run }] : [])];
 }
 
+/** The lead of an own change whose thing has no mark of its own, and of an own run of changes: one symbol for both. */
+const CHANGE_MARK = { icon: "history" };
+
 export type ActivityRowProps = {
   row: HistoryRowModel;
   env: HistoryEnvironment;
@@ -289,7 +292,7 @@ export function ActivityRow(props: ActivityRowProps) {
     <Row
       lines={facts() ? [sentenceLine(), facts()] : [sentenceLine()]}
       avatar={props.notes ? undefined : personOf(actor())}
-      mark={props.notes ? (mark()?.mark ?? { icon: "history" }) : undefined}
+      mark={props.notes ? (mark()?.mark ?? CHANGE_MARK) : undefined}
       time={crowded() ? undefined : time()}
       href={props.toggle ? undefined : hrefOf(linked())}
       onNavigate={props.env.onNavigate}
@@ -335,7 +338,7 @@ export function RunRow(props: {
         h().changesCount.replace("{count}", String(props.rows.length)),
       ]}
       avatar={own() ? undefined : personOf(actor())}
-      mark={own() ? { icon: "files" } : undefined}
+      mark={own() ? CHANGE_MARK : undefined}
       time={span()}
       onOpen={props.onToggle}
     />

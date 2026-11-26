@@ -87,18 +87,18 @@ export default function SharesPane(props: {
   };
   const place = (share: ShareView) => [storage(share), ...share.scope.split("/").filter(Boolean)].join(" › ");
   const what = (share: ShareView) => (share.kind === "inbox" ? b().inboxShare : b().shareItems(share.items.length));
-  const by = (share: ShareView) =>
-    [share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy, b().shareAccess(share.accessCount)].join(" · ");
-  const expires = (share: ShareView) => (share.expiresAt ? date().format(new Date(share.expiresAt)) : b().noExpiry);
-  // In the column a link without an end is a dash: its head says what the column holds, and the row on the phone says it in words.
-  const expiresCell = (share: ShareView) => (share.expiresAt ? expires(share) : "—");
+  const by = (share: ShareView) => (share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy);
+  // A link without an end is the rule: the column shows a dash, the row on the phone nothing.
+  const expires = (share: ShareView) => (share.expiresAt ? date().format(new Date(share.expiresAt)) : undefined);
+  const expiresCell = (share: ShareView) => expires(share) ?? "—";
   // an active link is the rule and says nothing; only an expired or revoked one wears its state
   const state = (share: ShareView) => (
     <Show when={share.state !== "active"}>
       <Chip status={STATE[share.state]}>{share.state === "expired" ? b().stateExpired : b().stateRevoked}</Chip>
     </Show>
   );
-  const active = () => page()?.items.filter((share) => share.state === "active").length ?? 0;
+  // the lead names the exceptions; active links are the rule
+  const counted = (state: ShareView["state"]) => page()?.items.filter((share) => share.state === state).length ?? 0;
 
   return (
     <Pane
@@ -110,7 +110,12 @@ export default function SharesPane(props: {
           start={
             <Text type="meta">
               {page()
-                ? b().v2SharesLead({ count: page()!.items.length, more: page()!.next ? "+" : "", active: active() })
+                ? b().v2SharesLead({
+                    count: page()!.items.length,
+                    more: page()!.next ? "+" : "",
+                    expired: counted("expired"),
+                    revoked: counted("revoked"),
+                  })
                 : b().sharesTitle}
             </Text>
           }
@@ -128,6 +133,7 @@ export default function SharesPane(props: {
               open={(share) => ({ href: filesUrl(share.base.id, share.scope), onNavigate: props.onNavigate })}
               empty={{ icon: "world-share", text: b().noShares }}
               phone={(share) => ({
+                // two lines: what and who; how often it was opened stands in the column on wider screens
                 lines: [share.title, `${what(share)} · ${by(share)}`],
                 mark: KIND_MARK[share.kind],
                 time: expires(share),
