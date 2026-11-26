@@ -138,7 +138,9 @@ inside the `Canvas`: with a `height` it keeps that height, so nothing
 moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
 of another page). Directly in its `Pane`, it takes the height left under
 head and status by layout alone, from the first render (never measure it
-in a script); below 240 px the pane scrolls.
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it.
 
 ## Structure
 
