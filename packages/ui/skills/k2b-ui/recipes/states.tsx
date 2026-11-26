@@ -2,7 +2,7 @@
 // Nothing yet and nothing behind a filter are two different sentences with their own way out; loading holds the place
 // of the rows that will come; data that failed to load once offers "Erneut versuchen" there and nowhere else. A problem
 // a person must fix is a Notice that names the deed; a connection that retries on its own says so in the status row.
-import { Bar, Button, Chip, Empty, Failed, List, Loading, Nav, Notice, Pane, Row, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Empty, Failed, Loading, Nav, Notice, Pane, StatusRow, Table, Tabs, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
 export const app = { name: "Lager", color: "#0e7490", icon: "building-warehouse" };
@@ -16,18 +16,29 @@ const goods = {
   tiles: { icon: "layout-grid", color: "#0e7490" },
 };
 
-type Delivery = { id: string; supplier: string; goods: keyof typeof goods; place: string; time: string; state: "ok" | "warn" | "bad" };
+type Delivery = {
+  id: string;
+  supplier: string;
+  goods: keyof typeof goods;
+  gate: string;
+  amount: string;
+  value: string;
+  checker?: { name: string };
+  time: string;
+  state: "ok" | "warn" | "bad";
+};
+const people = { sami: { name: "Sami Yilmaz" }, jonas: { name: "Jonas Kern" }, mira: { name: "Mira Solberg" } };
 
 const deliveries: Delivery[] = [
-  { id: "WE-2611-081", supplier: "Lackfabrik Nordhaus", goods: "paint", place: "Tor 1 · 6 Gebinde", time: "07:50", state: "ok" },
-  { id: "WE-2611-082", supplier: "Holzwerk Brandt", goods: "wood", place: "Tor 2 · 14 Platten", time: "09:40", state: "warn" },
-  { id: "WE-2611-083", supplier: "Beschläge Krüger", goods: "hardware", place: "Tor 1 · 3 Pakete", time: "10:15", state: "ok" },
-  { id: "WE-2611-084", supplier: "Spedition Kraus", goods: "pallet", place: "Tor 2 · 1 Palette, beschädigt", time: "11:05", state: "bad" },
-  { id: "WE-2611-085", supplier: "Fliesen Ortenau", goods: "tiles", place: "Tor 2 · 22 Kartons", time: "11:30", state: "ok" },
-  { id: "WE-2611-086", supplier: "Holzwerk Brandt", goods: "wood", place: "Tor 2 · 40 Leisten", time: "12:10", state: "ok" },
-  { id: "WE-2611-087", supplier: "Beschläge Krüger", goods: "hardware", place: "Tor 1 · 1 Paket", time: "13:05", state: "warn" },
-  { id: "WE-2611-088", supplier: "Lackfabrik Nordhaus", goods: "paint", place: "Tor 1 · 2 Gebinde", time: "13:40", state: "ok" },
-  { id: "WE-2611-089", supplier: "Spedition Kraus", goods: "pallet", place: "Tor 2 · 3 Paletten", time: "14:20", state: "ok" },
+  { id: "WE-2611-081", supplier: "Lackfabrik Nordhaus", goods: "paint", gate: "Tor 1", amount: "6 Gebinde", value: "1.284,00 €", checker: people.sami, time: "07:50", state: "ok" },
+  { id: "WE-2611-082", supplier: "Holzwerk Brandt", goods: "wood", gate: "Tor 2", amount: "14 Platten", value: "3.920,00 €", time: "09:40", state: "warn" },
+  { id: "WE-2611-083", supplier: "Beschläge Krüger", goods: "hardware", gate: "Tor 1", amount: "3 Pakete", value: "412,50 €", checker: people.jonas, time: "10:15", state: "ok" },
+  { id: "WE-2611-084", supplier: "Spedition Kraus", goods: "pallet", gate: "Tor 2", amount: "1 Palette", value: "2.610,00 €", checker: people.mira, time: "11:05", state: "bad" },
+  { id: "WE-2611-085", supplier: "Fliesen Ortenau", goods: "tiles", gate: "Tor 2", amount: "22 Kartons", value: "1.870,40 €", checker: people.mira, time: "11:30", state: "ok" },
+  { id: "WE-2611-086", supplier: "Holzwerk Brandt", goods: "wood", gate: "Tor 2", amount: "40 Leisten", value: "640,00 €", checker: people.sami, time: "12:10", state: "ok" },
+  { id: "WE-2611-087", supplier: "Beschläge Krüger", goods: "hardware", gate: "Tor 1", amount: "1 Paket", value: "96,80 €", time: "13:05", state: "warn" },
+  { id: "WE-2611-088", supplier: "Lackfabrik Nordhaus", goods: "paint", gate: "Tor 1", amount: "2 Gebinde", value: "428,00 €", checker: people.jonas, time: "13:40", state: "ok" },
+  { id: "WE-2611-089", supplier: "Spedition Kraus", goods: "pallet", gate: "Tor 2", amount: "3 Paletten", value: "5.140,00 €", checker: people.sami, time: "14:20", state: "ok" },
 ];
 const stateLabel = { ok: "Geprüft", warn: "Wartet", bad: "Beschädigt" } as const;
 
@@ -44,7 +55,7 @@ type Props = {
 };
 
 export default function IncomingGoods(props: Props) {
-  const rows = () => (props.rows ?? deliveries).filter((row) => !props.filtered || row.place.startsWith("Tor 2"));
+  const rows = () => (props.rows ?? deliveries).filter((row) => !props.filtered || row.gate === "Tor 2");
   return (
     <Workspace
       sidebar={
@@ -143,17 +154,33 @@ export default function IncomingGoods(props: Props) {
             />
           )
         ) : (
-          <List label="Einlieferungen von heute">
-            {rows().map((row) => (
-              <Row
-                mark={goods[row.goods]}
-                lines={[row.supplier, `${row.id} · ${row.place}`]}
-                time={row.time}
-                href={`#${row.id}`}
-                end={<Chip status={row.state}>{stateLabel[row.state]}</Chip>}
-              />
-            ))}
-          </List>
+          // one line per delivery: what came, through which gate, how much, who checked it and its state
+          <Table
+            label="Einlieferungen von heute"
+            rows={rows()}
+            open={(row) => ({ href: `#${row.id}` })}
+            phone={(row) => ({
+              mark: goods[row.goods],
+              lines: [row.supplier, `${row.gate} · ${row.amount} · ${row.value}`],
+              time: row.time,
+              marks: row.state === "ok" ? undefined : <Chip status={row.state}>{stateLabel[row.state]}</Chip>,
+            })}
+            columns={[
+              { title: "Lieferant", width: { min: 150, default: 165 }, mark: (row) => goods[row.goods], cell: (row) => row.supplier },
+              { title: "Tor", width: { min: 56, default: 64 }, cell: (row) => row.gate },
+              { title: "Menge", width: { min: 80, default: 90 }, drop: true, cell: (row) => row.amount },
+              { title: "Wert", width: { min: 90, default: 100 }, align: "end", cell: (row) => row.value },
+              {
+                title: "Geprüft von",
+                width: { min: 110, default: 120 },
+                drop: true,
+                avatar: (row) => row.checker ?? { name: "–" },
+                cell: (row) => row.checker?.name ?? "noch offen",
+              },
+              { title: "Zustand", width: { min: 100, default: 105 }, cell: (row) => <Chip status={row.state}>{stateLabel[row.state]}</Chip> },
+              { title: "Zeit", width: { min: 52, default: 56 }, align: "end", cell: (row) => row.time },
+            ]}
+          />
         )}
       </Pane>
     </Workspace>
@@ -163,7 +190,7 @@ export default function IncomingGoods(props: Props) {
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
   empty: () => <IncomingGoods rows={[]} />,
-  filtered: () => <IncomingGoods rows={deliveries.filter((row) => row.place.startsWith("Tor 1"))} filtered />,
+  filtered: () => <IncomingGoods rows={deliveries.filter((row) => row.gate === "Tor 1")} filtered />,
   loading: () => <IncomingGoods loading />,
   failed: () => <IncomingGoods failed />,
   problem: () => <IncomingGoods problem />,
