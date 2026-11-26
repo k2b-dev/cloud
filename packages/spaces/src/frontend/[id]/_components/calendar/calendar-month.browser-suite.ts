@@ -311,13 +311,6 @@ const selectedDays = (page: Page) =>
   );
 const clickDay = async (page: Page, key: string, options: { button?: "left" | "right"; modifiers?: "Shift" } = {}) => {
   const point = await emptyPoint(page, key);
-  console.error(
-    "at point:",
-    await page.evaluate(({ x, y }) => {
-      const element = document.elementFromPoint(x, y) as HTMLElement | null;
-      return `${x},${y} ${element?.tagName}.${element?.className?.toString().slice(0, 60)} ${element?.closest("[role=gridcell]")?.getAttribute("data-calendar-day-key")}`;
-    }, point),
-  );
   if (options.modifiers) await page.keyboard.down(options.modifiers);
   await page.mouse.click(point.x, point.y, { button: options.button ?? "left" });
   if (options.modifiers) await page.keyboard.up(options.modifiers);
