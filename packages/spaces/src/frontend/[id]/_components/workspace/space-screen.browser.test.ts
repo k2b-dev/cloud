@@ -54,6 +54,9 @@ describe("a Space on v2", () => {
       ["/app/spaces/Space1?view=table", "usual"],
       ["/app/spaces/Space1?view=kanban", "usual"],
       ["/app/spaces/Space1?view=list&item=Item05", "usual"],
+      // The board and the table beside an open item keep the same rules as the list.
+      ["/app/spaces/Space1?view=kanban&item=Item05", "usual"],
+      ["/app/spaces/Space1?view=table&item=Item05", "usual"],
       ["/app/spaces/Space1?view=list", "empty"],
     ] as const)
       test(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules and shows no loading on the first picture`, async () => {

@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import type { ItemListResult, SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
+import type { SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
 import SpaceScreen from "../workspace/SpaceScreen.island";
 import type { KanbanBucketInitial } from "./types";
 
@@ -15,16 +15,14 @@ type Props = {
   canWrite: boolean;
   currentUserId: string;
   locale: string;
-  workspace?: "kanban" | "table";
-  itemsResult?: ItemListResult;
 };
 
 /**
- * The board (or the table) as the Space page mounts it on v2: the page's one island, `SpaceScreen`, below the server
- * locale, with the board or the table as the Space's own view (no `view` in the address).
+ * The board as the Space page mounts it on v2: the page's one island, `SpaceScreen`, below the server
+ * locale, with the board as the Space's own view (no `view` in the address).
  */
 export default function KanbanFixture(props: Props) {
-  const view = props.workspace === "table" ? "table" : "kanban";
+  const view = "kanban";
   const space = {
     id: props.spaceId,
     name: "Project",
@@ -64,7 +62,7 @@ export default function KanbanFixture(props: Props) {
           icalBaseUrl: "https://cloud.example.test",
           eventCursor: null,
           snapshotDay: "2026-10-01",
-          itemsResult: props.itemsResult ?? { items: [], total: 0, page: 1, pageSize: 50, totalPages: 0, groupCounts: {} },
+          itemsResult: { items: [], total: 0, page: 1, pageSize: 50, totalPages: 0, groupCounts: {} },
           kanbanBuckets: props.initialBuckets,
           calendarView: "month",
           calendarDate: "2026-10-01T00:00:00.000Z",
