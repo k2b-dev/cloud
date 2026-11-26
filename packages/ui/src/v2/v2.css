@@ -1042,6 +1042,20 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
+/* sections side by side: two columns where both get 360 px, else one; no line between the columns */
+.k2-ui .k2-sec-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(min(360px, 100%), 40%), 1fr));
+  min-width: 0;
+}
+.k2-ui .k2-sec-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.k2-ui .k2-sec-col > .k2-sec {
+  flex: 1;
+}
 .k2-ui .k2-sh {
   display: flex;
   align-items: center;

@@ -31,6 +31,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Cells",
     "Tiles",
     "Section",
+    "Section.Columns",
     "Group",
     "List",
     "Digest",
@@ -66,6 +67,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "k2-group-body": "Group",
     "k2-disc-body": "Disclosure",
     "k2-sec": "Section",
+    "k2-sec-cols": "Section.Columns",
+    "k2-sec-col": "Section.Columns",
     "k2-band": "Band",
   };
   const ownedChild = (child: Element) =>
