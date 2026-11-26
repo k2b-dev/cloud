@@ -1,17 +1,21 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/services";
+import { accountsAppService as accountsService, audit, coreSettings } from "@k2b/cloud/services";
 import { getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ssr } from "../config";
 import AccountsNavigation from "./AccountsNavigation.island";
 import { accountsNavigationItems } from "./accounts-nav";
+import { auditMessages } from "./audit/messages";
+import { auditRows } from "./audit/rows";
 import { buildGroupDetailUrl, buildGroupsUrl } from "./lib/url-state";
 import { accountsMessages } from "./messages";
 import type { OverviewAdmin, OverviewGroup, OverviewLogLink } from "./overview/OverviewScreen";
 import OverviewScreen from "./overview/OverviewScreen.island";
 
+/** How many changes of the audit log the overview tells; "Alle Aktivitäten" leads to the rest. */
+const ACTIVITY_SIZE = 8;
 /** How many of the person's groups the overview shows; the list behind "All groups" has the rest. */
 const MY_GROUPS = 6;
 
@@ -36,13 +40,15 @@ export default ssr<AuthContext>(async (c) => {
   const defaultGroupScope = getDefaultGroupScope(user);
   const [summary, activity, managedGroups, memberGroups, allGroups] = await Promise.all([
     isAdmin ? accountsService.dashboard.get() : Promise.resolve(null),
-    isAdmin ? accountsService.dashboard.activity() : Promise.resolve([]),
+    // one statement, rows only: the newest changes of the audit log, only for administrators, who may read it
+    isAdmin ? audit.latest({ limit: ACTIVITY_SIZE }).catch(() => null) : Promise.resolve(null),
     accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "managed" } }),
     accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "member" } }),
     accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { mode: "all" } }),
   ]);
 
   const now = new Date();
+  const auditWords = auditMessages.resolve([locale]).t;
   const groupsHref = (scope: "managed" | "member" | "all") =>
     buildGroupsUrl({ search: "", page: 1, provider: "", scope }, { defaultScope: defaultGroupScope });
   // the person's own groups: the managed ones first, then the others they belong to, a handful in all
@@ -79,13 +85,10 @@ export default ssr<AuthContext>(async (c) => {
             { run: "reminders" as const, runs: summary.recentReminderRuns, failed: summary.recentReminderRunsWithFailures },
           ],
           window: summary.runHealthWindow,
-          activity: activity.map((entry) => ({
-            id: String(entry.id),
-            level: entry.level,
-            source: entry.source,
-            message: entry.message,
-            time: dates.formatDateTime(entry.createdAt, { locale, timeZone }),
-          })),
+          // worded as the audit log words them; an actor recorded by ID alone keeps its fallback name (no extra read)
+          activity: activity
+            ? auditRows(activity, { t, locale, timeZone, names: [], now, today: auditWords.today, yesterday: auditWords.yesterday })
+            : null,
           logs: freeIpaEnabled ? LOG_LINKS : LOG_LINKS.filter((link) => !link.href.includes("auth:ipa:")),
         }
       : null;

@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,10 @@ const root = mkdtempSync(join(tmpdir(), "accounts-overview-render-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("../page");
+
+// the sentences say "Today" and "Yesterday": the clock stands still at a fixed morning
+beforeAll(() => setSystemTime(new Date("2026-11-25T08:00:00.000Z")));
+afterAll(() => setSystemTime());
 
 const person = (roles: User["roles"]): User => ({
   id: "11111111-1111-4111-8111-111111111111",
@@ -56,16 +60,34 @@ const summary = {
 
 const render = async (user: User, freeIpa = true) => {
   const dashboard = spyOn(services.accountsAppService.dashboard, "get").mockResolvedValue(summary as never);
-  const activity = spyOn(services.accountsAppService.dashboard, "activity").mockResolvedValue([
+  const activity = spyOn(services.audit, "latest").mockResolvedValue([
     {
-      id: "1",
-      level: "error",
-      source: "auth:ipa:sync",
-      message: "Sync step failed",
-      metadata: null,
-      createdAt: "2026-11-24T22:00:00.000Z",
+      id: 41,
+      createdAt: "2026-11-25T07:42:00.000Z",
+      action: "accounts.group.member.add",
+      outcome: "allowed",
+      actor: { userId: "44444444-4444-4444-8444-000000000001", uid: "ada.renz", provider: "local", roles: ["admin"] },
+      target: { type: "group", id: "33333333-3333-4333-8333-000000000001", label: "Werkstatt", provider: "local" },
+      reason: null,
+      errorCode: null,
+      errorMessage: null,
+      requestId: null,
+      metadata: {},
     },
-  ] as never);
+    {
+      id: 40,
+      createdAt: "2026-11-24T16:20:00.000Z",
+      action: "accounts.user.remove",
+      outcome: "failed",
+      actor: { userId: null, uid: null, provider: null, roles: [] },
+      target: { type: "user", id: "44444444-4444-4444-8444-000000000002", label: "guest-tom", provider: "local" },
+      reason: null,
+      errorCode: "FREEIPA",
+      errorMessage: "FreeIPA nicht erreichbar",
+      requestId: null,
+      metadata: {},
+    },
+  ]);
   const spies = [
     stubRailSnapshot(),
     dashboard,
@@ -87,14 +109,19 @@ const render = async (user: User, freeIpa = true) => {
     const response = await app.request("/app/accounts", { headers: { "Accept-Language": "en" } });
     const html = await response.text();
     expect(response.status, html).toBe(200);
-    return { html, dashboardCalls: dashboard.mock.calls.length, activityCalls: activity.mock.calls.length };
+    return {
+      html,
+      dashboardCalls: dashboard.mock.calls.length,
+      activityCalls: activity.mock.calls.length,
+      activityLimits: activity.mock.calls.map(([config]) => config.limit),
+    };
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
 };
 
 test("an administrator sees their account, the groups and the administration, linked to the new places", async () => {
-  const { html } = await render(person(["user", "admin"]));
+  const { html, activityLimits } = await render(person(["user", "admin"]));
   expect(html).toContain('data-k2-part="Workspace"');
   expect(html).toContain("Jana Berger");
   expect(html).toContain("Your account");
@@ -112,7 +139,14 @@ test("an administrator sees their account, the groups and the administration, li
   expect(html).toContain('href="/app/accounts/activity"');
   expect(html).toContain("/app/accounts/activity?kind=deleted");
   expect(html).toContain("/app/accounts/activity?kind=reminders");
-  expect(html).toContain("Sync step failed");
+  // who changed what, as sentences from one read of the audit log: the actor, the verb, the thing with its link
+  expect(activityLimits).toEqual([8]);
+  expect(html).toContain("ada.renz");
+  expect(html).toContain('href="/app/accounts/groups/33333333-3333-4333-8333-000000000001"');
+  expect(html).toContain("Today, 07:42");
+  expect(html).toContain("Yesterday, 16:20");
+  expect(html).toContain("Failed");
+  expect(html).toContain("All activity");
   expect(html).toContain('href="/me"');
   expect(html).not.toContain('data-k2-part="Loading"');
   console.info(`overview v2 DOM elements (admin): ${html.match(/<[a-z][a-z0-9-]*/gi)?.length}`);
@@ -128,5 +162,6 @@ test("everyone else sees only their account and their groups; the administration
   expect(html).not.toContain("/admin/observability/logs");
   expect(html).not.toContain("/app/accounts/requests");
   expect(dashboardCalls).toBe(0);
+  // no audit read at all for someone who may not read the audit log
   expect(activityCalls).toBe(0);
 });

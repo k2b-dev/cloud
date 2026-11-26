@@ -1,9 +1,10 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Cells, Chip, Digest, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Cells, Chip, Digest, Mark, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
-import { type AccountsMessages, useAccountsMessages } from "../messages";
-import { type OverviewMessages, useOverviewMessages } from "./messages";
+import type { AuditRow } from "../audit/rows";
+import { useAccountsMessages } from "../messages";
+import { useOverviewMessages } from "./messages";
 
 /** A log page the overview links to; `label` names a word of the Accounts catalog. */
 export type OverviewLogLink = {
@@ -12,11 +13,12 @@ export type OverviewLogLink = {
 };
 
 /** One line of the lifecycle log: the run that wrote it (`source`), its level and words, and when, formatted. */
-export type OverviewActivity = { id: string; level: string; source: string; message: string; time: string };
+/** One change of the audit log as the overview tells it: worded and dated by the server (`audit/rows.ts`). */
+export type OverviewActivity = AuditRow;
 
 export type OverviewRun = { run: "ipaSync" | "ipaDemotion" | "reminders"; runs: number; failed: number };
 
-/** What only administrators see: what waits today, the account runs and the recent lifecycle activity. */
+/** What only administrators see: what waits today, the account runs and the newest changes of the audit log. */
 export type OverviewAdmin = {
   accounts: { total: number; freeIpa: number; local: number };
   openRequests: number;
@@ -25,7 +27,8 @@ export type OverviewAdmin = {
   lastSync: string | null;
   health: OverviewRun[];
   window: number;
-  activity: OverviewActivity[];
+  /** The newest changes of the audit log; null when it could not be read. */
+  activity: OverviewActivity[] | null;
   logs: OverviewLogLink[];
 };
 
@@ -73,40 +76,21 @@ const kind = {
 
 const runKind = { ipaSync: kind.sync, ipaDemotion: kind.demotion, reminders: kind.reminder } as const;
 
-/** The run a log line comes from: its name and its colour, as it stands in a sentence. */
-const sourceOf = (t: AccountsMessages, source: string) =>
-  source === "auth:ipa:sync"
-    ? { name: t.ipaSync, ...kind.sync }
-    : source === "auth:ipa:backfill"
-      ? { name: t.ipaBackfill, ...kind.backfill }
-      : source === "auth:local-user:backfill"
-        ? { name: t.localUserBackfill, ...kind.backfill }
-        : source === "auth:guest:backfill"
-          ? { name: t.guestBackfill, ...kind.backfill }
-          : source === "auth:reminder:daily"
-            ? { name: t.reminders, ...kind.reminder }
-            : { name: source, icon: "terminal-2", color: "#475569" };
-
-const initials = (name: string) =>
-  name
-    .split(/[\s-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-
-const levelChip = (o: OverviewMessages, level: string) =>
-  level === "error" ? (
-    <Chip status="bad" icon="alert-triangle">
-      {o.levelError}
-    </Chip>
-  ) : level === "warn" ? (
-    <Chip status="warn">{o.levelWarn}</Chip>
-  ) : undefined;
+/** The mark of what an event was done to, in the colour of its kind, as the audit log shows it (`audit/AuditScreen.tsx`). */
+const targetMark = (type: string | null): { icon: string; color?: string } =>
+  type === "user"
+    ? { icon: "user", color: "#2563eb" }
+    : type === "group"
+      ? { icon: "users-group", color: "#7c3aed" }
+      : type === "service_account" || type === "service_account_credential"
+        ? { icon: "robot", color: "#0e7490" }
+        : type === "ai_approval"
+          ? { icon: "checks", color: "#8e1b6f" }
+          : { icon: "target" };
 
 /**
  * The Accounts overview on v2: the first row says what waits today, then who I am here and my groups, and for
- * administrators the account runs and, beside them, what the runs did.
+ * administrators the account runs and, beside them, who changed what.
  */
 export default function OverviewScreen(props: OverviewScreenProps) {
   const t = useAccountsMessages();
@@ -376,27 +360,46 @@ export default function OverviewScreen(props: OverviewScreenProps) {
           <Show when={props.admin}>
             {(admin) => (
               <Pane side label={o().activity} width={{ min: 300, default: 380 }}>
-                <Section
-                  title={o().activity}
-                  count={admin().activity.length}
-                  more={{ label: t().auditLog, href: "/app/accounts/activity", forward: true }}
-                >
-                  <Show when={admin().activity.length > 0} fallback={<Text muted>{t().noLifecycleActivity}</Text>}>
-                    <Digest
-                      label={o().activity}
-                      activity={admin().activity.map((entry) => {
-                        const run = sourceOf(t(), entry.source);
-                        return {
-                          person: { name: run.name, initials: initials(run.name), color: run.color },
-                          text: (
-                            <>
-                              <Text weight="strong">{run.name}</Text>: {entry.message} {levelChip(o(), entry.level)}
-                            </>
-                          ),
-                          time: entry.time,
-                        };
-                      })}
-                    />
+                <Section title={o().activity} more={{ label: o().allActivity, href: "/app/accounts/activity", forward: true }}>
+                  <Show when={admin().activity} fallback={<Text muted>{o().activityFailed}</Text>}>
+                    {(rows) => (
+                      <Show when={rows().length > 0} fallback={<Text muted>{t().noAuditEvents}</Text>}>
+                        <Digest
+                          label={o().activity}
+                          activity={rows().map((row) => ({
+                            // a change without a person is the system's, as in the audit log
+                            person: row.actor.userId
+                              ? { name: row.actor.label }
+                              : { name: row.actor.label, initials: "S", color: "#475569" },
+                            text: (
+                              <>
+                                <Text weight="strong">{row.actor.label}</Text> {row.action.label}
+                                <Show when={row.target.label !== "–"}>
+                                  {" · "}
+                                  <Mark {...targetMark(row.target.type)} />
+                                  {row.target.href ? (
+                                    <Text weight="strong" href={row.target.href}>
+                                      {row.target.label}
+                                    </Text>
+                                  ) : (
+                                    <Text weight="strong">{row.target.label}</Text>
+                                  )}
+                                </Show>
+                                <Show when={row.outcome !== "allowed"}>
+                                  {" "}
+                                  {row.outcome === "denied" ? (
+                                    <Chip status="warn">{t().denied}</Chip>
+                                  ) : (
+                                    <Chip status="bad">{t().failed}</Chip>
+                                  )}
+                                </Show>
+                              </>
+                            ),
+                            time: `${row.day}, ${row.time}`,
+                          }))}
+                        />
+                      </Show>
+                    )}
                   </Show>
                 </Section>
               </Pane>

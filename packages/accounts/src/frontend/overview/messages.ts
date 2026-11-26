@@ -31,8 +31,8 @@ export const overviewMessages = i18n.define({
       failedRuns: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 run failed", other: `${count} runs failed` }),
       runsOk: ({ ok, runs }: { ok: number; runs: number }) => `${ok} of ${runs} runs without errors`,
       errors: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 error", other: `${count} errors` }),
-      levelError: "Error",
-      levelWarn: "Warning",
+      allActivity: "All activity",
+      activityFailed: "The latest changes could not be read.",
     },
     de: {
       views: "Ansichten",
@@ -56,8 +56,8 @@ export const overviewMessages = i18n.define({
       failedRuns: ({ count }) => i18n.plural(count, "de", { one: "1 Lauf mit Fehler", other: `${count} Läufe mit Fehler` }),
       runsOk: ({ ok, runs }) => `${ok} von ${runs} Läufen ohne Fehler`,
       errors: ({ count }) => `${count} Fehler`,
-      levelError: "Fehler",
-      levelWarn: "Warnung",
+      allActivity: "Alle Aktivitäten",
+      activityFailed: "Die letzten Änderungen konnten nicht gelesen werden.",
     },
   },
 });

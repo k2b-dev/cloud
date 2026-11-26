@@ -181,6 +181,10 @@ describe("the Accounts overview on v2", () => {
   test("the logs menu leads to the system logs and to the activity kinds that replaced the old pages", async () => {
     const { context, tab, errors } = await open(wide, "/app/accounts", { admin: true });
     try {
+      // who changed what: the audit log as sentences with the person, and the way to all of it
+      expect(await tab.locator('[data-k2-part="Digest.Entry"]').count()).toBe(8);
+      await tab.getByText("Mitglied hinzugefügt").first().waitFor();
+      expect(await tab.getByRole("link", { name: /Alle Aktivitäten/ }).getAttribute("href")).toBe("/app/accounts/activity");
       await tab.getByRole("button", { name: "Protokolle" }).click();
       const deleted = tab.getByRole("menuitem", { name: "Gelöschte Konten" });
       expect(await deleted.getAttribute("href")).toBe("/app/accounts/activity?kind=deleted");

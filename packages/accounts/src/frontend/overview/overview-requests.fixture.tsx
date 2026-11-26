@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import RequestsScreen, { type RequestRow } from "../requests/RequestsScreen";
 import type { RequestStatusView } from "../requests/requests-url";
-import OverviewScreen, { type OverviewAdmin, type OverviewGroup, type OverviewScreenProps } from "./OverviewScreen";
+import OverviewScreen, { type OverviewActivity, type OverviewAdmin, type OverviewGroup, type OverviewScreenProps } from "./OverviewScreen";
 import { REQUESTS, REQUESTS_OLDEST, REQUESTS_OVERDUE } from "./overview-requests.fixture-data";
 
 // Frozen, invented sample data for the overview and the request list: dates are text as the server formats them.
@@ -13,6 +13,37 @@ const LOGS: OverviewAdmin["logs"] = [
   { href: "/app/accounts/activity?kind=deleted", label: "deletedAccounts" },
   { href: "/app/accounts/activity?kind=reminders", label: "reminderHistory" },
 ];
+
+/** One change of the audit log as the server words it; `null` as the actor is the system. */
+const change = (
+  id: number,
+  day: string,
+  time: string,
+  actor: string | null,
+  action: string,
+  type: "user" | "group" | "service_account",
+  target: string,
+  outcome: "allowed" | "denied" | "failed" = "allowed",
+): OverviewActivity => ({
+  id: String(id),
+  day,
+  time,
+  actor: { label: actor ?? "System", userId: actor ? `44444444-4444-4444-8444-${String(id).padStart(12, "0")}` : null, provider: "Lokal" },
+  action: { label: action, code: "accounts.example" },
+  target: {
+    label: target,
+    kind: type,
+    type,
+    href:
+      type === "group"
+        ? `/app/accounts/groups/33333333-3333-4333-8333-${String(id).padStart(12, "0")}`
+        : type === "user"
+          ? `/app/accounts/users/44444444-4444-4444-8444-${String(id + 100).padStart(12, "0")}`
+          : null,
+  },
+  outcome,
+  reason: outcome === "allowed" ? null : "FreeIPA nicht erreichbar",
+});
 
 export const overviewAdmin: OverviewAdmin = {
   accounts: { total: 192, freeIpa: 128, local: 64 },
@@ -26,25 +57,14 @@ export const overviewAdmin: OverviewAdmin = {
   ],
   window: 10,
   activity: [
-    {
-      id: "1",
-      level: "info",
-      source: "auth:ipa:sync",
-      message: "128 Konten und 31 Gruppen abgeglichen",
-      time: "heute, 09:40",
-    },
-    { id: "2", level: "info", source: "auth:reminder:daily", message: "6 Erinnerungen verschickt", time: "heute, 06:00" },
-    {
-      id: "3",
-      level: "error",
-      source: "auth:ipa:sync",
-      message: "Gruppe „Werkstatt-Alt“ nicht erreichbar",
-      time: "heute, 03:40",
-    },
-    { id: "4", level: "info", source: "auth:guest:backfill", message: "Ablauf für 2 Gastkonten gesetzt", time: "gestern, 22:15" },
-    { id: "5", level: "warn", source: "auth:ipa:sync", message: "3 Konten ohne E-Mail-Adresse übersprungen", time: "gestern, 21:40" },
-    { id: "6", level: "info", source: "auth:local-user:backfill", message: "Ablauf für 1 lokales Konto gesetzt", time: "gestern, 22:15" },
-    { id: "7", level: "info", source: "auth:reminder:daily", message: "4 Erinnerungen verschickt", time: "gestern, 06:00" },
+    change(1, "Heute", "09:42", "Ada Renz", "Mitglied hinzugefügt", "group", "Werkstatt"),
+    change(2, "Heute", "09:31", "Felix Thal", "Benutzer angelegt", "user", "Jonas Weber"),
+    change(3, "Heute", "08:57", "Ada Renz", "Ablauf gesetzt", "user", "guest-tom"),
+    change(4, "Heute", "08:12", "Lena Hartwig", "Anfrage abgelehnt", "user", "Greta Lindqvist", "denied"),
+    change(5, "Gestern", "17:05", "Jana Berger", "Verwalter hinzugefügt", "group", "Lager"),
+    change(6, "Gestern", "16:40", null, "Benutzer gelöscht", "user", "guest-anna", "failed"),
+    change(7, "Gestern", "14:02", "Sami Yilmaz", "API-Schlüssel erstellt", "service_account", "Wochenbericht"),
+    change(8, "Gestern", "11:20", "Tom Oswald", "Gruppe angelegt", "group", "Fotografie"),
   ],
   logs: LOGS,
 };
@@ -99,14 +119,16 @@ const worstAdmin: OverviewAdmin = {
   lastSync: null,
   health: [{ run: "reminders", runs: 0, failed: 0 }],
   activity: [
-    {
-      id: "9",
-      level: "error",
-      source: "auth:local-user:backfill:with-a-very-long-source-name",
-      message:
-        "Backfill step failed for account maximiliane.theodora.von.hohenstein-wartenberg-schoenfeld@sehr-lange-domain-ohne-umbruch.example: timeout after 30000 ms",
-      time: "24.11.2026, 23:59",
-    },
+    change(
+      9,
+      "Heute",
+      "23:59",
+      "Maximiliane Theodora von Hohenstein-Wartenberg-Schönfeld",
+      "Benutzer gelöscht",
+      "user",
+      "maximiliane.theodora.vonhohensteinwartenbergschoenfeld@sehr-lange-domain-ohne-umbruch.example",
+      "failed",
+    ),
   ],
 };
 const worstGroups: OverviewGroup[] = [
