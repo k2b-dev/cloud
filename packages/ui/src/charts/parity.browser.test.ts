@@ -13,6 +13,8 @@ import { chartSvgWithUiPalette, renderChartSvg } from "./core";
 
 const uiRoot = resolve(import.meta.dir, "../..");
 const repoRoot = resolve(uiRoot, "../..");
+/** Generated ids differ by runtime and by what rendered before: a drawing's own definitions start with its tooltip's. */
+const stableDrawingIds = (svg: string) => svg.replace(/k2b-chart-tooltip-[\w-]+?-drawing/g, "k2b-chart-tooltip-ID-drawing");
 const frozenDemoSvgs: string[] = JSON.parse(brotliDecompressSync(Buffer.from(legacyDemoSvg.svgBrotli, "base64")).toString());
 const buildFixture = async (contents: string, hydratable = false) => {
   const { transformAsync } = await import("@babel/core");
@@ -73,7 +75,8 @@ test("all registered kinds match server SVG and geometry on the first client ren
     const errors = pageErrors(page);
     await page.setContent(`<html><body>${html}</body></html>`);
     // @k2b/ssr mounts islands afresh. Compare exact drawing markup and logical geometry;
-    // Solid's HTML comment markers, attribute order and generated tooltip IDs differ by runtime.
+    // Solid's HTML comment markers, attribute order and generated IDs (the tooltip's, and the ids of a drawing's own
+    // definitions, which start with it) differ by runtime.
     const drawing = () =>
       page.locator(".k2b-chart__svg").evaluateAll((charts) =>
         charts.map((chart) => ({
@@ -87,12 +90,12 @@ test("all registered kinds match server SVG and geometry on the first client ren
           stretch: chart.getAttribute("data-stretch"),
         })),
       );
-    const before = await drawing();
+    const before = (await drawing()).map((entry) => ({ ...entry, svg: stableDrawingIds(entry.svg) }));
     await page.locator("body > div").evaluateAll((charts) => charts.forEach((chart) => chart.replaceChildren()));
     await page.addScriptTag({ content: bundle });
     expect(errors).toEqual([]);
     expect(await page.locator("body").getAttribute("data-mounted")).toBe("true");
-    const after = await drawing();
+    const after = (await drawing()).map((entry) => ({ ...entry, svg: stableDrawingIds(entry.svg) }));
     expect(after).toEqual(before);
     expect(after).toHaveLength(specs.length);
     expect(errors).toEqual([]);
@@ -194,7 +197,9 @@ for (const width of [1440, 390]) {
             const drawings = page.locator(".k2b-chart__svg > svg");
             expect(await drawings.count()).toBe(frozenDemoSvgs.length);
             if (stage === "after")
-              expect(await drawings.evaluateAll((nodes) => nodes.map((node) => node.outerHTML))).toEqual(frozenDemoSvgs);
+              expect((await drawings.evaluateAll((nodes) => nodes.map((node) => node.outerHTML))).map(stableDrawingIds)).toEqual(
+                frozenDemoSvgs,
+              );
             if (stage === "before")
               await drawings.evaluateAll(
                 (nodes, svgs) =>
