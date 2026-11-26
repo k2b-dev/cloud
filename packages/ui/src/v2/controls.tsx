@@ -800,9 +800,16 @@ const ChoiceGroup = (props: ChoiceProps) => {
                 checked={option.value === value()}
                 required={field?.required || undefined}
                 disabled={props.disabled || option.disabled}
-                onChange={() => {
+                onChange={(event) => {
                   setOwn(option.value);
                   props.onChange?.(option.value);
+                  // The page holds the value: when it refuses the press or decides later (after a confirm), the
+                  // browser's radio would keep the pressed option. Every radio shows the page's value again; a value
+                  // the page sets later checks its radio through the binding above.
+                  const group = event.currentTarget.closest('[role="radiogroup"]');
+                  for (const radio of group?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []) {
+                    radio.checked = radio.value === value();
+                  }
                 }}
               />
               <span class="k2-radio" data-checked={option.value === value() ? "" : undefined} data-k2-mark="" />

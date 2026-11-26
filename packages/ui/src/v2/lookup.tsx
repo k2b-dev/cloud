@@ -174,8 +174,15 @@ export const Lookup = (props: LookupProps) => {
   const chosenGroup = createUniqueId();
   const offeredGroup = createUniqueId();
 
-  const Option = (item: LookupItem) => (
-    <list.Item class="k2-opt" value={item.value} label={item.label} aria-checked={props.value.includes(item.value) ? "true" : "false"}>
+  // each entry names its group, as a renderer of core does; without it core takes the group for empty and hides it
+  const Option = (group: string) => (item: LookupItem) => (
+    <list.Item
+      class="k2-opt"
+      value={item.value}
+      label={item.label}
+      group={group}
+      aria-checked={props.value.includes(item.value) ? "true" : "false"}
+    >
       <Show when={several()}>
         <span class="k2-check" data-checked={props.value.includes(item.value) ? "" : undefined} aria-hidden="true">
           <Show when={props.value.includes(item.value)}>
@@ -217,7 +224,7 @@ export const Lookup = (props: LookupProps) => {
             <list.GroupLabel class="k2-opt-head" id={chosenGroup} group={chosenGroup}>
               {t().chosen}
             </list.GroupLabel>
-            <For each={chosen()}>{Option}</For>
+            <For each={chosen()}>{Option(chosenGroup)}</For>
           </list.Group>
         </Show>
         <list.Group class="k2-opt-group" id={offeredGroup}>
@@ -225,7 +232,7 @@ export const Lookup = (props: LookupProps) => {
             {loadedFor() && showList() ? t().resultsFor({ query: loadedFor() }) : t().results}
           </list.GroupLabel>
           <Show when={showList() && offered().length > 0}>
-            <For each={offered()}>{Option}</For>
+            <For each={offered()}>{Option(offeredGroup)}</For>
           </Show>
         </list.Group>
       </list.List>

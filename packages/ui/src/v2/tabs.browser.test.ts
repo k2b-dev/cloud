@@ -44,7 +44,7 @@ const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, befo
 
 test("the server already sends both kinds: a navigation of links and a tab list", () => {
   expect(markup).toMatch(/<nav [^>]*data-k2-part="Tabs" aria-label="Ansichten"/);
-  expect(markup).toMatch(/role="tablist" aria-label="Beispiel"/);
+  expect(markup).toMatch(/aria-label="Beispiel"[^>]*role="tablist"|role="tablist"[^>]*aria-label="Beispiel"/);
   expect(markup).toMatch(/role="tab"[^>]*aria-selected="true"/);
   expect(markup).toContain('role="tabpanel"');
 });
@@ -63,12 +63,10 @@ test("tabs in place are the WAI-ARIA tabs: selected, controlling the panel the o
     const list = page.getByRole("tablist", { name: "Beispiel" });
     expect(await list.getByRole("tab").allTextContents()).toEqual(["Vorschau", "Code", "Eigenschaften"]);
     expect(await list.getByRole("tab", { selected: true }).textContent()).toBe("Vorschau");
-    expect(await list.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("aria-controls")))).toEqual([
-      "example",
-      "example",
-      "example",
-    ]);
+    // the open tab controls the panel in the page (core points only at a panel that is there)
     const panel = page.getByRole("tabpanel", { name: "Vorschau" });
+    const controls = await list.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("aria-controls")));
+    expect(controls).toEqual([await panel.getAttribute("id"), null, null]);
     expect(await panel.textContent()).toBe("Die Vorschau");
     // one tab stop: the open tab
     expect(await list.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("tabindex")))).toEqual(["0", "-1", "-1"]);
@@ -114,9 +112,13 @@ test("while the open tab hides in “Mehr”, a tab that shows holds the tab sto
       const list = page.getByRole("tablist", { name: "Beispiel" });
       // the open tab has no room and stands in the menu of further tabs
       expect(await list.locator('[role="tab"][aria-selected="true"]').getAttribute("data-overflow")).toBe("");
-      const stops = await list.locator('[role="tab"]').evaluateAll((tabs) =>
-        tabs.filter((tab) => tab.getAttribute("tabindex") === "0").map((tab) => ({ text: tab.textContent, hidden: tab.hasAttribute("data-overflow") })),
-      );
+      const stops = await list
+        .locator('[role="tab"]')
+        .evaluateAll((tabs) =>
+          tabs
+            .filter((tab) => tab.getAttribute("tabindex") === "0")
+            .map((tab) => ({ text: tab.textContent, hidden: tab.hasAttribute("data-overflow") })),
+        );
       expect(stops).toEqual([{ text: "Vorschau", hidden: false }]);
       // the keys walk only the tabs that show
       await list.getByRole("tab", { name: "Vorschau" }).focus();

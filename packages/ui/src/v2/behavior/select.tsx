@@ -94,6 +94,8 @@ export type SelectParts = {
   Input: SlotComponent;
   /** What the list says about its items: its children function gets `{ status }` (loading, failed). */
   Status: SlotComponent;
+  /** With `multiple`: one hidden input per chosen value (pass `value`), which a form sends under `name`. */
+  ValueInput: SlotComponent;
 };
 
 /** The given items in the order core lists them (a search leaves some out); core's list holds the same data. */
@@ -178,10 +180,11 @@ export function useSelect(options: () => SelectOptions | MultiSelectOptions): Se
     FormInput: slotComponent(handle, "form-input", "input"),
     Input: slotComponent(handle, "input", "input"),
     Status: slotComponent(handle, "status", "div"),
+    ValueInput: slotComponent(handle, "value-input", "input"),
   };
 }
 
-export type ComboboxParts = Omit<SelectParts, "Status"> & {
+export type ComboboxParts = Omit<SelectParts, "Status" | "ValueInput"> & {
   /** The search field that also holds focus while the list is open. */
   Input: SlotComponent;
   /** The chips of a multiple combobox, with `Chip` and `ChipRemove` per value (pass `value`). */

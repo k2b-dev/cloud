@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, createUniqueId, For, onCleanup, onMount, Show } from "solid-js";
 import { createAsyncOptions } from "./behavior/async-options";
 import { useBehaviorMessages } from "./behavior/messages";
 import { type ChoiceItem, useSelect } from "./behavior/select";
@@ -110,6 +110,7 @@ export const LookupSelect = (props: LookupSelectProps) => {
   const items = (): ChoiceItem[] => state().items.map((item) => ({ value: item.value, label: item.label }));
   const metaOf = (code: string) => state().items.find((item) => item.value === code)?.meta;
 
+  const [open, setOpen] = createSignal(false);
   // One value that may stay empty can be taken back: "Auswahl entfernen" under the matches.
   const clearable = () => !props.multiple && !field?.required && !props.disabled && chosen().length > 0;
   const shared = () => ({
@@ -117,7 +118,9 @@ export const LookupSelect = (props: LookupSelectProps) => {
     filter: false as const,
     status: state().status,
     onQueryChange: (query: string) => options.setQuery(query.trim()),
+    open: open(),
     onOpenChange: (open: boolean) => {
+      setOpen(open);
       // the first matches load as the list opens, without the wait for typing
       if (open && (props.minChars ?? 0) === 0) options.reload();
       if (!open) options.cancel();
@@ -171,6 +174,9 @@ export const LookupSelect = (props: LookupSelectProps) => {
       </select.Trigger>
       {/* core's form input: each chosen code under the field's name, required, reset with the form, out when disabled */}
       <select.FormInput />
+      <Show when={props.multiple}>
+        <For each={[...chosen()]}>{(code) => <select.ValueInput value={code} />}</For>
+      </Show>
       <select.Popup
         class="k2-menu k2-lpick"
         data-listbox=""
@@ -222,7 +228,8 @@ export const LookupSelect = (props: LookupSelectProps) => {
           </Show>
         </select.Empty>
         <Show when={clearable()}>
-          <select.Clear class="k2-btn k2-lpick-clear" data-variant="text">
+          {/* taking the value back is a choice too: the list closes after it */}
+          <select.Clear class="k2-btn k2-lpick-clear" data-variant="text" onClick={() => queueMicrotask(() => setOpen(false))}>
             <Icon name="x" />
             <span class="k2-btn-label">{t().clearChoice}</span>
           </select.Clear>

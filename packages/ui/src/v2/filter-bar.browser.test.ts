@@ -201,7 +201,7 @@ test("nothing moves when a statement is hovered, focused or opened, or when the 
   });
 });
 
-test("lookup: typing waits, a newer search aborts the one that runs, and closing aborts too", async () => {
+test("lookup: typing waits, a newer search aborts the one that runs, Escape empties the search, then closes", async () => {
   await withPage("consignor=c-1005", async (page) => {
     await page.locator(".k2-stmt-b").first().click();
     await page.getByRole("combobox", { name: "Einlieferer suchen" }).waitFor();
@@ -223,12 +223,15 @@ test("lookup: typing waits, a newer search aborts the one that runs, and closing
     expect(await page.locator(".k2-lookup .k2-opt-head").allTextContents()).toEqual(["Gewählt", "Treffer für „berg“"]);
     // the chosen value stays on top
     expect(await page.locator(".k2-lookup [role=option]").first().textContent()).toContain("Nachlass Kessler");
-    // closing while a load runs aborts it
+    // Escape first empties the search (core's command steps back one thing at a time), which aborts the load that
+    // runs; the next Escape closes the editor
     await page.keyboard.type("x");
     await page.waitForTimeout(260);
     await page.keyboard.press("Escape");
+    expect(await page.getByRole("combobox", { name: "Einlieferer suchen" }).inputValue()).toBe("");
+    expect((await calls(page)).find((call) => call.query === "bergx")?.aborted).toBe(true);
+    await page.keyboard.press("Escape");
     await page.locator(".k2-fpop").waitFor({ state: "detached" });
-    expect((await calls(page)).at(-1)).toEqual({ query: "bergx", aborted: true });
   });
 });
 
