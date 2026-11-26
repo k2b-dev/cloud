@@ -817,19 +817,13 @@ const openMenuOf = (tile: Element) => tile.querySelector<HTMLElement>(":scope > 
  * which opens the same menu with Shift+F10 on the tile. The focus a closing menu gives back goes to the tile.
  */
 const TileMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
-  let span: HTMLSpanElement | undefined;
-  onMount(() => {
-    const button = span?.querySelector("button");
-    button?.setAttribute("tabindex", "-1");
-    button?.setAttribute("aria-hidden", "true");
-  });
   const back = (event: FocusEvent) => {
     if (event.target instanceof HTMLElement && event.target.matches("button[aria-hidden]"))
       event.target.closest<HTMLElement>(".k2-tile")?.focus();
   };
   return (
-    <span ref={span} class="k2-tile-menu" on:keydown={stopHere} on:click={stopHere} on:pointerdown={stopHere} on:focusin={back}>
-      <Menu label={props.label} items={props.items} />
+    <span class="k2-tile-menu" on:keydown={stopHere} on:click={stopHere} on:pointerdown={stopHere} on:focusin={back}>
+      <Menu label={props.label} items={props.items} pointerOnly />
     </span>
   );
 };
@@ -855,7 +849,9 @@ const TileMedia = (props: {
       {...props.drag.attrs}
       ref={props.drag.ref}
       class="k2-tile"
-      role="listitem"
+      // in a selection the tiles are options that say whether they are selected; else items of a list
+      role={props.select ? "option" : "listitem"}
+      aria-selected={props.select ? (selected() ? "true" : "false") : undefined}
       aria-labelledby={title}
       data-open={props.tile.href !== undefined ? "" : undefined}
       data-selected={selected() ? "" : undefined}
@@ -869,9 +865,10 @@ const TileMedia = (props: {
         if (props.tile.menu && asksForMenu(event)) {
           event.preventDefault();
           openMenuOf(event.currentTarget);
-        } else if (event.key === " " && props.select) {
+        } else if (event.key === " ") {
+          // Space selects where people select, and never scrolls the page
           event.preventDefault();
-          props.select.onChange(keyOf(props.tile), !selected());
+          props.select?.onChange(keyOf(props.tile), !selected());
         } else if (event.key === "Enter") {
           event.preventDefault();
           event.currentTarget.querySelector<HTMLElement>(".k2-row-open")?.click();
@@ -925,7 +922,8 @@ const MediaTiles = (props: TilesProps) => {
         data-k2-part="Tiles"
         data-variant="media"
         data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
-        role="list"
+        role={props.select ? "listbox" : "list"}
+        aria-multiselectable={props.select ? "true" : undefined}
         aria-label={props.label}
       >
         <For each={props.items}>

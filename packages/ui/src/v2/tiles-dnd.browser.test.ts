@@ -46,8 +46,9 @@ const withPage = async (run: (page: Page) => Promise<void>) => {
   }
 };
 
-const tiles = (page: Page) => page.getByRole("list", { name: "Dateien als Kacheln" });
-const tile = (page: Page, name: string) => tiles(page).getByRole("listitem", { name, exact: true });
+// the files stand in a selection: a listbox of options
+const tiles = (page: Page) => page.getByRole("listbox", { name: "Dateien als Kacheln" });
+const tile = (page: Page, name: string) => tiles(page).getByRole("option", { name, exact: true });
 const folder = (page: Page, name: string) => page.getByRole("treeitem", { name, exact: true }).locator(":scope > .k2-nt-row");
 const tableRow = (page: Page, name: string) =>
   page.getByRole("table", { name: "Dateien als Tabelle" }).locator("tbody tr", { hasText: name });
@@ -333,5 +334,70 @@ test("drag: a selection the app changes in place during the drag does not move m
     await page.evaluate(() => window.__growSelection?.("messe"));
     await page.mouse.up();
     expect(await page.evaluate(() => window.__moves)).toEqual(["angebot>projekte"]);
+  });
+});
+
+// ── Review r2 (Opus, 26.11.) ─────────────────────────────────────────────────────────────────────────────────────
+
+test("server markup: each tile's '…' is out of the tab order and hidden from screen readers before the page is live", () => {
+  const triggers = [...markup.matchAll(/<span class="k2-tile-menu"[^>]*><button([^>]*)>/g)].map((match) => match[1] ?? "");
+  expect(triggers.length).toBeGreaterThan(0);
+  for (const trigger of triggers) {
+    expect(trigger).toContain('tabindex="-1"');
+    expect(trigger).toContain('aria-hidden="true"');
+  }
+});
+
+test("tiles in a selection say whether the focused one is selected; Space changes it", async () => {
+  await withPage(async (page) => {
+    const grid = page.getByRole("listbox", { name: "Dateien als Kacheln" });
+    expect(await grid.getAttribute("aria-multiselectable")).toBe("true");
+    const fotos = grid.getByRole("option", { name: "Fotos", exact: true });
+    expect(await fotos.getAttribute("aria-selected")).toBe("false");
+    await fotos.focus();
+    await page.keyboard.press("Space");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-selected") === "true");
+    // tiles without a selection stay a list of items
+    expect(await page.getByRole("list", { name: "Andere Ablage" }).getByRole("listitem").count()).toBe(1);
+  });
+});
+
+test("Space on a tile never scrolls the page, also without a selection", async () => {
+  await withPage(async (page) => {
+    await page.setViewportSize({ width: 1440, height: 500 });
+    await settled(page);
+    // a list without a selection that has more page below it
+    const other = page.getByRole("list", { name: "Verknüpfungen" }).getByRole("listitem").first();
+    await other.focus();
+    await settled(page);
+    // the scroller around the tile: it can scroll down from where it stands
+    const before = await other.evaluate((tile) => {
+      let box: HTMLElement | null = tile.parentElement;
+      while (box && !(box.scrollHeight > box.clientHeight && getComputedStyle(box).overflowY !== "visible")) box = box.parentElement;
+      const scroller = box ?? (document.scrollingElement as HTMLElement);
+      (window as unknown as { __scroller: HTMLElement }).__scroller = scroller;
+      // what is left to scroll below, from where the focused tile stands now
+      return { top: scroller.scrollTop, room: scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop };
+    });
+    expect(before.room).toBeGreaterThan(0);
+    await page.keyboard.press("Space");
+    await settled(page);
+    expect(await page.evaluate(() => (window as unknown as { __scroller: HTMLElement }).__scroller.scrollTop)).toBe(before.top);
+  });
+});
+
+test("arrows follow the screen in a right-to-left page", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      document.documentElement.dir = "rtl";
+    });
+    await settled(page);
+    const names = await page
+      .locator(".k2-tiles[aria-label='Dateien als Kacheln'] > .k2-tile .k2-tile-title")
+      .evaluateAll((titles) => titles.map((title) => title.textContent));
+    await page.locator(".k2-tiles[aria-label='Dateien als Kacheln'] > .k2-tile").first().focus();
+    // the second tile stands to the left of the first in a right-to-left grid
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForFunction((second) => document.activeElement?.querySelector(".k2-tile-title")?.textContent === second, names[1]);
   });
 });

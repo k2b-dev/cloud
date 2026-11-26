@@ -127,7 +127,9 @@ card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 
 A media grid (`variant="media"`) is one Tab stop: arrows go to the nearest
-tile, Space selects (with `select`), Enter opens, and a tile's `menu` (its
+tile (by the screen, also right to left), Space selects (with `select`
+the grid is a listbox whose tiles say `aria-selected`; Space never
+scrolls), Enter opens, and a tile's `menu` (its
 deeds, such as "Verschieben nach …") opens from a "…" on the picture, a
 right-click, Shift+F10 or the menu key. `drag` makes its tiles drag onto
 folders (see below).
