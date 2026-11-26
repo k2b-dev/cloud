@@ -274,13 +274,13 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           })}
           // one line per client; colour only for the state that needs a look
           columns={[
-            { title: t().client, width: { min: 160, default: 220 }, cell: (client) => client.name },
+            { title: t().client, width: { min: 150, default: 180 }, cell: (client) => client.name },
             {
               title: t().state,
-              width: { min: 120, default: 120 },
+              width: { min: 110, default: 110 },
               cell: (client: ClientRow) => (client.groups.length === 0 ? blocked() : ""),
             },
-            { title: t().allowedGroups, width: { min: 140, default: 240 }, cell: (client) => groupLine(client), drop: true },
+            { title: t().allowedGroups, width: { min: 140, default: 180 }, cell: (client) => groupLine(client), drop: true },
             ...(props.open
               ? []
               : [{ title: t().created, width: { min: 110, default: 120 }, cell: (client: ClientRow) => client.created, drop: true }]),
