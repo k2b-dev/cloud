@@ -443,15 +443,16 @@ export const worstPresence = (state: MailV2FixtureState, now: number): Conversat
   }));
 };
 
+/** The title of a linked task at worst: long, with names and numbers (invented data, not a text of the UI). */
+const TASK = "Aufgabe";
+const WORST_TASK_TITLE = "Schlussrechnung 2026-004711 korrigieren und an Frau Wiśniewska-Kowalczyk schicken (Position 14 doppelt)";
+
 /** What other apps linked: fourteen tasks with long titles in the worst case (spaces context, no limit found). */
 export const worstLinked = (state: MailV2FixtureState) => {
   const count = state === "worst" ? 14 : state === "one" ? 1 : 0;
   return Array.from({ length: count }, (_, index) => ({
     ref: { app: "spaces", type: "task", id: `WorstTask${index + 1}` },
-    title:
-      index === 0
-        ? "Schlussrechnung 2026-004711 korrigieren und an Frau Wiśniewska-Kowalczyk schicken (Position 14 doppelt)"
-        : `Aufgabe ${index + 1}`,
+    title: index === 0 ? WORST_TASK_TITLE : `${TASK} ${index + 1}`,
     icon: "ti ti-checkbox",
     links: [{ rel: "open", href: `/app/spaces/tasks/WorstTask${index + 1}` }],
   }));
