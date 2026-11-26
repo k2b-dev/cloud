@@ -332,6 +332,19 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
     calls.push(`${method} ${url.pathname}${url.search}`);
     const conversations = fixtureConversations(scene.state ?? "usual");
     if (method !== "GET") posted.push({ path: url.pathname, body: route.request().postDataJSON() });
+    // All chats: one page of the person's history, searched and filtered as the server does it.
+    if (url.pathname.endsWith("/conversations/page") && method === "GET") {
+      const q = url.searchParams.get("q")?.toLocaleLowerCase();
+      const archivedView = url.searchParams.get("archived") === "true";
+      const items = (archivedView ? conversations.slice(0, 2).map((chat) => ({ ...chat, archivedAt: FIXTURE_NOW })) : conversations).filter(
+        (chat) => !q || chat.title.toLocaleLowerCase().includes(q),
+      );
+      return route.fulfill({ json: { items: items.slice(0, 20), total: items.length, page: 1, perPage: 20, hasNext: items.length > 20 } });
+    }
+    if (url.pathname.endsWith("/restore") && method === "POST") {
+      const id = url.pathname.split("/").at(-2);
+      return route.fulfill({ json: conversations.find((chat) => chat.id === id) ?? conversations[0] });
+    }
     if (url.pathname === "/api/ai/conversations" && method === "POST") {
       created++;
       return route.fulfill({
@@ -786,6 +799,41 @@ describe("Assistant on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  for (const view of [wide, narrow])
+    test(`${view.name}: All chats opens as a v2 dialog, searches, and restores an archived chat`, async () => {
+      const { context, page, errors, unanswered, posted } = await open(view, "/app/assistant");
+      try {
+        await page.locator('[data-k2-part="Nav"]').getByText("Alle Chats", { exact: true }).click();
+        const dialog = page.getByRole("dialog", { name: "Alle Chats" });
+        await dialog.locator('[data-k2-part="Row"]').first().waitFor();
+        await settled(page);
+        await shoot(page, `${view.name}-all-chats`);
+        expect(await dialog.locator('[data-k2-part="Row"]').count()).toBe(20);
+        // The search narrows the page as the server does.
+        await dialog.getByRole("searchbox").fill("Rechnung");
+        await dialog.locator('[data-k2-part="Row"]').nth(1).waitFor({ state: "detached" });
+        expect(await dialog.locator('[data-k2-part="Row"]').first().textContent()).toContain("Rechnung 2026-118 prüfen");
+        // Archived chats are restored from their row.
+        await dialog.getByRole("searchbox").fill("");
+        await dialog.getByRole("button", { name: "Alle Chats" }).click();
+        await page
+          .getByRole("menuitemcheckbox", { name: "Archiviert" })
+          .or(page.getByRole("menuitem", { name: "Archiviert" }))
+          .first()
+          .click();
+        await dialog.getByRole("button", { name: "Chat wiederherstellen" }).first().waitFor({ state: "attached" });
+        await settled(page);
+        await shoot(page, `${view.name}-all-chats-archived`);
+        await dialog.getByRole("button", { name: "Chat wiederherstellen" }).first().click();
+        await until(() => posted.some((entry) => entry.path.endsWith("/restore")));
+        expect(posted.some((entry) => entry.path.endsWith("/restore"))).toBe(true);
+        expect(errors).toEqual([]);
+        expect(unanswered).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
 
   test("a person with only archived chats keeps All chats in the sidebar; a person without any chat does not get it", async () => {
     for (const archived of [true, false]) {

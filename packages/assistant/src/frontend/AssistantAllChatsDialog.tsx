@@ -1,34 +1,11 @@
-import type { AiConversation, AiConversationPage, AiConversationStatusFilter, AiProject } from "@k2b/cloud/ai";
-import { query as solidQuery } from "@k2b/stdlib/solid";
-import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFixedOptions, Select, TextInput, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
-import { assistantApi } from "../api/client";
+import type { AiConversation, AiProject } from "@k2b/cloud/ai";
+import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFixedOptions, Select, TextInput } from "@k2b/ui";
+import { Show } from "solid-js";
 import AssistantAllChatsList from "./AssistantAllChatsList";
-import {
-  type AssistantLiveHub,
-  type AssistantLiveInvalidation,
-  AssistantLiveProvider,
-  matchesAssistantInvalidation,
-  useAssistantLive,
-} from "./assistant-live";
+import { type ChatView, createAllChats, emptyViewText } from "./all-chats-state";
+import { type AssistantLiveHub, AssistantLiveProvider } from "./assistant-live";
 import type { ConversationOpenResult } from "./assistant-navigation";
-import { assistantMessages } from "./messages";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
-
-type ChatView = "done" | "all" | "running" | "needs_attention" | "failed" | "unread" | "archived";
-
-const PER_PAGE = 20;
-
-const emptyViewText = (view: ChatView, search: string, text: (value: string) => string): string => {
-  if (search) return text("No chats match your search.");
-  if (view === "done") return text("No done chats.");
-  if (view === "archived") return text("No archived chats.");
-  if (view === "running") return text("No chats are running.");
-  if (view === "needs_attention") return text("No chats need attention.");
-  if (view === "failed") return text("No failed chats.");
-  if (view === "unread") return text("No new responses.");
-  return text("No chats yet.");
-};
 
 function AssistantAllChatsDialog(props: {
   basePath?: string;
@@ -39,76 +16,7 @@ function AssistantAllChatsDialog(props: {
 }) {
   const text = useAssistantText();
   const copy = useAssistantCopy();
-  const locale = useLocale();
-  const t = () => assistantMessages.resolve([locale()]).t;
-  // One quiet filter beside the search instead of seven segments that wrap on narrow screens.
-  const chatViews = (): { value: ChatView; label: string }[] => [
-    { value: "all", label: text("All chats") },
-    { value: "unread", label: text("New responses") },
-    { value: "running", label: t().running },
-    { value: "needs_attention", label: t().needsAttention },
-    { value: "failed", label: t().failed },
-    { value: "done", label: text("Done") },
-    { value: "archived", label: text("Archived") },
-  ];
-  const [query, setQuery] = createSignal("");
-  const [view, setView] = createSignal<ChatView>(props.initialView ?? "all");
-  const [page, setPage] = createSignal(1);
-  const [requestQuery, setRequestQuery] = createSignal("");
-  let latestOpenRequestId = 0;
-  const source = createMemo(() => JSON.stringify({ query: requestQuery(), view: view(), page: page() }));
-  const result = solidQuery.create<string, AiConversationPage, AssistantLiveInvalidation>({
-    source,
-    load: async (serialized, { abortSignal }) => {
-      const input = JSON.parse(serialized) as { query: string; view: ChatView; page: number };
-      const status =
-        input.view !== "all" && input.view !== "archived" && input.view !== "done" ? (input.view as AiConversationStatusFilter) : undefined;
-      return assistantApi.listConversationsPage({
-        q: input.query || undefined,
-        page: input.page,
-        perPage: PER_PAGE,
-        archived: input.view === "archived",
-        done: input.view === "done" ? true : undefined,
-        status,
-        signal: abortSignal,
-      });
-    },
-  });
-  const live = useAssistantLive();
-  const unregister = live.register({
-    matches: matchesAssistantInvalidation(["conversation-list", "project-list"]),
-    invalidate: (invalidation) => result.invalidate(invalidation),
-  });
-  onCleanup(unregister);
-
-  createEffect(() => {
-    const value = query().trim();
-    const timer = window.setTimeout(() => setRequestQuery(value), 180);
-    onCleanup(() => window.clearTimeout(timer));
-  });
-
-  createEffect(() => {
-    const value = result.data();
-    if (!value) return;
-    const lastPage = Math.max(1, Math.ceil(value.total / value.perPage));
-    if (value.page > lastPage) setPage(lastPage);
-  });
-
-  const selectView = (next: ChatView) => {
-    setPage(1);
-    setView(next);
-  };
-  const totalPages = () => Math.max(1, Math.ceil((result.data()?.total ?? 0) / (result.data()?.perPage ?? PER_PAGE)));
-  const openConversation = async (conversation: AiConversation): Promise<ConversationOpenResult> => {
-    const requestId = ++latestOpenRequestId;
-    const result = await props.openConversation(conversation);
-    if (requestId !== latestOpenRequestId) return "stale";
-    if (result !== "stale") props.close();
-    return result;
-  };
-  onCleanup(() => {
-    latestOpenRequestId += 1;
-  });
+  const { chatViews, query, search, view, selectView, page, setPage, result, totalPages, openConversation } = createAllChats(props);
 
   return (
     <PanelDialog>
@@ -127,15 +35,9 @@ function AssistantAllChatsDialog(props: {
             aria-label={text("Search chats")}
             placeholder={text("Search chats…")}
             value={query}
-            onValueChange={(value) => {
-              setPage(1);
-              setQuery(value);
-            }}
+            onValueChange={search}
             clearable
-            onClear={() => {
-              setPage(1);
-              setQuery("");
-            }}
+            onClear={() => search("")}
           />
           <Select
             aria-label={text("Chat filters")}
