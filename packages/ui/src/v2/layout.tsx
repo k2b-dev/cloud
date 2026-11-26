@@ -587,6 +587,11 @@ export type CellProps = {
   href?: string;
   /** A short history beside the value, such as orders per day this week (`Spark`). */
   trend?: SparkProps;
+  /**
+   * A value with a limit ("1,5 von 3 h", "38 von 100 GB"): a thin bar under it shows how much of the limit is used, in
+   * the cell's colour, amber from the limit on. `label` names it for assistive technology (the cell's label by default).
+   */
+  meter?: { value: number; of: number; label?: string };
 };
 
 /** Two to four equal cells side by side with a line between them; two by two on the phone. */
@@ -620,6 +625,24 @@ Cells.Cell = (props: CellProps) => {
         {props.value}
         <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
       </span>
+      <Show when={props.meter}>
+        {(meter) => {
+          const share = () => (meter().of > 0 ? Math.max(0, Math.min(1, meter().value / meter().of)) : 0);
+          return (
+            <span
+              class="k2-cell-meter"
+              role="meter"
+              aria-valuemin={0}
+              aria-valuemax={meter().of}
+              aria-valuenow={meter().value}
+              aria-label={meter().label ?? props.label}
+              data-full={meter().of > 0 && meter().value >= meter().of ? "" : undefined}
+            >
+              <i style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })} />
+            </span>
+          );
+        }}
+      </Show>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">{meta()}</span>
       </Show>

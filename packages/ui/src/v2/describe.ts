@@ -568,8 +568,23 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (control === fab || fab.contains(control) || hidden(control)) return false;
       const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
       if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || bar?.parentElement?.hasAttribute("data-slot"))) return false;
+      // what a person sees of the control: cut by every column around it that clips (a field scrolled out of view
+      // lies under nothing)
       const other = control.getBoundingClientRect();
-      return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
+      let [top, bottom, left, right] = [other.top, other.bottom, other.left, other.right];
+      for (let box = control.parentElement; box && box !== root.parentElement; box = box.parentElement) {
+        const style = getComputedStyle(box);
+        if (style.overflowY === "visible" && style.overflowX === "visible") continue;
+        const clip = box.getBoundingClientRect();
+        [top, bottom, left, right] = [
+          Math.max(top, clip.top),
+          Math.min(bottom, clip.bottom),
+          Math.max(left, clip.left),
+          Math.min(right, clip.right),
+        ];
+      }
+      if (bottom <= top || right <= left) return false;
+      return right > box.left && left < box.right && bottom > box.top && top < box.bottom;
     });
     if (covered.length)
       problems.push(

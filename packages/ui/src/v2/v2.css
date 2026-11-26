@@ -745,9 +745,9 @@
 }
 /* A cell under 220 px (half a phone, four cells in a pane of 600 px) leaves no room for a big number in 18 px
    ("12.345.678"): its value takes the cell's whole width under the label, stands in 14 px, still in 600, and breaks
-   between its words (a chip too) instead of being cut. */
-@container k2-cell (max-width: 219.98px) {
-  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meta) {
+   between its words (a chip too) instead of being cut. The query measures inside the cell's edge of 2 × 16 px. */
+@container k2-cell (max-width: 187.98px) {
+  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meter, .k2-cell-meta) {
     grid-column: 1 / -1;
   }
   .k2-ui .k2-cell > .k2-cell-value {
@@ -766,25 +766,59 @@
     flex-wrap: wrap;
   }
 }
-/* Four key numbers or more stand two by two where a row of them would give each less than 220 px (a pane under
-   880 px: beside a side column, a detail, a tablet), so a big number keeps its 18 px; the phone does so for every count. */
+/* Key numbers never stand one under the other as tall cells: two stand side by side down to the phone, three while
+   each gets 150 px (below that see the phone's rule: two, then the third as one line across); four stand two by two
+   where a row would give each less than 220 px (a pane under 880 px: beside a side column, a detail, a tablet, the
+   phone), so a big number keeps its 18 px; five and six stand in rows of three. */
 @container k2-pane (max-width: 879.98px) {
   .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) {
     grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell + .k2-cell {
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell:nth-child(odd) {
     border-left: 0;
-  }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell:nth-child(even) {
-    border-left: var(--k2-hairline);
   }
   .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell:nth-child(n + 3) {
     border-top: var(--k2-hairline);
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell:nth-child(odd):last-child {
-    grid-column: 1 / -1;
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) > .k2-cell {
+    border-top: 0;
+    border-left: var(--k2-hairline);
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) > .k2-cell:nth-child(3n + 1) {
+    border-left: 0;
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) > .k2-cell:nth-child(n + 4) {
+    border-top: var(--k2-hairline);
+  }
+}
+/* a value with a limit: a thin bar under it, in the cell's colour, amber from the limit on (rule 3) */
+.k2-ui .k2-cell > .k2-cell-meter {
+  grid-column: 2 / -1;
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n200);
+  overflow: hidden;
+}
+.k2-ui .k2-cell > .k2-cell-meter > i {
+  display: block;
+  height: 100%;
+  width: var(--k2-p);
+  border-radius: var(--k2-r-round);
+  background: var(--k2-c-ink, var(--k2-c, var(--k2-app, var(--k2-blue))));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-cell > .k2-cell-meter > i,
+.k2-ui.dark .k2-cell > .k2-cell-meter > i,
+.k2-ui[data-theme="dark"] .k2-cell > .k2-cell-meter > i {
+  background: var(--k2-c-ink-dark, var(--k2-c, var(--k2-app, var(--k2-blue))));
+}
+.k2-ui .k2-cell > .k2-cell-meter[data-full] > i {
+  background: var(--k2-warn-dot);
 }
 .k2-ui .k2-cell > .k2-icon:first-child {
   color: var(--k2-c, var(--k2-subtle));
@@ -2904,9 +2938,9 @@
 .k2-ui .k2-sec > .k2-field[data-setting] + .k2-field[data-setting] {
   margin-top: 0;
 }
-/* By the width of its pane, not of the window: below 600 px of pane the name would get less than its room beside the
-   300 px column (a settings pane beside a sidebar and a side column at 800 px of window), so the value goes under it. */
-@container k2-pane (max-width: 599px) {
+/* By the width of its pane, not of the window: below 640 px of pane the name would get less than its 240 px beside the
+   300 px column (a settings pane beside a sidebar and a side column), so the value goes under it. */
+@container k2-pane (max-width: 639.98px) {
   .k2-ui .k2-field[data-setting] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
@@ -2928,6 +2962,37 @@
   }
   .k2-ui .k2-field[data-setting][data-action] > :is(.k2-field-label, .k2-field-action) {
     align-self: start;
+  }
+}
+
+/* A short control (a switch, a box, a number with its unit, a short selection) stays beside the name where the
+   settings stand one under the other: the name and its hint on the left, the control at the end of the name's line;
+   a short field takes 128 px there. */
+@container k2-pane (max-width: 639.98px) {
+  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)):not([data-action]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "label control" "message control" "was was";
+  }
+  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)):not([data-action]) > .k2-field-label {
+    align-self: end;
+  }
+  .k2-ui .k2-field[data-setting][data-compact]:not([data-action]) > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+    width: 128px;
+  }
+}
+@container k2-pane (max-width: 799.98px) {
+  .k2-ui .k2-field[data-setting][data-action]:is([data-compact], :has(> .k2-choice)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "label control" "message control" "action was";
+  }
+  .k2-ui .k2-field[data-setting][data-action]:is([data-compact], :has(> .k2-choice)) > .k2-field-label {
+    align-self: end;
+  }
+  .k2-ui .k2-field[data-setting][data-action]:is([data-compact], :has(> .k2-choice)) > .k2-field-action {
+    justify-self: start;
+  }
+  .k2-ui .k2-field[data-setting][data-action][data-compact] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+    width: 128px;
   }
 }
 
@@ -4391,6 +4456,17 @@
   .k2-ui:has(.k2-bar[data-selecting]) .k2-pane > .k2-scroll {
     margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
+  /* settings are a form: the floating main action ("Speichern") covers none of their fields, so a column of settings
+     ends above it (its 48 px, its distance of 16, a gap of 8 and the safe area) */
+  .k2-ui:has(.k2-fab)
+    .k2-pane
+    > .k2-scroll:has(
+      > .k2-field[data-setting],
+      > .k2-sec > .k2-field[data-setting],
+      > .k2-split > .k2-pane > .k2-scroll > .k2-sec > .k2-field[data-setting]
+    ) {
+    margin-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;
@@ -4465,31 +4541,40 @@
   .k2-ui .k2-cgrip {
     display: none;
   }
-  /* Key numbers stand two by two in a narrow column and on the phone, as dense as the mockup: four cells in two rows,
-     three as two and one across, two side by side. A line between the two of a row, one between the rows. */
-  .k2-ui .k2-cells {
+  /* Three key numbers need 150 px each to stand side by side with their values whole; below that two stand side by
+     side and the third becomes one line across, its label on the left and its value at the end, so no tall cell stands
+     alone in a row. */
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)):not(:has(> .k2-cell:nth-child(4))) {
     grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .k2-ui .k2-cell + .k2-cell {
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)):not(:has(> .k2-cell:nth-child(4))) > .k2-cell:nth-child(3) {
+    grid-column: 1 / -1;
+    grid-template-columns: 16px minmax(0, 1fr) auto auto;
+    padding-block: 10px;
     border-left: 0;
-  }
-  .k2-ui .k2-cell:nth-child(even) {
-    border-left: var(--k2-hairline);
-  }
-  .k2-ui .k2-cell:nth-child(n + 3) {
     border-top: var(--k2-hairline);
   }
-  .k2-ui .k2-cell:nth-child(odd):last-child {
-    grid-column: 1 / -1;
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)):not(:has(> .k2-cell:nth-child(4))) > .k2-cell:nth-child(3) > .k2-cell-value {
+    grid-row: 1;
+    grid-column: 3;
+    margin-top: 0;
+    text-align: right;
   }
-  /* in a cell half as wide the value and its line take the cell's whole width, under the label with its symbol, so a
-     big number or an amount stays whole */
-  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meta) {
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)):not(:has(> .k2-cell:nth-child(4))) > .k2-cell:nth-child(3) > .k2-cell-go {
+    grid-row: 1;
+    grid-column: 4;
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)):not(:has(> .k2-cell:nth-child(4))) > .k2-cell:nth-child(3) > :is(.k2-cell-meter, .k2-cell-meta) {
+    grid-column: 2 / -1;
+  }
+  /* in a narrow column and on the phone key numbers keep their rows (see above): the value and its line take the
+     cell's whole width under the label with its symbol, so a big number or an amount stays whole */
+  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meter, .k2-cell-meta) {
     grid-column: 1 / -1;
   }
   /* a value longer than its half cell breaks between its words, a chip too, instead of being cut; all values of the
-     block stand in 14 px, also the one that spans the row alone, so the block keeps one size */
+     block stand in 14 px, so the block keeps one size */
   .k2-ui .k2-cell > .k2-cell-value {
     white-space: normal;
     font: var(--k2-t-body);

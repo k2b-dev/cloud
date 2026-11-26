@@ -454,36 +454,44 @@ test("the sidebar shows what the storage uses, as a meter with its words", async
   });
 });
 
-test("a setting goes to one column by the width of its pane, so its name never runs into its value (review #4223)", async () => {
-  // at 800 px of window the settings pane is narrow beside the sidebar and the side column, while the window is no phone;
-  // at 1240 and 1300 the pane is about 630 and 690 px: room for name and value, but not for a deed beside them too
-  // one page, its window set to each width in turn: the layout follows the pane's width alone
+test("a setting keeps 240 px for its name beside its value, goes to one column below a pane of 640 px, and a short value stays beside its name on the phone (review A)", async () => {
+  // one page, its window set to each width in turn: the layout follows the pane's width alone. At 800 px of window the
+  // settings pane is narrow beside the sidebar and the side column; at 1240 and 1300 it is about 630 and 690 px.
   await withPage(
     "settings",
     async (page) => {
-      for (const width of [800, 1024, 1240, 1300, 1440]) {
+      for (const width of [390, 800, 1024, 1240, 1300, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await settled(page);
-        const crossed = await page.evaluate(() =>
-          [...document.querySelectorAll("[data-k2-part='Setting']")]
-            .map((setting) => {
-              const label = setting.querySelector<HTMLElement>(".k2-field-label")!;
-              const control = setting
-                .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action)")!
-                .getBoundingClientRect();
-              const box = label.getBoundingClientRect();
-              const beside = control.left > box.left;
-              // beside its value a name keeps the room of a short name in one line ("Angemeldet bleiben")
-              const cramped = beside && (box.width < 160 || box.height > 20);
-              return {
-                name: label.textContent,
-                bad: cramped || label.scrollWidth > label.clientWidth + 1 || (beside && box.right > control.left),
-              };
-            })
-            .filter((setting) => setting.bad)
-            .map((setting) => setting.name),
+        const found = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>("[data-k2-part='Setting']")].map((setting) => {
+            const label = setting.querySelector<HTMLElement>(".k2-field-label")!;
+            const control = setting
+              .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action)")!
+              .getBoundingClientRect();
+            const box = label.getBoundingClientRect();
+            const beside = control.left > box.right - 1 && control.top < box.bottom;
+            const short = setting.hasAttribute("data-compact") || !!setting.querySelector(":scope > .k2-choice");
+            return {
+              name: label.textContent ?? "",
+              short,
+              beside,
+              // beside a wide value a name keeps 240 px; beside a short one it keeps one line
+              cramped: beside && ((!short && box.width < 240) || box.height > 20),
+              crossed: label.scrollWidth > label.clientWidth + 1 || (beside && box.right > control.left),
+            };
+          }),
         );
-        expect({ width, crossed }).toEqual({ width, crossed: [] });
+        expect({ width, bad: found.filter((setting) => setting.cramped || setting.crossed).map((setting) => setting.name) }).toEqual({
+          width,
+          bad: [],
+        });
+        // on the phone a short value (a switch, a number with its unit) stays beside its name; a wide one goes under it
+        if (width === 390) {
+          expect(found.filter((setting) => setting.short && !setting.beside).map((setting) => setting.name)).toEqual([]);
+          expect(found.filter((setting) => !setting.short && setting.beside).map((setting) => setting.name)).toEqual([]);
+          expect(found.filter((setting) => setting.short).length).toBeGreaterThanOrEqual(3);
+        }
       }
     },
     800,
@@ -533,7 +541,7 @@ test("a setting stands with its value beside its name, and an unsaved change say
         beside: control.left > label.right,
         width: Math.round(control.width),
         was: was?.textContent,
-        under: was ? was.getBoundingClientRect().top >= control.bottom : false,
+        under: was ? was.getBoundingClientRect().top >= control.bottom - 0.5 : false,
       };
     });
     expect(found).toEqual({ beside: true, width: 300, was: "geändert · vorher 12 Std.", under: true });
@@ -560,15 +568,17 @@ test("a setting stands with its value beside its name, and an unsaved change say
   await withPage(
     "settings",
     async (page) => {
-      const found = await page
-        .locator("[data-k2-part='Setting']")
-        .first()
-        .evaluate((element) => ({
-          under:
-            element.querySelector(".k2-input")!.getBoundingClientRect().top >=
-            element.querySelector(".k2-field-label")!.getBoundingClientRect().bottom,
-        }));
-      expect(found).toEqual({ under: true });
+      // on the phone a wide value (an address) goes under its name; a short one (hours) stays beside it
+      const under = (name: string) =>
+        page
+          .locator("[data-k2-part='Setting']", { hasText: name })
+          .first()
+          .evaluate(
+            (element) =>
+              element.querySelector(".k2-input")!.getBoundingClientRect().top >=
+              element.querySelector(".k2-field-label")!.getBoundingClientRect().bottom,
+          );
+      expect({ address: await under("Adresse"), hours: await under("Angemeldet bleiben") }).toEqual({ address: true, hours: false });
     },
     390,
   );
@@ -641,8 +651,8 @@ test("key numbers in a pane of about 600 px beside a side column stay whole: fou
   });
 });
 
-test("key numbers stand two by two on the phone, a third alone across; big numbers and long labels stay whole", async () => {
-  for (const width of [390, 1440])
+test("key numbers never stand alone as a tall cell: four in a row or two by two, three in a row or two and a line; values whole (review A)", async () => {
+  for (const width of [390, 1024, 1440])
     await withPage(
       "cells",
       async (page) => {
@@ -650,10 +660,22 @@ test("key numbers stand two by two on the phone, a third alone across; big numbe
           [...document.querySelectorAll(".k2-cells")].map((cells) => {
             const items = [...cells.querySelectorAll<HTMLElement>(":scope > .k2-cell")];
             const boxes = items.map((cell) => cell.getBoundingClientRect());
+            const rows = new Map<number, HTMLElement[]>();
+            items.forEach((cell, index) =>
+              rows.set(Math.round(boxes[index]!.top), [...(rows.get(Math.round(boxes[index]!.top)) ?? []), cell]),
+            );
             return {
-              rows: new Set(boxes.map((box) => Math.round(box.top))).size,
+              rows: rows.size,
               widths: boxes.map((box) => Math.round(box.width)),
-              // the values that are cut: none
+              // a cell alone in its row is one line: its value stands on the line of its label
+              alone: [...rows.values()]
+                .filter((row) => row.length === 1)
+                .map((row) => {
+                  const cell = row[0]!;
+                  const label = cell.querySelector(".k2-cell-label")!.getBoundingClientRect();
+                  const value = cell.querySelector(".k2-cell-value")!.getBoundingClientRect();
+                  return Math.abs(label.top + label.height / 2 - (value.top + value.height / 2)) <= 4;
+                }),
               values: items
                 .map((cell) => cell.querySelector<HTMLElement>(".k2-cell-value")!)
                 .filter((value) => value.scrollWidth > value.clientWidth + 1)
@@ -661,14 +683,18 @@ test("key numbers stand two by two on the phone, a third alone across; big numbe
             };
           }),
         );
+        const [four, three] = found;
         if (width === 390) {
-          const [four, three] = found;
+          // two by two, equal; two and the third as one line across
           expect(four!.rows).toBe(2);
           expect(new Set(four!.widths).size).toBe(1);
           expect(three!.rows).toBe(2);
-          // the third takes the whole second row
-          expect(three!.widths[2]).toBe(three!.widths[0]! + three!.widths[1]!);
-        } else for (const cells of found) expect(cells.rows).toBe(1);
+          expect(three!.alone).toEqual([true]);
+        } else {
+          // side by side: each cell of four gets at least its 220 px
+          expect([four!.rows, three!.rows]).toEqual([1, 1]);
+          expect(Math.min(...four!.widths)).toBeGreaterThanOrEqual(220);
+        }
         for (const cells of found) expect(cells.values).toEqual([]);
         // a value is the cell's statement (18 px) where cells stand side by side, 14 px in half a phone
         expect(
@@ -677,6 +703,12 @@ test("key numbers stand two by two on the phone, a third alone across; big numbe
             .first()
             .evaluate((value) => getComputedStyle(value).fontSize),
         ).toBe(width === 390 ? "14px" : "18px");
+        // a value with a limit has its bar: 38,2 of 100 fill 38 % of it
+        const meter = await page.locator(".k2-cell-meter").evaluate((bar) => ({
+          role: bar.getAttribute("role"),
+          share: Math.round((bar.firstElementChild!.getBoundingClientRect().width / bar.getBoundingClientRect().width) * 100),
+        }));
+        expect(meter).toEqual({ role: "meter", share: 38 });
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },

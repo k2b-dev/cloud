@@ -179,11 +179,12 @@ export default function SigninSettings(props: Props) {
                 hint="Danach muss man sich neu anmelden."
                 was={props.saved ? undefined : "12 Std."}
                 action={{ label: "Auf Standard zurücksetzen", icon: "arrow-back-up" }}
+                compact
               >
                 <Input type="number" value="8" end={<Text type="meta">Std.</Text>} />
               </Setting>
-              <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt.">
-                <Input type="number" value="15" end={<Text type="meta">Min. ohne Eingabe</Text>} />
+              <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt." compact>
+                <Input type="number" value="15" end={<Text type="meta">Min.</Text>} />
               </Setting>
             </Section>
             <Section icon="device-mobile-check" title="App-Freigabe" count="6 Geräte gekoppelt">

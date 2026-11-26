@@ -75,6 +75,11 @@ export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
    * deed coming or going moves nothing.
    */
   action?: Action;
+  /**
+   * The control is short (a number with its unit, a short selection): it stays beside the name also where the
+   * settings stand one under the other, as a switch or a box does on its own.
+   */
+  compact?: boolean;
 };
 
 /**
@@ -84,7 +89,7 @@ export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
  */
 export const Setting = (props: SettingProps) => <FieldFrame field={props} setting />;
 
-const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action }; setting?: boolean }) => {
+const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action; compact?: boolean }; setting?: boolean }) => {
   const props = frame.field;
   const t = useSettingMessages();
   const control = createUniqueId();
@@ -169,6 +174,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-setting={setting}
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
+      data-compact={props.compact ? "" : undefined}
       role="group"
       aria-labelledby={label}
     >
@@ -187,6 +193,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-setting={setting}
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
+      data-compact={props.compact ? "" : undefined}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
@@ -204,6 +211,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-setting={setting}
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
+      data-compact={props.compact ? "" : undefined}
     >
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}

@@ -79,9 +79,9 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
       notice: [".k2-notice", "0,101 390x137"],
       // the key figures stand two by two on the phone (lane C), so the record is shorter by a row of cells
-      cells: [".k2-cells", "0,238 390x236"],
-      section: [".k2-sec", "0,474 390x245"],
-      todo: [".k2-sec .k2-row", "0,526 390x92"],
+      cells: [".k2-cells", "0,238 390x208"],
+      section: [".k2-sec", "0,446 390x245"],
+      todo: [".k2-sec .k2-row", "0,498 390x92"],
     },
   },
   // akte-einlieferungen.html

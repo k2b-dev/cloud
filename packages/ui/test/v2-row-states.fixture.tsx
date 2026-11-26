@@ -98,7 +98,7 @@ export const CellsScreen = (props: { narrow?: boolean }) => {
         />
       </Cells>
       <Cells>
-        <Cells.Cell icon="database" label="Speicher" value="38,2 von 100 GB" meta="Werkstatt" />
+        <Cells.Cell icon="database" label="Speicher" value="38,2 von 100 GB" meter={{ value: 38.2, of: 100 }} meta="Werkstatt" />
         <Cells.Cell icon="users" label="Konten" value="192" meta="23 Gäste" />
         <Cells.Cell icon="clock" label="Letzte Sicherung" value={<Chip status="ok">heute 03:00</Chip>} meta="nächste 03:00" />
       </Cells>
