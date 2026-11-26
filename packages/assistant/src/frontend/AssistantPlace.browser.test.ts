@@ -191,7 +191,7 @@ const propsOf = (scenario: Scenario, url: URL) => {
     initialPlace: answer && answer !== "fail" ? answer : null,
     initialPlaceChats: { total: placeChats.length, items: placeChats },
     initialPlacesFilter: Boolean(scenario.placesFilter),
-    initialCounts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 } },
+    initialCounts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 }, hasArchived: false },
     userId: "user123",
     cloudUrl: assets.url.origin,
     status: {
@@ -394,7 +394,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       return route.fulfill({
         json: {
           conversations: chats,
-          counts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 } },
+          counts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 }, hasArchived: false },
           placeChats: { total: placeChats.length, items: placeChats },
           projects: [],
           doneCount: 0,

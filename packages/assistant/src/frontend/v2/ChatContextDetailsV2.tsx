@@ -20,6 +20,27 @@ const kindIcon: Record<FileKind, string> = {
 };
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
+/** A memory up to this length stands whole (at most two lines on a phone); a longer one is cut over three lines. */
+const MEMORY_WHOLE = 90;
+/** How much of a long memory stands as its row's title before the rest follows on two cut lines. */
+const MEMORY_HEAD = 48;
+/**
+ * A memory as row lines: one up to `MEMORY_WHOLE` letters stands whole; a long one becomes a row of three lines (its head up to the first
+ * clause or the last word within `MEMORY_HEAD` letters, then the rest over two lines), each cut with "…".
+ * k2b-ui gap: only a Row of three lines cuts its lines; one or two lines wrap without bound, where v1 clamped a memory.
+ */
+export const memoryLines = (content: string): [string] | [string, string, string] => {
+  const text = content.trim();
+  if (text.length <= MEMORY_WHOLE) return [text];
+  const clause = text.slice(0, MEMORY_HEAD).search(/[.;:!?](\s|$)/);
+  const space = text.lastIndexOf(" ", MEMORY_HEAD);
+  const cut = clause > 0 ? clause + 1 : space > 0 ? space : MEMORY_HEAD;
+  const rest = text.slice(cut).trim();
+  const middle = rest.lastIndexOf(" ", Math.ceil(rest.length / 2));
+  const split = middle > 0 ? middle : Math.ceil(rest.length / 2);
+  return [text.slice(0, cut).trim(), rest.slice(0, split).trim(), rest.slice(split).trim()];
+};
+
 /**
  * "Kontext" of a chat on v2, the tab "In diesem Chat" opens: the chat's Project with its instructions, knowledge, files
  * and references, the Skills it used, what it remembered, and its secrets. Sections of rows, each row opening what it
@@ -110,7 +131,7 @@ export default function ChatContextDetailsV2(props: {
       <Show when={props.snapshot.memories.length > 0}>
         <Section icon="bulb" title={copy().memoriesFromChat} count={props.snapshot.memories.length}>
           <List label={copy().memoriesFromChat}>
-            <For each={props.snapshot.memories}>{(memory) => <Row icon="bulb" lines={[memory.content]} />}</For>
+            <For each={props.snapshot.memories}>{(memory) => <Row icon="bulb" lines={memoryLines(memory.content)} />}</For>
           </List>
         </Section>
       </Show>

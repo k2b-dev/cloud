@@ -421,9 +421,10 @@ export function AssistantChatContextPlaces(props: {
           </Button>
         </div>
       </Show>
-      {/* Beside the timeline only with something to show: results, sources or files. An empty box ("Noch keine") would
-          take a column for nothing; the chat's Project is named by the page's head. */}
-      <div class="assistant-context-boxcol" data-empty={contextEmpty() ? "" : undefined}>
+      {/* On the v2 page (no head row here) the column stands beside the timeline only with something to show: results,
+          sources or files; the chat's Project is named by the page's head. v1 keeps its column as it was, so its head
+          row and column never swap places while a chat streams. */}
+      <div class="assistant-context-boxcol" data-empty={props.head === false && contextEmpty() ? "" : undefined}>
         <AssistantChatContextBox
           variant="island"
           state={props.state}

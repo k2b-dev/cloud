@@ -215,6 +215,9 @@ export function ChatWorkspace(props: {
         .filter(Boolean)
         .join(" · ");
     }
+    // On the v2 page the context tab's sections say what it holds; a line listing all kinds would name things the chat
+    // does not have.
+    if (tab.kind === "context" && tab.category === "context" && props.contextV2) return null;
     if (tab.kind === "context") return w().metaContext({ category: tab.category });
     return null;
   };

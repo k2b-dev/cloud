@@ -166,7 +166,7 @@ const request = (href = "https://cloud.example.test/app/assistant?project=projec
 test("missing or revoked selected project returns opaque HTML404 despite a stale sidebar", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [{ ...project, id: project.shortId }],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -188,7 +188,7 @@ test("missing or revoked selected project returns opaque HTML404 despite a stale
 test("authorized project omitted by sidebar cap remains in the rendered workspace with public IDs", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -275,7 +275,7 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
     setSystemTime(new Date("2026-11-07T09:00:00Z"));
     spies.push(
       spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-        counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+        counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
         projects: [],
         doneCount: 0,
         questions: { items: [], count: 0 },
@@ -306,7 +306,7 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
 test("?approvals=1 renders Waiting for you without selecting a chat, and the row stays when nothing waits", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -369,7 +369,7 @@ const mockCodeQueries = (items: unknown[], options: { fail?: boolean } = {}) => 
 test("My apps & automations shows only for a person with Code, and ?code=1 seeds their list from the server", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -412,7 +412,7 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
 test("an unknown Code answer keeps the entry, and the list shows its error with a way to retry", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -436,7 +436,7 @@ test("an unknown Code answer keeps the entry, and the list shows its error with 
 test("an existing chat still loads at its old address under the name Gustav", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -465,7 +465,7 @@ test("an existing chat still loads at its old address under the name Gustav", as
 test("a chat with stored tabs and no tab in its address opens on the chat: the server draws no detail", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -500,7 +500,7 @@ test("a chat with stored tabs and no tab in its address opens on the chat: the s
 test("the panel starts without selecting an unrelated recent chat and renders no second shell", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -532,7 +532,7 @@ test("the panel starts without selecting an unrelated recent chat and renders no
 test("a panel conversation selector does not bypass ownership or fall back to another chat", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -550,7 +550,7 @@ test("a panel conversation selector does not bypass ownership or fall back to an
 test("the panel names the place's Code from the first paint, through the place's own reader", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -650,7 +650,7 @@ const mailCatalog = (owners: string[]) =>
 const quietSidebar = () =>
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -771,7 +771,7 @@ test("Waiting for you renders the row's own list: versions from the shared quest
   };
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [version, automation], count: 2 },
@@ -802,7 +802,7 @@ test("Waiting for you renders the row's own list: versions from the shared quest
 test("live dictation availability reaches the composer only when the platform allows it for this person", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },

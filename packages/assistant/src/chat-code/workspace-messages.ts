@@ -37,7 +37,7 @@ export const workspaceMessages = i18n.define({
         ({
           files: "Results, files, sources, and context of this chat",
           sources: "Pages, searches, and Cloud items this chat read",
-          context: "Project, skills, memories, routines, and secrets",
+          context: "Project, skills, memories, and secrets",
           apps: "Studio apps and runs of this chat",
           knowledge: "Knowledge of the Project",
           tasks: "Routines of this chat",
@@ -74,7 +74,7 @@ export const workspaceMessages = i18n.define({
         ({
           files: "Ergebnisse, Dateien, Quellen und Kontext dieses Chats",
           sources: "Seiten, Suchen und Cloud-Einträge, die dieser Chat gelesen hat",
-          context: "Projekt, Skills, Erinnerungen, Routinen und Secrets",
+          context: "Projekt, Skills, Erinnerungen und Secrets",
           apps: "Studio-Apps und Läufe dieses Chats",
           knowledge: "Wissen des Projekts",
           tasks: "Routinen dieses Chats",

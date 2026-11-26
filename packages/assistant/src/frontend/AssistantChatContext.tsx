@@ -16,7 +16,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, lazy, onCleanup, Show, Suspense } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
@@ -54,7 +54,9 @@ import { type AssistantLiveHub, type AssistantLiveInvalidation, matchesAssistant
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { formatDictationTimestamp } from "./dictation-files";
 import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
-import ChatContextDetailsV2 from "./v2/ChatContextDetailsV2";
+
+/** The v2 page's context tab loads its v2 rows on demand, so v1's panel never carries @k2b/ui/v2. */
+const ChatContextDetailsV2 = lazy(() => import("./v2/ChatContextDetailsV2"));
 
 export { splitAssistantConversationSources } from "./assistant-context";
 
@@ -740,12 +742,14 @@ export function AssistantChatContextContent(
     return (
       <Show when={state.snapshot()}>
         {(snapshot) => (
-          <ChatContextDetailsV2
-            snapshot={snapshot()}
-            project={props.project ?? null}
-            state={state}
-            actions={actions(props.onOpenView ?? (() => undefined))}
-          />
+          <Suspense>
+            <ChatContextDetailsV2
+              snapshot={snapshot()}
+              project={props.project ?? null}
+              state={state}
+              actions={actions(props.onOpenView ?? (() => undefined))}
+            />
+          </Suspense>
         )}
       </Show>
     );

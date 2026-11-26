@@ -356,7 +356,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   const liveDictation = createLiveDictationSource({ app: "assistant" });
   const canUseComposer = () => props.status.enabled && props.status.options.length > 0;
   const modelState = (): AiModelChooserState => ({ status: "ready", models: props.status });
-  const [modelChoice, setModelChoice] = createSignal<AiModelRequest | null>(null);
+  const [modelChoice] = createSignal<AiModelRequest | null>(null);
   const selectedModel = createMemo<AiModelRequest>(() => {
     const explicit = modelChoice();
     if (explicit) return explicit;

@@ -79,12 +79,19 @@ const contextOf = (chatId: string) => ({
   sourceCount: 0,
   sourceCursor: null,
   skills: [],
-  memories: [],
+  memories: [
+    { id: "mem-1", content: "Rechnungen von Steinwerk Nord immer gegen das Angebot prüfen." },
+    {
+      id: "mem-2",
+      content:
+        "Bei Abweichungen zwischen Rechnung und Angebot zuerst die Montagestunden, dann die Anfahrt und zuletzt Materialpreise vergleichen; Rückfragen an Lieferanten freundlich und kurz formulieren, mit Rechnungsnummer, Datum des Angebots, genauer Position und dem Betrag der Abweichung, und nie ohne Rücksprache mit Mira einen Abzug ankündigen, auch wenn die Abweichung eindeutig ist und der Lieferant schon öfter falsch abgerechnet hat.",
+    },
+  ],
   runCount: 0,
   runs: [],
 });
 
-type Scene = { state?: AssistantV2FixtureState; open?: boolean; waiting?: boolean; tabs?: boolean };
+type Scene = { state?: AssistantV2FixtureState; open?: boolean; waiting?: boolean; tabs?: boolean; archived?: boolean };
 /** A web page the person left open beside the chat, as the server stores the chat's tabs. */
 const storedTabs = (chatId: string) => ({
   chatId,
@@ -125,6 +132,12 @@ const propsOf = (scene: Scene, url: URL) => {
     renderedAt: FIXTURE_NOW,
     initialLiveCursor: "s6t.cloud-live-core.0",
     initialConversations: conversations,
+    initialCounts: {
+      unread: 0,
+      needsAttention: 0,
+      places: { total: state === "empty" ? 0 : FIXTURE_PLACE_CHATS.length, unread: 0, needsAttention: 0 },
+      hasArchived: Boolean(scene.archived),
+    },
     initialDoneCount: conversations.filter((conversation) => conversation.isDone).length,
     // The server lists at most 100 open chats and says when more exist (AI_SIDEBAR_CONVERSATIONS_MAX).
     initialMoreConversations: state === "huge",
@@ -349,7 +362,12 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
       return route.fulfill({
         json: {
           conversations,
-          counts: { unread: 0, needsAttention: 0, places: { total: FIXTURE_PLACE_CHATS.length, unread: 0, needsAttention: 0 } },
+          counts: {
+            unread: 0,
+            needsAttention: 0,
+            places: { total: FIXTURE_PLACE_CHATS.length, unread: 0, needsAttention: 0 },
+            hasArchived: false,
+          },
           placeChats: state === "empty" ? { total: 0, items: [] } : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
           projects: fixtureProjects(state),
           doneCount: conversations.filter((conversation) => conversation.isDone).length,
@@ -639,6 +657,10 @@ describe("Assistant on v2", () => {
       );
       expect(seen).toBe(1);
       expect(await detail.locator('[data-k2-part="Row"]', { hasText: "Projektanweisungen" }).count()).toBe(1);
+      // A long memory keeps its row short, as v1 clamped it: at most three lines of text.
+      const longMemory = detail.locator('[data-k2-part="Row"]', { hasText: "Bei Abweichungen" });
+      await longMemory.waitFor();
+      expect((await longMemory.boundingBox())?.height ?? 0).toBeLessThanOrEqual(80);
       await shoot(page, "390-in-this-chat");
       await back.getByRole("button").or(back.getByRole("link")).first().click();
       await page.locator('[data-k2-part="Pane"][data-detail]').waitFor({ state: "detached" });
@@ -648,6 +670,19 @@ describe("Assistant on v2", () => {
       expect(errors).toEqual([]);
     } finally {
       await context.close();
+    }
+  }, 60_000);
+
+  test("a person with only archived chats keeps All chats in the sidebar; a person without any chat does not get it", async () => {
+    for (const archived of [true, false]) {
+      const { context, page, errors } = await open(wide, "/app/assistant", { state: "empty", archived });
+      try {
+        const entry = page.locator('[data-k2-part="Nav"]').getByText("Alle Chats", { exact: true });
+        expect(await entry.count()).toBe(archived ? 1 : 0);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
     }
   }, 60_000);
 });

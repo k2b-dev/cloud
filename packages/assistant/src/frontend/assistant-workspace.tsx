@@ -402,7 +402,12 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     initial: {
       source: "/api/assistant/workspace/sidebar",
       data: {
-        counts: props.initialCounts ?? { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+        counts: props.initialCounts ?? {
+          unread: 0,
+          needsAttention: 0,
+          places: { total: 0, unread: 0, needsAttention: 0 },
+          hasArchived: false,
+        },
         conversations: props.initialConversations,
         projects: props.projects,
         doneCount: props.initialDoneCount,
