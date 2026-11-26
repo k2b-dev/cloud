@@ -10,64 +10,41 @@ import { join, resolve } from "node:path";
 // Each v2 runtime export is one island here, built alone and all together the way an app builds its islands
 // (production, code splitting, minified); the difference of their static closures is the coupling.
 //
-// The allowlist holds the coupling measured on 2026-11-26 (d4f6ceee6f) in KiB with about 10 % headroom, so ordinary
-// work on a coupled file does not touch it. It only shrinks: split a file along its heavy imports, and the entries of
-// the exports that no longer grow must go (the test says which). Every export not listed may grow by at most
-// THRESHOLD bytes, so no new coupling comes in.
+// The four files that mix light and heavy exports (MIXED) are only reported for now: open primitive PRs work in them,
+// and each would need an allowlist entry for every export it adds. When a file is split along its heavy imports, the
+// move PR removes it from MIXED, and its exports follow the rules below.
+//
+// Every other export may grow by at most THRESHOLD bytes beside the others, so no new coupling comes in. The
+// allowlist holds the coupling measured on 2026-11-26 (d4f6ceee6f) in KiB with about 10 % headroom, so ordinary work
+// does not touch it. It only shrinks: an entry whose export no longer grows, or no longer exists, fails until it is
+// removed.
 
 const v2 = resolve(import.meta.dir, "index.ts");
 const THRESHOLD = 2048;
+const MIXED = new Set(["./components", "./content", "./controls", "./layout"]);
 // export → most KiB its island may grow beside the others
 const coupled: Record<string, number> = {
   Avatar: 24,
-  Band: 485,
-  Bar: 485,
   Button: 17,
-  Canvas: 485,
-  Cells: 486,
-  Check: 380,
   Chip: 10,
-  Choice: 379,
   confirm: 98,
-  DateInput: 148,
   DatePicker: 22,
   Dialog: 98,
-  Digest: 523,
   Empty: 19,
-  Facts: 458,
   Failed: 13,
-  Field: 382,
   FilterBar: 108,
   Group: 18,
   Icon: 30,
-  Inline: 483,
-  Input: 373,
-  List: 481,
   ListOrder: 350,
   Loading: 29,
   Lookup: 28,
   Menu: 27,
-  Nav: 362,
-  Notice: 521,
-  Pane: 486,
-  Path: 538,
   Popover: 68,
   Progress: 25,
-  Prose: 405,
-  RecordHead: 522,
-  Row: 459,
   Section: 18,
-  Select: 212,
-  StatusRow: 510,
-  Steps: 538,
-  Table: 428,
-  Tabs: 365,
-  Text: 477,
-  Tiles: 485,
   useLocale: 20,
   useToast: 56,
   viewIcon: 533,
-  Workspace: 291,
 };
 
 const work = await mkdtemp(join(tmpdir(), "k2-v2-island-chunks-"));
@@ -138,6 +115,12 @@ test("a v2 export's island loads no more beside the other islands of an app than
   const exports = Object.values(names).find((output) => output.entryPoint?.endsWith("exports.ts"))?.exports ?? [];
   expect(exports.length).toBeGreaterThan(40);
 
+  // the file each export comes from, as the barrel names it
+  const owner = new Map<string, string>();
+  for (const [, kind, list, from] of (await Bun.file(v2).text()).matchAll(/export\s*(type\s*)?\{([^}]*)\}\s*from\s*"([^"]+)"/g))
+    if (!kind) for (const part of list!.split(",")) if (part.trim() && !part.trim().startsWith("type ")) owner.set(part.trim(), from!);
+  const mixed = (name: string) => MIXED.has(owner.get(name) ?? "");
+
   const islands = exports.map((name) => {
     const file = join(work, `${name}.island.ts`);
     return { name, file };
@@ -155,21 +138,28 @@ test("a v2 export's island loads no more beside the other islands of an app than
     growth[name] = closure(together, `${name}.island`) - closure(alone, `${name}.island`);
   }
 
+  const report = Object.entries(growth)
+    .filter(([name, bytes]) => mixed(name) && bytes > THRESHOLD)
+    .map(([name, bytes]) => `${name} +${Math.ceil(bytes / 1024)}`);
+  if (report.length) console.info(`v2 exports of mixed files that grow beside the others (KiB): ${report.join(", ")}`);
   const over = Object.entries(growth)
-    .filter(([name, bytes]) => bytes > (coupled[name] === undefined ? THRESHOLD : coupled[name] * 1024))
+    .filter(([name, bytes]) => !mixed(name) && bytes > (coupled[name] === undefined ? THRESHOLD : coupled[name] * 1024))
     .map(
       ([name, bytes]) => `${name}: +${(bytes / 1024).toFixed(1)} KiB beside the others (allowed ${coupled[name] ?? THRESHOLD / 1024} KiB)`,
     );
-  // an entry whose coupling is gone, or whose export is gone, must go
+  // an entry whose coupling is gone, whose export is gone, or whose export lives in a mixed file, must go
   const loose = Object.keys(coupled)
-    .filter((name) => (growth[name] ?? 0) <= THRESHOLD)
-    .map((name) => `${name}: no longer grows beside the others; remove its entry`);
+    .filter((name) => mixed(name) || (growth[name] ?? 0) <= THRESHOLD)
+    .map(
+      (name) =>
+        `${name}: no entry needed (${mixed(name) ? "a mixed file, only reported" : "no longer grows beside the others"}); remove it`,
+    );
   if (process.env.K2_ISLAND_CHUNKS_REPORT)
     console.log(
       JSON.stringify(
         Object.fromEntries(
           Object.entries(growth)
-            .filter(([, bytes]) => bytes > THRESHOLD)
+            .filter(([name, bytes]) => !mixed(name) && bytes > THRESHOLD)
             .map(([name, bytes]) => [name, Math.ceil(bytes / 1024)]),
         ),
       ),
