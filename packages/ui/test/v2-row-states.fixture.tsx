@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Bar, Button, Canvas, Chip, Facts, FilterBar, Input, List, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import { Bar, Button, Canvas, Chip, Facts, FilterBar, Input, List, Menu, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
 import { defineListQuery, type ListQueryStateOf } from "../src/v2/list-query";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
@@ -177,3 +177,35 @@ export const LongAddressScreen = () => {
     </Workspace>
   );
 };
+
+// The areas of a notebook in a menu, each in its colour: a pale one, a strong one, one with its symbol, an oklch() one
+// the stylesheet cannot work out, and a value that is no colour.
+export const AreasMenuScreen = () => (
+  <Workspace
+    head={
+      <Bar
+        start={<Text weight="strong">Notizbuch</Text>}
+        end={
+          <Menu
+            label="Bereich"
+            items={[
+              { label: "Werkstatt", color: "#fef08a" },
+              { label: "Kunden", color: "#2563eb" },
+              { label: "Einkauf", icon: "shopping-cart", color: "#22c55e" },
+              { label: "Archiv", color: "oklch(0.62 0.17 145)" },
+              { label: "Ohne Farbe", color: "#008f4c;position:fixed;inset:0" },
+            ]}
+          >
+            Bereich
+          </Menu>
+        }
+      />
+    }
+  >
+    <Pane label="Notizen">
+      <Section title="Notizen" count={0}>
+        <List label="Notizen">{[]}</List>
+      </Section>
+    </Pane>
+  </Workspace>
+);
