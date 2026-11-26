@@ -1,11 +1,29 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { swapPage } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { Avatar, Bar, Button, Failed, Inline, Input, type NavProps, Pane, Path, StatusRow, Table, Text, useLocale, useToast } from "@k2b/ui/v2";
+import { useLocale } from "@k2b/ui";
+import {
+  Avatar,
+  Bar,
+  Button,
+  Chip,
+  Failed,
+  Inline,
+  Input,
+  Mark,
+  type NavProps,
+  Pane,
+  Path,
+  StatusRow,
+  Table,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import { keptListHref } from "../../admin-sections";
 import { mailKeptAdminMessages } from "../../kept-admin-messages";
 import { downloadKeptConversations } from "../kept-admin-download";
+import { keptMark } from "./mail-admin-kept-mark";
 
 /** One kept conversation as the list shows it; the page words and formats it, so the first render matches the server. */
 export type MailAdminKeptRow = {
@@ -15,7 +33,8 @@ export type MailAdminKeptRow = {
   mailboxName: string;
   mailboxDeleted: boolean;
   subject: string;
-  sender: { name: string | null; address: string | null };
+  /** The sender's name, else the address, else "Unknown sender". */
+  sender: string;
   /** The newest message: a short date for the cell, the full time for its tooltip. */
   date: { text: string; title: string; iso: string } | null;
   keptBy: string;
@@ -38,9 +57,10 @@ export type MailAdminKeptListProps = {
 const rowKey = (row: MailAdminKeptRow) => `${row.mailboxId}/${row.conversationId}`;
 
 /**
- * Cloud administration › Mail › Kept on v2: the search in the head, how many are kept as the status row, one row per
- * kept conversation that opens its record, and a selection that downloads as one JSON file. The server searches and
- * pages; a search or a page is an address.
+ * Cloud administration › Mail › Kept on v2, after the filtered-table recipe: the search in the head, how many are kept
+ * as the status row, one row of the same shape per kept conversation (its mark, subject, mailbox, sender, who kept it
+ * and since when at the end), and a selection that downloads as one JSON file. The server searches and pages; a
+ * search or a page is an address.
  */
 export default function MailAdminKeptList(props: MailAdminKeptListProps) {
   const locale = useLocale();
@@ -53,11 +73,12 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
     onSuccess: () => toast(t().downloadStarted, { status: "ok" }),
     onError: (error) => toast(error.message, { status: "bad", retry: () => void download.mutate() }),
   });
-  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const lead = () => {
     if (props.total === null) return t().title;
     return props.query ? t().filteredCount({ count: props.rows.length, total: props.total }) : t().count({ count: props.total });
   };
+  // only what is not fine speaks up: conversations whose mailbox is gone live on as Cloud's kept copy alone
+  const orphaned = () => props.rows.filter((row) => row.mailboxDeleted).length;
   const search = (text: string) => void swapPage(keptListHref({ q: text.trim() }));
 
   return (
@@ -102,10 +123,11 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
                   }
                 : undefined
             }
+            filters={orphaned() > 0 ? <Chip status="warn">{t().orphanedCount({ count: orphaned() })}</Chip> : undefined}
             selection={
               selected().length > 0
                 ? {
-                    count: t().selected({ count: number(selected().length) }),
+                    count: t().selected({ count: selected().length }),
                     actions: [
                       {
                         label: t().downloadSelection,
@@ -121,51 +143,76 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
           />
         }
       >
-        <Show when={props.failure === null} fallback={<Failed text={props.failure ?? t().loadFailed} onRetry={() => void swapPage(location.href)} />}>
+        <Show
+          when={props.failure === null}
+          fallback={<Failed text={props.failure ?? t().loadFailed} onRetry={() => void swapPage(location.href)} />}
+        >
           <Table
             label={t().title}
             rows={props.rows}
             rowKey={rowKey}
-            select={{ selected: selected(), onChange: setSelected, all: t().selectAll, row: (row) => t().selectRow({ subject: row.subject }) }}
+            select={{
+              selected: selected(),
+              onChange: setSelected,
+              all: t().selectAll,
+              row: (row) => t().selectRow({ subject: row.subject }),
+            }}
             open={(row) => ({ href: row.href })}
             empty={
               props.query
-                ? { icon: "search-off", text: t().noMatches({ query: props.query }), action: { label: t().clearSearch, icon: "x", href: keptListHref({}) } }
+                ? {
+                    icon: "search-off",
+                    text: t().noMatches({ query: props.query }),
+                    action: { label: t().clearSearch, icon: "x", href: keptListHref({}) },
+                  }
                 : { icon: "lock", text: `${t().empty} ${t().emptyDescription}` }
             }
             phone={(row) => ({
-              lines: [row.subject, `${row.sender.name ?? row.sender.address ?? t().unknownSender} · ${row.mailboxName}`],
-              avatar: { name: row.sender.name ?? row.sender.address ?? "?" },
-              time: row.date?.text,
-              marks: row.mailboxDeleted ? <Text tone="warn">{t().deletedMailbox}</Text> : undefined,
+              mark: keptMark(row.mailboxDeleted),
+              lines: [row.subject, `${row.mailboxName} · ${row.sender}`],
+              time: row.keptSince.text,
+              marks: row.mailboxDeleted ? <Chip status="warn">{t().deletedMailbox}</Chip> : undefined,
             })}
+            // the widths fit beside the admin bar from 1024 px on; below that the table becomes `phone` rows
             columns={[
               {
-                title: t().columnSubject,
-                width: { min: 220, default: 360 },
-                cell: (row) => ({
-                  lines: [
-                    <Text weight="strong">{row.subject}</Text>,
-                    <Show when={row.mailboxDeleted} fallback={row.mailboxName}>
-                      <Text tone="warn">
-                        {row.mailboxName} · {t().deletedMailbox}
-                      </Text>
-                    </Show>,
-                  ],
-                }),
+                title: t().columnConversation,
+                width: { min: 220, default: 320 },
+                cell: (row) => (
+                  <Inline>
+                    <Mark {...keptMark(row.mailboxDeleted)} />
+                    <Text>{row.subject}</Text>
+                  </Inline>
+                ),
+              },
+              {
+                title: t().columnMailbox,
+                width: { min: 130, default: 160 },
+                cell: (row) =>
+                  row.mailboxDeleted ? (
+                    <Inline>
+                      <Text>{row.mailboxName}</Text>
+                      <Chip status="warn">{t().deletedShort}</Chip>
+                    </Inline>
+                  ) : (
+                    row.mailboxName
+                  ),
+                drop: true,
               },
               {
                 title: t().columnSender,
-                width: { min: 180, default: 240 },
-                cell: (row) =>
-                  row.sender.name && row.sender.address
-                    ? { lines: [row.sender.name, <Text muted>{row.sender.address}</Text>] }
-                    : (row.sender.name ?? row.sender.address ?? <Text muted>{t().unknownSender}</Text>),
+                width: { min: 150, default: 190 },
+                cell: (row) => (
+                  <Inline>
+                    <Avatar name={row.sender} decorative />
+                    <Text>{row.sender}</Text>
+                  </Inline>
+                ),
                 drop: true,
               },
               {
                 title: t().columnDate,
-                width: { min: 96, default: 120 },
+                width: { min: 90, default: 110 },
                 cell: (row) =>
                   row.date ? (
                     <time dateTime={row.date.iso} title={row.date.title}>
@@ -178,7 +225,7 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               },
               {
                 title: t().columnKeptBy,
-                width: { min: 150, default: 190 },
+                width: { min: 150, default: 180 },
                 cell: (row) => (
                   <Inline>
                     <Avatar name={row.keptBy} decorative />
@@ -189,13 +236,13 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               },
               {
                 title: t().columnKeptSince,
-                width: { min: 110, default: 130 },
+                width: { min: 100, default: 120 },
+                align: "end",
                 cell: (row) => (
                   <time dateTime={row.keptSince.iso} title={row.keptSince.title}>
                     {row.keptSince.text}
                   </time>
                 ),
-                drop: true,
               },
             ]}
           />

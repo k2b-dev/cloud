@@ -31,7 +31,9 @@ export default ssr<AuthContext>(async (c) => {
     <AdminLayout c={c} title="Mail" ui="v2">
       <MailAdminKeptRecord
         nav={adminNavigation(c, mailAdminSections(locale, "kept"))}
-        record={result?.ok && conversation ? { conversation, history: result.data.history, messageCount: result.data.messageCount } : undefined}
+        record={
+          result?.ok && conversation ? { conversation, history: result.data.history, messageCount: result.data.messageCount } : undefined
+        }
         missing={
           conversation
             ? undefined

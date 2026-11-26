@@ -3,31 +3,35 @@ import { swapPage } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
+import { useLocale } from "@k2b/ui";
 import {
   Avatar,
-  Band,
   Bar,
   Button,
   Canvas,
+  Cells,
   Dialog,
+  Digest,
   Empty,
   type Fact,
   Facts,
   Failed,
   Field,
+  Group,
   Icon,
   Inline,
   Input,
   List,
+  Mark,
+  Menu,
+  type MarkProps,
   type NavProps,
   Notice,
   Pane,
-  Path,
   Row,
   Section,
   type Status,
   Text,
-  useLocale,
   useToast,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
@@ -37,10 +41,12 @@ import type { KeepHistoryEntry } from "../../../service/kept-conversations";
 import { mailKeptAdminMessages } from "../../kept-admin-messages";
 import { readApiError } from "../api-response";
 import { downloadKeptConversations } from "../kept-admin-download";
+import { keptMark } from "./mail-admin-kept-mark";
 
 type KeptConversation = KeptConversationExport["conversations"][number];
 type KeptMessage = KeptConversation["messages"][number];
 type Address = KeptMessage["from"][number];
+type Attachment = KeptMessage["attachments"][number];
 type DeliveryState = NonNullable<KeptMessage["delivery"]>["state"];
 
 export type MailAdminKeptRecordProps = {
@@ -66,6 +72,16 @@ const formatBytes = (value: number, locale: string): string => {
   return `${format(value / (1024 * 1024), 1)} MB`;
 };
 
+/** The mark of an attachment by its type, the same as Files shows for it. */
+const attachmentMark = (attachment: Attachment): MarkProps => {
+  const type = attachment.contentType.toLowerCase();
+  if (type === "application/pdf") return { icon: "file-type-pdf", color: "#dc2626", kind: "PDF" };
+  if (type.startsWith("image/")) return { icon: "photo", color: "#7c3aed" };
+  if (type.includes("spreadsheet") || type.includes("excel") || type === "text/csv") return { icon: "table", color: "#15803d" };
+  if (type.includes("word") || type.startsWith("text/")) return { icon: "file-text", color: "#2563eb" };
+  return { icon: "file" };
+};
+
 /**
  * Stored HTML is already sanitized. The frame still runs nothing and loads nothing from the network, so opening kept
  * mail as evidence can't execute content or tell a sender that an administrator read it.
@@ -74,8 +90,9 @@ const htmlFrameDocument = (html: string): string =>
   `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><style>body{margin:0;font:14px/1.5 system-ui,sans-serif;color:#18181b;background:#fff;overflow-wrap:anywhere}</style></head><body>${html}</body></html>`;
 
 /**
- * One kept conversation in Cloud administration › Mail › Kept on v2: its messages as evidence beside who kept it and
- * its logged history, with the download and the end of keeping in the head.
+ * One kept conversation in Cloud administration › Mail › Kept on v2, after the record recipe: its mark and subject in
+ * the head with the download and the end of keeping, three key figures, its messages as evidence, and beside them
+ * where it lives and its logged history.
  */
 export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
   const locale = useLocale();
@@ -91,6 +108,7 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
     conversationId: props.record?.conversation.conversationId ?? "",
   });
   const when = (iso: string) => dates.formatDateTime(iso, props.dateConfig);
+  const day = (iso: string) => dates.formatDate(iso, props.dateConfig);
 
   const download = mutation.create<void, void>({
     mutation: (_, { abortSignal }) => downloadKeptConversations([ref()], t().downloadFailed, abortSignal),
@@ -131,7 +149,7 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
     if (state === "cancelled" || state === "reconciled_unsent") return { label: t().deliveryNotSent, icon: "circle-minus", tone: "warn" };
     return { label: t().deliveryUnknown, icon: "help-circle", tone: "warn" };
   };
-  const historyLabel = (entry: KeepHistoryEntry): string => {
+  const historyVerb = (entry: KeepHistoryEntry): string => {
     if (entry.action === "mail.conversation.keep") return t().historyKept;
     if (entry.action === "mail.conversation.keep.release")
       return entry.outcome === "allowed" ? t().historyReleased : t().historyReleaseDenied;
@@ -141,21 +159,12 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
   };
   const messageFacts = (message: KeptMessage): Fact[] => {
     const facts: Fact[] = [];
+    const from = addressText(message.from);
+    facts.push({ label: t().from, value: from || t().unknownSender });
     if (message.to.length) facts.push({ label: t().to, value: addressText(message.to) });
     if (message.cc.length) facts.push({ label: t().cc, value: addressText(message.cc) });
     if (message.bcc.length) facts.push({ label: t().bcc, value: addressText(message.bcc) });
     if (message.replyTo.length) facts.push({ label: t().replyTo, value: addressText(message.replyTo) });
-    if (message.delivery) {
-      const state = delivery(message.delivery.state);
-      facts.push({
-        label: t().delivery,
-        value: (
-          <Text weight="medium" tone={state.tone}>
-            <Icon name={state.icon} /> {state.label}
-          </Text>
-        ),
-      });
-    }
     if (message.messageId) facts.push({ label: t().messageIdHeader, value: message.messageId, mono: true });
     return facts;
   };
@@ -166,23 +175,18 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
       head={
         <Bar
           start={
-            <Path
-              label={t().tabsLabel}
-              items={[
-                { label: t().areaMail, href: "/admin/mail" },
-                { label: t().tabKept, href: LIST_PATH },
-                { label: props.record ? subject() : t().tabKept },
-              ]}
-            />
+            <Show when={props.record} fallback={<Text type="lead">{t().tabKept}</Text>}>
+              <Inline>
+                <Mark {...keptMark(false)} />
+                <Text type="lead">{subject()}</Text>
+              </Inline>
+            </Show>
           }
           end={
             <Show when={props.record}>
-              <Button icon="download" busy={download.loading()} onClick={() => void download.mutate()}>
-                {t().downloadJson}
-              </Button>
-              <Button icon="lock-open" onClick={ask}>
-                {t().stopKeeping}
-              </Button>
+              {/* both stay on the phone, where a head keeps only its symbols */}
+              <Button icon="download" label={t().downloadJson} keep busy={download.loading()} onClick={() => void download.mutate()} />
+              <Menu label={t().moreActions} items={[{ label: t().stopKeeping, icon: "lock-open", danger: true, onClick: ask }]} />
             </Show>
           }
         />
@@ -201,126 +205,174 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
           </Pane>
         }
       >
-        {(record) => (
-          <Pane.Split>
-            <Pane label={t().messages({ count: record().messageCount })} scrollKey="mail-admin-kept-record">
-              <Show when={record().messageCount > record().conversation.messages.length}>
-                <Notice tone="note" icon="info-circle">
-                  {t().truncated({ shown: record().conversation.messages.length, total: record().messageCount })}
+        {(record) => {
+          const conversation = () => record().conversation;
+          const messages = () => conversation().messages;
+          const newest = () =>
+            messages().reduce<string | undefined>(
+              (latest, message) => (!latest || message.date > latest ? message.date : latest),
+              undefined,
+            );
+          const attachments = () => messages().flatMap((message) => message.attachments.filter((attachment) => !attachment.inline));
+          return (
+            <Pane label={subject()} scrollKey="mail-admin-kept-record">
+              {/* A status band only when something needs attention: the record shows fewer messages than it keeps. */}
+              <Show when={record().messageCount > messages().length}>
+                <Notice
+                  tone="warn"
+                  title={t().truncatedTitle}
+                  actions={[{ label: t().downloadJson, icon: "download", onClick: () => void download.mutate() }]}
+                >
+                  {t().truncated({ shown: messages().length, total: record().messageCount })}
                 </Notice>
               </Show>
-              <For each={record().conversation.messages}>
-                {(message) => {
-                  const from = () => message.from[0];
-                  const name = () => from()?.name || from()?.address || t().unknownSender;
-                  return (
-                    <Band label={message.subject ?? subject()}>
-                      <Row
-                        avatar={{ name: name() }}
-                        strong
-                        lines={[name(), <time dateTime={message.date}>{when(message.date)}</time>]}
-                        meta={from()?.name ? from()?.address : undefined}
-                      />
-                      <Facts items={messageFacts(message)} />
-                      <Show when={message.text || message.html} fallback={<Text muted>{t().noBody}</Text>}>
-                        <Canvas label={t().messageText} height={message.text ? undefined : 320}>
-                          <Show
-                            when={message.text}
-                            fallback={
-                              <iframe
-                                width="100%"
-                                height="100%"
-                                sandbox=""
-                                referrerpolicy="no-referrer"
-                                title={message.subject ?? t().noSubject}
-                                srcdoc={htmlFrameDocument(message.html ?? "")}
-                              />
+              <Cells>
+                <Cells.Cell
+                  icon="mail"
+                  color={keptMark(false).color}
+                  label={t().cellMessages}
+                  value={new Intl.NumberFormat(locale()).format(record().messageCount)}
+                  meta={newest() ? t().newestOn({ date: day(newest()!) }) : undefined}
+                />
+                <Cells.Cell
+                  icon="lock"
+                  label={t().columnKeptSince}
+                  value={day(conversation().keep.keptAt)}
+                  meta={t().byName({ name: conversation().keep.keptBy.displayName })}
+                />
+                <Cells.Cell
+                  icon="paperclip"
+                  label={t().attachments}
+                  value={new Intl.NumberFormat(locale()).format(attachments().length)}
+                  meta={
+                    attachments().length
+                      ? formatBytes(
+                          attachments().reduce((sum, attachment) => sum + attachment.size, 0),
+                          locale(),
+                        )
+                      : t().noAttachments
+                  }
+                />
+              </Cells>
+              <Pane.Split>
+                <Pane label={t().messages({ count: record().messageCount })}>
+                  <Section icon="mail" color={keptMark(false).color} title={t().cellMessages} count={record().messageCount}>
+                    <For each={messages()}>
+                      {(message) => {
+                        const sender = () => message.from[0]?.name || message.from[0]?.address || t().unknownSender;
+                        const state = () => (message.delivery ? delivery(message.delivery.state) : undefined);
+                        return (
+                          <Group
+                            icon={message.delivery ? "send" : "mail"}
+                            title={sender()}
+                            meta={<time dateTime={message.date}>{when(message.date)}</time>}
+                            state={
+                              <Show when={state()}>
+                                {(shown) => (
+                                  <Text weight="medium" tone={shown().tone}>
+                                    <Icon name={shown().icon} /> {shown().label}
+                                  </Text>
+                                )}
+                              </Show>
                             }
                           >
-                            {/* The kept text as Cloud stored it: its own line breaks, on the text edge of the band. */}
-                            <div
-                              style={{
-                                "padding-inline": "var(--k2-edge)",
-                                "white-space": "pre-wrap",
-                                "overflow-wrap": "anywhere",
-                                font: "400 14px/22px var(--k2-font, inherit)",
-                              }}
-                            >
-                              {message.text}
-                            </div>
-                          </Show>
-                        </Canvas>
-                      </Show>
-                      <Show when={message.attachments.length}>
-                        <List label={t().attachments}>
-                          <For each={message.attachments}>
-                            {(attachment) => (
-                              <Row
-                                icon="paperclip"
-                                lines={[
-                                  attachment.filename ?? attachment.contentType,
-                                  `${attachment.contentType} · ${formatBytes(attachment.size, locale())}${attachment.inline ? ` · ${t().inline}` : ""}`,
-                                ]}
-                              />
-                            )}
-                          </For>
-                        </List>
-                      </Show>
-                    </Band>
-                  );
-                }}
-              </For>
-            </Pane>
-            <Pane side label={t().keepSection} width={{ min: 280, default: 340 }}>
-              <Section icon="lock" title={t().keepSection}>
-                <Facts
-                  items={[
-                    {
-                      label: t().columnKeptSince,
-                      value: <time dateTime={record().conversation.keep.keptAt}>{when(record().conversation.keep.keptAt)}</time>,
-                    },
-                    {
-                      label: t().columnKeptBy,
-                      value: (
-                        <Inline>
-                          <Avatar name={record().conversation.keep.keptBy.displayName} decorative />
-                          <Text>{record().conversation.keep.keptBy.displayName}</Text>
-                        </Inline>
-                      ),
-                    },
-                    { label: t().mailboxLabel, value: record().conversation.mailbox.name },
-                    { label: t().cloudId, value: record().conversation.cloudId, mono: true, copy: record().conversation.cloudId },
-                  ]}
-                />
-              </Section>
-              <Section icon="history" title={t().history} count={record().history.length || undefined}>
-                <Show when={record().history.length} fallback={<Text muted>{t().historyEmpty}</Text>}>
-                  <List label={t().history}>
-                    <For each={record().history}>
-                      {(entry) => (
-                        <Row
-                          avatar={{ name: entry.actor.label }}
-                          lines={
-                            entry.reason
-                              ? [
-                                  <Text tone={entry.outcome === "allowed" ? undefined : "bad"}>{historyLabel(entry)}</Text>,
-                                  t().historyReason({ reason: entry.reason }),
-                                  `${entry.actor.label} · ${when(entry.at)}`,
-                                ]
-                              : [
-                                  <Text tone={entry.outcome === "allowed" ? undefined : "bad"}>{historyLabel(entry)}</Text>,
-                                  `${entry.actor.label} · ${when(entry.at)}`,
-                                ]
-                          }
-                        />
-                      )}
+                            <Facts items={messageFacts(message)} />
+                            <Show when={message.text || message.html} fallback={<Text muted>{t().noBody}</Text>}>
+                              <Canvas label={t().messageText} height={message.text ? undefined : 320}>
+                                <Show
+                                  when={message.text}
+                                  fallback={
+                                    <iframe
+                                      width="100%"
+                                      height="100%"
+                                      sandbox=""
+                                      referrerpolicy="no-referrer"
+                                      title={message.subject ?? t().noSubject}
+                                      srcdoc={htmlFrameDocument(message.html ?? "")}
+                                    />
+                                  }
+                                >
+                                  {/* The kept text as Cloud stored it: its own line breaks, on the text edge. */}
+                                  <div
+                                    style={{
+                                      "padding-inline": "var(--k2-edge)",
+                                      "white-space": "pre-wrap",
+                                      "overflow-wrap": "anywhere",
+                                      font: "400 14px/22px var(--k2-font, inherit)",
+                                    }}
+                                  >
+                                    {message.text}
+                                  </div>
+                                </Show>
+                              </Canvas>
+                            </Show>
+                            <Show when={message.attachments.length}>
+                              <List label={t().attachments}>
+                                <For each={message.attachments}>
+                                  {(attachment) => (
+                                    <Row
+                                      mark={attachmentMark(attachment)}
+                                      lines={[
+                                        attachment.filename ?? attachment.contentType,
+                                        attachment.inline ? `${attachment.contentType} · ${t().inline}` : attachment.contentType,
+                                      ]}
+                                      time={formatBytes(attachment.size, locale())}
+                                    />
+                                  )}
+                                </For>
+                              </List>
+                            </Show>
+                          </Group>
+                        );
+                      }}
                     </For>
-                  </List>
-                </Show>
-              </Section>
+                  </Section>
+                </Pane>
+                <Pane side label={t().keepSection} width={{ min: 280, default: 340 }}>
+                  <Section icon="info-circle" title={t().keepSection}>
+                    <Facts
+                      items={[
+                        { label: t().mailboxLabel, value: conversation().mailbox.name },
+                        {
+                          label: t().columnKeptBy,
+                          value: (
+                            <Inline>
+                              <Avatar name={conversation().keep.keptBy.displayName} decorative />
+                              <Text>{conversation().keep.keptBy.displayName}</Text>
+                            </Inline>
+                          ),
+                        },
+                        {
+                          label: t().columnKeptSince,
+                          value: <time dateTime={conversation().keep.keptAt}>{when(conversation().keep.keptAt)}</time>,
+                        },
+                        { label: t().cloudId, value: conversation().cloudId, mono: true, copy: conversation().cloudId },
+                      ]}
+                    />
+                  </Section>
+                  <Section icon="history" title={t().history} count={record().history.length || undefined}>
+                    <Show when={record().history.length} fallback={<Empty icon="history" text={t().historyEmpty} />}>
+                      <Digest
+                        label={t().history}
+                        activity={record().history.map((entry) => ({
+                          person: { name: entry.actor.label },
+                          text: (
+                            <>
+                              <Text weight="strong">{entry.actor.label}</Text>{" "}
+                              <Text tone={entry.outcome === "allowed" ? undefined : "bad"}>{historyVerb(entry)}</Text>
+                              {entry.reason ? ` · ${t().historyReason({ reason: entry.reason })}` : ""}
+                            </>
+                          ),
+                          time: when(entry.at),
+                        }))}
+                      />
+                    </Show>
+                  </Section>
+                </Pane>
+              </Pane.Split>
             </Pane>
-          </Pane.Split>
-        )}
+          );
+        }}
       </Show>
       <Dialog
         title={t().stopKeepingTitle}
@@ -333,15 +385,25 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
             <Button onClick={() => setAsking(false)} disabled={release.loading()}>
               {t().cancel}
             </Button>
-            <Button variant="primary" icon="lock-open" busy={release.loading()} onClick={() => void release.mutate()}>
+            <Button
+              variant="primary"
+              icon="lock-open"
+              busy={release.loading()}
+              disabled={reason().trim().length > REASON_MAX_LENGTH}
+              onClick={() => void release.mutate()}
+            >
               {t().stopKeeping}
             </Button>
           </>
         }
       >
         <Text>{t().stopKeepingConsequence}</Text>
-        <Field label={t().stopKeepingReason} hint={t().stopKeepingReasonDescription}>
-          <Input multiline value={reason()} maxLength={REASON_MAX_LENGTH} disabled={release.loading()} onInput={setReason} />
+        <Field
+          label={t().stopKeepingReason}
+          hint={t().stopKeepingReasonDescription}
+          error={reason().trim().length > REASON_MAX_LENGTH ? t().reasonTooLong({ max: REASON_MAX_LENGTH }) : undefined}
+        >
+          <Input multiline value={reason()} disabled={release.loading()} onInput={setReason} />
         </Field>
         <Show when={refusal()}>
           {(text) => (

@@ -51,7 +51,7 @@ export default ssr<AuthContext>(async (c) => {
         mailboxName: item.mailboxName,
         mailboxDeleted: item.mailboxDeleted,
         subject: item.subject?.trim() || t.noSubject,
-        sender: { name: item.sender?.name?.trim() || null, address: item.sender?.address ?? null },
+        sender: item.sender?.name?.trim() || item.sender?.address || t.unknownSender,
         date: item.lastMessageAt
           ? {
               text: dates.formatDate(item.lastMessageAt, dateConfig),
@@ -60,7 +60,11 @@ export default ssr<AuthContext>(async (c) => {
             }
           : null,
         keptBy: item.keptBy.displayName,
-        keptSince: { text: dates.formatDate(item.keptAt, dateConfig), title: dates.formatDateTime(item.keptAt, dateConfig), iso: item.keptAt },
+        keptSince: {
+          text: dates.formatDate(item.keptAt, dateConfig),
+          title: dates.formatDateTime(item.keptAt, dateConfig),
+          iso: item.keptAt,
+        },
       },
     ];
   });
