@@ -254,7 +254,7 @@ export default function IncomingGoods(props: Props) {
               marks: row.state === "ok" ? undefined : <Chip status={row.state}>{stateLabel[row.state]}</Chip>,
             })}
             columns={[
-              { title: "Lieferant", width: { min: 150, default: 165 }, mark: (row) => goods[row.goods], cell: (row) => row.supplier },
+              { title: "Lieferant", width: { min: 145, default: 155 }, mark: (row) => goods[row.goods], cell: (row) => row.supplier },
               { title: "Tor", width: { min: 56, default: 64 }, cell: (row) => row.gate },
               { title: "Menge", width: { min: 80, default: 90 }, drop: true, cell: (row) => row.amount },
               { title: "Wert", width: { min: 90, default: 100 }, align: "end", cell: (row) => row.value },
@@ -267,7 +267,7 @@ export default function IncomingGoods(props: Props) {
               },
               {
                 title: "Zustand",
-                width: { min: 100, default: 105 },
+                width: { min: 110, default: 120 },
                 cell: (row) => <Chip status={row.state}>{stateLabel[row.state]}</Chip>,
               },
               { title: "Zeit", width: { min: 52, default: 56 }, align: "end", cell: (row) => row.time },

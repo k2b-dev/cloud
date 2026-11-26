@@ -544,6 +544,8 @@ type TableBase<T> = {
     mark?: MarkProps;
     time?: JSX.Element;
     marks?: JSX.Element;
+    /** The row's deeds at its end, such as its "…" menu, as `Row end`: what a column of deeds offers on the desktop. */
+    end?: JSX.Element;
   };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
@@ -1236,6 +1238,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                             mark={form.mark}
                             time={form.time}
                             marks={form.marks}
+                            end={form.end}
                             strong
                             href={target?.href}
                             onNavigate={target?.onNavigate}

@@ -162,6 +162,8 @@ export default function SpaceMembers() {
               avatar: { name: member.name, initials: member.initials, color: member.color },
               lines: [member.name, last[member.id] ?? ""],
               marks: <Chip>{member.role}</Chip>,
+              // the deeds stay on the phone, at the end of each row
+              end: <Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />,
             })}
             columns={[
               {

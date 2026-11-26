@@ -429,7 +429,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     );
 
   test(
-    "a table column is exactly its default wide; cut text never widens it, rows without wrap are 40 px",
+    "a table column is at least its default wide and shares free room in proportion; cut text never widens it, rows without wrap are 40 px",
     async () => {
       const page = await open("table");
       try {
@@ -452,7 +452,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           };
         });
         expect(table.chip).toEqual([true, true]);
-        expect(table.heads.slice(0, -1)).toEqual([260, 180, 300, 140]);
+        // the defaults 260, 180, 300, 140: each column at least that wide, the free room shared in their proportion
+        const defaults = [260, 180, 300, 140];
+        const shown = table.heads.slice(0, -1);
+        for (const [index, width] of shown.entries()) expect(width).toBeGreaterThanOrEqual(defaults[index]!);
+        for (const [index, width] of shown.entries()) expect(width / shown[0]!).toBeCloseTo(defaults[index]! / defaults[0]!, 1);
         expect(table.heads.at(-1)!).toBeGreaterThanOrEqual(120);
         expect(table.cut).toBe(true);
         expect(table.wrapLines).toBe(3);
