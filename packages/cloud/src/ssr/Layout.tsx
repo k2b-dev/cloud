@@ -480,7 +480,9 @@ export default function Layout(props: LayoutProps) {
                   panelOpen={panel ? panelState.open : undefined}
                   authenticated={showRail}
                   pageSearch={props.ui === "v2"}
-                  title={pageName?.() ?? (props.headTitle === "page" ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title))}
+                  title={props.headTitle === "page" ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
+                  // the bar of a signed-in page is the phone's; a signed-out page's names the app beside its breadcrumbs
+                  pageName={showRail ? pageName?.() : undefined}
                   launchpad={!!(user || appLabel)}
                   breadcrumbs={user ? undefined : breadcrumbs}
                   loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}

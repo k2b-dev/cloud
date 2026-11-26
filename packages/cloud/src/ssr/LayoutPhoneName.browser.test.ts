@@ -4,14 +4,16 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { User } from "../contracts/shared";
+import type {} from "./LayoutPhoneName.browser-harness";
 import type { RuntimeContext } from "./runtime";
 
 // A v2 page whose head shows where it stands and whose open item has no title of its own (W7: the Assistant's open
-// chat): on the phone the shell's bar names that item, the last step of the head's path, from the server's page on.
-// A page without such a path keeps the app's name there, and a v1 page keeps its order and its bar.
+// chat): on the phone the shell's bar names that item, the last step of the head's path, from the server's page on,
+// and follows it when the page opens another item without a new page. A page without such a path keeps the app's
+// name there.
 registerSsrTestPlugin({ dev: true, rootDir: resolve(import.meta.dir, "../.."), componentRoots: [] });
 
 const { defineApp } = await import("../_internal/define-app");
@@ -91,12 +93,42 @@ const server = new Hono<Env>()
 
 let browser: Browser;
 let css: string;
+let harness: string;
 beforeAll(async () => {
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
   css = await build.outputs[0]!.text();
+  const ui = resolve(import.meta.dir, "../../../ui");
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const client = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "LayoutPhoneName.browser-harness.tsx")],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "layout-phone-name",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            if (!result?.code) throw new Error(`Could not compile ${path}`);
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!client.success) throw new AggregateError(client.logs, "Could not build the phone name harness.");
+  harness = await client.outputs[0]!.text();
   browser = await launchBrowser();
-}, 30_000);
+}, 60_000);
 afterAll(async () => {
   await browser?.close();
   for (const spy of spies) spy.mockRestore();
@@ -107,7 +139,10 @@ const open = async (query: string): Promise<Page> => {
   const response = await server.request(`/app/chat?${query}`);
   expect(response.status).toBe(200);
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  await page.setContent(await response.text());
+  const html = await response.text();
+  // a real address: the shell's islands read the page's URL
+  await page.route("http://cloud.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+  await page.goto(`http://cloud.test/app/chat?${query}`);
   await page.addStyleTag({ content: css });
   await settled(page);
   return page;
@@ -133,6 +168,30 @@ test("390 px: the phone bar names the open chat, the last step of the head's pat
 test("390 px: without an open chat the phone bar names the app", async () => {
   const page = await open("");
   try {
+    expect(await barTitle(page)).toBe("Gustav");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("390 px: the phone bar follows the page's islands when another chat opens without a new page", async () => {
+  const page = await open("chat=Reiseplanung%20Lissabon");
+  try {
+    const errors = pageErrors(page);
+    await page.evaluate(() => (window.__chat = "Reiseplanung Lissabon"));
+    await page.addScriptTag({ content: harness });
+    expect(errors).toEqual([]);
+    await page.locator('body[data-mounted="true"]').waitFor({ timeout: 10_000 });
+    // the header's island keeps the server's name until the page's island tells its own
+    expect(await page.locator("body").getAttribute("data-header-first")).toBe("Reiseplanung Lissabon");
+    await settled(page);
+    expect(await barTitle(page)).toBe("Reiseplanung Lissabon");
+    await page.evaluate(() => window.__openChat?.("Budget 2027"));
+    await settled(page);
+    expect(await barTitle(page)).toBe("Budget 2027");
+    // no open chat: the app's name again
+    await page.evaluate(() => window.__openChat?.(undefined));
+    await settled(page);
     expect(await barTitle(page)).toBe("Gustav");
   } finally {
     await page.close();

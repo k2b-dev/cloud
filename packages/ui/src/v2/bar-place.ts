@@ -1,4 +1,4 @@
-import { createContext, onCleanup, useContext } from "solid-js";
+import { createContext, createSignal, onCleanup, useContext } from "solid-js";
 import type { MenuEntry } from "./menu";
 
 /** What marks a bar: a title, a toolbar (a filter bar) or a path in its start, the "…" or a search at its end. */
@@ -81,8 +81,8 @@ export const SidebarPlaceContext = createContext<(name: () => string | undefined
 export type HeadPlace = {
   place: () => string | undefined;
   creates: (entries: () => readonly MenuEntry[]) => () => void;
-  /** A path in the head's start tells the words of the open item, its last step. */
-  names: (name: () => string | undefined) => void;
+  /** A path in the head's start tells the words of the open item, its last step; the returned call takes them back. */
+  names: (name: () => string | undefined) => () => void;
 };
 
 /**
@@ -91,6 +91,17 @@ export type HeadPlace = {
  * then, such as the Assistant's open chat.
  */
 export const PageNameContext = createContext<(name: () => string | undefined) => void>();
+
+const [toldPageName, tellPageName] = createSignal<{ readonly name: string | undefined }>();
+
+/**
+ * The open item a workspace's head names, in the browser: there a host's bar and the page are islands of their own,
+ * which no `PageNameContext` joins, and the item changes without a new page (the Assistant opens another chat). The
+ * workspace tells it here; `undefined` until one has, so the host keeps the name its server rendered until then.
+ */
+export const pageName = toldPageName;
+
+export { tellPageName };
 
 export const HeadPlaceContext = createContext<HeadPlace>();
 

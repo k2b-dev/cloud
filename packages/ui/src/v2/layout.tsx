@@ -13,7 +13,7 @@ import {
   splitProps,
   useContext,
 } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import {
   BarPlaceContext,
@@ -22,6 +22,7 @@ import {
   SidebarPlaceContext,
   StatusPlaceContext,
   type StatusRowKind,
+  tellPageName,
 } from "./bar-place";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
@@ -137,9 +138,9 @@ const SeamGrip = (props: { grip: SeamGrip }) => {
 };
 
 /** The seam between two columns: the one 1 px line, and on a line that moves its grip. */
-const Seam = (props: { grip?: SeamGrip; beforeClosed?: boolean }) => (
-  // the seam before a closed detail goes with it on the phone
-  <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"} data-before-closed={props.beforeClosed ? "" : undefined}>
+const Seam = (props: { grip?: SeamGrip; besideClosed?: boolean }) => (
+  // the seam beside a closed detail, before or after it, goes with it on the phone
+  <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"} data-beside-closed={props.besideClosed ? "" : undefined}>
     <Show when={props.grip}>{(grip) => <SeamGrip grip={grip()} />}</Show>
   </div>
 );
@@ -232,14 +233,28 @@ export const Workspace = (props: WorkspaceProps) => {
   const [headCreates, setHeadCreates] = createSignal<() => readonly MenuEntry[]>();
   // the open item the head's path names, for a host that names the page in its own bar
   const [headName, setHeadName] = createSignal<() => string | undefined>();
-  useContext(PageNameContext)?.(() => headName()?.());
+  const tellHost = useContext(PageNameContext);
+  if (tellHost) tellHost(() => headName()?.());
+  else if (!isServer) {
+    // in the browser no host provides the context: the host's bar is another island and reads `pageName`
+    let told: { readonly name: string | undefined } | undefined;
+    createEffect(() => {
+      told = { name: headName()?.() };
+      tellPageName(told);
+    });
+    // a workspace that goes leaves the name it told, unless another one told its own since
+    onCleanup(() => tellPageName((current) => (current === told ? undefined : current)));
+  }
   const headPlace = {
     place: () => placeName()?.(),
     creates: (entries: () => readonly MenuEntry[]) => {
       setHeadCreates(() => entries);
       return () => setHeadCreates((current) => (current === entries ? undefined : current));
     },
-    names: (name: () => string | undefined) => setHeadName(() => name),
+    names: (name: () => string | undefined) => {
+      setHeadName(() => name);
+      return () => setHeadName((current) => (current === name ? undefined : current));
+    },
   };
   const head = resolveChildren(() => <HeadPlaceContext.Provider value={headPlace}>{props.head}</HeadPlaceContext.Provider>);
   const fabCreates = () => headCreates()?.() ?? [];
@@ -662,7 +677,7 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
         {(pane, index) => (
           <>
             {pane}
-            <Seam grip={grip(index())} beforeClosed={entryOf(index() + 1)?.closed === true} />
+            <Seam grip={grip(index())} besideClosed={entryOf(index())?.closed === true || entryOf(index() + 1)?.closed === true} />
           </>
         )}
       </For>

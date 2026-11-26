@@ -48,6 +48,7 @@ type Head =
   | "pane-actions"
   | "chat"
   | "chat-open"
+  | "chat-tabs-first"
   | "named-bare-drawer";
 const screens = {
   list: () => createComponent(FilteredOrders, {}),
@@ -65,6 +66,7 @@ const screens = {
   "pane-actions": () => createComponent(PaneWithTwoActions, {}),
   chat: () => createComponent(ChatWithTabs, {}),
   "chat-open": () => createComponent(ChatWithTabs, { open: true }),
+  "chat-tabs-first": () => createComponent(ChatWithTabs, { tabsFirst: true }),
   "named-bare-drawer": () => createComponent(NamedPlace, { bare: true, detail: 600 }),
 };
 const markup = (head: Head) => renderToString(screens[head]);
@@ -567,6 +569,13 @@ test("390 px: in a split only the pane in front stands; a closed detail waits ou
     expect(await split(page)).toEqual({ panes: ["Chat"], seams: 0 });
   } finally {
     await page.close();
+  }
+  // a closed detail before the chat takes the seam after it along
+  const before = await open(390, "chat-tabs-first");
+  try {
+    expect(await split(before)).toEqual({ panes: ["Chat"], seams: 0 });
+  } finally {
+    await before.close();
   }
   // opened, it is the page
   const opened = await open(390, "chat-open");

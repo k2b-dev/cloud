@@ -429,7 +429,7 @@ export const Path = (props: PathProps) => {
   markBarPlace("start", "path");
   // in a workspace's head its last step is the open item, which a host's own bar may name (the phone's shell)
   const head = inBarStart() ? useContext(HeadPlaceContext) : undefined;
-  head?.names(() => props.items.at(-1)?.label);
+  if (head) onCleanup(head.names(() => props.items.at(-1)?.label));
   const itself = usePageItself();
   return (
     <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>

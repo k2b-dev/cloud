@@ -9,6 +9,11 @@ type LayoutHeaderProps = {
   pageSearch?: boolean;
   panelOpen?: boolean;
   title?: string;
+  /**
+   * A v2 page's open item, which its head's path names (the Assistant's chat): the phone bar shows it instead of
+   * `title`, and follows the page in the browser as the item changes (`pageName` of `@k2b/ui/v2`).
+   */
+  pageName?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
   /** Where Sign in leads on signed-out pages; it returns the person to this page afterwards. */
@@ -51,6 +56,7 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
         authenticated={props.authenticated}
         // only a v2 page sends it, so the island's props of every other page stay as they were
         {...(props.pageSearch ? { pageSearch: true } : {})}
+        {...(props.pageName ? { pageName: props.pageName } : {})}
         title={props.title}
         launchpad={props.launchpad}
         breadcrumbs={props.breadcrumbs}

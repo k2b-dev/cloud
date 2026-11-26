@@ -32,6 +32,7 @@ declare global {
       | "pane-actions"
       | "chat"
       | "chat-open"
+      | "chat-tabs-first"
       | "named-bare-drawer";
   }
 }
@@ -52,6 +53,7 @@ const heads: Record<string, () => JSX.Element> = {
   "pane-actions": () => createComponent(PaneWithTwoActions, {}),
   chat: () => createComponent(ChatWithTabs, {}),
   "chat-open": () => createComponent(ChatWithTabs, { open: true }),
+  "chat-tabs-first": () => createComponent(ChatWithTabs, { tabsFirst: true }),
   "named-bare-drawer": () => createComponent(NamedPlace, { bare: true, detail: 600 }),
 };
 

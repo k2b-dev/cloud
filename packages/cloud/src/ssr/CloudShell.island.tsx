@@ -1,4 +1,5 @@
 import { useLocale } from "@k2b/ui";
+import { pageName } from "@k2b/ui/v2";
 import { createEffect } from "solid-js";
 import { anyAppBadge } from "./app-badges";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
@@ -22,6 +23,7 @@ type CloudShellProps =
       authenticated: boolean;
       pageSearch?: boolean;
       title?: string;
+      pageName?: string;
       launchpad: boolean;
       breadcrumbs?: LayoutBreadcrumb[];
       panelOpen?: boolean;
@@ -85,6 +87,7 @@ function HeaderControls(props: {
   authenticated: boolean;
   pageSearch?: boolean;
   title?: string;
+  pageName?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
   panelOpen?: boolean;
@@ -94,6 +97,12 @@ function HeaderControls(props: {
   const t = () => platformMessages.resolve([locale()]).t;
   if (!data) return null;
   const news = () => anyAppBadge(data.apps);
+  // a signed-in page's bar is the phone's: it names the open item of a v2 page, as the page's island tells it once it
+  // runs, and the server's until then; a signed-out page's bar names the app beside its breadcrumbs
+  const title = () => {
+    const told = props.authenticated ? pageName() : undefined;
+    return told ? (told.name ?? props.title) : (props.pageName ?? props.title);
+  };
   return (
     <>
       <div class="ml-2 flex min-w-0 flex-1 items-center">
@@ -107,7 +116,7 @@ function HeaderControls(props: {
             props.authenticated ? "min-w-0 items-center max-lg:flex lg:hidden" : "min-w-0 items-center max-md:hidden md:flex lg:hidden"
           }
         >
-          <span class="layout-header-title truncate font-semibold">{props.title}</span>
+          <span class="layout-header-title truncate font-semibold">{title()}</span>
           {props.launchpad && (
             <AppLaunchpadButton
               profile={
@@ -123,7 +132,7 @@ function HeaderControls(props: {
               apps={data.apps}
               legalLinks={data.legalLinks}
               variant="title"
-              label={props.title}
+              label={title()}
             />
           )}
         </div>
