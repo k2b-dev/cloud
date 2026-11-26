@@ -77,7 +77,7 @@ const html = async (hono: Hono<AuthContext & { Variables: { runtime: CloudRuntim
 
 test("the reports tab renders with the figures, filtered by its own search, and nothing loading", async () => {
   const page = await html(server(), "/admin/mail/security?reports=paypal&rules=kern");
-  expect(page).toContain('data-k2-part="Cells"');
+  expect(page).toContain('data-k2-part="Band"');
   // the open reports carry their real trend: reports received per day
   expect(page).toContain('data-k2-part="Spark"');
   expect(page).toContain("rechnung@paypal-konto-sicherheit.example.org");

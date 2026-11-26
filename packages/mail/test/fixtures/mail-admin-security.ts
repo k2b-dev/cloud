@@ -102,7 +102,7 @@ export const securityProps = (view: SecurityView = "reports", overrides: Partial
   nav: keptAdminNav("de", "security"),
   view,
   searches: { reports: "", rules: "", identities: "" },
-  figures: { open: 3, blocking: 2, trusted: 1, identities: 2 },
+  figures: { open: 3, blocking: 2, trusted: 1, paused: 1, identities: 2 },
   reports: {
     rows: securityReports.map((item) => ({
       report: item,
@@ -135,7 +135,7 @@ export const securityWorstProps = (view: SecurityView = "reports"): MailAdminSec
   const rules = base.rules;
   return {
     ...base,
-    figures: { open: 12_847, blocking: 1_284, trusted: 0, identities: 1 },
+    figures: { open: 12_847, blocking: 1_284, trusted: 0, paused: 312, identities: 1 },
     reports:
       "rows" in reports
         ? {

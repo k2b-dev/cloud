@@ -189,7 +189,7 @@ describe("Admin › Mail › Kept on v2", () => {
       await table.waitFor();
       // a column head's name also carries the grip beside it, so its words are read as text
       const heads = (await table.getByRole("columnheader").allInnerTexts()).map((text) => text.trim()).filter(Boolean);
-      expect(heads).toEqual(["Unterhaltung", "Postfach", "Aufbewahrt von", "Absender", "Datum", "Aufbewahrt seit"]);
+      expect(heads).toEqual(["Unterhaltung", "Postfach", "Aufbewahrt von", "Absender", "Aufbewahrt seit"]);
       await page.getByText("214 aufbewahrte Unterhaltungen").waitFor();
       await page.getByText("2 aus gelöschten Postfächern").waitFor();
 
@@ -488,7 +488,11 @@ describe("Admin › Mail › Security on v2", () => {
     for (const context of [desktop, phone]) {
       const page = await open(context, security());
       try {
-        await page.getByText("Gemeldete E-Mails").filter({ visible: true }).first().waitFor();
+        await page
+          .getByRole("link", { name: /^Meldungen/ })
+          .filter({ visible: true })
+          .first()
+          .waitFor();
         await page.getByText("rechnung@paypal-konto-sicherheit.example.org").filter({ visible: true }).first().waitFor();
         // every report shows its state as dot and word (a cell that returned nothing once left the column empty)
         await page.getByText("In Prüfung", { exact: true }).filter({ visible: true }).first().waitFor();
@@ -655,11 +659,15 @@ describe("Admin › Mail at its limits (break-ui)", () => {
   // nothing throws, and the long values stay readable where they stand.
   const states: [string, KeptHarnessOptions, string][] = [
     ["mailboxes at their limits", { locale: "de", mailboxes: mailboxesWorstProps() }, "客户服务 · 售后支持"],
-    ["500 mailboxes, a full page", { locale: "de", mailboxes: mailboxesHugeProps() }, "50 von 500 Postfächern"],
-    ["no mailbox", { locale: "de", mailboxes: mailboxesEmptyProps() }, "0 von 0 Postfächern"],
+    ["500 mailboxes, a full page", { locale: "de", mailboxes: mailboxesHugeProps() }, "IT-Service 12"],
+    ["no mailbox", { locale: "de", mailboxes: mailboxesEmptyProps() }, "Noch kein Postfach"],
     ["security reports at their limits", { locale: "de", security: securityWorstProps("reports") }, "j@x.de"],
-    ["security rules at their limits", { locale: "de", security: securityWorstProps("rules") }, "Aktive Regeln"],
-    ["protected identities at their limits", { locale: "de", security: securityWorstProps("identities") }, "Ö"],
+    ["security rules at their limits", { locale: "de", security: securityWorstProps("rules") }, "312 Regeln pausiert"],
+    [
+      "protected identities at their limits",
+      { locale: "de", security: securityWorstProps("identities") },
+      "niederlassung-20.northwind-industries-holdings.example.org",
+    ],
     [
       "a kept record at its limits",
       { locale: "de", record: { nav: keptAdminNav(), record: keptWorstRecord(), dateConfig: keptDateConfig } },
@@ -671,7 +679,7 @@ describe("Admin › Mail at its limits (break-ui)", () => {
       for (const context of [desktop, phone]) {
         const page = await open(context, options);
         try {
-          await page.getByText(text, { exact: true }).filter({ visible: true }).first().waitFor();
+          await page.getByText(text).filter({ visible: true }).first().waitFor();
           expect(await overflow(page)).toBeLessThanOrEqual(0);
           expect(page.errors).toEqual([]);
         } finally {

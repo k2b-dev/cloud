@@ -4,9 +4,9 @@ import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import {
   Avatar,
+  Band,
   Bar,
   Button,
-  Cells,
   Chip,
   Failed,
   Inline,
@@ -14,6 +14,7 @@ import {
   Mark,
   type NavProps,
   Pane,
+  Spark,
   StatusRow,
   Table,
   Text,
@@ -77,11 +78,14 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
   });
   const lead = () => {
     if (props.total === null) return t().title;
-    // the figure above says how many: the row says in which order, or how many the search shows
-    return props.query ? t().filteredCount({ count: props.rows.length, total: props.total }) : t().newestFirst;
+    // the hero's statement until DP's band: how many are kept, or how many the search shows
+    return props.query
+      ? t().filteredCount({ count: props.rows.length, total: props.total })
+      : t().keptTotal({ count: props.total, shown: number(props.total) });
   };
   // only what is not fine speaks up: conversations whose mailbox is gone live on as Cloud's kept copy alone
-  const orphaned = () => props.rows.filter((row) => row.mailboxDeleted).length;
+  const orphaned = () => props.rows.filter((row) => row.mailboxDeleted);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const search = (text: string) => void swapPage(keptListHref({ q: text.trim() }));
 
   return (
@@ -116,16 +120,23 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
         status={
           <StatusRow
             lead={lead()}
-            select={
-              props.rows.length > 0
-                ? {
-                    label: t().selectAll,
-                    checked: selected().length === 0 ? false : selected().length === props.rows.length ? true : "mixed",
-                    onChange: (all) => setSelected(all ? props.rows.map(rowKey) : []),
-                  }
-                : undefined
+            // the real trend and two facts beside the hero; one box selects all (the table's head), and a selection
+            // turns this row into its bar
+            facts={
+              props.query || props.cursor
+                ? undefined
+                : [
+                    ...(props.perDay ? [{ value: number(props.perDay.reduce((sum, day) => sum + day, 0)), after: t().newIn30Days }] : []),
+                    ...(props.rows[0]
+                      ? [{ before: t().lastKeptShort, value: props.rows[0].keptSince.text, after: props.rows[0].keptBy }]
+                      : []),
+                  ]
             }
-            filters={orphaned() > 0 ? <Chip status="warn">{t().orphanedCount({ count: orphaned() })}</Chip> : undefined}
+            filters={
+              props.perDay && !props.query && !props.cursor ? (
+                <Spark values={props.perDay} label={t().keptPerDay({ days: props.perDay.length })} />
+              ) : undefined
+            }
             selection={
               selected().length > 0
                 ? {
@@ -145,23 +156,17 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
           />
         }
       >
-        {/* the hero's place: DP's hero band takes these figures when it lands */}
-        <Show when={props.total !== null && !props.query && !props.cursor}>
-          <Cells>
-            <Cells.Cell
-              icon="lock"
-              color={keptMark(false).color}
-              label={t().keptFigure}
-              value={t().keptTotal({ count: props.total ?? 0, shown: new Intl.NumberFormat(locale()).format(props.total ?? 0) })}
-              meta={
-                props.perDay
-                  ? t().newInWindow({ count: props.perDay.reduce((sum, day) => sum + day, 0), days: props.perDay.length })
-                  : undefined
-              }
-              trend={props.perDay ? { values: props.perDay, label: t().keptPerDay({ days: props.perDay.length }) } : undefined}
-            />
-            <Cells.Cell icon="clock" label={t().lastKept} value={props.rows[0]?.keptSince.text ?? "–"} meta={props.rows[0]?.keptBy} />
-          </Cells>
+        {/* the hero's place (DP's hero band takes it): how many are kept with their real trend, then one line of exceptions */}
+        {/* one line of exceptions under the hero, only while there is one */}
+        <Show when={orphaned().length > 0}>
+          <Band label={t().title}>
+            <Text>
+              <Text tone="warn" weight="medium">
+                ● {t().orphanedCount({ count: orphaned().length })}
+              </Text>{" "}
+              <Text muted>{[...new Set(orphaned().map((row) => row.mailboxName))].join(", ")}</Text>
+            </Text>
+          </Band>
         </Show>
         <Show
           when={props.failure === null}
@@ -195,8 +200,8 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
             })}
             // the widths fit beside the admin bar from 1024 px on; below that the table becomes `phone` rows
             columns={[
-              // columns that drop give way from the last one as the table gets narrower: the date first, then the
-              // sender, then who kept it, then the mailbox; the conversation and since when stay
+              // columns that drop give way from the last one as the table gets narrower: the sender first, then who
+              // kept it, then the mailbox; the conversation and since when stay
               {
                 title: t().columnConversation,
                 width: { min: 220, default: 300 },
@@ -242,19 +247,6 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
                     <Text>{row.sender}</Text>
                   </Inline>
                 ),
-                drop: true,
-              },
-              {
-                title: t().columnDate,
-                width: { min: 90, default: 100 },
-                cell: (row) =>
-                  row.date ? (
-                    <time dateTime={row.date.iso} title={row.date.title}>
-                      {row.date.text}
-                    </time>
-                  ) : (
-                    "–"
-                  ),
                 drop: true,
               },
               {

@@ -102,7 +102,7 @@ test("the mailboxes render on v2 with their figures, health, access and the cont
   const response = await server().request("/admin/mail?q=Ver", { headers: { "Accept-Language": "de" } });
   expect(response.status).toBe(200);
   const html = await response.text();
-  expect(html).toContain('data-k2-part="Cells"');
+  expect(html).toContain('data-k2-part="Band"');
   expect(html).toContain('data-k2-part="Table"');
   expect(html).toContain("Verwaltung");
   expect(html).toContain("Ohne Verwaltung");

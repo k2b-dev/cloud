@@ -110,6 +110,7 @@ export default ssr<AuthContext>(async (c) => {
           open: reports.filter((report) => report.status === "new" || report.status === "in_review").length,
           blocking: policies.filter((policy) => policy.disposition === "deny" && policy.enabled).length,
           trusted: policies.filter((policy) => policy.disposition === "trust" && policy.enabled).length,
+          paused: policies.filter((policy) => !policy.enabled).length,
           identities: identities.filter((identity) => identity.enabled).length,
         }}
         // only the open tab's rows travel to the browser; the others give their counts

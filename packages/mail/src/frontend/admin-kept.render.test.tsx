@@ -104,7 +104,8 @@ test("the list renders on v2 with its rows, the admin bar and Mail's views, and 
   expect(page).toContain("Kündigung Mietvertrag 1");
   expect(page).toContain("(Kein Betreff)");
   expect(page).toContain("3 von 214 angezeigt");
-  expect(page).toContain("1 aus gelöschten Postfächern");
+  // while searching, a deleted mailbox shows in its row (the exception line belongs to the whole list)
+  expect(page).toContain(">gelöscht<");
   expect(page).toContain('href="/admin/mail/kept?q=Miet&amp;cursor=next-1"');
   // Mail's views stand one level in under Mail in the admin bar, the open one current; the v1 tabs are gone
   expect(page).toMatch(/<a [^>]*aria-current="page" data-level="2" href="\/admin\/mail\/kept"/);

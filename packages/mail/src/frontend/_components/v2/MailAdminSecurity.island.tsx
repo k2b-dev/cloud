@@ -3,8 +3,8 @@ import { refreshCurrentPath, swapPage } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import {
+  Band,
   Bar,
-  Cells,
   Chip,
   confirm,
   Failed,
@@ -15,6 +15,7 @@ import {
   type MenuEntry,
   type NavProps,
   Pane,
+  Spark,
   type Status,
   Table,
   Tabs,
@@ -51,7 +52,7 @@ export type MailAdminSecurityProps = {
   nav: NavProps;
   view: SecurityView;
   searches: SecuritySearches;
-  figures: { open: number; blocking: number; trusted: number; identities: number };
+  figures: { open: number; blocking: number; trusted: number; paused: number; identities: number };
   /** Reports received per day over the last 30 days, oldest first (`countReportsPerDay`); `null` when it could not load. */
   reportsPerDay: number[] | null;
   reports: { rows: SecurityReportRow[]; total: number } | { failed: string };
@@ -255,21 +256,21 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
             label={t().phishingProtection}
             items={[
               {
-                label: t().reportedMessages,
+                label: t().tabReports,
                 icon: "flag",
                 count: count(props.reports),
                 current: props.view === "reports",
                 href: securityHref("reports", props.searches),
               },
               {
-                label: t().organizationRules,
+                label: t().tabRules,
                 icon: "shield",
                 count: count(props.rules),
                 current: props.view === "rules",
                 href: securityHref("rules", props.searches),
               },
               {
-                label: t().protectedIdentities,
+                label: t().tabIdentities,
                 icon: "user-shield",
                 count: count(props.identities),
                 current: props.view === "identities",
@@ -279,33 +280,42 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
           />
         }
       >
-        <Cells>
-          <Cells.Cell
-            icon="shield-exclamation"
-            color={SECURITY_COLOR}
-            label={t().openReports}
-            value={props.figures.open ? <Chip status="warn">{number(props.figures.open)}</Chip> : "0"}
-            meta={t().reportsOpenSub}
-            trend={
+        {/* the hero's place (DP's hero band takes it): the open reports with their real trend, then one line of exceptions */}
+        <Band label={t().phishingProtection}>
+          <Inline>
+            <Text type="lead">{t().openReportsHero({ count: props.figures.open, shown: number(props.figures.open) })}</Text>
+            <Show when={props.reportsPerDay}>{(days) => <Spark values={days()} label={t().reportsPerDay({ days: days().length })} />}</Show>
+          </Inline>
+          <Text type="meta" muted>
+            {[
+              t().reportsOpenSub,
               props.reportsPerDay
-                ? { values: props.reportsPerDay, label: t().reportsPerDay({ days: props.reportsPerDay.length }) }
-                : undefined
-            }
-          />
-          {/* three figures keep their words beside the trend down to 1024 px: the two kinds of rule share one */}
-          <Cells.Cell
-            icon="shield"
-            label={t().activeRules}
-            value={number(props.figures.blocking + props.figures.trusted)}
-            meta={t().rulesSplit({ blocking: number(props.figures.blocking), trusted: number(props.figures.trusted) })}
-          />
-          <Cells.Cell
-            icon="user-shield"
-            label={t().protectedIdentities}
-            value={number(props.figures.identities)}
-            meta={t().visibleSenderNames}
-          />
-        </Cells>
+                ? t().reportsReceived({
+                    shown: number(props.reportsPerDay.reduce((sum, day) => sum + day, 0)),
+                    days: props.reportsPerDay.length,
+                  })
+                : undefined,
+              t().rulesSplit({ blocking: number(props.figures.blocking), trusted: number(props.figures.trusted) }),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Text>
+          <Show when={props.figures.paused > 0 || props.trustedAuthservIds === null}>
+            <Text>
+              <Show when={props.figures.paused > 0}>
+                <Text tone="warn" weight="medium">
+                  ● {t().pausedRules({ count: props.figures.paused, shown: number(props.figures.paused) })}
+                </Text>
+              </Show>
+              {"   "}
+              <Show when={props.trustedAuthservIds === null}>
+                <Text tone="bad" weight="medium">
+                  ● {words().authenticationSettingsLoadFailed}
+                </Text>
+              </Show>
+            </Text>
+          </Show>
+        </Band>
         <Switch>
           <Match when={props.view === "reports"}>
             {failedOr(props.reports, (list) => (
@@ -479,9 +489,6 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
             ))}
           </Match>
         </Switch>
-        <Text type="meta" muted>
-          {t().securityDescription}
-        </Text>
       </Pane>
       <Switch>
         <Match when={open()?.kind === "rule"}>

@@ -5,6 +5,7 @@ import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import {
+  Band,
   Bar,
   Button,
   Canvas,
@@ -16,7 +17,6 @@ import {
   Facts,
   Failed,
   Field,
-  Group,
   Icon,
   Input,
   List,
@@ -168,31 +168,11 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
   };
 
   return (
-    <AdminWorkspace
-      nav={props.nav}
-      head={
-        <Bar
-          start={
-            <Show when={props.record} fallback={<Text type="lead">{t().tabKept}</Text>}>
-              {/* mark and subject straight in the head: the subject gives way with "…", the actions keep their room */}
-              <Mark {...keptMark(false)} />
-              <Text type="lead">{subject()}</Text>
-            </Show>
-          }
-          end={
-            <Show when={props.record}>
-              {/* both stay on the phone, where a head keeps only its symbols */}
-              <Button icon="download" label={t().downloadJson} keep busy={download.loading()} onClick={() => void download.mutate()} />
-              <Menu label={t().moreActions} items={[{ label: t().stopKeeping, icon: "lock-open", danger: true, onClick: ask }]} />
-            </Show>
-          }
-        />
-      }
-    >
+    <AdminWorkspace nav={props.nav}>
       <Show
         when={props.record}
         fallback={
-          <Pane label={t().tabKept}>
+          <Pane label={t().tabKept} head={<Bar start={<Text type="lead">{t().tabKept}</Text>} />}>
             <Show
               when={props.missing?.notFound === false ? props.missing.text : undefined}
               fallback={<Empty icon="lock-off" text={t().detailNotFound} action={{ label: t().backToList, href: LIST_PATH }} />}
@@ -212,7 +192,36 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
             );
           const attachments = () => messages().flatMap((message) => message.attachments.filter((attachment) => !attachment.inline));
           return (
-            <Pane label={subject()} scrollKey="mail-admin-kept-record">
+            <Pane
+              detail
+              // the record is a page of its own: on the phone the way back to the list stands above its head
+              back={{ label: t().backToList, href: LIST_PATH }}
+              head={
+                <Bar
+                  start={
+                    <>
+                      {/* mark and subject: the subject gives way with "…", the actions keep their room */}
+                      <Mark {...keptMark(false)} />
+                      <Text type="lead">{subject()}</Text>
+                    </>
+                  }
+                  end={
+                    <>
+                      <Button
+                        icon="download"
+                        label={t().downloadJson}
+                        keep
+                        busy={download.loading()}
+                        onClick={() => void download.mutate()}
+                      />
+                      <Menu label={t().moreActions} items={[{ label: t().stopKeeping, icon: "lock-open", danger: true, onClick: ask }]} />
+                    </>
+                  }
+                />
+              }
+              label={subject()}
+              scrollKey="mail-admin-kept-record"
+            >
               {/* A status band only when something needs attention: the record shows fewer messages than it keeps. */}
               <Show when={record().messageCount > messages().length}>
                 <Notice
@@ -253,17 +262,17 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
               </Cells>
               <Pane.Split>
                 <Pane label={t().messages({ count: record().messageCount })}>
-                  <Section icon="mail" color={keptMark(false).color} title={t().cellMessages} count={record().messageCount}>
-                    <For each={messages()}>
-                      {(message) => {
-                        const sender = () => message.from[0]?.name || message.from[0]?.address || t().unknownSender;
-                        const state = () => (message.delivery ? delivery(message.delivery.state) : undefined);
-                        return (
-                          <Group
-                            icon={message.delivery ? "send" : "mail"}
-                            title={sender()}
-                            meta={<time dateTime={message.date}>{when(message.date)}</time>}
-                            state={
+                  <For each={messages()}>
+                    {(message) => {
+                      const sender = () => message.from[0]?.name || message.from[0]?.address || t().unknownSender;
+                      const state = () => (message.delivery ? delivery(message.delivery.state) : undefined);
+                      return (
+                        <Band label={message.subject ?? subject()}>
+                          <Row
+                            avatar={{ name: sender() }}
+                            strong
+                            lines={[sender(), <time dateTime={message.date}>{when(message.date)}</time>]}
+                            end={
                               <Show when={state()}>
                                 {(shown) => (
                                   <Text weight="medium" tone={shown().tone}>
@@ -272,73 +281,63 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
                                 )}
                               </Show>
                             }
-                          >
-                            <Facts items={messageFacts(message)} />
-                            <Show when={message.text || message.html} fallback={<Text muted>{t().noBody}</Text>}>
-                              <Canvas label={t().messageText} height={message.text ? undefined : 320}>
-                                <Show
-                                  when={message.text}
-                                  fallback={
-                                    <iframe
-                                      width="100%"
-                                      height="100%"
-                                      sandbox=""
-                                      referrerpolicy="no-referrer"
-                                      title={message.subject ?? t().noSubject}
-                                      srcdoc={htmlFrameDocument(message.html ?? "")}
-                                    />
-                                  }
+                          />
+                          <Facts items={messageFacts(message)} />
+                          <Show when={message.text || message.html} fallback={<Text muted>{t().noBody}</Text>}>
+                            <Canvas label={t().messageText} height={message.text ? undefined : 320}>
+                              <Show
+                                when={message.text}
+                                fallback={
+                                  <iframe
+                                    width="100%"
+                                    height="100%"
+                                    sandbox=""
+                                    referrerpolicy="no-referrer"
+                                    title={message.subject ?? t().noSubject}
+                                    srcdoc={htmlFrameDocument(message.html ?? "")}
+                                  />
+                                }
+                              >
+                                {/* The kept text as Cloud stored it: its own line breaks, on the text edge. */}
+                                <div
+                                  style={{
+                                    "padding-inline": "var(--k2-edge)",
+                                    "white-space": "pre-wrap",
+                                    "overflow-wrap": "anywhere",
+                                    font: "400 14px/22px var(--k2-font, inherit)",
+                                  }}
                                 >
-                                  {/* The kept text as Cloud stored it: its own line breaks, on the text edge. */}
-                                  <div
-                                    style={{
-                                      "padding-inline": "var(--k2-edge)",
-                                      "white-space": "pre-wrap",
-                                      "overflow-wrap": "anywhere",
-                                      font: "400 14px/22px var(--k2-font, inherit)",
-                                    }}
-                                  >
-                                    {message.text}
-                                  </div>
-                                </Show>
-                              </Canvas>
-                            </Show>
-                            <Show when={message.attachments.length}>
-                              <List label={t().attachments}>
-                                <For each={message.attachments}>
-                                  {(attachment) => (
-                                    <Row
-                                      mark={attachmentMark(attachment)}
-                                      lines={[
-                                        attachment.filename ?? attachment.contentType,
-                                        attachment.inline ? `${attachment.contentType} · ${t().inline}` : attachment.contentType,
-                                      ]}
-                                      time={formatBytes(attachment.size, locale())}
-                                    />
-                                  )}
-                                </For>
-                              </List>
-                            </Show>
-                          </Group>
-                        );
-                      }}
-                    </For>
-                  </Section>
+                                  {message.text}
+                                </div>
+                              </Show>
+                            </Canvas>
+                          </Show>
+                          <Show when={message.attachments.length}>
+                            <Digest label={t().attachments}>
+                              <For each={message.attachments}>
+                                {(attachment) => (
+                                  <Row
+                                    mark={attachmentMark(attachment)}
+                                    lines={[
+                                      attachment.filename ?? attachment.contentType,
+                                      attachment.inline ? `${attachment.contentType} · ${t().inline}` : attachment.contentType,
+                                    ]}
+                                    time={formatBytes(attachment.size, locale())}
+                                  />
+                                )}
+                              </For>
+                            </Digest>
+                          </Show>
+                        </Band>
+                      );
+                    }}
+                  </For>
                 </Pane>
                 <Pane side label={t().keepSection} width={{ min: 280, default: 340 }}>
                   <Section icon="info-circle" title={t().keepSection}>
                     <Facts
                       items={[
                         { label: t().mailboxLabel, value: conversation().mailbox.name },
-                        {
-                          label: t().columnKeptBy,
-                          // the name wraps like every fact; its face stands in the history beside it
-                          value: conversation().keep.keptBy.displayName,
-                        },
-                        {
-                          label: t().columnKeptSince,
-                          value: <time dateTime={conversation().keep.keptAt}>{when(conversation().keep.keptAt)}</time>,
-                        },
                         { label: t().cloudId, value: conversation().cloudId, mono: true, copy: conversation().cloudId },
                       ]}
                     />

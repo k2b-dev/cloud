@@ -3,9 +3,9 @@ import { swapPage } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import {
+  Band,
   Bar,
   Button,
-  Cells,
   Chip,
   Inline,
   Input,
@@ -18,7 +18,6 @@ import {
   Row,
   Section,
   type Status,
-  StatusRow,
   Table,
   Text,
   useToast,
@@ -112,7 +111,22 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
     view.apps?.find((app) => app.appId === view.config.appId)?.appName ?? view.config.appId;
   const directoryNeedsAttention = (view: ContactDirectoryAdminView) =>
     view.issues.length > 0 || Object.values(view.unreadable ?? {}).some(Boolean);
-  const figure = (value: number | null) => (value === null ? t().unavailable : number(value));
+  // the exceptions of the shown rows, each said once: what needs doing, what does not sync cleanly
+  const attention = () => props.rows.filter((row) => row.attention > 0);
+  const trouble = () => props.rows.filter((row) => row.health.status !== undefined);
+  /** The first three names, and how many more. */
+  const names = (rows: readonly MailAdminMailboxRow[]) =>
+    rows.length === 0
+      ? undefined
+      : [
+          rows
+            .slice(0, 3)
+            .map((row) => row.name)
+            .join(", "),
+          rows.length > 3 ? t().andMore({ shown: number(rows.length - 3) }) : undefined,
+        ]
+          .filter(Boolean)
+          .join(" ");
   const search = (text: string) => void swapPage(listHref({ q: text.trim() }));
 
   return (
@@ -147,19 +161,7 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
         />
       }
     >
-      <Pane
-        label={t().adminMailboxes}
-        scrollKey="mail-admin-mailboxes"
-        status={
-          <StatusRow
-            lead={
-              props.figures.mailboxes === null
-                ? t().adminMailboxes
-                : t().mailboxesShown({ shown: number(props.rows.length), total: number(props.figures.mailboxes) })
-            }
-          />
-        }
-      >
+      <Pane label={t().adminMailboxes} scrollKey="mail-admin-mailboxes">
         <Show when={props.failure}>
           {(text) => (
             <Notice tone="bad" title={t().partialAdminError}>
@@ -167,39 +169,47 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
             </Notice>
           )}
         </Show>
-        <Cells>
-          <Cells.Cell
-            icon="inbox"
-            color={MAIL_COLOR}
-            label={t().adminMailboxes}
-            value={figure(props.figures.mailboxes)}
-            meta={t().active}
-          />
-          <Cells.Cell
-            icon="user-exclamation"
-            label={t().needOwner}
-            value={
-              props.figures.withoutAdministrator ? (
-                <Chip status="bad">{number(props.figures.withoutAdministrator)}</Chip>
-              ) : (
-                figure(props.figures.withoutAdministrator)
-              )
-            }
-            meta={t().noAdministrator}
-          />
-          <Cells.Cell
-            icon="alert-triangle"
-            label={t().needAttention}
-            value={props.figures.attention ? <Chip status="warn">{number(props.figures.attention)}</Chip> : figure(props.figures.attention)}
-            meta={t().failedCommands}
-          />
-          <Cells.Cell
-            icon="database"
-            label={t().logicalStorage}
-            value={props.figures.storage?.value ?? t().unavailable}
-            meta={props.figures.storage?.meta}
-          />
-        </Cells>
+        {/* the hero's place (DP's hero band takes it): what needs someone today, then one line of exceptions */}
+        <Band label={t().overview}>
+          <Text type="lead">
+            {props.figures.mailboxes === 0
+              ? t().noMailboxesHero
+              : props.figures.withoutAdministrator
+                ? t().heroWithoutAdministrator({
+                    count: props.figures.withoutAdministrator,
+                    shown: number(props.figures.withoutAdministrator),
+                  })
+                : t().heroAllManaged({ count: props.figures.mailboxes ?? 0, shown: number(props.figures.mailboxes ?? 0) })}
+          </Text>
+          <Text type="meta" muted>
+            {[
+              names(props.rows.filter((row) => row.administrators === 0)),
+              props.figures.mailboxes === null
+                ? undefined
+                : t().mailboxesMeta({ shown: number(props.rows.length), total: number(props.figures.mailboxes) }),
+              props.figures.storage ? `${props.figures.storage.value} · ${props.figures.storage.meta}` : undefined,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Text>
+          <Show when={attention().length > 0 || trouble().length > 0}>
+            <Text>
+              <Show when={attention().length > 0}>
+                <Text tone="warn" weight="medium">
+                  ● {t().exceptionAttention({ count: attention().length, shown: number(attention().length) })}
+                </Text>{" "}
+                <Text muted>{names(attention())}</Text>
+              </Show>
+              {"   "}
+              <Show when={trouble().length > 0}>
+                <Text tone="bad" weight="medium">
+                  ● {t().exceptionTrouble({ count: trouble().length, shown: number(trouble().length) })}
+                </Text>{" "}
+                <Text muted>{names(trouble())}</Text>
+              </Show>
+            </Text>
+          </Show>
+        </Band>
         <Table
           label={t().activeMailboxes}
           rows={props.rows}
@@ -227,8 +237,8 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
                 <Chip status="warn">{number(row.attention)}</Chip>
               ) : undefined,
           })}
-          // columns that drop give way from the last one as the table gets narrower: the ID first, then storage; the
-          // mailbox, its health, its last sync, what needs attention and its access (with the repair) stay
+          // storage drops first as the table gets narrower; the mailbox, its health, its sync, what needs doing and its
+          // access (with the repair) stay
           columns={[
             {
               title: t().adminMailboxes,
@@ -244,11 +254,12 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
             {
               title: t().health,
               width: { min: 120, default: 130 },
+              // a mailbox that runs says so in plain words; colour only for trouble (identity B, rule 7)
               cell: (row) =>
-                row.health.status ? <Chip status={row.health.status}>{row.health.label}</Chip> : <Chip>{row.health.label}</Chip>,
+                row.health.status ? <Chip status={row.health.status}>{row.health.label}</Chip> : <Text muted>{row.health.label}</Text>,
             },
             {
-              title: t().lastSync,
+              title: t().syncShort,
               width: { min: 120, default: 140 },
               cell: (row) =>
                 row.sync ? (
@@ -260,9 +271,8 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
                 ),
             },
             { title: t().storage, width: { min: 90, default: 100 }, align: "end", cell: (row) => row.storage ?? "–", drop: true },
-            { title: t().mailboxIdColumn, width: { min: 80, default: 90 }, cell: (row) => <Text muted>{row.id}</Text>, drop: true },
             {
-              title: t().attention,
+              title: t().attentionShort,
               width: { min: 100, default: 110 },
               align: "end",
               cell: (row) =>
@@ -271,7 +281,7 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
                     {number(row.attention)}
                   </Text>
                 ) : (
-                  <Text muted>0</Text>
+                  ""
                 ),
             },
             {
@@ -285,13 +295,16 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
                   ) : (
                     <Text>{t().accessCounts({ administrators: row.administrators, total: row.people })}</Text>
                   )}
-                  <Button
-                    variant="ghost"
-                    icon="shield"
-                    label={settings().managePermissionsFor({ name: row.name })}
-                    busy={repair.loading()}
-                    onClick={() => void repair.mutate({ id: row.id, name: row.name })}
-                  />
+                  {/* the shield only where someone must repair; every row opens its access too */}
+                  <Show when={row.administrators === 0}>
+                    <Button
+                      variant="ghost"
+                      icon="shield"
+                      label={settings().managePermissionsFor({ name: row.name })}
+                      busy={repair.loading()}
+                      onClick={() => void repair.mutate({ id: row.id, name: row.name })}
+                    />
+                  </Show>
                 </Inline>
               ),
             },
@@ -330,9 +343,6 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
             </Section>
           )}
         </Show>
-        <Text type="meta" muted>
-          {t().adminDescription}
-        </Text>
       </Pane>
     </AdminWorkspace>
   );
