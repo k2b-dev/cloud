@@ -1,4 +1,4 @@
-import { PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_SCOPE } from "@k2b/cloud/contracts/pwa-paths";
 import type { shellMessages } from "../../messages";
 import { phoneAuth } from "../phone";
 

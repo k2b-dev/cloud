@@ -1,4 +1,4 @@
-import { PWA_AUTH_PATH, PWA_COOKIES, PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_AUTH_PATH, PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "@k2b/cloud/contracts";
 import { rememberedPwaAddress } from "@k2b/cloud/contracts/pwa-location";
 import { type AuthContext, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
@@ -8,7 +8,9 @@ import { installationPlatform } from "@k2b/ui";
 import { deleteCookie, getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
+import BlockedScreen from "./_components/BlockedScreen.island";
 import StartScreen from "./_components/StartScreen.island";
+import Unavailable from "./_components/Unavailable.island";
 import Welcome from "./_components/Welcome.island";
 
 const WELCOME_STATES = ["new", "ended", "expired"] as const;
@@ -44,7 +46,7 @@ export default ssr<AuthContext>(async (c) => {
     // Start on v2 in the app's frame, which brings the head and the way to Settings; the island renders the parts.
     return () => (
       <PwaLayout c={c} ui="v2" title={cloud} sidebarTitle={t.start}>
-        <StartScreen cloud={cloud} view={{ kind: "parts", parts: starts, endpoints, name: user.displayName || user.uid }} />
+        <StartScreen parts={starts} endpoints={endpoints} name={user.displayName || user.uid} />
       </PwaLayout>
     );
   }
@@ -53,7 +55,7 @@ export default ssr<AuthContext>(async (c) => {
   if (state === "blocked") {
     return () => (
       <PwaLayout c={c} ui="v2" title={cloud}>
-        <StartScreen cloud={cloud} view={{ kind: "blocked" }} />
+        <BlockedScreen cloud={cloud} />
       </PwaLayout>
     );
   }
@@ -61,7 +63,7 @@ export default ssr<AuthContext>(async (c) => {
   if (state === "unavailable" || (!isWelcomeState(state) && c.req.query("pwa_launch") !== undefined)) {
     return () => (
       <PwaLayout c={c} ui="v2" title={cloud}>
-        <StartScreen cloud={cloud} view={{ kind: "unavailable" }} />
+        <Unavailable cloud={cloud} rotationGraceSeconds={PWA_LIMITS.rotationGraceSeconds} />
       </PwaLayout>
     );
   }

@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { PWA_LIMITS } from "@k2b/cloud/contracts/pwa";
 import { createComponent, type JSX } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
@@ -36,7 +37,8 @@ const load = async () => {
     return {
       ui: await import("@k2b/ui"),
       SettingsScreen: (await import("./SettingsScreen.island")).default,
-      Unavailable: (await import("./Unavailable")).default,
+      Unavailable: (await import("./Unavailable.island")).default,
+      BlockedScreen: (await import("./BlockedScreen.island")).default,
       StartScreen: (await import("./StartScreen.island")).default,
       StartParts: (await import("./StartParts")).default,
     };
@@ -94,6 +96,7 @@ const settings = () =>
     account: { id: "mia", name: "Mia Muster" },
     theme: "light",
     name: "iPhone",
+    nameMaxLength: 80,
     cloud: "Example Cloud",
     version: "Cloud 1.0.0",
   });
@@ -401,16 +404,22 @@ else {
     const fetch = mockFetch((_method, path) =>
       path === "/pwa/_auth/session/renew" ? Response.json({ renewed: true, builds: {} }) : undefined,
     );
-    let page = mount(() => createComponent(modules!.Unavailable, { cloud: "Example Cloud" }), { url: "/pwa/?pwa=unavailable" });
+    let page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: "/pwa/?pwa=unavailable" },
+    );
     try {
       await waitFor(() => page.replaced.length === 1, "the launch");
       expect(page.replaced).toEqual(["/pwa/?launch"]);
       const marker = page.dom.window.sessionStorage.getItem("cloud.pwa.unavailable-retry")!;
       page.dispose();
-      page = mount(() => createComponent(modules!.Unavailable, { cloud: "Example Cloud" }), {
-        url: "/pwa/?pwa=unavailable",
-        before: (dom) => dom.window.sessionStorage.setItem("cloud.pwa.unavailable-retry", marker),
-      });
+      page = mount(
+        () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+        {
+          url: "/pwa/?pwa=unavailable",
+          before: (dom) => dom.window.sessionStorage.setItem("cloud.pwa.unavailable-retry", marker),
+        },
+      );
       await waitFor(() => fetch.calls.length === 2, "second renewal");
       await Bun.sleep(20);
       expect(page.replaced).toEqual([]);
@@ -430,7 +439,10 @@ else {
       delays.push(delay);
       return window.setTimeout(callback, delay === 60_000 ? 5 : delay);
     }) as never);
-    const page = mount(() => createComponent(modules!.Unavailable, { cloud: "Example Cloud" }), { url: "/pwa/?pwa=unavailable" });
+    const page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: "/pwa/?pwa=unavailable" },
+    );
     try {
       await waitFor(() => page.replaced.length === 1, "the launch");
       expect(fetch.calls.map((call) => call.path)).toEqual(["/pwa/_auth/session/renew", "/pwa/_auth/session/renew"]);
@@ -449,7 +461,10 @@ else {
     );
     const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) =>
       window.setTimeout(callback, delay === 60_000 ? 5 : delay)) as never);
-    const page = mount(() => createComponent(modules!.Unavailable, { cloud: "Example Cloud" }), { url: "/pwa/?pwa=unavailable" });
+    const page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: "/pwa/?pwa=unavailable" },
+    );
     try {
       await waitFor(() => fetch.calls.length === 2, "second renewal");
       await Bun.sleep(20);
@@ -462,21 +477,16 @@ else {
   });
 
   test("a connected app explains why a pairing link does not pair again; other pages just drop it", async () => {
-    let page = mount(
-      () =>
-        createComponent(modules!.StartScreen, {
-          cloud: "Example Cloud",
-          view: { kind: "parts", parts: [], endpoints: [], name: "Mia Muster" },
-        }),
-      { url: `/pwa/#pair=${SECRET}` },
-    );
+    let page = mount(() => createComponent(modules!.StartScreen, { parts: [], endpoints: [], name: "Mia Muster" }), {
+      url: `/pwa/#pair=${SECRET}`,
+    });
     try {
       expect(page.dom.window.location.href).toBe("http://localhost/pwa/");
       await waitFor(() => page.dom.document.body.textContent?.includes("already connected as Mia Muster") ?? false, "notice");
     } finally {
       page.dispose();
     }
-    page = mount(() => createComponent(modules!.StartScreen, { cloud: "Example Cloud", view: { kind: "blocked" } }), {
+    page = mount(() => createComponent(modules!.BlockedScreen, { cloud: "Example Cloud" }), {
       url: `/pwa/?pwa=blocked#pair=${SECRET}`,
     });
     try {

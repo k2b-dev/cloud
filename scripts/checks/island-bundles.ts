@@ -11,10 +11,15 @@ import type { Finding, Rule } from "./rule";
 // Dynamic imports are excluded, exactly as in the production SSR asset manifest.
 const budgets = [
   { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 96 },
-  // The phone Start and Settings on @k2b/ui/v2 (its menus, confirm dialog and toasts in the static closure). Measured
-  // 2026-11-26: 553,489 / 612,960 B; about 10 % headroom, rounded up to the next KiB.
-  { file: "packages/pwa/src/frontend/_components/StartScreen.island.tsx", kib: 595 },
-  { file: "packages/pwa/src/frontend/_components/SettingsScreen.island.tsx", kib: 659 },
+  // The phone app on @k2b/ui/v2: Start, a blocked account, an unreachable Cloud and Settings are islands of their own,
+  // so Start loads no renewal schema and no sign-out question (the question loads when asked). Measured 2026-11-26 in
+  // this build: 307,311 / 304,427 / 108,697 / 368,927 B; about 10 % headroom, rounded up to the next KiB. Built alone,
+  // Start is 70 KB; in the app's build about 130 KB of ui-sdk menus, popups and dialogs it never uses ride along,
+  // because `@k2b/ui/v2` is one barrel whose re-exports split builds keep (platform issue, reported).
+  { file: "packages/pwa/src/frontend/_components/StartScreen.island.tsx", kib: 331 },
+  { file: "packages/pwa/src/frontend/_components/BlockedScreen.island.tsx", kib: 328 },
+  { file: "packages/pwa/src/frontend/_components/Unavailable.island.tsx", kib: 117 },
+  { file: "packages/pwa/src/frontend/_components/SettingsScreen.island.tsx", kib: 397 },
   // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure; KaTeX
   // loads only for math. Measured 2026-11-05 with these roots: 2,155,527 B (with KaTeX 2,258,365 B and fewer roots).
   // Measured 2026-11-07 with first-use table controls: 2,210,862 B; original 2160 KiB cap restored.

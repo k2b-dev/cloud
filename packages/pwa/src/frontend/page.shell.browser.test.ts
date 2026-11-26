@@ -8,14 +8,12 @@ import { announcements } from "@k2b/cloud/services/announcements";
 import * as iconSource from "@k2b/cloud/services/branding/app-icon-source";
 import * as staticAssets from "@k2b/cloud/services/pwa-assets";
 import { session } from "@k2b/cloud/services/session";
+import { loadShellAssets, openShellPage, type ShellAssets, serveCoreV2Sheet } from "@k2b/cloud/testing";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
-import { serveCoreV2Sheet } from "../../../../scripts/fixtures/core-v2-sheet";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
-import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
-import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
+import { launchBrowser, launchHookMs, pageErrors } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // The app's pages on v2 in their real frame, from an invented account and phone: Start with its parts (and the worst
@@ -173,23 +171,22 @@ const buildShellHarness = async (): Promise<string> => {
 const shellProps = (name: string, parts: RuntimeAppMeta[]) => {
   if (name === "einstellungen")
     return {
-      screen: "settings",
+      screen: "SettingsScreen",
       props: {
         account: { id: user.id, name: "Mia Muster", mail: "mia.muster@werkstatt.example" },
         theme: "system",
         name: "iPhone von Mia",
+        nameMaxLength: 80,
         cloud: "Werkstatt Cloud",
         version: "Cloud 0.0.0-local",
       },
     };
-  if (name === "gesperrt") return { screen: "start", cloud: "Werkstatt Cloud", view: { kind: "blocked" } };
-  if (name === "nicht-erreichbar") return { screen: "start", cloud: "Werkstatt Cloud", view: { kind: "unavailable" } };
+  if (name === "gesperrt") return { screen: "BlockedScreen", props: { cloud: "Werkstatt Cloud" } };
+  if (name === "nicht-erreichbar") return { screen: "Unavailable", props: { cloud: "Werkstatt Cloud", rotationGraceSeconds: 30 } };
   const visible = visiblePwaParts(parts, user, "de");
   return {
-    screen: "start",
-    cloud: "Werkstatt Cloud",
-    view: {
-      kind: "parts",
+    screen: "StartScreen",
+    props: {
       name: "Mia Muster",
       endpoints: visible.flatMap((app) => (app.pwa.summary ? [app.pwa.summary] : [])),
       parts: visible.map((app) => ({
@@ -209,9 +206,7 @@ let browser: Browser;
 let assets: ShellAssets;
 let harness: string;
 beforeAll(async () => {
-  assets = await loadShellAssets(
-    await cloudShellSheets({ id: "pwa", css: resolve(import.meta.dir, "../styles/app.css"), v2Page: true }, import.meta.dir),
-  );
+  assets = await loadShellAssets({ id: "pwa", css: resolve(import.meta.dir, "../styles/app.css"), v2Page: true });
   harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
@@ -244,6 +239,7 @@ describe("The app on v2 in its frame", () => {
           ]),
         );
         const { context, tab, errors } = await openShellPage(browser, assets, {
+          errors: pageErrors,
           path,
           html,
           width,

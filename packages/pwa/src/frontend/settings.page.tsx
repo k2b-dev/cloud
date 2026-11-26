@@ -1,4 +1,4 @@
-import { PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_LIMITS, PWA_SCOPE } from "@k2b/cloud/contracts";
 import { type AuthContext, buildMetadata, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { pwaDevices } from "@k2b/cloud/services";
 import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
@@ -27,6 +27,7 @@ export default ssr<AuthContext>(async (c) => {
         account={{ id: user.id, name, mail: user.mail || undefined, avatar }}
         theme={readThemePreferenceFromCookieHeader(c.req.header("Cookie"))}
         name={device?.name ?? ""}
+        nameMaxLength={PWA_LIMITS.nameMaxLength}
         cloud={cloud}
         version={t.version({ version: buildMetadata.version })}
       />

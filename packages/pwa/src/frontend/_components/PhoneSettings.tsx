@@ -1,6 +1,5 @@
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
-import { PWA_LIMITS } from "@k2b/cloud/contracts";
 import type { CloudThemePreference } from "@k2b/cloud/shared";
 import { createPreferenceController, THEME_CYCLE } from "@k2b/cloud/ssr/preference-controller";
 import { useLocale } from "@k2b/ui";
@@ -8,13 +7,14 @@ import { Bar, Button, Input, List, Menu, Notice, NoticeStack, Row, Text, useToas
 import { createSignal, onMount, Show } from "solid-js";
 import { shellMessages } from "../../messages";
 import { phoneAuth } from "../phone";
-import { confirmWithBack } from "./confirm-with-back";
 import { signOutOfApp } from "./sign-out";
 
 export type PhoneSettingsProps = {
   /** The signed-in person, as the page read them. */
   account: { id: string; name: string; mail?: string; avatar?: string };
   theme: CloudThemePreference;
+  /** The longest name a phone takes (`PWA_LIMITS.nameMaxLength`), from the page: the island loads no contract schemas. */
+  nameMaxLength: number;
   /** This phone's name; empty when the request carries no device. */
   name: string;
   cloud: string;
@@ -61,7 +61,7 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
     if (saving() || !changed()) return;
     const submitted = name();
     const value = submitted.trim();
-    if (!value || value.length > PWA_LIMITS.nameMaxLength) return setError(t().nameInvalid);
+    if (!value || value.length > props.nameMaxLength) return setError(t().nameInvalid);
     setSaving(true);
     setProblem(undefined);
     const answer = await phoneAuth.rename(value);
@@ -84,6 +84,8 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
   const signOut = async () => {
     if (signingOut()) return;
     setSigningOut(true);
+    // the question loads when it is asked: the page draws without the dialog's code
+    const { confirmWithBack } = await import("./confirm-with-back");
     const agreed = await confirmWithBack({
       title: t().signOut,
       description: t().signOutConfirm({ cloud: props.cloud }),
@@ -168,7 +170,7 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
                 label={t().phoneName}
                 value={name()}
                 placeholder={t().phoneNamePlaceholder}
-                maxLength={PWA_LIMITS.nameMaxLength}
+                maxLength={props.nameMaxLength}
                 autocomplete="off"
                 disabled={!ready()}
                 onInput={(value) => {

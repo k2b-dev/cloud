@@ -1,17 +1,24 @@
+import { afterAll, spyOn } from "bun:test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { settled } from "@k2b/ui/v2/testing";
+import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page, Route } from "playwright";
-import { pageErrors, settled } from "./browser";
+import * as watcher from "./_internal/runtime-watcher";
 
 /**
- * A page of an app as Cloud draws it, for browser tests and design pictures without a running Cloud: the first HTML
- * of the real page (with its shell) or a test harness, served with the page's stylesheets, Plex fonts and icons.
- * Every request that leaves the test origin is refused, so a picture never depends on the network. The page's
- * stylesheets come from the caller (a Cloud app takes them from `scripts/fixtures/cloud-shell-sheets.ts`): the
- * component library builds none of an application's styles.
+ * `@k2b/cloud/testing`: an app's page as Cloud draws it, for browser tests and design pictures without a running
+ * Cloud. Needs Playwright in the consumer; nothing here is part of the runtime exports.
  *
- *   const assets = await loadShellAssets({ "/public/app.css": css });
- *   const { tab, errors, context } = await openShellPage(browser, assets, { path: "/admin/ipa-hosts", html, width: 1440 });
+ * - `loadShellAssets({ id, css })`: Cloud's global.css, the app's own sheet and, with `v2Page`, Core's v2.css, built
+ *   from this Cloud, with the Plex fonts and the icons, served at the paths a page asks for.
+ * - `openShellPage(browser, assets, { path, html, width, errors })`: the first HTML of a page (or a harness) at one
+ *   width, light; every request that leaves the test origin is refused, so a picture never depends on the network.
+ * - `serveCoreV2Sheet()`: the registered Core declares its `/public/v2.css`, as every current installation does.
+ *
+ *   serveCoreV2Sheet();
+ *   const assets = await loadShellAssets({ id: "oauth", css: resolve(dir, "../styles/app.css"), v2Page: true });
+ *   const { tab, errors, context } = await openShellPage(browser, assets, { path: "/oauth/device", html, width: 390, errors: pageErrors });
  */
 
 export const SHELL_ORIGIN = "https://cloud.example.test";
@@ -23,20 +30,33 @@ const LOGO =
 export type ShellAssets = {
   /** Answers a request for one of the shell's assets; false when the path is none of them. */
   serve: (route: Route, url: URL) => Promise<boolean>;
-  /** The `<link>`s a harness document puts in its head to draw with the shell's fonts and icons. */
+  /** The `<link>`s a harness document puts in its head to draw with the shell's sheets, fonts and icons. */
   head: string;
 };
 
-/** Serves the page's stylesheets (path to text, in the order of its head), the Plex fonts and the icons at their paths. */
-export const loadShellAssets = async (sheets: Record<string, string>): Promise<ShellAssets> => {
+const build = async (entry: string, withTailwind: boolean) => {
+  const result = await Bun.build({ entrypoints: [entry], plugins: withTailwind ? [tailwind] : [] });
+  if (!result.success) throw new AggregateError(result.logs, `Could not build ${entry}`);
+  return result.outputs[0]!.text();
+};
+
+/**
+ * Builds the page's stylesheets once per test file and serves them, the Plex fonts and the icons at their paths: Cloud's
+ * global.css, the app's sheet at `/public/<id>/app.css` and, for a page that links Core's v2.css alone (a visitor page
+ * on `MinimalLayout ui="v2"`, an app page on `PwaLayout ui="v2"`), that sheet with `v2Page`.
+ */
+export const loadShellAssets = async (app: { id: string; css: string; v2Page?: boolean }): Promise<ShellAssets> => {
   const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
   const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
   const iconFont = /tabler-icons-[\w-]+\.woff2/.exec(icons)?.[0];
   if (!iconFont) throw new Error("The Tabler preset names no font");
+  const styles = resolve(import.meta.dir, "styles");
   const stylesheets: Record<string, string> = {
     "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
     "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
-    ...sheets,
+    "/public/global.css": await build(resolve(styles, "global.css"), true),
+    [`/public/${app.id}/app.css`]: await build(app.css, true),
+    ...(app.v2Page ? { "/public/v2.css": await build(resolve(styles, "v2-page.css"), false) } : {}),
   };
   const fonts = resolve(uiDist, "fonts");
   return {
@@ -60,7 +80,9 @@ export const loadShellAssets = async (sheets: Record<string, string>): Promise<S
 
 /**
  * Opens the first HTML of a page in the shell at one width, light. The islands stay as the server drew them (their
- * scripts answer empty), so the picture is the first one a person sees; every other request is refused.
+ * scripts answer empty), so the picture is the first one a person sees; every other request is refused. `errors`
+ * collects the page's errors from the moment it opens (the test's own collector, such as one that knows WebKit's
+ * words for a refused request).
  *
  * `extra` puts a test's own script into the real page, such as a harness that renders the app's screen from invented
  * data into its island, so a dialog opens inside the shell's frame: `html` goes before `</body>`, and `files` answer
@@ -69,7 +91,13 @@ export const loadShellAssets = async (sheets: Record<string, string>): Promise<S
 export const openShellPage = async (
   browser: Browser,
   assets: ShellAssets,
-  page: { path: string; html: string; width: number; extra?: { html: string; files: Record<string, { type: string; body: string }> } },
+  page: {
+    path: string;
+    html: string;
+    width: number;
+    errors: (tab: Page) => string[];
+    extra?: { html: string; files: Record<string, { type: string; body: string }> };
+  },
 ): Promise<{ context: BrowserContext; tab: Page; errors: string[] }> => {
   const phone = page.width < 600;
   const context = await browser.newContext({
@@ -93,10 +121,21 @@ export const openShellPage = async (
     return route.fulfill({ status: 404, body: "" });
   });
   const tab = await context.newPage();
-  const errors = pageErrors(tab);
+  const errors = page.errors(tab);
   await tab.goto(`${SHELL_ORIGIN}${page.path}`);
   if (page.extra) await tab.waitForSelector("body[data-ready]", { state: "attached" });
   await tab.evaluate(() => window.document.fonts.ready);
   await settled(tab);
   return { context, tab, errors };
+};
+
+/**
+ * Lets an app's SSR test render as a current installation: the registered Core declares its `/public/v2.css`, so a page
+ * on `MinimalLayout ui="v2"` or `PwaLayout ui="v2"` links it alone and draws the v2 frame. Without it a test renders the
+ * frame beside an older Core, a state no current installation shows. The spy is restored after the calling test file.
+ */
+export const serveCoreV2Sheet = () => {
+  const routes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]);
+  afterAll(() => routes.mockRestore());
+  return routes;
 };
