@@ -52,6 +52,7 @@ const server = new Hono<Environment>()
         createComponent(PanelLayout, {
           c,
           title: "Fixture lookup",
+          ui: c.req.query("ui") === "v2" ? "v2" : undefined,
           get children() {
             return createComponent(Child, {});
           },
@@ -98,6 +99,19 @@ test("a provider panel document takes its own app's primary colour", async () =>
     const body = (await response.text()).match(/<body\b[^>]*>/)?.[0] ?? "";
     expect(body.includes('data-k2b-primary="ai"')).toBe(primary === "ai");
   }
+});
+
+test("PanelLayout ui=v2 makes the panel page the v2 scope and puts its app's v2 colour and inks on the body", async () => {
+  const v2 = await (await server.request("/app/fixture/panel?ui=v2")).text();
+  expect(v2).toMatch(/class="cloud-panel-page k2-ui" data-cloud-panel-page(?:="")? data-ui="v2" data-panel-provider="fixture"/);
+  const body = v2.match(/<body\b[^>]*>/)?.[0] ?? "";
+  expect(body).toContain("app-accent-scope");
+  expect(body).toContain("--app-accent:#0f766e");
+  expect(body).toMatch(/--app-v2-ink-light:#[0-9a-f]{6};--app-v2-ink-dark:#[0-9a-f]{6}/);
+  // the v1 panel page stays as it was: no v2 scope, no app colour on the body
+  const v1 = await (await server.request("/app/fixture/panel")).text();
+  expect(v1).toMatch(/class="cloud-panel-page" data-cloud-panel-page(?:="")? data-panel-provider/);
+  expect(v1.match(/<body\b[^>]*>/)?.[0]).not.toContain("app-accent-scope");
 });
 
 test("PanelLayout passes the declared panel pathname as the runtime scope", async () => {

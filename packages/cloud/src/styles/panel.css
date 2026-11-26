@@ -389,6 +389,13 @@ body:has(> [data-cloud-panel-page]) {
   background: var(--k2b-surface);
 }
 
+/* A v2 panel page (`PanelLayout ui="v2"`) is the v2 scope on the v2 surface. The panel is a column beside the app at
+   any width, so its text edge is 16 px, also where the panel is 768 px or wider. */
+.cloud-panel-page.k2-ui {
+  background: var(--k2-surface);
+  --k2-edge: 16px;
+}
+
 /* The shell's consent question: one calm notice above the provider page, inset from the card edge like the
    tabs above it. The server draws it when the answer is missing, so hydration never moves it; the error line is
    reserved and fills in place. */
