@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-tiles-dnd.demo";
 
@@ -27,9 +27,9 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>) => {
+const withPage = async (run: (page: Page) => Promise<void>, touch = false) => {
   // tall enough that the media grids, the table and its last rows all stand in view
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1400 }, hasTouch: touch });
   page.setDefaultTimeout(3000);
   const errors = pageErrors(page);
   try {
@@ -421,5 +421,49 @@ test("tiles: the deed after the tiles stands outside the listbox, which holds on
   await withPage(async (page) => {
     expect(await page.getByRole("button", { name: "Alle laden" }).count()).toBe(1);
     expect(await tiles(page).getByRole("button", { name: "Alle laden" }).count()).toBe(0);
+  });
+});
+
+// ── Review r4 (Opus, 26.11.) ─────────────────────────────────────────────────────────────────────────────────────
+
+test("server markup: a tile with deeds says how to open them without keys", () => {
+  expect(markup).toMatch(
+    /role="option"[^>]*aria-description="Aktionen: lange drücken oder Umschalt\+F10"|aria-description="Aktionen: lange drücken oder Umschalt\+F10"[^>]*role="option"/,
+  );
+});
+
+test("tiles: a finger held on a tile opens its deeds", async () => {
+  // Playwright drives WebKit touch only as a whole tap; a held finger needs Chromium's touch input
+  if (browserName !== "chromium") return;
+  await withPage(async (page) => {
+    const box = await tile(page, "Angebot.pdf").boundingBox();
+    if (!box) throw new Error("no tile");
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + box.width / 2, y: box.y + 40 }] });
+      await page.getByRole("menuitem", { name: "Verschieben nach …" }).waitFor();
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    } finally {
+      await cdp.detach();
+    }
+  }, true);
+});
+
+test("tiles: the menu key, or Shift+F10 followed by the context menu event, opens one menu", async () => {
+  await withPage(async (page) => {
+    for (const key of ["ContextMenu", "F10"]) {
+      await tile(page, "Angebot.pdf").focus();
+      await page.evaluate((pressed) => {
+        const item = document.activeElement;
+        item?.dispatchEvent(new KeyboardEvent("keydown", { key: pressed, shiftKey: pressed === "F10", bubbles: true, cancelable: true }));
+        // Firefox and Windows send the context menu event after the key, to the focused tile
+        item?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      }, key);
+      await page.getByRole("menuitem", { name: "Verschieben nach …" }).first().waitFor();
+      await settled(page);
+      expect(await page.getByRole("menu").count()).toBe(1);
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => document.querySelectorAll('[role="menu"]').length === 0);
+    }
   });
 });

@@ -102,6 +102,7 @@ const uiMessages = i18n.define({
       entries: ({ count }: { count: number }) => `${count.toLocaleString("en")} entries`,
       dropNothing: "Drop here: nothing happens",
       dropFoldersRefused: "Folders can't be dropped here, only files",
+      deedsHint: "Actions: long press or Shift+F10",
       yes: "Yes",
     },
     de: {
@@ -200,6 +201,7 @@ const uiMessages = i18n.define({
       entries: ({ count }) => `${count.toLocaleString("de")} Einträge`,
       dropNothing: "Hier loslassen: nichts passiert",
       dropFoldersRefused: "Ordner können hier nicht abgelegt werden, nur Dateien",
+      deedsHint: "Aktionen: lange drücken oder Umschalt+F10",
       yes: "Ja",
     },
   },

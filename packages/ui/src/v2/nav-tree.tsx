@@ -4,7 +4,7 @@ import { type TreeParts, useTree } from "./behavior/lists";
 import { announceText } from "./behavior/treegrid";
 import { type DragMove, useDragMove } from "./drag";
 import { Dot, Icon } from "./marks";
-import { Menu, type MenuEntry } from "./menu";
+import { Menu, type MenuEntry, PointerMenu } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { OnNavigate, Status } from "./types";
 
@@ -87,7 +87,7 @@ const isBranch = (node: NavTreeNode) => node.branch === true || (node.children?.
 const stop = (event: Event) => event.stopPropagation();
 
 /** A Shift+F10 or the menu key on a place opens its deeds, as a right-click does. */
-const asksForMenu = (event: KeyboardEvent) => event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
+const asksForMenu = (event: KeyboardEvent) => event.shiftKey && event.key === "F10";
 
 const openMenuOf = (item: Element) => item.querySelector<HTMLElement>(":scope > .k2-nt-row > .k2-nt-menu > button")?.click();
 
@@ -102,7 +102,7 @@ const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
   };
   return (
     <span class="k2-nt-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop} on:focusin={back}>
-      <Menu label={props.label} items={props.items} pointerOnly />
+      <PointerMenu label={props.label} items={props.items} />
     </span>
   );
 };
@@ -275,13 +275,25 @@ export const NavTreeView = (props: NavTree) => {
         class="k2-nt-item"
         aria-posinset={entry.position}
         aria-setsize={entry.size}
-        // its deeds open from Shift+F10 on the place (the "…" is no Tab stop)
+        // its deeds open from Shift+F10 on the place (the "…" is no Tab stop) and a long press on its row; screen readers
+        // that read no key shortcuts hear the menu and the hint
         aria-keyshortcuts={entry.node.menu ? "Shift+F10" : undefined}
+        aria-haspopup={entry.node.menu ? "menu" : undefined}
+        aria-description={entry.node.menu ? t().deedsHint : undefined}
         ref={(element: HTMLElement) => keepPlace(element, () => ({ position: entry.position, size: entry.size }))}
         onKeyDown={(event: KeyboardEvent) => {
           if (event.target !== event.currentTarget || !entry.node.menu || !asksForMenu(event)) return;
           event.preventDefault();
           if (event.currentTarget instanceof Element) openMenuOf(event.currentTarget);
+        }}
+        onContextMenu={(event: MouseEvent) => {
+          // The menu key (and Shift+F10 where the browser still sends the event) ends in a context menu event on the
+          // focused place itself; the row's Menu.Context only sees those that start on the row. One menu: not twice.
+          const item = event.currentTarget;
+          if (event.target !== item || !entry.node.menu || !(item instanceof Element)) return;
+          event.preventDefault();
+          if (item.querySelector(':scope > .k2-nt-row > .k2-nt-menu > button[aria-expanded="true"]')) return;
+          openMenuOf(item);
         }}
       >
         {(() => {
@@ -292,6 +304,11 @@ export const NavTreeView = (props: NavTree) => {
               class="k2-ni k2-nt-row"
               data-k2-part="Nav.Item"
               data-has-menu={entry.node.menu ? "" : undefined}
+              // A menu opened on the row gives the focus back into the row when it closes (to its name); the place takes it.
+              on:focusin={(event: FocusEvent) => {
+                if (!(event.target instanceof Element) || event.target.closest(".k2-nt-menu")) return;
+                event.target.closest<HTMLElement>('[role="treeitem"]')?.focus();
+              }}
             >
               <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
                 {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}

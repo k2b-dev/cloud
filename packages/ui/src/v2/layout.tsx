@@ -21,7 +21,7 @@ import { MarkCheck } from "./controls";
 import { type DragMove, useDragMove } from "./drag";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
-import { Menu, type MenuEntry } from "./menu";
+import { Menu, type MenuEntry, PointerMenu } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty } from "./states";
@@ -814,7 +814,8 @@ const keyOf = (tile: Tile) => tile.key ?? tile.href ?? tile.title;
 const stopHere = (event: Event) => event.stopPropagation();
 
 /** A Shift+F10 or the menu key on a tile opens its deeds, as a right-click does. */
-const asksForMenu = (event: KeyboardEvent) => event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
+/** Shift+F10 on a tile opens its deeds; the menu key is left to its context menu event (`Menu.Context`). */
+const asksForMenu = (event: KeyboardEvent) => event.shiftKey && event.key === "F10";
 
 const openMenuOf = (tile: Element) => tile.querySelector<HTMLElement>(":scope > .k2-tile-media > .k2-tile-menu > button")?.click();
 
@@ -830,7 +831,7 @@ const TileMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
   };
   return (
     <span class="k2-tile-menu" on:keydown={stopHere} on:click={stopHere} on:pointerdown={stopHere} on:focusin={back}>
-      <Menu label={props.label} items={props.items} pointerOnly />
+      <PointerMenu label={props.label} items={props.items} />
     </span>
   );
 };
@@ -847,6 +848,7 @@ const TileMedia = (props: {
   drag: ReturnType<ReturnType<typeof useDragMove>["entry"]>;
 }) => {
   const overlay = useOverlayMessages();
+  const t = useUiMessages();
   const title = createUniqueId();
   const selected = () => props.select?.selected.includes(keyOf(props.tile)) ?? false;
   const owner = () => props.tile.people?.[0];
@@ -862,8 +864,19 @@ const TileMedia = (props: {
       aria-labelledby={title}
       data-open={props.tile.href !== undefined ? "" : undefined}
       data-selected={selected() ? "" : undefined}
-      // its deeds open from Shift+F10 on the tile (the "…" is for the pointer only)
+      // its deeds open from Shift+F10 on the tile (the "…" is for the pointer only) and a long press; screen readers
+      // that read no key shortcuts hear the hint
       aria-keyshortcuts={props.tile.menu ? "Shift+F10" : undefined}
+      aria-description={props.tile.menu ? t().deedsHint : undefined}
+      // Where a browser still sends the context menu event after Shift+F10 opened the "…", it opens nothing more. This
+      // listener is bound before the one of `Menu.Context`, so it runs first.
+      on:contextmenu={(event: MouseEvent) => {
+        const open =
+          event.currentTarget instanceof Element && event.currentTarget.querySelector('.k2-tile-menu > button[aria-expanded="true"]');
+        if (!open) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }}
       onKeyDown={(event: KeyboardEvent) => {
         if (event.target !== event.currentTarget || !(event.currentTarget instanceof HTMLElement)) return;
         if (props.tile.menu && asksForMenu(event)) {
