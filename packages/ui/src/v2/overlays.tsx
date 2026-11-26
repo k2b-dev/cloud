@@ -11,8 +11,11 @@ import { Icon } from "./marks";
 // ── Dialog ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type DialogProps = {
+  /** The heading in the head of the dialog, which also names it for assistive technology. */
   title: string;
+  /** Whether the dialog shows; the screen keeps this state, such as a signal set by the button that opens it. */
   open: boolean;
+  /** Called with `false` when Escape, the close button, a press outside or a swipe closes the dialog. */
   onOpenChange: (open: boolean) => void;
   /** The buttons at the foot, the main one last. */
   foot: JSX.Element;
