@@ -415,7 +415,8 @@ export type PaneProps = {
   scrollKey?: string;
   /**
    * The bar at the end of the column, such as "Verwerfen" and "Speichern" under a form of settings: in the flow after
-   * the content, so it ends the column.
+   * the content, so it ends the column. Its "Speichern" is the page's one primary, so the page has no `Workspace
+   * primary`.
    */
   foot?: JSX.Element;
   /**

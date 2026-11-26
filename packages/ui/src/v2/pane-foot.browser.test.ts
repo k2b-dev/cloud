@@ -9,7 +9,7 @@ import { measureV2Layout } from "./testing";
 
 // The foot of a column (`Pane foot`, test/v2-pane-foot.client.tsx: a long form of settings): in the flow at the end of
 // the column while nothing changed; with unsaved changes on the bottom of the column while it scrolls, so "Speichern"
-// is in reach from the first field. The last field stays above it, and on the phone the floating main action too.
+// is in reach from the first field. The last field stays above it.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -50,15 +50,12 @@ const place = (page: Page) =>
     const column = scroll.getBoundingClientRect();
     const fields = [...scroll.querySelectorAll(".k2-field")];
     const last = fields[fields.length - 1]!.getBoundingClientRect();
-    const fab = document.querySelector(".k2-fab");
-    const fabBox = fab && getComputedStyle(fab).display !== "none" ? fab.getBoundingClientRect() : null;
     return {
       scrolled: scroll.scrollTop,
       scrolls: scroll.scrollHeight > scroll.clientHeight + 100,
       onBottom: Math.abs(bar.bottom - column.bottom) <= 1,
       inView: bar.top < column.bottom && bar.bottom > column.top,
       lastAbove: last.bottom <= bar.top + 0.5,
-      fabAbove: fabBox ? fabBox.bottom <= bar.top + 0.5 : true,
     };
   });
 
@@ -75,7 +72,6 @@ for (const width of [1440, 390])
       // changed while the column stands at its top: the save is on the bottom of the column, in sight
       expect(changed.scrolled).toBeLessThan(200);
       expect(changed.onBottom).toBe(true);
-      expect(changed.fabAbove).toBe(true);
       // at the end of the column the last field stands above it
       await page.locator(".k2-pane > .k2-scroll").evaluate((scroll) => {
         scroll.scrollTop = scroll.scrollHeight;
@@ -84,7 +80,6 @@ for (const width of [1440, 390])
       const end = await place(page);
       expect(end.onBottom).toBe(true);
       expect(end.lastAbove).toBe(true);
-      expect(end.fabAbove).toBe(true);
       // one line above the foot, from edge to edge, and every other rule of the layout
       expect((await measureV2Layout(page)).problems).toEqual([]);
       // saved: it goes back into the flow, out of sight again at the top

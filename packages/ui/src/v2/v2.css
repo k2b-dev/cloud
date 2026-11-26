@@ -4087,10 +4087,6 @@
     box-shadow: var(--k2-float);
     z-index: 4;
   }
-  /* a column's foot that stays on the bottom (unsaved changes) holds the main action above it, never under it */
-  .k2-ui .k2-ws:has(> .k2-ws-main > :is(.k2-pane, .k2-split > .k2-pane) > .k2-scroll > [data-slot="foot"][data-unsaved]) > .k2-fab {
-    bottom: calc(16px + var(--k2-h-head));
-  }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;

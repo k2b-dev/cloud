@@ -71,7 +71,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
 - `foot` (a `Bar` with `end`, such as "Verwerfen" and "Speichern" under
   a form of settings): ends the column in the flow. With `unsaved` it stays
   on the bottom of the column while it scrolls (in the column, not the
-  window), and the floating main action on the phone stands above it.
+  window). Its "Speichern" is the page's one primary, so a page with a
+  `foot` has no `Workspace primary`.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
