@@ -229,6 +229,41 @@ describe("workflow run statistics integration", () => {
     }
   });
 
+  postgresTest("a zone Intl knows but Postgres does not counts on UTC instead of failing the page", async () => {
+    const baseId = uuid();
+    const workflowId = uuid();
+    // an old tz link: Intl still accepts it, Postgres 15 and later reject it with 22023
+    const timeZone = "US/Pacific-New";
+    expect(new Intl.DateTimeFormat("en-US", { timeZone }).resolvedOptions().timeZone).toBe(timeZone);
+    try {
+      await sql`
+        INSERT INTO grids.bases (id, short_id, name)
+        VALUES (${baseId}::uuid, ${testShortId()}, 'Workflow run series with an unknown zone')
+      `;
+      await insertTestWorkflow({ id: workflowId, baseId, name: "Unknown zone", shortId: testShortId(), enabled: true });
+      await insertTestWorkflowRun({ workflowId, baseId, state: "failed", createdAt: new Date(Date.now() - 30 * 60_000) });
+      const meter = await meterSql();
+      let stats: GridsWorkflowRunStats | undefined;
+      try {
+        const statements = await meter.during(async () => {
+          stats = await getWorkflowRunStats(baseId, [workflowId], { window: "24h", timeZone });
+        });
+        // the rejected statement and the one on UTC: a second statement only in this case
+        expect(statements).toHaveLength(2);
+      } finally {
+        await meter.close();
+      }
+      expect(stats!.total).toBe(1);
+      expect(stats!.series.points).toHaveLength(25);
+      // the buckets begin on UTC hours
+      expect(stats!.series.points.every((point) => point.start.endsWith(":00:00.000Z"))).toBe(true);
+      expect(stats!.series.points.reduce((sum, point) => sum + point.failed, 0)).toBe(1);
+    } finally {
+      await deleteTestWorkflowScope(baseId);
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
+
   postgresTest("a day across the end of summer time is one bucket of 25 hours, and its double hour two buckets", async () => {
     const baseId = uuid();
     const workflowId = uuid();

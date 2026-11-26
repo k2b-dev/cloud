@@ -294,15 +294,18 @@ export const PublicGridsWorkflowRunStatsSchema = z
     series: z
       .object({
         bucket: GridsWorkflowRunSeriesBucketSchema,
-        points: z.array(
-          z
-            .object({
-              start: z.string().datetime(),
-              total: z.number().int().nonnegative(),
-              failed: z.number().int().nonnegative(),
-            })
-            .strict(),
-        ),
+        points: z
+          .array(
+            z
+              .object({
+                start: z.string().datetime(),
+                total: z.number().int().nonnegative(),
+                failed: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          // the longest window, 30 days in days, with its partial first day and a daylight-saving day (maxSeriesPoints)
+          .max(32),
       })
       .strict(),
     byWorkflow: z.array(

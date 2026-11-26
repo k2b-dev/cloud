@@ -540,6 +540,9 @@ const statsCounts = (row: StatsSqlRow | undefined) => {
   };
 };
 
+/** The SQLSTATE of a Postgres error: Bun's driver carries it in `errno`, its own code in `code`. */
+const sqlState = (error: unknown): unknown => (typeof error === "object" && error !== null && "errno" in error ? error.errno : undefined);
+
 export const getWorkflowRunStats = async (
   baseId: string,
   workflowIds: string[],
@@ -559,132 +562,142 @@ export const getWorkflowRunStats = async (
   const ids = toPgUuidArray(workflowIds);
   const windowSeconds = STATS_WINDOW_SECONDS[window];
   const timeZone = normalizeTimeZone(options.timeZone, "UTC");
-  const now = options.now ? sql`${options.now.toISOString()}::timestamptz` : sql`now()`;
-  const since = sql`(${now} - (${windowSeconds} * interval '1 second'))`;
-  const localMidnight = sql`(date_trunc('day', ${now} AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`;
-  // Day buckets follow the viewer's calendar, so a day across a daylight-saving
-  // switch has 23 or 25 hours. Shorter buckets bin absolute time from the
-  // viewer's midnight: no hour repeats or disappears.
-  const bucketStart = (at: SQLQuery) =>
-    bucket === "1d"
-      ? sql`(date_trunc('day', ${at} AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`
-      : sql`date_bin(${stepSeconds} * interval '1 second', ${at}, ${localMidnight})`;
-  const seriesBuckets =
-    bucket === "1d"
-      ? sql`SELECT local_day AT TIME ZONE ${timeZone} AS start
-            FROM generate_series(date_trunc('day', ${since} AT TIME ZONE ${timeZone}),
-                                 date_trunc('day', ${now} AT TIME ZONE ${timeZone}), interval '1 day') AS local_day`
-      : sql`SELECT start
-            FROM generate_series(${bucketStart(since)}, ${bucketStart(now)}, ${stepSeconds} * interval '1 second') AS start`;
-  const [row] = await sql<Array<StatsSqlRow & { by_workflow: unknown; series_points: unknown }>>`
-    WITH scoped AS (
-      SELECT id, workflow_id::text AS workflow_id, state, created_at, started_at, finished_at
-      FROM workflows.run
-      WHERE app_id = ${GRIDS_APP_ID}
-        AND scope_id = ${baseId}
-        AND workflow_id = ANY(${ids}::uuid[])
-        AND mode = 'execute'
-    ),
-    filtered AS (
-      SELECT id, workflow_id, state, created_at,
-             CASE WHEN started_at IS NOT NULL AND finished_at IS NOT NULL
-               THEN GREATEST(0, EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)
-               ELSE NULL
-             END AS duration_ms
-      FROM scoped
-      WHERE created_at >= ${since} AND created_at <= ${now}
-    ),
-    active AS (
-      SELECT workflow_id, count(*)::int AS active
-      FROM scoped
-      WHERE state IN ('queued', 'running', 'waiting')
-      GROUP BY workflow_id
-    ),
-    failed_24h AS (
-      SELECT count(*)::int AS failed_last_24h
-      FROM scoped
-      WHERE state IN ('failed', 'needs_attention') AND created_at >= ${now} - interval '24 hours'
-    ),
-    overall AS (
-      SELECT count(*)::int AS total,
-             count(*) FILTER (WHERE state = 'queued')::int AS queued,
-             count(*) FILTER (WHERE state = 'running')::int AS running,
-             count(*) FILTER (WHERE state = 'waiting')::int AS waiting,
-             count(*) FILTER (WHERE state = 'succeeded')::int AS succeeded,
-             count(*) FILTER (WHERE state = 'failed')::int AS failed,
-             count(*) FILTER (WHERE state = 'canceled')::int AS canceled,
-             count(*) FILTER (WHERE state = 'needs_attention')::int AS needs_attention,
-             round((avg(duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::numeric)::int AS avg_duration_ms,
-             round((percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms)
-               FILTER (WHERE duration_ms IS NOT NULL))::numeric)::int AS p99_duration_ms,
-             max(created_at) AS last_run_at
-      FROM filtered
-    ),
-    latest AS (
-      SELECT DISTINCT ON (workflow_id) workflow_id, state AS latest_status
-      FROM filtered
-      ORDER BY workflow_id, created_at DESC, id DESC
-    ),
-    window_per_workflow AS (
-      SELECT f.workflow_id,
-             count(*)::int AS total,
-             0::int AS active,
-             count(*) FILTER (WHERE f.state = 'queued')::int AS queued,
-             count(*) FILTER (WHERE f.state = 'running')::int AS running,
-             count(*) FILTER (WHERE f.state = 'waiting')::int AS waiting,
-             count(*) FILTER (WHERE f.state = 'succeeded')::int AS succeeded,
-             count(*) FILTER (WHERE f.state = 'failed')::int AS failed,
-             count(*) FILTER (WHERE f.state = 'canceled')::int AS canceled,
-             count(*) FILTER (WHERE f.state = 'needs_attention')::int AS needs_attention,
-             round((avg(f.duration_ms) FILTER (WHERE f.duration_ms IS NOT NULL))::numeric)::int AS avg_duration_ms,
-             round((percentile_cont(0.99) WITHIN GROUP (ORDER BY f.duration_ms)
-               FILTER (WHERE f.duration_ms IS NOT NULL))::numeric)::int AS p99_duration_ms,
-             max(f.created_at) AS last_run_at,
-             latest.latest_status
-      FROM filtered f
-      JOIN latest ON latest.workflow_id = f.workflow_id
-      GROUP BY f.workflow_id, latest.latest_status
-    ),
-    per_workflow AS (
-      SELECT COALESCE(windowed.workflow_id, active.workflow_id) AS workflow_id,
-             COALESCE(windowed.total, 0)::int AS total,
-             COALESCE(active.active, 0)::int AS active,
-             COALESCE(windowed.queued, 0)::int AS queued,
-             COALESCE(windowed.running, 0)::int AS running,
-             COALESCE(windowed.waiting, 0)::int AS waiting,
-             COALESCE(windowed.succeeded, 0)::int AS succeeded,
-             COALESCE(windowed.failed, 0)::int AS failed,
-             COALESCE(windowed.canceled, 0)::int AS canceled,
-             COALESCE(windowed.needs_attention, 0)::int AS needs_attention,
-             windowed.avg_duration_ms,
-             windowed.p99_duration_ms,
-             windowed.last_run_at,
-             windowed.latest_status
-      FROM window_per_workflow windowed
-      FULL JOIN active ON active.workflow_id = windowed.workflow_id
-    ),
-    series_buckets AS (${seriesBuckets}),
-    series_counts AS (
-      SELECT ${bucketStart(sql`created_at`)} AS start,
-             count(*)::int AS total,
-             count(*) FILTER (WHERE state IN ('failed', 'needs_attention'))::int AS failed
-      FROM filtered
-      GROUP BY 1
-    )
-    SELECT overall.*,
-           COALESCE((SELECT sum(active.active)::int FROM active), 0)::int AS active,
-           failed_24h.failed_last_24h,
-           COALESCE((SELECT jsonb_agg(to_jsonb(per_workflow) ORDER BY per_workflow.last_run_at DESC, per_workflow.workflow_id)
-                     FROM per_workflow), '[]'::jsonb) AS by_workflow,
-           COALESCE((SELECT jsonb_agg(jsonb_build_object(
-                              'start', to_char(b.start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-                              'total', COALESCE(c.total, 0),
-                              'failed', COALESCE(c.failed, 0)) ORDER BY b.start)
-                     FROM series_buckets b
-                     LEFT JOIN series_counts c ON c.start = b.start), '[]'::jsonb) AS series_points
-    FROM overall
-    CROSS JOIN failed_24h
-  `;
+  // The statement for one zone: the zone decides where buckets and days begin.
+  const read = async (timeZone: string) => {
+    const now = options.now ? sql`${options.now.toISOString()}::timestamptz` : sql`now()`;
+    const since = sql`(${now} - (${windowSeconds} * interval '1 second'))`;
+    const localMidnight = sql`(date_trunc('day', ${now} AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`;
+    // Day buckets follow the viewer's calendar, so a day across a daylight-saving
+    // switch has 23 or 25 hours. Shorter buckets bin absolute time from the
+    // viewer's midnight: no hour repeats or disappears.
+    const bucketStart = (at: SQLQuery) =>
+      bucket === "1d"
+        ? sql`(date_trunc('day', ${at} AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`
+        : sql`date_bin(${stepSeconds} * interval '1 second', ${at}, ${localMidnight})`;
+    const seriesBuckets =
+      bucket === "1d"
+        ? sql`SELECT local_day AT TIME ZONE ${timeZone} AS start
+              FROM generate_series(date_trunc('day', ${since} AT TIME ZONE ${timeZone}),
+                                   date_trunc('day', ${now} AT TIME ZONE ${timeZone}), interval '1 day') AS local_day`
+        : sql`SELECT start
+              FROM generate_series(${bucketStart(since)}, ${bucketStart(now)}, ${stepSeconds} * interval '1 second') AS start`;
+    const [row] = await sql<Array<StatsSqlRow & { by_workflow: unknown; series_points: unknown }>>`
+      WITH scoped AS (
+        SELECT id, workflow_id::text AS workflow_id, state, created_at, started_at, finished_at
+        FROM workflows.run
+        WHERE app_id = ${GRIDS_APP_ID}
+          AND scope_id = ${baseId}
+          AND workflow_id = ANY(${ids}::uuid[])
+          AND mode = 'execute'
+      ),
+      filtered AS (
+        SELECT id, workflow_id, state, created_at,
+               CASE WHEN started_at IS NOT NULL AND finished_at IS NOT NULL
+                 THEN GREATEST(0, EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)
+                 ELSE NULL
+               END AS duration_ms
+        FROM scoped
+        WHERE created_at >= ${since} AND created_at <= ${now}
+      ),
+      active AS (
+        SELECT workflow_id, count(*)::int AS active
+        FROM scoped
+        WHERE state IN ('queued', 'running', 'waiting')
+        GROUP BY workflow_id
+      ),
+      failed_24h AS (
+        SELECT count(*)::int AS failed_last_24h
+        FROM scoped
+        WHERE state IN ('failed', 'needs_attention') AND created_at >= ${now} - interval '24 hours' AND created_at <= ${now}
+      ),
+      overall AS (
+        SELECT count(*)::int AS total,
+               count(*) FILTER (WHERE state = 'queued')::int AS queued,
+               count(*) FILTER (WHERE state = 'running')::int AS running,
+               count(*) FILTER (WHERE state = 'waiting')::int AS waiting,
+               count(*) FILTER (WHERE state = 'succeeded')::int AS succeeded,
+               count(*) FILTER (WHERE state = 'failed')::int AS failed,
+               count(*) FILTER (WHERE state = 'canceled')::int AS canceled,
+               count(*) FILTER (WHERE state = 'needs_attention')::int AS needs_attention,
+               round((avg(duration_ms) FILTER (WHERE duration_ms IS NOT NULL))::numeric)::int AS avg_duration_ms,
+               round((percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms)
+                 FILTER (WHERE duration_ms IS NOT NULL))::numeric)::int AS p99_duration_ms,
+               max(created_at) AS last_run_at
+        FROM filtered
+      ),
+      latest AS (
+        SELECT DISTINCT ON (workflow_id) workflow_id, state AS latest_status
+        FROM filtered
+        ORDER BY workflow_id, created_at DESC, id DESC
+      ),
+      window_per_workflow AS (
+        SELECT f.workflow_id,
+               count(*)::int AS total,
+               0::int AS active,
+               count(*) FILTER (WHERE f.state = 'queued')::int AS queued,
+               count(*) FILTER (WHERE f.state = 'running')::int AS running,
+               count(*) FILTER (WHERE f.state = 'waiting')::int AS waiting,
+               count(*) FILTER (WHERE f.state = 'succeeded')::int AS succeeded,
+               count(*) FILTER (WHERE f.state = 'failed')::int AS failed,
+               count(*) FILTER (WHERE f.state = 'canceled')::int AS canceled,
+               count(*) FILTER (WHERE f.state = 'needs_attention')::int AS needs_attention,
+               round((avg(f.duration_ms) FILTER (WHERE f.duration_ms IS NOT NULL))::numeric)::int AS avg_duration_ms,
+               round((percentile_cont(0.99) WITHIN GROUP (ORDER BY f.duration_ms)
+                 FILTER (WHERE f.duration_ms IS NOT NULL))::numeric)::int AS p99_duration_ms,
+               max(f.created_at) AS last_run_at,
+               latest.latest_status
+        FROM filtered f
+        JOIN latest ON latest.workflow_id = f.workflow_id
+        GROUP BY f.workflow_id, latest.latest_status
+      ),
+      per_workflow AS (
+        SELECT COALESCE(windowed.workflow_id, active.workflow_id) AS workflow_id,
+               COALESCE(windowed.total, 0)::int AS total,
+               COALESCE(active.active, 0)::int AS active,
+               COALESCE(windowed.queued, 0)::int AS queued,
+               COALESCE(windowed.running, 0)::int AS running,
+               COALESCE(windowed.waiting, 0)::int AS waiting,
+               COALESCE(windowed.succeeded, 0)::int AS succeeded,
+               COALESCE(windowed.failed, 0)::int AS failed,
+               COALESCE(windowed.canceled, 0)::int AS canceled,
+               COALESCE(windowed.needs_attention, 0)::int AS needs_attention,
+               windowed.avg_duration_ms,
+               windowed.p99_duration_ms,
+               windowed.last_run_at,
+               windowed.latest_status
+        FROM window_per_workflow windowed
+        FULL JOIN active ON active.workflow_id = windowed.workflow_id
+      ),
+      series_buckets AS (${seriesBuckets}),
+      series_counts AS (
+        SELECT ${bucketStart(sql`created_at`)} AS start,
+               count(*)::int AS total,
+               count(*) FILTER (WHERE state IN ('failed', 'needs_attention'))::int AS failed
+        FROM filtered
+        GROUP BY 1
+      )
+      SELECT overall.*,
+             COALESCE((SELECT sum(active.active)::int FROM active), 0)::int AS active,
+             failed_24h.failed_last_24h,
+             COALESCE((SELECT jsonb_agg(to_jsonb(per_workflow) ORDER BY per_workflow.last_run_at DESC, per_workflow.workflow_id)
+                       FROM per_workflow), '[]'::jsonb) AS by_workflow,
+             COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                                'start', to_char(b.start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+                                'total', COALESCE(c.total, 0),
+                                'failed', COALESCE(c.failed, 0)) ORDER BY b.start)
+                       FROM series_buckets b
+                       LEFT JOIN series_counts c ON c.start = b.start), '[]'::jsonb) AS series_points
+      FROM overall
+      CROSS JOIN failed_24h
+    `;
+    return row;
+  };
+  // Intl knows zones that Postgres does not (old links such as US/Pacific-New, zones newer than the server's tz data):
+  // rather than fail the page, the stats count on UTC days. Only this error spends a second statement.
+  const row = await read(timeZone).catch((error: unknown) => {
+    if (timeZone === "UTC" || sqlState(error) !== "22023") throw error;
+    return read("UTC");
+  });
   const byWorkflow = parseJsonbRow<WorkflowStatsSqlRow[]>(row?.by_workflow, []).map((item) => ({
     workflowId: item.workflow_id,
     ...statsCounts(item),
