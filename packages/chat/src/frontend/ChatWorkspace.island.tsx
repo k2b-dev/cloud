@@ -88,6 +88,11 @@ import type { ChosenMember } from "./MemberPicker";
 import { createNotificationCleanup } from "./notification-cleanup";
 import ResourceChatStart from "./ResourceChatStart";
 import { createReadReporter, seenRange } from "./read-reporter";
+import ChatFrameV2, { type ChatDetailV2, type ChatHeadButton, type ChatListNotice } from "./v2/ChatFrameV2";
+import ChatListV2, { ChatDeviceNoticeV2, type ChatListSection, type ChatRowsContext, ChatSearchV2 } from "./v2/ChatListV2";
+import type { MenuEntry } from "@k2b/ui/v2";
+import { chatV2Messages } from "./v2/chat-v2-messages";
+import { threadMenu } from "./v2/chat-v2-threads";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
 import { type ResourceChat, resourceChatExists, resourceChatPath } from "./resource-chat";
 import {
@@ -132,6 +137,8 @@ export type ChatWorkspaceProps = {
   liveDictation?: boolean;
   /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
   app?: boolean;
+  /** The full page on @k2b/ui v2 (`/app/chat`); the panel and the Cloud app keep v1's frame for now. */
+  v2?: boolean;
   archived?: boolean;
   filter?: "all" | "unread";
   collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
@@ -2647,6 +2654,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           {(current) => (
             <ChatConversation
               dictation={props.liveDictation ? liveDictationSource : undefined}
+              framed={props.v2 ? { onNewAway: (away) => setNewAway(away) } : undefined}
               actions={
                 <>
                   <Show when={props.embedded}>{resourceChatButton()}</Show>
@@ -3221,6 +3229,487 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       </Show>
     </>
   );
+  const infoView = () => (
+    <>
+      {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
+      <Show when={infoMounted() && openChat()?.id} keyed>
+        <Show when={conversation()}>
+          {(current) => (
+            <ChatInfoPanel
+              conversation={current()}
+              viewerId={props.viewerId}
+              active={panel() === "info"}
+              revision={(openChat()?.membershipRev ?? 0) + localBumps()}
+              store={liveStore()}
+              onClose={() => closeInfo()}
+              onAddPeople={() => void addPeople()}
+              onEditDetails={editDetails}
+              onDiscovery={current().permission === "admin" ? () => void editDiscovery() : undefined}
+              onCreateThread={!system() && !current().channel && current().permission === "admin" ? () => void createThread() : undefined}
+              sharedProps={{
+                chatId: current().id,
+                revision: openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined,
+                threads: openChat()?.threads ?? null,
+                viewerId: props.viewerId,
+                dateConfig: props.dateConfig,
+                now,
+                cards: cards(),
+                load: (query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet"))),
+                onJump: jumpToShared,
+              }}
+              notificationProps={
+                current().notifications
+                  ? {
+                      conversation: current(),
+                      notifications: current().notifications!,
+                      dateConfig: props.dateConfig,
+                      now,
+                      save: (input) =>
+                        store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet")),
+                    }
+                  : undefined
+              }
+              onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
+            />
+          )}
+        </Show>
+      </Show>
+    </>
+  );
+  // ── The full page on @k2b/ui v2 (`/app/chat`): the same controller in v2's frame ──────────────────────────────────
+  const v2t = () => chatV2Messages.resolve([locale()]).t;
+  const atList = () => !route().forYou && !route().channels;
+  const showChannels = async (navigation: LinkNavigateEvent) => {
+    if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
+  };
+  const loadedUnread = () => rows().reduce((sum, row) => sum + row.unread, 0);
+  const v2Nav = () => ({
+    label: t().appName,
+    groups: [
+      {
+        items: [
+          {
+            label: t().chats,
+            icon: "messages",
+            href: basePath,
+            current: atList() && !archived() && filter() === "all",
+            onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("all") : backToList(navigation)),
+          },
+          {
+            label: t().unreadChats,
+            icon: "mail",
+            href: `${basePath}?filter=unread`,
+            current: atList() && !archived() && filter() === "unread",
+            count: (unreadTotal() ?? loadedUnread()) || undefined,
+            onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("unread") : navigation.fallback()),
+          },
+          {
+            label: t().forYou,
+            icon: "at",
+            href: `${basePath}/for-you`,
+            current: route().forYou === true,
+            count: forYouUnread() || undefined,
+            onNavigate: showForYou,
+          },
+          {
+            label: t().browseChannels,
+            icon: "speakerphone",
+            href: `${basePath}/channels`,
+            current: route().channels === true,
+            onNavigate: showChannels,
+          },
+        ],
+      },
+    ],
+    foot: [
+      {
+        label: t().archive,
+        icon: "archive",
+        href: `${basePath}/archive`,
+        current: atList() && archived(),
+        onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("archive") : navigation.fallback()),
+      },
+    ],
+  });
+  const rowMenu = (row: Conversation, section: string): MenuEntry[] => {
+    const pending = listPending() || listLoading();
+    const pins = pinnedRows();
+    const unread = row.unread > 0 || row.read?.unreadFromSeq != null;
+    return [
+      ...(row.kind === "system"
+        ? []
+        : [
+            {
+              label: row.pinnedRank === null ? t().pinChat : t().unpinChat,
+              icon: "pin",
+              disabled: pending,
+              onClick: () => void personal(row.id, { pinned: row.pinnedRank === null }),
+            },
+            ...(section === "pinned"
+              ? [
+                  {
+                    label: t().moveUp,
+                    icon: "arrow-up",
+                    disabled: pending || pins[0]?.id === row.id,
+                    onClick: () => reorder(row.id, "up"),
+                  },
+                  {
+                    label: t().moveDown,
+                    icon: "arrow-down",
+                    disabled: pending || pins.at(-1)?.id === row.id,
+                    onClick: () => reorder(row.id, "down"),
+                  },
+                ]
+              : []),
+            {
+              label: row.archived ? t().restoreChat : t().archiveChat,
+              icon: "archive",
+              disabled: pending,
+              onClick: () => void personal(row.id, { archived: !row.archived }),
+            },
+          ]),
+      unread
+        ? { label: t().markRead, icon: "mail-opened", onClick: () => markRead(row.id) }
+        : { label: t().markUnread, icon: "mail", onClick: () => void markUnread(row.id) },
+    ];
+  };
+  const rowsContext: ChatRowsContext = {
+    get label() {
+      return t().chats;
+    },
+    get activeId() {
+      return openChat()?.id ?? null;
+    },
+    viewerId: props.viewerId,
+    dateConfig: props.dateConfig,
+    now,
+    href: (row) => listHref(panelHref(row.id, null)),
+    onNavigate: (row) => (navigation) => {
+      if (row.kind !== "system") return openFromList(row.id, navigation);
+      const ref = row.resource;
+      if (ref) return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+      return openSystemFromList(row.id, navigation);
+    },
+    menu: rowMenu,
+  };
+  /** The discussions about places, as v1's section shows them: the known ones and the open one. */
+  const systemRows = () => {
+    const found = new Map(
+      rows()
+        .filter((row) => row.kind === "system")
+        .map((row) => [row.id, row]),
+    );
+    const current = conversation();
+    if (current?.kind === "system") found.set(current.id, current);
+    if (chat()?.status === "no-access") found.delete(chat()!.id);
+    return [...found.values()];
+  };
+  const moreChats = () =>
+    hasMore()
+      ? { label: t().showMoreChats, icon: "dots", disabled: listLoading() || listPending(), onClick: () => void more() }
+      : undefined;
+  const v2Sections = (): ChatListSection[] => {
+    if (archived()) return [{ key: "archive", title: t().archive, rows: listRows(), empty: t().archiveEmpty, more: moreChats() }];
+    const plain = listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system");
+    const channels = listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system");
+    const discussions = systemRows();
+    const systemMore = Object.values(systemList.page()?.cursors ?? {}).some(Boolean);
+    return [
+      ...(pinnedRows().length > 0 ? [{ key: "pinned", title: t().pinnedChats, rows: pinnedRows() }] : []),
+      {
+        key: "chats",
+        title: t().chats,
+        rows: plain,
+        empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
+        actions: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
+        more: moreChats(),
+      },
+      ...(channels.length > 0 ? [{ key: "channels", title: t().channels, rows: channels }] : []),
+      ...(discussions.length > 0 || systemMore
+        ? [
+            {
+              key: "system",
+              title: t().systemChats,
+              count: discussions.reduce((sum, row) => sum + row.unread, 0) || undefined,
+              rows: discussions,
+              more: systemMore
+                ? {
+                    label: t().showMoreChats,
+                    icon: "dots",
+                    disabled: systemList.status() === "loading",
+                    onClick: () => void systemList.load(true),
+                  }
+                : undefined,
+            },
+          ]
+        : []),
+    ];
+  };
+  const v2Notices = (): ChatListNotice[] => {
+    const notices: ChatListNotice[] = [];
+    const error = listError();
+    if (error)
+      notices.push({
+        tone: "bad",
+        text: error,
+        action: listRetry() ? { label: t().retry, disabled: listPending() || listLoading(), onClick: () => listRetry()?.() } : undefined,
+      });
+    const failure = readFailure();
+    if (failure && !openChat())
+      notices.push({
+        tone: "bad",
+        text: t().readStateFailed,
+        action: {
+          label: t().retry,
+          disabled: retryingRead(),
+          onClick: async () => {
+            setRetryingRead(true);
+            try {
+              await changeRead(failure.run);
+              refreshSearch();
+            } finally {
+              setRetryingRead(false);
+            }
+          },
+        },
+      });
+    if (draftStorageFailed())
+      notices.push({ tone: "bad", text: t().draftNotSaved, action: { label: t().retry, onClick: retryDraftStorage } });
+    if (systemList.status() === "failed")
+      notices.push({
+        tone: "bad",
+        text: t().systemChatsFailed,
+        action: { label: t().retry, onClick: () => void systemList.load(systemList.more()) },
+      });
+    else if (systemList.status() === "ready" && systemList.page()?.skipped.length)
+      notices.push({
+        tone: "warn",
+        text: t().systemChatsPartial,
+        action: { label: t().retry, onClick: () => void systemList.load(false) },
+      });
+    return notices;
+  };
+  const v2Lead = () => {
+    if (archived()) return v2t().archived({ count: listRows().length });
+    const unread = rows().filter((row) => row.unread > 0);
+    if (unread.length === 0) return v2t().allRead;
+    const count = (unreadTotal() ?? loadedUnread()).toLocaleString(locale());
+    return v2t().unread({ count, chats: unread.length });
+  };
+  const [followBusy, setFollowBusy] = createSignal(false);
+  const toggleFollow = async (chatId: string, threadId: string, on: boolean) => {
+    if (!store) return;
+    setFollowBusy(true);
+    try {
+      await store.follow(chatId, threadId, on);
+    } catch (failure) {
+      toast.error(failure instanceof ChatRequestError ? failure.message : t().followFailed);
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+  const [newAway, setNewAway] = createSignal<{ direction: "above" | "below"; jump: () => void } | null>(null);
+  const backAction = (): ChatDetailV2["back"] =>
+    backToThreadDirectory() && route().chatId
+      ? { label: t().backToThreads, href: listHref(threadsPageHref(route().chatId!)), onNavigate: backToThreads }
+      : { label: t().chats, href: listHref(), onNavigate: backToList };
+  const chatDetail = (current: Conversation): ChatDetailV2 => {
+    const thread = openThread();
+    const resource = system() ? (thread?.resource ?? undefined) : undefined;
+    const status = resource ? (resource.status ?? (resource.done ? t().threadsDone : null)) : null;
+    const subtitle =
+      system() && thread
+        ? current.title
+        : system()
+          ? t().systemMembers
+          : current.channel
+            ? t().subscribers({ count: current.memberCount })
+            : t().members({ count: current.memberCount });
+    const buttons: ChatHeadButton[] = [];
+    const away = newAway();
+    if (away)
+      buttons.push({
+        label: t().jumpToNew,
+        icon: away.direction === "above" ? "arrow-up" : "arrow-down",
+        words: true,
+        disabled: busy(),
+        onClick: away.jump,
+      });
+    if (resource?.href)
+      buttons.push({ label: t().openInType({ title: resource.typeTitle }), icon: "external-link", href: resource.href, words: true });
+    if (system() && thread?.resource && thread.following !== undefined)
+      buttons.push({
+        label: thread.following ? t().followOn : t().followOff,
+        icon: thread.following ? "bell-ringing" : "bell-plus",
+        words: true,
+        pressed: thread.following === true,
+        busy: followBusy(),
+        onClick: () => void toggleFollow(current.id, thread.id, !thread.following),
+      });
+    buttons.push({
+      label: t().chatInfo,
+      icon: "info-circle",
+      pressed: panel() === "info",
+      href: listHref(routeAddress({ ...route(), chatId: current.id, panel: panel() === "info" ? null : "info" }, basePath)),
+      onNavigate: (navigation) => (navigation.url.searchParams.get("panel") === "info" ? openInfo(navigation) : closeInfo(navigation)),
+    });
+    const admin = !system() && current.permission === "admin";
+    const menu: MenuEntry[] = [
+      ...(admin ? [{ label: t().addPeople, icon: "user-plus", onClick: () => void addPeople() }] : []),
+      ...(admin && thread && !thread.archived
+        ? [
+            { label: t().renameThread, icon: "pencil", onClick: () => void renameThread() },
+            { label: t().archiveThread, icon: "archive", onClick: () => void archiveThread() },
+          ]
+        : []),
+      ...(current.channel && current.member
+        ? [{ label: t().unsubscribe, icon: "bell-off", disabled: unsubscribing(), onClick: () => void unsubscribe() }]
+        : []),
+    ];
+    return {
+      key: "chat",
+      label: current.title,
+      head: {
+        name: system() && thread ? thread.name : current.title,
+        avatar: current.channel || system() ? undefined : { name: current.title },
+        kinds: status ? [status] : undefined,
+        ids: [
+          { value: subtitle },
+          ...(current.notifications?.level === "none" ? [{ icon: "bell-off", value: t().notificationsOffMark }] : []),
+        ],
+      },
+      back: backAction(),
+      picker: threaded()
+        ? {
+            label: t().switchThread({ name: viewTitle() }),
+            name: viewTitle(),
+            items: threadMenu({
+              t: t(),
+              chatId: current.id,
+              basePath,
+              view: openChat()?.view ?? "all",
+              threads: openChat()?.threads ?? null,
+              unread: current.unread,
+              system: system(),
+              canAdmin: canCreateThread(),
+              creating: creatingThread(),
+              total: current.summaryCursor == null ? current.threads : undefined,
+              onSelect: (view) => (navigation) => openView(current.id, view, navigation),
+              onOverview: (navigation) => openOverview(navigation),
+              onCreate: () => void createThread(),
+            }),
+          }
+        : undefined,
+      buttons,
+      menu,
+      content: conversationView,
+    };
+  };
+  const pageDetail = (key: string, name: string, content: () => JSX.Element): ChatDetailV2 => ({
+    key,
+    label: name,
+    head: { name },
+    back: { label: t().chats, href: listHref(), onNavigate: backToList },
+    content,
+  });
+  const v2Detail = (): ChatDetailV2 | null => {
+    // k2b-ui gap: For you, Discover channels and a chat's threads page still draw v1 inside the v2 pane (next slice).
+    if (route().forYou)
+      return pageDetail("for-you", t().forYou, () => (
+        <ForYou
+          initial={takeInitialForYou()}
+          revision={forYouRevision()}
+          basePath={basePath}
+          dateConfig={props.dateConfig}
+          now={now}
+          onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
+          onBack={backToList}
+        />
+      ));
+    if (route().channels)
+      return pageDetail("channels", t().browseChannels, () => (
+        <DiscoverChannels
+          initial={takeInitialChannelPage()}
+          query={route().query ?? ""}
+          onQuery={(query) => {
+            setRoute({ ...route(), query });
+            navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+              replace: true,
+              scroll: "preserve",
+              viewTransition: false,
+            });
+          }}
+          revision={channelRevision()}
+          onSubscribe={subscribe}
+          onOpen={(id) => openChosen(id)}
+          onBack={backToList}
+          listHref={basePath}
+        />
+      ));
+    const threads = threadsPageOpen();
+    if (threads) return { ...pageDetail(`threads:${threads.id}`, t().threadsIn({ title: threads.title }), () => threadsPageView(threads)) };
+    const current = conversation();
+    if (openChat()?.id && current) return chatDetail(current);
+    if (noAccess()) return pageDetail("no-access", t().noAccessTitle, noAccessView);
+    return null;
+  };
+  if (props.v2)
+    return (
+      <ChatFrameV2
+        nav={v2Nav()}
+        newChat={{ label: t().newChat, icon: "message-plus", onClick: () => void newChat() }}
+        search={{
+          get value() {
+            return searchQuery();
+          },
+          onInput: setSearchQuery,
+          onKeyDown: (event) => {
+            if (event.key !== "Escape" || !searchQuery()) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setSearchQuery("");
+          },
+        }}
+        list={{
+          get lead() {
+            return v2Lead();
+          },
+          get facts() {
+            return forYouUnread() > 0 && !archived() ? [{ value: forYouUnread(), after: v2t().forYouFact }] : undefined;
+          },
+          get loading() {
+            return listLoading() || listPending();
+          },
+          get notices() {
+            return v2Notices();
+          },
+          content: (
+            <Show
+              when={!searchQuery().trim()}
+              fallback={
+                <ChatSearchV2
+                  search={chatSearch}
+                  basePath={basePath}
+                  active={{ chatId: openChat()?.id ?? null, view: openChat()?.view ?? "all" }}
+                  context={rowsContext}
+                  known={(hit) => rows().find((row) => row.id === hit.id) ?? hit}
+                  onThread={(chatId, thread) => (navigation) => openView(chatId, thread, navigation)}
+                  onSystem={(ref) => void openSystem(ref)}
+                />
+              }
+            >
+              <Show when={rows().length > 0 && !listError()}>
+                <ChatDeviceNoticeV2 notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
+              </Show>
+              <ChatListV2 sections={v2Sections} context={rowsContext} />
+            </Show>
+          ),
+        }}
+        detail={v2Detail}
+        info={() => (panel() === "info" && conversation() ? { close: { label: v2t().closeInfo, onClick: () => closeInfo() } } : null)}
+        infoContent={infoView}
+      />
+    );
   return (
     <>
       {catalogPopover()}
@@ -3366,51 +3855,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             open={panel() === "info" && conversation() !== null}
             onClose={() => closeInfo()}
           >
-            {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
-            <Show when={infoMounted() && openChat()?.id} keyed>
-              <Show when={conversation()}>
-                {(current) => (
-                  <ChatInfoPanel
-                    conversation={current()}
-                    viewerId={props.viewerId}
-                    active={panel() === "info"}
-                    revision={(openChat()?.membershipRev ?? 0) + localBumps()}
-                    store={liveStore()}
-                    onClose={() => closeInfo()}
-                    onAddPeople={() => void addPeople()}
-                    onEditDetails={editDetails}
-                    onDiscovery={current().permission === "admin" ? () => void editDiscovery() : undefined}
-                    onCreateThread={
-                      !system() && !current().channel && current().permission === "admin" ? () => void createThread() : undefined
-                    }
-                    sharedProps={{
-                      chatId: current().id,
-                      revision: openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined,
-                      threads: openChat()?.threads ?? null,
-                      viewerId: props.viewerId,
-                      dateConfig: props.dateConfig,
-                      now,
-                      cards: cards(),
-                      load: (query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet"))),
-                      onJump: jumpToShared,
-                    }}
-                    notificationProps={
-                      current().notifications
-                        ? {
-                            conversation: current(),
-                            notifications: current().notifications!,
-                            dateConfig: props.dateConfig,
-                            now,
-                            save: (input) =>
-                              store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet")),
-                          }
-                        : undefined
-                    }
-                    onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
-                  />
-                )}
-              </Show>
-            </Show>
+            {infoView()}
           </AppWorkspace.Detail>
         </AppWorkspace.Content>
       </AppWorkspace>

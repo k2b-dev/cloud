@@ -102,6 +102,11 @@ export type ChatConversationProps = {
   dictation?: DictationSource;
   /** The chat's own commands at the end of the header, such as its info. */
   actions?: JSX.Element;
+  /**
+   * A frame of its own names the chat and holds its deeds (Chat on @k2b/ui v2): the conversation then draws no header,
+   * and says where "New messages" lies while it is out of view, so the frame shows the way there.
+   */
+  framed?: { onNewAway: (away: { direction: "above" | "below"; jump: () => void } | null) => void };
   listHref?: string;
   chatId: string;
   title: string;
@@ -423,6 +428,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     if (!range || marker < 0) return null;
     return marker < props.items.indexOf(range.first) ? "above" : marker > props.items.indexOf(range.last) ? "below" : null;
   });
+  const jumpToNew = () =>
+    props.unreadGap ? props.unreadGap.jump() : props.markerKey && feed()?.scrollToKey(props.markerKey, { align: "start" });
+  createEffect(() => {
+    const direction = markerAway();
+    props.framed?.onNewAway(direction ? { direction, jump: jumpToNew } : null);
+  });
   // When the chat opens without showing the marker, it moves there once, unless a deep link leads.
   let placed = false;
   createEffect(() => {
@@ -485,98 +496,92 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         props.onReply(item);
       }}
     >
-      <header class="chat-conversation__header">
-        <span class="chat-conversation__back">
-          <IconButtonLink
-            href={props.backHref ?? props.listHref ?? "/app/chat"}
-            navigation="enhanced"
-            onNavigate={props.onBack}
-            label={
-              props.backHref
-                ? t().backToThreads
-                : props.allChats
-                  ? t().panelAllChats
-                  : props.backCount
-                    ? t().backToChatsUnread({ count: props.backCount })
-                    : t().backToChats
-            }
-            tooltip={props.allChats && !props.backHref ? undefined : false}
-          >
-            <i class={props.allChats && !props.backHref ? "ti ti-list" : "ti ti-chevron-left"} aria-hidden="true" />
-            <Show when={!props.backHref && props.backCount !== undefined}>
-              <span class="chat-conversation__back-count" aria-hidden="true">
-                {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}
-              </span>
-            </Show>
-          </IconButtonLink>
-        </span>
-        <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
-        <Show when={props.muted}>
-          <i class="ti ti-bell-off chat-conversation__muted" role="img" aria-label={t().notificationsOffMark} />
-        </Show>
-        {props.titleExtra}
-        <Show when={props.wideTitle}>
-          {(wide) => (
-            <div class="chat-conversation__wide-title">
-              <h1 class="chat-conversation__wide-name">{wide().title}</h1>
-              <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
-              <p class="chat-conversation__phone-subtitle">
-                {[...new Set([wide().chat, props.subtitle ?? t().members({ count: props.memberCount })])].join(" · ")}
-              </p>
-            </div>
-          )}
-        </Show>
-        <Show when={props.resource}>
-          {(resource) => (
-            <>
-              <Show when={resourceStatus()}>
-                {(status) => (
-                  <span class="chat-resource-head__status">
-                    <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />
-                  </span>
-                )}
-              </Show>
-              <span class="chat-resource-head__metadata">
-                <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
-              </span>
-              <Show when={resource().href}>
-                {(href) => (
-                  <>
-                    <span class="chat-resource-head__link">
-                      <ButtonLink href={href()} variant="text" size="sm">
-                        {resourceLabel()}
-                      </ButtonLink>
-                    </span>
-                    <span class="chat-resource-head__icon">
-                      <IconButtonLink href={href()} label={resourceLabel()}>
-                        <i class="ti ti-external-link" aria-hidden="true" />
-                      </IconButtonLink>
-                    </span>
-                  </>
-                )}
-              </Show>
-            </>
-          )}
-        </Show>
-        <Show when={markerAway()}>
-          {(direction) => (
-            <Button
-              size="sm"
-              variant="ghost"
-              tooltip={t().jumpToNewLabel}
-              disabled={props.busy}
-              onClick={() =>
-                props.unreadGap ? props.unreadGap.jump() : props.markerKey && feed()?.scrollToKey(props.markerKey, { align: "start" })
+      <Show when={!props.framed}>
+        <header class="chat-conversation__header">
+          <span class="chat-conversation__back">
+            <IconButtonLink
+              href={props.backHref ?? props.listHref ?? "/app/chat"}
+              navigation="enhanced"
+              onNavigate={props.onBack}
+              label={
+                props.backHref
+                  ? t().backToThreads
+                  : props.allChats
+                    ? t().panelAllChats
+                    : props.backCount
+                      ? t().backToChatsUnread({ count: props.backCount })
+                      : t().backToChats
               }
+              tooltip={props.allChats && !props.backHref ? undefined : false}
             >
-              <i class={direction() === "above" ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
-              {t().jumpToNew}
-            </Button>
-          )}
-        </Show>
-        <div class="chat-conversation__actions">{props.actions}</div>
-      </header>
-      <Show when={props.resource}>
+              <i class={props.allChats && !props.backHref ? "ti ti-list" : "ti ti-chevron-left"} aria-hidden="true" />
+              <Show when={!props.backHref && props.backCount !== undefined}>
+                <span class="chat-conversation__back-count" aria-hidden="true">
+                  {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}
+                </span>
+              </Show>
+            </IconButtonLink>
+          </span>
+          <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
+          <Show when={props.muted}>
+            <i class="ti ti-bell-off chat-conversation__muted" role="img" aria-label={t().notificationsOffMark} />
+          </Show>
+          {props.titleExtra}
+          <Show when={props.wideTitle}>
+            {(wide) => (
+              <div class="chat-conversation__wide-title">
+                <h1 class="chat-conversation__wide-name">{wide().title}</h1>
+                <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
+                <p class="chat-conversation__phone-subtitle">
+                  {[...new Set([wide().chat, props.subtitle ?? t().members({ count: props.memberCount })])].join(" · ")}
+                </p>
+              </div>
+            )}
+          </Show>
+          <Show when={props.resource}>
+            {(resource) => (
+              <>
+                <Show when={resourceStatus()}>
+                  {(status) => (
+                    <span class="chat-resource-head__status">
+                      <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />
+                    </span>
+                  )}
+                </Show>
+                <span class="chat-resource-head__metadata">
+                  <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
+                </span>
+                <Show when={resource().href}>
+                  {(href) => (
+                    <>
+                      <span class="chat-resource-head__link">
+                        <ButtonLink href={href()} variant="text" size="sm">
+                          {resourceLabel()}
+                        </ButtonLink>
+                      </span>
+                      <span class="chat-resource-head__icon">
+                        <IconButtonLink href={href()} label={resourceLabel()}>
+                          <i class="ti ti-external-link" aria-hidden="true" />
+                        </IconButtonLink>
+                      </span>
+                    </>
+                  )}
+                </Show>
+              </>
+            )}
+          </Show>
+          <Show when={markerAway()}>
+            {(direction) => (
+              <Button size="sm" variant="ghost" tooltip={t().jumpToNewLabel} disabled={props.busy} onClick={jumpToNew}>
+                <i class={direction() === "above" ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
+                {t().jumpToNew}
+              </Button>
+            )}
+          </Show>
+          <div class="chat-conversation__actions">{props.actions}</div>
+        </header>
+      </Show>
+      <Show when={!props.framed && props.resource}>
         {(resource) => (
           <div class="chat-resource-head__mobile">
             {/* The reader's context line already names the kind; show it only when the reader gives none. */}

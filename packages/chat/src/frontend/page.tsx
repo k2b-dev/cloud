@@ -85,6 +85,7 @@ export default ssr<AuthContext>(async (c) => {
   const workspace = () => (
     <ChatWorkspace
       embedded={embedded}
+      v2={!embedded}
       resourceChat={resourceChat}
       resourcePage={resourcePage}
       panelScope={scope}
@@ -118,7 +119,12 @@ export default ssr<AuthContext>(async (c) => {
       </PanelLayout>
     );
   return () => (
-    <Layout c={c} fullPage title={chatTitle({ start: t.start, appName: t.appName, title, listHref, ownBack: channelsPage || forYouPage })}>
+    <Layout
+      c={c}
+      fullPage
+      ui="v2"
+      title={chatTitle({ start: t.start, appName: t.appName, title, listHref, ownBack: channelsPage || forYouPage })}
+    >
       {workspace()}
     </Layout>
   );

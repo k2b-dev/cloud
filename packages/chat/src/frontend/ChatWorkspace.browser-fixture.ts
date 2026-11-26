@@ -149,6 +149,7 @@ const buildHarness = async () => {
           setup(builder) {
             // Exercise the current shared component source without a separate UI build.
             builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
+            builder.onResolve({ filter: /^@k2b\/ui\/v2$/ }, () => ({ path: resolve(ui, "src/v2/index.ts") }));
             builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
               const result = await transformAsync(await Bun.file(path).text(), {
                 filename: path,
@@ -875,6 +876,9 @@ export const startChatHarness = async (
         return new Response(harness.get(url.pathname), { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+      // @k2b/ui v2 for the pages on it, as the Layout loads it beside the global stylesheet.
+      if (url.pathname === "/v2.css")
+        return new Response(Bun.file(resolve(ui, "src/v2/v2.css")), { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/tabler-icons.woff2") return new Response(Bun.file(fontAssets.icons));
       if (url.pathname.startsWith("/fonts/")) return new Response(Bun.file(resolve(uiDist, `.${url.pathname}`)));
       if (url.pathname === "/api/accounts/entities" && request.method === "GET") {
