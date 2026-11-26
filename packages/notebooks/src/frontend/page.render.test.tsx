@@ -45,16 +45,24 @@ const notebook = (shortId: string, index: number) => ({
 });
 
 const spies: Array<{ mockRestore(): void }> = [];
+// bookAA and bookBB exist; the person reaches both unless a test says otherwise
+let list: ReturnType<typeof spyOn<typeof notebooksService.notebook, "list">>;
+let permission: ReturnType<typeof spyOn<typeof notebooksService.notebook.permission, "get">>;
 beforeEach(() => {
   spies.push(stubRailSnapshot());
+  list = spyOn(notebooksService.notebook, "list").mockResolvedValue({
+    items: [notebook("bookAA", 1)],
+    total: 2,
+    page: 1,
+    perPage: 1,
+    hasNext: true,
+  });
+  permission = spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("read");
+  spies.push(list, permission);
   spies.push(
-    spyOn(notebooksService.notebook, "list").mockResolvedValue({
-      items: [notebook("bookAA", 1), notebook("bookBB", 2)],
-      total: 2,
-      page: 1,
-      perPage: 2,
-      hasNext: false,
-    }),
+    spyOn(notebooksService.notebook, "getByShortId").mockImplementation(async ({ shortId }) =>
+      shortId === "bookAA" ? notebook("bookAA", 1) : shortId === "bookBB" ? notebook("bookBB", 2) : null,
+    ),
   );
   spies.push(spyOn(notebooksService.note, "recentForUser").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.activity, "list").mockResolvedValue({ items: [], nextCursor: null }));
@@ -82,10 +90,13 @@ const openNotebooks = (lastNotebookId?: string, query = "") => {
 };
 
 for (const query of ["", "?recent=true"])
-  test(`Notebooks opens the notebook used last (${query || "no query"})`, async () => {
+  test(`Notebooks opens the notebook used last, reading that one alone (${query || "no query"})`, async () => {
     const response = await openNotebooks("bookBB", query);
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/app/notebooks/bookBB");
+    // no list of every notebook: one notebook and its access
+    expect(list).not.toHaveBeenCalled();
+    expect(permission).toHaveBeenCalledWith({ notebookId: notebook("bookBB", 2).id, userId: user.id });
   });
 
 test("a command link to Notebooks reaches the notebook it opens, with its query", async () => {
@@ -97,15 +108,23 @@ test("a command link to Notebooks reaches the notebook it opens, with its query"
 });
 
 test("Notebooks opens the first notebook when the one used last is gone, no longer shared, or unknown", async () => {
-  for (const last of ["bookZZ", undefined]) {
+  for (const [last, access] of [
+    ["bookZZ", "read"],
+    ["bookBB", "none"],
+    [undefined, "read"],
+  ] as const) {
+    permission.mockResolvedValue(access);
+    list.mockClear();
     const response = await openNotebooks(last);
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/app/notebooks/bookAA");
+    // the first one by name, and only that one
+    expect(list).toHaveBeenCalledWith({ userId: user.id, pagination: { page: 1, perPage: 1 } });
   }
 });
 
-test("without a notebook, Notebooks starts the first one: one sentence and the one +, read from the notebooks alone", async () => {
-  spies.push(spyOn(notebooksService.notebook, "list").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 0, hasNext: false }));
+test("without a notebook, Notebooks offers the ways to start as rows, read from the notebooks alone", async () => {
+  list.mockResolvedValue({ items: [], total: 0, page: 1, perPage: 1, hasNext: false });
   const recent = spyOn(notebooksService.note, "recentForUser");
   const activity = spyOn(notebooksService.activity, "list");
   spies.push(recent, activity);
@@ -113,10 +132,20 @@ test("without a notebook, Notebooks starts the first one: one sentence and the o
   expect(response.status).toBe(200);
   const html = await response.text();
   expect(await selectHtml(html, "[data-k2-workspace]")).toHaveLength(1);
-  expect((await selectHtml(html, '[data-k2-part="Empty"]'))[0]?.text).toContain("Noch keine Notizbücher.");
-  // the one way to the first notebook is the head's +
-  expect(await selectHtml(html, '[data-slot="head"] button[aria-label="Neues Notizbuch"]')).toHaveLength(1);
-  expect(await selectHtml(html, '[data-k2-part="Empty"] button')).toHaveLength(0);
+  const [section] = await selectHtml(html, '[data-k2-part="Section"]');
+  expect(section?.text).toContain("Erstes Notizbuch anlegen");
+  expect(section?.text).toContain("Noch keine Notizbücher.");
+  // a blank notebook first, then every template with what it holds, each a row that opens
+  const rows = await selectHtml(html, '[data-k2-part="Row"]');
+  const templates = notebooksService.template.list("de");
+  expect(rows.map((row) => row.text.trim())).toEqual([
+    "Leeres NotizbuchLeer, mit einer Willkommensseite",
+    ...templates.map((template) => `${template.name}${template.description}`),
+  ]);
+  expect(await selectHtml(html, '[data-k2-part="Row"] button.k2-row-open')).toHaveLength(rows.length);
+  // no head that only repeats the rows; the phone's floating main action makes a blank one
+  expect(await selectHtml(html, '[data-slot="head"]')).toHaveLength(0);
+  expect((await selectHtml(html, ".k2-fab"))[0]?.text).toContain("Neues Notizbuch");
   expect(recent).not.toHaveBeenCalled();
   expect(activity).not.toHaveBeenCalled();
 });

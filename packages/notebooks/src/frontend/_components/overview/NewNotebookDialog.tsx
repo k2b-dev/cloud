@@ -1,66 +1,89 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Button, Dialog, Field, Input, Notice } from "@k2b/ui/v2";
+import { Button, Dialog, Field, Input, Notice, Select } from "@k2b/ui/v2";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { notebooksPageMessages } from "../../messages";
-import type { TemplateSummary } from "./NotebooksStart";
 
-/** Where a new notebook starts: blank (with the welcome note), or from a template. */
-export type NewNotebookSource = { kind: "blank" } | { kind: "template"; template: TemplateSummary };
+/** A built-in template as the server lists it (`GET /api/notebooks/templates`). */
+export type TemplateSummary = { id: string; name: string; description: string; icon: string };
+
+/** Where a new notebook starts: blank (with the welcome note), or from a template, the given one or the first. */
+export type NewNotebookSource = { kind: "blank" } | { kind: "template"; templateId?: string };
+
+/** The server's own words for a refused request, else the fixed sentence. */
+const reasonOf = async (response: Pick<Response, "json">, fallback: string) => {
+  const body: unknown = await response.json().catch(() => null);
+  return body && typeof body === "object" && "message" in body && typeof body.message === "string" && body.message
+    ? body.message
+    : fallback;
+};
 
 /**
- * A new notebook on v2: its name (and, when blank, a description), then the notebook opens. From a template the name
- * may stay empty and the template's name is taken. A failure says so in the dialog, which stays open.
+ * The one way to make a notebook, on the start page and from the notebook switcher: blank with its name (and a
+ * description), or from a template, which may keep the template's name. The new notebook opens after. A refusal or an
+ * answer that is no notebook says so in the dialog, which stays open and usable.
  */
-export default function NewNotebookDialog(props: { source: NewNotebookSource | null; onClose: () => void }) {
+export default function NewNotebookDialog(props: {
+  templates: readonly TemplateSummary[];
+  source: NewNotebookSource | null;
+  onClose: () => void;
+}) {
   const locale = useLocale();
   const t = () => notebooksPageMessages.resolve([locale()]).t;
   const [name, setName] = createSignal("");
   const [description, setDescription] = createSignal("");
+  const [templateId, setTemplateId] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [failed, setFailed] = createSignal<string | null>(null);
-  // a new start opens empty
+  // a new start opens empty, on the template it was opened for
   createEffect(() => {
-    if (!props.source) return;
+    const source = props.source;
+    if (!source) return;
     setName("");
     setDescription("");
     setFailed(null);
+    setTemplateId(source.kind === "template" ? (source.templateId ?? props.templates[0]?.id ?? "") : "");
   });
-  const template = () => (props.source?.kind === "template" ? props.source.template : null);
+  const fromTemplate = () => props.source?.kind === "template";
+  const template = () => props.templates.find((candidate) => candidate.id === templateId());
   const close = () => {
     if (!busy()) props.onClose();
   };
   const create = async () => {
-    const source = props.source;
-    if (!source || busy()) return;
-    if (source.kind === "blank" && !name().trim()) {
+    if (!props.source || busy()) return;
+    const chosen = template();
+    if (fromTemplate() && !chosen) return;
+    if (!fromTemplate() && !name().trim()) {
       setFailed(t().nameRequired);
       return;
     }
+    const fallback = chosen ? t().createFromTemplateFailed : t().createFailed;
     setBusy(true);
     setFailed(null);
-    // a failed request and an answer that is no notebook end the same way: the dialog says so and stays usable
-    const created = await (source.kind === "blank"
-      ? apiClient.index.$post({ json: { name: name().trim(), description: description().trim() || undefined } })
-      : apiClient.templates[":templateId"].$post({
-          param: { templateId: source.template.id },
-          json: { name: name().trim() || undefined },
-        })
+    const outcome = await (chosen
+      ? apiClient.templates[":templateId"].$post({ param: { templateId: chosen.id }, json: { name: name().trim() || undefined } })
+      : apiClient.index.$post({ json: { name: name().trim(), description: description().trim() || undefined } })
     )
-      .then((response) => (response.ok ? response.json() : null))
-      .catch(() => null);
+      .then(async (response): Promise<{ id: string } | { reason: string }> => {
+        if (!response.ok) return { reason: await reasonOf(response, fallback) };
+        const created: unknown = await response.json().catch(() => null);
+        return created && typeof created === "object" && "id" in created && typeof created.id === "string"
+          ? { id: created.id }
+          : { reason: fallback };
+      })
+      .catch(() => ({ reason: fallback }));
     setBusy(false);
-    if (!created) {
-      setFailed(source.kind === "blank" ? t().createFailed : t().createFromTemplateFailed);
+    if ("reason" in outcome) {
+      setFailed(outcome.reason);
       return;
     }
     props.onClose();
-    navigateTo(`/app/notebooks/${created.id}`);
+    navigateTo(`/app/notebooks/${outcome.id}`);
   };
   return (
     <Dialog
-      title={template()?.name ?? t().newNotebook}
+      title={fromTemplate() ? t().newNotebookFromTemplate : t().newNotebook}
       open={props.source !== null}
       onOpenChange={(open) => {
         if (!open) close();
@@ -70,13 +93,34 @@ export default function NewNotebookDialog(props: { source: NewNotebookSource | n
           <Button onClick={close} disabled={busy()}>
             {t().cancel}
           </Button>
-          <Button variant="primary" icon="plus" busy={busy()} onClick={() => void create()}>
+          <Button variant="primary" icon="plus" busy={busy()} disabled={fromTemplate() && !template()} onClick={() => void create()}>
             {t().create}
           </Button>
         </>
       }
     >
-      <Field name="name" label={t().name} required={!template()}>
+      <Show when={fromTemplate()}>
+        <Show
+          when={props.templates.length > 0}
+          fallback={
+            <Notice tone="bad" icon="alert-circle">
+              {t().templatesLoadFailed}
+            </Notice>
+          }
+        >
+          <Field name="template" label={t().template} hint={template()?.description}>
+            <Select
+              options={props.templates.map((candidate) => ({ value: candidate.id, label: candidate.name }))}
+              value={templateId()}
+              onChange={(value) => {
+                setTemplateId(value);
+                setFailed(null);
+              }}
+            />
+          </Field>
+        </Show>
+      </Show>
+      <Field name="name" label={t().name} required={!fromTemplate()}>
         <Input
           value={name()}
           placeholder={template()?.name ?? t().notebookName}
@@ -90,7 +134,7 @@ export default function NewNotebookDialog(props: { source: NewNotebookSource | n
           }}
         />
       </Field>
-      <Show when={!template()}>
+      <Show when={!fromTemplate()}>
         <Field name="description" label={t().description}>
           <Input multiline value={description()} placeholder={t().optionalDescription} disabled={busy()} onInput={setDescription} />
         </Field>

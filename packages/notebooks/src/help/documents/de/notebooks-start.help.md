@@ -18,7 +18,7 @@ Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Dein Text bleibt zuer
 - **Neues Notizbuch:** Wähle in derselben Liste **Neues Notizbuch** oder **Notizbuch aus Vorlage**. Erstelle ein neues Notizbuch, wenn das Wissen eigenen Zugriff und eigene Einstellungen braucht. Ein Notizbuch aus einer Vorlage ohne Namen bekommt den Namen der Vorlage.
 - **Vorlagen:** Wähle eine Vorlage nur, wenn ihre Struktur zur Arbeit passt. Für einen neuen Zweck ist ein leeres Notizbuch der sicherste Start.
 - **Suche und letzte Notizen:** Suche nach einem bekannten Namen. Das Widget **Letzte Notizen** auf deiner Startseite zeigt deine letzten Notizen aus allen Notizbüchern.
-- **Noch kein Notizbuch:** Notizbücher zeigt einen Satz und **+**. Wähle ein leeres Notizbuch oder eine Vorlage.
+- **Noch kein Notizbuch:** Notizbücher zeigt die Wege zum Start: ein leeres Notizbuch und jede Vorlage mit ihrem Inhalt. Wähle einen davon.
 :::
 
 **Überblick**

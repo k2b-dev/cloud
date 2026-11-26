@@ -23,15 +23,10 @@ describe("notebooks container switcher loader", () => {
   mock.module("@k2b/ssr/nav", () => ({ ...navigation, navigateTo }));
   const post = mock(async (_input: unknown) => ({ ok: true, json: async () => ({ id: "Created01" }) }));
   const get = mock((_input: { query: Record<string, string> }) => reply());
-  const templates = [
-    { id: "meeting", name: "Meetings", description: "Minutes with tasks", icon: "ti ti-users" },
-    { id: "handbook", name: "Handbook", description: "Chapters and contacts", icon: "ti ti-book" },
-  ];
-  const listTemplates = mock(async () => ({ ok: true, json: async () => templates }));
-  const postTemplate = mock(async (_input: unknown) => ({ ok: true, json: async () => ({ id: "Created02" }) }));
-  mock.module("@/api/client", () => ({
-    apiClient: { index: { $get: get, $post: post }, templates: { $get: listTemplates, ":templateId": { $post: postTemplate } } },
-  }));
+  mock.module("@/api/client", () => ({ apiClient: { index: { $get: get, $post: post } } }));
+  // the dialog itself is the start page's (its browser test covers it); here it only records how it was opened
+  const openDialog = mock(async (_source: { kind: string }, _locale: string) => {});
+  mock.module("../../../create-notebook-dialog", () => ({ openNewNotebookDialog: openDialog }));
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   const mount = async (canCreate = false) => {
     const { createNotebookSwitcher } = await import("./notebook-switcher");
@@ -47,9 +42,8 @@ describe("notebooks container switcher loader", () => {
     dom = createDomTestHarness();
     get.mockClear();
     post.mockClear();
-    listTemplates.mockClear();
-    postTemplate.mockClear();
     navigateTo.mockClear();
+    openDialog.mockClear();
     reply = async () => success();
   });
 
@@ -147,116 +141,28 @@ describe("notebooks container switcher loader", () => {
     }
   });
 
-  test("opens the shared blank form once and navigates after creation", async () => {
-    const { prompts, dialogCore } = await import("@k2b/ui");
-    let disposeRender: (() => void) | undefined;
-    const form = spyOn(prompts, "form");
-    const open = spyOn(dialogCore, "open").mockImplementation(
-      (content) =>
-        new Promise((resolve) => {
-          disposeRender = render(
-            () =>
-              content(resolve, {
-                dialog: dom.document.createElement("dialog"),
-                setModal: () => {},
-                setPosition: () => {},
-                setDismissHandler: () => {},
-                requestDismiss: async () => {},
-              }),
-            dom.root,
-          );
-        }),
-    );
+  test("both actions open the start page's one dialog, blank or from a template, and wait until it closes", async () => {
     const view = await mount(true);
     try {
-      const action = view.switcher().actions?.[0];
-      action?.action?.();
-      action?.action?.();
-      expect(view.switcher().actions?.[0]?.disabled).toBe(true);
-      for (let attempt = 0; attempt < 30 && !dom.root.querySelector("form"); attempt++) await settle();
-      expect(form).toHaveBeenCalledTimes(1);
-      expect(form.mock.calls[0]?.[0]?.title).toBe("New notebook");
-      const name = dom.root.querySelector<HTMLInputElement>("input[type=text]")!;
-      name.value = "New container";
-      name.dispatchEvent(new Event("input", { bubbles: true }));
-      const description = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
-      description.value = "Description";
-      description.dispatchEvent(new Event("input", { bubbles: true }));
-      dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      for (let attempt = 0; attempt < 30 && navigateTo.mock.calls.length === 0; attempt++) await settle();
-      expect(post).toHaveBeenCalledTimes(1);
-      expect(post.mock.calls[0]?.[0]).toEqual({ json: { name: "New container", description: "Description" } });
-      expect(navigateTo).toHaveBeenCalledWith("/app/notebooks/Created01");
-      expect(view.switcher().actions?.[0]?.disabled).toBe(false);
-    } finally {
-      disposeRender?.();
-      open.mockRestore();
-      form.mockRestore();
-      view.dispose();
-    }
-  });
-
-  test("from a template: picks one of the listed templates, takes its name when none is given, and opens it", async () => {
-    const { prompts } = await import("@k2b/ui");
-    const form = spyOn(prompts, "form").mockResolvedValue({ template: "handbook", name: "  " });
-    const view = await mount(true);
-    try {
-      view.switcher().actions?.[1]?.action?.();
-      for (let attempt = 0; attempt < 30 && navigateTo.mock.calls.length === 0; attempt++) await settle();
-      expect(listTemplates).toHaveBeenCalledTimes(1);
-      const fields = form.mock.calls[0]?.[0]?.fields as Record<string, { options?: { id: string; label?: string }[] }>;
-      expect(fields.template?.options?.map((option) => [option.id, option.label])).toEqual([
-        ["meeting", "Meetings"],
-        ["handbook", "Handbook"],
-      ]);
-      expect(postTemplate.mock.calls[0]?.[0]).toEqual({ param: { templateId: "handbook" }, json: {} });
-      expect(post).not.toHaveBeenCalled();
-      expect(navigateTo).toHaveBeenCalledWith("/app/notebooks/Created02");
-    } finally {
-      form.mockRestore();
-      view.dispose();
-    }
-  });
-
-  test("templates that cannot be read, or none, say so instead of an empty form", async () => {
-    const { prompts } = await import("@k2b/ui");
-    const form = spyOn(prompts, "form");
-    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
-    const view = await mount(true);
-    try {
-      for (const answer of [
-        { ok: true, json: async () => Promise.reject(new SyntaxError("Unexpected token <")) },
-        { ok: true, json: async () => [] },
-        { ok: false, json: async () => ({}) },
-      ]) {
-        listTemplates.mockImplementationOnce(async () => answer as Awaited<ReturnType<typeof listTemplates>>);
-        view.switcher().actions?.[1]?.action?.();
-        for (let attempt = 0; attempt < 30 && view.switcher().actions?.[1]?.disabled; attempt++) await settle();
-        expect(view.switcher().actions?.[1]?.disabled).toBe(false);
+      for (const [index, kind] of [
+        [0, "blank"],
+        [1, "template"],
+      ] as const) {
+        const closed = Promise.withResolvers<void>();
+        openDialog.mockImplementationOnce(() => closed.promise);
+        view.switcher().actions?.[index]?.action?.();
+        view.switcher().actions?.[index]?.action?.();
+        for (let attempt = 0; attempt < 30 && openDialog.mock.calls.length <= index; attempt++) await settle();
+        // one dialog at a time: both actions wait while it is open
+        expect(openDialog.mock.calls[index]).toEqual([{ kind }, "en"]);
+        expect(view.switcher().actions?.map((action) => action.disabled)).toEqual([true, true]);
+        closed.resolve();
+        for (let attempt = 0; attempt < 30 && view.switcher().actions?.[index]?.disabled; attempt++) await settle();
+        expect(view.switcher().actions?.map((action) => action.disabled)).toEqual([false, false]);
       }
-      expect(error.mock.calls.map((call) => call[0])).toEqual(Array(3).fill("The templates could not be loaded."));
-      expect(form).not.toHaveBeenCalled();
-      expect(postTemplate).not.toHaveBeenCalled();
-    } finally {
-      error.mockRestore();
-      form.mockRestore();
-      view.dispose();
-    }
-  });
-
-  test("cancelling creation makes no request and enables the action again", async () => {
-    const { prompts } = await import("@k2b/ui");
-    const form = spyOn(prompts, "form").mockResolvedValue(null);
-    const view = await mount(true);
-    try {
-      view.switcher().actions?.[0]?.action?.();
-      for (let attempt = 0; attempt < 30 && view.switcher().actions?.[0]?.disabled; attempt++) await settle();
-      expect(form).toHaveBeenCalledTimes(1);
+      expect(openDialog).toHaveBeenCalledTimes(2);
       expect(post).not.toHaveBeenCalled();
-      expect(navigateTo).not.toHaveBeenCalled();
-      expect(view.switcher().actions?.[0]?.disabled).toBe(false);
     } finally {
-      form.mockRestore();
       view.dispose();
     }
   });

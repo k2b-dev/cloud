@@ -18,7 +18,7 @@ Notebooks are Markdown workspaces for knowledge. Your text stays readable first.
 - **New notebook:** In the same list, choose **New notebook** or **Notebook from a template**. Create a new notebook when the knowledge needs its own access and settings. A notebook from a template without a name gets the name of the template.
 - **Templates:** Choose a template only when its structure fits the work. For a new use case, a blank notebook is the safest start.
 - **Search and recent notes:** Search for a name that you know. The **Recent notes** widget on your start page shows your latest notes from all notebooks.
-- **No notebook yet:** Notebooks shows one sentence and **+**. Choose a blank notebook or a template.
+- **No notebook yet:** Notebooks lists the ways to start: a blank notebook, and each template with what it holds. Choose one.
 :::
 
 **Overview**
