@@ -137,13 +137,20 @@ export function measureTextInPage(options: { root: string; skip: string; control
   // "12.345.678,90 €", Arabic-Indic figures with Arabic separators), and the direction marks a formatter puts around it
   // (format characters, \p{Cf}). A word before the number stands apart ("CHF 1’234.50"); an ID ("RE-2611") is no number.
   const numberLike =
-    /^[\s\p{Cf}\p{Sm}]*(?:(?:\p{Sc}|\p{L}{1,3}\p{Sc}|\p{L}{1,3}\.)[\s\p{Cf}]*|\p{L}{2,3}\s+)?[\p{Sm}\p{Pd}\p{Cf}]*\p{Nd}[\p{Nd}\s\p{Cf}.,:'/\p{Pd}\p{Sm}\p{Po}\p{Pf}]*(?:[\s\p{Cf}]*(?:\p{Po}|\p{Sc}|[\p{L}.]{1,6}))?[\s\p{Cf}]*$/u;
+    /^[\s\p{Cf}\p{Sm}\p{Pd}\p{Ps}]*(?:(?:\p{Sc}|\p{L}{1,3}\p{Sc}|\p{L}{1,3}\.)[\s\p{Cf}]*|\p{L}{2,3}\s+)?[\p{Sm}\p{Pd}\p{Cf}]*\p{Nd}[\p{Nd}\s\p{Cf}.,:'/\p{Pd}\p{Sm}\p{Po}\p{Pf}]*(?:[\s\p{Cf}]*(?:\p{Po}|\p{Sc}|[\p{L}.]{1,6}))?[\s\p{Cf}\p{Pe}]*$/u;
+  // An ISO currency code before the number may join it with a sign ("CHF-1'234.50"); a code the runtime does not know as
+  // a currency ("RE-2611") leaves the text as it is, so an ID stays no number.
+  const currencies = new Set(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []);
+  const isNumber = (text: string) => {
+    const code = /^[\s\p{Cf}\p{Pd}\p{Ps}]*(\p{Lu}{3})(?=[\s\p{Cf}\p{Pd}\p{Sm}]*\p{Nd})/u.exec(text);
+    return numberLike.test(code && currencies.has(code[1]!) ? text.replace(code[1]!, "") : text);
+  };
   const oneLine =
     ".k2-table td .k2-cell-line, .k2-row-time, .k2-row-meta, .k2-cell-value, .k2-chip-text, .k2-digest-date, .k2-fact-value, .k2-sh-count, .k2-gh-count, .k2-tab-count, .k2-ni-count";
   for (const element of Array.from(root.querySelectorAll(oneLine))) {
     if (skipped(element) || !shown(element)) continue;
     const text = words(element.textContent);
-    if (!text || !((element.closest("td[data-numeric]") && !element.matches("[data-second]")) || numberLike.test(text))) continue;
+    if (!text || !((element.closest("td[data-numeric]") && !element.matches("[data-second]")) || isNumber(text))) continue;
     const cut = hardCut(element);
     const view = seenIn(element);
     let outside = 0;
@@ -153,6 +160,10 @@ export function measureTextInPage(options: { root: string; skip: string; control
         // only what lies in sight: a cell of a row scrolled away is measured when it is scrolled into view
         if (box.bottom < view.top || box.top > view.bottom) continue;
         outside = Math.max(outside, box.right - cut.right, cut.left - box.left);
+        // A number that the edge of a scrolling place cuts reads as another number now ("12.345" of "12.345.678,90 €"),
+        // although scrolling would show the rest; one that lies whole beyond the edge is simply not in sight.
+        const partly = box.right > view.left + 0.5 && box.left < view.right - 0.5;
+        if (partly) outside = Math.max(outside, box.right - view.right, view.left - box.left);
       }
     }
     const style = getComputedStyle(element);

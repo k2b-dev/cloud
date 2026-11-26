@@ -799,6 +799,63 @@ describe("text a person cannot read", () => {
     TEST_TIMEOUT,
   );
 
+  // delta review r3: negative amounts with the currency first, in brackets, or joined to a currency code
+  test(
+    "red: negative amounts of en-US, en-GB, ja-JP and de-CH cut in a cell that is not marked numeric",
+    async () => {
+      const money = (locale: string, currency: string, sign?: "accounting") =>
+        new Intl.NumberFormat(locale, { style: "currency", currency, currencySign: sign }).format(-1234567.5);
+      const amounts = [
+        money("en-US", "USD"),
+        money("en-US", "USD", "accounting"),
+        money("en-GB", "GBP"),
+        money("ja-JP", "JPY"),
+        money("de-CH", "CHF"),
+      ];
+      const found = await measure(
+        `<table class="k2-table" data-sized style="width:60px"><colgroup><col style="width:60px"></colgroup><tbody>${amounts
+          .map((amount) => `<tr><td><span class="k2-cell-line">${amount}</span></td></tr>`)
+          .join("")}</tbody></table>`,
+      );
+      expect(found.number.length).toBe(amounts.length);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // delta review r3: a number the edge of a scrolling place cuts reads as another number
+  test(
+    "red: an amount cut by the edge of a table that scrolls sideways",
+    async () => {
+      const found = await measure(
+        '<div style="width:200px;overflow-x:auto"><table class="k2-table" style="width:320px"><tbody><tr><td style="width:150px">Kunde</td><td data-numeric><span class="k2-cell-line">12.345.678,90 €</span></td></tr></tbody></table></div>',
+      );
+      expect(found.number).toEqual([expect.stringContaining('"12.345.678,90 €"')]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // delta review r3: only the search of a head opened over its tabs covers text on purpose, with its end (a clear ×)
+  test(
+    "red: a focused search outside a head lies on text; green: the open search of a head with its end",
+    async () => {
+      const search = (place: string) =>
+        `<div ${place} style="position:relative;height:40px"><span class="k2-t-row" style="position:absolute;left:24px;top:10px">Fehler</span>` +
+        '<div class="k2-input" data-search style="position:absolute;left:12px;top:4px;width:200px;height:32px;background:white;display:flex"><input aria-label="Suchen" style="flex:1;border:0"><span class="k2-input-end"><button type="button" aria-label="Leeren" style="width:24px;height:24px"></button></span></div></div>';
+      const outline = async (place: string) => {
+        const page = await open(columns(search(place)));
+        try {
+          await page.locator("input[aria-label='Suchen']").focus();
+          return (await measureV2Layout(page)).overlap;
+        } finally {
+          await page.close();
+        }
+      };
+      expect((await outline('class="row"')).length).toBeGreaterThan(0);
+      expect(await outline('data-slot="head"')).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "green: text a machine wrote stands in a type role, its line breaks kept",
     async () => {

@@ -764,7 +764,7 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
     untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
-    covers: options.covers ?? ".k2-input[data-search]:focus-within input",
+    covers: options.covers ?? '[data-slot="head"] .k2-input[data-search]:focus-within :is(input, .k2-input-end *)',
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
     // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
