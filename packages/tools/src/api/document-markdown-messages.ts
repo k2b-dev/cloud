@@ -25,6 +25,14 @@ export const documentMarkdownMessages = i18n.define({
       dropHint: "Maximum document size: 20 MB",
       dropAriaLabel: "Choose a document to convert to Markdown",
       dropToConvert: "Drop to convert the document to Markdown",
+      busyDropTitle: ({ filename }: { filename: string }) => `${filename} was not converted`,
+      busyDrop: "A conversion is running. Cancel it to convert another document.",
+      onlyFirstTitle: ({ filename }: { filename: string }) => `Only ${filename} is converted`,
+      onlyFirst: ({ count }: { count: number }) =>
+        count === 1
+          ? "1 more document was not converted. Drop or choose one document at a time."
+          : `${count} more documents were not converted. Drop or choose one document at a time.`,
+      hide: "Hide",
       serverNotice:
         "The document is sent to this Cloud server for conversion. Neither the upload nor the Markdown result is stored by this tool.",
       convertingFile: ({ filename }: { filename: string }) => `Converting ${filename}…`,
@@ -38,6 +46,10 @@ export const documentMarkdownMessages = i18n.define({
       truncatedTitle: "Preview shortened",
       truncatedBody: "The extracted Markdown reached the 1 MB output limit. Download and preview contain the same shortened result.",
       extractedFromAria: ({ filename }: { filename: string }) => `Plain Markdown extracted from ${filename}`,
+      chooseDocument: "Choose document",
+      noDocument: "No document converted yet",
+      copied: "Copied",
+      copyFailed: "Not copied",
       resultMeta: ({ format, input, output }: { format: string; input: string; output: string }) =>
         `${format} · ${input} input · ${output} Markdown`,
     },
@@ -58,6 +70,14 @@ export const documentMarkdownMessages = i18n.define({
       dropHint: "Maximale Dokumentgröße: 20 MB",
       dropAriaLabel: "Dokument für die Konvertierung zu Markdown auswählen",
       dropToConvert: "Ablegen, um das Dokument in Markdown umzuwandeln",
+      busyDropTitle: ({ filename }) => `${filename} wurde nicht umgewandelt`,
+      busyDrop: "Eine Umwandlung läuft. Brich sie ab, um ein anderes Dokument umzuwandeln.",
+      onlyFirstTitle: ({ filename }) => `Nur ${filename} wird umgewandelt`,
+      onlyFirst: ({ count }) =>
+        count === 1
+          ? "Ein weiteres Dokument wurde nicht umgewandelt. Lege oder wähle immer nur ein Dokument."
+          : `${count} weitere Dokumente wurden nicht umgewandelt. Lege oder wähle immer nur ein Dokument.`,
+      hide: "Ausblenden",
       serverNotice:
         "Das Dokument wird zur Konvertierung an diesen Cloud-Server gesendet. Das Werkzeug speichert weder den Upload noch das Markdown-Ergebnis.",
       convertingFile: ({ filename }) => `${filename} wird konvertiert…`,
@@ -71,6 +91,10 @@ export const documentMarkdownMessages = i18n.define({
       truncatedTitle: "Vorschau gekürzt",
       truncatedBody: "Das extrahierte Markdown hat das Limit von 1 MB erreicht. Vorschau und Download enthalten dieselbe gekürzte Ausgabe.",
       extractedFromAria: ({ filename }) => `Reines Markdown, extrahiert aus ${filename}`,
+      chooseDocument: "Dokument wählen",
+      noDocument: "Noch kein Dokument umgewandelt",
+      copied: "Kopiert",
+      copyFailed: "Nicht kopiert",
       resultMeta: ({ format, input, output }) => `${format} · Eingabe: ${input} · Markdown: ${output}`,
     },
   },

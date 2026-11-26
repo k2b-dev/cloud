@@ -27,13 +27,11 @@ type ToolProps = {
   webhookData?: WebhookTesterData;
 };
 
-const toolComponents: Record<string, (props: ToolProps) => JSX.Element> = {
-  "document-markdown": () => <DocumentMarkdown />,
-  "markdown-pdf": () => <MarkdownPdf />,
-};
 
 /** The tools on v2; each island renders the whole Tools screen with its own panes. */
 const v2Tools: Partial<Record<string, (props: ToolProps) => JSX.Element>> = {
+  "document-markdown": () => <DocumentMarkdown />,
+  "markdown-pdf": () => <MarkdownPdf />,
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
   speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,

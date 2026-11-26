@@ -3,6 +3,7 @@ import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import ToolCatalog from "./ToolCatalog.island";
 import ColorConverter from "./tools/ColorConverter.island";
+import DocumentMarkdown from "./tools/DocumentMarkdown.island";
 import EncodingTool from "./tools/EncodingTool.island";
 import EncryptionTool from "./tools/EncryptionTool.island";
 import HashGenerator from "./tools/HashGenerator.island";
@@ -11,6 +12,7 @@ import ImageProcessor, { ImageProcessorView } from "./tools/ImageProcessor.islan
 import { openFixturePhotos } from "./tools/image-processor/photo-fixture";
 import LoremIpsumGenerator from "./tools/LoremIpsumGenerator.island";
 import MailtoGenerator from "./tools/MailtoGenerator.island";
+import MarkdownPdf from "./tools/MarkdownPdf.island";
 import PasswordGenerator from "./tools/PasswordGenerator.island";
 import QrCodeGenerator from "./tools/QrCodeGenerator.island";
 import SpeedTest from "./tools/SpeedTest.island";
@@ -31,6 +33,8 @@ export const v2Screens: Record<string, () => JSX.Element> = {
   mailto: () => <MailtoGenerator />,
   encryption: () => <EncryptionTool />,
   qr: () => <QrCodeGenerator />,
+  "document-markdown": () => <DocumentMarkdown />,
+  "markdown-pdf": () => <MarkdownPdf />,
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
   speedtest: () => <SpeedTest server="https://speedtest.example.test" enabled />,
