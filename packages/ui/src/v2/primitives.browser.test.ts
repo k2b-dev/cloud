@@ -677,14 +677,23 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     async () => {
       const page = await open("grid", { width: 390 });
       try {
+        // The way out stays in the row on its text edge; the actions float in a bar at the bottom (in reach of the
+        // thumb), inside the window, each word whole under its symbol.
         const buttons = await page.evaluate(() => {
           const row = document.querySelector('[data-k2-part="StatusRow"]')!;
           const right = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
-          return [...row.querySelectorAll(".k2-btn")].map((button) => [
-            button.textContent?.trim(),
-            button.getBoundingClientRect().right <= right + 0.5,
-            button.scrollWidth <= button.clientWidth,
-          ]);
+          const floating = row.querySelector(".k2-status-actions")!.getBoundingClientRect();
+          return [...row.querySelectorAll(".k2-btn")].map((button) => {
+            const box = button.getBoundingClientRect();
+            const inBar = button.parentElement?.classList.contains("k2-status-actions") ?? false;
+            const label = button.querySelector(".k2-btn-label") ?? button;
+            return [
+              button.textContent?.trim(),
+              inBar ? box.left >= floating.left && box.right <= floating.right && floating.bottom <= innerHeight : box.right <= right + 0.5,
+              // in the floating bar the word stands whole under its symbol; the way out may keep only its ×
+              inBar ? label.scrollWidth <= label.clientWidth + 1 : button.scrollWidth <= button.clientWidth,
+            ];
+          });
         });
         expect(buttons).toEqual([
           ["Exportieren", true, true],
