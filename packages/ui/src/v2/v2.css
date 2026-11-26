@@ -2064,12 +2064,6 @@
   padding-block: 4px;
   min-width: 0;
 }
-/* the face of a person leads the words of their option: 20 px on the 20 px line of the words */
-.k2-ui .k2-choice > .k2-av {
-  width: 20px;
-  height: 20px;
-  font-size: 9px;
-}
 .k2-ui .k2-choice > .k2-choice-text {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -2149,24 +2143,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* a value that keeps its start and its end (an address and its domain): the start gives way first, then the end */
-.k2-ui .k2-ends {
-  display: flex;
-  min-width: 0;
-  max-width: 100%;
-}
-.k2-ui :is(.k2-ends-start, .k2-ends-end) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.k2-ui .k2-ends-start {
-  flex: 0 1000 auto;
-}
-.k2-ui .k2-ends-end {
-  flex: 0 1 auto;
 }
 .k2-ui .k2-input-value[data-placeholder] {
   color: var(--k2-subtle);
@@ -2470,17 +2446,11 @@
 .k2-ui .k2-slider-thumb:has(:focus-visible) {
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
-/* the thumb's own press area; a press anywhere on the control sets the thumb there */
+/* the press area of the thumb reaches the control's height (44 px on the phone through the control) */
 .k2-ui .k2-slider-thumb::after {
   content: "";
   position: absolute;
   inset: -10px;
-}
-/* on the phone the slider is 44 px high, so its press area takes a finger */
-@media not all and (min-width: 768px) {
-  .k2-ui .k2-slider {
-    height: 44px;
-  }
 }
 .k2-ui .k2-slider-value {
   min-width: 40px;
