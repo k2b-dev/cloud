@@ -114,11 +114,53 @@ const storedTabs = (chatId: string) => ({
     },
   },
 });
+/** A Project the person opened: its chats and what Gustav knows there, as the server reads them. */
+const projectOf = (projectId: string, conversations: AiConversationLike[]) => {
+  const project = fixtureProjects("usual").find((entry) => entry.id === projectId);
+  if (!project) return null;
+  const items = conversations.filter((conversation) => conversation.projectId === projectId);
+  const stamp = "2026-11-20T08:00:00.000Z";
+  return {
+    project,
+    chats: { items, total: items.length, page: 1, perPage: 20, hasNext: false },
+    context: {
+      projectId,
+      skills: { items: [], page: 1, hasNext: false },
+      knowledge: [
+        {
+          id: "kn1",
+          shortId: "kn1",
+          projectId,
+          title: "Mahnstufen und Fristen",
+          content: "# Mahnstufen",
+          createdAt: stamp,
+          updatedAt: stamp,
+        },
+        { id: "kn2", shortId: "kn2", projectId, title: "Kontenrahmen SKR03", content: "# SKR03", createdAt: stamp, updatedAt: stamp },
+      ],
+      files: [
+        { id: "fi1", shortId: "fi1", projectId, path: "Belege/Oktober.pdf", mediaType: "application/pdf", size: 48_000, updatedAt: stamp },
+        {
+          id: "fi2",
+          shortId: "fi2",
+          projectId,
+          path: "Monatsabschluss.xlsx",
+          mediaType: "application/vnd.ms-excel",
+          size: 12_000,
+          updatedAt: stamp,
+        },
+      ],
+      references: [],
+    },
+  };
+};
+type AiConversationLike = ReturnType<typeof fixtureConversations>[number];
+
 const propsOf = (scene: Scene, url: URL) => {
   const state = scene.state ?? "usual";
   const conversations = fixtureConversations(state);
   const openId =
-    scene.open === false || url.searchParams.has("approvals")
+    scene.open === false || url.searchParams.has("approvals") || url.searchParams.has("project")
       ? null
       : (url.searchParams.get("conversation") ?? (state === "usual" ? FIXTURE_OPEN_ID : state === "worst" ? "Wst001" : null));
   const open = openId ? conversations.find((conversation) => conversation.id === openId) : undefined;
@@ -168,9 +210,15 @@ const propsOf = (scene: Scene, url: URL) => {
     initialContext: open ? contextOf(open.id) : null,
     initialTabs: open && scene.tabs ? storedTabs(open.id) : null,
     projects: fixtureProjects(state),
-    initialProject: null,
-    initialProjectChats: null,
-    initialProjectContext: null,
+    ...(() => {
+      const opened = url.searchParams.get("project");
+      const project = opened ? projectOf(opened, conversations) : null;
+      return {
+        initialProject: project?.project ?? null,
+        initialProjectChats: project?.chats ?? null,
+        initialProjectContext: project?.context ?? null,
+      };
+    })(),
     approvals:
       url.searchParams.get("approvals") === "1"
         ? {
@@ -466,6 +514,31 @@ describe("Assistant on v2", () => {
         const titles = ["Wochenbericht Vertrieb", "Rückfragen sammeln", "Stoffpreise prüfen", "Angebote nachfassen"];
         expect(rows).toHaveLength(titles.length);
         for (const [index, title] of titles.entries()) expect(rows[index]).toContain(title);
+        expect(await layoutProblems(page)).toEqual([]);
+        expect(errors).toEqual([]);
+        expect(unanswered).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+  for (const view of [phone, narrow, wide, large])
+    test(`${view.name}: a Project shows its head, what it holds, its chats with the composer, and its context`, async () => {
+      const { context, page, errors, unanswered } = await open(view, "/app/assistant?project=Prj03", { open: false });
+      try {
+        const pane = page.locator('[data-k2-part="Pane"][aria-label="Buchhaltung 2026"]');
+        await pane.locator('[data-k2-part="RecordHead"]').waitFor();
+        await settled(page);
+        await shoot(page, `${view.name}-project`);
+        expect(await pane.locator('[data-k2-part="RecordHead"]').textContent()).toBe("Buchhaltung 2026");
+        // What it holds, from the server's read: three chats, two pieces of knowledge, two files, no references.
+        expect((await pane.locator('[data-k2-part="Cells"]').textContent())?.replace(/\s+/g, " ")).toMatch(
+          /Chats\s*3.*Projektwissen\s*2.*Dateien\s*2.*Referenzen\s*0/,
+        );
+        for (const title of ["Rechnung 2026-118 prüfen", "Mahnung an Kunde Berger formulieren", "Steuerberater: Fragen zur Umsatzsteuer"])
+          expect(await pane.getByText(title).count()).toBe(1);
+        expect(await page.getByPlaceholder("Neuen Chat in Buchhaltung 2026 beginnen").count()).toBe(1);
+        if (view !== phone) expect(await page.locator('[data-k2-part="Pane"][aria-label="Projektkontext"]').isVisible()).toBe(true);
         expect(await layoutProblems(page)).toEqual([]);
         expect(errors).toEqual([]);
         expect(unanswered).toEqual([]);

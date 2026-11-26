@@ -137,7 +137,14 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
                   )}
                 />
               )
-            : null
+            : w.projectView()
+              ? () => (
+                  // The open Project as its own panes: its chats and composer, its context beside them.
+                  <Show when={w.projectView()} keyed>
+                    {(view) => <w.ProjectContent view={view} frame="v2" />}
+                  </Show>
+                )
+              : null
       }
       tabs={{
         open: () => w.artifactWorkspace.state().tabs.length > 0,

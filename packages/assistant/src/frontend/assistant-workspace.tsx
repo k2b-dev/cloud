@@ -3415,6 +3415,30 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
       </Show>
     </>
   );
+  /** The open Project: v1 draws it in the chat's place, v2's frame as its own panes (`frame`). */
+  const ProjectContent = (p: { view: NonNullable<ReturnType<typeof projectView>>; frame?: "v2" }) => (
+    <Show when={projects().find((project) => project.id === p.view.projectId)}>
+      {(project) => (
+        <AssistantProjectView
+          project={project()}
+          initialPage={p.view.page}
+          initialContext={p.view.context}
+          frame={p.frame}
+          composer={
+            <div class="flex flex-col gap-2">
+              <WaitingRow />
+              {modelNote()}
+              <AssistantComposer projectId={project().id} projectName={project().name} />
+              <Show when={props.embedded}>
+                <PanelRow />
+              </Show>
+            </div>
+          }
+          onOpenConversation={openAndFocusConversation}
+        />
+      )}
+    </Show>
+  );
   const MainContent = () => (
     <>
       <PanelTop />
@@ -3622,28 +3646,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
             </Chat>
           }
         >
-          {(view) => (
-            <Show when={projects().find((project) => project.id === view.projectId)}>
-              {(project) => (
-                <AssistantProjectView
-                  project={project()}
-                  initialPage={view.page}
-                  initialContext={view.context}
-                  composer={
-                    <div class="flex flex-col gap-2">
-                      <WaitingRow />
-                      {modelNote()}
-                      <AssistantComposer projectId={project().id} projectName={project().name} />
-                      <Show when={props.embedded}>
-                        <PanelRow />
-                      </Show>
-                    </div>
-                  }
-                  onOpenConversation={openAndFocusConversation}
-                />
-              )}
-            </Show>
-          )}
+          {(view) => <ProjectContent view={view} />}
         </Show>
       </Show>
     </>
@@ -3696,6 +3699,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     sidebar,
     chat,
     mainView,
+    projectView,
+    ProjectContent,
     codeRendered,
     codeDetailShown,
     createFromCodeView,
