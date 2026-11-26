@@ -1,16 +1,17 @@
 import { createSignal, For, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import { Band, Bar, Button, Field, Input, Notice, Pane, Section, Table, Text, Workspace } from "../src/v2";
+import { Band, Bar, Button, Field, Input, List, Notice, Pane, Row, Section, Table, Text, Workspace } from "../src/v2";
 
 // A long form of settings, as an admin page draws it: many fields in sections, and a foot with "Verwerfen" and
 // "Speichern". The first change makes the foot stay on the bottom of the column. "Speichern" is the page's one primary,
 // so the page has no floating main action. The test picks the layout before the script runs: the form alone or beside
-// an info column (`Pane.Split`), and what ends the column before the foot (a section, a notice, a band, a table).
+// an info column (`Pane.Split`), and what ends the column before the foot (a section, a notice, a band, a table). The
+// layout "list" is a long list alone in a split while no detail is open, as Mail and Logs draw it on the phone.
 
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Layout?: "pane" | "split";
+    __k2Layout?: "pane" | "split" | "list";
     __k2Last?: "section" | "notice" | "band" | "table";
   }
 }
@@ -91,7 +92,17 @@ const form = () => (
 render(
   () => (
     <Workspace head={<Bar start={<Text type="lead">Einstellungen</Text>} />}>
-      {window.__k2Layout === "split" ? (
+      {window.__k2Layout === "list" ? (
+        <Pane.Split>
+          <Pane label="Liste" scrollKey="liste" status={<Bar start={<Text>80 Nachrichten</Text>} />}>
+            <List label="Nachrichten">
+              <For each={Array.from({ length: 80 }, (_, index) => index + 1)}>
+                {(index) => <Row lines={[`Nachricht ${index}`, `von Ada Renz · ${index}. Nov.`]} />}
+              </For>
+            </List>
+          </Pane>
+        </Pane.Split>
+      ) : window.__k2Layout === "split" ? (
         <Pane.Split>
           {form()}
           <Pane label="Info" width={{ min: 240, default: 280 }} side>

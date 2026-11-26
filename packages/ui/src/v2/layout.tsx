@@ -588,7 +588,9 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
     };
   };
   return (
-    <div class="k2-split" data-k2-part="Pane.Split">
+    // more than one pane: on the phone they stand one under the other and scroll as one page; a single pane (the list
+    // while no detail is open) fills the height and scrolls on its own, so its status stays and its scrollKey holds
+    <div class="k2-split" data-k2-part="Pane.Split" data-stack={panes().length > 1 ? "" : undefined}>
       <For each={panes()}>
         {(pane, index) => (
           <>

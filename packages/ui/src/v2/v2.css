@@ -3898,16 +3898,26 @@
     mask-image: none;
     animation: none;
   }
-  /* the panes stand one under the other and scroll as one page: the split is the scroller of the column (a foot
-     that stays sticks to it, and a focused field is scrolled above that foot) */
-  .k2-ui .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])) {
+  /* panes that stand one under the other (a form beside its info column) scroll as one page: the split is the
+     scroller of the column (a foot that stays sticks to it, and a focused field is scrolled above that foot) */
+  .k2-ui .k2-ws-main > .k2-split[data-stack]:not(:has(> .k2-pane[data-detail])) {
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: none;
   }
-  .k2-ui .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])):has(> .k2-pane > .k2-scroll > [data-slot="foot"][data-unsaved]) {
+  .k2-ui .k2-ws-main > .k2-split[data-stack]:not(:has(> .k2-pane[data-detail])):has(> .k2-pane > .k2-scroll > [data-slot="foot"][data-unsaved]) {
     scroll-padding-bottom: calc(var(--k2-h-head) + 16px);
+  }
+  /* one pane (the list while no detail is open) is the page: it fills the height and scrolls on its own, so its status
+     stays above it, its scrollKey holds its place and a foot that stays sticks to it */
+  .k2-ui .k2-ws-main > .k2-split:not([data-stack]) > .k2-pane {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .k2-ui .k2-ws-main > .k2-split:not([data-stack]) > .k2-pane > .k2-scroll {
+    overflow-y: auto;
   }
   /* a detail that is there (a mail that is open) is the page; the list is the page while no detail is there */
   .k2-ui .k2-split > .k2-pane[data-detail] {

@@ -25,7 +25,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Layout = "pane" | "split";
+type Layout = "pane" | "split" | "list";
 type Last = "section" | "notice" | "band" | "table";
 
 const withPage = async (width: number, layout: Layout, last: Last, run: (page: Page) => Promise<void>) => {
@@ -130,10 +130,18 @@ for (const width of [1440, 390])
             const field = document.activeElement as HTMLElement;
             const bar = document.querySelector('[data-slot="foot"] > .k2-bar')!.getBoundingClientRect();
             const box = field.getBoundingClientRect();
+            // the top of what shows of the column: the top of the element that scrolls it
+            let scroller = field.parentElement;
+            while (
+              scroller &&
+              !(scroller.scrollHeight > scroller.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))
+            )
+              scroller = scroller.parentElement;
+            const top = scroller?.getBoundingClientRect().top ?? 0;
             return {
               name: field.getAttribute("name") ?? field.id,
               input: field.tagName === "INPUT",
-              whole: box.bottom <= bar.top + 0.5 && box.top >= 0,
+              whole: box.bottom <= bar.top + 0.5 && box.top >= top - 0.5,
             };
           });
           if (seen.input && !seen.whole) hidden.push(seen.name);
@@ -155,3 +163,23 @@ for (const width of [1440, 390])
         expect((await measureV2Layout(page)).problems).toEqual([]);
       });
     });
+
+for (const width of [1440, 390])
+  test(`list at ${width}: a long list alone in a split scrolls in its own pane, under a status that stays, where its scrollKey reads`, async () => {
+    await withPage(width, "list", "section", async (page) => {
+      const where = () =>
+        page.evaluate(() => ({
+          status: Math.round(document.querySelector('[data-slot="status"]')!.getBoundingClientRect().top),
+          kept: document.querySelector<HTMLElement>('.k2-scroll[data-scroll-preserve="liste"]')!.scrollTop,
+        }));
+      const before = await where();
+      await page.mouse.move(width / 2, 500);
+      await page.mouse.wheel(0, 1200);
+      await page.waitForFunction(() => document.querySelector<HTMLElement>('.k2-scroll[data-scroll-preserve="liste"]')!.scrollTop > 0);
+      const after = await where();
+      // the list scrolled in the region the page restores by its scrollKey, and the status did not move
+      expect(after.kept).toBeGreaterThan(0);
+      expect(after.status).toBe(before.status);
+      expect((await measureV2Layout(page)).problems).toEqual([]);
+    });
+  });
