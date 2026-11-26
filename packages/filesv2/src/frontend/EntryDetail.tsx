@@ -27,7 +27,7 @@ import type { BaseSummary, EntryResult, FileEntry } from "../contracts";
 import { ENTRY_TYPE, entryRefId, FOLDER_TYPE } from "../resource-ref";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { createEntryLinks, createVersions, EntryHistory, type InspectorHistory } from "./entry-history";
+import { createEntryLinks, createVersions, EntryHistory, EntryVersions, type InspectorHistory } from "./entry-history";
 import { EntryLinksSection } from "./entry-links";
 import { entryMark } from "./entry-mark";
 import FilePreview from "./FilePreview";
@@ -361,7 +361,20 @@ function Loaded(
         />
       </Show>
       <Show when={props.history}>{(history) => <EntryLinksSection links={links} env={history().env} />}</Show>
-      {/* the versions and the item's history are still the v1 parts of the detail; their v2 rebuild follows */}
+      <Show when={!props.item.directory}>
+        <EntryVersions
+          base={props.base}
+          entry={props.item}
+          busy={busy()}
+          onChanged={(path) => void props.onChanged(path)}
+          onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+          locale={locale()}
+          env={props.history?.env}
+          versions={versions}
+          currentAuthor={currentAuthor()}
+        />
+      </Show>
+      {/* the item's history is still the v1 part of the detail; its v2 rebuild follows */}
       <Band>
         <Canvas label={h().publicLink}>
           {/* The v1 parts bring no text edge of their own; until PR 2 they stand on the column's edge. */}
@@ -377,10 +390,13 @@ function Loaded(
               history={props.history}
               versions={versions}
               currentAuthor={currentAuthor()}
-              versionsId={`filesv2-versions-${props.item.path}`}
-              versionsOpen
               links={links}
-              onShowVersions={() => document.getElementById(`filesv2-versions-${props.item.path}`)?.scrollIntoView({ block: "nearest" })}
+              // the versions' list in this detail, found by its name
+              onShowVersions={() =>
+                document
+                  .querySelector(`[data-k2-part="List"][aria-label="${CSS.escape(t().versions)}"]`)
+                  ?.scrollIntoView({ block: "nearest" })
+              }
             />
           </div>
         </Canvas>

@@ -1,5 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
-import { Avatar, Button, DetailPanel, formatFileViewSize, Placeholder, prompts, Section, toast } from "@k2b/ui";
+import { formatFileViewSize, prompts, toast } from "@k2b/ui";
+import { Bar, Section as Group, List, Menu, Notice, Row, Text } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
@@ -202,8 +203,6 @@ export function EntryHistory(props: {
   history?: InspectorHistory;
   versions: Versions;
   currentAuthor?: string | null;
-  versionsId: string;
-  versionsOpen: boolean;
   onShowVersions: () => void;
   /** The item's public links (see `createEntryLinks`): their access feeds the history's lines too. */
   links: EntryLinks;
@@ -212,7 +211,6 @@ export function EntryHistory(props: {
   const t = useBrowserMessages();
   // Numbers count the saved versions, oldest first; the current content comes after them.
   const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
-  const versionNumbers = createMemo(() => new Map(ordered().map((version, index) => [version.id, index + 1])));
   const versionOf = (entry: ActivityEntry) => (props.versions.state() === "ready" ? activityVersion(entry, props.entry, ordered()) : null);
   const restorePrevious = async (entry: ActivityEntry) => {
     const previous = ordered().at(-1);
@@ -225,23 +223,6 @@ export function EntryHistory(props: {
   const source = () => JSON.stringify([props.base.locationKey ?? null, itemHistorySource(request())]);
   return (
     <>
-      <Show when={!props.entry.directory}>
-        {/* Phones open this list from the version count in Info; wider panels always show it. */}
-        <div id={props.versionsId} class="filesv2-inspector-versions" data-open={props.versionsOpen ? "true" : undefined}>
-          <VersionsSection
-            base={props.base}
-            entry={props.entry}
-            busy={props.busy}
-            onChanged={props.onChanged}
-            onOpen={props.onOpen}
-            locale={props.locale}
-            versions={props.versions}
-            currentAuthor={props.currentAuthor}
-            env={props.history?.env}
-            number={(version) => versionNumbers().get(version.id)}
-          />
-        </div>
-      </Show>
       <Show when={props.history}>
         {(history) => (
           <ItemHistory
@@ -269,7 +250,7 @@ export function EntryHistory(props: {
   );
 }
 
-function VersionsSection(props: {
+export function EntryVersions(props: {
   base: BaseSummary;
   entry: FileEntry;
   busy?: boolean;
@@ -279,7 +260,6 @@ function VersionsSection(props: {
   env?: HistoryEnvironment;
   versions: Versions;
   currentAuthor?: string | null;
-  number?: (version: FileVersion) => number | undefined;
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
@@ -287,8 +267,9 @@ function VersionsSection(props: {
   const [busy, setBusy] = createSignal(false);
   const items = () => props.versions.items() ?? [];
   const canAct = () => props.versions.state() === "ready" && !props.versions.refreshing();
-  // Newest first, below the current file, as the approved list reads.
+  // Newest first, below the current file, as the approved list reads; numbered oldest first, as the history counts them.
   const listed = createMemo(() => [...items()].sort((a, b) => b.created.localeCompare(a.created)));
+  const number = (version: FileVersion) => listed().length - listed().indexOf(version);
   const run = async (work: () => Promise<void>) => {
     if (busy() || props.busy) return;
     if (!canAct()) {
@@ -376,132 +357,87 @@ function VersionsSection(props: {
     props.env
       ? formatWhen(iso, props.locale, h(), props.env)
       : new Date(iso).toLocaleString(props.locale, { dateStyle: "medium", timeStyle: "short" });
+  const label = (version: FileVersion) => h().versionN.replace("{n}", String(number(version)));
+  const writable = () => props.entry.actions?.write !== false;
   return (
-    <DetailPanel.Group label={t().versions}>
-      <Section
-        title={t().versions}
-        icon="ti ti-versions"
-        actions={
-          <span class="inline-flex size-4" role="status">
-            <Show when={props.versions.state() === "ready" && props.versions.refreshing()}>
-              <i class="ti ti-loader-2 motion-safe:animate-spin" aria-hidden="true" />
-              <span class="sr-only">{t().loadingDetails}</span>
-            </Show>
-          </span>
-        }
-        count={props.versions.state() === "ready" ? items().length + 1 : undefined}
-      >
-        <Show when={props.versions.state() === "error"}>
-          <Placeholder
-            state="error"
-            align="left"
-            class="px-0 py-1"
-            description={h().versionsFailed}
-            action={
-              <Button size="xs" variant="text" onClick={() => void props.versions.refresh()}>
-                {t().retry}
-              </Button>
-            }
-          />
-        </Show>
-        <Switch>
-          <Match when={props.versions.state() === "off"}>
-            <p class="text-xs text-dimmed">{t().versionsUnavailable}</p>
-          </Match>
-          <Match when={props.versions.state() === "loading"}>
-            <Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />
-          </Match>
-          <Match when={props.versions.items() !== null}>
-            <div class="flex flex-col">
-              {/* The file as it is now, numbered after the saved versions as the history counts it. */}
-              <DetailPanel.Action
-                type="button"
-                title={
-                  props.versions.state() === "ready"
-                    ? `${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`
-                    : h().versionCurrent
-                }
-                leading={
-                  <span aria-hidden="true" class="flex">
-                    <Avatar
-                      name={props.currentAuthor ?? h().versionCurrent}
-                      icon={props.currentAuthor ? undefined : "ti ti-file"}
-                      size="xs"
-                      style={{ width: "20px", height: "20px" }}
-                    />
-                  </span>
-                }
-                trailing={
-                  <time dateTime={props.entry.modified} title={when(props.entry.modified)}>
-                    {when(props.entry.modified)}
-                  </time>
-                }
-                disabled={props.busy}
-                onClick={() => props.onOpen(props.entry)}
-              />
-              <For each={listed()}>
-                {(version) => (
-                  <DetailPanel.Action
-                    type="button"
-                    title={
-                      props.number?.(version)
-                        ? h().versionN.replace("{n}", String(props.number(version)))
-                        : t().versionLabel(when(version.created))
-                    }
-                    description={[version.comment, version.author, formatFileViewSize(version.size, props.locale)]
+    <Group icon="versions" title={t().versions} count={props.versions.state() === "ready" ? items().length + 1 : undefined}>
+      <Switch>
+        <Match when={props.versions.state() === "error"}>
+          <Notice tone="bad" actions={[{ label: t().retry, onClick: () => void props.versions.refresh() }]}>
+            {h().versionsFailed}
+          </Notice>
+        </Match>
+        <Match when={props.versions.state() === "off"}>
+          <Bar start={<Text type="meta">{t().versionsUnavailable}</Text>} />
+        </Match>
+        <Match when={props.versions.state() === "loading"}>
+          <Bar start={<Text type="meta">{t().loadingDetails}</Text>} />
+        </Match>
+        <Match when={props.versions.items() !== null}>
+          <List label={t().versions}>
+            {/* the file as it is now, numbered after the saved versions as the history counts it */}
+            <Row
+              mark={{ icon: "file" }}
+              lines={[
+                props.versions.state() === "ready"
+                  ? `${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`
+                  : h().versionCurrent,
+                [props.currentAuthor, when(props.entry.modified)].filter(Boolean).join(" · "),
+              ]}
+              onOpen={props.busy ? undefined : () => props.onOpen(props.entry)}
+            />
+            <For each={listed()}>
+              {(version) => (
+                <Row
+                  mark={{ icon: "history" }}
+                  // Filegate's author metadata names the comment editor, not the content author.
+                  lines={[
+                    label(version),
+                    [version.comment, version.author, formatFileViewSize(version.size, props.locale), when(version.created)]
                       .filter(Boolean)
-                      .join(" · ")}
-                    // Filegate's author metadata names the comment editor, not the content author.
-                    leading={
-                      <span aria-hidden="true" class="flex">
-                        <Avatar name={t().versions} icon="ti ti-history" size="xs" style={{ width: "20px", height: "20px" }} />
-                      </span>
-                    }
-                    trailing={
-                      <time dateTime={version.created} title={when(version.created)}>
-                        {when(version.created)}
-                      </time>
-                    }
-                    disabled={busy() || props.busy || !canAct()}
-                    onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
-                    menuLabel={`${t().actions}: ${when(version.created)}`}
-                    menuItems={[
-                      {
-                        disabled: !canAct() || props.entry.actions?.write === false,
-                        label: t().commentVersion,
-                        icon: "ti ti-message",
-                        action: () => void comment(version),
-                      },
-                      {
-                        disabled: !canAct(),
-                        label: t().downloadVersion,
-                        icon: "ti ti-download",
-                        action: () => void downloadVersion(version),
-                      },
-                      {
-                        disabled: !canAct() || !props.entry.revision || props.entry.actions?.write === false,
-                        label: t().restoreVersion,
-                        description: !props.entry.revision ? t().restoreNeedsRevision : undefined,
-                        icon: "ti ti-arrow-back-up",
-                        action: () => void restore(version),
-                      },
-                      {
-                        disabled: !canAct(),
-                        label: t().restoreVersionAs,
-                        icon: "ti ti-file-plus",
-                        action: () => void restoreAs(version),
-                      },
-                    ]}
-                  />
-                )}
-              </For>
-            </div>
-            <Show when={!items().length}>
-              <p class="text-xs text-dimmed">{t().noVersions}</p>
-            </Show>
-          </Match>
-        </Switch>
-      </Section>
-    </DetailPanel.Group>
+                      .join(" · "),
+                  ]}
+                  onOpen={
+                    busy() || props.busy || !canAct()
+                      ? undefined
+                      : () => (writable() ? void comment(version) : void downloadVersion(version))
+                  }
+                  end={
+                    <Menu
+                      label={`${t().actions}: ${label(version)}`}
+                      items={[
+                        {
+                          label: t().commentVersion,
+                          icon: "message",
+                          disabled: !canAct() || !writable(),
+                          onClick: () => void comment(version),
+                        },
+                        {
+                          label: t().downloadVersion,
+                          icon: "download",
+                          disabled: !canAct(),
+                          onClick: () => void downloadVersion(version),
+                        },
+                        {
+                          // an in-place restore needs the file's revision; without it the copy below still works
+                          label: t().restoreVersion,
+                          icon: "arrow-back-up",
+                          disabled: !canAct() || !props.entry.revision || !writable(),
+                          onClick: () => void restore(version),
+                        },
+                        { label: t().restoreVersionAs, icon: "file-plus", disabled: !canAct(), onClick: () => void restoreAs(version) },
+                      ]}
+                    />
+                  }
+                />
+              )}
+            </For>
+          </List>
+          <Show when={!items().length}>
+            <Bar start={<Text type="meta">{t().noVersions}</Text>} />
+          </Show>
+        </Match>
+      </Switch>
+    </Group>
   );
 }

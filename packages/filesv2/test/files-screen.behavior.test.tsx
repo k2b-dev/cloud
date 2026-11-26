@@ -182,8 +182,10 @@ describe("the detail of the v2 folder screen", () => {
           }),
         );
         const detail = () => dom.root;
-        const section = () => dom.root.querySelector<HTMLElement>(".filesv2-inspector-versions")!;
-        const titles = () => [...section().querySelectorAll(".k2b-detail-panel__action-title")].map((title) => title.textContent?.trim());
+        // the versions' own section, its rows on v2: the title is each row's first line
+        const section = () => sectionTitled(dom.root, "Versions")!;
+        const titles = () =>
+          [...section().querySelectorAll('[data-k2-part="Row"] .k2-row-title')].map((title) => title.textContent?.trim());
         await flush();
         answerIf("shares", () => Response.json({ items: [], next: null }));
         // R4 was written after the details were read: the list now saves R3 as v-3.
