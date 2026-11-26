@@ -33,7 +33,7 @@ export default function AssistantWaitingV2(props: AssistantApprovalsViewProps) {
     }).catch(() => null);
     if (!response?.ok) {
       setRestoring(null);
-      toast(a().restoreFailed, { status: "bad", retry: () => restore(chat) });
+      toast(a().restoreFailedTitle, { status: "bad", retry: () => restore(chat) });
       return;
     }
     toast(a().restored({ title: chat.title }), { status: "ok" });
