@@ -11,6 +11,14 @@ export const REMINDERS = [
   ["Ada Renz", "error", "SMTP: connection refused"],
   ["Petra Lindqvist", "pending", ""],
   ["Jonas Wehrle", "sent", ""],
+  ["Mira Kaya", "sent", ""],
+  ["Lea Brandner", "error", "550 5.1.1 mailbox unavailable"],
+  ["Felix Thal", "sent", ""],
+  ["Sami Yilmaz", "pending", ""],
+  ["Jana Berger", "sent", ""],
+  ["Tom Oswald", "sent", ""],
+  ["Nora Petersen", "sent", ""],
+  ["Milan Horvat", "sent", ""],
 ].map(
   ([name, status, error], index): Reminder => ({
     id: `66666666-6666-4666-8666-${String(index + 1).padStart(12, "0")}`,
@@ -35,6 +43,15 @@ export const DELETED = [
   ["Jonas Wehrle", "guest_expired_deleted", "local", "guest"],
   ["Mira Kaya", "manual_delete", "ipa", "user"],
   ["Lea Brandner", "sync_out_of_scope_demoted", "ipa", "user"],
+  ["Kai Wagner", "guest_expired_deleted", "local", "guest"],
+  ["Ina Vogel", "local_user_expired_deleted", "local", "user"],
+  ["Ole Brandt", "ipa_expired_demoted", "ipa", "user"],
+  ["Rita Sommer", "manual_demote", "local", "user"],
+  ["Paul Engel", "ipa_expired_deleted", "ipa", "user"],
+  ["Eva Lorenz", "guest_expired_deleted", "local", "guest"],
+  ["Ben Hartmann", "manual_delete", "local", "user"],
+  ["Lisa Krämer", "sync_out_of_scope_deleted", "ipa", "user"],
+  ["Jan Seidel", "guest_expired_deleted", "local", "guest"],
 ].map(([name, reason, provider, profile], index) => ({
   id: `77777777-7777-4777-8777-${String(index + 1).padStart(12, "0")}`,
   deletedUserId: `33333333-3333-4333-8333-${String(300 + index).padStart(12, "0")}`,
@@ -44,6 +61,6 @@ export const DELETED = [
   previousProvider: provider!,
   previousProfile: profile!,
   reason: reason!,
-  deletedAt: `2026-11-${String(10 + index).padStart(2, "0")}T09:00:00.000Z`,
+  deletedAt: new Date(Date.UTC(2026, 10, 20, 9) - index * 26 * 60 * 60 * 1000).toISOString(),
   meta: { actor: "ada.renz", note: index === 1 ? "Austritt zum 31.10." : null },
 }));

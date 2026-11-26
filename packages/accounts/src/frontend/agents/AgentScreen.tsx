@@ -1,17 +1,17 @@
-import { Band, Bar, Button, Chip, Facts, Failed, Notice, Pane, RecordHead, Section, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import { useLocale } from "@k2b/ui";
+import { Bar, Cells, Chip, Facts, Notice, Pane, RecordHead, Section, Text, Workspace } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../AccountsNav";
 import { useAccountsMessages } from "../messages";
-import { type AgentKeyView, accessLabel, NewKeyDialog, OpenKey } from "./AgentKeyDialogs";
-import { type AgentKeyOpen, type AgentKeySort, agentPageHref } from "./agent-keys";
+import ApiKeysSection from "../service-accounts/ApiKeysSection";
+import type { KeyPage } from "../service-accounts/account-keys";
+import DirectoryAccessSection, { type DirectoryPage } from "../service-accounts/DirectoryAccessSection";
+import { directoryMessages } from "../service-accounts/directory-messages";
 import { useAgentPictureChange } from "./agent-picture";
 import { useAgentMessages } from "./messages";
 
-export type { AgentKeyView } from "./AgentKeyDialogs";
-
-/** The side column and an open key share one width, so the table's edge stays where it is when a key opens. */
-const sideWidth = { min: 300, default: 380 };
+/** One data colour per area of the record, the same in its cell and its section. */
+const area = { keys: "#8e1b6f", directory: "#0f766e", person: "#2563eb" };
 
 export type AgentView = {
   id: string;
@@ -20,54 +20,32 @@ export type AgentView = {
   /** The address of the agent's picture, its photo or its robot. */
   image: string | undefined;
   created: string;
-  createdBy: { name: string; href: string } | null;
+  createdBy: { name: string; href: string; image?: string } | null;
 };
 
 type Props = {
   agent: AgentView;
-  /** The keys in the chosen order; null when they could not be loaded. */
-  keys: readonly AgentKeyView[] | null;
-  /** How many active keys the agent has; the page lists one page of them. */
-  keysTotal: number;
-  page: number;
-  pages: number;
-  /** Whether a column may order the keys: only while every key stands on the one page. */
-  sortable: boolean;
-  sort: AgentKeySort;
-  open: AgentKeyOpen;
+  /** The first page of the agent's API keys, as `firstKeyPage` read it; null when it could not be read. */
+  keys: KeyPage | null;
+  /** The first page of its directory access; undefined when it could not be read, the section then loads it. */
+  directory: DirectoryPage | undefined;
   modelsAvailable: boolean;
+  timeZone: string;
   pendingRequests: number;
 };
 
 /**
- * An agent's page on v2: its name and picture, and its access: the API keys in the chosen order, each of which opens
- * beside the list. What is open (the dialog for a new key, one key) and the order live in the address. A new key's token
- * exists only in the dialog's memory until it closes.
+ * The agent kind of the account record: the agent's name, picture and state in the head; its key figures; its API
+ * keys and its directory access as the sections every service account shows (lane C); beside them who created it and
+ * what a key reaches. Keys open, are created and revoked inside their section.
  */
 export default function AgentScreen(props: Props) {
   const t = useAgentMessages();
   const accounts = useAccountsMessages();
-  const { showChanges, openPage } = usePageSwap();
+  const locale = useLocale();
   const changePicture = useAgentPictureChange(() => props.agent);
-  const href = (open?: string, page = props.page) => agentPageHref(props.agent.id, { sort: props.sort, open, page });
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const status = () => (props.agent.active ? t().active : t().disabled);
-  // What is open stays open when the order changes.
-  const openParam = () => (props.open.kind === "new" ? "new" : props.open.kind === "key" ? props.open.id : undefined);
-  // A column head sorts by its column; pressed again, the list goes back to the newest first.
-  // A key works only while its agent is active: then expired keys warn and the others are ok; otherwise every key rests.
-  const keyStatus = (entry: AgentKeyView): { status?: "ok" | "warn"; label: string } =>
-    !props.agent.active
-      ? { label: t().keyInactive }
-      : entry.expired
-        ? { status: "warn", label: t().expired }
-        : { status: "ok", label: t().keyActive };
-  const sortBy = (sort: AgentKeySort) => ({
-    href: agentPageHref(props.agent.id, { sort: props.sort === sort ? "created" : sort, open: openParam(), page: props.page }),
-  });
-  const openKey = () => {
-    const open = props.open;
-    return open.kind === "key" ? (props.keys?.find((entry) => entry.id === open.id) ?? null) : null;
-  };
 
   return (
     <Workspace
@@ -75,187 +53,80 @@ export default function AgentScreen(props: Props) {
       head={
         <Bar
           start={
-            <RecordHead
-              name={props.agent.name}
-              avatar={{ name: props.agent.name, image: props.agent.image }}
-              kinds={[t().agent, status()]}
-            />
-          }
-          // A disabled agent gets no key: no action, and the notice on the page says why.
-          end={
-            props.agent.active ? (
-              <Button variant="primary" icon="plus" href={href("new")}>
-                {t().createKey}
-              </Button>
-            ) : undefined
+            <RecordHead name={props.agent.name} avatar={{ name: props.agent.name, image: props.agent.image }} kinds={[t().agent]} />
           }
         />
       }
-      primary={props.agent.active ? { label: t().createKey, icon: "plus", href: href("new") } : undefined}
     >
-      <Pane.Split>
-        <Pane
-          label={t().keys}
-          scrollKey="accounts-agent-keys"
-          status={<StatusRow lead={props.keys ? t().keysCount({ count: props.keysTotal }) : t().keys} />}
-        >
-          <Show when={!props.agent.active}>
-            <Notice tone="warn" icon="alert-triangle">
-              {t().agentDisabledNotice}
-            </Notice>
-          </Show>
-          <Band>
-            <Text>{t().keysIntro}</Text>
-            <Show when={!props.sortable}>
-              <Text type="meta" muted>
-                {t().sortAllOnly}
-              </Text>
-            </Show>
-          </Band>
-          <Show when={props.keys} fallback={<Failed text={t().keysFailed} onRetry={() => void showChanges()} />}>
-            {(keys) => (
-              <>
-                {/* one page of the service at a time, with the true count; k2b-ui gap: virtualized list (lane MW) */}
-                <Table
-                  label={t().keys}
-                  rows={keys()}
-                  rowKey={(entry) => entry.id}
-                  current={openKey()?.id}
-                  open={(entry) => ({ href: href(entry.id) })}
-                  // the newest first has no column of its own: pressing a sorted head again goes back to it
-                  sort={
-                    props.sort === "name"
-                      ? { column: 0, direction: "ascending" }
-                      : props.sort === "used"
-                        ? { column: 2, direction: "descending" }
-                        : undefined
-                  }
-                  empty={{
-                    icon: "key",
-                    text: t().noKeys,
-                    action: props.agent.active ? { label: t().createKey, icon: "plus", href: href("new") } : undefined,
-                  }}
-                  phone={(entry) => ({
-                    lines: [
-                      entry.name,
-                      `${accessLabel(t(), entry.access)} · ${!props.agent.active || entry.expired ? keyStatus(entry).label : entry.lastUsed ? t().usedAgo({ when: entry.lastUsed }) : t().neverUsed}`,
-                    ],
-                  })}
-                  columns={[
-                    {
-                      title: t().name,
-                      // k2b-ui gap: a cell cuts a long key name at its end; no cut in the middle with the whole name as hint
-                      sort: props.sortable ? sortBy("name") : undefined,
-                      width: { min: 160, default: 180 },
-                      cell: (entry) => ({ lines: [entry.name, `${entry.tokenPrefix}…`] }),
-                    },
-                    {
-                      title: t().keyAccess,
-                      width: { min: 150, default: 170 },
-                      cell: (entry) => accessLabel(t(), entry.access),
-                      drop: true,
-                    },
-                    {
-                      title: t().lastUsed,
-                      sort: props.sortable ? sortBy("used") : undefined,
-                      width: { min: 120, default: 130 },
-                      cell: (entry) => entry.lastUsed ?? t().neverUsed,
-                      drop: true,
-                    },
-                    {
-                      title: t().status,
-                      // a disabled agent's keys rest: a plain chip, as the notice above says
-                      cell: (entry) => {
-                        const state = keyStatus(entry);
-                        return state.status ? <Chip status={state.status}>{state.label}</Chip> : <Chip>{state.label}</Chip>;
-                      },
-                    },
-                  ]}
-                />
-                <Show when={props.pages > 1}>
-                  <Bar
-                    start={<Text type="meta">{t().pageOf({ page: props.page, pages: props.pages })}</Text>}
-                    end={
-                      <>
-                        <Button icon="chevron-left" href={href(openParam(), props.page - 1)} disabled={props.page <= 1}>
-                          {t().previous}
-                        </Button>
-                        <Button href={href(openParam(), props.page + 1)} disabled={props.page >= props.pages} forward>
-                          {t().next}
-                        </Button>
-                      </>
-                    }
-                  />
-                </Show>
-              </>
-            )}
-          </Show>
-        </Pane>
-        <Show
-          when={props.open.kind === "key"}
-          fallback={
-            <Pane side label={t().details} width={sideWidth}>
-              <Section
-                title={t().agent}
-                actions={[{ label: accounts().agentChangePicture, icon: "photo", onClick: () => void changePicture() }]}
-              >
-                <Facts
-                  items={[
-                    { label: t().created, value: props.agent.created },
-                    {
-                      label: t().createdBy,
-                      value: props.agent.createdBy ? <Text href={props.agent.createdBy.href}>{props.agent.createdBy.name}</Text> : "–",
-                    },
-                  ]}
-                />
-              </Section>
-              {/* what a key can do, in the words of its access; a key lives only as long as its agent is active */}
-              <Section title={t().reachTitle} summary={t().reachWhileActive}>
-                <Facts
-                  items={[
-                    { label: t().fullAccess, value: t().reachFull },
-                    ...(props.modelsAvailable ? [{ label: t().modelsOnly, value: t().reachModels }] : []),
-                    ...(props.keys?.some((entry) => entry.access === "legacy")
-                      ? [{ label: t().legacyLimited, value: t().reachLegacy }]
-                      : []),
-                  ]}
-                />
-              </Section>
-            </Pane>
-          }
-        >
-          <Pane
-            detail
-            label={openKey()?.name ?? t().keys}
-            width={sideWidth}
-            back={{ label: t().keys, href: href() }}
-            head={
-              <Bar
-                start={<Text type="lead">{openKey()?.name ?? t().keys}</Text>}
-                end={<Button variant="ghost" icon="x" label={t().close} href={href()} />}
-              />
-            }
-          >
-            <Show
-              when={openKey()}
-              fallback={
-                <Notice tone="bad" icon="alert-circle">
-                  {t().keyNotFound}
-                </Notice>
-              }
-            >
-              {(entry) => <OpenKey agentId={props.agent.id} entry={entry()} revoked={() => void openPage(href(), { replace: true })} />}
-            </Show>
-          </Pane>
+      <Pane label={t().agent} scrollKey="accounts-agent-record">
+        <Show when={!props.agent.active}>
+          <Notice tone="warn" icon="alert-triangle">
+            {t().agentDisabledNotice}
+          </Notice>
         </Show>
-      </Pane.Split>
-      <NewKeyDialog
-        agent={props.agent}
-        modelsAvailable={props.modelsAvailable}
-        open={props.open.kind === "new"}
-        // Closing drops `?key=new` from the address in place, so Back never reopens it; the list shows a created key.
-        close={() => void openPage(href(), { replace: true })}
-      />
+        <Cells>
+          <Cells.Cell
+            icon={props.agent.active ? "robot" : "robot-off"}
+            label={t().status}
+            value={<Chip status={props.agent.active ? "ok" : "warn"}>{status()}</Chip>}
+            meta={props.agent.created}
+          />
+          <Cells.Cell
+            icon="key"
+            color={area.keys}
+            label={t().keys}
+            value={props.keys ? number(props.keys.total) : "–"}
+            meta={props.keys ? undefined : t().keysFailed}
+          />
+          <Cells.Cell
+            icon="address-book"
+            color={area.directory}
+            label={directoryMessages.resolve([locale()]).t.title}
+            value={props.directory ? number(props.directory.total) : "–"}
+          />
+          <Cells.Cell
+            icon="user"
+            color={area.person}
+            label={t().createdBy}
+            value={props.agent.createdBy?.name ?? "–"}
+            href={props.agent.createdBy?.href}
+          />
+        </Cells>
+        <Pane.Split>
+          <Pane label={t().keys}>
+            <ApiKeysSection
+              account={{ kind: "agent", id: props.agent.id, name: props.agent.name, active: props.agent.active }}
+              first={props.keys}
+              modelsAvailable={props.modelsAvailable}
+              timeZone={props.timeZone}
+            />
+            <DirectoryAccessSection account={{ id: props.agent.id, name: props.agent.name }} initial={props.directory} />
+          </Pane>
+          <Pane side label={t().details} width={{ min: 300, default: 380 }}>
+            <Section title={t().agent} actions={[{ label: accounts().agentChangePicture, icon: "photo", onClick: () => void changePicture() }]}>
+              <Facts
+                items={[
+                  { label: t().created, value: props.agent.created },
+                  {
+                    label: t().createdBy,
+                    value: props.agent.createdBy ? <Text href={props.agent.createdBy.href}>{props.agent.createdBy.name}</Text> : "–",
+                  },
+                ]}
+              />
+            </Section>
+            {/* what a key can do, in the words of its access; a key lives only as long as its agent is active */}
+            <Section title={t().reachTitle} summary={t().reachWhileActive}>
+              <Facts
+                items={[
+                  { label: t().fullAccess, value: t().reachFull },
+                  ...(props.modelsAvailable ? [{ label: t().modelsOnly, value: t().reachModels }] : []),
+                  { label: t().legacyLimited, value: t().reachLegacy },
+                ]}
+              />
+            </Section>
+          </Pane>
+        </Pane.Split>
+      </Pane>
     </Workspace>
   );
 }

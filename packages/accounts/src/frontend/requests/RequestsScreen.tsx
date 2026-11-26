@@ -88,6 +88,7 @@ export default function RequestsScreen(props: RequestsScreenProps) {
           <StatusRow
             lead={r().lead({ count: props.total, status: props.status })}
             facts={props.oldest ? [{ before: r().oldestBefore, value: props.oldest }] : undefined}
+            // k2b-ui gap: a toned chip of the lead has no place of its own; in `filters` it leaves on the phone.
             filters={
               props.overdue > 0 ? (
                 <Chip status="warn" icon="clock-exclamation">

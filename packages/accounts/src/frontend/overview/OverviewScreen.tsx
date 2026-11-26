@@ -176,6 +176,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
       primary={props.isAdmin ? { label: t().newUser, icon: "user-plus", href: "/app/accounts/users/new" } : undefined}
     >
       <Pane label={t().dashboard} scrollKey="accounts-dashboard">
+        {/* k2b-ui gap: on the phone `Cells` stand one under the other; the approved mockup shows them two by two. */}
         <Show
           when={props.admin}
           fallback={

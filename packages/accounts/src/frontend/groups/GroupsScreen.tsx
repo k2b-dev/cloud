@@ -140,6 +140,11 @@ export default function GroupsScreen(props: GroupsScreenProps) {
             <StatusRow
               lead={t().groupsCount({ count: number(props.total) })}
               loading={refreshing()}
+              // what the page shows at a glance: the groups this person manages, and the POSIX groups
+              facts={[
+                { value: props.groups.filter((group) => group.managed).length, after: t().managedByMe },
+                { value: props.groups.filter((group) => group.posix).length, after: "POSIX" },
+              ]}
               filters={<ListOrder query={query()} state={state()} onChange={change} />}
             />
           </>
