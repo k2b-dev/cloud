@@ -172,6 +172,7 @@ export function startPwaRuntime(props: PwaRuntimeProps, view: PwaRuntimeView): (
     if (document.visibilityState === "visible") void renew(true);
   };
   document.addEventListener("visibilitychange", visible);
+  // runtime-timer: the installed app's session keepalive in the browser, for as long as the page lives; cleared with it
   const timer = setInterval(() => {
     if (document.visibilityState === "visible") void renew();
   }, KEEPALIVE_INTERVAL_MS);
