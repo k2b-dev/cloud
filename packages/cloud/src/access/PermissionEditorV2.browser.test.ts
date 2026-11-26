@@ -180,6 +180,24 @@ describe("the permission editor on v2", () => {
     }
   });
 
+  test("removing a row in the middle moves the focus to the Remove of the row after it", async () => {
+    const { context, tab } = await open(views[0]!);
+    try {
+      await row(tab, "Jonas Weber")
+        .getByRole("button", { name: /Remove Jonas Weber/ })
+        .click();
+      await tab
+        .getByRole("alertdialog")
+        .getByRole("button", { name: /Remove/ })
+        .click();
+      await tab.getByRole("button", { name: "Remove Jonas Weber", exact: true }).waitFor({ state: "detached" });
+      await settled(tab);
+      expect(await tab.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Remove Logistik");
+    } finally {
+      await context.close();
+    }
+  });
+
   test("the last manager keeps Manage and cannot be removed", async () => {
     const { context, tab } = await open(views[0]!);
     try {
