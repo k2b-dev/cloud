@@ -1,14 +1,15 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
-import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
+import * as watcher from "../_internal/runtime-watcher";
+import { buildOlderGlobal } from "../styles/older-core-global.fixture";
 
 // A visitor page without the Cloud shell on v2: the k2b-ui "public page" recipe inside `MinimalLayout ui="v2"`. The
 // page and its footer share the window; a kiosk page without the footer takes the whole window and scrolls inside.
@@ -20,8 +21,15 @@ const { default: MinimalLayout } = await import("./MinimalLayout");
 const recipe = await import("../../../ui/skills/k2b-ui/recipes/public-page");
 type Context = Parameters<typeof MinimalLayout>[0]["c"];
 
+/** What the registered Core serves: from the v2 sheet on it declares `/public/v2.css`; an older Core does not. */
+const coreRoutes = spyOn(watcher, "registeredCoreRoutes");
+type Core = "with v2.css" | "older";
+const declare = (core: Core) =>
+  coreRoutes.mockReturnValue(core === "with v2.css" ? ["/public/global.css", "/public/v2.css"] : ["/public/global.css"]);
+
 const legalApp = { id: "legal-probe", legalLinks: [{ label: "Imprint", href: "/impressum" }] };
-const render = (kiosk: boolean) => {
+const render = (kiosk: boolean, core: Core = "with v2.css") => {
+  declare(core);
   const page: { appUi?: "v2"; stylesheets?: "v2" } = {};
   const context = {
     get: (key: string) => (key === "page" ? page : key === "runtime" ? { apps: [legalApp] } : undefined),
@@ -41,26 +49,29 @@ const render = (kiosk: boolean) => {
 };
 
 let browser: Browser;
-// The page loads Core's v2.css alone, as `MinimalLayout ui="v2"` links it (its body then is the v2 scope); beside an
-// older Core it keeps global.css. Both sheets render the same page.
-const sheets: Record<"v2.css" | "global.css", { css: string; body: string }> = {
-  "v2.css": { css: "", body: "k2b-ui k2-ui" },
-  "global.css": { css: "", body: "k2b-ui" },
+// The page loads Core's v2.css alone, as `MinimalLayout ui="v2"` links it (its body then is the v2 scope). Beside an
+// older Core it keeps that Core's global.css and the v1 footer.
+const sheets: Record<Core, { css: string; body: string }> = {
+  "with v2.css": { css: "", body: "k2b-ui k2-ui" },
+  older: { css: "", body: "k2b-ui" },
 };
 beforeAll(async () => {
   const v2 = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../styles/v2-page.css")] });
-  const global = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
-  for (const build of [v2, global]) if (!build.success) throw new AggregateError(build.logs, "Could not build the stylesheets.");
-  sheets["v2.css"].css = await v2.outputs[0]!.text();
-  sheets["global.css"].css = await global.outputs[0]!.text();
+  if (!v2.success) throw new AggregateError(v2.logs, "Could not build v2.css.");
+  sheets["with v2.css"].css = await v2.outputs[0]!.text();
+  // the visitor frame and its v2 footer (`minimal-layout.css`) came with the v2 sheet; an older Core has neither
+  sheets.older.css = await buildOlderGlobal(["./minimal-layout.css"]);
+  if (sheets.older.css.includes("minimal-layout-main")) throw new Error("The older sheet still holds the v2 visitor frame.");
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
   await browser?.close();
+  coreRoutes.mockRestore();
 });
 
 describe("MinimalLayout ui v2", () => {
   test("a page without ui keeps global.css, its v1 footer and its page options", () => {
+    declare("with v2.css");
     const page: Record<string, unknown> = {};
     const context = {
       get: (key: string) => (key === "page" ? page : key === "runtime" ? { apps: [legalApp] } : undefined),
@@ -89,15 +100,32 @@ describe("MinimalLayout ui v2", () => {
     expect(html).toContain("Imprint");
   });
 
-  for (const sheet of ["v2.css", "global.css"] as const)
+  test("beside an older Core, whose global.css has no v2 footer, the page keeps the v1 footer and its content stays v2", () => {
+    for (const kiosk of [false, true]) {
+      const { html, page } = render(kiosk, "older");
+      // The app's v2 inks, but no v2.css: such a Core does not serve it.
+      expect(page).toEqual({ appUi: "v2" });
+      expect(html).not.toContain('data-ui="v2"');
+      expect(html).toMatch(/<main class="k2-ui minimal-layout-main" style="[^"]*flex/);
+      expect(html).toContain('data-k2-part="Workspace"');
+      if (kiosk) expect(html).not.toContain("<footer");
+      else {
+        expect(html).toMatch(/<div class="minimal-layout" style="[^"]*min-height/);
+        expect(html).toContain('<footer class="minimal-layout-footer">');
+        expect(html).toContain("Imprint");
+      }
+    }
+  });
+
+  for (const core of ["with v2.css", "older"] as const)
     for (const kiosk of [false, true])
       for (const width of [1440, 390])
-        test(`${sheet}: ${kiosk ? "kiosk" : "visitor page"} at ${width} px: clean, inside the window, the footer after it`, async () => {
+        test(`Core ${core}: ${kiosk ? "kiosk" : "visitor page"} at ${width} px: clean, inside the window, the footer after it`, async () => {
           const tab = await browser.newPage({ viewport: { width, height: 900 } });
           try {
             await tab.setContent(
-              `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${sheets[sheet].css}</style></head>` +
-                `<body class="${sheets[sheet].body}">${render(kiosk).html}</body></html>`,
+              `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${sheets[core].css}</style></head>` +
+                `<body class="${sheets[core].body}">${render(kiosk, core).html}</body></html>`,
             );
             await settled(tab);
             const outline = await describeV2Page(tab, "main");
@@ -119,7 +147,11 @@ describe("MinimalLayout ui v2", () => {
               expect(boxes.footer).toBeUndefined();
               expect(Math.round(boxes.main!.height)).toBe(900);
               expect(boxes.scrollHeight).toBeLessThanOrEqual(900);
-            } else expect(boxes.footer!.top).toBeGreaterThanOrEqual(boxes.main!.bottom - 0.5);
+            } else {
+              expect(boxes.footer!.top).toBeGreaterThanOrEqual(boxes.main!.bottom - 0.5);
+              // The content fills the window above the footer.
+              expect(boxes.main!.height).toBeGreaterThan(400);
+            }
           } finally {
             await tab.close();
           }

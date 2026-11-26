@@ -132,8 +132,10 @@ instead of `global.css`. Core serves it from this release on and declares the
 route beside `/public/global.css`, with the same caching. Deploy Core first in
 a rolling upgrade. An application on this `@k2b/cloud` that finds an older
 Core in the registry, which does not declare `/public/v2.css`, keeps linking
-`global.css`; that sheet holds the same v2 rules, so its visitor pages stay
-styled. Nothing else changes: no environment variable, no external service.
+that Core's `global.css`. That sheet has neither the v2 frame of a visitor page
+nor its v2 footer, so such a page shows the v1 footer and brings its frame
+inline; it stays usable until Core is upgraded. Nothing else changes: no
+environment variable, no external service.
 
 ## App-paid capabilities
 
