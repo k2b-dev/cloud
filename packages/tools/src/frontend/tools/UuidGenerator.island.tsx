@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Field, Input, List, Pane, Row, StatusRow } from "@k2b/ui/v2";
-import { createMemo, createSignal, For, onMount } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import { Band, Button, Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { createMemo, createSignal, onMount } from "solid-js";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -12,7 +12,6 @@ export const uuidMessages = i18n.define({
     en: {
       count: "Count",
       countDescription: "Number of UUIDs to generate at once",
-      uuidCount: ({ count }: { count: number }) => (count === 1 ? "1 UUID" : `${count} UUIDs`),
       copied: "Copied",
       copyAll: "Copy all",
       regenerate: "Generate again",
@@ -20,7 +19,6 @@ export const uuidMessages = i18n.define({
     de: {
       count: "Anzahl",
       countDescription: "UUIDs pro Durchlauf",
-      uuidCount: ({ count }) => (count === 1 ? "1 UUID" : `${count} UUIDs`),
       copied: "Kopiert",
       copyAll: "Alle kopieren",
       regenerate: "Neu erzeugen",
@@ -63,27 +61,38 @@ export default function UuidGenerator() {
         </>
       }
     >
-      <Pane label={w().result} scrollKey="tools-uuid" status={<StatusRow lead={t().uuidCount({ count: uuids().length })} />}>
-        <Band label={w().settings}>
-          <Field label={t().count} hint={t().countDescription} optional="1–100">
-            <Input
-              type="number"
-              min={1}
-              max={100}
-              value={String(count())}
-              onInput={(value) => {
-                const next = Number.parseInt(value, 10);
-                if (Number.isFinite(next)) setCount(Math.min(100, Math.max(1, next)));
-              }}
-            />
-          </Field>
-        </Band>
-        <List label={w().result}>
-          <For each={uuids()}>
-            {(uuid) => <Row lines={[uuid]} end={<Button variant="ghost" icon="copy" label={w().copy} onClick={() => void copy(uuid)} />} />}
-          </For>
-        </List>
-      </Pane>
+      <ToolPanes
+        kind="generator"
+        scrollKey="tools-uuid"
+        result={{
+          label: w().result,
+          children: (
+            // technical values in monospace, each with its copy; the count is a quiet number at the head
+            <Section icon="fingerprint" title={w().result} count={uuids().length || undefined}>
+              <Facts items={uuids().map((uuid, index) => ({ label: String(index + 1), value: uuid, mono: true, copy: uuid }))} />
+            </Section>
+          ),
+        }}
+        input={{
+          label: w().settings,
+          children: (
+            <Band label={w().settings}>
+              <Field label={t().count} hint={t().countDescription} optional="1–100">
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={String(count())}
+                  onInput={(value) => {
+                    const next = Number.parseInt(value, 10);
+                    if (Number.isFinite(next)) setCount(Math.min(100, Math.max(1, next)));
+                  }}
+                />
+              </Field>
+            </Band>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }

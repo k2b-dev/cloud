@@ -1,7 +1,7 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { type Action, Bar, Nav, type NavGroup, Path, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Nav, type NavGroup, Pane, Path, Workspace } from "@k2b/ui/v2";
 import { createEffect, createMemo, type JSX, onCleanup } from "solid-js";
 import { createToolSearch, toolSearchMessages } from "./tool-search";
 import { categoryOrder, resolveRegistry, type ToolCategory, type ToolId } from "./tools/registry";
@@ -87,3 +87,40 @@ export default function ToolsScreen(props: {
     </>
   );
 }
+
+/** The fixed column of a tool page: wide enough for a field and its hint, never stretched over a wide window. */
+const toolColumn = { min: 320, default: 400 };
+
+/**
+ * A tool page in two columns, so a wide window holds its parts side by side instead of one form stretched over 1500 px.
+ * A generator (password, UUID, text) leads with its result as the page's hero and keeps its options in a side column
+ * at a fixed width; a converter (hash, encoding) takes what goes in at a fixed width on the left and shows the result
+ * beside it. On the phone the two stand one under the other in this order: the result first for a generator.
+ */
+export const ToolPanes = (props: {
+  kind: "generator" | "converter";
+  /** The name of the page's scroll position. */
+  scrollKey: string;
+  /** What goes in; `head` holds its kinds as tabs, such as symmetric and asymmetric encryption. */
+  input: { label: string; head?: JSX.Element; children: JSX.Element };
+  result: { label: string; status?: JSX.Element; children: JSX.Element };
+}) =>
+  props.kind === "generator" ? (
+    <Pane.Split>
+      <Pane label={props.result.label} scrollKey={props.scrollKey} status={props.result.status}>
+        {props.result.children}
+      </Pane>
+      <Pane side label={props.input.label} head={props.input.head} width={toolColumn} scrollKey={`${props.scrollKey}-options`}>
+        {props.input.children}
+      </Pane>
+    </Pane.Split>
+  ) : (
+    <Pane.Split>
+      <Pane label={props.input.label} head={props.input.head} width={toolColumn} scrollKey={`${props.scrollKey}-input`}>
+        {props.input.children}
+      </Pane>
+      <Pane label={props.result.label} scrollKey={props.scrollKey} status={props.result.status}>
+        {props.result.children}
+      </Pane>
+    </Pane.Split>
+  );

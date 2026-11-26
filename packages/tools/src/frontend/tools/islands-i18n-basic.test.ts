@@ -40,7 +40,7 @@ describe("tool island catalogs", () => {
   });
 
   test("English base stays intact", () => {
-    expect(uuidMessages.resolve(["en"]).t.uuidCount({ count: 3 })).toBe("3 UUIDs");
+    expect(uuidMessages.resolve(["en"]).t.copyAll).toBe("Copy all");
     expect(encodingMessages.resolve(["en"]).t.formatOutputLabel({ format: "Base32" })).toBe("Base32 Output");
   });
 
