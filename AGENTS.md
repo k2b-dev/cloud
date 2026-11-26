@@ -235,7 +235,8 @@ Before calling a change complete, decide which of these apply:
 - `skills/ssr` — building applications with `@k2b/ssr`;
 - `skills/stdlib` — using `@k2b/stdlib`;
 - `.github/workflows` — `ci.yml` (PR gate), `nightly.yml`, `main.yml`
-  (sha images and release-please), `release.yml`, `build-images.yml`;
+  (sha images and release-please), `release.yml`, `build-images.yml`,
+  `codeql.yml` (main, merge queue, and weekly; outside `gate`);
 - `scripts/checks` — repository rules;
 - `scripts/workspace.ts` — the application list.
 
