@@ -73,17 +73,27 @@ const titled = (root: ParentNode, title: string) =>
 const sectionTitles = (root: ParentNode) => [...root.querySelectorAll('[data-k2-part="Section"] h3')].map((title) => text(title));
 
 describe("the note's details on v2", () => {
-  test("a detail pane whose head names the note and whose state line names the last edit", () => {
-    inspect({}, (document) => {
+  test("the open note's head: its mark and name, one meta line, and three key facts", () => {
+    inspect({ initialCommentsPage: { items: [], page: 1, perPage: 30, total: 3, hasNext: false } }, (document) => {
       const pane = document.querySelector('[data-k2-part="Pane"][data-detail]');
       expect(pane).not.toBeNull();
-      expect(text(pane?.querySelector('[data-slot="head"]'))).toContain("Wareneingang");
-      expect(text(pane?.querySelector('[data-slot="status"]'))).toMatch(/^Jana Berger · bearbeitet .*12/);
+      const head = pane?.querySelector('[data-slot="head"]');
+      expect(head?.querySelector('[data-k2-part="Mark"]')).not.toBeNull();
+      expect(text(head?.querySelector(".k2-t-lead"))).toBe("Wareneingang");
+      expect(text(pane?.querySelector('[data-k2-part="Band"] .k2-t-meta'))).toBe("Erstellt am 13. Okt. 2026 von Paul Wagner");
+      const facts = pane?.querySelector('[data-k2-part="Band"]');
+      expect([...(facts?.querySelectorAll("dt") ?? [])].map((term) => text(term))).toEqual(["Bearbeitet", "Umfang", "Kommentare"]);
+      const values = [...(facts?.querySelectorAll("dd") ?? [])].map((value) => text(value));
+      expect(values[0]).toMatch(/^Jana Berger · .*12/);
+      expect(values[1]).toMatch(/^1 Wort · /);
+      expect(values[2]).toBe("3");
     });
+    inspect({}, (document) => expect(text(document.querySelectorAll('[data-k2-part="Band"] dd')[2])).toBe("Noch keine"));
   });
-  test("calls the current editor Du", () => {
-    inspect({ currentUserId: jana.id }, (document) =>
-      expect(text(document.querySelector('[data-slot="status"]'))).toMatch(/^Du · bearbeitet/),
+  test("calls the current editor and creator Du", () => {
+    inspect({ currentUserId: jana.id }, (document) => expect(text(document.querySelector('[data-k2-part="Band"] dd'))).toMatch(/^Du · /));
+    inspect({ currentUserId: creator.id }, (document) =>
+      expect(text(document.querySelector('[data-k2-part="Band"] .k2-t-meta'))).toMatch(/von dir$/),
     );
   });
   test("AI only for writers in Write on an unlocked note; locked and read-only say so in the state line", () => {
@@ -175,10 +185,10 @@ describe("the note's details on v2", () => {
     inspect({ accessVisible: true, canManageAccess: true }, (document) => expect(text(document.body)).toContain("Zugriff verwalten"));
     inspect({ accessVisible: false }, (document) => expect(titled(document, "Zugriff")).toBeNull());
   });
-  test("properties and the way to the version history", () => {
+  test("properties say only what the head does not, with the way to the version history", () => {
     inspect({}, (document) => {
       const properties = titled(document, "Eigenschaften");
-      expect(text(properties)).toContain("Paul Wagner");
+      expect([...(properties?.querySelectorAll("dt") ?? [])].map((term) => text(term))).toEqual(["Größe"]);
       expect(properties?.querySelector('a[href="/app/notebooks/book01/notes/note01?mode=versions"]')).not.toBeNull();
     });
   });
