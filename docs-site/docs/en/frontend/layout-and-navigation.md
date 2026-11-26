@@ -546,7 +546,9 @@ the application's own `app.css`, for drawings inside a `Canvas`. The content fil
 without a sidebar, with the brand and the one task in its head. With
 `preferences={false}`, a kiosk screen takes the whole window and its `Pane`
 scrolls inside. The k2b-ui recipe `public-page` shows such a page and its kiosk
-state.
+state. Beside a Core from before `v2.css` the page keeps that Core's
+`global.css` and the v1 footer, and its content stays v2; see
+[Upgrade Core before v2 visitor pages](/en/docs/operations/deployment-requirements#upgrade-core-before-v2-visitor-pages).
 
 ```tsx
 <MinimalLayout c={c} ui="v2">

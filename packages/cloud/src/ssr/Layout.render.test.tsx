@@ -326,7 +326,9 @@ describe("Cloud layouts SSR", () => {
     // The scope sets the v2 type and ink, so it never reaches the body, the shell or a v1 page.
     const html = await (await server.request("/layout?ui=v2")).text();
     expect(html.match(/<body[^>]*class="([^"]*)"/)?.[1]?.split(" ")).not.toContain("k2-ui");
-    const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
+    // The inks live in v2-app-ink.css, which global.css and Core's v2.css both import.
+    const css = await Bun.file(new URL("../styles/v2-app-ink.css", import.meta.url)).text();
+    expect(await Bun.file(new URL("../styles/global.css", import.meta.url)).text()).toContain('@import "./v2-app-ink.css";');
     // Cloud sets the app colour and the server-computed ink of each theme; v2 derives the tint, never Cloud.
     const scope = css.slice(css.indexOf(".app-accent-scope .k2-ui {"), css.indexOf("}", css.indexOf(".app-accent-scope .k2-ui {")));
     expect(scope).toContain("--k2-app: var(--app-accent");
