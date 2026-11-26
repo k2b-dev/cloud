@@ -55,8 +55,13 @@ export default function AssistantProjectV2(p: ProjectParts) {
             title={p.text("Recent chats")}
             count={p.chatTotal()}
             actions={[
-              { label: p.copy().searchChatsIn({ project: p.props.project.name }), icon: "search", onClick: () => void p.searchChats() },
+              // The section already names the Project: the action is the short deed.
+              { label: p.text("Search chats"), icon: "search", onClick: () => void p.searchChats() },
             ]}
+            // Further chats are the way to the rest of the section, at its end.
+            more={
+              p.chats.hasMore() ? { label: p.text("Load more chats"), icon: "chevron-down", onClick: () => void p.loadMore() } : undefined
+            }
           >
             <Show when={p.chats.error()}>{(error) => <Failed text={error().message} onRetry={() => void p.chats.refresh()} />}</Show>
             <Show
@@ -81,15 +86,8 @@ export default function AssistantProjectV2(p: ProjectParts) {
                 </For>
               </List>
             </Show>
-            <Show when={p.chats.hasMore()}>
-              <Band>
-                <ButtonV2 variant="text" icon="chevron-down" busy={p.chats.loadingMore()} onClick={() => void p.loadMore()}>
-                  {p.text("Load more chats")}
-                </ButtonV2>
-              </Band>
-            </Show>
           </Section>
-          {/* k2b-ui gap: a pane has no foot for a composer; it follows the p.chats until the design study places it. */}
+          {/* k2b-ui gap: a pane has no foot for a composer; it follows the chats until the design study places it. */}
           <Canvas label={p.text("Project")}>
             <div class="assistant-project-composer-v2">{p.props.composer}</div>
           </Canvas>

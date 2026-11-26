@@ -244,7 +244,11 @@ const propsOf = (scene: Scene, url: URL) => {
       : null,
     initialContext: open ? contextOf(open.id) : null,
     initialTabs: open && scene.tabs ? storedTabs(open.id) : null,
-    projects: fixtureProjects(state),
+    // As the server does: the opened Project stands in the list even where the sidebar has none yet.
+    projects: ((opened) => [
+      ...fixtureProjects(state),
+      ...(opened && !fixtureProjects(state).some((entry) => entry.id === opened.id) ? [opened] : []),
+    ])(url.searchParams.get("project") ? projectOf(url.searchParams.get("project")!, conversations, state)?.project : undefined),
     ...(() => {
       const opened = url.searchParams.get("project");
       const project = opened ? projectOf(opened, conversations, state) : null;
@@ -677,7 +681,12 @@ describe("Assistant on v2", () => {
       const breaks: Record<string, string[]> = {};
       for (const screen of SCREENS)
         for (const state of screen.states) {
-          const { context, page, errors, unanswered } = await open(view, screen.address, { state, open: false });
+          // My apps & automations reads its own day; the page clock follows it, as in the apps test.
+          const { context, page, errors, unanswered } = await open(view, screen.address, {
+            state,
+            open: false,
+            ...(screen.name === "apps" ? { now: APPS_NOW } : {}),
+          });
           try {
             const pane = page.locator(`[data-k2-part="Pane"][aria-label="${screen.pane}"]`).first();
             await pane.waitFor({ timeout: 10_000 }).catch(() => undefined);

@@ -67,30 +67,39 @@ describe("My apps & automations on v2", () => {
     expect(html).toMatch(/data-k2-part="Chip"[^>]*>[\s\S]*?Letzter Lauf fehlgeschlagen/);
     expect(html).toMatch(/data-k2-part="Chip"[^>]*>[\s\S]*?Pausiert/);
     expect(html).not.toMatch(/data-k2-part="Chip"[^>]*>[^<]*Eingeschaltet/);
-    for (const part of ["Montags um 07:00", "Preisliste von stoffe-nord.example nicht erreichbar", "nächster Lauf Mo, 16.11."])
+    // One meaning per column: the schedule, what happened last, the next run (else "–").
+    for (const part of ["Montags um 07:00", "Preisliste von stoffe-nord.example nicht erreichbar", "Mo, 16.11."])
       expect(text).toContain(part);
-    // What the old head and foot said stays: the purpose, the create action, where other Code lives.
-    for (const part of ["Dein Code läuft als du, mit deinen Rechten und nicht mehr.", "Im Chat erstellen", "unter „Code“"])
+    expect(text).not.toContain("nächster Lauf");
+    expect(text).toContain("–");
+    // B rule 1: the exceptions stand beside the hero, each with the first one it names; the create action beside them.
+    for (const part of ["1 braucht dich · Stoffpreise prüfen", "1 läuft · Rückfragen sammeln", "1 pausiert", "Im Chat erstellen"])
       expect(text).toContain(part);
-    // Fewer than eight apps: no filter.
-    expect(text).not.toContain("Braucht dich");
+    // Explanations belong to the empty state, not to every day.
+    expect(text).not.toContain("Dein Code läuft als du");
+    // Each mark in Gustav's colour, its symbol from what starts the Code.
+    expect(html).toMatch(/data-name="clock"/);
+    expect(html).toMatch(/data-name="bolt"/);
   });
 
   test("English names the same parts", () => {
     const text = visible(apps("normal", "en"));
-    for (const part of ["15 runs today", "Create in chat", "Your Code runs as you, with your rights and no more."])
+    for (const part of ["15 runs today", "Create in chat", "1 needs you · Stoffpreise prüfen", "1 running · Rückfragen sammeln"])
       expect(text).toContain(part);
   });
 
-  test("a long list offers the filters as toggles beside the statement", () => {
+  test("the exceptions beside the hero are the filters: pressing one shows only those apps", () => {
     const html = apps("lang");
-    expect(html).toMatch(/aria-pressed="false"[^>]*>[\s\S]*?Braucht dich/);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>[\s\S]*?brauchen dich/);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>[\s\S]*?pausiert/);
   });
 
   test("empty says so and offers to create in the chat, without a table", () => {
     const html = apps("leer");
     expect(html).toContain('data-k2-part="Empty"');
     expect(visible(html)).toContain("Im Chat erstellen");
+    // The empty state explains what Code is here.
+    expect(visible(html)).toContain("Dein Code läuft als du, mit deinen Rechten und nicht mehr.");
     expect(html).not.toContain('data-k2-part="Table"');
   });
 

@@ -166,7 +166,7 @@ const WORST = (): CodeOverviewItem[] => {
       proposedTiming: [],
       lastRun: null,
       automations: [],
-      extras: undefined,
+      extras: { ...on.extras!, runs: [] },
     },
     { ...on, id: "c_worst6", title: "Lauf unbekannt", lastRun: undefined, extras: { ...on.extras!, runs: [] } },
     BRIEFING(true),
