@@ -167,7 +167,7 @@ const rules: readonly V2Rule[] = [
   {
     id: "app-css",
     title: "An app writes no layout CSS",
-    text: "From its first value import of @k2b/ui/v2, directly or through a local module that re-exports it, a screen has no class, style, spread onto a plain element, styling ref, innerHTML or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas, which stands directly in a v2 primitive and never wraps a whole screen.",
+    text: "From its first value import of @k2b/ui/v2, directly or through a local module that re-exports it, a screen has no class, style, spread onto a plain element, styling ref, innerHTML or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas, which stands directly in a v2 primitive and never wraps a whole screen. Markup outside @k2b/ui never writes the class of a primitive's inner part either (v2-part-classes): the shipped v2.css gives such a part no way through an island wrapper.",
     excerpts: [],
     checked: "v2-app-layout-css fails bun run check and the gate. Screens without a v2 import are untouched for now.",
     limits:
