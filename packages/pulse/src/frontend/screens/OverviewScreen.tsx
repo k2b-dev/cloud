@@ -17,7 +17,6 @@ import {
   Progress,
   Row,
   Section,
-  StatusRow,
   Table,
   Text,
   useToast,
@@ -81,10 +80,19 @@ export default function OverviewScreen(props: OverviewScreenProps) {
     history.replaceState(history.state, "", `${url.pathname}${url.search}`);
   };
 
+  const statement = () =>
+    query().trim()
+      ? words().matchesCount({ count: shown().length, total: props.bases.length })
+      : troubledBases().length > 0
+        ? words().storeTrouble({ count: troubledBases().length })
+        : undefined;
   return (
     <Workspace
+      // one head: the statement on the left (only when there is something to act on or a search found less than all),
+      // the search and "New base" on the right; no second row under it
       head={
         <Bar
+          start={statement() ? <Text type="lead">{statement()}</Text> : undefined}
           end={
             <>
               <Input
@@ -110,22 +118,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
       }
       primary={{ label: t().newBase, icon: "plus", onClick: () => setCreating(true) }}
     >
-      <Pane
-        label={t().yourBases}
-        scrollKey="pulse-bases"
-        // the first row speaks only when there is something to act on or a search found less than all
-        status={
-          query().trim() || troubledBases().length > 0 ? (
-            <StatusRow
-              lead={
-                query().trim()
-                  ? words().matchesCount({ count: shown().length, total: props.bases.length })
-                  : words().storeTrouble({ count: troubledBases().length })
-              }
-            />
-          ) : undefined
-        }
-      >
+      <Pane label={t().yourBases} scrollKey="pulse-bases">
         <Show
           when={props.bases.length > 0}
           fallback={
