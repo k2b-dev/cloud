@@ -7,6 +7,7 @@ const controlMessages = i18n.define({
   messages: {
     en: {
       removeValue: ({ label }: { label: string }) => `Remove ${label}`,
+      chooseOne: "Choose at least one option.",
       chooseImage: "Choose image",
       changeImage: "Change image",
       removeImage: "Remove image",
@@ -24,6 +25,7 @@ const controlMessages = i18n.define({
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
+      chooseOne: "Wähle mindestens eine Option.",
       chooseImage: "Bild wählen",
       changeImage: "Bild ändern",
       removeImage: "Bild entfernen",

@@ -1208,6 +1208,7 @@ export const Choice = (props: ChoiceProps) => {
 const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
+  const t = useControlMessages();
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
   const given = (): readonly string[] => (props.multiple ? (props.value ?? []) : props.value === undefined ? [] : [props.value]);
   // the values the choice started with: a form's reset puts them back (the inputs' default, and what the choice holds)
@@ -1268,11 +1269,14 @@ const ChoiceGroup = (props: ChoiceProps) => {
                   name={props.name}
                   value={option.value}
                   checked={on()}
-                  ref={(input) => {
+                  // points: the group is required; boxes: while none is chosen the first one says "choose at least one",
+                  // so the form asks for one, and no box sounds mandatory on its own
+                  required={(field?.required && !props.multiple) || undefined}
+                  ref={(input: HTMLInputElement) => {
                     input.defaultChecked = initial.includes(option.value);
+                    if (props.multiple && index() === 0)
+                      createRenderEffect(() => input.setCustomValidity(field?.required && chosen().length === 0 ? t().chooseOne : ""));
                   }}
-                  // boxes: while none is chosen the first one is required, so the form asks for one, never for all
-                  required={(field?.required && (!props.multiple || (index() === 0 && chosen().length === 0))) || undefined}
                   disabled={props.disabled}
                   onChange={(event) => choose(option.value, event.currentTarget.checked)}
                 />

@@ -181,8 +181,12 @@ for (const width of [1440, 390])
       // a press near the start of the control, away from the thumb, sets the thumb there
       const control = await corners.locator(".k2-slider-control").boundingBox();
       await page.mouse.click((control?.x ?? 0) + 2, (control?.y ?? 0) + (control?.height ?? 0) / 2);
-      await page.waitForFunction(() => document.querySelector('[aria-label="Ecken"], .k2-field input[type="range"]') !== null);
-      expect(Number(await thumb.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(1);
+      await page.waitForFunction(() => {
+        const range = [...document.querySelectorAll<HTMLInputElement>('input[type="range"]')].find((input) =>
+          input.getAttribute("aria-valuetext")?.endsWith("px"),
+        );
+        return Number(range?.getAttribute("aria-valuenow")) <= 1;
+      });
     }, width);
   });
 
@@ -203,6 +207,11 @@ test("choice of several that is required: the form cannot be sent until one is c
     const crew = field(page, "Mannschaft");
     const valid = () => page.evaluate(() => document.querySelector<HTMLInputElement>('input[name="crew"]')?.validity.valid);
     expect(await valid()).toBe(false);
+    // the reason asks for one of them, and no box is marked as mandatory on its own
+    expect(await page.evaluate(() => document.querySelector<HTMLInputElement>('input[name="crew"]')?.validationMessage)).toBe(
+      "Wähle mindestens eine Option.",
+    );
+    expect(await page.evaluate(() => document.querySelectorAll('input[name="crew"][required]').length)).toBe(0);
     await crew.getByRole("checkbox", { name: "Jonas Wolf" }).click();
     expect(await valid()).toBe(true);
     // one box is enough: the second is never asked for
