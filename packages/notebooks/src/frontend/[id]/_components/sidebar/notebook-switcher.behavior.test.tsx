@@ -23,7 +23,9 @@ describe("notebooks container switcher loader", () => {
   mock.module("@k2b/ssr/nav", () => ({ ...navigation, navigateTo }));
   const post = mock(async (_input: unknown) => ({ ok: true, json: async () => ({ id: "Created01" }) }));
   const get = mock((_input: { query: Record<string, string> }) => reply());
-  mock.module("@/api/client", () => ({ apiClient: { index: { $get: get, $post: post } } }));
+  // the switcher's "New notebook" also offers the built-in templates; none here
+  const templates = mock(async () => ({ ok: true, json: async () => [] }));
+  mock.module("@/api/client", () => ({ apiClient: { index: { $get: get, $post: post }, templates: { $get: templates } } }));
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   const mount = async (canCreate = false) => {
     const { createNotebookSwitcher } = await import("./notebook-switcher");
@@ -43,7 +45,7 @@ describe("notebooks container switcher loader", () => {
     reply = async () => success();
   });
 
-  test("switcher labels match the overview in English and German", async () => {
+  test("switcher labels in English and German", async () => {
     for (const { locale, expected } of [
       { locale: "en", expected: { switchLabel: "Switch notebook", actions: ["New notebook"] } },
       { locale: "de", expected: { switchLabel: "Notizbuch wechseln", actions: ["Neues Notizbuch"] } },
@@ -124,13 +126,13 @@ describe("notebooks container switcher loader", () => {
     }
   });
 
-  test("offers creation only for a user-backed actor, before All", async () => {
+  test("offers creation only for a user-backed actor, and no way to an overview", async () => {
     const allowed = await mount(true);
     const denied = await mount(false);
     try {
-      expect(allowed.switcher().actions?.map((action) => action.id)).toEqual(["new", "all"]);
+      expect(allowed.switcher().actions?.map((action) => action.id)).toEqual(["new"]);
       expect(allowed.switcher().actions?.[0]?.label).toBe("New notebook");
-      expect(denied.switcher().actions?.map((action) => action.id)).toEqual(["all"]);
+      expect(denied.switcher().actions?.map((action) => action.id)).toEqual([]);
     } finally {
       allowed.dispose();
       denied.dispose();

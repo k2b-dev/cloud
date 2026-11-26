@@ -10,7 +10,7 @@ import { mailConversationUiMessages } from "../packages/mail/src/frontend/_compo
 import { mailEventsMessages } from "../packages/mail/src/frontend/_components/mail-events-messages";
 import { presentMailEvents } from "../packages/mail/src/frontend/_components/mail-events-presentation";
 import type { MailActivityEvent } from "../packages/mail/src/service/collaboration";
-import { activityMessages, noteActivitySentences } from "../packages/notebooks/src/frontend/activity-messages";
+import { noteActivitySentences } from "../packages/notebooks/src/frontend/activity-messages";
 import { overviewMessages } from "../packages/spaces/src/frontend/overview-messages";
 import { registerSsrTestPlugin } from "../packages/ui/test/ssr-test-plugin";
 
@@ -91,8 +91,6 @@ test("all four apps render standalone activity sentences after an actor in DE an
     for (const [key, value] of Object.entries(spaces)) {
       if (key.startsWith("activity") && typeof value === "function") samples.push([`Spaces/${key}`, value(spaceParams)]);
     }
-    for (const [key, value] of Object.entries(activityMessages.resolve([locale]).t))
-      samples.push([`Notebooks/overview/${key}`, value({ target: "Plan", notebook: "Stadtpark", self: false, overview: true })]);
     for (const [key, value] of Object.entries(noteActivitySentences.resolve([locale]).t)) samples.push([`Notebooks/note/${key}`, value]);
     const grids = recordMessages.resolve([locale]).t;
     for (const key of gridsKeys) samples.push([`Grids/${key}`, grids[key]]);
