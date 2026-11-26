@@ -11,16 +11,28 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 // - `A + B`   also matches A last in a wrapper before B, B first in a wrapper after A, or both;
 // - `A ~ B`   the same, without first and last;
 // - `:first-child`, `:last-child`, `:only-child` of an element in a wrapper also need the wrapper in that place;
+// - an empty wrapper (an island that renders nothing) does not count: structural pseudo-classes skip any number of
+//   them, `+` steps over one;
 // - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper, and an anchor in a wrapper looks past it;
-// - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself.
+// - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself;
+// - a sibling chain keeps every adjacency: an element in a wrapper between two siblings is first and last in it.
 // Every added part sits in `:where()`, so specificity, and with it the cascade, stays exactly as written; without a
 // wrapper on the page every rule matches exactly what it matched before. A form this cannot make transparent
-// (`:nth-*`, `:*-of-type`, `:empty`, a sibling relation inside `:has()` after its first step) fails the build;
+// (`:nth-*`, `:*-of-type`, `:empty`, a sibling relation inside `:has()` after its first step, also inside `:is()`,
+// a `:has()` before a sibling relation, an escaped pseudo-class) fails the build;
 // `:nth-*` is allowed on placeholders (`.k2-skel`), which never sit in an island.
 
 const WRAPPER = ":where(solid-island,solid-client)";
 const NOT_WRAPPER = ":where(:not(solid-island):not(solid-client))";
-const STRUCTURAL = new Set([":first-child", ":last-child", ":only-child"]);
+const EMPTY = ":where(solid-island:empty,solid-client:empty)";
+// A structural pseudo-class that skips empty wrappers. `:nth-child(1 of S)` weighs one pseudo-class plus S, and S is
+// all `:where()`, so it weighs exactly what it replaces.
+const PLACE: Record<string, string> = {
+  ":first-child": `:nth-child(1 of :not(${EMPTY}))`,
+  ":last-child": `:nth-last-child(1 of :not(${EMPTY}))`,
+  ":only-child": `:nth-child(1 of :not(${EMPTY})):where(:nth-last-child(1 of :not(${EMPTY})))`,
+};
+const STRUCTURAL = new Set(Object.keys(PLACE));
 const LOGICAL = new Set([":is", ":where", ":not", ":matches", ":-webkit-any", ":-moz-any"]);
 const PSEUDO_ELEMENTS = new Set([":before", ":after", ":first-line", ":first-letter"]);
 
@@ -28,6 +40,8 @@ type Context = { inHas: boolean; placeholder: boolean; rule: string };
 type Compound = { body: string; pseudoElement: string; hasHas: boolean };
 type Relation = ">" | "+" | "~";
 type Variant = "direct" | "wrapped" | "left" | "both";
+/** How one relation crosses wrappers; `gap`: `+` steps over one empty wrapper. */
+type Step = { variant: Variant; gap?: boolean };
 
 const fail = (context: Context, reason: string): never => {
   throw new Error(`v2.css: ${reason} cannot see through an island wrapper in \`${context.rule}\``);
@@ -45,12 +59,14 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
     }
     if (node.type === "pseudo") {
       const name = node.value.toLowerCase();
+      // `:\66 irst-child` is `:first-child`; rather than decode every escape, an escaped name fails.
+      if (name.includes("\\")) fail(context, `the escaped pseudo-class ${name}`);
       if (name.startsWith("::") || PSEUDO_ELEMENTS.has(name)) {
         pseudoElement = String(node).trim();
         continue;
       }
       if (STRUCTURAL.has(name)) {
-        body += `${name}:where(:not(${WRAPPER}>*),${WRAPPER}${name}>*)`;
+        body += `${PLACE[name]}:where(:not(${WRAPPER}>*),${WRAPPER}${PLACE[name]}>*)`;
         continue;
       }
       if (/^:nth-|-of-type$|^:empty$/.test(name)) {
@@ -115,38 +131,63 @@ const parse = (selector: Selector): Parsed => {
 
 /** The chains of one run of compounds joined by `>`, `+` or `~`, each crossing at most one wrapper. */
 const run = (compounds: Compound[], relations: Relation[], context: Context, lead?: Relation): string[] => {
-  // Relation i stands before compounds[i] (with a lead, relation 0 starts at the anchor of `:has()`).
+  // Relation i stands before compounds[i + offset] (with a lead, relation 0 starts at the anchor of `:has()`).
   const all: Relation[] = lead ? [lead, ...relations] : relations;
   const offset = lead ? 0 : 1;
-  const choices = all.map((relation, index): Variant[] => {
-    if (relation === ">") return ["direct", "wrapped"];
+  const choices = all.map((relation, index): Step[] => {
+    if (relation === ">") return [{ variant: "direct" }, { variant: "wrapped" }];
+    // Inside `:has()` only its lead may be a sibling relation; the anchor's side is handled by the `:has()` itself.
+    if (context.inHas && !(lead && index === 0)) fail(context, "a sibling relation inside :has() after its first step");
     const left = compounds[index + offset - 1];
-    // The left side in a wrapper needs `:has()`; inside `:has()` the anchor's side is handled by the `:has()` itself.
-    if (!left || context.inHas || left.hasHas) return ["direct", "wrapped"];
-    return ["direct", "wrapped", "left", "both"];
+    // The left side in a wrapper needs `:has()` around it, and `:has()` does not nest.
+    if (left?.hasHas && !context.inHas) fail(context, ":has() before a sibling relation");
+    const variants: Variant[] = left && !context.inHas ? ["direct", "wrapped", "left", "both"] : ["direct", "wrapped"];
+    // `+` also steps over one empty wrapper.
+    return variants.flatMap((variant) => (relation === "+" ? [{ variant }, { variant, gap: true }] : [{ variant }]));
   });
-  const combos: Variant[][] = [[]];
+  const combos: Step[][] = [[]];
   for (const options of choices) combos.splice(0, combos.length, ...combos.flatMap((combo) => options.map((option) => [...combo, option])));
+  const sibling = (relation?: Relation) => relation === "+" || relation === "~";
+  // Compound k in a wrapper as seen from the relation before it (`entered`) and from the sibling relation after it
+  // (`leaves`). Both describe the same element, so they must agree: an element in a wrapper between two siblings is
+  // first and last in that one wrapper.
+  const place = (combo: Step[], k: number) => {
+    const before = all[k - offset];
+    const after = all[k - offset + 1];
+    const into = combo[k - offset]?.variant;
+    const out = combo[k - offset + 1]?.variant;
+    const entered = !!before && (into === "wrapped" || into === "both");
+    const leaves = sibling(after) && (out === "left" || out === "both");
+    return { before, after, entered, leaves };
+  };
   const kept = combos.filter((combo) => {
-    const wrappers = combo.reduce((sum, variant) => sum + (variant === "direct" ? 0 : variant === "both" ? 2 : 1), 0);
-    return wrappers <= 1 || (combo.filter((variant) => variant === "both").length === 1 && wrappers === 2);
+    let wrappers = combo.reduce((sum, step) => sum + (step.variant === "direct" ? 0 : step.variant === "both" ? 2 : 1), 0);
+    for (let k = 0; k < compounds.length; k++) {
+      const { before, after, entered, leaves } = place(combo, k);
+      // Siblings inside one wrapper have no wrapper between them, empty or not.
+      if (entered && !leaves && after === "+" && combo[k - offset + 1]?.gap) return false;
+      if (!leaves || !before) continue;
+      // Under `>` the wrapper takes the element's place (`P > W:has(> B)`), so `>` itself stays direct.
+      if (before === ">" && entered) return false;
+      if (sibling(before)) {
+        if (!entered) return false;
+        wrappers--;
+      }
+    }
+    return wrappers <= 1 || (combo.filter((step) => step.variant === "both").length === 1 && wrappers === 2);
   });
   return kept.map((combo) => {
     let chain = "";
-    compounds.forEach((part, index) => {
-      const relationIndex = index - offset;
-      const relation = all[relationIndex];
-      const variant = combo[relationIndex];
-      if (relation && variant) {
-        const through = variant === "wrapped" || variant === "both";
-        chain += relation === ">" ? (through ? `>${WRAPPER}>` : ">") : through ? `${relation}${WRAPPER}>` : relation;
+    compounds.forEach((part, k) => {
+      const { before, after, entered, leaves } = place(combo, k);
+      const step = combo[k - offset];
+      if (before && step) {
+        const relation = before === "+" && step.gap ? `+${EMPTY}+` : before;
+        chain += entered && !leaves ? `${relation === ">" ? ">" : relation}${WRAPPER}>` : relation;
       }
-      const next = all[relationIndex + 1];
-      const nextVariant = combo[relationIndex + 1];
-      const first = relation === "+" && (variant === "wrapped" || variant === "both") ? ":where(:first-child)" : "";
-      if (next && next !== ">" && (nextVariant === "left" || nextVariant === "both"))
-        chain += `${WRAPPER}:has(>${part.body}${first}${next === "+" ? ":where(:last-child)" : ""})`;
-      else chain += `${part.body}${first}`;
+      const first = before === "+" && entered ? ":where(:first-child)" : "";
+      const last = after === "+" && leaves ? ":where(:last-child)" : "";
+      chain += leaves ? `${WRAPPER}:has(>${part.body}${first}${last})` : `${part.body}${first}`;
     });
     return chain.trim();
   });
@@ -184,8 +225,6 @@ const relativeAlternatives = (selector: Selector, context: Context) => {
   const parsed = parse(selector);
   const lead = parsed.lead ?? " ";
   const groups = segments(parsed, context);
-  if (groups.some((group) => group.relations.some((relation) => relation !== ">")))
-    fail(context, "a sibling relation inside :has() after its first step");
   const [head, ...rest] = groups;
   const tail = rest.map((group) => join(run(group.compounds, group.relations, context), group.compounds.at(-1)!.pseudoElement));
   // A relative chain starts with its lead; `run` writes it in front of the first compound.

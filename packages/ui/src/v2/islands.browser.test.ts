@@ -78,25 +78,62 @@ const modes = {
   rows: '[data-k2-part="Row"], [data-k2-part="Digest.Entry"], [data-k2-part="Field"], [data-k2-part="Cells.Cell"]',
 };
 
-const page = async (css: string, html: string, width: number, wrap?: string) => {
+/**
+ * `wrap` puts each outermost match in an island of its own, as an application would write it; `empty` adds an island
+ * that renders nothing before and after it (one between two neighbours); `remove` takes it away, as the page would stand without it.
+ */
+type Islands = { selector: string; as: "wrap" | "empty" | "remove" };
+
+const page = async (css: string, html: string, width: number, islands?: Islands) => {
   const opened = await browser.newPage({ viewport: { width, height: 900 } });
   await opened.setContent(
     `<!doctype html><html lang="de"><head><style>${islandStyle}</style><style>${css}</style><style>${testCss}</style></head>` +
       `<body class="k2-ui"><div class="frame">${html}</div></body></html>`,
   );
-  if (wrap)
-    await opened.evaluate((selector) => {
-      // Each outermost match gets an island of its own, as an application would write it.
+  if (islands)
+    await opened.evaluate(({ selector, as }) => {
       const picked = [...document.querySelectorAll(selector)].filter((element) => !element.parentElement?.closest(selector));
       picked.forEach((element, index) => {
-        const island = document.createElement(index % 2 ? "solid-client" : "solid-island");
-        island.dataset.id = `island-${index}`;
-        element.replaceWith(island);
-        island.append(element);
+        if (as === "remove") {
+          element.remove();
+          return;
+        }
+        const island = (side: string) => {
+          const made = document.createElement(index % 2 ? "solid-client" : "solid-island");
+          made.dataset.id = `island-${index}${side}`;
+          return made;
+        };
+        if (as === "empty") {
+          // One empty island between two neighbours, as `+` steps over one.
+          if (!/^solid-(?:island|client)$/.test(element.previousElementSibling?.localName ?? "")) element.before(island("-before"));
+          element.after(island("-after"));
+          return;
+        }
+        const wrapper = island("");
+        element.replaceWith(wrapper);
+        wrapper.append(element);
       });
-    }, wrap);
+    }, islands);
   await settled(opened);
   return opened;
+};
+
+/** Every island's content leaves (`out`), kept in a template outside the frame, or comes back. */
+const moveContent = async (opened: Page, out: boolean) => {
+  await opened.evaluate((out) => {
+    document.querySelectorAll("solid-island, solid-client").forEach((island, index) => {
+      const id = `kept-${index}`;
+      let kept = document.head.querySelector<HTMLTemplateElement>(`template#${id}`);
+      if (!kept) {
+        kept = document.createElement("template");
+        kept.id = id;
+        document.head.append(kept);
+      }
+      if (out) kept.content.append(...island.childNodes);
+      else island.append(kept.content);
+    });
+  }, out);
+  await settled(opened);
 };
 
 /** Every box and every line a person sees: the boxes of all elements but the wrappers, with their drawn style. */
@@ -199,7 +236,7 @@ describe("a small island inside a v2 container keeps the container's layout", ()
           expect(differences(expected, await snapshot(same))).toEqual([]);
           let placed = 0;
           for (const [mode, selector] of Object.entries(modes)) {
-            const wrapped = await page(shipped, html, width, selector);
+            const wrapped = await page(shipped, html, width, { selector, as: "wrap" });
             opened.push(wrapped);
             // A recipe without rows has nothing to wrap in that mode.
             const islands = await wrapped.locator("solid-island, solid-client").count();
@@ -208,6 +245,17 @@ describe("a small island inside a v2 container keeps the container's layout", ()
             expect(differences(expected, await snapshot(wrapped)), mode).toEqual([]);
             expect(await describeV2Page(wrapped, ".frame"), mode).toBe(outline);
             expect((await measureV2Layout(wrapped, { root: "[data-k2-workspace]" })).problems, mode).toEqual([]);
+            // An island that renders nothing changes nothing, wherever it stands.
+            const empty = await page(shipped, html, width, { selector, as: "empty" });
+            opened.push(empty);
+            expect(differences(expected, await snapshot(empty)), `${mode} beside empty islands`).toEqual([]);
+            // Content that leaves its islands leaves the page as if it were not there, and comes back as it was.
+            const without = await page(source, html, width, { selector, as: "remove" });
+            opened.push(without);
+            await moveContent(wrapped, true);
+            expect(differences(await snapshot(without), await snapshot(wrapped)), `${mode} emptied`).toEqual([]);
+            await moveContent(wrapped, false);
+            expect(differences(expected, await snapshot(wrapped)), `${mode} filled again`).toEqual([]);
           }
           expect(placed, "islands placed").toBeGreaterThan(2);
         } finally {
