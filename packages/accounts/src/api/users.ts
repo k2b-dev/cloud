@@ -5,9 +5,10 @@ import {
   PwaDeviceViewSchema,
   UpdateAvatarResponseSchema,
   UpdateAvatarSchema,
+  UserDirectoryEntrySchema,
   UserSchema,
 } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { AppApprovalError, accountsAppService as accountsService, appApproval, logger, PwaError, pwaDevices } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -15,7 +16,6 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { app as accountsApp } from "@/config";
 import {
-  BaseUserSchema,
   CreateUserResponseSchema,
   CreateUserSchema,
   createPagination,
@@ -26,6 +26,7 @@ import {
   parsePagination,
   SearchQuerySchema,
 } from "@/contracts";
+import { directoryQueryOf, legacyUsersParams, parseUsersAddress, usersQuery } from "@/frontend/users/query";
 import { createAccountsNotificationSender } from "@/notifications";
 import { expectUserBackedActor, toAccountsActor } from "@/shared/actor";
 import { accountsApiMessages } from "./messages";
@@ -71,7 +72,7 @@ const AdminUpdateUserSchema = z
 const AdminUpdateResponseSchema = MessageResponseSchema;
 
 const UsersListResponseSchema = z.object({
-  users: z.array(BaseUserSchema),
+  users: z.array(UserDirectoryEntrySchema),
   pagination: PaginationResponseSchema,
 });
 
@@ -197,10 +198,17 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Users"],
       summary: "List users",
-      description: "List accounts with pagination and optional search. Searches uid, display name, first/last name, and email.",
+      description:
+        "List accounts with pagination, filters and sort, as the user list of Accounts reads its address. " +
+        "q searches uid, display name, first/last name, and email (search is its old name). " +
+        "role=admin,member,guest; member-of=<group ids> (direct members, personal Linux groups left out); " +
+        "status=active,invited,expired (invited: never signed in); login=last-7d|last-30d|older-90d|never or YYYY-MM-DD..YYYY-MM-DD " +
+        "in the caller's time zone; passkey=yes|no; provider=local|ipa; sort=name.asc|name.desc|login.desc|login.asc. " +
+        "profile=user|guest is the old name of role=admin,member and role=guest. A value the list cannot hold is refused with 400.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(UsersListResponseSchema, "Paginated list of users"),
+        400: jsonResponse(ErrorResponseSchema, "A filter value the list cannot hold"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
       },
@@ -210,28 +218,43 @@ const app = new Hono<AuthContext>()
       z.object({
         ...PaginationQuerySchema.shape,
         ...SearchQuerySchema.shape,
+        q: z.string().optional(),
+        role: z.string().optional(),
+        "member-of": z.string().optional(),
+        status: z.string().optional(),
+        login: z.string().optional(),
+        passkey: z.enum(["yes", "no"]).optional(),
         provider: z.enum(["local", "ipa"]).optional(),
         profile: z.enum(["user", "guest"]).optional(),
+        sort: z.string().optional(),
       }),
     ),
     async (c) => {
-      const query = c.req.valid("query");
-      const pagination = parsePagination(query);
+      const pagination = parsePagination(c.req.valid("query"));
+      const raw = new URL(c.req.url).searchParams;
+      const params = legacyUsersParams(raw) ?? raw;
+      // The API pages with its own `page` and `per_page`; the list page's own page limit does not apply here.
+      params.delete("per_page");
+      params.delete("page");
+      // The list arranges groups on its page; the API returns the users of the page and ignores the grouping.
+      params.delete("group");
+      const address = parseUsersAddress(usersQuery(getLocale(c)), params);
+      const refused = address.issues.filter((issue) => issue.code !== "unknown");
+      if (refused.length > 0)
+        return c.json({ message: `Invalid list parameters: ${refused.map((issue) => issue.param || issue.code).join(", ")}` }, 400);
 
-      const usersPage = await accountsService.user.list({
-        pagination: {
-          page: pagination.page,
-          perPage: pagination.perPage,
-        },
-        filter: { search: query.search },
-        scope: { provider: query.provider, profile: query.profile },
+      const result = await accountsService.user.directory({
+        actor: toAccountsActor(expectUserBackedActor(c)),
+        ...directoryQueryOf(address.state, getTimeZone(c)),
+        pagination: { page: pagination.page, perPage: pagination.perPage },
       });
+      if (!result.ok) return respond(c, result);
 
       return respond(
         c,
         ok({
-          users: usersPage.items,
-          pagination: createPagination(pagination, usersPage.total),
+          users: result.data.items,
+          pagination: createPagination(pagination, result.data.total),
         }),
       );
     },
