@@ -48,7 +48,14 @@ export type SecurityScreenProps = {
   };
   now: string;
   /** The newest few entries of the account's activity, their time formatted relative to the page's time. */
-  recent: { label: string; context: string; when: string; mark: { icon: string; color: string }; refused: boolean }[];
+  recent: {
+    label: string;
+    context: string;
+    when: string;
+    mark: { icon: string; color: string };
+    /** An attempt that did not go through: its outcome as a chip. */
+    outcome: { label: string; tone: "warn" | "bad" } | null;
+  }[];
   /** A FreeIPA password's end, formatted, and whether it is near; null without one. */
   password: { value: string; soon: boolean } | null;
 };
@@ -138,7 +145,7 @@ export default function SecurityScreen(props: SecurityScreenProps) {
                       mark={entry.mark}
                       lines={[entry.label, entry.context]}
                       time={entry.when}
-                      marks={entry.refused ? <Chip status="warn">{t().refused}</Chip> : undefined}
+                      marks={entry.outcome ? <Chip status={entry.outcome.tone}>{entry.outcome.label}</Chip> : undefined}
                     />
                   )}
                 </For>

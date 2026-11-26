@@ -2,7 +2,7 @@ import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/privacy-timer";
 import type { KeyboardPlatform } from "@k2b/ui";
 import { Button, Cells, Chip, Facts, Notice, Pane, Section } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import AccountWorkspace, { sideWidth, twoActions, useAccountMessages } from "./AccountWorkspace";
+import AccountWorkspace, { twoActions, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
 import { ACCOUNT_KINDS } from "./kinds";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
@@ -132,23 +132,18 @@ export default function ProfileScreen(props: ProfileScreenProps) {
             href="/me/security"
           />
         </Cells>
-        <Pane.Split>
-          <Pane label={t().profileTitle}>
-            <Section icon="user" title={t().profileTitle} actions={profileActions()}>
-              <Facts items={props.profileFacts} />
-            </Section>
-            <Section icon="id" title={t().accountFacts} actions={urgentExpiry() ? undefined : extendAction()}>
-              <Facts items={props.accountFacts} />
-            </Section>
-          </Pane>
-          <Pane side label={t().screenTitle} width={sideWidth}>
-            <ScreenSection
-              timerSeconds={props.screen.timerSeconds}
-              platform={props.screen.platform}
-              sharedWorkstation={props.screen.sharedWorkstation}
-            />
-          </Pane>
-        </Pane.Split>
+        {/* one column: what the person is, what the account is, how the screen behaves; no half-empty side column */}
+        <Section icon="user" title={t().profileTitle} actions={profileActions()}>
+          <Facts items={props.profileFacts} />
+        </Section>
+        <Section icon="id" title={t().accountFacts} actions={urgentExpiry() ? undefined : extendAction()}>
+          <Facts items={props.accountFacts} />
+        </Section>
+        <ScreenSection
+          timerSeconds={props.screen.timerSeconds}
+          platform={props.screen.platform}
+          sharedWorkstation={props.screen.sharedWorkstation}
+        />
       </Pane>
       {actions.dialogs()}
     </AccountWorkspace>

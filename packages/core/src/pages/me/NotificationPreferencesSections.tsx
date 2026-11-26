@@ -66,6 +66,7 @@ const Preference = (props: { preference: UserNotificationPreference; availableCh
       ...new Set(optionalChannels.map((channel) => availability(channel).description).filter((reason): reason is string => !!reason)),
     ].join(" ");
 
+  // k2b-ui gap: `Setting` (#4223) keeps the name column at least 240 px wide at 1024 and on the phone; a row wraps it.
   // The kind's channels as chips to press at the row's end; a channel the app always uses stands as a plain tag.
   return (
     <Row

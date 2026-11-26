@@ -6,7 +6,7 @@ import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
 import { approvalAvailability } from "../app-approval/availability";
 import { accountUserView } from "./account-view";
-import { activityLabel, activityMark, activityRefused } from "./activity-labels";
+import { activityLabel, activityMark, activityOutcome } from "./activity-labels";
 import { activityHref } from "./activity-query";
 import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
@@ -56,7 +56,7 @@ export default ssr<AuthContext>(async (c) => {
     context: entry.context || t.accountContext,
     when: dates.formatDateTimeRelative(entry.createdAt, { locale, base: now }),
     mark: activityMark(entry.action),
-    refused: activityRefused(entry),
+    outcome: activityOutcome(entry, t),
   }));
   const passwordExpires = user.ipa?.passwordExpires;
   const availability = approvalAvailability(approvalConfig);

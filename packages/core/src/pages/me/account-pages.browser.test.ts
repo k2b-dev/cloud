@@ -147,15 +147,20 @@ beforeEach(() => {
     spyOn(services.webauthn, "listForUser").mockResolvedValue(fixture.passkeys(localUser.id)),
     spyOn(services.audit, "listSelfServiceActivity").mockResolvedValue({
       items: fixture.accountEvents,
-      total: 23,
-    } as never),
-    spyOn(services.notifications.user.preferences, "list").mockResolvedValue(fixture.notificationPreferences),
-    spyOn(services.notifications.user.history, "list").mockResolvedValue({
-      items: fixture.deliveries,
-      total: fixture.deliveries.length,
       page: 1,
       perPage: 25,
-      totalPages: 1,
+      total: fixture.accountEvents.length,
+      hasNext: false,
+      outcomes: {
+        denied: fixture.accountEvents.filter((entry) => entry.outcome === "denied").length,
+        failed: fixture.accountEvents.filter((entry) => entry.outcome === "failed").length,
+      },
+    }),
+    spyOn(services.notifications.user.preferences, "list").mockResolvedValue(fixture.notificationPreferences),
+    // a page of the deliveries with the state the page asked for, as the service filters them
+    spyOn(services.notifications.user.history, "list").mockImplementation(async ({ status }) => {
+      const items = fixture.deliveries.filter((item) => status === undefined || item.status === status);
+      return { items, total: items.length, page: 1, perPage: 25, totalPages: 1 };
     }),
     spyOn(services.notifications.user.quiet, "get").mockResolvedValue({
       doNotDisturbUntil: null,
@@ -168,7 +173,7 @@ beforeEach(() => {
       enabled: true,
       adminPairing: false,
     }),
-    spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null } as never),
+    spyOn(server, "loadPendingApprovals").mockResolvedValue(fixture.openApprovals),
     spyOn(services.appApproval, "listDevices").mockResolvedValue({ items: fixture.appDevices, nextCursor: null }),
     spyOn(server.auth.session, "getToken").mockReturnValue("demo-session" as never),
     spyOn(server.auth.session, "authenticateRequest").mockImplementation(async () => ({ user, data: { sid: "demo-session" } }) as never),

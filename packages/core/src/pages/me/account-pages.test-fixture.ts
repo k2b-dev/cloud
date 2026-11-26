@@ -5,6 +5,7 @@ import type {
   UserNotificationPreference,
   WebAuthnPasskey,
 } from "@k2b/cloud/contracts";
+import type { ApprovalPage, PendingApproval } from "@k2b/cloud/contracts/approvals";
 
 // Invented, dense sample data for the account pages as a person with a working account sees them: several apps that
 // notify, a few passkeys and keys (one about to expire), devices, groups and a month of account events. Nobody real;
@@ -111,7 +112,7 @@ export const accountEvents = [
   createdAt: at(time as string),
   action: action as string,
   label: action as string,
-  outcome: (outcome ?? "allowed") as "allowed" | "denied",
+  outcome: (outcome ?? "allowed") as "allowed" | "denied" | "failed",
   context: context ?? null,
 }));
 
@@ -212,3 +213,50 @@ export const deliveries: UserNotificationHistoryItem[] = [
   delivery(11, "mail", "Neue Mail", "Neue Mail von Studierendenwerk: Rückmeldung", "browser", "delivered", "09-25T08:20"),
   delivery(12, "core", "Ablauf des Kontos", "Dein Konto läuft am 31. März 2027 ab", "email", "delivered", "09-24T09:00"),
 ];
+
+const approval = (
+  index: number,
+  values: Pick<PendingApproval, "app" | "action" | "sentence" | "requester"> & { sends: string; to: string },
+): PendingApproval => ({
+  id: id("6", index),
+  app: values.app,
+  action: values.action,
+  assurance: "confirm",
+  sentence: values.sentence,
+  review: {
+    locale: "de",
+    sentence: { action: values.sends, running: values.sends, done: values.sends, confirm: values.sends, decline: "Nicht ausführen" },
+    slots: {},
+    ask: "sends",
+    view: { version: 1, blocks: [{ kind: "Detail", title: "Details", items: [{ label: "An", value: values.to }] }] },
+  },
+  requester: values.requester,
+  remember: { chat: false, always: false, website: false },
+  createdAt: at("09-30T09:20"),
+  expiresAt: at("10-01T09:20"),
+});
+
+/** Two actions that wait for the person's decision: a mail to send and a card to move. */
+export const openApprovals: ApprovalPage = {
+  items: [
+    approval(1, {
+      app: { id: "mail", name: "Mail", icon: "ti ti-mail" },
+      action: "draft.send",
+      sentence: "Mail: Den Entwurf „Einladung Sommerfest“ an 48 Empfänger senden",
+      sends: "Einladung senden",
+      to: "fachschaft@example.org",
+      requester: { kind: "chat", appId: "assistant", title: "Einladung Sommerfest", href: "/app/assistant?conversation=c1" },
+    }),
+    approval(2, {
+      app: { id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban" },
+      action: "card.move",
+      sentence: "Spaces: 12 Karten von „Planung“ nach „Erledigt“ verschieben",
+      sends: "Karten verschieben",
+      to: "Board Sommerfest",
+      requester: { kind: "chat", appId: "assistant", title: "Aufräumen im Board", href: "/app/assistant?conversation=c2" },
+    }),
+  ],
+  nextCursor: null,
+  count: 2,
+  elsewhere: 0,
+};

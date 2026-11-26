@@ -7,7 +7,7 @@ import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
 import ActivityScreen, { type ActivityScreenProps } from "./ActivityScreen.island";
 import { accountUserView } from "./account-view";
-import { activityLabel, activityMark } from "./activity-labels";
+import { activityLabel, activityMark, activityOutcome } from "./activity-labels";
 import { activityDaysOf, activityKindOf, activityQuery, activityStateFor, deliveryStatusOf } from "./activity-query";
 import { accountMessages } from "./messages";
 import { notificationChannelMeta, notificationErrorText, notificationStatusMeta } from "./notification-ui";
@@ -39,16 +39,18 @@ export default ssr<AuthContext>(async (c) => {
   const loadContent = async (): Promise<ActivityScreenProps["content"]> => {
     if (kind === "open") return { kind, app, approvals: await loadPendingApprovals(c, app ? { app } : {}) };
     if (kind === "deliveries") {
-      const history = await notifications.user.history.list({
-        userId: user.id,
-        page,
-        perPage: 25,
-        status: deliveryStatusOf(state),
-        locale,
-      });
+      const status = deliveryStatusOf(state);
+      // the failures of every page, not only this one's; one count when the filter already names them
+      const [history, failed] = await Promise.all([
+        notifications.user.history.list({ userId: user.id, page, perPage: 25, status, locale }),
+        status === undefined
+          ? notifications.user.history.list({ userId: user.id, page: 1, perPage: 1, status: "failed", locale }).then((list) => list.total)
+          : Promise.resolve(undefined),
+      ]);
       const apps = appsById();
       return {
         kind,
+        problems: { failed: failed ?? (status === "failed" ? history.total : 0), denied: 0 },
         total: history.total,
         page: history.page,
         pages: history.totalPages,
@@ -63,9 +65,13 @@ export default ssr<AuthContext>(async (c) => {
             color: apps.get(item.appId)?.appearance?.accent,
           },
           state: { label: notificationStatusMeta(item.status, locale).label, tone: deliveryTone(item.status) },
+          // the reason of a failure only; where a delivery went is not news to the person
           detail:
-            notificationErrorText(item.errorCode, item.errorMessage, locale) ??
-            (item.channel === "none" ? t.noDeliveryChannel : (item.destinationLabel ?? null)),
+            item.status === "failed"
+              ? (notificationErrorText(item.errorCode, item.errorMessage, locale) ?? t.deliveryFailedReasonUnknown)
+              : item.channel === "none"
+                ? t.noDeliveryChannel
+                : null,
         })),
       };
     }
@@ -76,6 +82,7 @@ export default ssr<AuthContext>(async (c) => {
     });
     return {
       kind,
+      problems: activity.outcomes,
       total: activity.total,
       page,
       pages: Math.max(1, Math.ceil(activity.total / 25)),
@@ -85,12 +92,7 @@ export default ssr<AuthContext>(async (c) => {
         title: activityLabel(entry, t),
         href: null,
         source: entry.context || t.accountContext,
-        state:
-          entry.outcome === "allowed"
-            ? { label: t.outcomeAllowed, tone: "ok" }
-            : entry.outcome === "denied"
-              ? { label: t.outcomeDenied, tone: "warn" }
-              : { label: t.outcomeFailed, tone: "bad" },
+        state: activityOutcome(entry, t) ?? { label: t.outcomeAllowed, tone: "ok" },
         detail: null,
         mark: activityMark(entry.action),
       })),

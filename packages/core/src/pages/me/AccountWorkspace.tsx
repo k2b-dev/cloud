@@ -34,8 +34,6 @@ export default function AccountWorkspace(props: {
   place: AccountTab | "activity";
   /** The page's deeds at the end of the head. */
   actions?: JSX.Element;
-  /** The list's filter row: it joins the head as its second row, one block with one line under it. */
-  toolbar?: JSX.Element;
   /** The page's main deed, floating on the phone; the same deed stands as the primary button in `actions`. */
   primary?: Action;
   children: JSX.Element;
@@ -83,7 +81,6 @@ export default function AccountWorkspace(props: {
               }
               end={props.actions}
             />
-            {props.toolbar}
           </>
         }
         primary={props.primary}

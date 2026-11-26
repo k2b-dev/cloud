@@ -21,17 +21,29 @@ export const activityWords = (t: AccountMessages): Record<string, string> => ({
   "auth.session.sign_out_others": t.activitySignedOutElsewhere,
 });
 
-/** Whether the attempt was refused or failed: then it reads as a refusal, never as the deed it tried. */
+/** Whether the attempt was refused or failed: then its outcome stands beside it as a chip. */
 export const activityRefused = (entry: Pick<AccountActivity, "outcome">): boolean => entry.outcome !== "allowed";
 
-/** The app's own words for an activity it knows; the audit label for any other. A refused attempt says so. */
+/**
+ * The app's own words for an activity it knows; the audit label for any other. A sign-in that did not go through is
+ * named neutrally ("Anmeldung mit Passkey"): the outcome chip beside it says refused or failed, once.
+ */
 export const activityLabel = (entry: AccountActivity, t: AccountMessages): string => {
-  const words = activityWords(t)[entry.action] ?? entry.label;
-  if (!activityRefused(entry)) return words;
-  if (entry.action === "webauthn_credential.authenticate") return t.activityPasskeyRefused;
-  if (entry.action === "service_account_credential.authenticate") return t.activityApiKeyRefused;
-  return t.activityRefused({ what: words });
+  if (activityRefused(entry) && entry.action === "webauthn_credential.authenticate") return t.activityPasskeySignIn;
+  if (activityRefused(entry) && entry.action === "service_account_credential.authenticate") return t.activityApiKeySignIn;
+  return activityWords(t)[entry.action] ?? entry.label;
 };
+
+/** The outcome of an attempt that did not go through, as a chip's word and state; nothing for one that did. */
+export const activityOutcome = (
+  entry: Pick<AccountActivity, "outcome">,
+  t: AccountMessages,
+): { label: string; tone: "warn" | "bad" } | null =>
+  entry.outcome === "denied"
+    ? { label: t.outcomeDenied, tone: "warn" }
+    : entry.outcome === "failed"
+      ? { label: t.outcomeFailed, tone: "bad" }
+      : null;
 
 /** An account event as the kind of thing it touched, with the same mark as on the account's pages. */
 export const activityMark = (action: string): { icon: string; color: string } =>

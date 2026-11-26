@@ -955,7 +955,7 @@ An older browser sign-in receives `403 REAUTHENTICATE`.
 
 Automation that created personal API keys using an OAuth token or another API
 key must stop doing so. Create the key in **Developer → API keys**
-(`/me/developer`) after signing in again in the browser, then provide it to the
+(`/me/security`) after signing in again in the browser, then provide it to the
 integration through its credential store. Resource and standalone
 service-account keys keep their existing rules.
 

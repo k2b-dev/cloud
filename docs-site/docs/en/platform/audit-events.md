@@ -124,6 +124,15 @@ security operation.
 Use [logging](/en/docs/platform/logging) for diagnosis and
 [tracing](/en/docs/platform/tracing) for timing and execution flow.
 
+## Show a person their account activity
+
+`audit.listSelfServiceActivity({ userId, days, pagination })` returns the
+person's own account events of the last `days` (at most 365), newest first,
+with `total` and `outcomes` (the number of `denied` and `failed` events in the
+whole range). `audit.selfServiceActions` is the frozen list of the actions it
+returns. An app that shows these events in its own words checks in a test that
+it has words for every action in that list.
+
 ## Accounts notification batches
 
 The batch mutation methods on `notificationBatches` require an `actor` with

@@ -17,7 +17,7 @@ export type ActivityRow = {
   /** Where it came from: the app and kind of a notification, the context of a sign-in. */
   source: string;
   state: { label: string; tone?: "ok" | "warn" | "bad" };
-  /** A failure's reason, or where a delivery went. */
+  /** Why it failed, in words; nothing for an entry that went through or still waits. */
   detail: string | null;
   /** What the entry is about: the app of a notification, the kind of thing of an account event. */
   mark: { icon: string; color?: string };
@@ -30,7 +30,15 @@ export type ActivityScreenProps = {
   /** What the kind of the address shows: the open approvals, or the entries of a page. */
   content:
     | { kind: "open"; app?: string; approvals: ApprovalPage }
-    | { kind: Exclude<ActivityKind, "open">; rows: ActivityRow[]; total: number; page: number; pages: number };
+    | {
+        kind: Exclude<ActivityKind, "open">;
+        rows: ActivityRow[];
+        total: number;
+        page: number;
+        pages: number;
+        /** What went wrong in the whole range, counted by the server: failed deliveries, refused and failed attempts. */
+        problems: { failed: number; denied: number };
+      };
 };
 
 /**
@@ -55,25 +63,20 @@ export default function ActivityScreen(props: ActivityScreenProps) {
   };
   // A state is shown where it is an exception; what went as expected carries no chip.
   const exceptional = (row: ActivityRow) => row.state.tone !== "ok";
-  // Only what went wrong counts: a delivery that failed (one still waiting or sending is no failure), an attempt that
-  // was refused or failed.
-  const problems = () => {
-    const list = entries();
-    if (!list) return 0;
-    return list.rows.filter((row) => (list.kind === "deliveries" ? row.state.tone === "bad" : row.state.tone !== "ok")).length;
+  // The status row stands only for what needs the person: open approvals, or entries that went wrong anywhere in range.
+  const needsYou = () => {
+    const content = props.content;
+    // the approval list names its own open count, so the statement would say it twice
+    return content.kind !== "open" && content.problems.failed + content.problems.denied > 0;
   };
-  // The status row stands only for what needs the person: open approvals, or entries that went wrong.
-  const needsYou = () => (props.content.kind === "open" ? props.content.approvals.items.length > 0 : problems() > 0);
   const lead = () => {
     const content = props.content;
-    if (content.kind === "open") return t().waitingForYou({ count: content.approvals.items.length });
-    if (content.kind === "deliveries") return t().notDelivered({ count: problems() });
+    if (content.kind === "open") return "";
+    if (content.kind === "deliveries") return t().notDelivered({ count: content.problems.failed });
     // a refusal and a failure are different things: each is said with its own word
-    const refused = content.rows.filter((row) => row.state.tone === "warn").length;
-    const failed = content.rows.filter((row) => row.state.tone === "bad").length;
     return [
-      ...(refused > 0 ? [t().deniedAttempts({ count: refused })] : []),
-      ...(failed > 0 ? [t().failedAttempts({ count: failed })] : []),
+      ...(content.problems.denied > 0 ? [t().deniedAttempts({ count: content.problems.denied })] : []),
+      ...(content.problems.failed > 0 ? [t().failedAttempts({ count: content.problems.failed })] : []),
     ].join(" · ");
   };
   const chip = (row: ActivityRow) =>
@@ -83,30 +86,27 @@ export default function ActivityScreen(props: ActivityScreenProps) {
       <Chip>{row.state.label}</Chip>
     );
   return (
-    <AccountWorkspace
-      user={props.user}
-      place="activity"
-      toolbar={
-        <FilterBar
-          query={query()}
-          state={state()}
-          results={count()}
-          icons={{ kind: "list", status: "send", activityDays: "calendar" }}
-          onChange={(next) => {
-            // a new kind keeps only the filters it has
-            const own = activityQueryFor(t(), kindOfState(next));
-            setState(own.parse(own.serialize(next)).state);
-            // The bar wrote the address; the server reads the kind and its filter from it and renders the entries.
-            void swapPage(activityPageHref(t(), next, 1), { replace: true, scroll: "preserve" });
-          }}
-        />
-      }
-    >
+    <AccountWorkspace user={props.user} place="activity">
       <Pane
         label={t().activity}
         scrollKey="account-activity"
+        // the filter row and the statement are the toolbar rows of the column; #4290 joins them to the head as one block
         status={
           <>
+            <FilterBar
+              query={query()}
+              state={state()}
+              results={count()}
+              icons={{ kind: "list", status: "send", activityDays: "calendar" }}
+              onChange={(next) => {
+                // a new kind keeps only the filters it has
+                const own = activityQueryFor(t(), kindOfState(next));
+                setState(own.parse(own.serialize(next)).state);
+                // The bar wrote the address; the server reads the kind and its filter from it and renders the entries.
+                void swapPage(activityPageHref(t(), next, 1), { replace: true, scroll: "preserve" });
+              }}
+            />
+
             {/* with nothing to show the empty state speaks alone, so the lead never says it a second time */}
             <Show when={needsYou()}>
               <StatusRow lead={lead()} facts={[{ value: count() }]} />
@@ -144,7 +144,9 @@ export default function ActivityScreen(props: ActivityScreenProps) {
                     {(row) => (
                       <Row
                         mark={row.mark}
-                        lines={exceptional(row) && row.detail ? [row.title, row.source, row.detail] : [row.title, row.source]}
+                        // a failure says why first in its second line, then where it came from; the line wraps, so the
+                        // reason is never cut
+                        lines={row.detail ? [row.title, `${row.detail} · ${row.source}`] : [row.title, row.source]}
                         time={row.time}
                         marks={chip(row)}
                         href={row.href ?? undefined}

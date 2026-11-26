@@ -24,8 +24,8 @@ export type AccessScreenProps = {
 /**
  * `/me/access` on v2: the person's groups by their part in them — the ones they manage, the ones they belong to, and
  * (on request) the ones they belong to through another group — and the FreeIPA account request beside them.
- * Data gap: a membership's start and who granted it are not in the account service's answer yet; each row shows the
- * group's name and the name other apps and the command line use for it.
+ * Data gap: a membership's start, who granted it and the group's members are not in the account service's answer for
+ * the person's groups (names only); the cards show the group's name by its part.
  */
 export default function AccessScreen(props: AccessScreenProps) {
   const t = useAccountMessages();
@@ -53,7 +53,6 @@ export default function AccessScreen(props: AccessScreenProps) {
             items={props.managed.map((group) => ({
               ...ACCOUNT_KINDS.managedGroup,
               title: group.label,
-              meta: group.name,
               href: groupHref("managed", group.name),
             }))}
           />
@@ -78,7 +77,6 @@ export default function AccessScreen(props: AccessScreenProps) {
             items={direct().map((group) => ({
               ...ACCOUNT_KINDS.group,
               title: group.label,
-              meta: group.name,
               href: groupHref("member", group.name),
             }))}
           />
@@ -93,7 +91,6 @@ export default function AccessScreen(props: AccessScreenProps) {
               items={inherited().map((group) => ({
                 ...ACCOUNT_KINDS.inheritedGroup,
                 title: group.label,
-                meta: group.name,
                 href: groupHref("member", group.name),
               }))}
             />

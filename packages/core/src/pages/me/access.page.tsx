@@ -30,7 +30,12 @@ export default ssr<AuthContext>(async (c) => {
   const offered = user.provider === "local" && ((requestsEnabled && freeIpaEnabled && categoryPolicy.freeipa.enabled) || pendingRequest);
 
   return () => (
-    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.access }]}>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.accessAndGroups }]}
+    >
       <AccessScreen
         user={accountUserView(user, t)}
         actionsUser={profileActionsUser(user)}

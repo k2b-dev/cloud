@@ -75,7 +75,7 @@ export default ssr<AuthContext>(async (c) => {
     .at(0);
 
   return () => (
-    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account }]}>
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.profile }]}>
       <ProfileScreen
         user={accountUserView(user, t, now)}
         actionsUser={profileActionsUser(user)}

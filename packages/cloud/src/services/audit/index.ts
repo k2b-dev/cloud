@@ -417,7 +417,7 @@ const listSelfServiceActivity = async (config: {
   userId: string;
   pagination?: PageParams;
   days?: number;
-}): Promise<Paginated<SelfServiceAuditActivity>> => {
+}): Promise<Paginated<SelfServiceAuditActivity> & { outcomes: { denied: number; failed: number } }> => {
   const { page, perPage, offset } = paginate(config.pagination);
   const days = config.days && Number.isFinite(config.days) && config.days > 0 ? Math.min(Math.floor(config.days), 365) : 30;
   const where = sql`
@@ -426,7 +426,13 @@ const listSelfServiceActivity = async (config: {
     AND created_at >= now() - ${`${days} days`}::interval
   `;
   const [countRows, rows] = await Promise.all([
-    sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM audit.events WHERE ${where}`,
+    // the whole range's refusals and failures in the same statement as its count, not only this page's
+    sql<{ count: number; denied: number; failed: number }[]>`
+      SELECT COUNT(*)::int AS count,
+        COUNT(*) FILTER (WHERE outcome = 'denied')::int AS denied,
+        COUNT(*) FILTER (WHERE outcome = 'failed')::int AS failed
+      FROM audit.events WHERE ${where}
+    `,
     sql<DbAuditRow[]>`
       SELECT *
       FROM audit.events
@@ -443,6 +449,7 @@ const listSelfServiceActivity = async (config: {
     perPage,
     total,
     hasNext: page * perPage < total,
+    outcomes: { denied: countRows[0]?.denied ?? 0, failed: countRows[0]?.failed ?? 0 },
   };
 };
 
@@ -454,5 +461,5 @@ export const audit = {
   list,
   listSelfServiceActivity,
   /** The actions the account's own activity lists; an app that words them can check it knows each one. */
-  selfServiceActions: SELF_SERVICE_ACTIONS as readonly string[],
+  selfServiceActions: Object.freeze([...SELF_SERVICE_ACTIONS]) as readonly string[],
 };

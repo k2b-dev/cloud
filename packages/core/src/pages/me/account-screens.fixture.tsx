@@ -67,7 +67,7 @@ export const securityProps = (): SecurityScreenProps => ({
       context: "Arbeitslaptop",
       when: "vor 2 Std.",
       mark: { icon: "fingerprint", color: "#0d9488" },
-      refused: false,
+      outcome: null,
     },
   ],
   password: null,
