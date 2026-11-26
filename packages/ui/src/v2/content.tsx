@@ -14,6 +14,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
+import { markBarPlace } from "./bar-place";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
@@ -53,18 +54,22 @@ const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
  * block that carries the text edge itself; anywhere else (a bar, a row, a sentence) it runs inline, and in a bar it is
  * cut to one line with "…". The stylesheet decides by place, so text passed as data behaves the same.
  */
-export const Text = (props: TextProps) => (
-  <Dynamic
-    component={props.href ? "a" : "span"}
-    href={props.href}
-    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
-    data-k2-part="Text"
-    data-type={props.type}
-    data-tone={props.tone}
-  >
-    {props.children}
-  </Dynamic>
-);
+export const Text = (props: TextProps) => {
+  // a text in the start of a bar names its page there
+  markBarPlace("start");
+  return (
+    <Dynamic
+      component={props.href ? "a" : "span"}
+      href={props.href}
+      class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
+      data-k2-part="Text"
+      data-type={props.type}
+      data-tone={props.tone}
+    >
+      {props.children}
+    </Dynamic>
+  );
+};
 
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;

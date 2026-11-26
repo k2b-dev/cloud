@@ -13,6 +13,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { BarPlaceContext } from "./bar-place";
 import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -539,15 +540,24 @@ export type BarProps = {
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
  */
 export const Bar = (props: BarProps) => {
-  const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => props.end);
+  // what stands in its places marks the bar, already on the server: a title in its start, the "…" at its end
+  const [title, setTitle] = createSignal(false);
+  const [more, setMore] = createSignal(false);
+  const start = resolveChildren(() => (
+    <BarPlaceContext.Provider value={{ place: "start", mark: () => setTitle(true) }}>{props.start}</BarPlaceContext.Provider>
+  ));
+  const end = resolveChildren(() => (
+    <BarPlaceContext.Provider value={{ place: "end", mark: () => setMore(true) }}>{props.end}</BarPlaceContext.Provider>
+  ));
   return (
-    <div class="k2-bar" data-k2-part="Bar">
+    <div class="k2-bar" data-k2-part="Bar" data-title={title() ? "" : undefined}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
       <Show when={end() !== undefined}>
-        <div class="k2-bar-end">{end()}</div>
+        <div class="k2-bar-end" data-more={more() ? "" : undefined}>
+          {end()}
+        </div>
       </Show>
     </div>
   );

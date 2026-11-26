@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import { markBarPlace } from "./bar-place";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -370,6 +371,8 @@ const MenuRoot = (props: MenuProps) => {
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
+  // the "…" at the end of a bar takes in what gives way beside it
+  if (iconOnly()) markBarPlace("end");
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("end");
@@ -391,8 +394,7 @@ const MenuRoot = (props: MenuProps) => {
           Reflect.set(element, itemsKey, () => props.items);
         }}
         disabled={props.disabled}
-        // the "…" of a head takes in the buttons that give way beside it; a class, so the head's rule asks for it cheaply
-        class={iconOnly() ? "k2-btn k2-more" : "k2-btn"}
+        class="k2-btn"
         data-k2-part="Button"
         data-variant={(props.variant ?? (iconOnly() ? "ghost" : "secondary")) === "secondary" ? undefined : (props.variant ?? "ghost")}
         data-icon-only={iconOnly() ? "" : undefined}

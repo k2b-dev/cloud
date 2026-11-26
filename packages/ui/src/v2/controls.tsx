@@ -20,6 +20,7 @@ import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
 import { Icon } from "./marks";
+import { textEdge } from "./tokens";
 
 type FieldIds = {
   /** The id of the one control the label names. */
