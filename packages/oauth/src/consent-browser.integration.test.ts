@@ -17,7 +17,8 @@ import { sql } from "@k2b/cloud";
 import { launchBrowser } from "../../ui/test/browser";
 
 // A person approves or denies an MCP client in a real browser: dynamic registration, authorization,
-// the consent page with its real headers and form, the loopback callback, and the code exchange.
+// the consent page with its real headers and form, the loopback callback, and the code exchange; and approves a
+// device code of the command line on the device page, whose form is checked by Origin the same way.
 // Requests that a test builds by hand cannot show which Origin a browser sends for the consent form.
 const suite = suiteFor("database", "valkey", "nats");
 
@@ -32,6 +33,7 @@ const pkceChallenge = async () =>
 suite("OAuth consent in a browser", () => {
   const root = mkdtempSync(join(tmpdir(), "oauth-consent-browser-"));
   const consentOrigins: string[] = [];
+  const deviceOrigins: string[] = [];
   const clientIds: string[] = [];
   let browser: Browser;
   let server: Server<unknown>;
@@ -50,6 +52,10 @@ suite("OAuth consent in a browser", () => {
     const app = new Hono<AuthContext>()
       .use("/oauth/consent", async (c, next) => {
         if (c.req.method === "POST") consentOrigins.push(c.req.header("origin") ?? "(none)");
+        await next();
+      })
+      .use("/oauth/device", async (c, next) => {
+        if (c.req.method === "POST") deviceOrigins.push(c.req.header("origin") ?? "(none)");
         await next();
       })
       .route("/", pages);
@@ -187,6 +193,68 @@ suite("OAuth consent in a browser", () => {
       expect(params.get("state")).toBe("deny-state");
       expect(params.get("iss")).toBe(origin);
       expect(params.has("code")).toBe(false);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  /** Starts a device sign-in of the command line as a terminal does, then opens its code in the browser. */
+  const openDevice = async (locale: string) => {
+    const caller = { "x-forwarded-for": uniqueCallerAddress() };
+    const started = await fetch(`${origin}/oauth/device_authorization`, {
+      method: "POST",
+      headers: { ...caller, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: "cloud-cli", scope: "openid read" }),
+    });
+    expect(started.status).toBe(200);
+    const { device_code: deviceCode, user_code: userCode } = (await started.json()) as { device_code: string; user_code: string };
+    const context = await browser.newContext({ locale, extraHTTPHeaders: caller });
+    await context.addCookies([{ name: "session_token", value: sessionToken, url: origin }]);
+    const page = await context.newPage();
+    await page.goto(`${origin}/oauth/device?user_code=${encodeURIComponent(userCode)}`);
+    return { context, page, deviceCode, caller };
+  };
+
+  test("a device code is approved from Cloud's own origin after forged decisions failed, and the terminal gets its tokens", async () => {
+    const { context, page, deviceCode, caller } = await openDevice("de-DE");
+    try {
+      // the confirmation's hidden request, which a form on another site would have to send
+      const request = await page.evaluate(() => document.querySelector<HTMLInputElement>('#oauth-decision input[name="request"]')?.value);
+      expect(request).toBeTruthy();
+      for (const forgedOrigin of ["https://attacker.example", "null"]) {
+        const forged = await fetch(`${origin}/oauth/device`, {
+          method: "POST",
+          headers: {
+            cookie: `session_token=${sessionToken}`,
+            "content-type": "application/x-www-form-urlencoded",
+            "x-forwarded-for": uniqueCallerAddress(),
+            origin: forgedOrigin,
+          },
+          body: new URLSearchParams({ request: request!, decision: "approve" }),
+          redirect: "manual",
+        });
+        expect(forged.headers.get("location")).toStartWith("/oauth/error?error=access_denied");
+      }
+
+      deviceOrigins.length = 0;
+      await Promise.all([
+        page.waitForURL((url) => url.searchParams.get("result") === "approved"),
+        page.getByRole("button", { name: "Zugriff erlauben" }).click(),
+      ]);
+      // A form posted from the device page carries Cloud's own origin, never `null`.
+      expect(deviceOrigins).toEqual([origin]);
+      expect(await page.getByRole("heading", { level: 1 }).textContent()).toBe("Gerät verbunden");
+
+      const tokens = await fetch(`${origin}/oauth/token`, {
+        method: "POST",
+        headers: { ...caller, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          device_code: deviceCode,
+          client_id: "cloud-cli",
+        }),
+      });
+      expect(tokens.status).toBe(200);
     } finally {
       await context.close();
     }

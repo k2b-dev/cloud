@@ -1,7 +1,8 @@
-import { DescriptionList, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Facts } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, DecisionHeader, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
 
 export type ConsentDecisionView = {
   request: string;
@@ -13,25 +14,24 @@ export type ConsentDecisionView = {
   scopes: readonly string[];
 };
 
-/** The content of the consent card for a dynamically registered client or the first-party command line. */
+/**
+ * The consent for a dynamically registered client or the first-party command line. The client names itself, so its
+ * whole name stands in the facts, where it wraps; the head never cuts it.
+ */
 export function ConsentDecision(props: { view: ConsentDecisionView }) {
   const locale = useLocale();
   const t = () => oauthMessages.resolve([locale()]).t;
-  const value = (text: string) => <span class="break-all font-mono">{text}</span>;
 
   return (
     <>
-      <DecisionHeader title={t().authorize({ name: props.view.client.name })} />
-      <div class="mt-6">
-        <DescriptionList
-          layout="compact"
-          items={[
-            { term: t().returnsTo, description: value(props.view.redirectHost) },
-            ...(props.view.resource ? [{ term: t().resource, description: value(props.view.resource) }] : []),
-            { term: t().clientId, description: value(props.view.client.clientId) },
-          ]}
-        />
-      </div>
+      <Facts
+        items={[
+          { label: t().application, value: props.view.client.name },
+          { label: t().returnsTo, value: props.view.redirectHost, mono: true },
+          ...(props.view.resource ? [{ label: t().resource, value: props.view.resource, mono: true }] : []),
+          { label: t().clientId, value: props.view.client.clientId, mono: true },
+        ]}
+      />
       <RequestedAccess scopes={props.view.scopes} />
       <CautionNote>{props.view.firstParty ? t().firstPartyOwnRequest : t().unverifiedDynamic}</CautionNote>
       <Show when={props.view.reauthenticateHref}>

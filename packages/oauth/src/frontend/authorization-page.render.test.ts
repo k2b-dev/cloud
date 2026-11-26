@@ -35,34 +35,50 @@ const text = (html: string) => {
 const count = (html: string, pattern: RegExp) => html.match(pattern)?.length ?? 0;
 
 const title = (html: string) => /<title>([^<]*)<\/title>/.exec(html)?.[1];
-const heading = (html: string) => /<h1 id="oauth-page-title"[^>]*>([^<]*)<\/h1>/.exec(html)?.[1];
+const heading = (html: string) => /<h1 class="k2-record-name"[^>]*>([^<]*)<\/h1>/.exec(html)?.[1];
+
+/** The address of the first link whose words contain `words`. */
+const linkTo = (html: string, words: string) => {
+  for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)) {
+    if (!match[2]!.includes(words)) continue;
+    return /href="([^"]*)"/.exec(match[1]!)?.[1]?.replaceAll("&amp;", "&");
+  }
+  return undefined;
+};
+
+/** The start tags of the buttons that send the form `form`, in document order. */
+const submitButtons = (html: string, form: string) =>
+  [...html.matchAll(/<button\b[^>]*>/g)].map((match) => match[0]).filter((tag) => tag.includes(`form="${form}"`));
 
 describe("OAuth authorization pages", () => {
   test("end-session navigation asks for a POST and preserves the redirect for server validation", async () => {
     const html = await renderAuthorizationState("logout", "en");
     expect(text(html)).toContain("Sign out of Cloud in this browser?");
-    expect(html).toContain(
-      '<form method="post" action="/oauth/logout?client_id=reference&amp;post_logout_redirect_uri=https%3A%2F%2Fclient.example%2Fsigned-out"',
+    expect(html).toMatch(
+      /<form id="oauth-sign-out" method="post" action="\/oauth\/logout\?client_id=reference&amp;post_logout_redirect_uri=https%3A%2F%2Fclient.example%2Fsigned-out"/,
     );
-    expect(text(html)).toContain("Stay signed in");
+    // the one button that sends it ends the session; staying signed in is a link that sends nothing
+    expect(submitButtons(html, "oauth-sign-out")).toHaveLength(1);
+    expect(submitButtons(html, "oauth-sign-out")[0]).toContain('type="submit"');
+    expect(linkTo(html, "Stay signed in")).toBe("/");
   });
-  test("every state is one centered card on the minimal layout, without Cloud chrome", async () => {
+
+  test("every state is one v2 workspace on the minimal layout, without Cloud chrome", async () => {
     for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
       for (const locale of ["en", "de"] as const) {
         const html = await renderAuthorizationState(state, locale);
         const context = `${state} ${locale}`;
         expect(html, context).toContain(`<html lang="${locale}"`);
         expect(count(html, /<main\b/g), context).toBe(1);
-        expect(html, context).toContain('aria-labelledby="oauth-page-title"');
-        expect(html, context).toContain("standalone-card");
+        expect(html, context).toContain('data-k2-part="Workspace"');
+        // the head names the task: the page's one heading
         expect(count(html, /<h1\b/g), context).toBe(1);
-        expect(html, context).toContain('<h1 id="oauth-page-title"');
-        expect(html, context).toContain('<footer class="minimal-layout-footer">');
+        expect(heading(html), context).toBeString();
+        expect(html, context).toContain('<footer class="minimal-layout-footer" data-ui="v2"');
         // The only navigation is the footer's legal links.
         expect(count(html, /<nav\b/g), context).toBe(1);
-        // No tinted icon tile and no yellow notice box.
-        expect(html, context).not.toContain("k2b-notice");
-        expect(html, context).not.toMatch(/bg-(blue|emerald|amber|red)-100/);
+        // no v1 card or control
+        expect(html, context).not.toMatch(/standalone-card|k2b-button|k2b-notice/);
       }
     }
   });
@@ -72,10 +88,9 @@ describe("OAuth authorization pages", () => {
     const body = text(html);
     expect(html).toContain("<title>Connect a device");
     expect(body).toContain("Allow Cloud CLI to access your account?");
-    expect(html).toMatch(new RegExp(`data-testid="device-user-code"[^>]*>${sample.code}<`));
+    expect(body).toContain(`Code ${sample.code}`);
     expect(body).toContain("Check that this code matches the one on your device");
-    expect(body).toContain("Client ID");
-    expect(body).toContain(sample.cli.clientId);
+    expect(body).toContain(`Client ID ${sample.cli.clientId}`);
     for (const scope of [
       "Identify your Cloud account",
       "Read data and Help available to your account",
@@ -85,10 +100,15 @@ describe("OAuth authorization pages", () => {
       expect(body).toContain(scope);
     expect(body).toContain("Only continue if you started this sign-in yourself.");
     expect(body).toContain("Cloud permissions still limit");
-    expect(html).toContain('<form method="post" action="/oauth/device"');
+    expect(html).toContain('<form id="oauth-decision" method="post" action="/oauth/device"');
     expect(html).toContain(`<input type="hidden" name="request" value="${sample.request}"`);
-    // Deny first, Allow last and primary.
-    expect(html).toMatch(/value="deny"[^>]*data-variant="secondary"[\s\S]*value="approve"[^>]*data-variant="primary"/);
+    // Deny first, Allow last and primary; both send the decision form.
+    const [deny, allow, ...more] = submitButtons(html, "oauth-decision");
+    expect(more).toEqual([]);
+    expect(deny).toContain('name="decision" value="deny"');
+    expect(deny).not.toContain("data-variant");
+    expect(allow).toContain('name="decision" value="approve"');
+    expect(allow).toContain('data-variant="primary"');
     expect(body).toMatch(/Deny .*Allow access/);
   });
 
@@ -103,13 +123,15 @@ describe("OAuth authorization pages", () => {
     const html = await renderAuthorizationState("consent", "de");
     const consent = text(html);
     expect(html).toContain("<title>Anwendung autorisieren");
-    expect(consent).toContain(`${sample.dynamic.name} autorisieren`);
+    expect(heading(html)).toBe(`${sample.dynamic.name} autorisieren`);
+    // the client names itself: its whole name also stands where it wraps
+    expect(consent).toContain(`Anwendung ${sample.dynamic.name}`);
     expect(consent).toContain("Rückkehr zu localhost:53682");
     expect(consent).toContain("Ressource https://cloud.example/api/mcp/v1");
     expect(consent).toContain(`Client-ID ${sample.dynamic.clientId}`);
     expect(consent).toContain("Für dein Konto verfügbare Änderungen ausführen");
     expect(consent).toContain("nicht verifiziert");
-    expect(html).toContain('<form method="post" action="/oauth/consent"');
+    expect(html).toContain('<form id="oauth-decision" method="post" action="/oauth/consent"');
     expect(consent).toMatch(/Ablehnen .*Zugriff erlauben/);
   });
 
@@ -129,11 +151,7 @@ describe("OAuth authorization pages", () => {
         // No way to allow from here, Deny still works, and the sign-in leads back to this request.
         expect(html, context).not.toContain('value="approve"');
         expect(html, context).toContain('value="deny"');
-        const href =
-          /<a[^>]*data-testid="oauth-confirm-identity"[^>]*href="([^"]+)"|<a[^>]*href="([^"]+)"[^>]*data-testid="oauth-confirm-identity"/.exec(
-            html,
-          );
-        const target = new URL((href?.[1] ?? href?.[2])!.replaceAll("&amp;", "&"), "https://cloud.test");
+        const target = new URL(linkTo(html, button)!, "https://cloud.test");
         expect(target.pathname, context).toBe("/auth/login");
         expect(target.searchParams.get("redirectTo"), context).toBe(returnTo);
         expect(body, context).toMatch(new RegExp(`${locale === "en" ? "Deny" : "Ablehnen"} .*${button}`));
@@ -166,8 +184,11 @@ describe("OAuth authorization pages", () => {
       const html = await renderAuthorizationState("entry", locale);
       expect(text(html)).toContain(title);
       expect(text(html)).toContain(button);
-      expect(html).toContain('<form method="get" action="/oauth/device"');
-      expect(html).toContain('name="user_code"');
+      expect(html).toContain('<form id="oauth-device-code" method="get" action="/oauth/device"');
+      // the field and the button send that form without standing in it
+      expect(html).toMatch(/<input[^>]*name="user_code"[^>]*form="oauth-device-code"/);
+      expect(html).toMatch(/<input[^>]*autocomplete="one-time-code"/);
+      expect(submitButtons(html, "oauth-device-code")).toHaveLength(1);
     }
   });
 
@@ -177,7 +198,7 @@ describe("OAuth authorization pages", () => {
       ["de", "Gerät verbunden", "Du kannst diesen Tab jetzt schließen."],
     ] as const) {
       const html = await renderAuthorizationState("approved", locale);
-      expect(html).toMatch(new RegExp(`role="status"[\\s\\S]*<h1 id="oauth-page-title"[^>]*>${title}</h1>`));
+      expect(heading(html)).toBe(title);
       expect(text(html)).toContain(body);
       expect(html).not.toContain("<form");
     }
@@ -185,26 +206,22 @@ describe("OAuth authorization pages", () => {
 
   test("denied, expired and failed requests end calmly with what to do next", async () => {
     const denied = await renderAuthorizationState("denied", "de");
-    expect(denied).toContain('role="status"');
-    expect(text(denied)).toContain("Zugriff abgelehnt");
+    expect(heading(denied)).toBe("Zugriff abgelehnt");
     expect(text(denied)).toContain("Das Gerät wurde nicht verbunden. Du kannst diesen Tab jetzt schließen.");
 
     const expired = await renderAuthorizationState("expired", "en");
-    expect(expired).toContain('role="status"');
-    expect(text(expired)).toContain("Request no longer valid");
-    expect(expired).toMatch(/<a href="\/oauth\/device"[^>]*>[\s\S]*Enter another code/);
+    expect(heading(expired)).toBe("Request no longer valid");
+    expect(linkTo(expired, "Enter another code")).toBe("/oauth/device");
 
     const failed = await renderAuthorizationState("error", "en");
-    expect(failed).toContain('role="status"');
     expect(failed).toContain("<title>Authorization error");
-    expect(text(failed)).toContain("Authorization failed");
+    expect(heading(failed)).toBe("Authorization failed");
     expect(text(failed)).toContain("Your account is not allowed to use this application.");
-    expect(text(failed)).toContain("Error code: access_denied");
-    expect(failed).toMatch(/<a href="\/"[^>]*>[\s\S]*Back to home/);
+    expect(text(failed)).toContain("Error code access_denied");
+    expect(linkTo(failed, "Back to home")).toBe("/");
 
     const blocked = await renderAuthorizationState("blocked", "en");
-    expect(blocked).toContain('role="status"');
-    expect(text(blocked)).toContain("Authorization failed");
+    expect(heading(blocked)).toBe("Authorization failed");
     expect(text(blocked)).toContain("The Cloud app cannot grant access to other applications.");
     expect(blocked).not.toContain("<form");
   });

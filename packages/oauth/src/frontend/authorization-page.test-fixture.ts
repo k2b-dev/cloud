@@ -95,6 +95,7 @@ const consentPage = (client: "dynamic" | "cli", reauthenticate: boolean) =>
       createComponent(AuthorizationPage, {
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
+        heading: oauthMessages.resolve([getLocale(c)]).t.authorize({ name: sample[client].name }),
         get children() {
           return createComponent(ConsentDecision, {
             view: {

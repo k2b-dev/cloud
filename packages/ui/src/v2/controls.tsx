@@ -180,6 +180,8 @@ export type InputProps = {
   max?: number;
   /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
+  /** The `id` of the form the value is sent with, when the field does not stand inside it (a form of the server). */
+  form?: string;
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
   /** Called with the new text on every change. */
@@ -241,6 +243,7 @@ export const Input = (props: InputProps) => {
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
+    form: props.form,
     placeholder: props.placeholder,
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,

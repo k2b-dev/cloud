@@ -41,6 +41,14 @@ type ButtonBase = {
   pressed?: boolean;
   /** `submit` sends the form the button stands in; `button` by default. */
   type?: "button" | "submit";
+  /**
+   * With `submit`: the `id` of the form it sends, when the button does not stand inside it, such as a form of the server
+   * whose fields are hidden.
+   */
+  form?: string;
+  /** With `submit`: the name and value the form sends for this button, so two buttons send two answers (Deny, Allow). */
+  name?: string;
+  value?: string;
   /** Stays in a head on the phone, where the other actions move into the menu. */
   keep?: boolean;
   /**
@@ -81,6 +89,9 @@ export const Button = (props: ButtonProps) => {
       href={off() ? undefined : props.href}
       onNavigate={off() || props.href === undefined ? undefined : props.onNavigate}
       type={props.href ? undefined : (props.type ?? "button")}
+      form={props.href ? undefined : props.form}
+      name={props.href ? undefined : props.name}
+      value={props.href ? undefined : props.value}
       disabled={props.href ? undefined : props.disabled}
       aria-disabled={(props.href && props.disabled) || props.busy ? "true" : undefined}
       aria-busy={props.busy ? "true" : undefined}

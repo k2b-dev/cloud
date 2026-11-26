@@ -34,7 +34,7 @@ export default ssr<AuthContext>(async (c) => {
       : null;
 
   return () => (
-    <AuthorizationPage c={c} title={t.authorizeApplication}>
+    <AuthorizationPage c={c} title={t.authorizeApplication} heading={t.authorize({ name: client.name })}>
       <ConsentDecision
         view={{
           request: requestId,
