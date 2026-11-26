@@ -31,7 +31,8 @@ declare global {
       | "named-bare"
       | "pane-actions"
       | "chat"
-      | "chat-open";
+      | "chat-open"
+      | "named-bare-drawer";
   }
 }
 
@@ -51,6 +52,7 @@ const heads: Record<string, () => JSX.Element> = {
   "pane-actions": () => createComponent(PaneWithTwoActions, {}),
   chat: () => createComponent(ChatWithTabs, {}),
   "chat-open": () => createComponent(ChatWithTabs, { open: true }),
+  "named-bare-drawer": () => createComponent(NamedPlace, { bare: true, detail: 600 }),
 };
 
 // A head as its island renders it over the server's markup: a list with its toolbar rows, a toolbar in the head, or a

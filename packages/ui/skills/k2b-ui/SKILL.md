@@ -57,6 +57,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 - A screen is a component that returns one `Workspace`.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
+- A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
+  page's language: the `@k2b/ui` entry belongs to v1.
 
 ## What to use for what
 

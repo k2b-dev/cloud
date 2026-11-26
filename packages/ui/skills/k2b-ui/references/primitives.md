@@ -72,7 +72,9 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
   with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
-  line.
+  line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
+  limits, Enter back to the default) move the width; a reload starts at the
+  default again. The sidebar's grip works the same.
 - `detail={false}`: a detail that is closed now (the Assistant's tabs beside
   its chat). It stands as a column beside the others on a wide screen; on
   the phone only the pane in front stands, and this one waits out of sight
@@ -212,7 +214,7 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, grip in the head), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by

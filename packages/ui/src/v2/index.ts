@@ -10,6 +10,8 @@
  *   enforce this.
  */
 
+// The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
+export { useLocale } from "../intl/locale";
 // A host that names the page in its own bar (Cloud's phone shell) hears the open item a workspace head's path names.
 export { PageNameContext } from "./bar-place";
 export { Button, type ButtonProps } from "./button";

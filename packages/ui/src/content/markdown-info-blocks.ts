@@ -1,5 +1,5 @@
 import { Lexer, type MarkedExtension, Tokenizer, type TokenizerAndRendererExtension } from "marked";
-import { NOTICE_CARD_CLASSES, type NoticeTone } from "../surfaces/NoticeCard";
+import { NOTICE_CARD_CLASSES, type NoticeTone } from "../surfaces/notice-card-classes";
 import { type MarkdownInfoBlockMessages, resolveMarkdownInfoBlockMessages } from "./markdown-info-block-messages";
 
 /**

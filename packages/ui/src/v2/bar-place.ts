@@ -2,7 +2,7 @@ import { createContext, onCleanup, useContext } from "solid-js";
 import type { MenuEntry } from "./menu";
 
 /** What marks a bar: a title, a toolbar (a filter bar) or a path in its start, the "…" or a search at its end. */
-export type BarMark = "title" | "toolbar" | "path" | "more" | "search";
+export type BarMark = "title" | "toolbar" | "path" | "more" | "search" | "kept";
 
 /** A place of a `Bar`, its start or its end, which hears what stands in it. */
 type BarPlace = {
@@ -80,7 +80,7 @@ export const SidebarPlaceContext = createContext<(name: () => string | undefined
  */
 export type HeadPlace = {
   place: () => string | undefined;
-  creates: (entries: () => readonly MenuEntry[]) => void;
+  creates: (entries: () => readonly MenuEntry[]) => () => void;
   /** A path in the head's start tells the words of the open item, its last step. */
   names: (name: () => string | undefined) => void;
 };

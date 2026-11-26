@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
-import { BarPlaceContext, markBarCreate, markBarPlace } from "./bar-place";
+import { BarPlaceContext, HeadPlaceContext, markBarCreate, markBarPlace } from "./bar-place";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -439,7 +439,9 @@ const MenuRoot = (props: MenuProps) => {
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
         {/* a menu's entries belong to the menu, not to the bar its button stands in */}
         <BarPlaceContext.Provider value={undefined}>
-          <Entries level={level} entries={entries()} />
+          <HeadPlaceContext.Provider value={undefined}>
+            <Entries level={level} entries={entries()} />
+          </HeadPlaceContext.Provider>
         </BarPlaceContext.Provider>
       </level.Popup>
     </>
@@ -474,7 +476,9 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
         {/* a menu's entries belong to the menu, not to the bar its button stands in */}
         <BarPlaceContext.Provider value={undefined}>
-          <Entries level={level} entries={props.items} />
+          <HeadPlaceContext.Provider value={undefined}>
+            <Entries level={level} entries={props.items} />
+          </HeadPlaceContext.Provider>
         </BarPlaceContext.Provider>
       </level.Popup>
     </>
