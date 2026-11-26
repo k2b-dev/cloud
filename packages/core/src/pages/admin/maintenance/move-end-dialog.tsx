@@ -29,8 +29,15 @@ export default function MoveEndDialog(props: {
     setError(undefined);
     setFailed(false);
   });
+  /** The end as the picker shows it: the wall time in the named zone. */
+  const wallValue = () => {
+    const end = value();
+    return end ? dates.instantToZonedInput(end, props.dateConfig.timeZone) : undefined;
+  };
   const save = async () => {
     const end = value();
+    // a refused pick keeps its message and saves nothing, not even the end shown before it
+    if (error()) return;
     if (!end || !isFutureEnd(end)) return void setError(t().timePassed);
     setSaving(true);
     setFailed(false);
@@ -57,17 +64,19 @@ export default function MoveEndDialog(props: {
           <Button disabled={saving()} onClick={() => props.onClose(undefined)}>
             {t().cancel}
           </Button>
-          <Button variant="primary" busy={saving()} disabled={!value()} onClick={() => void save()}>
+          <Button variant="primary" busy={saving()} disabled={!value() || !!error()} onClick={() => void save()}>
             {t().moveEndSave}
           </Button>
         </>
       }
     >
       <Field name="until" label={t().newEnd} hint={t().timeIn({ zone: props.dateConfig.timeZone })} error={error()}>
+        {/* k2b-ui gap: DatePicker has no `disabled`; while the end saves, the dialog's buttons wait and a pick only changes
+            the value the next save would send. */}
         <DatePicker
           time
           label={t().newEnd}
-          value={value() ? dates.instantToZonedInput(value()!, props.dateConfig.timeZone) : undefined}
+          value={wallValue()}
           min={todayKey(props.dateConfig.timeZone)}
           timeZone={props.dateConfig.timeZone}
           onPick={(wall) => {

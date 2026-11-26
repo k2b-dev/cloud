@@ -154,6 +154,37 @@ test("the end moves past midnight with the date-time picker, which names the tim
   }
 }, 60_000);
 
+test("a wall time the clock change skips or repeats is refused and saves nothing, not even the end before it", async () => {
+  const { page, errors } = await open(views[0], "state=aktiv&locale=de");
+  try {
+    fixture.control.requests.length = 0;
+    await page.getByRole("button", { name: "Ende verschieben", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const pick = async (day: string, months: number) => {
+      for (let step = 0; step < months; step++) await dialog.getByRole("button", { name: "Nächster Monat" }).click();
+      await dialog.locator(`[data-value="${day}"]`).click();
+      await dialog.getByRole("group", { name: "Uhrzeit" }).getByRole("spinbutton", { name: "Stunde" }).focus();
+      await page.keyboard.type("0230");
+      await dialog.getByRole("button", { name: "Übernehmen", exact: true }).click();
+      await dialog.getByText("wegen der Zeitumstellung", { exact: false }).waitFor();
+      expect(await dialog.getByRole("button", { name: "Speichern", exact: true }).isDisabled()).toBe(true);
+    };
+    // spring: 02:30 does not exist in Berlin on 28 March 2027; autumn: it exists twice on 31 October 2027
+    await pick("2027-03-28", 4);
+    // a time that exists clears the message, so the autumn case below is its own
+    await dialog.getByRole("group", { name: "Uhrzeit" }).getByRole("spinbutton", { name: "Stunde" }).focus();
+    await page.keyboard.type("0330");
+    await dialog.getByRole("button", { name: "Übernehmen", exact: true }).click();
+    await dialog.getByText("wegen der Zeitumstellung", { exact: false }).waitFor({ state: "detached" });
+    await pick("2027-10-31", 7);
+    await page.keyboard.press("Enter");
+    expect(fixture.control.requests.some((request) => request.path === "/api/admin/maintenance/until")).toBe(false);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
 test("ending asks first: cancel changes nothing, the v2 layout holds in both states", async () => {
   for (const state of ["aus", "aktiv"])
     for (const width of [1440, 1024, 390]) {

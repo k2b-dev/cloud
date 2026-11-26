@@ -37,7 +37,6 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceIpaBackfill,
         logs: "/admin/observability/logs?source=auth:ipa:backfill",
         confirm: m().startIpaBackfill,
-        startedText: m().ipaBackfillStarted,
         description: m().ipaBackfillDescription,
       },
       {
@@ -45,7 +44,6 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceLocalUserBackfill,
         logs: "/admin/observability/logs?source=auth:local-user:backfill",
         confirm: m().startLocalUserBackfill,
-        startedText: m().localUserBackfillStarted,
         description: m().localUserBackfillDescription,
       },
       {
@@ -53,7 +51,6 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceLocalGuestBackfill,
         logs: "/admin/observability/logs?source=auth:guest:backfill",
         confirm: m().startLocalGuestBackfill,
-        startedText: m().localGuestBackfillStarted,
         description: m().localGuestBackfillDescription,
       },
     ].filter((operation) => props.freeIpaEnabled || operation.key !== "ipa-backfill");
@@ -75,7 +72,15 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         const data = (await response.json().catch(() => null)) as { message?: string } | null;
         throw new Error(data?.message ?? m().jobStartFailed);
       }
-      toast(operation.startedText, { status: "ok" });
+      // the catalogue entries themselves, so the toast copy check reads the words that show
+      toast(
+        operation.key === "ipa-backfill"
+          ? m().ipaBackfillStarted
+          : operation.key === "local-user-backfill"
+            ? m().localUserBackfillStarted
+            : m().localGuestBackfillStarted,
+        { status: "ok" },
+      );
     } catch (error) {
       toast(error instanceof Error ? error.message : m().jobStartFailed, { status: "bad" });
     } finally {
