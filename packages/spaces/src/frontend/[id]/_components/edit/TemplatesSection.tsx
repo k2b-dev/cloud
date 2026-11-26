@@ -567,7 +567,6 @@ export function TemplatesSection(props: {
     const list = () => props.templates.filter((template) => template.kind === kind);
     return (
       <Section
-        icon={kind === "task" ? "checkbox" : "calendar-event"}
         title={kind === "task" ? t.taskTemplates : t.eventTemplates}
         summary={kind === "task" ? t.taskTemplatesDescription : t.eventTemplatesDescription}
         count={list().length}

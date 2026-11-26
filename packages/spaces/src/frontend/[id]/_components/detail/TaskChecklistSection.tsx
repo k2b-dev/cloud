@@ -92,7 +92,7 @@ export default function TaskChecklistSection(props: Props) {
   const done = () => entries().filter((entry) => entry.completed).length;
 
   return (
-    <Section icon="checklist" title={t.checklist} count={entries().length ? `${done()}/${entries().length}` : undefined}>
+    <Section title={t.checklist} count={entries().length ? `${done()}/${entries().length}` : undefined}>
       <Show when={entries().length > 0 || props.canWrite} fallback={<Text type="meta">{t.noChecklistEntries}</Text>}>
         <For each={entries()}>
           {(entry) => (

@@ -184,7 +184,7 @@ export function StatusesSection(props: {
   return (
     <>
       {/* Above the list: the rows a switch adds or removes never move the switch itself. */}
-      <Section icon="robot" title={m.automaticColumns} summary={m.automaticColumnsDescription}>
+      <Section title={m.automaticColumns} summary={m.automaticColumnsDescription}>
         <For each={["blocked", "overdue"] as const}>
           {(kind) => (
             <Row
@@ -204,7 +204,6 @@ export function StatusesSection(props: {
         </For>
       </Section>
       <Section
-        icon="columns-3"
         title={m.workflowStatuses}
         summary={m.workflowStatusesDescription}
         count={columns().length}

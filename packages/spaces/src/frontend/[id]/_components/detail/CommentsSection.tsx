@@ -113,7 +113,7 @@ export default function CommentsSection(props: Props) {
   const sortedComments = () => [...props.comments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   return (
-    <Section icon="message-circle" title={props.recurrenceId ? t.occurrenceComments : t.comments} count={props.total}>
+    <Section title={props.recurrenceId ? t.occurrenceComments : t.comments} count={props.total}>
       <Show when={props.hasMore}>
         <Bar
           end={

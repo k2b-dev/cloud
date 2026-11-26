@@ -27,9 +27,6 @@ type ItemListProps = {
   host: () => HTMLElement | undefined;
 };
 
-/** Group icons are stored as v1 classes ("ti-alert-triangle"); v2 names the Tabler icon alone. */
-const iconName = (icon: string | undefined) => icon?.replace(/^ti\s+/, "").replace(/^ti-/, "");
-
 /**
  * The items of a Space as rows, one section per group (day, status, priority or tag) with its count from the server,
  * or one list without groups. A row keeps its element while its item stays, so a refresh leaves focus and a running
@@ -82,8 +79,6 @@ export default function ItemList(props: ItemListProps) {
         <For each={groups()}>
           {(group) => (
             <Section
-              icon={iconName(group.icon) ?? "point"}
-              color={group.color}
               title={group.meta ? `${group.label} · ${group.meta}` : group.label}
               count={props.groupCounts?.[group.key] ?? (grouped().itemsByGroup[group.key] ?? []).length}
             >

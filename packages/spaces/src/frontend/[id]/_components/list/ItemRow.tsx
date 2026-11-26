@@ -57,6 +57,10 @@ export const itemPeople = (item: SpaceItem, onIt?: (values: { name: string }) =>
   ...(item.assignees ?? []).filter((assignee) => assignee.id !== item.claim?.actor.id).map((assignee) => assignee.displayName),
 ];
 
+/** People in a row's quiet line: the first and "+n" for the rest, never a run of names across the row. */
+export const peopleSummary = (names: string[]) =>
+  names.length === 0 ? undefined : names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+
 /**
  * One task or event of the list: its status, when, how urgent, and who; the row opens the item beside the list. A
  * task is ticked off at the end of the row; a row the filters then hide stays a moment, done, and Undo puts it back.
@@ -159,7 +163,8 @@ export default function ItemRow(props: ItemRowProps) {
       props.item.estimatedDurationMinutes !== null ? formatEstimate(props.item.estimatedDurationMinutes) : undefined,
       props.item.activeBlockerCount > 0 ? t.blockedByCount({ count: props.item.activeBlockerCount }) : undefined,
       isInactiveTask(props.item) ? t.inactiveFor({ days: INACTIVE_ITEM_DAYS }) : undefined,
-      itemPeople(props.item, t.onIt).join(", ") || undefined,
+      // The first person and "+n": the faces lead the row, all names stand in the detail.
+      peopleSummary(itemPeople(props.item, t.onIt)),
       tags.length
         ? `${tags
             .slice(0, 2)

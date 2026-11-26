@@ -122,7 +122,9 @@ test("shows whoever works on the task once, first, as on it, with their picture"
     }),
   );
   expect(html).toContain('data-k2-part="Avatar" data-k2-avatar role="img" aria-label="Mira Beck"');
-  expect(html).toContain("Mira Beck is on it, Valentin Kolb");
+  // The quiet line names the first person and counts the rest; all names stand in the detail.
+  expect(html).toContain("Mira Beck is on it +1");
+  expect(html).not.toContain("Valentin Kolb");
   expect(html.match(/Mira Beck/g)).toHaveLength(2);
 });
 

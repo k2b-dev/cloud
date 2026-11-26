@@ -60,11 +60,7 @@ export default function ItemHistorySection(props: Props) {
   };
 
   return (
-    <Section
-      icon="history"
-      title={t.history}
-      actions={shown() ? undefined : [{ label: t.historyShow, icon: "history", onClick: () => setShown(true) }]}
-    >
+    <Section title={t.history} actions={shown() ? undefined : [{ label: t.historyShow, icon: "history", onClick: () => setShown(true) }]}>
       <Show when={shown()}>
         <Show when={history.pages().length || !history.loading()} fallback={<Loading rows={2} lines={2} />}>
           <For each={visible()}>

@@ -198,7 +198,6 @@ export default function TaskAttachmentsSection(props: {
 
   return (
     <Section
-      icon="paperclip"
       title={t.attachments}
       count={media().length || undefined}
       actions={

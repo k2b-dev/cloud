@@ -160,7 +160,6 @@ export default function ItemLinksSection(props: Props) {
 
   return (
     <Section
-      icon="link"
       title={t.links}
       count={props.references.length + links().length}
       actions={

@@ -44,7 +44,7 @@ const task = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   ...overrides,
 });
 
-test("colors each status tag with its column color and falls back to green only for a done column without one", () => {
+test("states are quiet words; the kind is the title's sign in the Space's colour", () => {
   const html = renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "en",
@@ -67,20 +67,21 @@ test("colors each status tag with its column color and falls back to green only 
           tags: [],
           baseUrl: "/app/spaces/Space1",
           dateConfig: { timeZone: "Europe/Berlin" },
+          color: "#6366f1",
         });
       },
     }),
   );
 
-  const statusTag = (name: string) => html.match(new RegExp(`<span\\b[^>]*>\\s*<span\\b[^>]*>${name}</span>`))?.[0];
-
-  expect(statusTag("Verworfen")).toContain("--k2-c:#ef4444");
-  expect(statusTag("Verworfen")).not.toContain("--k2-c:#10b981");
-  expect(statusTag("Erledigt")).toContain("--k2-c:#10b981");
-  expect(statusTag("In progress")).toContain("--k2-c:#3b82f6");
-  // A completed item in an open column without a color stays untinted, as in List and Kanban.
-  expect(statusTag("Backlog")).toBeDefined();
-  expect(statusTag("Backlog")).not.toContain("--k2-c");
+  // Identity B: a good or normal state is neutral, a word without colour; colour stands only for a problem.
+  for (const name of ["In progress", "Erledigt", "Verworfen", "Backlog"]) expect(html).toContain(name);
+  expect(html).not.toContain("--k2-c:#3b82f6");
+  expect(html).not.toContain("--k2-c:#10b981");
+  expect(html).not.toContain("--k2-c:#ef4444");
+  // The kind leads the title as its sign in the colour of the Space it belongs to; there is no Kind column.
+  expect(html.match(/data-k2-part="Mark"/g)?.length).toBeGreaterThanOrEqual(4);
+  expect(html).toContain("#6366f1");
+  expect(html).not.toContain(">Kind<");
 });
 
 const renderTable = (item: SpaceItem) =>
@@ -117,6 +118,10 @@ test("names whoever works on the task once, first, as on it", () => {
       },
     }),
   );
-  expect(html).toContain("Mira Beck is on it, Valentin Kolb");
-  expect(html.match(/Mira Beck/g)).toHaveLength(1);
+  // The people are the row's picture: a stack named once with everyone, whoever works on it first, and each face
+  // once in that order.
+  expect(html).toContain('data-k2-part="Avatar.Stack"');
+  expect(html).toContain('aria-label="Mira Beck is on it, Valentin Kolb"');
+  const faces = [...html.matchAll(/data-k2-part="Avatar"[^>]*>([A-Z]{2})</g)].map((match) => match[1]);
+  expect(faces.slice(0, 2)).toEqual(["MB", "VK"]);
 });

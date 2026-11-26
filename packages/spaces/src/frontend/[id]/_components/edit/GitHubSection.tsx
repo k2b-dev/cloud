@@ -62,7 +62,7 @@ export function GitHubSection(props: { spaceId: string; configured: boolean; onS
   };
 
   return (
-    <Section icon="brand-github" title={m.githubPreviews} summary={m.githubPreviewsDescription}>
+    <Section title={m.githubPreviews} summary={m.githubPreviewsDescription}>
       <Facts
         items={[
           {

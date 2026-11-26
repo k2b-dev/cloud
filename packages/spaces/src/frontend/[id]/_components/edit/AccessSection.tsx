@@ -92,12 +92,7 @@ export function PermissionsSection(props: {
       });
   };
   return (
-    <Section
-      icon="shield"
-      title={m.peopleAndGroups}
-      summary={m.accessDescription}
-      actions={[{ label: m.editAccess, icon: "lock-access", onClick: run }]}
-    >
+    <Section title={m.peopleAndGroups} summary={m.accessDescription} actions={[{ label: m.editAccess, icon: "lock-access", onClick: run }]}>
       <For each={accessMemberEntries(entries(), { locale: locale() })}>
         {(entry) =>
           entry.kind === "person" ? (
@@ -114,7 +109,7 @@ export function PermissionsSection(props: {
 export function ApiKeysSection(props: { spaceId: string; apiKeys: ResourceApiKey[] }) {
   const m = useSpaceMessages();
   return (
-    <Section icon="key" title={m.integrationAccess} summary={m.integrationAccessDescription}>
+    <Section title={m.integrationAccess} summary={m.integrationAccessDescription}>
       {/* The platform's key list (create, show once, revoke) draws itself; it has no v2 form yet. */}
       <Canvas label={m.apiKeys}>
         <ResourceApiKeys

@@ -196,6 +196,7 @@ export default function ItemsPane(props: Props) {
             selectedItemId={selectedItemId()}
             baseUrl={view.current().source}
             dateConfig={props.dateConfig}
+            color={props.space.color}
           />
         </Show>
         <Show when={pages() > 1}>

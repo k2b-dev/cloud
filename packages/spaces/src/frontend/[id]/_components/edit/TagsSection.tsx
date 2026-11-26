@@ -86,7 +86,6 @@ export function TagsSection(props: {
   };
   return (
     <Section
-      icon="tags"
       title={m.vocabulary}
       summary={m.vocabularyDescription}
       count={props.tags.length}
