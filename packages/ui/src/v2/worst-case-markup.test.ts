@@ -50,12 +50,10 @@ const table = () =>
 
 test("an amount column is at least as wide as its longest value and marked numeric, so it is never cut", () => {
   const markup = table();
-  // the amount needs more than its default, so it keeps what it needs; the date gives way between 112 and 120 px with
-  // the width of the table's place, and never below its longest date
-  expect(markup).toContain("--k2-col-w:max(152px, calc(15ch + 12px + var(--k2-edge)))");
-  expect(markup).toContain(
-    "--k2-col-w:max(clamp(112px, calc(112px + (100cqw - 640px) * 0.0465), 120px), calc(10ch + 12px + var(--k2-edge)))",
-  );
+  // the amount and the date need more than their defaults (reckoned at 10 px a figure, above any font), so each keeps
+  // what it needs, and never less than its longest value in the font it stands in
+  expect(markup).toContain("--k2-col-base:max(182px, calc(15ch + 12px + var(--k2-edge)))");
+  expect(markup).toContain("--k2-col-base:max(132px, calc(10ch + 12px + var(--k2-edge)))");
   expect(markup.match(/<td[^>]*data-numeric=""/g)?.length).toBe(4); // two rows × (Fällig, Betrag)
 });
 
@@ -63,17 +61,51 @@ test("drop columns leave one by one from the last, by a container query on the t
   const markup = table();
   const id = markup.match(/data-k2-table="([^"]+)"/)?.[1];
   expect(id).toBeDefined();
-  // at their minimum the columns need 120 + 160 + 112 + 152 + 96 px (the date and the amount measured at 8 px a sign,
-  // the last column without a width 96): below that the date (the last drop column) leaves, below what the rest need
+  // at their minimum the columns need 120 + 160 + 132 + 182 + 96 px (the date and the amount at 10 px a figure, the
+  // last column without a width 96): below that the date (the last drop column) leaves, below what the rest need
   // the number leaves as well; above it the columns give way between minimum and default
   expect(markup).toContain(
-    `@container k2-table (width < 640px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="1"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; } }`,
+    `@container k2-table (width < 690px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="1"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; }`,
   );
   expect(markup).toContain(
-    `@container k2-table (width < 528px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="2"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; } }`,
+    `@container k2-table (width < 558px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="2"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; }`,
+  );
+  // each step shares the room anew among the columns still shown (delta review r4): without the date the customer
+  // gives way between 160 and 240 px over 558 to 722 px, without the number too over 438 to 582 px
+  expect(markup).toContain(
+    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: max(clamp(160px, calc(160px + (100cqw - 558px) * 0.4878), 240px), calc(240px + (100cqw - 722px) * 0.8)); }`,
+  );
+  expect(markup).toContain(
+    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: max(clamp(160px, calc(160px + (100cqw - 438px) * 0.5556), 240px), calc(240px + (100cqw - 582px) * 1)); }`,
   );
   // the column leaves with its cells, so the remaining columns keep their widths
   expect(markup).toMatch(/<col data-drop="" data-drop-step="1"/);
+});
+
+test("a large table drops its columns by their defaults, since it never shrinks them (Users at 1024 px)", () => {
+  const markup = renderToString(() =>
+    createComponent(Table<Invoice>, {
+      label: "Rechnungen",
+      rows,
+      sticky: true,
+      columns: [
+        { title: "Nummer", width: { min: 120, default: 140 }, cell: (row) => row.number, drop: true },
+        { title: "Kunde", width: { min: 160, default: 240 }, cell: (row) => row.customer },
+        { title: "Fällig", width: { min: 100, default: 120 }, cell: () => "31.12.2026", numeric: true, drop: true },
+        { title: "Betrag", width: { min: 100, default: 120 }, align: "end", cell: (row) => row.amount },
+        { title: "Notiz", cell: () => "–" },
+      ],
+    }),
+  );
+  const id = markup.match(/data-k2-table="([^"]+)"/)?.[1];
+  // 140 + 240 + 132 + 182 + 160 px at their defaults (the date and the amount at 10 px a figure): below that the date
+  // leaves whole, below what the rest need at their defaults the number as well
+  expect(markup).toContain(
+    `@container k2-table (width < 854px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="1"] { display: none; } }`,
+  );
+  expect(markup).toContain(
+    `@container k2-table (width < 722px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="2"] { display: none; } }`,
+  );
 });
 
 test("a person in a cell is a picture beside lines, the picture without a name of its own", () => {

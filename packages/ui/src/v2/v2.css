@@ -286,6 +286,7 @@
   --k2-p: initial;
   --k2-whole: initial;
   --k2-col-w: initial;
+  --k2-col-base: initial;
   --k2-v: initial;
   --k2-avs-w: initial;
   --k2-canvas-h: initial;
@@ -1578,7 +1579,7 @@
 }
 /* a column's width, set by the table (its default, or what its longest number needs); none: the rest of the row */
 .k2-ui .k2-table col {
-  width: var(--k2-col-w);
+  width: var(--k2-col-w, var(--k2-col-base));
 }
 .k2-ui .k2-table th {
   position: relative;

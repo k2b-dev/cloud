@@ -586,6 +586,28 @@ export const fixtures = {
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
   table: TableFixture,
+  // a last column of digits only at exactly the width the table reckons as its least (delta review r4): digits are the
+  // widest signs, and a fallback font draws them wider than Plex
+  tableDigits: () =>
+    shell(
+      <Pane label="Konten">
+        <Table
+          label="Konten"
+          rows={[
+            { title: "Nachlassverwaltung Oberhauser-Wettstein", number: "123456789012345" },
+            { title: "Familie Oswald", number: "987654321098765" },
+            { title: "Architekturbüro Winter", number: "100000000000000" },
+            { title: "Stadtwerke Auental", number: "555555555555555" },
+            { title: "Praxis Dr. Lindqvist", number: "4" },
+            { title: "J", number: "42" },
+          ]}
+          columns={[
+            { title: "Kunde", width: { min: 200, default: 300 }, cell: (row) => row.title },
+            { title: "Konto", numeric: true, cell: (row) => row.number },
+          ]}
+        />
+      </Pane>,
+    ),
   // an amount in the last column of a narrow table (Codex review of #4209): it is never cut, the table scrolls instead
   tableAmount: () =>
     shell(

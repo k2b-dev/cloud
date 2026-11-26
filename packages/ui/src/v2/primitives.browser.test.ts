@@ -458,8 +458,52 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  // DR's wish (26.11.): the last column no longer takes all the room left; the columns that can give way share it
+  for (const width of [1440, 1024])
+    test(
+      `${width} px: the room left is shared among the columns that can give way, not given to the last column`,
+      async () => {
+        const page = await open("table", { width });
+        try {
+          const found = await page.evaluate(() => {
+            const scroller = document.querySelector(".k2-table-scroll")!.getBoundingClientRect();
+            const heads = [...document.querySelectorAll(".k2-table th")].map((head) => head.getBoundingClientRect());
+            return { heads: heads.map((head) => head.width), right: heads.at(-1)!.right, edge: scroller.right };
+          });
+          // the row is filled to its edge, and the amount at the end keeps its own width (132 px for its longest value)
+          expect(Math.abs(found.right - found.edge)).toBeLessThanOrEqual(1);
+          expect(found.heads.at(-1)!).toBeLessThanOrEqual(150);
+          // the first four have their minimum at least
+          found.heads.slice(0, -1).forEach((each, index) => expect(each).toBeGreaterThanOrEqual([160, 120, 200, 100][index]! - 0.5));
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   test(
-    "a table column is exactly its default wide; cut text never widens it, rows without wrap are 40 px",
+    "a last column of digits keeps every figure in sight at exactly the width the table reckons as its least",
+    async () => {
+      const page = await open("tableDigits");
+      try {
+        const least = await page.$eval(".k2-table", (table) => Number.parseFloat((table as HTMLElement).style.minWidth));
+        expect(least).toBeGreaterThan(0);
+        await narrowColumn(page, ".k2-table-scroll", least);
+        const cut = await page.$$eval(".k2-table td[data-numeric] > .k2-cell-line", (lines) =>
+          lines.filter((line) => line.scrollWidth > line.clientWidth).map((line) => line.textContent),
+        );
+        expect(cut).toEqual([]);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).number).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "a table column is at least its default wide where there is room; cut text never widens it, rows without wrap are 40 px",
     async () => {
       const page = await open("table");
       try {
@@ -482,8 +526,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           };
         });
         expect(table.chip).toEqual([true, true]);
-        expect(table.heads.slice(0, -1)).toEqual([260, 180, 300, 140]);
+        // with room to spare every column has at least its default; the amount (no range, 132 px for its longest value)
+        // keeps its width, the columns that can give way share the rest
+        table.heads.slice(0, -1).forEach((width, index) => expect(width).toBeGreaterThanOrEqual([260, 180, 300, 140][index]!));
         expect(table.heads.at(-1)!).toBeGreaterThanOrEqual(120);
+        expect(table.heads.at(-1)!).toBeLessThanOrEqual(150);
         expect(table.cut).toBe(true);
         expect(table.wrapLines).toBe(3);
         expect(table.cells[1]).toBe(heights.row);

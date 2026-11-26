@@ -93,10 +93,8 @@ Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui g
 ### Do
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
-- Give every wide table a `phone(row)`.
-- Put the count and key figures in the `StatusRow`.
-- Keep row text short; long text is cut with "…".
-- Mark numbers, amounts and times with `align: "end"` (or `numeric` for a time at the start): they are never cut, and their column grows to the longest value.
+- Give every wide table a `phone(row)`, and put the count and key figures in the `StatusRow`.
+- Keep row text short (it is cut with "…"); mark numbers, amounts and times with `align: "end"` or `numeric`: they are never cut, and their column grows to the longest value.
 - Show a person in a cell as `{ avatar, lines: [name] }`, not as an `Inline` of `Avatar` and `Text`.
 
 ### Don't

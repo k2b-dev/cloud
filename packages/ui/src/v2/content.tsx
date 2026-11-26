@@ -526,8 +526,9 @@ export type Column<T> = {
    */
   numeric?: boolean;
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
-   * default wide; cut text never widens it.
+   * A column that can be dragged wider or narrower: its minimum and default in px. In a small table it is its default
+   * wide where the row has room and shares the room left with the other columns that can give way; where the row has
+   * less, it gives way down to its minimum. Cut text never widens it.
    */
   width?: { min: number; default: number };
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
@@ -674,10 +675,14 @@ const signsOf = (value: CellValue): number => {
   return 0;
 };
 
-/** What a column without a width counts with (its default and its minimum), and a figure's width for those sums. */
+/**
+ * What a column without a width counts with (its default and its minimum), and the room a figure takes in those sums:
+ * 10 px, above what any font gives a figure of the row's 13 px (Plex 7.6, a fallback font 8.3), so a column reckoned
+ * for a number never falls short of what the number takes.
+ */
 const flexibleColumn = 160;
 const flexibleMin = 96;
-const figureWidth = 8;
+const figureWidth = 10;
 
 /**
  * A group of rows: its key, its head (such as a state chip), quiet figures after it, and its count, quiet after the
@@ -815,22 +820,28 @@ export const Table = <T,>(props: TableProps<T>) => {
   // In a small table with widths every column moves between its minimum and its default with the width of the table's
   // place (`100cqw`, the table's container), so together they fill it: at the sum of the defaults each has its default,
   // at the sum of the minimums each its minimum. The stylesheet decides, on the server's page too.
-  const shrink = (index: number) => {
-    const all = need();
-    const { lo, hi } = all[index]!;
-    const least = all.reduce((sum, each) => sum + each.lo, box);
-    const most = all.reduce((sum, each) => sum + each.hi, box);
+  // The sums are over the columns shown: after `drop` columns left, the others share the room among themselves.
+  // Above the sum of the defaults the room left is shared among the columns with a width that can give way (minimum
+  // below default), in the measure they give way: no column takes all of it, and an action column at the end leaves
+  // no air on the right. A column without a width (a deed, a note) keeps its 160 px.
+  const round = (value: number) => Math.round(value * 10000) / 10000;
+  const shrink = (index: number, gone: ReadonlySet<number> = new Set()) => {
+    const shown = need().filter((_, at) => !gone.has(at));
+    const { lo, hi } = need()[index]!;
+    const least = shown.reduce((sum, each) => sum + each.lo, box);
+    const most = shown.reduce((sum, each) => sum + each.hi, box);
     if (hi === lo || most <= least) return `${lo}px`;
-    const share = Math.round(((hi - lo) / (most - least)) * 10000) / 10000;
-    return `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${share}), ${hi}px)`;
+    const below = `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${round((hi - lo) / (most - least))}), ${hi}px)`;
+    const range = (at: number) => (props.columns[at]!.width ? need()[at]!.hi - need()[at]!.lo : 0);
+    const ranges = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + range(at)), 0);
+    if (range(index) === 0 || ranges === 0) return below;
+    return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${round(range(index) / ranges)}))`;
   };
-  const colWidth = (column: Column<T>, index: number): string | undefined => {
-    const last = index === props.columns.length - 1;
-    // in a small table with widths the last column takes the rest of the row, which holds its value
-    if (sized() && !grid() && last) return undefined;
+  const colWidth = (column: Column<T>, index: number, gone?: ReadonlySet<number>): string | undefined => {
     const count = signs()[index] ?? 0;
     const fit = count > 0 ? `calc(${count}ch + 12px + var(--k2-edge))` : undefined;
-    const base = !column.width ? undefined : grid() ? `${column.width.default}px` : shrink(index);
+    // a small table with widths sizes every column, also one without a width of its own; a large table keeps defaults
+    const base = grid() ? (column.width ? `${column.width.default}px` : undefined) : sized() ? shrink(index, gone) : undefined;
     return base && fit ? `max(${base}, ${fit})` : (base ?? fit);
   };
   const measured = () => signs().some((count) => count > 0);
@@ -844,7 +855,8 @@ export const Table = <T,>(props: TableProps<T>) => {
   // numbers), so the stylesheet decides on the server's page too; it is one container query per table.
   const steps = createMemo(() => {
     if (!sized()) return [] as { column: number; below: number }[];
-    const widths = need().map((width) => width.lo);
+    // a large table keeps its columns at their default (it never shrinks them), so its steps reckon with the defaults
+    const widths = need().map((width) => (grid() ? width.hi : width.lo));
     let room = widths.reduce((sum, width) => sum + width, box);
     const out: { column: number; below: number }[] = [];
     for (let index = props.columns.length - 1; index >= 0; index--) {
@@ -862,12 +874,26 @@ export const Table = <T,>(props: TableProps<T>) => {
   // in its grid of columns (a group row spans them all) at no width, so the others keep theirs.
   const hide = (selector: string) =>
     grid() ? `${selector} { display: none; }` : `${selector} { width: 0; padding: 0; visibility: hidden; overflow: hidden; }`;
+  // Each step hides its column and, in a table of fixed columns, gives the columns still shown their widths anew over
+  // themselves, so they fill the room the column left instead of the last one taking all of it.
   const dropRule = () =>
     steps()
-      .map(
-        (entry, at) =>
-          `@container k2-table (width < ${entry.below}px) { ${hide(`.k2-ui [data-k2-table="${id}"] [data-drop-step="${at + 1}"]`)} }`,
-      )
+      .map((entry, at) => {
+        const scope = `.k2-ui [data-k2-table="${id}"]`;
+        const gone = new Set(
+          steps()
+            .slice(0, at + 1)
+            .map((each) => each.column),
+        );
+        const widths = grid()
+          ? []
+          : props.columns.flatMap((column, index) => {
+              const width = gone.has(index) ? undefined : colWidth(column, index, gone);
+              const place = index + 1 + (props.select ? 1 : 0);
+              return width ? [`${scope} col:nth-child(${place}) { --k2-col-w: ${width}; }`] : [];
+            });
+        return `@container k2-table (width < ${entry.below}px) { ${[hide(`${scope} [data-drop-step="${at + 1}"]`), ...widths].join(" ")} }`;
+      })
       .join(" ");
   // the entries of a tree stay the same objects while nothing about their row changes, so its `tr` stays
   let lastItems = new Map<string, TableItem<T>>();
@@ -1108,14 +1134,14 @@ export const Table = <T,>(props: TableProps<T>) => {
               <Show when={props.select}>
                 <col style={{ width: "44px" }} />
               </Show>
-              {/* every column is its default wide, a numeric one at least as wide as its longest value; in a small table
-                  the last one takes the rest of the row. A column that drops leaves with its cells. */}
+              {/* every column between its minimum and default (a large table: its default), sharing the room left in a small
+                  table; a numeric one at least as wide as its longest value. A column that drops leaves with its cells. */}
               <For each={props.columns}>
                 {(column, index) => (
                   <col
                     data-drop={column.drop ? "" : undefined}
                     data-drop-step={step(index())}
-                    style={custom({ "--k2-col-w": colWidth(column, index()) })}
+                    style={custom({ "--k2-col-base": colWidth(column, index()) })}
                   />
                 )}
               </For>
