@@ -19,6 +19,9 @@ const { default: BaseScreen } = await import("./base/BaseScreen");
 const { generalSections } = await import("./base/sections");
 const { fixtureEntries } = await import("./base/BaseArea.browser-fixture");
 const { default: AnnouncementsScreen } = await import("./announcements/AnnouncementsScreen");
+const { default: AppsScreen } = await import("./apps/AppsScreen");
+const { FIXTURE_NOW, fixtureApps } = await import("./apps/AdminApps.fixture-data");
+const { deriveApp, parseAppsQuery, sortApps } = await import("./apps/model");
 
 const announcement = {
   id: "aaaaaaaa-0000-4000-8000-000000000001",
@@ -137,5 +140,32 @@ describe("v2 admin screens on the server", () => {
     );
     expect(empty.text).toContain("Noch keine Ankündigungen");
     expect(empty.text).toContain("Erstellen");
+  });
+
+  test("apps list every app with its state and first problem from the server, without an open app", () => {
+    const apps = sortApps(fixtureApps().map(deriveApp), "de");
+    const { body, text } = render(() =>
+      createComponent(AppsScreen, {
+        nav: adminNavFixture("/admin/apps", [
+          { label: "Registrierte Apps", icon: "apps", href: "/admin/apps", nested: true, current: true },
+          { label: "Navigation", icon: "layout-sidebar", href: "/admin/apps/navigation", nested: true },
+        ]),
+        data: {
+          locale: "de",
+          dateConfig: { locale: "de", timeZone: "Europe/Berlin" },
+          now: FIXTURE_NOW,
+          query: parseAppsQuery({}),
+          list: { state: "ok", apps, issues: [], unchecked: 0, logsHref: null },
+          app: null,
+          detail: null,
+        },
+      }),
+    );
+    expect(text).toContain("11 Apps · 6 laufen · 2 gestört · 2 laufen nicht · 1 nicht gestartet");
+    expect(body.querySelectorAll("tbody tr").length).toBe(apps.length);
+    expect(text).toContain("Fehlerquote 4,3% in 24 h");
+    expect(body.querySelector('a[href="/admin/apps?app=grids"]')).not.toBeNull();
+    expect(body.querySelector('[data-k2-part="Nav.Item"][aria-current="page"]')?.textContent).toContain("Registrierte Apps");
+    expect(loaders(body)).toBe(0);
   });
 });

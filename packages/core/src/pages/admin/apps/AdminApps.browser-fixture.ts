@@ -72,8 +72,9 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
-  const { AppsView } = await import("./view");
-  const { appsFormat } = await import("./format");
+  const { default: AppsScreen } = await import("./AppsScreen");
+  const { adminNavFixture } = await import("../admin-v2.fixture");
+  const { toJSON } = await import("seroval");
   const { deriveApp, parseAppsQuery, sortApps } = await import("./model");
   const ui = resolve(import.meta.dir, "../../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", `${ui}/`));
@@ -147,7 +148,6 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "Apps", theme });
     const query = parseAppsQuery(c.req.query());
-    const format = appsFormat({ locale, timeZone: "Europe/Berlin" }, FIXTURE_NOW);
     const inputs = fixtureApps()
       // Without its provider, an app only the provider knows is not listed at all.
       .filter((app) => !removed.has(app.id) && !(state === "removed" && app.id === "pulse") && !(state === "provider" && !app.coreKnows))
@@ -308,57 +308,63 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
         logsHref: "/admin/observability/logs",
       } as const;
     })();
+    const props = {
+      nav: adminNavFixture("/admin/apps", [
+        { label: "Registrierte Apps", icon: "apps", href: "/admin/apps", nested: true, current: true },
+        { label: "Navigation", icon: "layout-sidebar", href: "/admin/apps/navigation", nested: true },
+      ]),
+      data: {
+        locale,
+        dateConfig: { locale, timeZone: "Europe/Berlin" },
+        now: FIXTURE_NOW,
+        query,
+        list:
+          state === "failed"
+            ? { state: "failed" }
+            : {
+                state: "ok",
+                // "added": the open app was just added under "Add app" and is not in any list yet.
+                apps: state === "empty" ? [] : state === "added" ? apps.filter((app) => app.id !== query.app) : apps,
+                issues: state === "rejected" ? [{ key: "apps/maps", reason: "routes fehlt" }] : [],
+                unchecked: 0,
+                logsHref: "/admin/observability/logs",
+              },
+        app: entry
+          ? {
+              entry,
+              details,
+              revokedKeyName: keys.find((item) => item.status === "revoked")?.name ?? null,
+              startKeyReady: keys.some((item) => item.status === "active" && item.keyId !== rejectionFor(state, entry.id)?.keyId),
+              providerFailures: state === "provider" ? ["Gateway"] : [],
+              keysSupported: entry.id !== "core",
+              docs: {
+                recover: "/docs/en/operations/app-keys#rotate-or-recover-a-key",
+                migrate: "/docs/en/operations/app-keys#use-the-key-at-start",
+              },
+              accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
+              domains: entry.id !== "lager" ? null : state === "domains-error" ? "failed" : state === "domains-empty" ? [] : domains,
+              appNames: new Map([
+                ["contacts", "Kontakte"],
+                ["files", "Dateien"],
+                ["core", "Cloud"],
+              ]),
+            }
+          : null,
+        detail,
+      },
+    } satisfies Parameters<typeof AppsScreen>[0];
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,
+        ui: "v2",
         title: entry?.name ?? "Apps",
-        ownMain: true,
         get children() {
-          return createComponent(AppsView, {
-            data: {
-              locale,
-              format,
-              query,
-              list:
-                state === "failed"
-                  ? { state: "failed" }
-                  : {
-                      state: "ok",
-                      // "added": the open app was just added under "Add app" and is not in any list yet.
-                      apps: state === "empty" ? [] : state === "added" ? apps.filter((app) => app.id !== query.app) : apps,
-                      issues: state === "rejected" ? [{ key: "apps/maps", reason: "routes fehlt" }] : [],
-                      unchecked: 0,
-                      logsHref: "/admin/observability/logs",
-                    },
-              app: entry
-                ? {
-                    entry,
-                    details,
-                    revokedKeyName: keys.find((item) => item.status === "revoked")?.name ?? null,
-                    startKeyReady: keys.some((item) => item.status === "active" && item.keyId !== rejectionFor(state, entry.id)?.keyId),
-                    providerFailures: state === "provider" ? ["Gateway"] : [],
-                    keysSupported: entry.id !== "core",
-                    docs: {
-                      recover: "/docs/en/operations/app-keys#rotate-or-recover-a-key",
-                      migrate: "/docs/en/operations/app-keys#use-the-key-at-start",
-                    },
-                    accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
-                    domains: entry.id !== "lager" ? null : state === "domains-error" ? "failed" : state === "domains-empty" ? [] : domains,
-                    appNames: new Map([
-                      ["contacts", "Kontakte"],
-                      ["files", "Dateien"],
-                      ["core", "Cloud"],
-                    ]),
-                  }
-                : null,
-              detail,
-            },
-          });
+          return createComponent(AppsScreen, props);
         },
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props">${JSON.stringify(toJSON(props)).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   });
 

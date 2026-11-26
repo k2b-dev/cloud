@@ -10,6 +10,10 @@ export const appsPageMessages = i18n.define({
   messages: {
     en: {
       apps: "Apps",
+      overview: "Overview",
+      allApps: "All",
+      problemsTab: "Problems",
+      noneOpen: "No app open",
       addApp: "Add app",
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [
@@ -267,6 +271,10 @@ export const appsPageMessages = i18n.define({
     },
     de: {
       apps: "Apps",
+      overview: "Übersicht",
+      allApps: "Alle",
+      problemsTab: "Probleme",
+      noneOpen: "Keine App geöffnet",
       addApp: "App hinzufügen",
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [

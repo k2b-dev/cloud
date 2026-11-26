@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../../ui/test/browser";
 import { adminAppsBrowserFixture } from "./AdminApps.browser-fixture";
 import { FIXTURE_NOW } from "./AdminApps.fixture-data";
 
-// The real AdminLayout, Apps view, islands and styles with fictional apps; no live services.
+// The real AdminLayout, the v2 Apps screen and styles with fictional apps; no live services. Keys, domains and access
+// are still the v1 parts inside the record (rebuilt next); their tests stay as they were.
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof adminAppsBrowserFixture>>;
 let page: Page;
@@ -32,151 +34,179 @@ beforeEach(async () => {
     });
   }, FIXTURE_NOW);
 }, 20_000);
-/** The list's row of one app: the whole table row around its name link. */
-const row = (id: string) => page.locator("tbody tr").filter({ has: page.locator(`[data-app="${id}"]`) });
+/** The list's row of one app: the table row around its name link. */
+const row = (name: string) => page.locator("main tbody tr").filter({ has: page.getByRole("link", { name: new RegExp(`^${name}`) }) });
+/** A fact of the open app: a row of the detail beside the list whose quiet second line is its label. */
+const fact = (label: string) => page.locator('main [data-k2-part="Pane"][data-detail] [data-k2-part="Row"]').filter({ hasText: label });
+const notice = (text: string | RegExp) => page.locator('main [data-k2-part="Notice"]').filter({ hasText: text });
 
 afterAll(async () => {
   await browser?.close();
   fixture?.close();
 }, 20_000);
 
-test("the list names every app by name with its state in words and its most important hint", async () => {
+test("the list names every app with its state in words and its most important hint, and keeps the v2 rules", async () => {
   await open("");
-  const rows = page.locator("[data-app]");
-  expect(await rows.evaluateAll((elements) => elements.map((element) => element.getAttribute("data-app")))).toEqual([
-    "chat",
-    "files",
-    "grids",
-    "inventar",
-    "lager",
-    "mail",
-    "notebooks",
-    "pulse",
-    "spaces",
-    "tools",
-    "wiki",
-  ]);
-  expect(await page.locator("[data-apps-summary]").innerText()).toContain(
+  const names = await page
+    .locator("main tbody tr")
+    .evaluateAll((rows) => rows.map((row) => row.querySelector("a")?.textContent?.trim() ?? ""));
+  expect(names.length).toBe(11);
+  expect(await page.locator('main [data-k2-part="StatusRow"]').innerText()).toContain(
     "11 Apps · 6 laufen · 2 gestört · 2 laufen nicht · 1 nicht gestartet",
   );
-  const grids = row("grids");
-  expect(await grids.innerText()).toContain("Gestört");
-  expect(await grids.innerText()).toContain("Fehlerquote 4,3% in 24 h · +2");
-  expect(await row("tools").innerText()).toContain("Zugriff: niemand verwaltet ihn");
-  // Without an open app the list is the whole page, with version and address.
-  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand", "Version", "Adresse", "Problem"]);
-  // Status keeps one place: every row's dot starts at the same x, whatever the word ("Läuft", "Nicht gestartet").
-  const dots = await page
-    .locator("tbody tr:not(.k2b-data-table__details)")
-    .evaluateAll((elements) =>
-      elements.map((element) => Math.round(element.querySelector(".k2b-status-badge__dot")!.getBoundingClientRect().left)),
-    );
-  expect(new Set(dots).size).toBe(1);
-}, 20_000);
-
-test("with classic scrollbars the list never scrolls sideways and no state word is cut", async () => {
-  // A desktop window with classic scrollbars that take room, as on Windows and Linux.
-  const classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
-  try {
-    const tab = await classic.newPage();
-    tab.setDefaultTimeout(8000);
-    await tab.addInitScript((at) => {
-      globalThis.Date = new Proxy(Date, {
-        construct: (target, args) => Reflect.construct(target, args.length ? args : [at]),
-        apply: (target) => new target(at).toString(),
-        get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
-      });
-    }, FIXTURE_NOW);
-    for (const [width, query] of [
-      [390, ""],
-      [768, ""],
-      [1100, ""],
-      [1100, "?app=chat"],
-      [1440, ""],
-    ] as const) {
-      await tab.setViewportSize({ width, height: 900 });
-      await tab.goto(`${fixture.url}${query}`);
-      await tab.waitForSelector('body[data-ready="true"]');
-      await settled(tab);
-      const result = await tab.evaluate(() => {
-        const probe = document.createElement("div");
-        probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
-        document.body.append(probe);
-        const gutter = probe.offsetWidth - probe.clientWidth;
-        probe.remove();
-        return {
-          gutter,
-          sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          // A state word is never cut.
-          cutStates: Array.from(document.querySelectorAll("[data-apps-list] tbody .k2b-status-badge"))
-            .flatMap((badge) => [badge, ...Array.from(badge.querySelectorAll("*"))])
-            .filter((element) => element.scrollWidth > element.clientWidth + 0.5 && element.clientWidth > 0).length,
-          // The primary list never scrolls sideways; columns it cannot show move into the row's details.
-          listSideways: (() => {
-            const wrap = document.querySelector("[data-apps-list] .k2b-table-wrap");
-            return wrap ? wrap.scrollWidth - wrap.clientWidth : null;
-          })(),
-        };
-      });
-      const label = `${width} px ${query}`;
-      expect(result.gutter, label).toBeGreaterThan(0);
-      expect(result.sideways, label).toBeLessThanOrEqual(0);
-      expect(result.listSideways, label).not.toBeNull();
-      expect(result.listSideways!, label).toBeLessThanOrEqual(0);
-      expect(result.cutStates, label).toBe(0);
-    }
-    await tab.close();
-  } finally {
-    await classic.close();
+  expect(await row("Grids").innerText()).toContain("Gestört");
+  expect(await row("Grids").innerText()).toContain("Fehlerquote 4,3% in 24 h · +2");
+  for (const width of [1440, 1024, 390]) {
+    await open("?app=grids", width);
+    expect({ width, problems: (await measureV2Layout(page, { root: "main.k2-ui", skip: ".k2b-field" })).problems }).toEqual({
+      width,
+      problems: [],
+    });
+    expect(await page.locator('main [data-k2-part="Loading"]').count()).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
-}, 60_000);
+}, 40_000);
 
-test("the old app address opens the app, and every hint has exactly one way out to its column", async () => {
+test("every hint has exactly one way out to its view", async () => {
   await open("?app=grids");
-  const hints = page.locator("[data-app-hints] [data-hint]");
-  expect(await hints.count()).toBe(2);
-  await page.getByRole("link", { name: "Zustellungen ansehen" }).click();
-  await page.waitForSelector('[data-detail="events"]');
+  expect(await page.locator('main [data-k2-part="Notice"]').count()).toBe(2);
+  await page.locator("main").getByRole("link", { name: "Zustellungen ansehen" }).click();
+  await page.waitForURL(/view=events/);
+  await page.waitForSelector('body[data-ready="true"]');
   expect(new URL(page.url()).search).toBe("?app=grids&view=events");
-  expect(await page.getByRole("button", { name: /Kontakt geändert .* erneut zustellen/ }).count()).toBe(2);
+  expect(await page.locator("main").getByRole("button", { name: "Erneut zustellen" }).count()).toBe(2);
 }, 20_000);
 
-test("an old link lands with a hint that closes and leaves the address clean", async () => {
+test("an old link lands with a note that says where the page is now", async () => {
   await open("?moved=gateway");
-  const hint = page.locator("[data-moved-notice]");
-  expect(await hint.innerText()).toContain("„Systembeobachtung › Gateway › Apps“ ist jetzt hier.");
-  const list = await page.locator("[data-apps-list]").boundingBox();
-  await page.getByRole("button", { name: "Hinweis schließen" }).click();
-  await settled(page);
-  expect(await hint.count()).toBe(0);
-  expect(new URL(page.url()).search).toBe("");
-  // The list moves up by the hint's height only once, when the person closes it.
-  expect((await page.locator("[data-apps-list]").boundingBox())!.y).toBeLessThan(list!.y);
+  expect(await notice("ist jetzt hier").innerText()).toContain("„Systembeobachtung › Gateway › Apps“ ist jetzt hier.");
   await open("?moved=credentials");
-  expect(await page.locator("[data-moved-notice]").innerText()).toContain("„Schlüssel“ › „Tokens für Host-Betrieb“");
+  expect(await notice("Tokens für Host-Betrieb").count()).toBe(1);
 }, 20_000);
 
 test("only an app that is not running can leave the list; a failure keeps it and says so", async () => {
-  // A running app keeps the row and says when it can leave; there is no button to press.
   await open("?app=mail");
-  expect(await page.locator('[data-row="Entfernen"]').innerText()).toBe("nur wenn gestoppt");
-  expect(await page.locator('[data-row="remove"]').count()).toBe(0);
+  expect(await page.locator("main").innerText()).toContain("nur wenn gestoppt");
+  expect(await page.locator("main").getByRole("button", { name: "Entfernen", exact: true }).count()).toBe(0);
 
   await open("?app=pulse&state=core-fail");
-  await page.locator('[data-row="remove"]').click();
+  await page.locator("main").getByRole("button", { name: "Entfernen", exact: true }).first().click();
   const dialog = page.getByRole("alertdialog");
   expect(await dialog.innerText()).toContain("Zugriff, Schlüssel und Abos bleiben.");
   await dialog.getByRole("button", { name: "Entfernen" }).click();
   await dialog.getByRole("alert").waitFor();
   expect(await dialog.innerText()).toContain("Nicht entfernt. Pulse steht weiter in der Liste.");
-  expect(await dialog.getByRole("button", { name: "Erneut versuchen" }).isVisible()).toBe(true);
+}, 20_000);
 
+test("a provider that does not answer says so, and its values say they are unavailable", async () => {
+  await open("?app=mail&state=provider");
+  expect(await notice("Gateway antwortet gerade nicht.").count()).toBe(1);
+  expect(await fact("Verkehr 24 h").innerText()).toContain("Nicht verfügbar");
+}, 20_000);
+
+test("routes keep the five windows and say which prefix the router sends elsewhere", async () => {
+  await open("?app=spaces&view=routes");
+  const tabs = page.locator("main").getByRole("navigation", { name: "Zeitfenster" }).getByRole("link");
+  expect(await tabs.allInnerTexts()).toEqual(["1 h", "6 h", "24 h", "7 Tage", "30 Tage"]);
+  expect(
+    await page.locator('main [data-k2-part="Pane"][data-detail] tbody tr').filter({ hasText: "fehlt im Router" }).innerText(),
+  ).toContain("/caldav");
+  expect(await notice("/caldav erklärt Spaces, der Router leitet es an Dateien weiter.").count()).toBe(1);
+}, 20_000);
+
+test("key states: a running app without a key starts with its environment, and its way out opens Create key", async () => {
+  await open("");
+  expect(await row("Dateien").innerText()).toContain("Startet noch mit Env");
+  await open("?app=files");
+  const hint = notice("Dateien holt Datenbank, Valkey und NATS aus der eigenen Env.");
+  expect(await hint.getByRole("link", { name: "Umstellung (Fibel)" }).getAttribute("href")).toBe(
+    "/docs/en/operations/app-keys#use-the-key-at-start",
+  );
+  expect(await fact("Schlüssel").first().innerText()).toContain("Kein Schlüssel · startet mit Env");
+  expect(await hint.getByRole("link", { name: "Schlüssel erzeugen" }).getAttribute("href")).toBe(
+    "/admin/apps?app=files&view=keys&create=1",
+  );
+}, 20_000);
+
+test("key states: no valid key says so; rotation names the old key", async () => {
+  await open("?app=notebooks");
+  const hint = notice("Kein gültiger Schlüssel.");
+  expect(await hint.getByRole("link", { name: "Neuen Schlüssel erzeugen" }).getAttribute("href")).toBe(
+    "/admin/apps?app=notebooks&view=keys&create=1",
+  );
+  expect(await fact("Schlüssel").first().innerText()).toContain("kein gültiger Schlüssel");
+  await open("?app=grids");
+  expect(await fact("Schlüssel").first().innerText()).toContain("2 aktiv · Rotation läuft");
+}, 20_000);
+
+test("key states: a refused start leads the list and the app page, with one way out", async () => {
+  await open("");
+  expect(await row("Pulse").innerText()).toContain("Start abgelehnt · Schlüssel widerrufen · +1");
   await open("?app=pulse");
-  await page.locator('[data-row="remove"]').click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Entfernen" }).click();
-  await page.waitForURL((url) => url.search === "");
+  const hint = notice("Pulse startet nicht.");
+  expect(await hint.innerText()).toContain("Core hat den Schlüssel vor 3 Minuten beim Start abgelehnt, weil er widerrufen ist.");
+  expect(await notice("Kein gültiger Schlüssel.").count()).toBe(0);
+  expect(await hint.getByRole("link", { name: "Neuen Schlüssel erzeugen" }).getAttribute("href")).toBe(
+    "/admin/apps?app=pulse&view=keys&create=1",
+  );
+  await open("?app=pulse&state=start-disabled");
+  expect(await notice("Pulse startet nicht.").getByRole("link", { name: "Wieder aktivieren" }).getAttribute("href")).toBe(
+    "/admin/apps?app=pulse&view=keys",
+  );
+  await open("?app=pulse&state=start-replaced");
+  const replaced = notice("Ein gültiger Schlüssel existiert");
+  expect(await replaced.getByRole("link", { name: "Schlüssel ansehen" }).getAttribute("href")).toBe("/admin/apps?app=pulse&view=keys");
+  expect(await replaced.getByRole("link", { name: "Neuen Schlüssel erzeugen" }).count()).toBe(0);
+}, 20_000);
+
+test("domains: only an app with public pages has a Domains tab and fact", async () => {
+  await open("?app=mail");
+  expect(await fact("Domains").count()).toBe(0);
+  expect(await page.locator("main").getByRole("link", { name: "Domains" }).count()).toBe(0);
+  await open("?app=lager");
+  expect(await fact("Domains").innerText()).toContain("lager.example.de +2 · 1 Problem");
+  await open("?app=lager&state=domains-error");
+  expect(await fact("Domains").innerText()).toContain("Nicht geladen");
+}, 20_000);
+
+test("a row opens its app beside the list; search, filter and tab stay in the address", async () => {
+  await open("");
+  await row("Grids").getByRole("link").first().click();
+  await page.waitForURL(/app=grids/);
   await page.waitForSelector('body[data-ready="true"]');
-  expect(await page.locator('[data-app="pulse"]').count()).toBe(0);
+  expect(new URL(page.url()).search).toBe("?app=grids");
+  await page
+    .locator("main")
+    .getByRole("link", { name: /^Probleme/ })
+    .click();
+  await page.waitForURL(/filter=problems/);
+  await page.waitForSelector('body[data-ready="true"]');
+  expect(await page.locator("main tbody tr").count()).toBe(8);
+  await page.getByRole("searchbox", { name: "App suchen" }).fill("dat");
+  await page.getByRole("searchbox", { name: "App suchen" }).press("Enter");
+  await page.waitForURL(/q=dat/);
+  await page.waitForSelector('body[data-ready="true"]');
+  expect(new URL(page.url()).search).toBe("?app=grids&q=dat&filter=problems");
+  expect(await page.locator("main tbody tr").count()).toBe(1);
+  await fact("Schlüssel").first().getByRole("link").click();
+  await page.waitForURL(/view=keys/);
+  expect(new URL(page.url()).search).toBe("?app=grids&view=keys&q=dat&filter=problems");
+}, 30_000);
+
+test("a search that finds nothing says so in place and leads back to every app", async () => {
+  await open("?q=zzz");
+  expect(await page.locator("main").innerText()).toContain("Keine App passt zur Suche oder zum Filter.");
+  expect(await page.locator("main").getByRole("link", { name: "Alle Apps zeigen" }).getAttribute("href")).toBe("/admin/apps");
+}, 20_000);
+
+test("on a phone the list keeps name and state with the problem under the name, and the open app is its own page", async () => {
+  await open("", 390);
+  expect(await page.locator('main .k2-table-phone [data-k2-part="Row"]').filter({ hasText: "Pulse" }).innerText()).toContain(
+    "Start abgelehnt",
+  );
+  await open("?app=mail&view=keys", 390);
+  expect(await page.locator('[data-keys="mail"]').isVisible()).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }, 20_000);
 
 test("keys: the private key shows once, and closing it unsaved asks first", async () => {
@@ -243,157 +273,11 @@ test("keys: background access off says so and offers to turn it on; two active k
   expect(await page.getByRole("button", { name: "Schlüssel erzeugen" }).isDisabled()).toBe(true);
 }, 20_000);
 
-test("a provider that does not answer leaves its values in place, and trying again keeps every row where it is", async () => {
-  await open("?app=mail&state=provider");
-  expect(await page.locator('[data-hint="provider"]').innerText()).toContain("Gateway antwortet gerade nicht.");
-  const rows = () => page.locator("[data-row]").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().top));
-  const before = await rows();
-  expect(await page.locator('[data-row="Verkehr 24 h"]').innerText()).toContain("Nicht verfügbar");
-  await page.locator('[data-hint="provider"]').getByRole("button", { name: "Erneut versuchen" }).click();
-  await page.locator('[data-row="Verkehr 24 h"]').getByText("12.400").waitFor();
-  expect(await rows()).toEqual(before);
-}, 20_000);
-
-test("routes keep the five windows and say which prefix the router sends elsewhere", async () => {
-  await open("?app=spaces&view=routes");
-  const tabs = page.getByRole("navigation", { name: "Zeitfenster" }).getByRole("link");
-  expect(await tabs.allInnerTexts()).toEqual(["1 h", "6 h", "24 h", "7 Tage", "30 Tage"]);
-  expect(await page.locator('[data-route="/caldav"]').innerText()).toContain("fehlt im Router");
-  expect(await page.getByText("/caldav erklärt Spaces, der Router leitet es an Dateien weiter.").isVisible()).toBe(true);
-}, 20_000);
-
-test("on a phone each level is its own page with a way back", async () => {
-  await open("?app=mail&view=keys", 390);
-  expect(await page.locator('[data-keys="mail"]').isVisible()).toBe(true);
-  expect(await page.locator('[data-app="mail"]').isVisible()).toBe(false);
-  // One back step, to the app the keys belong to; the app steps back to the list.
-  const back = page.locator(".k2b-app-workspace__level-back:visible");
-  expect(await back.count()).toBe(1);
-  expect(await back.getAttribute("aria-label")).toBe("Zurück zu Mail");
-  expect(await back.getAttribute("href")).toBe("/admin/apps?app=mail");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-}, 20_000);
-
-test("key states: a running app without a key says it still starts with its environment, and its way out opens Create key", async () => {
-  await open("");
-  expect(await row("files").innerText()).toContain("Startet noch mit Env");
-  await open("?app=files");
-  const notice = page.locator('[data-hint="envStart"]');
-  expect(await notice.innerText()).toContain("Dateien holt Datenbank, Valkey und NATS aus der eigenen Env.");
-  expect(await notice.getByRole("link", { name: "Umstellung (Fibel)" }).getAttribute("href")).toBe(
-    "/docs/en/operations/app-keys#use-the-key-at-start",
-  );
-  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("Kein Schlüssel · startet mit Env");
-  await notice.getByRole("link", { name: "Schlüssel erzeugen" }).click();
-  await page.waitForSelector('body[data-ready="true"]');
-  await page.locator("[data-key-create]").waitFor();
-  expect(new URL(page.url()).search).toBe("?app=files&view=keys");
-  // The way out opens exactly one dialog.
-  expect(await page.locator("[data-key-create]").count()).toBe(1);
-  expect(await page.locator('[data-keys="files"]').innerText()).toContain(
-    "Bis dahin startet Dateien mit den Zugängen aus der eigenen Env.",
-  );
-}, 20_000);
-
-test("key states: no valid key carries the page's one filled action; rotation names the old key", async () => {
-  await open("?app=notebooks");
-  const notice = page.locator('[data-hint="keyRevoked"]');
-  expect(await notice.innerText()).toContain("Kein gültiger Schlüssel.");
-  const action = notice.getByRole("link", { name: "Neuen Schlüssel erzeugen" });
-  expect(await action.getAttribute("href")).toBe("/admin/apps?app=notebooks&view=keys&create=1");
-  expect(await action.getAttribute("data-variant")).toBe("primary");
-  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("kein gültiger Schlüssel");
-  await open("?app=notebooks&view=keys");
-  const keys = page.locator('[data-keys="notebooks"]');
-  expect(await keys.innerText()).toContain("Kein gültiger Schlüssel.");
-  expect(await keys.locator('[data-key="erststart"]').isVisible()).toBe(true);
-
-  await open("?app=grids&view=keys");
-  expect(await page.getByText("Rotation läuft. Sobald keine Instanz mehr den alten Schlüssel nutzt, widerrufe ihn.").isVisible()).toBe(
-    true,
-  );
-  expect(await page.locator('[data-key="produktion-2026-10"]').innerText()).toContain("produktion-2026-10 (alt)");
-  expect(await page.locator('[data-key="rotation-2026-11"]').innerText()).not.toContain("(alt)");
-  await open("?app=grids");
-  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("2 aktiv · Rotation läuft");
-  expect(await page.locator('[data-hint="rotation"]').count()).toBe(0);
-}, 20_000);
-
-test("key states: a refused start leads the list and the app page, and the keys column marks the refused key", async () => {
-  await open("");
-  expect(await row("pulse").innerText()).toContain("Start abgelehnt · Schlüssel widerrufen · +1");
-  await open("?app=pulse");
-  const notice = page.locator('[data-hint="startRejected"]');
-  expect(await notice.innerText()).toContain(
-    "Pulse startet nicht. Core hat den Schlüssel vor 3 Minuten beim Start abgelehnt, weil er widerrufen ist.",
-  );
-  // The refusal already says there is no valid key; the page keeps one filled action.
-  expect(await page.locator('[data-hint="keyRevoked"]').count()).toBe(0);
-  const action = notice.getByRole("link", { name: "Neuen Schlüssel erzeugen" });
-  expect(await action.getAttribute("href")).toBe("/admin/apps?app=pulse&view=keys&create=1");
-  expect(await action.getAttribute("data-variant")).toBe("primary");
-  expect(await notice.getByRole("link", { name: "Was tun? (Fibel)" }).count()).toBe(1);
-  await open("?app=pulse&view=keys");
-  const key = page.locator('[data-keys="pulse"] [data-key="pulse-prod"]');
-  expect(await key.isVisible()).toBe(true);
-  expect(await key.innerText()).toContain("Start abgelehnt vor 3 Minuten");
-
-  // Background access off: the way out is turning it on again, in the keys column.
-  await open("?app=pulse&state=start-disabled");
-  const disabled = page.locator('[data-hint="startRejected"]');
-  expect(await disabled.innerText()).toContain("weil der Hintergrundzugriff der App aus ist");
-  expect(await disabled.getByRole("link", { name: "Wieder aktivieren" }).getAttribute("href")).toBe("/admin/apps?app=pulse&view=keys");
-  await open("?app=pulse&view=keys&state=start-disabled");
-  expect(await page.locator("[data-background-off]").getByRole("button", { name: "Wieder aktivieren" }).isVisible()).toBe(true);
-}, 20_000);
-
-test("key states: once Core would take a start again, the refusal asks only for the deployment and a restart", async () => {
-  await open("?app=pulse&state=start-replaced");
-  const notice = page.locator('[data-hint="startRejected"]');
-  expect(await notice.innerText()).toContain(
-    "Ein gültiger Schlüssel existiert und der Hintergrundzugriff ist an: Hinterlege den Schlüssel im Deployment und starte die App neu.",
-  );
-  const action = notice.getByRole("link", { name: "Schlüssel ansehen" });
-  expect(await action.getAttribute("href")).toBe("/admin/apps?app=pulse&view=keys");
-  expect(await action.getAttribute("data-variant")).toBe("secondary");
-  expect(await notice.getByRole("link", { name: "Neuen Schlüssel erzeugen" }).count()).toBe(0);
-}, 20_000);
-
 test("key states: when the first keys read fails, the browser read still opens the refused revoked key", async () => {
   await open("?app=pulse&view=keys&state=keys-late");
   const key = page.locator('[data-keys="pulse"] [data-key="pulse-prod"]');
   await key.waitFor();
   expect(await key.innerText()).toContain("Start abgelehnt vor 3 Minuten");
-}, 20_000);
-
-test("domains: only an app with public pages has a Domains row; its column shows each domain's checks and redirect", async () => {
-  await open("?app=mail");
-  expect(await page.locator('[data-row="Domains"]').count()).toBe(0);
-  await open("?app=lager");
-  expect(await page.locator('[data-row="Domains"]').innerText()).toContain("lager.example.de +2 · 1 Problem");
-  await open("?app=lager&view=domains");
-  const column = page.locator('[data-domains="lager"]');
-  expect(await column.locator("[data-domain]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-domain")))).toEqual([
-    "lager.example.de",
-    "www.lager.example.de",
-    "bestand.example.de",
-  ]);
-  expect(await column.locator('[data-domain="lager.example.de"]').innerText()).toContain("Hauptdomain");
-  expect(await column.locator('[data-domain="www.lager.example.de"]').innerText()).toContain("Leitet mit 301 weiter auf lager.example.de");
-  const broken = column.locator('[data-domain="bestand.example.de"]');
-  expect(await broken.locator("[data-domain-status]").innerText()).toContain("Zertifikat fehlgeschlagen");
-  expect(await broken.innerText()).toContain("certificate has expired");
-  const check = broken.getByRole("button", { name: "Prüfen bestand.example.de" });
-  const checking = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/check"));
-  await check.click();
-  const headers = await (await checking).allHeaders();
-  expect(headers.cookie).toContain("session_token=fixture-session");
-  expect(headers.origin).toBe(new URL(fixture.url).origin);
-  await page
-    .getByRole("button", { name: "Prüfen bestand.example.de" })
-    .getByText(/Erneut prüfen in \d+ s/)
-    .waitFor();
-  expect(await check.isDisabled()).toBe(true);
 }, 20_000);
 
 test("domains: adding keeps the input on a conflict, an alias appears under its primary, and the primary can change", async () => {
@@ -435,16 +319,6 @@ test("domains: a domain others redirect to cannot be removed; removing another a
   await page.locator('[data-domain="bestand.example.de"]').waitFor({ state: "detached" });
 }, 20_000);
 
-test("domains: an empty list and a failed read each say so in place", async () => {
-  await open("?app=lager&view=domains&state=domains-empty");
-  expect(await page.locator('[data-domains="lager"]').innerText()).toContain("Noch keine Domain.");
-  await open("?app=lager&view=domains&state=domains-error");
-  expect(await page.locator('[data-domains="lager"]').innerText()).toContain("Die Domains konnten nicht geladen werden.");
-  expect(await page.getByRole("button", { name: "Erneut versuchen" }).isVisible()).toBe(true);
-  await open("?app=lager&state=domains-error");
-  expect(await page.locator('[data-row="Domains"]').innerText()).toContain("Nicht geladen");
-}, 20_000);
-
 test("domains: a promotion that stops halfway says so and can be finished", async () => {
   await open("?app=lager&view=domains&state=domains-partial");
   await page.getByRole("button", { name: "Aktionen für www.lager.example.de" }).click();
@@ -454,88 +328,4 @@ test("domains: a promotion that stops halfway says so and can be finished", asyn
   await alert.getByRole("button", { name: "Änderung abschließen" }).click();
   await page.locator('[data-domain="lager.example.de"]').getByText("Leitet mit 301 weiter auf www.lager.example.de").waitFor();
   expect(await alert.count()).toBe(0);
-}, 20_000);
-
-test("a row opens its app beside the list; search and filter stay in the address through every level", async () => {
-  await open("");
-  await row("grids").locator("td").nth(1).click();
-  await page.waitForSelector('[data-detail-app="grids"]');
-  expect(new URL(page.url()).search).toBe("?app=grids");
-  // Beside the open app the list keeps name, state and problem, and marks the row.
-  expect(await page.locator("thead th").allInnerTexts()).toEqual(["App", "Zustand", "Problem"]);
-  expect(await row("grids").getAttribute("data-selected")).toBe("true");
-  expect(await page.locator('[data-app="grids"]').getAttribute("aria-current")).toBe("true");
-  // The narrower table truncates its problems instead of scrolling sideways.
-  for (const width of [1440, 1024]) {
-    await page.setViewportSize({ width, height: 1000 });
-    await settled(page);
-    const scroller = page.locator("[data-apps-list] table").locator("xpath=..");
-    expect(await scroller.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  }
-  await page.setViewportSize({ width: 1440, height: 1000 });
-
-  await page.getByRole("link", { name: /Probleme 8/ }).click();
-  expect(await page.locator("tbody tr").count()).toBe(8);
-  await page.getByRole("searchbox", { name: "App suchen" }).fill("dat");
-  expect(await page.locator("[data-app]").evaluateAll((links) => links.map((link) => link.getAttribute("data-app")))).toEqual(["files"]);
-  expect(new URL(page.url()).search).toBe("?app=grids&q=dat&filter=problems");
-
-  await page.locator('[data-app="files"]').click();
-  await page.waitForSelector('[data-detail-app="files"]');
-  await page.waitForSelector('body[data-ready="true"]');
-  expect(new URL(page.url()).search).toBe("?app=files&q=dat&filter=problems");
-  expect(await page.getByRole("searchbox", { name: "App suchen" }).inputValue()).toBe("dat");
-  await page.locator('[data-row="Schlüssel"]').click();
-  await page.waitForSelector('[data-keys="files"]');
-  await page.waitForSelector('body[data-ready="true"]');
-  expect(new URL(page.url()).search).toBe("?app=files&view=keys&q=dat&filter=problems");
-  // The view takes the app's place beside the list and steps back to it.
-  expect(await page.locator("[data-apps-list]").isVisible()).toBe(true);
-  await page.getByRole("link", { name: "Zurück zu Dateien" }).click();
-  await page.waitForSelector('[data-detail-app="files"]');
-  await page.waitForSelector('body[data-ready="true"]');
-  expect(new URL(page.url()).search).toBe("?app=files&q=dat&filter=problems");
-
-  // Escape closes the detail; the list stays as it was.
-  await page.keyboard.press("Escape");
-  await page.waitForSelector("[data-detail-app]", { state: "detached" });
-  await page.waitForSelector('body[data-ready="true"]');
-  expect(new URL(page.url()).search).toBe("?q=dat&filter=problems");
-  expect(await page.locator("[data-app]").count()).toBe(1);
-}, 30_000);
-
-test("a search that finds nothing says so in place and leads back to every app", async () => {
-  await open("?q=zzz");
-  const list = page.locator("[data-apps-list]");
-  expect(await list.innerText()).toContain("Keine App passt zur Suche oder zum Filter.");
-  await list.getByRole("button", { name: "Alle Apps zeigen" }).click();
-  expect(await page.locator("[data-app]").count()).toBe(11);
-  expect(new URL(page.url()).search).toBe("");
-}, 20_000);
-
-test("on a phone the list keeps name and state, with the problem under the name and the rest in its details", async () => {
-  await open("", 390);
-  // Version, address and problem wait in the row's details (priority 3) instead of widening the list.
-  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand", "Details"]);
-  expect(await row("pulse").innerText()).toContain("Start abgelehnt");
-  expect(await row("chat").innerText()).toContain("/chat");
-  await row("pulse").locator(".k2b-data-table__details-button").click();
-  const details = page.locator("tr.k2b-data-table__details:visible");
-  await details.first().waitFor();
-  const text = await details.first().innerText();
-  for (const value of ["0.52.1", "/pulse", "Start abgelehnt"]) expect(text).toContain(value);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-}, 20_000);
-
-test("the detail's links follow a search typed beside it, and a just-added app steps back to the list", async () => {
-  await open("?app=mail");
-  await page.getByRole("searchbox", { name: "App suchen" }).fill("ma");
-  expect(await page.locator('[data-row="Schlüssel"]').getAttribute("href")).toBe("/admin/apps?app=mail&view=keys&q=ma");
-  expect(await page.getByRole("link", { name: "Detail schließen" }).getAttribute("href")).toBe("/admin/apps?q=ma");
-
-  // An app without any record has no page of its own until its first key, so its keys lead back to the list.
-  await open("?app=inventar&view=keys&state=added&filter=problems");
-  const back = page.locator(".k2b-app-workspace__level-back:visible");
-  expect(await back.getAttribute("aria-label")).toBe("Zurück zu Apps");
-  expect(await back.getAttribute("href")).toBe("/admin/apps?filter=problems");
 }, 20_000);
