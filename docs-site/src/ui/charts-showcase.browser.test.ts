@@ -90,7 +90,11 @@ const islands = (page: Page) =>
                     .sort()
                     .join(";")
                 : // The chart core numbers sparkline gradients per process, so a server that rendered earlier pages counts on.
-                  attribute.value.replace(/stdlib-spark-grad-\d+/g, "stdlib-spark-grad");
+                  // A chart's own definitions take the id of its instance (generated, as above), and so do the
+                  // references to them.
+                  attribute.value
+                    .replace(/stdlib-spark-grad-\d+/g, "stdlib-spark-grad")
+                    .replace(/k2b-chart-tooltip-[\w-]+?-drawing/g, "k2b-chart-tooltip-ID-drawing");
           return `${attribute.name}="${value}"`;
         })
         .sort()

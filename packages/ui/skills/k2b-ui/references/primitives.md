@@ -434,6 +434,9 @@ lines instead of cutting a thing.
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+- Counts of `Nav` and `Tabs`: a number is written in the page's language and
+  in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
+  you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
