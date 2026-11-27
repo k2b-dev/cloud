@@ -390,7 +390,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
             <Canvas label={t().radarAlt}>
               {/* the radar keeps the text edge, so its dark picture never meets the column's line */}
               <div style={{ padding: "0 20px" }}>
-                <RadarCard showLegend />
+                <RadarCard showLegend locale={locale()} />
               </div>
             </Canvas>
           </Section>
