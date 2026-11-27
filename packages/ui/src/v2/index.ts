@@ -24,6 +24,7 @@ export {
   type NavGroup,
   type NavItem,
   type NavProps,
+  type NavSearch,
   Notice,
   type NoticeProps,
   Path,
