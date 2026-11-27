@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
-import { toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Failed, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Failed, type OnNavigate, Pane, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkedEntry } from "../contracts";
@@ -36,6 +36,7 @@ export default function FavoritesPane(props: {
   const b = useBrowserMessages();
   const h = useHistoryMessages();
   const locale = useLocale();
+  const toast = useToast();
   const favorites = query.create({
     source: () => "favorites",
     initial: props.initial ? { source: "favorites", data: props.initial } : undefined,
@@ -54,7 +55,7 @@ export default function FavoritesPane(props: {
       if (!response.ok) await apiFailure(response, b().loadFailed);
     } catch (error) {
       setRemoved((current) => new Set([...current].filter((value) => value !== keyOf(item))));
-      toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+      toast(error instanceof Error && error.message ? error.message : h().actionFailed, { status: "bad", retry: () => remove(item) });
     }
   };
   return (

@@ -150,37 +150,14 @@ packages/editor/src/markdown/mermaid-viewport.tsx | untitled | t().exportFailed
 packages/editor/src/markdown/notebook-charts.tsx | untitled | t().copyFailed
 packages/filesv2/src/frontend/AdminShares.tsx | untitled | error instanceof Error ? error.message : a().actionFailed
 packages/filesv2/src/frontend/AdminShares.tsx | untitled | error instanceof Error ? error.message : b().revokeFailed
-packages/filesv2/src/frontend/Browser.tsx | untitled | [b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · ")
-packages/filesv2/src/frontend/Browser.tsx | untitled | b().cursorReset
-packages/filesv2/src/frontend/Browser.tsx | untitled | b().hiddenLeftOut(input.hidden)
-packages/filesv2/src/frontend/Browser.tsx | untitled | b().opUndone
-packages/filesv2/src/frontend/Browser.tsx | untitled | b().uploadUnavailable
-packages/filesv2/src/frontend/Browser.tsx | untitled | created.length === 1 ? b().folderCreated(first.path) : b().foldersCreated({ count: created.length, name: first.path })
-packages/filesv2/src/frontend/Browser.tsx | untitled | error instanceof Error ? error.message : t().unavailable
-packages/filesv2/src/frontend/Browser.tsx | untitled | error.message
-packages/filesv2/src/frontend/Browser.tsx | untitled | error.message
-packages/filesv2/src/frontend/Browser.tsx | untitled | failures.map((result) => `${result.path}: ${result.error ?? t().unavailable}`).join("\n")
-packages/filesv2/src/frontend/Browser.tsx | untitled | message
-packages/filesv2/src/frontend/Browser.tsx | untitled | message(succeeded)
-packages/filesv2/src/frontend/FavoritesPage.tsx | untitled | error instanceof Error && error.message ? error.message : h().actionFailed
-packages/filesv2/src/frontend/FileInspector.tsx | untitled | error instanceof Error ? error.message : f().downloadFailed
-packages/filesv2/src/frontend/FileInspector.tsx | untitled | error instanceof Error ? error.message : f().unavailable
-packages/filesv2/src/frontend/FileInspector.tsx | untitled | error instanceof Error ? error.message : f().unavailable
-packages/filesv2/src/frontend/FileInspector.tsx | untitled | h().versionsFailed
 packages/filesv2/src/frontend/PublicInbox.island.tsx | untitled | b().uploadTooLarge(tooLarge.map((file) => file.name))
 packages/filesv2/src/frontend/PublicInbox.island.tsx | untitled | error instanceof Error ? error.message : b().publicLinkUnavailableDescription
 packages/filesv2/src/frontend/PublicShare.island.tsx | untitled | error instanceof Error ? error.message : t().downloadFailed
 packages/filesv2/src/frontend/PublicShare.island.tsx | untitled | error instanceof Error ? error.message : t().downloadFailed
 packages/filesv2/src/frontend/ShareDialog.tsx | untitled | b().quotaInvalid
 packages/filesv2/src/frontend/ShareDialog.tsx | untitled | error instanceof Error ? error.message : b().shareCreateFailed
-packages/filesv2/src/frontend/SharesOverview.tsx | untitled | error instanceof Error ? error.message : b().revokeFailed
-packages/filesv2/src/frontend/SharesOverview.tsx | untitled | error instanceof Error ? error.message : b().revokeFailed
 packages/filesv2/src/frontend/Templates.tsx | untitled | error instanceof Error ? error.message : t().failed
 packages/filesv2/src/frontend/Templates.tsx | untitled | error instanceof Error ? error.message : t().failed
-packages/filesv2/src/frontend/TrashView.tsx | untitled | error instanceof Error ? error.message : t().unavailable
-packages/filesv2/src/frontend/Workspace.island.tsx | untitled | error instanceof Error && error.message ? error.message : h().actionFailed
-packages/filesv2/src/frontend/Workspace.island.tsx | untitled | error instanceof Error && error.message ? error.message : h().actionFailed
-packages/filesv2/src/frontend/Workspace.island.tsx | untitled | h().actionFailed
 packages/filesv2/src/frontend/file-lightbox.ts | untitled | t.failed
 packages/gateway-ops/src/observability/jobs/_components/JobsActionToast.island.tsx | untitled | url.searchParams.get(MESSAGE_PARAM) || t.scheduleRunAccepted
 packages/gateway-ops/src/observability/sync/_components/DeadLetterActions.island.tsx | untitled | isTopic() ? t.syncReplayed : t.syncRequeued
@@ -210,26 +187,6 @@ packages/grids/src/frontend/custom-app/document-preview.ts | untitled | reason
 packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostAdded
 packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostRemoved
 packages/ipa-hosts/src/frontend/HostSettings.island.tsx | untitled | t().scheduleUpdated
-packages/mail/src/frontend/mail-workspace.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
-packages/mail/src/frontend/mail-workspace.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | message
-packages/mail/src/frontend/mail-workspace.tsx | untitled | message
-packages/mail/src/frontend/mail-workspace.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().changeListViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().closeConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().healthRefreshFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().listWidthSaveFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().messageMoved
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().settingsRefreshFailed
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().downloadStarted
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().stopKeepingDone
 packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | untitled | t().downloadStarted
@@ -275,6 +232,26 @@ packages/mail/src/frontend/_components/mail-feedback.ts | title | options.title
 packages/mail/src/frontend/_components/mail-mailbox-management.ts | untitled | overviewText().mailboxRestored
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | error instanceof Error ? error.message : messages().failedSaveMailboxPreference
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count })
+packages/mail/src/frontend/mail-workspace.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
+packages/mail/src/frontend/mail-workspace.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | message
+packages/mail/src/frontend/mail-workspace.tsx | untitled | message
+packages/mail/src/frontend/mail-workspace.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().changeListViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().closeConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().healthRefreshFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().listWidthSaveFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().messageMoved
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().settingsRefreshFailed
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopied
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopyFailed
 packages/notebooks/src/frontend/[id]/_components/comments/CommentCard.tsx | untitled | t().actionFailed

@@ -1,5 +1,5 @@
-import { prompts, toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Failed, Notice, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
+import { prompts, useLocale } from "@k2b/ui";
+import { Bar, Button, Chip, Failed, Notice, type OnNavigate, Pane, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, TrashEntry } from "../contracts";
@@ -27,6 +27,7 @@ export default function TrashPane(props: {
   const t = useFilesMessages();
   const text = useTrashMessages();
   const locale = useLocale();
+  const toast = useToast();
   const [page, setPage] = createSignal<TrashPage | null>(props.initial);
   const [loading, setLoading] = createSignal(false);
   const [busy, setBusy] = createSignal<string | null>(null);
@@ -49,7 +50,7 @@ export default function TrashPane(props: {
       setPage({ entries, next: result.next });
     } catch (error) {
       if (lifetime.signal.aborted) return;
-      if (after) toast.error(error instanceof Error ? error.message : t().unavailable);
+      if (after) toast(error instanceof Error ? error.message : t().unavailable, { status: "bad", retry: () => load(after) });
       else setPage(null);
     } finally {
       setLoading(false);
@@ -82,11 +83,11 @@ export default function TrashPane(props: {
       );
       if (!response.ok) await apiFailure(response, t().unavailable);
       const result = await response.json();
-      toast.success(b().restored(entry.name));
+      toast(b().restored(entry.name), { status: "ok" });
       props.onRestored(result.entry.path);
     } catch (error) {
       if (lifetime.signal.aborted) return;
-      toast.error(error instanceof Error ? error.message : t().unavailable);
+      toast(error instanceof Error ? error.message : t().unavailable, { status: "bad", retry: () => restore(entry) });
       void load();
     } finally {
       setBusy(null);

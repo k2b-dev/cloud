@@ -1,7 +1,8 @@
 import { downloadArchive } from "@k2b/filegate/utils";
 import { showFileDialog, showFolderDialog } from "@k2b/stdlib/browser";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, FileDropTarget, InlineGuidance, Lightbox, prompts, toast, useLocale } from "@k2b/ui";
+import { Button, FileDropTarget, InlineGuidance, Lightbox, prompts, useLocale } from "@k2b/ui";
+import { useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EditorInfo, FileEntry } from "../contracts";
@@ -87,6 +88,7 @@ export type FolderContext = {
 export function createFolderActions(ctx: FolderContext) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
+  const toast = useToast();
   const assets = useAssetMessages();
   const locale = useLocale();
   const baseId = () => ctx.base().id;
@@ -123,7 +125,7 @@ export function createFolderActions(ctx: FolderContext) {
       if (!response.ok) return apiFailure(response, t().downloadFailed);
       downloadArchive(await response.json());
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error, _context, run) => toast(error.message, { status: "bad", retry: run.retry }),
   });
   onCleanup(() => download.abort());
 
@@ -137,7 +139,7 @@ export function createFolderActions(ctx: FolderContext) {
         actionLocation = null;
       }
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error, _context, run) => toast(error.message, { status: "bad", retry: run.retry }),
   });
   const busy = () => download.loading() || action.loading();
   const runAction = (run: () => Promise<void>) => {
@@ -251,7 +253,7 @@ export function createFolderActions(ctx: FolderContext) {
       const parts = relativeName(file).split("/").slice(0, -1);
       for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
     }
-    if (input.hidden) toast(b().hiddenLeftOut(input.hidden), { duration: 8000 });
+    if (input.hidden) toast(b().hiddenLeftOut(input.hidden));
     // Only empty folders: nothing to transfer, so they are made like a new folder.
     if (!files.length) {
       if (folders.size)
@@ -312,24 +314,15 @@ export function createFolderActions(ctx: FolderContext) {
     dropPreparation = request;
     const source = ctx.location();
     const timer = setTimeout(() => request.abort(), 30_000);
-    const notice = toast(b().readingDrop, {
-      duration: 0,
-      progress: "indeterminate",
-      action: { label: b().cancel, onClick: () => request.abort() },
-    });
-    const fail = (message: string) => {
-      if (notice.update(message, { variant: "error", progress: null, duration: undefined, action: null }) === false) toast.error(message);
-    };
+    const fail = (message: string) => toast(message, { status: "bad" });
     void readDroppedEntries(dropped, request.signal)
       .then((result) => {
-        if (request.signal.aborted || source !== ctx.location()) return notice.dismiss();
-        if (result.errors.length) fail(result.errors.join("\n"));
-        else notice.dismiss();
+        if (request.signal.aborted || source !== ctx.location()) return;
+        if (result.errors.length) fail(result.errors.length === 1 ? result.errors[0]! : b().dropUnread(result.errors.length));
         startUpload(result.files, result.directories, result.hidden.length, root);
       })
       .catch((error) => {
-        if (request.signal.aborted) notice.dismiss();
-        else fail(error instanceof Error && error.message === "drop_too_large" ? b().dropTooLarge : b().loadFailed);
+        if (!request.signal.aborted) fail(error instanceof Error && error.message === "drop_too_large" ? b().dropTooLarge : b().loadFailed);
       })
       .finally(() => clearTimeout(timer));
   };
@@ -350,7 +343,9 @@ export function createFolderActions(ctx: FolderContext) {
     const created = result.results.flatMap((item) => (item.state === "created" && item.entry ? [item.entry] : []));
     const [first] = created;
     if (first)
-      toast.success(created.length === 1 ? b().folderCreated(first.path) : b().foldersCreated({ count: created.length, name: first.path }));
+      toast(created.length === 1 ? b().folderCreated(first.path) : b().foldersCreated({ count: created.length, name: first.path }), {
+        status: "ok",
+      });
     await ctx.refresh(result.results[0]?.path);
   };
   // An empty file has nothing to transfer, so it is made at once instead of waiting behind an upload.
@@ -368,7 +363,7 @@ export function createFolderActions(ctx: FolderContext) {
             signal: questions.signal,
             fallback: t().unavailable,
           });
-          toast.success(b().documentCreated(name));
+          toast(b().documentCreated(name), { status: "ok" });
           void ctx.refresh(result.entry.path);
           return;
         } catch (error) {
@@ -417,7 +412,7 @@ export function createFolderActions(ctx: FolderContext) {
       const response = await apiClient.bases[":baseId"].documents.$post({ param: { baseId: baseId() }, json: { path, kind } });
       if (!response.ok) await apiFailure(response, t().unavailable);
       const created = await response.json();
-      toast.success(b().documentCreated(created.entry.name));
+      toast(b().documentCreated(created.entry.name), { status: "ok" });
       if (here()) ctx.onEdit(created.entry);
     });
   };
@@ -438,8 +433,12 @@ export function createFolderActions(ctx: FolderContext) {
   const finishBatch = async (results: readonly BatchItem[], message: (count: number) => string, selectPath: string | null = null) => {
     const failures = results.filter((result) => !result.ok);
     const succeeded = results.length - failures.length;
-    if (succeeded) toast.success(message(succeeded));
-    if (failures.length) toast.error(failures.map((result) => `${result.path}: ${result.error ?? t().unavailable}`).join("\n"));
+    if (succeeded) toast(message(succeeded), { status: "ok" });
+    const [failure] = failures;
+    if (failure)
+      toast(failures.length === 1 ? `${failure.path}: ${failure.error ?? t().unavailable}` : b().batchFailed(failures.length), {
+        status: "bad",
+      });
     await ctx.refresh(failures.length ? null : selectPath);
     if (failures.length && here()) ctx.select(failures.map((result) => result.path));
   };
@@ -509,7 +508,7 @@ export function createFolderActions(ctx: FolderContext) {
     runAction(async () => {
       const response = await apiClient.bases[":baseId"].rename.$post({ param: { baseId: baseId() }, json: { path: item.path, name } });
       if (!response.ok) await apiFailure(response, t().unavailable);
-      toast.success(b().renamed);
+      toast(b().renamed, { status: "ok" });
       await ctx.refresh((await response.json()).entry.path);
     });
   };
@@ -556,9 +555,9 @@ export function createFolderActions(ctx: FolderContext) {
       if (!response.ok) await apiFailure(response, t().unavailable);
       const failed = (await response.json()).results.find((result) => !result.ok);
       if (failed) throw new Error(failed.error ?? t().unavailable);
-      toast.success(b().opUndone);
+      toast(b().opUndone, { status: "ok" });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().unavailable);
+      toast(error instanceof Error ? error.message : t().unavailable, { status: "bad", retry: () => undoCreated(base, entry) });
     }
     if (base === baseId()) await ctx.refresh();
   };
@@ -578,9 +577,9 @@ export function createFolderActions(ctx: FolderContext) {
           markFresh(result.entry.path);
           await ctx.refresh();
         }
-        toast.success([b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · "), {
-          celebrate: true,
-          action: { label: b().opUndo, variant: "ghost", onClick: () => void undoCreated(operation.base, result.entry) },
+        toast([b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · "), {
+          status: "ok",
+          undo: () => undoCreated(operation.base, result.entry),
         });
       },
       (error: unknown) => {

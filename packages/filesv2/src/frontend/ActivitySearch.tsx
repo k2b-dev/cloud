@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
-import { toast, useLocale } from "@k2b/ui";
-import { type Action, Bar, Button, Chip, Empty, List, Notice, type OnNavigate, Row, Section, Text } from "@k2b/ui/v2";
+import { useLocale } from "@k2b/ui";
+import { type Action, Bar, Button, Chip, Empty, List, Notice, type OnNavigate, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, getOwner, type JSX, mapArray, runWithOwner, Show } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry } from "../activity-contracts";
 import { entryMark } from "./entry-mark";
@@ -181,6 +181,7 @@ export default function ActivitySearch(props: ActivitySearchProps) {
 /** A trashed hit reads as its state ("is in the trash"); every other hit as its newest change. */
 function OtherHit(props: { hit: SearchHit; env: HistoryEnvironment; actions?: HistoryActions; onChanged?: () => void }) {
   const h = useHistoryMessages();
+  const toast = useToast();
   const locale = useLocale();
   const row = createMemo(() => historyRows([props.hit.lead], { batches: false })[0]!);
   const entry = () => props.hit.lead;
@@ -216,12 +217,15 @@ function OtherHit(props: { hit: SearchHit; env: HistoryEnvironment; actions?: Hi
                 ? {
                     label: h().restoreItem,
                     icon: "arrow-back-up",
-                    onClick: async () => {
+                    onClick: async function perform() {
                       try {
-                        await restoreFromTrash(entry(), restore, h());
+                        await restoreFromTrash(entry(), restore, h(), toast);
                         props.onChanged?.();
                       } catch (error) {
-                        toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+                        toast(error instanceof Error && error.message ? error.message : h().actionFailed, {
+                          status: "bad",
+                          retry: perform,
+                        });
                       }
                     },
                   }
@@ -249,6 +253,7 @@ function MissingHit(props: {
   onChanged?: () => void;
 }) {
   const h = useHistoryMessages();
+  const toast = useToast();
   const locale = useLocale();
   const lead = () => props.hit.lead;
   const directory = createMemo(() => props.hit.entries.map(isDirectory).find((value) => value !== null) ?? null);
@@ -284,12 +289,12 @@ function MissingHit(props: {
   const deed = (label: string, icon: string, run: () => Promise<unknown> | unknown): Action => ({
     label,
     icon,
-    onClick: async () => {
+    onClick: async function perform() {
       try {
         await run();
         done();
       } catch (error) {
-        toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+        toast(error instanceof Error && error.message ? error.message : h().actionFailed, { status: "bad", retry: perform });
       }
     },
   });
@@ -410,7 +415,7 @@ function MissingHit(props: {
             ? [
                 deed(t.moveBack, "arrow-back-up", async () => {
                   await actions.onMoveBack!(lead(), point);
-                  toast.success(t.movedBack.replace("{name}", itemName()));
+                  toast(t.movedBack.replace("{name}", itemName()), { status: "ok" });
                 }),
               ]
             : []),
@@ -420,7 +425,7 @@ function MissingHit(props: {
         const trash = allowed()?.trash;
         return [
           ...(actions.onRestoreTrash && recovered && (!actions.loadRecovery || trash?.canRestore)
-            ? [deed(t.restoreItem, "arrow-back-up", () => restoreFromTrash(lead(), actions.onRestoreTrash!, t))]
+            ? [deed(t.restoreItem, "arrow-back-up", () => restoreFromTrash(lead(), actions.onRestoreTrash!, t, toast))]
             : []),
           ...(actions.onShowTrash && trash ? [{ label: t.showInTrash, icon: "trash", onClick: () => actions.onShowTrash?.(trash) }] : []),
         ];
@@ -433,7 +438,7 @@ function MissingHit(props: {
             icon: "copy",
             onClick: async () => {
               await navigator.clipboard.writeText(copyValue());
-              toast.success(t.pathCopied);
+              toast(t.pathCopied, { status: "ok" });
             },
           },
         ];
