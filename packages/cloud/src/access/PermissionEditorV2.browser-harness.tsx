@@ -1,13 +1,15 @@
 import { LocaleProvider } from "@k2b/ui";
 import { Bar, Pane, Section, Text, Workspace } from "@k2b/ui/v2";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type { AccessEntry } from "../contracts/shared";
-import { PermissionEditor } from "./v2";
+import { PermissionEditor, type PickedPrincipal, PrincipalPicker } from "./v2";
 
 /**
  * The v2 permission editor in a v2 settings pane, with invented people, a group and an agent. Changes are recorded
  * on `window.calls`; `?fail` lets the first level change fail, `?readonly` shows it without the right to change,
- * `?worst` lists the worst case (long, unbreakable and non-Latin names, many rows).
+ * `?worst` lists the worst case (long, unbreakable and non-Latin names, many rows). Below it, a picker of several
+ * principals (`PrincipalPicker` of v2), as a new chat asks for its people: what it holds is on `window.picked`.
  */
 const params = new URLSearchParams(location.search);
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -74,6 +76,22 @@ globalThis.fetch = Object.assign(
           kind: "user",
           user: { id: "10000000-0000-4000-8000-000000000022", displayName: "Lea Schmitt", uid: "lschmitt", mail: "lea@beispiel.de" },
         },
+        ...(url.searchParams.get("kinds")?.includes("service_account")
+          ? [
+              {
+                kind: "service_account",
+                serviceAccount: {
+                  id: "20000000-0000-4000-8000-000000000023",
+                  name: "Inventurbot",
+                  kind: "agent",
+                  appId: null,
+                  resourceType: null,
+                  resourceId: null,
+                  status: "active",
+                },
+              },
+            ]
+          : []),
       ],
       pagination: { page: 1, per_page: 20, total: 2, total_pages: 1, has_next: false },
     });
@@ -81,8 +99,10 @@ globalThis.fetch = Object.assign(
   { preconnect: originalFetch.preconnect },
 );
 
-const page = window as unknown as { calls: unknown[] };
+const page = window as unknown as { calls: unknown[]; picked: string[] };
 page.calls = [];
+page.picked = [];
+const [picked, setPicked] = createSignal<PickedPrincipal[]>([]);
 let failures = params.has("fail") ? 1 : 0;
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
@@ -95,7 +115,10 @@ render(
             <PermissionEditor
               initialEntries={entries}
               canEdit={!params.has("readonly")}
-              grantAccess={async (principal, permission) => ({ id: id(99), principal, permission, createdAt: "2026-11-26T00:00:00.000Z" })}
+              grantAccess={async (principal, permission) => {
+                page.calls.push({ grant: principal, permission });
+                return { id: id(99), principal, permission, createdAt: "2026-11-26T00:00:00.000Z" };
+              }}
               updateAccess={async (accessId, permission) => {
                 if (failures > 0) {
                   failures -= 1;
@@ -104,6 +127,17 @@ render(
                 page.calls.push({ update: accessId, permission });
               }}
               revokeAccess={async (accessId) => void page.calls.push({ revoke: accessId })}
+            />
+          </Section>
+          <Section icon="messages" title="New chat">
+            <PrincipalPicker
+              label="People"
+              value={picked()}
+              onChange={(next) => {
+                setPicked(next);
+                page.picked = next.map((entry) => entry.display.displayName);
+              }}
+              allowAuthenticated={false}
             />
           </Section>
         </Pane>

@@ -687,6 +687,26 @@ visible. Use the filters to match the resource's accepted recipients. `serviceAc
 client, for example to accounts bound to this resource. They never widen
 directory visibility; the service still checks every assignment. This picker grants no access itself.
 
+On a page built with `@k2b/ui/v2`, use `PrincipalPicker` from `@k2b/cloud/access/v2`, such as for the people of a new
+chat. It holds the chosen principals as chips, each removable by its name, with `value` and `onChange`
+(`PickedPrincipal[]`). "Add" opens the search beside the field; on the phone it is a sheet. The search is the same
+directory search with the same options (`existing`, `target`, `allowAuthenticated`, `allowPublic`,
+`allowServiceAccounts`, `kinds`, `serviceAccountKinds`, `serviceAccountStatus`, `serviceAccountFilter`,
+`takenReason`, `findServiceAccount`): it waits 200 ms after typing and aborts an older search. Each match shows its
+face (a person's avatar, a group's or a Code account's mark) and its kind. A principal already on the list stays
+dimmed with `takenReason`, or is left out without one. The keyboard moves from the search into the list, and Space
+picks. With `single`, a pick replaces the one before and closes the search; the v2 `PermissionEditor` adds this way:
+one principal, its level, **Add**. The same rule for service accounts applies to both pickers.
+
+```tsx
+import { type PickedPrincipal, PrincipalPicker } from "@k2b/cloud/access/v2";
+
+const [people, setPeople] = createSignal<PickedPrincipal[]>([]);
+<Field label="People">
+  <PrincipalPicker label="People" value={people()} onChange={setPeople} allowAuthenticated={false} />
+</Field>
+```
+
 ### Keep the editor mounted across refetches
 
 `PermissionEditor` mounts from `initialEntries` and keeps its own copy after

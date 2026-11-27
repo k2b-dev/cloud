@@ -17,7 +17,7 @@ const restrictions: Record<string, string> = {
 export const checkSource = (file: string, source: string): Finding[] => {
   if (isTestFile(file) || (!source.includes("PermissionEditor") && !source.includes("PrincipalPicker"))) return [];
   const { sourceFile: parsed, findings } = parseSource(file, source);
-  const pickerNames = new Set(["PermissionEditor", "PrincipalPicker"]);
+  const pickerNames = new Set(["PermissionEditor", "PrincipalPicker", "PrincipalPickerV2"]);
   for (const statement of parsed.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     const bindings = statement.importClause?.namedBindings;
@@ -34,7 +34,12 @@ export const checkSource = (file: string, source: string): Finding[] => {
           if (!ts.isJsxAttribute(attribute) || attribute.name.getText(parsed) !== "allowServiceAccounts") continue;
           const value = attribute.initializer;
           // The forwarding editors delegate the same default to PrincipalPicker.
-          if (file === "packages/cloud/src/access/PermissionEditor.tsx" || file === "packages/cloud/src/access/AccessDialog.tsx") continue;
+          if (
+            file === "packages/cloud/src/access/PermissionEditor.tsx" ||
+            file === "packages/cloud/src/access/PermissionEditorV2.tsx" ||
+            file === "packages/cloud/src/access/AccessDialog.tsx"
+          )
+            continue;
           if (!value || (ts.isJsxExpression(value) && value.expression?.kind === ts.SyntaxKind.TrueKeyword)) continue;
           if (restrictions[file]) continue;
           findings.push({

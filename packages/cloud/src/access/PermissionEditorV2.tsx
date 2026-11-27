@@ -1,11 +1,12 @@
 import { useLocale } from "@k2b/ui";
-import { Button, confirm, Empty, Failed, List, Loading, Menu, Notice, Popover, Row, Text } from "@k2b/ui/v2";
+import { Button, confirm, Empty, Failed, Inline, List, Loading, Menu, Notice, Popover, Row, Select, Text } from "@k2b/ui/v2";
 import { For, type JSX, mergeProps, onCleanup, Show } from "solid-js";
 import type { AccessEntry } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import { createGroupCoverage, type GroupCoverage } from "./group-coverage";
 import { accessMessages } from "./messages";
 import type { PermissionEditorProps } from "./PermissionEditor";
+import { PrincipalPickerV2 } from "./PrincipalPickerV2";
 import { createPermissionEditorState } from "./permission-editor-state";
 import { levelKey, type ResolvedLevel } from "./permission-levels";
 import { principalFace } from "./principal-face";
@@ -95,7 +96,8 @@ const createPermissionWords = (locale: string) => accessMessages.resolve([locale
 /**
  * The permission editor on v2: who has access, each a row with its face, kind, level menu and Remove; changes apply at
  * once, a failure says so in its row with "Try again", and the last manager keeps Manage. The same state and rules as
- * the v1 `PermissionEditor` (`createPermissionEditorState`). Adding someone comes with the single-choice `Lookup`.
+ * the v1 `PermissionEditor` (`createPermissionEditorState`). Adding: pick one principal (`PrincipalPicker` of v2), its
+ * level, "Hinzufügen"; the grant applies at once, as a change does.
  */
 export function PermissionEditorV2(props: PermissionEditorProps) {
   const locale = useLocale();
@@ -242,8 +244,67 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
     );
   };
 
+  // The one principal being added, with its level, until "Hinzufügen" grants it.
+  const draftLevels = () => {
+    const draft = state.draft();
+    return draft ? state.allowed(draft.principal, draft.display.serviceAccountKind) : [];
+  };
+  const addBar = () => (
+    <Inline>
+      <PrincipalPickerV2
+        single
+        label={props.placeholder ?? t().addBasic}
+        value={state.draft() ? [state.draft()!] : []}
+        onChange={(picked) => {
+          if (!state.canStart()) return;
+          const next = picked[0];
+          state.setDraft(next);
+          if (next) state.setDraftLevel(state.allowed(next.principal, next.display.serviceAccountKind)[0]?.key ?? "read");
+        }}
+        target={props.target}
+        existing={state.entries.map((entry) => entry.principal)}
+        allowPublic={state.allowPublic()}
+        allowAuthenticated={state.allowAuthenticated()}
+        allowServiceAccounts={props.allowServiceAccounts}
+        serviceAccountKinds={props.serviceAccountKinds}
+        serviceAccountStatus={props.serviceAccountStatus ?? "active"}
+        signedIn={props.signedIn}
+        disabled={state.saving()}
+      />
+      <Show when={state.draft()}>
+        {(draft) => (
+          <>
+            <Select
+              label={t().newPermission}
+              value={state.draftLevel()}
+              disabled={state.saving()}
+              options={draftLevels().map((option) => ({ value: option.key, label: option.label }))}
+              onChange={(value) => {
+                if (state.canStart()) state.setDraftLevel(value);
+              }}
+            />
+            <Button
+              variant="primary"
+              busy={state.grantPending()}
+              disabled={state.saving()}
+              onClick={() =>
+                void state.grant(
+                  draft().principal,
+                  draft().display,
+                  draftLevels().find((option) => option.key === state.draftLevel()),
+                )
+              }
+            >
+              {t().add}
+            </Button>
+          </>
+        )}
+      </Show>
+    </Inline>
+  );
   return (
     <>
+      <Show when={state.canEdit()}>{addBar()}</Show>
       <Show when={state.feedback.add}>
         {(failure) => (
           <Notice tone="bad" actions={failure().retry ? [{ label: t().retry, onClick: () => failure().retry?.() }] : undefined}>
