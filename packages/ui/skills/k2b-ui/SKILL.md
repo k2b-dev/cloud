@@ -21,6 +21,16 @@ That is the point: two agents building the same screen get the same result.
 `@k2b/ui/v2` is **provisional** until the maintainer approves it. Names and
 props may change in any release; check the types of the installed version.
 
+## The look is part of done
+
+Every screen follows [the look](references/look.md): a screen brief before
+code, one hero with its real trend, the app's colour where it means
+something, one data picture per row, a tinted head for the open object, and
+a large screen that uses its room. Run its wireframe check on your pictures
+before you call a screen ready: a screen that fails it is not done, however
+clean it is.
+Dense, clear, with faces: the nine rules are in [recipes](references/recipes.md#how-a-screen-looks-dense-clear-with-faces).
+
 ## Start here
 
 1. Find the screen in the task table below and open its recipe in
@@ -77,8 +87,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
 | a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
 | an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
-| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
-| several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
+| who did what; several people at once (a team, who has access) | `Digest activity`; `Avatar.Stack` | `overview.tsx`, `home.tsx` |
 | a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns; rows in levels | `Table`; with `rowKey` and `tree` | `table.tsx`, `tree.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
@@ -169,11 +178,6 @@ that failed to load once would stand. A connection that retries on its own
 says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
-## How a screen looks
-
-Dense, clear, with faces: read the nine rules in
-[recipes](references/recipes.md#how-a-screen-looks-dense-clear-with-faces).
-
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
@@ -182,7 +186,7 @@ Dense, clear, with faces: read the nine rules in
 - **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Steps`.
+  `Chip`, `Progress`, `Spark`, `Ticks`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
   `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
@@ -195,8 +199,9 @@ Dense, clear, with faces: read the nine rules in
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
-a code block with highlighting, an image or video viewer, and an assistant
+the mail and chat composer (comes from `@k2b/editor`), the menus of the
+Markdown editor (the editor itself goes into a `Canvas`, where its toolbar
+follows v2), a code block with highlighting, an image or video viewer, and an assistant
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with

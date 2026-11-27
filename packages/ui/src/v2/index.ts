@@ -134,6 +134,9 @@ export {
   type ProgressProps,
   Spark,
   type SparkProps,
+  type TickState,
+  Ticks,
+  type TicksProps,
 } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";

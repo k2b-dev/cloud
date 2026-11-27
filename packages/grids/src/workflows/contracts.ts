@@ -583,9 +583,28 @@ const GridsWorkflowRunStatsCountsSchema = z.object({
   lastRunAt: z.string().datetime().nullable(),
 });
 
+export const GridsWorkflowRunSeriesBucketSchema = z.enum(["1m", "5m", "1h", "1d"]);
+export type GridsWorkflowRunSeriesBucket = z.infer<typeof GridsWorkflowRunSeriesBucketSchema>;
+
+/**
+ * Runs per bucket over the stats window, oldest first, with a point for every
+ * bucket. `failed` counts failed and needs-attention runs, like `errorRate`.
+ */
+export const GridsWorkflowRunSeriesSchema = z.object({
+  bucket: GridsWorkflowRunSeriesBucketSchema,
+  points: z.array(
+    z.object({
+      start: z.string().datetime(),
+      total: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
 const GridsWorkflowRunStatsSchema = GridsWorkflowRunStatsCountsSchema.extend({
   window: GridsWorkflowRunStatsWindowSchema,
   failedLast24h: z.number().int().nonnegative(),
+  series: GridsWorkflowRunSeriesSchema,
   byWorkflow: z.array(
     GridsWorkflowRunStatsCountsSchema.extend({
       workflowId: z.string().uuid(),

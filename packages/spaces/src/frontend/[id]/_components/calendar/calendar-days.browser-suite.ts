@@ -480,7 +480,7 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     const heading = page.locator(".k2b-calendar-days__day[data-today] .k2b-calendar-days__head");
     expect(await heading.textContent()).toContain("Heute");
     expect(await heading.textContent()).toContain("Freitag, 9. Oktober");
-    expect(await page.locator(".k2b-calendar-header__title > span").first().textContent()).toBe("Fr, 9. Okt 2026");
+    expect(await page.locator(".k2b-calendar-header__title > span").first().textContent()).toBe("Oktober 2026");
     // The day starts at six; the night is a folded row unless an entry lies in it.
     const today = page.locator(".k2b-calendar-days__day[data-today]");
     expect(await today.locator(".k2b-calendar-days__hour").first().textContent()).toBe("06:00");
@@ -726,7 +726,7 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       element.scrollTop = monday.offsetTop + 300;
     });
     await page.waitForURL(/cd=2026-10-12/);
-    expect(await page.locator(".k2b-calendar-header__title > span").first().textContent()).toBe("Mo, 12. Okt 2026");
+    expect(await page.locator(".k2b-calendar-header__title > span").first().textContent()).toBe("Oktober 2026");
     await rested(page);
     const monday = '.k2b-calendar-days__day[data-calendar-keys="2026-10-12"]';
     const before = await box(page, monday);
@@ -1040,9 +1040,10 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     try {
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.keyboard.press("ArrowRight");
-      await page.waitForFunction(() => document.querySelector(".k2b-calendar-header__title > span")?.textContent === "Sa, 10. Okt 2026");
+      // the head names the month; the day the arrows went to is in the address
+      await page.waitForURL(/cd=2026-10-10/);
       await page.keyboard.press("ArrowLeft");
-      await page.waitForFunction(() => document.querySelector(".k2b-calendar-header__title > span")?.textContent === "Fr, 9. Okt 2026");
+      await page.waitForURL(/cd=2026-10-09/);
     } finally {
       await page.context().close();
     }
@@ -1086,7 +1087,7 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       await dialog.getByRole("textbox").fill("18.10.");
       await dialog.getByRole("textbox").press("Enter");
       await page.waitForURL(/cd=2026-10-18/);
-      expect(await title(page)).toBe("So, 18. Okt 2026");
+      expect(await title(page)).toBe("Oktober 2026");
       expect(await page.locator('[data-calendar-keys="2026-10-18"]').count()).toBe(1);
     } finally {
       await page.context().close();
