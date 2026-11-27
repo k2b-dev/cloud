@@ -32,7 +32,13 @@ export const compactDay = (value: string, context?: DateContext) => {
   }).format(new Date(value));
 };
 
+/** A moment as its time when it is today in the zone, else as day and time, with how long ago: "10:41 (vor 1 Minute)". */
 export const compactDateWithDelta = (value: string, context?: PulseDateContext) => {
   const resolved = dateContext(context);
-  return `${compactDate(value, resolved)} (${dates.formatTimeSpan(value, { ...resolved, base: context?.now ?? new Date() })})`;
+  const now = context?.now ?? new Date();
+  const zone = resolved.timeZone ?? "UTC";
+  const today =
+    dates.instantToZonedInput(value, zone).slice(0, 10) === dates.instantToZonedInput(new Date(now).toISOString(), zone).slice(0, 10);
+  const at = today ? compactDate(value, resolved) : `${compactDay(value, resolved)} ${compactDate(value, resolved)}`;
+  return `${at} (${dates.formatTimeSpan(value, { ...resolved, base: now })})`;
 };

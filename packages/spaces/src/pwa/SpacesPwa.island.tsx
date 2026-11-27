@@ -17,6 +17,7 @@ import {
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { SpaceLiveEventSchema } from "@/live-events";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { OverviewViewSchema } from "@/overview-contracts";
@@ -545,7 +546,11 @@ export default function SpacesPwa(props: Props) {
             lead={
               <Show when={head().color} fallback={<i class="ti ti-user-check spaces-pwa__lead-icon" aria-hidden="true" />}>
                 {(color) => (
-                  <span class="spaces-pwa__dot spaces-pwa__dot--head" style={{ "background-color": color() }} aria-hidden="true" />
+                  <span
+                    class="spaces-pwa__dot spaces-pwa__dot--head"
+                    style={{ "background-color": hexColor(color()) }}
+                    aria-hidden="true"
+                  />
                 )}
               </Show>
             }
@@ -692,7 +697,11 @@ export default function SpacesPwa(props: Props) {
             lead={
               <Show when={taskSpace()?.color}>
                 {(color) => (
-                  <span class="spaces-pwa__dot spaces-pwa__dot--head" style={{ "background-color": color() }} aria-hidden="true" />
+                  <span
+                    class="spaces-pwa__dot spaces-pwa__dot--head"
+                    style={{ "background-color": hexColor(color()) }}
+                    aria-hidden="true"
+                  />
                 )}
               </Show>
             }

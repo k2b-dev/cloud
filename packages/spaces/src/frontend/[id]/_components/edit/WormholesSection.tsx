@@ -3,6 +3,7 @@ import { Button, ColorInput, IconButton, prompts, Select, SettingsCollection, Se
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceWormhole, SpaceWormholeDestination } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { useSpaceMessages } from "../../messages";
 import { subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 import { readErrorMessage } from "./utils";
@@ -255,7 +256,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
                   ? m.wormholePositionDescription({ position: index() + 1, count: wormholes().length })
                   : m.restoreDestinationAccess
               }
-              icon={<span class="h-3 w-3 rounded-full" style={`background-color:${wormhole.color}`} />}
+              icon={<span class="h-3 w-3 rounded-full" style={`background-color:${hexColor(wormhole.color) ?? "transparent"}`} />}
             >
               <SettingsCollection.Item.Actions>
                 <SettingsCollection.Item.Reorder

@@ -17,8 +17,11 @@ Open orders of a workshop: the sidebar holds the app's places, the head holds th
 The workspace decides from its own width, on the server's page too, so nothing jumps when the page comes alive. Switch the example to 1024 and 390 px to see each.
 
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
+- **Context column:** in a split of one main column and a `Pane side` after it, the context stands beside only where the split holds both at their default widths. With less it gives way to the end of the main column at its full width, and the split scrolls in one piece: the main column is never squeezed, and nothing hides. `side={{ from: 1400 }}` asks for a large screen (a table that needs its room). It needs no room of the workspace, so the sidebar never becomes a drawer for it. A list, its reader and an info column stay beside each other as before.
+- **A detail that grows:** the same part inside a `Pane detail`, under its one head: what it is on the left, who and what happened in a `Pane side` on the right. From a window of ~1680 px beside a list of 640 px it stands in two columns, below that in reading order.
 - **Phone (below 768 px):** the sidebar leaves, and head actions hide unless they have `keep`. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
 - **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
+- **The bar names the page:** a pane with `back` and no `head` of its own, such as an editor whose name stood in the workspace's head, shows its `label` after the way back on the phone: "‹ Werkstatt  Notizen.md". The way back takes at most half the bar and is cut first; its whole name stays its hint.
 
 ## Tabs or path?
 
@@ -52,7 +55,7 @@ A column that scrolls, with no padding: a head, a status that stays, a `width` i
 
 ### Bar
 
-A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place.
+A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place. The `start` keeps a least: its name at `--k2-start-least` (16ch), or its open tab. Buttons of the `end` that do not fit beside the whole `start` move into a menu "…" at its end, in their order, or into the end's own plain `Menu` "…" as its first section (an end made outside the `Bar`, in an island of its own, gets the bar's "Mehr in dieser Leiste" instead); the primary action, a closing ×, a menu and a search stay. Only when nothing more can fold does the `start` shorten its words with "…", down to its least, never to nothing.
 
 <Props of="Bar" />
 
@@ -87,7 +90,7 @@ Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at tha
 
 - Put the app's places in `Nav`, its views in `Tabs`, and its main action in the head and in `Workspace primary`.
 - Render the detail only while the address names an entry, and give its `back` the list's address.
-- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list.
+- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list. While nothing is open, `detailEmpty` may carry a `hero`: a picture of the place as a whole, such as a [`Heat`](/en/ui/v2/content) of the mails received per day with a line that sums it up.
 - Give a long list a `scrollKey`, so back and forward return to where it was.
 
 ### Don't

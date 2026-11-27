@@ -34,7 +34,8 @@ describe("ObjectListValue", () => {
     expect(render([null])).toContain("This list cannot be displayed");
   });
   test("keeps large decimal values exact in detail views", () => {
-    expect(render([{ Amount: "9007199254740993.25", Total1: "18014398509481986.50" }])).toContain("18014398509481986.5");
+    // exact and grouped in the reader's language
+    expect(render([{ Amount: "9007199254740993.25", Total1: "18014398509481986.50" }])).toContain("18,014,398,509,481,986.5");
   });
   test("removes numeric storage padding, localizes decimals and retains units without altering snapshots", () => {
     const value = [{ Amount: "1.0000", Total1: "10.2500" }];
@@ -82,7 +83,7 @@ test("object list tables retain exact snapshot values and disclose secondary col
   expect(html).toContain("k2b-paper k2b-table-shell");
   expect(html.match(/>Positions(?:<| )/g)?.length).toBe(1);
   expect(html).not.toContain("26 rows");
-  expect(html).toContain("18014398509481986.5");
+  expect(html).toContain("18,014,398,509,481,986.5");
   expect(html).not.toContain("secondary-value");
   expect(html).not.toContain("999");
   expect(html).toContain("Show more rows");

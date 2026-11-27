@@ -1,4 +1,5 @@
 import { createEffect, createSignal, type JSX, on, Show } from "solid-js";
+import { cssColor } from "../internal/color";
 import { useAvatarMessages } from "./avatar-messages";
 import { personTint } from "./person-color";
 
@@ -48,9 +49,12 @@ export function Avatar(props: AvatarProps): JSX.Element {
   const fallback = () => props.fallback ?? initialsFor(props.name);
   const fallbackContent = () => (props.icon ? <i class={props.icon} aria-hidden="true" /> : fallback());
   const className = () => `k2b-avatar ${props.class ?? ""}`;
-  const ring = () => (props.ring === undefined ? undefined : typeof props.ring === "string" ? props.ring : "color");
+  // a ring in a colour of its own shows only when that colour is a colour
+  const ringColor = () => (typeof props.ring === "object" ? cssColor(props.ring.color) : undefined);
+  const ring = () =>
+    props.ring === undefined ? undefined : typeof props.ring === "string" ? props.ring : ringColor() ? "color" : undefined;
   const style = (): JSX.CSSProperties | string | undefined => {
-    const color = typeof props.ring === "object" ? props.ring.color : undefined;
+    const color = ringColor();
     if (color === undefined) return props.style;
     if (typeof props.style === "string") return `${props.style ? `${props.style};` : ""}--k2b-avatar-ring:${color}`;
     return { ...props.style, "--k2b-avatar-ring": color };

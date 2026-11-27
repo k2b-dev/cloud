@@ -9,6 +9,7 @@ import {
   type View,
   ViewUiSettingsSchema,
 } from "../contracts";
+import { withNormalizedSelectColors } from "../field-types/select-colors";
 import { mapDocumentTemplate } from "./document-mappers";
 import { type Form, normalizeFormConfig, toRenderableForm } from "./forms";
 import { parseJsonbRow } from "./jsonb";
@@ -77,7 +78,7 @@ const mapField = (row: DbRow): Field => ({
   description: (row.description as string | null) ?? null,
   icon: (row.icon as string | null) ?? null,
   type: row.type as string,
-  config: parseJsonbRow<Record<string, unknown>>(row.config, {}),
+  config: withNormalizedSelectColors(row.type as string, parseJsonbRow<Record<string, unknown>>(row.config, {})),
   position: row.position as number,
   required: row.required as boolean,
   presentable: (row.presentable as boolean | null) ?? false,

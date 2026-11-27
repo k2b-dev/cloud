@@ -1,5 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { For, Show } from "solid-js";
+import { hexColor } from "@/frontend/lib/color";
 import {
   CALENDAR_LIST_DAYS,
   type CalendarLookup,
@@ -91,7 +92,7 @@ export default function AgendaList(props: Props) {
                         data-kind={row.item.type}
                         data-selected={props.selectedKey === itemKey(row.item) ? "true" : undefined}
                         data-cancelled={row.item.type !== "deadline" && row.item.status === "cancelled" ? "true" : undefined}
-                        style={{ "--spaces-calendar-color": itemColor(row.item, found()?.calendar) }}
+                        style={{ "--spaces-calendar-color": hexColor(itemColor(row.item, found()?.calendar)) }}
                         onClick={(event) => props.onOpen(row.item, event.currentTarget)}
                       >
                         <span class="spaces-calendar-agenda__time">

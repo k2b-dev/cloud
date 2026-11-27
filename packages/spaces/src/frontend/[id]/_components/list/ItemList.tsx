@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { createComputed, createMemo, For, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { ItemGroupBy, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { createRetryToasts } from "../../../lib/feedback";
 import { keepHeld, type LeavingItems } from "../shared/leaving";
 import ItemRow from "./ItemRow";
@@ -37,9 +38,11 @@ function GroupHeader(props: { config: ItemListGroup; count: number; id: string }
       {/* Icon or color dot */}
       {props.config.icon && !props.config.color?.startsWith("#") && <i class={`ti ${props.config.icon} text-sm text-dimmed`} />}
       {props.config.color && !props.config.icon && (
-        <div class="h-2.5 w-2.5 shrink-0 rounded-full" style={`background-color: ${props.config.color}`} />
+        <div class="h-2.5 w-2.5 shrink-0 rounded-full" style={`background-color: ${hexColor(props.config.color) ?? "transparent"}`} />
       )}
-      {props.config.icon && props.config.color && <i class={`ti ${props.config.icon} text-sm`} style={`color: ${props.config.color}`} />}
+      {props.config.icon && hexColor(props.config.color) && (
+        <i class={`ti ${props.config.icon} text-sm`} style={`color: ${hexColor(props.config.color)}`} />
+      )}
 
       <h2 id={props.id} class="text-sm font-medium text-primary">
         {props.config.label}
