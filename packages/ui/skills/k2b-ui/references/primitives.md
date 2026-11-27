@@ -68,6 +68,14 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   back to where it was scrolled.
 - `side`: the info column of a record; quieter sections, a `more` link
   becomes a row.
+- `center`: the content stands in the middle of the column, across at its
+  own measure (at most four cards of 240 px with their gaps) and in the
+  middle of the height where it fits; taller content starts at the top and
+  scrolls, and on the phone it always starts at the top. Only for a page
+  with little on it and nothing beside it, such as the first start of an
+  app without data: one `Text type="lead"` line and `Tiles perRow={4}` with
+  the ways to start, without a sidebar. No line or box of its own; CSS
+  alone, so the server's first render already stands there.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -124,6 +132,9 @@ selected, onChange(key, on) }` puts a box on each picture; it shows under
 the pointer, with the focus, on touch, and on all tiles while one is
 selected; a selected tile is blue with a line inside its edge.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
+`perRow={n}`: at most n tiles share a row and grow with its width; a tile
+never gets narrower than 240 px for it, so below that they wrap, down to
+one under the other.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card

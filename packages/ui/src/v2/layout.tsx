@@ -414,6 +414,14 @@ export type PaneProps = {
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
    */
   scrollKey?: string;
+  /**
+   * The content stands in the middle of the column: across at its own measure, at most that of four cards (4 × 240 px
+   * with their gaps, between the text edges), and in the middle of the height where it fits. Taller content starts at
+   * the top and scrolls, as in any pane; on the phone it always starts at the top. For a page with little on it and
+   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. It draws no
+   * line and no box of its own, and it is CSS alone, so the server's first render already stands there.
+   */
+  center?: boolean;
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
@@ -472,6 +480,7 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
+      data-center={props.center ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
@@ -792,6 +801,11 @@ export type TilesProps = {
   /** The last tile makes a new thing: a dashed card, or among media a dashed picture with a plus ("Neuer Ordner"). */
   create?: TileCreate;
   /**
+   * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
+   * the page. A tile never gets narrower than 240 px for it: below that they wrap, down to one under the other.
+   */
+  perRow?: number;
+  /**
    * Media only: the tiles stand in a selection (pair it with `StatusRow selection`). Each tile has a box on its
    * picture, named by its title; it shows under the pointer, with the focus, on touch, and on every tile while one is
    * selected. A selected tile is tinted blue with a line inside its edge.
@@ -951,6 +965,8 @@ export const Tiles = (props: TilesProps) => (
     class="k2-tiles"
     data-k2-part="Tiles"
     data-variant={props.variant}
+    data-per-row={props.perRow ? "" : undefined}
+    style={props.perRow ? custom({ "--k2-per-row": String(Math.max(1, Math.floor(props.perRow))) }) : undefined}
     data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
     role="list"
     aria-label={props.label}
