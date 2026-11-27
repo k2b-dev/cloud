@@ -98,10 +98,6 @@
   --k2-h-control: 36px;
   --k2-h-control-small: 28px;
 
-  /* the least a bar's start gives way to: the name of its open page or item at its shortest (Path, the bar's fold).
-     The same token comes with #4392; this copy leaves with the main merge after it lands. */
-  --k2-start-least: 16ch;
-
   /* default column widths */
   --k2-w-side: 248px;
   --k2-w-detail: 380px;
