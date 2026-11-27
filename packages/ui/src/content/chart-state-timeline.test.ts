@@ -64,3 +64,77 @@ describe("state timeline rendering", () => {
     expect(svg).not.toContain("javascript:");
   });
 });
+
+describe("state timeline: now, runs of seconds, planned runs", () => {
+  const DAY = 86_400_000;
+  // a day of an assistant's runs: one of four seconds at 08:00, one planned at 18:00; the page passes "now" (14:00)
+  const day = (extra: Record<string, unknown> = {}) =>
+    renderStateTimelineSvg({
+      width: 480,
+      height: stateTimelineHeight(1, false),
+      domain: [0, DAY],
+      legend: false,
+      states: [
+        { state: "ok", label: "Erfolgreich", color: "#10b981" },
+        { state: "scheduled", label: "Geplant" },
+      ],
+      rows: [
+        {
+          label: "Morgenbericht",
+          intervals: [
+            { from: 8 * 3_600_000, to: 8 * 3_600_000 + 4_000, state: "ok", href: "/app/assistant/runs/r1", tooltip: "08:00, 4 s" },
+            { from: 18 * 3_600_000, to: 18 * 3_600_000 + 60_000, state: "scheduled", planned: true, tooltip: "18:00" },
+          ],
+        },
+      ],
+      nowLabel: "Jetzt",
+      plannedLabel: "geplant",
+      ...extra,
+    });
+  const attribute = (tag: string, name: string) => Number(tag.match(new RegExp(`\\b${name}="([^"]+)"`))?.[1]);
+  const rect = (svg: string, nth: number) => [...svg.matchAll(/<rect class="stdlib-chart-state-region[^>]*>/g)][nth]?.[0] ?? "";
+
+  test("a run of seconds is at least 3 units wide, centred on its start, and keeps its link and hint", () => {
+    const svg = day();
+    const run = rect(svg, 0);
+    const start = attribute(run, "x") + attribute(run, "width") / 2;
+    expect(attribute(run, "width")).toBe(3);
+    // 08:00 on the plot: the plot starts after the lane's name (6.3 units a letter and 20 of air) and ends 16 units
+    // before the right edge
+    const plotLeft = "Morgenbericht".length * 6.3 + 20;
+    expect(Math.abs(start - (plotLeft + (8 / 24) * (464 - plotLeft)))).toBeLessThan(0.01);
+    expect(svg).toContain('href="/app/assistant/runs/r1"');
+    expect(svg).toContain('data-chart-tooltip="08:00, 4 s"');
+  });
+
+  test("now is a thin line over the lanes with its word, where the page says; outside the day there is none", () => {
+    const svg = day({ now: 14 * 3_600_000 });
+    expect(svg).toMatch(/<line class="stdlib-chart-state-now"/);
+    expect(svg).toMatch(/<text class="[^"]*stdlib-chart-state-now-label"[^>]*>Jetzt<\/text>/);
+    expect(day({ now: 2 * DAY })).not.toContain("stdlib-chart-state-now");
+    // no clock of its own: without `now` there is no line
+    expect(day()).not.toContain("stdlib-chart-state-now");
+  });
+
+  test("a planned run is an outline in its state's colour, not filled, and says so to assistive technology", () => {
+    const svg = day();
+    const planned = rect(svg, 1);
+    expect(planned).toContain("data-planned");
+    expect(planned).toContain('stroke-dasharray="3 2"');
+    expect(planned).toContain('style="stroke:var(--stdlib-chart-c2);stroke-width:1.5"');
+    expect(planned).toContain('fill-opacity="0.12"');
+    // the state already says it: no "Geplant, geplant"
+    expect(svg).toContain('aria-label="Morgenbericht, Geplant"');
+    // a state whose words do not say it gets the word
+    expect(
+      day({
+        states: [
+          { state: "ok", label: "Erfolgreich" },
+          { state: "scheduled", label: "Steht an" },
+        ],
+      }),
+    ).toContain('aria-label="Morgenbericht, Steht an, geplant"');
+    // the run that happened stays filled
+    expect(rect(svg, 0)).not.toContain("data-planned");
+  });
+});

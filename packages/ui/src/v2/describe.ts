@@ -276,7 +276,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       case "Back": {
         // the way back of a detail on the phone: its words, and whether it leads by its address
         const button = element.querySelector("[data-k2-part='Button']");
-        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}`;
+        const name = element.querySelector(":scope > .k2-pane-back-name")?.textContent;
+        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}${
+          name ? ` · names ${quote(name)}` : ""
+        }`;
       }
       case "FilterBar": {
         // the statements as they read, whether the state differs from its view, and whether views can be saved
@@ -397,7 +400,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "Canvas": {
-        const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
+        const height = element.hasAttribute("data-fill")
+          ? "fills its pane"
+          : (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
       }
       case "Field": {
@@ -557,6 +562,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
+      // the way back beside the name of what is open gives it the room and is cut on purpose; its whole name is its hint
+      if (control.parentElement?.querySelector(":scope > .k2-pane-back-name") && control.getAttribute("title")) continue;
       // words kept only as the name of a control that gave way to its symbol are not cut: they are not in sight at all.
       // Only a label hidden that way counts (at most 1 px, taken out of the flow and clipped away, as sr-only text);
       // a label squeezed to 1 px in a broken layout is still cut.
