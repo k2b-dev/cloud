@@ -188,6 +188,10 @@ words on their text edge, never at the right: "All deliveries ›"; its
 the head or between entries, one line at the end. A long title (a
 question, a name) wraps onto more lines and the head grows with it; no word
 is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
+A section of a list that people fold (Chat's sections) takes `open` and
+`onOpenChange`: a chevron at the end of its head folds it, the app keeps the
+state, and the section keeps its head, rhythm and line, without a frame (a
+`Group` is a framed thing, not a part of a list).
 
 ### Group
 
@@ -345,7 +349,9 @@ text's size.
 
 One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
-lines instead of cutting a thing.
+lines instead of cutting a thing. In a table cell its `Text` gives way to
+the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
+name wraps in a small table and ends with "…" in one with column widths.
 
 ### Icon, Avatar, Chip, Progress, Ticks, Heat
 
