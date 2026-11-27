@@ -99,6 +99,8 @@ export const aiAreaMessages = i18n.define({
       recs: "Model classes",
       providers: "Providers",
       on: "On",
+      unpricedModels: ({ p, names }: { p: number; names: string }) =>
+        `${p} active models have no prices and stay unlimited: ${names}${p > 5 ? " …" : ""}. Budgets count reference costs only.`,
       budgetsOnHint: "Off: no rule limits anyone; the rules stay as they are.",
       assignment: "Assignment",
       noGrants: "Nobody yet",
@@ -743,6 +745,8 @@ export const aiAreaMessages = i18n.define({
       recs: "Modellklassen",
       providers: "Anbieter",
       on: "An",
+      unpricedModels: ({ p, names }: { p: number; names: string }) =>
+        `${p} aktive Modelle haben keine Preise und bleiben unbegrenzt: ${names}${p > 5 ? " …" : ""}. Budgets zählen nur Referenzkosten.`,
       budgetsOnHint: "Aus: keine Regel begrenzt jemanden; die Regeln bleiben, wie sie sind.",
       assignment: "Zuweisung",
       noGrants: "Noch niemand",

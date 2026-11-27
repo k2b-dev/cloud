@@ -712,3 +712,29 @@ test("budgets lead with the cost of 30 days, and the switch in the head turns ev
   await flip(main(), "On");
   expect((await write).postDataJSON()).toEqual(expect.objectContaining({ enabled: false, revision: 4 }));
 });
+
+for (const status of [403, 409, 500])
+  test(`releasing the background brake names why HTTP ${status} refused it`, async () => {
+    await page.route("**/api/admin/core/ai-quotas/background/release", (route) => json(route, { message: "test" }, status));
+    await goto("sec=budgets&rule=brake&state=worst");
+    await button("Release brake").click();
+    await main()
+      .getByText(status === 403 ? /do not have permission/ : status === 409 ? /unknown costs still prevent/ : /Please try again/)
+      .first()
+      .waitFor();
+    expect(errors).toEqual([]);
+  });
+
+test("a new rule offers only priced active chat models, and a rule whose model left keeps its scope", async () => {
+  await goto("sec=budgets&rule=new&state=empty");
+  await main().getByRole("combobox").first().click();
+  await page.getByRole("option", { name: "All models" }).waitFor();
+  // Llama is disabled and unpriced, Whisper is audio: neither can carry a budget
+  expect(await page.getByRole("option", { name: /Llama|Whisper/ }).count()).toBe(0);
+  await page.keyboard.press("Escape");
+  await goto("sec=budgets&rule=removed-model&state=orphan");
+  expect(await main().getByRole("combobox").first().innerText()).toContain("removed-model");
+  await main().getByRole("spinbutton").first().fill("12");
+  expect(await button("Save").first().isDisabled()).toBe(false);
+  expect(errors).toEqual([]);
+});

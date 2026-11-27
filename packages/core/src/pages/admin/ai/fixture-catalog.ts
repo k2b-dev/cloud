@@ -20,7 +20,8 @@ export type AiCatalogFixtureState =
   | "unassigned"
   | "conflict"
   | "listfail"
-  | "saving";
+  | "saving"
+  | "orphan";
 
 const ADMIN = "11111111-1111-4111-8111-111111111111";
 
@@ -212,7 +213,7 @@ export const budgetsFixture = (input: AiFixtureInput): AiBudgetsData => {
                     displayName: worstCase
                       ? "Arbeitsgruppe für maschinelles Lernen und angewandte Sprachverarbeitung"
                       : "Gruppe Entwicklung",
-                    limit: worstCase ? 9_999_999.99 : 30,
+                    limit: worstCase ? 999_999.99 : 30,
                   },
                   ...(worstCase
                     ? [
@@ -231,6 +232,18 @@ export const budgetsFixture = (input: AiFixtureInput): AiBudgetsData => {
                 ],
                 peopleAtLimit: 4,
               },
+              // a rule whose model was removed from the catalog after the rule was made
+              ...(input.state === "orphan"
+                ? [
+                    {
+                      scope: "removed-model",
+                      hours: 24,
+                      anchor: "2026-10-26T00:00:00.000Z",
+                      grants: [{ principal: { type: "authenticated" as const }, limit: 5 }],
+                      peopleAtLimit: 0,
+                    },
+                  ]
+                : []),
             ],
     },
     personalizationTokens: 100_000,

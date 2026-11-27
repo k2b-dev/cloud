@@ -94,6 +94,8 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
     }
   };
   const spend = () => props.data.spend;
+  /** Active chat models without prices: budgets never limit them, as the rules editor always said. */
+  const unpriced = () => props.data.models.filter((model) => !model.priced).map((model) => model.label);
   const days = () => spend()?.days ?? [];
 
   return (
@@ -162,6 +164,11 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
               href={aiAreaHref({ sec: "budgets", rule: "brake" })}
             />
           </Cells>
+          <Show when={unpriced().length > 0}>
+            <Notice tone="note" icon="coin-off">
+              {t().unpricedModels({ p: unpriced().length, names: unpriced().slice(0, 5).join(", ") })}
+            </Notice>
+          </Show>
           <Show when={(spend()?.unknown ?? 0) > 0}>
             <Notice tone="warn">{t().spendUnknown({ p: spend()!.unknown })}</Notice>
           </Show>
@@ -326,7 +333,11 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
     base()
       .rules.map((entry) => entry.scope)
       .filter((entry) => entry !== scope());
+  // a stored rule whose model left the catalog keeps its scope visible (and editable in every other field)
   const scopeOptions = () => [
+    ...(rule().scope !== "*" && !props.models.some((model) => model.id === rule().scope)
+      ? [{ value: rule().scope, label: rule().scope }]
+      : []),
     { value: "*", label: t().allModels, disabled: usedScopes().includes("*") },
     ...props.models
       .filter((model) => model.priced)
