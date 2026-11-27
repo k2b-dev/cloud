@@ -86,3 +86,16 @@ test("checks test helpers as well as test files, without interpreting child-proc
     "packages/demo/test/preload.ts",
   ]);
 });
+
+// #4404: a file that registers the SSR compiler itself is compiled before that, so its own JSX fails on load
+test("a file that registers the SSR compiler writes no JSX of its own", () => {
+  const register =
+    'import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";\nregisterSsrTestPlugin({ dev: true, rootDir: "/tmp/x" });\n';
+  const withJsx = checkSource("packages/ui/src/content/a.render.test.tsx", `${register}void (() => <Calendar date="2026-07-15" />);\n`);
+  expect(withJsx.map((finding) => [finding.line, finding.message.split(",")[0]])).toEqual([
+    [3, "This file registers the SSR compiler itself"],
+  ]);
+  expect(checkSource("packages/ui/src/content/b.render.test.tsx", `${register}void (() => createComponent(Calendar, {}));\n`)).toEqual([]);
+  // JSX is fine where nothing registers in the file: a module it imports after the registration
+  expect(checkSource("packages/ui/src/content/c.test-fixture.tsx", "export const C = () => <div />;\n")).toEqual([]);
+});

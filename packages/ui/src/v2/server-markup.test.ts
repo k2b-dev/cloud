@@ -144,6 +144,14 @@ test("a row at a level sends it in the server's markup: aria-level in a list, th
   }
 });
 
+// The page's live region is in the server markup: a region that exists before its first news is heard.
+test("a Workspace brings the page's live region in its server markup: a status and an alert, empty", () => {
+  const markup = renderToString(() => createComponent(Workspace, { children: createComponent(Pane, { label: "Liste", children: "" }) }));
+  expect(markup).toContain('data-k2-part="Announcer"');
+  expect(markup).toMatch(/role="status"[^>]*aria-live="polite"/);
+  expect(markup).toMatch(/role="alert"[^>]*aria-live="assertive"/);
+});
+
 test("Failed writes out the button a `Button` with its icon and words draws, so a change to Button reaches it", async () => {
   const { Failed } = await import("./failed");
   const { Button } = await import("./button");
