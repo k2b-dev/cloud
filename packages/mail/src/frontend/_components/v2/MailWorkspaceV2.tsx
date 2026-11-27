@@ -393,7 +393,10 @@ export default function MailWorkspaceV2(props: {
       .$get({ param: { mailboxId } })
       .then(async (response) => {
         // without it the reader shows its sentence alone, as before
-        if (response.ok) setLoaded({ mailboxId, received: await response.json() });
+        if (!response.ok) return;
+        // null: it could not be counted now (the server was busy)
+        const received = await response.json();
+        if (received) setLoaded({ mailboxId, received });
       })
       .catch(() => undefined)
       .finally(() => loading.delete(mailboxId));

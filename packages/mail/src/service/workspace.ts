@@ -57,7 +57,7 @@ import * as mailboxes from "./mailboxes";
 import type { ConversationRowState, ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
 import * as publicResources from "./public-resources";
-import { loadReceivedPerDay, type MailReceivedPerDay } from "./received-per-day";
+import { type MailReceivedPerDay, peekReceivedPerDay } from "./received-per-day";
 import type { ConversationReminder } from "./reminders";
 import * as reminders from "./reminders";
 import type { SavedConversationView } from "./saved-views";
@@ -1111,8 +1111,8 @@ export const loadMailboxPageData = async (pageParams: {
    */
   dropAssignees?: "load" | "keep";
   /**
-   * "load": the mails received per day in `timeZone`, one bounded aggregate (a v2 page load or mailbox switch). Without
-   * it the answer leaves them out (null), so navigating inside a mailbox never counts again.
+   * "load": the mails per day in `timeZone` when the cache holds them (a v2 page load or mailbox switch that opens no
+   * mail); the page never waits for a count. Without it the answer leaves them out (null).
    */
   receivedPerDay?: "load" | "keep";
   timeZone?: string;
@@ -1179,17 +1179,9 @@ export const loadMailboxPageData = async (pageParams: {
           params.mailboxId,
         )
       : null,
+    // only from the cache: the page never waits for a year count; on a miss the empty reader loads it itself
     pageParams.receivedPerDay === "load" && pageParams.timeZone
-      ? loadReceivedPerDay({ mailboxId: params.mailboxId, access: permission.data, timeZone: pageParams.timeZone }).catch(
-          (error: unknown) => {
-            // The reader's picture is extra: without it the empty reader shows its sentence alone.
-            log.warn("Failed to load the mails received per day", {
-              mailboxId: params.mailboxId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return null;
-          },
-        )
+      ? peekReceivedPerDay({ mailboxId: params.mailboxId, access: permission.data, timeZone: pageParams.timeZone })
       : null,
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);

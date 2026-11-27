@@ -133,7 +133,7 @@ test("a deep link to a mail counts nothing; once the reader is empty it loads th
 test("a day under the pointer shows one tip with its date, its count and what came in and went out", async () => {
   await withPage(1440, "", async (page) => {
     await page.locator('[data-detail-empty] [aria-current="date"]').hover();
-    const tip = page.getByRole("tooltip");
+    const tip = page.locator('[role="tooltip"]');
     await tip.waitFor();
     expect(await page.locator('[role="tooltip"]').count()).toBe(1);
     expect(await tip.innerText()).toMatch(/^Fr\., 27\. Nov\. · \d+ Nachrichten\n\d+ eingehend · \d+ gesendet$/);

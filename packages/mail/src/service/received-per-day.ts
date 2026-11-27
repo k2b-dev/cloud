@@ -94,30 +94,112 @@ const queryReceivedPerDay = async (params: {
   return { today: params.today, days: rows.map((row) => ({ date: row.day, incoming: row.incoming, sent: row.sent })) };
 };
 
+const keyOf = (params: { mailboxId: string; access: MailboxAccess; timeZone: string }, today: string) => {
+  // Mailbox ids are random UUIDs, so a key never meets another database's mailbox.
+  const reader = params.access.scope === "mailbox" ? "mailbox" : `assigned:${params.access.userId ?? params.access.serviceAccountId}`;
+  return `mail:received-per-day:v1:${params.mailboxId}:${reader}:${params.timeZone}:${today}`;
+};
+
+const read = async (key: string, today: string): Promise<MailReceivedPerDay | null> => {
+  const raw = await command("GET", [key]);
+  if (typeof raw !== "string") return null;
+  try {
+    const cached = snapshotSchema.safeParse(JSON.parse(raw));
+    return cached.success && cached.data.today === today ? cached.data : null;
+  } catch {
+    return null;
+  }
+};
+
+// As the view-count cache: one count per key at a time in this process (`pending`) and across replicas (a fill lease),
+// and at most one fewer counts at once than the pool has connections, so a cache outage cannot take the pool.
+const FILL_LEASE_MS = 10_000; // Cloud's normal request idle budget; a crashed owner releases itself
+const FILL_POLL_MS = 50;
+const release = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
+const pending = new Map<string, Promise<MailReceivedPerDay | null>>();
+const activeLoads = new Set<Promise<MailReceivedPerDay>>();
+/** How many year counts may run at once in this process: one fewer than the pool's connections. */
+export const receivedPerDayLoadLimit = () => Math.max(1, (sql.options.max ?? 10) - 1);
+
+/** Counts now, or answers null when as many counts already run as the pool allows: the reader then shows no picture. */
+const boundedLoad = async (load: () => Promise<MailReceivedPerDay>): Promise<MailReceivedPerDay | null> => {
+  if (activeLoads.size >= receivedPerDayLoadLimit()) return null;
+  const task = load();
+  activeLoads.add(task);
+  try {
+    return await task;
+  } finally {
+    activeLoads.delete(task);
+  }
+};
+
+const fill = (key: string, today: string, load: () => Promise<MailReceivedPerDay>): Promise<MailReceivedPerDay | null> => {
+  const existing = pending.get(key);
+  if (existing) return existing;
+  const task = (async () => {
+    const token = crypto.randomUUID();
+    const leaseKey = `${key}:fill`;
+    const deadline = Date.now() + FILL_LEASE_MS;
+    let claimed = false;
+    try {
+      for (;;) {
+        claimed = (await command("SET", [leaseKey, token, "NX", "PX", String(FILL_LEASE_MS)])) === "OK";
+        if (claimed) break;
+        // another replica counts: wait for its answer, and give up with its lease
+        const done = await read(key, today);
+        if (done) return done;
+        if (Date.now() >= deadline) return null;
+        await Bun.sleep(FILL_POLL_MS);
+      }
+    } catch {
+      // no cache: count from the database, bounded as above
+      await command("EVAL", [release, "1", leaseKey, token]).catch(() => {});
+      return await boundedLoad(load);
+    }
+    try {
+      // another replica may have finished between the first read and the lease
+      const done = await read(key, today).catch(() => null);
+      if (done) return done;
+      const fresh = await boundedLoad(load);
+      if (fresh) await command("SET", [key, JSON.stringify(fresh), "PX", String(RECEIVED_PER_DAY_TTL_MS)]).catch(() => undefined);
+      return fresh;
+    } finally {
+      if (claimed) await command("EVAL", [release, "1", leaseKey, token]).catch(() => {});
+    }
+  })().finally(() => pending.delete(key));
+  pending.set(key, task);
+  return task;
+};
+
 /**
- * The year of mail of a mailbox, for the v2 reader while none is open. One bounded aggregate (one statement, at most
- * one row per day), reused per mailbox, reader, time zone and day for `RECEIVED_PER_DAY_TTL_MS`. Without the cache it
- * still answers, from the database. Loaded with the page and with a mailbox switch only, never per message or per
- * navigation inside a mailbox (DATA-13).
+ * The year of mail of a mailbox, for the v2 reader while none is open: one bounded aggregate (one statement, at most
+ * one row per day), reused per mailbox, reader, time zone and day for `RECEIVED_PER_DAY_TTL_MS`, counted once at a time
+ * per key. Null when it cannot be counted now (as many counts run as the pool allows, or another replica's count
+ * outlasted its lease): the reader then shows its sentence alone. Never per message or per navigation (DATA-13).
  */
 export const loadReceivedPerDay = async (params: {
   mailboxId: string;
   access: MailboxAccess;
   timeZone: string;
   now?: Date;
-}): Promise<MailReceivedPerDay> => {
+}): Promise<MailReceivedPerDay | null> => {
   const today = dateIn(params.now ?? new Date(), params.timeZone);
-  // Mailbox ids are random UUIDs, so a key never meets another database's mailbox.
-  const reader = params.access.scope === "mailbox" ? "mailbox" : `assigned:${params.access.userId ?? params.access.serviceAccountId}`;
-  const key = `mail:received-per-day:v1:${params.mailboxId}:${reader}:${params.timeZone}:${today}`;
-  try {
-    const raw = await command("GET", [key]);
-    const cached = typeof raw === "string" ? snapshotSchema.safeParse(JSON.parse(raw)) : null;
-    if (cached?.success && cached.data.today === today) return cached.data;
-  } catch {
-    // no cache: count from the database
-  }
-  const fresh = await queryReceivedPerDay({ ...params, today });
-  await command("SET", [key, JSON.stringify(fresh), "PX", String(RECEIVED_PER_DAY_TTL_MS)]).catch(() => undefined);
-  return fresh;
+  const key = keyOf(params, today);
+  const cached = await read(key, today).catch(() => null);
+  if (cached) return cached;
+  return fill(key, today, () => queryReceivedPerDay({ ...params, today }));
+};
+
+/**
+ * The year of mail only when it is in the cache: a page or a mailbox switch never waits for a count. On a miss the
+ * empty reader loads it once from `/received-per-day`.
+ */
+export const peekReceivedPerDay = async (params: {
+  mailboxId: string;
+  access: MailboxAccess;
+  timeZone: string;
+  now?: Date;
+}): Promise<MailReceivedPerDay | null> => {
+  const today = dateIn(params.now ?? new Date(), params.timeZone);
+  return read(keyOf(params, today), today).catch(() => null);
 };

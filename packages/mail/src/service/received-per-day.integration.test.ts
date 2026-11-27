@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
-import { loadReceivedPerDay } from "./received-per-day";
+import { loadReceivedPerDay, peekReceivedPerDay, receivedPerDayLoadLimit } from "./received-per-day";
 
 // The mails a mailbox received per day, for the v2 reader while none is open: one statement, a day in the reader's time
 // zone, received means filed and never in Sent, Drafts or Junk, and an assigned-only reader counts only what it may see.
@@ -19,6 +19,7 @@ suite("Mail received per day", () => {
   const users: string[] = [];
   let mailboxId = "";
   let readerId = "";
+  let otherReaderId = "";
   const folders: Record<"inbox" | "sent" | "junk" | "drafts" | "all" | "archive" | "trash", string> = {
     inbox: "",
     sent: "",
@@ -72,6 +73,7 @@ suite("Mail received per day", () => {
   beforeAll(async () => {
     const owner = await user("owner");
     readerId = (await user("reader")).id;
+    otherReaderId = (await user("other-reader")).id;
     const context: MailRequestContext = {
       actor: {
         kind: "user",
@@ -104,6 +106,7 @@ suite("Mail received per day", () => {
     const assigned = await conversation();
     const other = await conversation();
     await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${assigned}::uuid, ${readerId}::uuid)`;
+    await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${other}::uuid, ${otherReaderId}::uuid)`;
     // today in Berlin: one in the inbox, and one at 00:30 Berlin time, which is still the 26th in UTC
     await message(assigned, "2026-11-27T08:00:00Z", ["inbox"]);
     await message(other, "2026-11-26T23:30:00Z", ["inbox"]);
@@ -162,24 +165,81 @@ suite("Mail received per day", () => {
     }
   });
 
-  test("an assigned-only reader counts only the conversations assigned to it, by the list's rule", async () => {
-    const received = await loadReceivedPerDay({
+  test("two assigned-only readers each count their own conversations; the cache keeps them apart", async () => {
+    const mine = await loadReceivedPerDay({
       mailboxId,
       access: { scope: "assigned", permission: "read", userId: readerId },
       timeZone,
       now,
     });
-    expect(received.days).toEqual([
+    expect(mine?.days).toEqual([
       { date: "2026-11-20", incoming: 1, sent: 0 },
       { date: "2026-11-27", incoming: 1, sent: 0 },
+    ]);
+    const theirs = await loadReceivedPerDay({
+      mailboxId,
+      access: { scope: "assigned", permission: "read", userId: otherReaderId },
+      timeZone,
+      now,
+    });
+    expect(theirs?.days.map((day) => day.date)).toEqual([
+      "2025-11-22",
+      "2026-11-17",
+      "2026-11-18",
+      "2026-11-19",
+      "2026-11-26",
+      "2026-11-27",
     ]);
   });
 
   test("a day is the reader's: in UTC the mail of 00:30 Berlin time falls on the day before, the late one on today", async () => {
     const received = await loadReceivedPerDay({ mailboxId, access: everything, timeZone: "UTC", now });
-    expect(received.days.slice(-2)).toEqual([
+    expect(received?.days.slice(-2)).toEqual([
       { date: "2026-11-26", incoming: 1, sent: 1 },
       { date: "2026-11-27", incoming: 2, sent: 0 },
     ]);
+  });
+
+  test("concurrent misses count once; a page only peeks and never counts", async () => {
+    const meter = await meterSql();
+    try {
+      const paris = { mailboxId, access: everything, timeZone: "Europe/Paris", now };
+      const peeked = await meter.during(async () => {
+        expect(await peekReceivedPerDay(paris)).toBeNull();
+      });
+      expect(peeked).toHaveLength(0);
+      let answers: unknown[] = [];
+      const statements = await meter.during(async () => {
+        answers = await Promise.all(Array.from({ length: 5 }, () => loadReceivedPerDay(paris)));
+      });
+      expect(statements).toHaveLength(1);
+      expect(new Set(answers.map((answer) => JSON.stringify(answer))).size).toBe(1);
+      expect(await peekReceivedPerDay(paris)).toEqual(answers[0] as never);
+    } finally {
+      await meter.close();
+    }
+  });
+
+  test("without the cache the counts run against the database, never more at once than the pool allows", async () => {
+    const meter = await meterSql();
+    // after the meter: it may bind the runtime's clients anew
+    const down = spyOn(redis, "send").mockRejectedValue(new Error("Valkey down"));
+    try {
+      const limit = receivedPerDayLoadLimit();
+      // one key per time zone: no two calls share a count
+      const zones = Intl.supportedValuesOf("timeZone")
+        .filter((zone) => zone.startsWith("Europe/"))
+        .slice(0, limit + 3);
+      let answers: unknown[] = [];
+      const statements = await meter.during(async () => {
+        answers = await Promise.all(zones.map((zone) => loadReceivedPerDay({ mailboxId, access: everything, timeZone: zone, now })));
+      });
+      expect(statements).toHaveLength(limit);
+      expect(answers.filter((answer) => answer === null)).toHaveLength(3);
+      expect(down).toHaveBeenCalled();
+    } finally {
+      await meter.close();
+      down.mockRestore();
+    }
   });
 });
