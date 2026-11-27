@@ -405,7 +405,6 @@ export const Chip = (props: ChipProps) => {
       <span class="k2-chip-text" title={props.tag && typeof words() === "string" ? String(words()) : undefined}>
         {words()}
       </span>
-      {props.children}
       <Show when={props.remove}>
         {(remove) => (
           <button
