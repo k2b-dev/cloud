@@ -233,6 +233,17 @@ describe("the notes list on v2", () => {
     }
   }, 60_000);
 
+  test("an order alone narrows nothing, so the bar shows no second count", async () => {
+    const { context, tab, errors } = await open(wide, `${PATH}?sort=title.asc`);
+    try {
+      expect(await titles(tab)).toHaveLength(10);
+      expect(await tab.locator(".k2-fbar-results").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("choosing a long tag in the sidebar shortens only the tag chip; Favoriten and Zuletzt keep their place and width", async () => {
     const { context, tab, errors } = await open(wide, PATH, { sample: "worst" });
     try {
