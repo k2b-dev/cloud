@@ -19,7 +19,7 @@ import type { CodeReviewComment } from "../../../code/review-contracts";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { CODE_LIMIT_KEYS } from "./area";
-import type { CodeAreaData } from "./view";
+import type { CodeAreaData } from "./data";
 
 const h = (seed: string) => seed.repeat(64).slice(0, 64);
 /** Freshness values are relative to now, so screenshots read "4 minutes ago" on any day. */
@@ -42,7 +42,7 @@ const V = {
 };
 export const FIXTURE_VERSIONS = V;
 
-export const fixtureSummary = (): CodeAdminSummary => ({ approvals: 4, reports: 1, codes: 8, groups: 2, cleanup: 2 });
+export const fixtureSummary = (): CodeAdminSummary => ({ approvals: 4, reports: 1, codes: 14, groups: 2, cleanup: 2 });
 
 export const fixtureApprovals = (): CodeAdminApproval[] => [
   {
@@ -628,6 +628,19 @@ export const fixtureCodes = (): CodeAdminCode[] => [
     ago(60 * 24 * 5),
     "policy_changed",
   ),
+  code("c_urlaub", "Urlaubsanträge vorsortieren", { kind: "person", userId: FIXTURE_PEOPLE.jana }, "Jana Probe", "active", ago(35)),
+  code("c_wartung", "Wartungstermine erinnern", { kind: "app", appId: "werkstatt" }, null, "active", ago(18)),
+  code(
+    "c_aufgabe",
+    "Aufgaben aus Mails anlegen",
+    { kind: "resource", ref: { type: "spaces.space", id: "s_logistik" } },
+    "Space Logistik",
+    "active",
+    ago(3),
+  ),
+  code("c_bericht", "Monatsbericht Werkstatt", { kind: "app", appId: "werkstatt" }, null, "deleting", ago(60 * 24 * 9)),
+  code("c_eingang", "Eingangsrechnungen prüfen", { kind: "person", userId: FIXTURE_PEOPLE.ben }, "Ben Schulz", "active", ago(26)),
+  code("c_notiz", "Notizen zusammenfassen", { kind: "person", userId: FIXTURE_PEOPLE.mia }, "Mia Koch", "draft", null),
 ];
 export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
   const base = fixtureCodes().find((code) => code.id === codeId) ?? fixtureCodes()[4]!;
@@ -928,7 +941,7 @@ export const fixtureData = (): CodeAreaData => ({
   approvals: { items: fixtureApprovals(), nextCursor: null },
   decided: fixtureDecided(),
   approval: null,
-  codes: { items: fixtureCodes(), total: 8, owners: 5, nextCursor: null },
+  codes: { items: fixtureCodes(), total: 14, owners: 7, nextCursor: null },
   code: null,
   policy: fixturePolicy(),
   effective: null,
@@ -944,6 +957,36 @@ export const fixtureData = (): CodeAreaData => ({
         deleteAt: "2026-12-01T12:00:00.000Z",
         lastAccess: "2026-10-30T09:00:00.000Z",
         namespace: "code_c_rueck_fixture",
+      },
+      {
+        codeId: "c_altlist",
+        title: "Alte Lieferantenliste",
+        owner: "Tom Beispiel",
+        bytes: 22_020_096,
+        since: "2026-10-12T08:00:00.000Z",
+        deleteAt: "2026-11-11T08:00:00.000Z",
+        lastAccess: "2026-10-11T17:20:00.000Z",
+        namespace: "code_c_altlist_fixture",
+      },
+      {
+        codeId: "c_messe",
+        title: "Messe-Anmeldungen 2025",
+        owner: "Postfach messe@example.org",
+        bytes: 786_432,
+        since: "2026-09-30T10:00:00.000Z",
+        deleteAt: null,
+        lastAccess: null,
+        namespace: "code_c_messe_fixture",
+      },
+      {
+        codeId: "c_inventur",
+        title: "Inventur Lager Süd",
+        owner: "Mia Koch",
+        bytes: null,
+        since: "2026-10-28T06:00:00.000Z",
+        deleteAt: "2026-11-27T06:00:00.000Z",
+        lastAccess: "2026-10-27T15:45:00.000Z",
+        namespace: "code_c_inventur_fixture",
       },
     ],
     nextCursor: null,
@@ -979,6 +1022,8 @@ export const CODE_FIXTURE_STATES = [
   "noexamples",
   "followup",
   "long",
+  "worst",
+  "huge",
 ] as const;
 export type CodeFixtureState = (typeof CODE_FIXTURE_STATES)[number];
 
@@ -1008,6 +1053,8 @@ const limitEntries = (locale: string): SettingFieldDef[] =>
 export function codeFixtureData(state: CodeFixtureState, query: Record<string, string | undefined>, locale = "de"): CodeAreaData {
   const data = fixtureData();
   data.limits = limitEntries(locale);
+  if (state === "worst") return worstData(data, query);
+  if (state === "huge") return hugeData(data);
   if (state === "empty")
     return {
       ...data,
@@ -1082,4 +1129,109 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
   }
   if (query.sec === "effective" && query.id) data.effective = state === "missing" ? "missing" : fixtureEffective();
   return data;
+}
+
+const LONG = "Eingangsrechnungen der Niederlassung Nord-Ost automatisch prüfen, kontieren und an die Buchhaltung weiterleiten";
+const UNBROKEN = "rechnungseingang.niederlassung-nord-ost.buchhaltung@verwaltung.example.org";
+
+/** break-ui: long and one-letter names, unbreakable addresses, missing names, non-Latin text, emoji, huge numbers. */
+function worstData(data: CodeAreaData, query: Record<string, string | undefined>): CodeAreaData {
+  const approvals = fixtureApprovals();
+  const worstApprovals: CodeAdminApproval[] = [
+    { ...approvals[0]!, title: LONG, ownerName: UNBROKEN, author: { id: FIXTURE_PEOPLE.lea, name: "Maximiliane-Theodora von Hohenzollern-Sigmaringen" } },
+    { ...approvals[1]!, title: "X", author: { id: null, name: null }, ownerName: null, number: 1234 },
+    { ...approvals[2]!, title: "請求書を経理に転送する 📨", author: { id: FIXTURE_PEOPLE.mia, name: "李小龍" } },
+    { ...approvals[3]!, title: "🧾🧾🧾", reason: null },
+  ];
+  const codes = fixtureCodes();
+  const worstCodes: CodeAdminCode[] = [
+    { ...codes[0]!, title: LONG, ownerName: UNBROKEN },
+    { ...codes[1]!, title: "Q", ownerName: null },
+    { ...codes[2]!, title: "Ежедневный отчёт для склада 🏭" },
+    { ...codes[3]!, title: "😀", lastRun: { at: ago(1), state: "failed" } },
+    ...codes.slice(4),
+  ];
+  const runners = fixtureRunners();
+  return {
+    ...data,
+    summary: { approvals: 12_345, reports: 987, codes: 1_234_567, groups: 999, cleanup: 10_001 },
+    approvals: { items: worstApprovals, nextCursor: "2026-11-01T11:10:00.123456Z|e0000000-0000-4000-8000-000000000001" },
+    codes: { items: worstCodes, total: 1_234_567, owners: 98_765, nextCursor: "eyJ0IjoiWiJ9" },
+    approval:
+      query.sec === "approvals" && query.id
+        ? (() => {
+            const detail = fixtureApprovalDetail("normal");
+            return { ...detail, code: { ...detail.code, title: LONG }, ownerName: UNBROKEN };
+          })()
+        : null,
+    code:
+      query.sec === "code" && query.id
+        ? (() => {
+            const detail = fixtureCodeDetail(query.id);
+            return {
+              ...detail,
+              code: { ...detail.code, title: LONG, ownerName: UNBROKEN },
+              database: detail.database ? { ...detail.database, bytes: 104_857_599, limit: 104_857_600 } : detail.database,
+            };
+          })()
+        : null,
+    databases: {
+      items: [
+        {
+          codeId: "c_worst",
+          title: LONG,
+          owner: UNBROKEN,
+          bytes: 987_654_321_098,
+          since: "2026-01-01T00:00:00.000Z",
+          deleteAt: null,
+          lastAccess: null,
+          namespace: "code_c_worst_fixture",
+        },
+        { codeId: "c_x", title: "X", owner: "李", bytes: 0, since: "2026-11-01T00:00:00.000Z", deleteAt: "2026-12-01T00:00:00.000Z", lastAccess: "2026-11-01T00:00:00.000Z", namespace: "code_c_x_fixture" },
+      ],
+      nextCursor: "c_zzzz",
+    },
+    cleanup: {
+      items: [{ ...fixtureCleanup()[0]!, title: LONG, attempts: 9_999 }, { ...fixtureCleanup()[1]!, title: "Ö" }],
+      nextCursor: "70000000-0000-4000-8000-000000000009",
+    },
+    runners: {
+      ...runners,
+      queued: 99_999,
+      oldestWaitingMs: 7_200_000,
+      instances: 128,
+      freeSlots: 0,
+      slots: 4_096,
+      runners: runners.runners.map((runner) => ({ ...runner, freeSlots: 0, busySlots: 999 })),
+    },
+    history: {
+      items: [
+        { ...fixtureHistory()[0]!, by: "Maximiliane-Theodora von Hohenzollern-Sigmaringen" },
+        { ...fixtureHistory()[2]!, by: null },
+      ],
+      nextPage: 2,
+    },
+    policy:
+      data.policy !== null && data.policy !== "failed" && data.policy !== "missing"
+        ? {
+            ...data.policy,
+            updatedByName: "李小龍",
+            usage: { ...data.policy.usage, read: 1_234_567 },
+            groups: [
+              { id: FIXTURE_GROUPS.buchhaltung, name: `${LONG} 👥`, rules: 17, members: 123_456, parents: ["Verwaltung", "Niederlassung Nord-Ost", "Holding"] },
+              { id: FIXTURE_GROUPS.praktikum, name: "Ü", rules: 0, members: 0, parents: [] },
+            ],
+          }
+        : data.policy,
+  };
+}
+
+/** A page of 1,000 automations: the list stays one line per row and bounded in work. */
+function hugeData(data: CodeAreaData): CodeAreaData {
+  const base = fixtureCodes();
+  const items = Array.from({ length: 1000 }, (_, index) => {
+    const source = base[index % base.length]!;
+    return { ...source, id: `c_h${String(index).padStart(5, "0")}`, title: `${source.title} ${index + 1}` };
+  });
+  return { ...data, codes: { items, total: 25_000, owners: 640, nextCursor: "eyJ0IjoiSCJ9" } };
 }
