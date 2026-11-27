@@ -5,7 +5,7 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { cloudShellSheets } from "../../../../../scripts/fixtures/cloud-shell-sheets";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { loadShellAssets, type ShellAssets } from "../../../../ui/test/shell-page";
+import { loadShellAssets, type ShellAssets } from "../../../../../scripts/fixtures/shell-page";
 import { fixtureClients } from "./proxy-auth-fixture-data";
 
 // Proxy Auth on v2, from invented clients: the screen keeps the v2 layout rules at desktop, tablet and phone width with

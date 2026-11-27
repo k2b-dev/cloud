@@ -11,7 +11,7 @@ import type { Browser } from "playwright";
 import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
-import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
+import { loadShellAssets, openShellPage, type ShellAssets } from "../../../../scripts/fixtures/shell-page";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { proxyAuthService } from "../service";
 import { fixtureClients, type ProxyAuthFixtureData } from "./_components/proxy-auth-fixture-data";
