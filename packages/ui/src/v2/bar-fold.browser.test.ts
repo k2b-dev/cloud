@@ -111,41 +111,43 @@ test("390 px, alive: the start stays whole, the last actions are in '…' in the
   });
 });
 
-test("a long start beside an end that folds nothing: the server's page is the live one (±1 px), also where the end cuts", async () => {
-  // "long": one button that fits; "closes": a primary with words and a closing button, which fold nothing and, at 240
-  // px, beside the start's least, have to be cut from the start of the end
-  const rects = (page: Page, bar: string) =>
-    page.evaluate((bar) => {
-      const element = document.querySelector(bar)!;
-      return [":scope > .k2-bar-start", ":scope > .k2-bar-start > *", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].flatMap(
-        (selector) =>
-          [...element.querySelectorAll(selector)].map((found) => {
-            const box = found.getBoundingClientRect();
-            return [box.left, box.top, box.width, box.height];
-          }),
-      );
-    }, bar);
-  for (const width of [240, 320, 390, 1024]) {
+/** The boxes of a bar's start, its parts, its end and the end's buttons. */
+const rects = (page: Page, bar: string) =>
+  page.evaluate((bar) => {
+    const element = document.querySelector(bar)!;
+    return [":scope > .k2-bar-start", ":scope > .k2-bar-start > *", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].flatMap(
+      (selector) =>
+        [...element.querySelectorAll(selector)].map((found) => {
+          const box = found.getBoundingClientRect();
+          return [box.left, box.top, box.width, box.height];
+        }),
+    );
+  }, bar);
+
+// One test per width: each loads the server's page and the live one, so a test stays two pages within its budget.
+for (const width of [240, 320, 390, 1024])
+  test(`${width} px, a long start beside an end that folds nothing: the server's page is the live one (±1 px), also where the end cuts`, async () => {
+    // "long": one button that fits; "closes": a primary with words and a closing button, which fold nothing and, at 240
+    // px, beside the start's least, have to be cut from the start of the end
     const sent: Record<string, number[][]> = {};
     await withPage(width, false, async (page) => {
       for (const which of ["long", "closes"]) sent[which] = await rects(page, head(which));
     });
     await withPage(width, true, async (page) => {
       for (const which of ["long", "closes"]) {
-        expect([which, width, await page.locator(`${head(which)} .k2-bar-fold`).count()]).toEqual([which, width, 0]);
+        expect([which, await page.locator(`${head(which)} .k2-bar-fold`).count()]).toEqual([which, 0]);
         const live = await rects(page, head(which));
         const apart = live
           .flatMap((box, at) => box.map((value, side) => Math.abs(value - sent[which]![at]![side]!)))
           .filter((gap) => gap > 1);
-        expect([which, width, live.length, apart]).toEqual([which, width, sent[which]!.length, []]);
+        expect([which, live.length, apart]).toEqual([which, sent[which]!.length, []]);
       }
       // the closing button, which never folds, stays in sight at the end
       const close = await page.locator(head("closes")).getByRole("button", { name: "Schließen" }).boundingBox();
       const end = await edges(page, head("closes"));
-      expect([width, close !== null && close.x + close.width <= end.end!.right + 0.5]).toEqual([width, true]);
+      expect(close !== null && close.x + close.width <= end.end!.right + 0.5).toBe(true);
     });
-  }
-});
+  });
 
 test("a quiet label of 16ch and more beside the title: the title keeps a few letters, the label shortens too", async () => {
   for (const live of [false, true])
