@@ -2066,11 +2066,7 @@
    the strip's end alignment clips its oldest slots, not its newest */
 /* one primitive: Ticks draws only its slots inside the strip */
 .k2-ui .k2-ticks:not([data-stretch]) > i + i {
-  margin-left: auto;
-}
-.k2-ui .k2-ticks:not([data-stretch]) > i + i:is(:dir(rtl), [dir="rtl"] *):not([dir="rtl"] [dir="ltr"] *) {
-  margin-left: 0;
-  margin-right: auto;
+  margin-inline-start: auto;
 }
 .k2-ui .k2-ticks > i[data-s="ok"] {
   background: color-mix(
