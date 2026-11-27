@@ -11,7 +11,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { ACCEPTED_DOCUMENTS, DocumentMarkdownView, markdownDownloadName, validateDocumentMarkdownFile } = await import(
+const { ACCEPTED_DOCUMENTS, acceptsDocument, DocumentMarkdownView, markdownDownloadName, validateDocumentMarkdownFile } = await import(
   "./DocumentMarkdown.island.tsx"
 );
 const { documentMarkdownMessages } = await import("@/api/document-markdown-messages");
@@ -109,5 +109,10 @@ describe("Document to Markdown tool", () => {
     expect(validateDocumentMarkdownFile({ name: `${"a".repeat(252)}.pdf`, size: 1 }, en)).toBe(
       "The filename must not exceed 255 characters.",
     );
+  });
+
+  test("a dropped file is converted only with an accepted ending, as from the file dialog", () => {
+    expect(["Angebot.DOCX", "report.pdf", "slides.pptx", "data.csv"].every((name) => acceptsDocument({ name }))).toBe(true);
+    expect(["photo.jpg", "archive.zip", "notes.md", "pdf"].some((name) => acceptsDocument({ name }))).toBe(false);
   });
 });

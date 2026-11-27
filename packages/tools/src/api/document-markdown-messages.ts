@@ -25,6 +25,7 @@ export const documentMarkdownMessages = i18n.define({
       dropToConvert: "Drop to convert the document to Markdown",
       busyDropTitle: ({ filename }: { filename: string }) => `${filename} was not converted`,
       busyDrop: "A conversion is running. Cancel it to convert another document.",
+      unsupportedDrop: "Only documents are converted: PDF, Word, OpenDocument, PowerPoint, Excel, CSV and EPUB.",
       onlyFirstTitle: ({ filename }: { filename: string }) => `Only ${filename} is converted`,
       onlyFirst: ({ count }: { count: number }) =>
         count === 1
@@ -70,6 +71,7 @@ export const documentMarkdownMessages = i18n.define({
       dropToConvert: "Ablegen, um das Dokument in Markdown umzuwandeln",
       busyDropTitle: ({ filename }) => `${filename} wurde nicht umgewandelt`,
       busyDrop: "Eine Umwandlung läuft. Brich sie ab, um ein anderes Dokument umzuwandeln.",
+      unsupportedDrop: "Umgewandelt werden nur Dokumente: PDF, Word, OpenDocument, PowerPoint, Excel, CSV und EPUB.",
       onlyFirstTitle: ({ filename }) => `Nur ${filename} wird umgewandelt`,
       onlyFirst: ({ count }) =>
         count === 1

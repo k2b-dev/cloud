@@ -27,9 +27,10 @@ describe("Markdown to PDF tool", () => {
     expect(html).not.toContain("This replaces the print template");
     expect(html.match(/Generate PDF/g)?.length).toBeGreaterThanOrEqual(1);
     expect(html).toContain("processed in memory and are not stored");
-    // no half of the page waits empty for a PDF: the preview comes with the first one
-    expect(html).not.toContain('aria-label="PDF preview"');
-    expect(html).not.toContain("No PDF generated yet");
+    // the preview column stands from the start (parity report, item 25): it says where the PDF will stand, and the
+    // way to make it stays the head's one action
+    expect(html).toContain('aria-label="PDF preview"');
+    expect(html).toContain(en.previewEmpty);
   });
 
   test("shows prefilled CSS below the Markdown for the Custom template", () => {

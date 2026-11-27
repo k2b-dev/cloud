@@ -24,6 +24,10 @@ type DocumentMarkdownViewProps = {
 };
 
 export const ACCEPTED_DOCUMENTS = ".pdf,.doc,.docx,.odt,.rtf,.ppt,.pptx,.odp,.xlsx,.ods,.csv,.epub";
+
+/** A dropped file is converted only with one of the accepted endings, as the file dialog's choice is. */
+export const acceptsDocument = (file: { name: string }) =>
+  ACCEPTED_DOCUMENTS.split(",").some((ending) => file.name.toLowerCase().endsWith(ending));
 const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 const MAX_FILENAME_CHARACTERS = 255;
 
@@ -176,8 +180,10 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
       event.preventDefault();
       depth = 0;
       setDragging(false);
+      const documents = files.filter(acceptsDocument);
       if (busy()) setRefusal({ title: t().busyDropTitle({ filename: files[0]!.name }), text: t().busyDrop });
-      else void convert(files);
+      else if (documents.length === 0) setRefusal({ title: t().busyDropTitle({ filename: files[0]!.name }), text: t().unsupportedDrop });
+      else void convert(documents);
     };
     document.addEventListener("dragenter", enter);
     document.addEventListener("dragleave", leave);
@@ -240,7 +246,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
         </Show>
         <Show when={error()}>
           {(message) => (
-            <Notice tone="bad" title={t().conversionFailedTitle} actions={[{ label: t().chooseDocument, onClick: choose }]}>
+            <Notice tone="bad" title={t().conversionFailedTitle}>
               {message()}
             </Notice>
           )}
@@ -249,11 +255,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
           when={result()}
           fallback={
             <Show when={!error()}>
-              <Empty
-                icon="markdown"
-                text={waiting()}
-                action={busy() ? undefined : { label: t().chooseDocument, icon: "file-upload", onClick: choose }}
-              />
+              <Empty icon="markdown" text={waiting()} />
             </Show>
           }
         >
