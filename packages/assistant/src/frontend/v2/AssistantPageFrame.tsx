@@ -115,7 +115,8 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         openChat={() => (w.mainView() || w.activeProject() ? null : (w.activeConversation() ?? null))}
         path={headPath}
         pagePrimary={() => w.projectSettings() && w.activeProject()?.permission === "admin"}
-        fab={() => w.mainView() === "code" || (Boolean(w.projectView()) && !w.projectSettings())}
+        // Only My apps floats New chat on the phone: a Project has its composer, which starts its new chat (look rules).
+        fab={() => w.mainView() === "code"}
         newChat={() => ({
           label: w.t().newChat,
           icon: "plus",

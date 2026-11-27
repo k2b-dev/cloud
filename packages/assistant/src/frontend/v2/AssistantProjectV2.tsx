@@ -78,7 +78,8 @@ export default function AssistantProjectV2(p: ProjectParts) {
                     <Row
                       icon="message-circle"
                       lines={[chat.title]}
-                      time={<Format.RelativeTime value={chat.updatedAt} />}
+                      // k2b-ui gap: #4413: a one-line row draws its end over its time, so the time follows the title.
+                      meta={<Format.RelativeTime value={chat.updatedAt} />}
                       href={assistantConversationHref("/app/assistant", chat.id)}
                       onNavigate={(nav) => p.openConversation(chat.id, nav)}
                       // The chat's settings, a quiet symbol at the row's end as in v1; the row itself opens the chat.

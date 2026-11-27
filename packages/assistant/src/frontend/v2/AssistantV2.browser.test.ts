@@ -699,6 +699,9 @@ describe("Assistant on v2", () => {
         }
         expect(await page.getByPlaceholder("Neuen Chat in Buchhaltung 2026 beginnen").count()).toBe(1);
         if (view !== phone) expect(await page.locator('[data-k2-part="Pane"][aria-label="Projektkontext"]').isVisible()).toBe(true);
+        // The composer starts the Project's new chat: nothing floats over it, and "Neuer Chat" stays in the head.
+        expect(await page.locator(".k2-fab:visible").count()).toBe(0);
+        expect(await page.locator('[data-slot="head"]').getByRole("button", { name: "Neuer Chat" }).isVisible()).toBe(true);
         expect(await layoutProblems(page)).toEqual([]);
         expect(errors).toEqual([]);
         expect(unanswered).toEqual([]);
