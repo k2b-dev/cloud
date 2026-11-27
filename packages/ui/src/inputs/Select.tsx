@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { cssColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
@@ -293,7 +294,7 @@ export function Select(props: SelectProps): JSX.Element {
               }
             >
               <Show
-                when={selected()?.color}
+                when={cssColor(selected()?.color)}
                 fallback={<Show when={selected()?.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
               >
                 {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
@@ -424,7 +425,7 @@ export function Select(props: SelectProps): JSX.Element {
                       when={option.value === CLEAR_VALUE}
                       fallback={
                         <Show
-                          when={option.color}
+                          when={cssColor(option.color)}
                           fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
                         >
                           {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
