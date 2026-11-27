@@ -2014,6 +2014,33 @@ test("beside the phone a row's mark is 32 again", async () => {
 // one picture of the data per row, and two weights of line.
 const rgb = (color: string) => color.replace(/\s/g, "");
 
+for (const width of [1440, 1024, 390])
+  test(`a row of one line with a time and a deed at its end shows both side by side, the deed after the time, at ${width} px`, async () => {
+    await withPage(
+      "oauth-b",
+      async (page) => {
+        const rows = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2-row[data-lines='1'][data-time]")]
+            .filter((row) => row.querySelector(":scope > .k2-row-end") && row.getClientRects().length > 0)
+            .map((row) => {
+              const box = row.getBoundingClientRect();
+              const time = row.querySelector(":scope > .k2-row-time")!.getBoundingClientRect();
+              const end = row.querySelector(":scope > .k2-row-end")!.getBoundingClientRect();
+              return {
+                after: end.left >= time.right,
+                inside: end.right <= box.right + 0.5 && time.left >= box.left,
+                oneLine: Math.abs(time.top + time.height / 2 - (end.top + end.height / 2)) <= 1,
+              };
+            }),
+        );
+        // the people who connected a client: one row each, with when and a way to take the connection away
+        expect(rows.length).toBeGreaterThan(0);
+        expect(rows.filter((row) => !(row.after && row.inside && row.oneLine))).toEqual([]);
+      },
+      width,
+    );
+  });
+
 for (const which of ["oauth-b", "pulse-b"] as const)
   for (const width of [1920, 1440, 1024, 390])
     test(`identity B, ${which} at ${width}: one figure per screen in the owner's colour, its real history beside it, the exceptions as one line`, async () => {

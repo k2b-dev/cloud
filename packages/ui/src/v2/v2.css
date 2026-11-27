@@ -1978,6 +1978,12 @@
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
 }
+/* a row of one line with a time and an end: the end stands after the time on that line, in a column of its own */
+.k2-ui .k2-row[data-lines="1"][data-time] > .k2-row-end {
+  grid-area: auto;
+  grid-row: 1;
+  grid-column: -1 / span 1;
+}
 .k2-ui .k2-row-marks {
   grid-area: marks;
   display: flex;
@@ -5838,7 +5844,8 @@
     grid-template-areas: "l1" "l2" "time";
     grid-template-columns: minmax(0, 1fr);
   }
-  .k2-ui .k2-row[data-action] > .k2-row-end {
+  /* [data-lines]: the deed keeps its own line under the text, also in a row of one line with a time */
+  .k2-ui .k2-row[data-action][data-lines] > .k2-row-end {
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
