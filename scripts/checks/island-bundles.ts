@@ -9,10 +9,13 @@ import type { Finding, Rule } from "./rule";
 // Production static closures include Solid, the mount runtime and Cloud's error fallback.
 // Measured 2026-11-04: 88,446 / 103,432 / 213,247 B; budgets round up with approximately 10% headroom.
 // Dynamic imports are excluded, exactly as in the production SSR asset manifest.
+// Measured 2026-11-26 on d4f6ceee6f once the error fallback loads its view only when an island fails (before → after):
+// PwaPartCount 92,479 → 59,830 B, PairingNotice 96,015 → 63,346 B, StartParts 139,603 → 134,544 B; their budgets keep
+// that gain with a small headroom.
 const budgets = [
-  { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 96 },
-  { file: "packages/pwa/src/frontend/_components/PairingNotice.island.tsx", kib: 112 },
-  { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 230 },
+  { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 60 },
+  { file: "packages/pwa/src/frontend/_components/PairingNotice.island.tsx", kib: 64 },
+  { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 136 },
   // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure; KaTeX
   // loads only for math. Measured 2026-11-05 with these roots: 2,155,527 B (with KaTeX 2,258,365 B and fewer roots).
   // Measured 2026-11-07 with first-use table controls: 2,210,862 B; original 2160 KiB cap restored.

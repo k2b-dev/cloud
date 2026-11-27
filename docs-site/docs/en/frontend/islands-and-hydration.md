@@ -300,6 +300,10 @@ around it. Disposal runs every Solid `onCleanup` and effect cleanup, also when
 the island shows an error fallback. Use `onCleanup` to remove global listeners,
 clear timers, and release subscriptions.
 
+In Cloud the error fallback is a small part of every island: the failed state
+it shows, with its words, loads only when an island fails, so no island carries
+it up front.
+
 The wrapper dispatches a bubbling `ssr:island-dispose` event just before
 cleanup. Code that renders outside the wrapper, such as a portal, can close
 what the island opened. Disposal closes every open `@k2b/ui` dialog.

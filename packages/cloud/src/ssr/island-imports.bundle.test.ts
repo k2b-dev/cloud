@@ -55,8 +55,15 @@ const closureInputs = async (source: string): Promise<string[]> => {
   }
 };
 
-test("the island error fallback brings no v1 module of @k2b/ui", async () => {
+test("the island error fallback carries no @k2b/ui and no catalog until an island fails", async () => {
   const fallback = resolve(import.meta.dir, "IslandError.tsx");
+  const inputs = await closureInputs(`import F from ${JSON.stringify(fallback)};\nconsole.log(F);\n`);
+  // every island loads this: its view, v2 `Failed` and the shared words come by import() when it is needed
+  expect(inputs.filter((path) => /packages\/ui\/|IslandErrorView/.test(path))).toEqual([]);
+}, 60_000);
+
+test("the island error view brings no v1 module of @k2b/ui", async () => {
+  const fallback = resolve(import.meta.dir, "IslandErrorView.tsx");
   const inputs = await closureInputs(`import F from ${JSON.stringify(fallback)};\nconsole.log(F);\n`);
   // v2 and the shared intl modules; anything else of @k2b/ui is a v1 component or its code
   const v1 = inputs.filter(
