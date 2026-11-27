@@ -11,7 +11,6 @@ import {
   Empty,
   Facts,
   Field,
-  Icon,
   Inline,
   Input,
   List,
@@ -403,13 +402,13 @@ export default function HostsScreen(props: HostsScreenProps) {
                 {
                   title: t().host,
                   width: { min: 220, default: 320 },
-                  // k2b-ui gap: the 28 px mark of a row comes with the table's column mark; until then a plain sign
+                  // k2b-ui gap: the 28 px sign of a row comes with the table's column mark (#4223, #4360); an icon in the text flow sits askew
+                  // in the cell's own text flow, not an Inline: the cell cuts a long name with “…”, a flex row would clip it bare
                   cell: (host) => (
-                    <Inline>
-                      <Icon name="server" />
+                    <>
                       <Text weight="strong">{host.sshFingerprints.length === 0 ? short(host.fqdn, 40) : host.fqdn}</Text>
-                      {hostState(host)}
-                    </Inline>
+                      <Show when={hostState(host)}>{(state) => <> {state()}</>}</Show>
+                    </>
                   ),
                 },
                 { title: t().location, width: { min: 140, default: 180 }, cell: (host) => place(host), drop: true },
@@ -467,13 +466,13 @@ export default function HostsScreen(props: HostsScreenProps) {
               {
                 title: t().hostgroup,
                 width: { min: 220, default: 360 },
-                // k2b-ui gap: the 28 px mark of a row comes with the table's column mark; until then a plain sign
+                // k2b-ui gap: the 28 px sign of a row comes with the table's column mark (#4223, #4360); an icon in the text flow sits askew
+                // in the cell's own text flow, not an Inline: the cell cuts a long name with “…”, a flex row would clip it bare
                 cell: (group) => (
-                  <Inline>
-                    <Icon name="folders" />
+                  <>
                     <Text weight="strong">{keyless(group) > 0 ? short(group.cn, 40) : group.cn}</Text>
-                    {groupState(group)}
-                  </Inline>
+                    <Show when={groupState(group)}>{(state) => <> {state()}</>}</Show>
+                  </>
                 ),
               },
               {
