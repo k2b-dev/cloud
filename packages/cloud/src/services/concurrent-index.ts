@@ -15,10 +15,15 @@ export type ConcurrentIndex = {
   /** Schema-qualified table, e.g. `ai.conversations`. */
   table: string;
   /**
-   * Everything after `ON <table>`: method, columns, order and an optional partial predicate. A constant of the code,
-   * never request input; it reaches SQL as written, so a `;` is refused.
+   * Everything after `ON <table>`: method, columns, order and, without `where`, an optional partial predicate. A
+   * constant of the code, never request input; it reaches SQL as written, so a `;` is refused.
    */
   definition: string;
+  /**
+   * The predicate of a partial index, without `WHERE`, under the same rule as `definition`. Required for a partial
+   * index on a TimescaleDB hypertable, whose build options stand between the columns and the predicate.
+   */
+  where?: string;
 };
 
 /**
@@ -47,22 +52,76 @@ const qualifiedTable = (table: string) => {
   return parts.length === 2 && parts.every((part) => IDENTIFIER.test(part));
 };
 const validIndex = (index: ConcurrentIndex) =>
-  IDENTIFIER.test(index.name) && qualifiedTable(index.table) && !index.definition.includes(";");
+  IDENTIFIER.test(index.name) && qualifiedTable(index.table) && !index.definition.includes(";") && !index.where?.includes(";");
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * How long a build on a TimescaleDB hypertable waits for a lock before it gives up as `busy`. A waiting build queues
+ * every new write to the table behind it, so it waits no longer than the log retention's background statements.
+ */
+const HYPERTABLE_LOCK_TIMEOUT = "1s";
+/** Postgres' `lock_not_available`: the build met `lock_timeout`. */
+const LOCK_NOT_AVAILABLE = "55P03";
+/** Postgres' `deadlock_detected`: another session, such as autovacuum on a chunk, held a lock the statement needed. */
+const DEADLOCK_DETECTED = "40P01";
+/** The SQLSTATE of a Postgres error, as Bun reports it in `errno`. */
+const sqlState = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "errno" in error ? String(error.errno) : undefined;
 
 const readIndex = async (db: SQL, index: ConcurrentIndex) => {
   const schema = index.table.split(".")[0]!;
   const qualified = `${schema}.${index.name}`;
-  // `relid IS NULL`: Postgres hides the table of a build that another role runs, so any such build counts.
-  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
+  // `relid IS NULL`: Postgres hides the table of a build that another role runs, so any such build counts. TimescaleDB
+  // reports no progress while it indexes a hypertable chunk by chunk; that build holds a share lock on the chunk it
+  // indexes, so another session's granted share lock on a chunk of the table counts as a build too.
+  const [state] = await db<{ present: boolean; valid: boolean; building: boolean; timescale: boolean }[]>`
     SELECT to_regclass(${qualified}) IS NOT NULL AS present,
       EXISTS (SELECT 1 FROM pg_catalog.pg_index WHERE indexrelid = to_regclass(${qualified})
         AND indisvalid AND indisready AND indislive) AS valid,
       EXISTS (SELECT 1 FROM pg_catalog.pg_stat_progress_create_index progress
         WHERE progress.datname = pg_catalog.current_database()
-          AND (progress.relid = to_regclass(${index.table}) OR progress.relid IS NULL)) AS building`;
-  return state ?? { present: false, valid: false, building: false };
+          AND (progress.relid = to_regclass(${index.table}) OR progress.relid IS NULL))
+      OR EXISTS (SELECT 1 FROM pg_catalog.pg_locks lock
+        JOIN pg_catalog.pg_inherits child ON child.inhrelid = lock.relation
+        WHERE child.inhparent = to_regclass(${index.table}) AND lock.locktype = 'relation' AND lock.mode = 'ShareLock'
+          AND lock.granted AND lock.pid <> pg_catalog.pg_backend_pid()) AS building,
+      EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'timescaledb') AS timescale`;
+  return state ?? { present: false, valid: false, building: false, timescale: false };
+};
+
+/** Whether the optional TimescaleDB made the table a hypertable, which takes no `CREATE INDEX CONCURRENTLY`. */
+const isHypertable = async (db: SQL, table: string) => {
+  const [schema, name] = table.split(".");
+  const [row] = await db<{ yes: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM timescaledb_information.hypertables
+      WHERE hypertable_schema = ${schema!} AND hypertable_name = ${name!}) AS yes`;
+  return row?.yes === true;
+};
+
+/**
+ * The build statement. A hypertable is indexed chunk by chunk, each chunk in its own transaction, as TimescaleDB offers
+ * instead of CONCURRENTLY; its options stand between the columns and the predicate, so its predicate must be `where`.
+ */
+const createStatement = (index: ConcurrentIndex, hypertable: boolean) => {
+  const predicate = index.where ? ` WHERE ${index.where}` : "";
+  return hypertable
+    ? `CREATE INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition} WITH (timescaledb.transaction_per_chunk)${predicate}`
+    : `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}${predicate}`;
+};
+
+/**
+ * Runs the build on the reserved connection. On a hypertable it waits at most `HYPERTABLE_LOCK_TIMEOUT` for each lock
+ * and resets the setting before the connection goes back to the pool, so no later query inherits it.
+ */
+const runBuild = async (db: SQL, index: ConcurrentIndex, hypertable: boolean) => {
+  if (!hypertable) return db.unsafe(createStatement(index, false)).simple();
+  await db.unsafe(`SET lock_timeout = '${HYPERTABLE_LOCK_TIMEOUT}'`).simple();
+  try {
+    return await db.unsafe(createStatement(index, true)).simple();
+  } finally {
+    await db.unsafe("RESET lock_timeout").simple();
+  }
 };
 
 const dropIndex = (db: SQL, index: ConcurrentIndex) =>
@@ -72,15 +131,38 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
   const before = await readIndex(db, index);
   if (before.valid) return "ready";
   if (before.building) return "busy";
-  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted.
-  if (before.present) await dropIndex(db, index);
+  const hypertable = before.timescale && (await isHypertable(db, index.table));
+  if (hypertable && !index.where && /\bwhere\b/i.test(index.definition)) {
+    options.log.warn(`The ${options.purpose} index needs its predicate in \`where\` on a hypertable; it was not built`, {
+      index: index.name,
+    });
+    return "failed";
+  }
+  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted. A lock it could not take now
+  // (a deadlock with autovacuum on a chunk, a lock timeout) passes: the next attempt drops it.
+  if (before.present) {
+    try {
+      await dropIndex(db, index);
+    } catch (error) {
+      const state = sqlState(error);
+      if (state !== DEADLOCK_DETECTED && state !== LOCK_NOT_AVAILABLE) throw error;
+      options.log.info(`The ${options.purpose} index's leftover waits for a lock; the next attempt drops it`, { index: index.name });
+      return "busy";
+    }
+  }
   const startedAt = performance.now();
   try {
-    await db.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`).simple();
+    await runBuild(db, index, hypertable);
   } catch (error) {
     const after = await readIndex(db, index);
     if (after.valid) return "ready";
     if (after.building) return "busy";
+    // a write the build would have queued behind: give way, and leave no half-built index for the planner to skip
+    if (hypertable && sqlState(error) === LOCK_NOT_AVAILABLE) {
+      options.log.info(`The ${options.purpose} index waits for a moment without writes; the next attempt continues`, { index: index.name });
+      if (after.present) await dropIndex(db, index);
+      return "busy";
+    }
     options.log.warn(`The ${options.purpose} index was not built; queries run without it until the next attempt`, {
       index: index.name,
       error: message(error),
@@ -111,6 +193,11 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
  *
  * Without a bound process sync (one process, as in tests and one-off scripts) it builds without the lease; the check for
  * a running build still leaves another build alone.
+ *
+ * Where the optional TimescaleDB made the table a hypertable, which refuses CONCURRENTLY, it indexes the table chunk by
+ * chunk instead (`timescaledb.transaction_per_chunk`). That build locks the chunk it indexes against writes while it
+ * runs and queues every write while it waits for a lock, so it waits for a lock at most `HYPERTABLE_LOCK_TIMEOUT` and
+ * then gives up as `busy`. A partial index on a hypertable takes its predicate in `where`.
  */
 export const ensureConcurrentIndexes = async (
   indexes: readonly ConcurrentIndex[],
@@ -285,6 +372,8 @@ export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { u
   >`SELECT to_regclass(${`${index.table.split(".")[0]}.${index.name}`}) IS NOT NULL AS present`;
   if (state?.present) return;
   await db
-    .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
+    .unsafe(
+      `CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}${index.where ? ` WHERE ${index.where}` : ""}`,
+    )
     .simple();
 };
