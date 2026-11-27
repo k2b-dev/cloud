@@ -729,6 +729,33 @@ test("a hidden tab with an address opens in place from the menu of further views
   );
 });
 
+// A tab that holds the focus and hides for lack of room hands the focus to the menu tab ("Mehr" or "Weitere"), so it
+// never falls to the page; a "Mehr" that held it and goes, as every tab has room again, hands it to the last tab.
+test("a tab that hides hands its focus to the menu tab, and a menu tab that goes to the last tab", async () => {
+  await withPage(async (page) => {
+    const focused = () => page.evaluate(() => document.activeElement?.textContent?.replace(/\s+/g, "") ?? "");
+    const areas = page.getByRole("navigation", { name: "Bereiche" });
+    await areas.getByRole("button", { name: "Reklamationen" }).focus();
+    await settled(page);
+    expect(await focused()).toBe("Reklamationen");
+    await page.setViewportSize({ width: 390, height: 900 });
+    await settled(page);
+    expect(await focused()).toMatch(/^Mehr\+\d+$/);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await settled(page);
+    expect(await areas.getByRole("button", { name: /Mehr/ }).count()).toBe(0);
+    expect(await focused()).toBe("Reklamationen");
+    // the views have a menu tab of their own that always stands
+    const views = page.getByRole("navigation", { name: "Ansichten" });
+    await views.getByRole("link", { name: /Wartet auf Material/ }).focus();
+    await settled(page);
+    expect(await focused()).toMatch(/^WartetaufMaterial/);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await settled(page);
+    expect(await focused()).toMatch(/^Weitere\+\d+$/);
+  });
+});
+
 // The menu tab's count grows by the tabs that hide, and a count that gains a digit ("+8" to "+12") makes the tab
 // wider, so fewer tabs fit. Tabs measure again in the next frame, never inside the observer's own turn: no
 // "ResizeObserver loop" error (WebKit reported one at 390 px in Mail), and the hidden ones still lead the menu.

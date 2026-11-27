@@ -54,6 +54,8 @@ The one dialog: 480 px in the middle of the window, a sheet from the bottom belo
 
 `const toast = useToast()` in the component, then `toast("„Regal Archiv“ gelöscht", { undo })`. One sentence for five seconds; `undo` adds "Rückgängig", `status` adds a sign, and `bad` is announced at once.
 
+News that no element shows as it happens, such as a run that changed its state, is only said: `announce("Lauf 3 ist fertig.")` puts it in the live region that every `Workspace` brings; with several Workspaces the first one shown takes it. The same news twice is said twice, a burst is said as its last news and at least once a second, and said news leaves the region after five seconds. `{ assertive: true }` is for news that cannot wait, such as a run that failed.
+
 <Props of="ToastOptions" />
 
 ### Popover

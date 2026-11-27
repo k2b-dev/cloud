@@ -68,7 +68,8 @@ for (const state of states) {
     expect(descendants).toEqual(["fill", "header icon"]);
     expect(html).toContain("ti ti-notebook");
     if (state.status === "ok" || state.status === "forbidden") expect(html).toContain('class="k2b-placeholder__icon k2b-icon-tile"');
-    if (state.status === "loading" || state.status === "error" || state.status === "timeout")
-      expect(html).toContain('class="k2b-placeholder__icon"');
+    if (state.status === "error" || state.status === "timeout") expect(html).toContain('class="k2b-placeholder__icon"');
+    // loading shows no spinner and no words on screen, only its frame
+    if (state.status === "loading") expect(html).not.toContain("k2b-placeholder");
   });
 }

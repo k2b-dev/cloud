@@ -130,8 +130,7 @@ export default function ToolCatalog(props: { search?: string }) {
                           // k2b-ui gap: a row of one line on the desktop (the note after the name) and two on the phone;
                           // a one-line row with a note stays one tall, cut line on the phone, so the rows keep two lines.
                           <Row
-                            icon={toolIcon(tool.icon)}
-                            color={categoryColor[category]}
+                            mark={{ icon: toolIcon(tool.icon), color: categoryColor[category] }}
                             lines={[tool.name, tool.description]}
                             href={`/tools/${tool.id}`}
                           />
