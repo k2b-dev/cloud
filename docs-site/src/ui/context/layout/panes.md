@@ -122,10 +122,8 @@ click or Enter on a boundary restores that boundary's ratio from
 `defaultLayout`, or 0.5 when the arrangement differs. Focus returns to the
 moved tab, and a screen reader hears where it went.
 
-Pass `arrangeHint` to show a one-time hint at the first tab grip, "Panes can
-be arranged", with an Arrange action. The application decides whether it was
-seen and stores `onDismiss`, as with every `MovedHint`. The hint steps aside
-while a tab is dragged, so it never covers a drop target.
+`arrangeHint` is deprecated and ignored: Panes shows no hint that panes can be
+arranged. The Arrange button and the tab grips are the way in.
 
 ## Import
 
