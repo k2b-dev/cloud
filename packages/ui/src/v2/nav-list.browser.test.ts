@@ -108,6 +108,9 @@ for (const width of [1440, 1024])
       const list = await box(page, ".k2-ws-side .k2-nav-list");
       expect(list.left).toBe(side.left);
       expect(Math.abs(list.right - side.right)).toBeLessThanOrEqual(1);
+      // the rows too: the list has no bar of its own that would take their end (a classic one in WebKit)
+      const row = await box(page, ".k2-ws-side .k2-nav-list .k2-row");
+      expect(Math.abs(row.right - side.right)).toBeLessThanOrEqual(1);
       const foot = await box(page, ".k2-ws-side .k2-nav-foot");
       expect(foot.bottom).toBeGreaterThan(side.bottom - 24);
       expect(list.bottom).toBeLessThanOrEqual(foot.top);
