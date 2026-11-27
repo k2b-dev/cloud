@@ -884,7 +884,8 @@
 .k2-ui .k2-sec[data-measure] > .k2-sec-body > * {
   max-width: calc(var(--k2-measure) + 2 * var(--k2-edge));
 }
-.k2-ui :is(.k2-sec, .k2-sec-body) > * {
+.k2-ui .k2-sec > *,
+.k2-ui .k2-sec-body > * {
   flex: none;
 }
 .k2-ui .k2-sh {
