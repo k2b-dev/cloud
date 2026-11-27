@@ -111,8 +111,18 @@ test("an app's sending access and its send log access save apart; a refused gran
   await goto("/admin/outgoing-mail/apps?app=backoffice");
   await page.getByRole("radio", { name: "Selected profiles" }).check();
   await page.getByRole("checkbox", { name: /Newsletter/ }).check();
+  // Save loads the app's page again at the same address: a mark on the old document tells the new one apart, so the
+  // next navigation never races that load
+  await page.evaluate(() => {
+    document.documentElement.dataset.previousDocument = "true";
+  });
   await page.locator('[data-k2-part="Section"]').first().getByRole("button", { name: "Save", exact: true }).click();
-  await page.waitForFunction(() => location.search.includes("app=backoffice"));
+  await page.waitForFunction(
+    () =>
+      document.documentElement.dataset.previousDocument === undefined &&
+      location.search.includes("app=backoffice") &&
+      document.querySelector('main.k2-ui[data-ready="true"]') !== null,
+  );
   expect(sent("PUT", "/api/admin/core/outgoing-mail/apps/backoffice")[0]?.body).toEqual({ mode: "selected", profiles: ["newsletter"] });
 
   await goto("/admin/outgoing-mail/apps?app=backoffice");
