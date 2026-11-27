@@ -86,6 +86,7 @@ export default function ClassesScreen(props: { nav: NavProps; data: AiClassesDat
   const assigned = (slot: AiModelSlot) => overview().assignments[slot]?.variantId ?? null;
   const classCount = () => AI_MODEL_CLASSES.filter((slot) => assigned(slot)).length;
   const toolCount = () => TOOLS.filter((slot) => assigned(slot)).length;
+  const offTools = () => TOOLS.filter((slot) => !assigned(slot)).map((slot) => aiSlotLabel(t(), slot));
   const nothing = () => data().models.length === 0;
   const issue = (slot: AiModelSlot) => {
     const found = find(assigned(slot));
@@ -124,7 +125,12 @@ export default function ClassesScreen(props: { nav: NavProps; data: AiClassesDat
             // k2b-ui gap: Hero figure (#4360); "n von 4 Klassen belegt" stands in the status row until the hero band exists
             <StatusRow
               lead={t().classesLead({ p: classCount() })}
-              facts={[{ value: toolCount(), after: t().toolsSet({ of: TOOLS.length }) }]}
+              // the tools that are off by name, since an operator acts on which ones, not on how many
+              facts={
+                offTools().length
+                  ? [{ before: t().toolsOff, value: offTools().join(", ") }]
+                  : [{ value: toolCount(), after: t().toolsSet({ of: TOOLS.length }) }]
+              }
             />
           }
         >
