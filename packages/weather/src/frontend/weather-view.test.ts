@@ -39,6 +39,8 @@ const data = (overrides: { chances?: (number | null)[]; gust?: number | null; da
       : [{ date: "2026-11-26", icon: "rain", tempMin: 2.9, tempMax: 9.1, precipitation: 3.2, precipitationProbability: 80, sunshine: 24 }],
 });
 
+/** Ulm, where the invented afternoon happens. */
+const ULM = { lat: 48.4, lon: 9.99 };
 const plain = (texts: string[]) => texts.map((text) => text.replace(/[\u00a0\u202f]/g, " "));
 
 describe("the weather of a location in the reader's words", () => {
@@ -46,7 +48,7 @@ describe("the weather of a location in the reader's words", () => {
   const format = weatherFormat("de", t, now);
 
   test("says from which hour rain is more likely than not, and today's low and high", () => {
-    const weather = format.weather(data());
+    const weather = format.weather(data(), ULM);
     expect(plain(weather.alerts)).toEqual(["Regen ab 17:00 · 60 %"]);
     expect(weather.today).toEqual({ low: "2,9°", high: "9,1°" });
     expect(weather.hourly.map((hour) => hour.rainChance)).toEqual([null, 10, 30, 60, 80]);
@@ -54,21 +56,23 @@ describe("the weather of a location in the reader's words", () => {
   });
 
   test("carries the numbers and kinds behind the words: a day's low and high, a sign's tone, the night", () => {
-    const night = data();
-    night.hourly[3]!.icon = "clear-night";
-    const weather = format.weather(night);
+    const rainy = data();
+    // a rainy evening: the provider sends no night sign for rain, the sun sets in Ulm about 15:30 UTC in late November
+    rainy.hourly[4]!.icon = "rain";
+    const weather = format.weather(rainy, ULM);
     expect(weather).toMatchObject({ tone: "plain", degrees: 8.4 });
     expect(weather.daily[0]).toMatchObject({ tone: "rain", low: 2.9, high: 9.1, lowText: "2,9°", highText: "9,1°" });
-    expect(weather.hourly.map((hour) => hour.night)).toEqual([false, false, false, true, false]);
+    // 13:00 … 17:00 UTC: day until 15:00, night from 16:00, the rainy hour included
+    expect(weather.hourly.map((hour) => hour.night)).toEqual([false, false, false, true, true]);
   });
 
   test("stays quiet on an ordinary day without a daily forecast", () => {
-    const weather = format.weather(data({ chances: [0, 20, 40, null], gust: 49, daily: false }));
+    const weather = format.weather(data({ chances: [0, 20, 40, null], gust: 49, daily: false }), ULM);
     expect(weather.alerts).toEqual([]);
     expect(weather.today).toBeNull();
   });
 
   test("names rain that is likely now and gusts from the DWD's lowest warning level", () => {
-    expect(plain(format.weather(data({ chances: [50, 90], gust: 50 })).alerts)).toEqual(["Regen ab Jetzt · 50 %", "Böen bis 50 km/h"]);
+    expect(plain(format.weather(data({ chances: [50, 90], gust: 50 }), ULM).alerts)).toEqual(["Regen ab Jetzt · 50 %", "Böen bis 50 km/h"]);
   });
 });

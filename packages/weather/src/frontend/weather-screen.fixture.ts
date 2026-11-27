@@ -8,12 +8,13 @@ import type { WeatherNow } from "./weather-view";
 const hours = ["Jetzt", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "00:00", "01:00"];
 const degrees = [8.4, 8.9, 8.6, 7.9, 7.1, 6.6, 6.2, 5.4, 4.8, 4.1, 3.6, 3.2];
 const chances = [0, 10, 30, 60, 80, 70, 40, 20, 0, 0, 0, 0];
-// sign, words, tone, and whether the hour lies in the dark (the provider's night sign)
+// sign, words, tone, and whether the sun is down (computed from Ulm's place: it sets about 16:30 in late November).
+// The provider sends night signs only for clear and partly cloudy hours, so rain and clouds keep their day signs at night.
 const conditions: [string, string, WeatherTone, boolean][] = [
   ["cloud", "bewölkt", "plain", false],
   ["cloud", "bewölkt", "plain", false],
   ["cloud", "bewölkt", "plain", false],
-  ["cloud-rain", "Regen", "rain", false],
+  ["cloud-rain", "Regen", "rain", true],
   ["cloud-rain", "Regen", "rain", true],
   ["cloud-rain", "Regen", "rain", true],
   ["cloud", "bewölkt", "plain", true],

@@ -49,7 +49,7 @@ export default ssr<AuthContext>(async (c) => {
               }
             : null
         }
-        weather={activeWeather ? format.weather(activeWeather) : null}
+        weather={activeWeather && active ? format.weather(activeWeather, active) : null}
       />
     </Layout>
   );

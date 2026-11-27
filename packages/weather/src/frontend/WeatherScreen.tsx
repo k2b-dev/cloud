@@ -179,21 +179,6 @@ export default function WeatherScreen(props: WeatherScreenProps) {
   );
 }
 
-/**
- * Phone and wide screen differ by layout alone, so the server sends both and CSS shows one: the phone's quieter day
- * (about 160 px) and its week of one-line days; from 768 px the full day and the week's table.
- */
-const PHONE_RULES = `
-@media not all and (min-width: 768px) {
-  .wx-day-wide { display: none; }
-  [data-k2-part="Section"]:has(.wx-week-phone) :is([data-k2-part="Table"], [data-k2-part="List"]) { display: none; }
-}
-@media (min-width: 768px) {
-  .wx-day-phone { display: none; }
-  [data-k2-part="Canvas"]:has(> .wx-week-phone) { display: none; }
-}
-`;
-
 /** The open location: the hero and its day, the week and the hours in the colours of weather, the measurements and radar. */
 function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
   const locale = useLocale();
@@ -235,8 +220,6 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
           to: w().hourly.at(-1)?.temperature ?? w().temperature,
         })}
       >
-        {/* the phone shows the quieter day and the week as one line per day; the wide screen the full day and the table */}
-        <style>{PHONE_RULES}</style>
         <div
           style={{
             padding: "16px var(--k2-edge) 4px",
@@ -248,9 +231,9 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
         >
           <span style={{ display: "inline-flex", "align-items": "center", gap: "10px" }}>
             <i
-              class={`ti ti-${w().icon}`}
+              class={`ti ti-${w().icon} wx-sign`}
               aria-hidden="true"
-              style={{ "font-size": "28px", "line-height": 1, color: toneColor(w().tone) }}
+              style={{ "font-size": "28px", "line-height": 1, "--wx-c": toneColor(w().tone) }}
             />
             <span style={{ font: "600 30px/36px var(--k2-font)", color: "var(--k2-text)", "font-variant-numeric": "tabular-nums" }}>
               {w().temperature}
@@ -261,6 +244,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
             <span style={{ font: "var(--k2-t-body)", color: "var(--k2-muted)", "overflow-wrap": "anywhere" }}>{facts().join(" · ")}</span>
           </Show>
         </div>
+        {/* the full day from 768 px, the phone's quieter day below: the app stylesheet shows one of the two */}
         <Show when={w().hourly.length > 1}>
           <div class="wx-day-wide">
             <DayChart hours={w().hourly} rain={t().rainChance} locale={locale()} />
@@ -277,8 +261,9 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
               <Canvas label={t().sevenDayForecast}>
                 {/* the week on the phone: one line of 44 px per day, without lines between them; the sign in its colour, the
                     day in regular weight, the low, the range on the week's one scale, the high, the rain quiet at the end.
-                    k2b-ui gap: a v2 list of one-line rows with an inset hairline or none (Y's List inset) does not exist
-                    yet; until it does, the lines are drawn in this Canvas. */}
+                    From 768 px the table below shows it; the app stylesheet shows one of the two wrappers.
+                    k2b-ui gap: a v2 list of one-line rows with an inset hairline or none (owner Y: List inset, after
+                    #4355; #4463). When it lands, these hand-drawn lines go. */}
                 <div class="wx-week-phone" role="list" style={{ padding: "0 var(--k2-edge) 4px" }}>
                   <For each={w().daily}>
                     {(day) => (
@@ -295,12 +280,7 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
                           "font-variant-numeric": "tabular-nums",
                         }}
                       >
-                        <i
-                          class={`ti ti-${day.icon}`}
-                          role="img"
-                          aria-label={day.condition}
-                          style={{ "font-size": "18px", color: toneColor(day.tone) }}
-                        />
+                        <Icon name={day.icon} label={day.condition} color={toneColor(day.tone)} />
                         <span style={{ overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>{day.day}</span>
                         <span style={{ "text-align": "end", color: "var(--k2-muted)" }}>{day.lowText}</span>
                         <RangeBar from={day.low} to={day.high} domain={week()} stops={temperatureStops} decorative />
@@ -310,39 +290,41 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
                     )}
                   </For>
                 </div>
+                <div class="wx-week-wide">
+                  <Table
+                    label={t().sevenDayForecast}
+                    rows={w().daily}
+                    // a narrow column of the wide screen (1024 px) reads the week in two lines: the sign, the day and its range,
+                    // the bar under them (the phone has its own one-line days above)
+                    phone={(day) => ({
+                      lines: [
+                        <>
+                          <Icon name={day.icon} label={day.condition} color={toneColor(day.tone)} /> {day.day} · {day.range}
+                        </>,
+                        range(day),
+                      ],
+                      time: rain(day),
+                    })}
+                    columns={[
+                      { title: t().day, width: { min: 64, default: 88 }, cell: (day) => day.day },
+                      { title: t().condition, width: { min: 140, default: 168 }, cell: sign },
+                      {
+                        title: t().low,
+                        width: { min: 56, default: 64 },
+                        align: "end",
+                        cell: (day) => day.lowText,
+                      },
+                      {
+                        title: t().temperature,
+                        cell: range,
+                      },
+                      { title: t().high, width: { min: 56, default: 64 }, cell: (day) => day.highText },
+                      { title: t().rainChance, width: { min: 80, default: 88 }, align: "end", cell: rain },
+                      { title: t().sunshineDay, width: { min: 64, default: 72 }, align: "end", drop: true, cell: (day) => day.sunshine },
+                    ]}
+                  />
+                </div>
               </Canvas>
-              <Table
-                label={t().sevenDayForecast}
-                rows={w().daily}
-                // a narrow column of the wide screen (1024 px) reads the week in two lines: the sign, the day and its range,
-                // the bar under them (the phone has its own one-line days above)
-                phone={(day) => ({
-                  lines: [
-                    <>
-                      <Icon name={day.icon} label={day.condition} color={toneColor(day.tone)} /> {day.day} · {day.range}
-                    </>,
-                    range(day),
-                  ],
-                  time: rain(day),
-                })}
-                columns={[
-                  { title: t().day, width: { min: 64, default: 88 }, cell: (day) => day.day },
-                  { title: t().condition, width: { min: 140, default: 168 }, cell: sign },
-                  {
-                    title: t().low,
-                    width: { min: 56, default: 64 },
-                    align: "end",
-                    cell: (day) => day.lowText,
-                  },
-                  {
-                    title: t().temperature,
-                    cell: range,
-                  },
-                  { title: t().high, width: { min: 56, default: 64 }, cell: (day) => day.highText },
-                  { title: t().rainChance, width: { min: 80, default: 88 }, align: "end", cell: rain },
-                  { title: t().sunshineDay, width: { min: 64, default: 72 }, align: "end", drop: true, cell: (day) => day.sunshine },
-                ]}
-              />
             </Show>
           </Section>
           <Section icon="clock" title={t().nextHours} summary={w().hourly.length > 0 ? undefined : t().noForecast}>

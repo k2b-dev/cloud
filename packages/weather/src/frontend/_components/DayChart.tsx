@@ -96,7 +96,11 @@ const share = (index: number, count: number) => (count < 2 ? 0 : index / (count 
  *
  * k2b-ui gap: `Chart` has no `bands` (shaded x-ranges such as the night), no `colorScale` for a line (its colour by
  * value), and no bar series on its own axis beside a line on one time axis; owner G. When they land, the day moves onto
- * `Chart` with the stops of `weather-scale.ts`, and this drawing goes.
+ * `Chart` with the stops of `weather-scale.ts`, and this drawing goes; the hover and focus layer of `Chart` (a value at
+ * the pointer, the keyboard along the hours) comes back with it. G's #4461 (bands, colorScale, track) is in review: if it
+ * lands first, the day moves onto `Chart` in a follow-up.
+ *
+ * Colours stand as `--wx-c` on each part and the app stylesheet paints with them, so forced colours can take over.
  */
 export default function DayChart(props: { hours: readonly WeatherHour[]; rain: string; locale: string; compact?: boolean }) {
   const g = () => (props.compact ? PHONE : WIDE);
@@ -170,16 +174,16 @@ export default function DayChart(props: { hours: readonly WeatherHour[]; rain: s
       >
         <defs>
           <linearGradient id={id()} gradientUnits="userSpaceOnUse" x1="0" y1={g().top} x2="0" y2={g().top + g().curve}>
-            <For each={stops()}>{(stop) => <stop offset={stop.offset} style={{ "stop-color": stop.color }} />}</For>
+            <For each={stops()}>{(stop) => <stop class="wx-stop" offset={stop.offset} style={{ "--wx-c": stop.color }} />}</For>
           </linearGradient>
         </defs>
         {/* the night: a quiet band behind everything, on the phone a thin band along the time axis */}
         <For each={nights()}>
           {(night) =>
             props.compact ? (
-              <rect x={night.x} y={base(g()) + 2} width={night.width} height={3} style={{ fill: "var(--k2-n300)" }} />
+              <rect class="wx-night" x={night.x} y={base(g()) + 2} width={night.width} height={3} style={{ "--wx-c": "var(--k2-n300)" }} />
             ) : (
-              <rect x={night.x} y={0} width={night.width} height={base(g())} style={{ fill: "var(--k2-n100)" }} />
+              <rect class="wx-night" x={night.x} y={0} width={night.width} height={base(g())} style={{ "--wx-c": "var(--k2-n100)" }} />
             )
           }
         </For>
@@ -211,7 +215,8 @@ export default function DayChart(props: { hours: readonly WeatherHour[]; rain: s
                   y={base(g()) - (g().rain * chance()) / 100}
                   width={Math.min(WIDTH, xOf(index()) + (slot() * g().bar) / 2) - Math.max(0, xOf(index()) - (slot() * g().bar) / 2)}
                   height={(g().rain * chance()) / 100}
-                  style={{ fill: g().rainColor }}
+                  class="wx-rain"
+                  style={{ "--wx-c": g().rainColor }}
                 />
               )}
             </Show>
@@ -229,82 +234,81 @@ export default function DayChart(props: { hours: readonly WeatherHour[]; rain: s
         {/* the temperature: a quiet tint under it and the strong line in the colour of its degrees */}
         <path
           d={`${curvePath(points())}L${WIDTH},${g().top + g().curve}L0,${g().top + g().curve}Z`}
-          style={{ fill: `url(#${id()})`, "fill-opacity": 0.1 }}
+          class="wx-area"
+          style={{ "--wx-c": `url(#${id()})` }}
         />
         <path
           d={curvePath(points())}
           vector-effect="non-scaling-stroke"
-          style={{
-            fill: "none",
-            stroke: `url(#${id()})`,
-            "stroke-width": props.compact ? "2.5px" : "3px",
-            "stroke-linecap": "round",
-            "stroke-linejoin": "round",
-          }}
+          class="wx-line"
+          style={{ "--wx-c": `url(#${id()})`, "stroke-width": props.compact ? "2.5px" : "3px" }}
         />
       </svg>
-      {/* the degrees, at the left text edge */}
-      <For each={ticks()}>
-        {(tick) => <span style={{ ...label, left: "var(--k2-edge)", top: `${yOf(tick) - 8}px` }}>{degreesText(tick)}</span>}
-      </For>
-      {/* the rain's scale: its words at the left, beside its bars (on the phone the soft blue bars speak for themselves) */}
-      <Show when={!props.compact}>
-        <span style={{ ...label, left: "var(--k2-edge)", top: `${base(g()) - 16}px` }}>{props.rain}</span>
-      </Show>
-      {/* now, the warmest and the coldest hour: a dot on the line and its degrees above it */}
-      <For each={marks()}>
-        {(index) => {
-          const hour = () => props.hours[index]!;
-          return (
-            <>
-              <span
-                style={{
-                  position: "absolute",
-                  left: across(share(index, count())),
-                  top: `${yOf(hour().degrees)}px`,
-                  width: index === 0 ? "10px" : "6px",
-                  height: index === 0 ? "10px" : "6px",
-                  "border-radius": "50%",
-                  transform: "translate(-50%, -50%)",
-                  background: temperatureColor(hour().degrees),
-                  "box-shadow": "0 0 0 2px var(--k2-surface)",
-                }}
-              />
+      {/* the words of the drawing: the canvas label already says the day, so assistive technology skips them */}
+      <div aria-hidden="true">
+        {/* the degrees, at the left text edge */}
+        <For each={ticks()}>
+          {(tick) => <span style={{ ...label, left: "var(--k2-edge)", top: `${yOf(tick) - 8}px` }}>{degreesText(tick)}</span>}
+        </For>
+        {/* the rain's scale: its words at the left, beside its bars (on the phone the soft blue bars speak for themselves) */}
+        <Show when={!props.compact}>
+          <span style={{ ...label, left: "var(--k2-edge)", top: `${base(g()) - 16}px` }}>{props.rain}</span>
+        </Show>
+        {/* now, the warmest and the coldest hour: a dot on the line and its degrees above it */}
+        <For each={marks()}>
+          {(index) => {
+            const hour = () => props.hours[index]!;
+            return (
+              <>
+                <span
+                  class="wx-dot"
+                  data-wx-dot={index === 0 ? "now" : ""}
+                  style={{
+                    left: across(share(index, count())),
+                    top: `${yOf(hour().degrees)}px`,
+                    width: index === 0 ? "10px" : "6px",
+                    height: index === 0 ? "10px" : "6px",
+                    "--wx-c": temperatureColor(hour().degrees),
+                    // a ring in the surface's colour lifts the dot off the line
+                    "box-shadow": "0 0 0 2px var(--k2-surface)",
+                  }}
+                />
+                <span
+                  style={{
+                    ...label,
+                    color: "var(--k2-text)",
+                    "font-weight": index === 0 ? 600 : 400,
+                    left: across(share(index, count())),
+                    top: `${yOf(hour().degrees) - 24}px`,
+                    transform: index === 0 ? "none" : index === count() - 1 ? "translateX(-100%)" : "translateX(-50%)",
+                  }}
+                >
+                  {hour().temperature}
+                </span>
+              </>
+            );
+          }}
+        </For>
+        {/* the hours under the base, every second or third; the first is "now" (the forecast names it so) */}
+        <For each={props.hours}>
+          {(hour, index) => (
+            <Show when={index() % labelEvery() === 0}>
               <span
                 style={{
                   ...label,
-                  color: "var(--k2-text)",
-                  "font-weight": index === 0 ? 600 : 400,
-                  left: across(share(index, count())),
-                  top: `${yOf(hour().degrees) - 24}px`,
-                  transform: index === 0 ? "none" : index === count() - 1 ? "translateX(-100%)" : "translateX(-50%)",
+                  color: index() === 0 ? "var(--k2-text)" : label.color,
+                  "font-weight": index() === 0 ? 600 : 400,
+                  left: across(share(index(), count())),
+                  top: `${base(g()) + (props.compact ? 8 : 6)}px`,
+                  transform: index() === 0 ? "none" : index() === count() - 1 ? "translateX(-100%)" : "translateX(-50%)",
                 }}
               >
-                {hour().temperature}
+                {hour.time}
               </span>
-            </>
-          );
-        }}
-      </For>
-      {/* the hours under the base, every second or third; the first is "now" (the forecast names it so) */}
-      <For each={props.hours}>
-        {(hour, index) => (
-          <Show when={index() % labelEvery() === 0}>
-            <span
-              style={{
-                ...label,
-                color: index() === 0 ? "var(--k2-text)" : label.color,
-                "font-weight": index() === 0 ? 600 : 400,
-                left: across(share(index(), count())),
-                top: `${base(g()) + (props.compact ? 8 : 6)}px`,
-                transform: index() === 0 ? "none" : index() === count() - 1 ? "translateX(-100%)" : "translateX(-50%)",
-              }}
-            >
-              {hour.time}
-            </span>
-          </Show>
-        )}
-      </For>
+            </Show>
+          )}
+        </For>
+      </div>
     </div>
   );
 }

@@ -4,3 +4,81 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Weather's own drawings, inside its canvases ([data-k2-canvas]) only. Every data colour stands as --wx-c on its part
+   (from weather-scale.ts, 3:1 on the surface in light and dark), and these rules paint with it, so forced colours can
+   take over. The radar legend also stands on the v1 wall display, outside a canvas. */
+
+/* The phone shows the quieter day and the week as one line per day; from 768 px the full day and the week's table. */
+@media not all and (min-width: 768px) {
+  [data-k2-canvas] :is(.wx-day-wide, .wx-week-wide) {
+    display: none;
+  }
+}
+@media (min-width: 768px) {
+  [data-k2-canvas] :is(.wx-day-phone, .wx-week-phone) {
+    display: none;
+  }
+}
+
+/* each part's colour, set inline by the drawing; the text colour until it is */
+:is(.wx-sign, .wx-stop, .wx-night, .wx-rain, .wx-area, .wx-line, .wx-dot, .wx-swatch) {
+  --wx-c: currentColor;
+}
+[data-k2-canvas] .wx-sign {
+  color: var(--wx-c);
+}
+[data-k2-canvas] .wx-stop {
+  stop-color: var(--wx-c);
+}
+[data-k2-canvas] .wx-night,
+[data-k2-canvas] .wx-rain {
+  fill: var(--wx-c);
+}
+[data-k2-canvas] .wx-area {
+  fill: var(--wx-c);
+  fill-opacity: 0.1;
+}
+[data-k2-canvas] .wx-line {
+  fill: none;
+  stroke: var(--wx-c);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+[data-k2-canvas] .wx-dot {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--wx-c);
+}
+.wx-swatch {
+  flex: 1;
+  background: var(--wx-c);
+}
+
+/* Forced colours: the line, the rain and the dots draw in the text colour, the night in the quiet one, the tint under
+   the line goes; the radar's swatches keep the picture's colours, each with an outline, so the legend stays readable. */
+@media (forced-colors: active) {
+  [data-k2-canvas] :is(.wx-line, .wx-rain, .wx-night, .wx-area, .wx-dot) {
+    forced-color-adjust: none;
+  }
+  [data-k2-canvas] .wx-line {
+    stroke: CanvasText;
+  }
+  [data-k2-canvas] .wx-rain {
+    fill: CanvasText;
+  }
+  [data-k2-canvas] .wx-night {
+    fill: GrayText;
+  }
+  [data-k2-canvas] .wx-area {
+    fill: none;
+  }
+  [data-k2-canvas] .wx-dot {
+    background: CanvasText;
+  }
+  .wx-swatch {
+    forced-color-adjust: none;
+    outline: 1px solid CanvasText;
+  }
+}

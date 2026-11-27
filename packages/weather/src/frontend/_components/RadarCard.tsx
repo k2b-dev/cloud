@@ -32,7 +32,8 @@ export default function RadarCard(props: RadarCardProps) {
   const pageLocale = useLocale();
   const t = () => weatherMessages.resolve([props.locale ?? pageLocale()]).t;
   const s = legendSizes[props.size ?? "md"];
-  const words = { "font-size": `${s.text}px`, "line-height": 1.4, color: "var(--k2-subtle, currentColor)" } as const;
+  // the quiet words: v2's subtle ink in a v2 screen, the dimmed ink of the v1 wall display around it otherwise
+  const words = { "font-size": `${s.text}px`, "line-height": 1.4, color: "var(--k2-subtle, var(--ui-text-dimmed))" } as const;
 
   return (
     <div class="flex h-full min-h-0 flex-col">
@@ -42,12 +43,12 @@ export default function RadarCard(props: RadarCardProps) {
 
       {(props.showLegend ?? true) && (
         <>
-          {/* the picture's colours from light to extreme, drawn with fixed values so the legend never depends on a
-              stylesheet, and its four words under them */}
+          {/* the picture's colours from light to extreme as fixed values (the app stylesheet paints them, with an outline
+              in forced colours), and its four words under them */}
           <div role="img" aria-label={t().precipitationLegend} style={{ "margin-top": "8px" }}>
             <div style={{ display: "flex", height: `${s.bar}px`, "border-radius": "4px", overflow: "hidden" }}>
               {RADAR_SCALE.map((color) => (
-                <div style={{ flex: "1", background: color }} />
+                <div class="wx-swatch" data-wx-swatch="" style={{ "--wx-c": color }} />
               ))}
             </div>
             <div style={{ display: "flex", "justify-content": "space-between", "margin-top": "4px", ...words }}>

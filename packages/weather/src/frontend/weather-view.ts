@@ -2,6 +2,7 @@ import type { GeoProvenance } from "@k2b/cloud/contracts";
 import { weatherUiService } from "@k2b/cloud/services/weather/ui";
 import type { WeatherDataPayload } from "../contracts";
 import { type WeatherMessages, weatherConditionLabel } from "../messages";
+import { isNight } from "./sun";
 import { type WeatherTone, weatherTone } from "./weather-scale";
 
 /** A saved location in the sidebar: its symbol and temperature come from its current weather, if any. */
@@ -9,7 +10,7 @@ export type WeatherPlace = { id: string; name: string; state: string | null; ico
 
 /**
  * `degrees` and `rainChance` are the plain numbers behind the words, for the day's curve and its rain bars; `tone` is
- * the colour of the sign, `night` whether the hour lies in the dark (the provider's night sign).
+ * the colour of the sign, `night` whether the sun is down at the place in that hour.
  */
 export type WeatherHour = {
   time: string;
@@ -120,7 +121,8 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
     temperature: data ? degrees(data.current.temperature) : null,
   });
 
-  const weather = (data: WeatherDataPayload): WeatherNow => {
+  /** The weather of a place; its latitude and longitude say which hours lie in the dark. */
+  const weather = (data: WeatherDataPayload, place: { lat: number; lon: number }): WeatherNow => {
     const { current } = data;
     const firstDay = data.daily[0];
     const rainy = data.hourly.findIndex((entry) => (entry.precipitationProbability ?? 0) >= RAIN_LIKELY);
@@ -162,7 +164,8 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
         condition: weatherConditionLabel(entry.icon, t),
         temperature: degrees(entry.temperature),
         degrees: entry.temperature,
-        night: entry.icon.endsWith("-night"),
+        // the sun says when it is dark: the forecast names night only for clear and partly cloudy hours
+        night: isNight(place.lat, place.lon, new Date(entry.timestamp)),
         rain: entry.precipitationProbability ? percent(entry.precipitationProbability) : missing,
         rainChance: entry.precipitationProbability || null,
       })),
