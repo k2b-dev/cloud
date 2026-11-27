@@ -48,6 +48,7 @@
  * ```
  */
 import type { Page } from "playwright";
+import { foldable } from "../bar-fold";
 import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
 import { settled } from "./settled";
 
@@ -107,6 +108,8 @@ export type V2Layout = {
 };
 
 type Limits = {
+  /** The buttons a bar folds into "…" (bar-fold.ts). */
+  folds: string;
   sizes: number[];
   lineHeights: number[];
   weights: number[];
@@ -589,7 +592,12 @@ function measureInPage(options: InPage): DomResult {
       const clip = hardClipX(control);
       for (const r of textBoxes(control, (node) => shortened.some((part) => part.contains(node))))
         if (r.left < Math.max(box.left, clip.left) - 0.5 || r.right > Math.min(box.right, clip.right) + 0.5) clipped = true;
-      if (clipped) cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
+      // A button the end of a bar cuts before the page is alive folds into its "…" once the bar measures (`Bar`): on the
+      // server's page the end cuts what it has no room for, from its start, so the parts at its end stay whole.
+      const folds =
+        control.closest('.k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end') !== null && control.matches(options.folds);
+      if (clipped && !folds)
+        cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
     }
     // A box of text that clips (overflow hidden or clip, not a scroller) shows every line of it whole and cuts a line at
     // its end only with "…". Only boxes of text count: text of their own or inline children. A control's label is
@@ -848,6 +856,7 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     oneLine:
       options.oneLine ??
       ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
+    folds: foldable,
     sizes: roles.map((role) => role.size),
     lineHeights: [...new Set(roles.map((role) => role.lineHeight))],
     weights: [...fontWeights],

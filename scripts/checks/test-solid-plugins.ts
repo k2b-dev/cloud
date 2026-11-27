@@ -10,6 +10,11 @@ const registrations = new Set([
   // The public app smoke starts this file as its own Bun process with the app's production plugin.
   "packages/cloud/src/_internal/public-surface-ssr.test-fixture.ts",
 ]);
+/** Files that still register the SSR compiler and write JSX of their own; each one has its issue. */
+const ownJsxPending = new Set([
+  // #4456
+  "packages/chat/src/frontend/ChatPanel.browser-fixture.tsx",
+]);
 const testFile =
   /\.(?:test|spec)\.tsx?$|(?:fixture|harness|suite|browser-server|ssr-test-plugin)\.tsx?$|(?:^|\/)(?:test|tests)\/|^scripts\/fixtures\//;
 const message =
@@ -55,6 +60,21 @@ export const checkSource = (file: string, source: string): Finding[] => {
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
+  // A file that registers the SSR compiler itself is compiled before that registration runs, so its own JSX goes through
+  // Bun's runtime, which Solid lacks (`jsxDEV` is not found since Bun 1.4.3). It worked only while an earlier file of
+  // the same process had registered the compiler: splitting a suite into parts made it fail (#4404).
+  if (/\bregisterSsrTestPlugin\(/.test(source) && !ownJsxPending.has(file)) {
+    const jsx = (node: ts.Node): ts.Node | undefined =>
+      ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node) ? node : ts.forEachChild(node, jsx);
+    const found = jsx(sourceFile);
+    if (found)
+      findings.push({
+        file,
+        line: sourceFile.getLineAndCharacterOfPosition(found.getStart(sourceFile)).line + 1,
+        message:
+          "This file registers the SSR compiler itself, so its own JSX is compiled before that and fails on load when it runs first in its process. Use createComponent here and keep JSX in the modules it imports after registerSsrTestPlugin.",
+      });
+  }
   return findings;
 };
 

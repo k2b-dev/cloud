@@ -32,6 +32,8 @@ The working surface of an app: one per screen.
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
   beside the columns; `detailEmpty={{ icon, text }}` stands in its place while
   none is open, so nothing moves when it opens. Keep the list's `width`.
+  `detailEmpty.hero` stands above its sentence: a picture of the place as a
+  whole, such as a `Heat` with a line that sums it up.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
@@ -112,6 +114,23 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
 
+The `start` keeps a least: its name at `--k2-start-least` (16ch, or all
+of it, where it is narrower), or its open tab. Where the `end` does not fit beside the whole
+`start` (six kept actions beside tabs on the phone), the end folds first:
+its buttons that do not fit move into a menu "…" at its end, in their
+order, the last first. If the end's last plain `Menu` "…" (no icon or
+label of its own) is followed only by parts that never fold (a closing ×,
+the primary), they are its first section; no second "…" stands beside it.
+An end made outside the `Bar` (a helper's JSX, an island of its own)
+cannot offer its "…": the bar then shows its own, "Mehr in dieser Leiste". The primary action, a
+closing ×, a `Menu`, a search and a button that opens a menu never fold.
+Only when nothing more can fold does the `start` shorten with "…", down
+to its least, never to nothing. The browser measures the fold once the
+page is alive; before that the bar stands as it does when nothing folds
+(the end whole, the start given way down to its least), so the server's
+page is the live one wherever nothing folds. Only an end that has to fold
+cuts, from its start, until the fold takes over.
+
 ### Band
 
 A block of free height with one line below. `tone`: `note`, `ai`, `yours`,
@@ -166,12 +185,13 @@ still reaches the column's edges), `more` (one link under the rows, its
 words on their text edge, never at the right: "All deliveries ›"; its
 `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
-the head or between entries, one line at the end. Put `Row`s directly in a
-section, or a `Digest`, `Facts`, `Group`s. A section of a list that people
-fold (Chat's sections) takes `open` and `onOpenChange`: a chevron at the end
-of its head folds it, the app keeps the state, and the section keeps its
-head, rhythm and line, without a frame (a `Group` is a framed thing, not a
-part of a list).
+the head or between entries, one line at the end. A long title (a
+question, a name) wraps onto more lines and the head grows with it; no word
+is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
+A section of a list that people fold (Chat's sections) takes `open` and
+`onOpenChange`: a chevron at the end of its head folds it, the app keeps the
+state, and the section keeps its head, rhythm and line, without a frame (a
+`Group` is a framed thing, not a part of a list).
 
 ### Group
 
@@ -320,7 +340,7 @@ lines instead of cutting a thing. In a table cell its `Text` gives way to
 the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
 name wraps in a small table and ends with "…" in one with column widths.
 
-### Icon, Avatar, Chip, Progress, Ticks
+### Icon, Avatar, Chip, Progress, Ticks, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -332,6 +352,10 @@ name wraps in a small table and ends with "…" in one with column widths.
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
+  With `status`, `quiet` drops the tinted round: the dot in the colour of
+  the state and the word in the ink of the text ("● Aktiv"), on the chip's
+  height. Use it for a column of states in a dense table or list, where a
+  chip on every line is too loud.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
   the writing direction; at most 60 in a table cell, more are cut at its
@@ -342,6 +366,18 @@ name wraps in a small table and ends with "…" in one with column widths.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
+  one bounded aggregate), `today` (a date key from the server: the last day,
+  marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words),
+  `detail` (a second tip line per date, such as "6 eingehend · 4 gesendet"),
+  `summary` (the line above, from the total and the days shown, such as
+  "… Mails in den letzten 12 Monaten · Ø 6 pro Tag"), `color` (a data colour
+  that keeps 3:1 at its strongest; default the app's ink). One column per
+  week, newest at the end of the writing direction; four tones over the
+  distinct counts, the busiest day always the strongest. Fits its place,
+  days up to 12 px, never cuts the newest weeks. The arrows walk the days;
+  one shared tip shows day and count on hover and focus. As a
+  `detailEmpty` `hero`, made once in the component.
 
 ## Controls
 
@@ -370,8 +406,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
   required field shows `error="Pflichtfeld."`.
-- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
-  `max`, `onInput`; `label` when it stands without a `Field` (a search).
+- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline` (shows
+  `rows` lines at least, 3 by default, or the lines of its value from the
+  server's page on, and grows with its words up to ten lines, then scrolls), `min`, `max`, `onInput`; `label` when it stands without a `Field` (a search).
   `onKeyDown` (Enter to search, Escape to clear; while
   `event.isComposing`, Enter belongs to the input method and must not
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
@@ -437,7 +474,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   month's short name, keys move the weeks, the arrows by six. Use it inside a
   popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
-  `onChange`, `disabled` (dimmed).
+  `onChange`, `disabled` (dimmed), `description` (a quiet line under the
+  words, such as what turning it on does; it describes the box and is no
+  part of its name).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
@@ -445,7 +484,17 @@ name wraps in a small table and ends with "…" in one with column widths.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+  `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
+  `Action`, such as "Neuer Chat") stand under the name, each across the
+  column; pass the same action as `Workspace` `primary`, which floats on the
+  phone. `list` holds the app's own rows after the groups (a `List` of
+  `Row`s, such as conversations): made once, like the other parts of a
+  frame, they reach the column's edges and scroll on their own above the
+  foot; virtualize a long list. With `phone: "page"` the list with the
+  search is the phone's page while no pane is open beside it; the title,
+  the groups and the foot are then in the platform's menu, and any pane
+  that opens (a detail or a page of its own) is the page in its place.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
@@ -505,7 +554,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   they keep only their symbols, the words stay their names; leave on the
   phone),
   `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  becomes the bar of what can be done with them; the count is never cut, and
+  actions without room go whole into a "…" menu from the end, right after the
+  last one in sight; the way out stays at the end of the bar).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
@@ -559,14 +610,18 @@ name wraps in a small table and ends with "…" in one with column widths.
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the
   quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
+  head it stays on the phone. An entry: `label`, `icon` or `color` (a data
+  colour as a dot before the words, such as an area; it goes through the
+  colour guard and adds nothing to the name), `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
-  beside the entry such as a `DatePicker`: a dialog of its own over the
-  menu, with its own keys and focus, that calls `close` once it picked;
-  Escape closes it first), and `current` (the value set through that
+  such as a `DatePicker` as the next step: a dialog of its own that takes
+  the place of the menu the entry stands in, under a head that leads
+  back; its own keys and focus, so the arrows stay with the calendar;
+  Escape and the back button lead back; it calls `close` once it
+  picked), and `current` (the value set through that
   submenu or panel, such as a reminder's time: at the end in the app's
   colour and part of the entry's name; it takes the place of `meta`); or
   `"separator"` between groups; or a section `{ title, items }` under a
@@ -598,6 +653,14 @@ name wraps in a small table and ends with "…" in one with column widths.
   (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
+- `announce(text, { assertive? })`: news for assistive technology that no
+  element shows as it happens, such as a run that changed its state or new
+  mail. It goes to the live region that `Workspace` brings in its server
+  markup (also from another island; with several, the first one shown);
+  the same news twice is said twice, a burst within 250 ms as its last
+  news and at least once a second, and said news leaves after five
+  seconds; `assertive` only for news that cannot wait, such as a run that
+  failed.
 
 ## States
 
