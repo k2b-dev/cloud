@@ -140,7 +140,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     }
     if (name === "Chip") {
       const kind = element.getAttribute("data-status") ?? element.getAttribute("data-kind");
-      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""})`;
+      return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""}${element.hasAttribute("data-quiet") ? " quiet" : ""})`;
     }
     if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}${element.hasAttribute("data-image") ? " picture" : ""}`;
     if (name === "Icon") return element.getAttribute("aria-label") ? `icon ${quote(element.getAttribute("aria-label"))}` : "";
@@ -315,7 +315,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
             .filter(inSight)
             .map((chip) => `[${chip.getAttribute("data-status") ? `${chip.getAttribute("data-status")} ` : ""}${quote(chip.textContent)}]`);
           const select = element.querySelector(".k2-mark, [data-k2-mark]") ? " select-all" : "";
-          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
+          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${end ? words(end).join(" ") : ""}`;
           return `StatusRow ${quote(lead)}${marks.length ? ` ${marks.join(" ")}` : ""}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
         }
         const startWords = start ? words(start) : [];

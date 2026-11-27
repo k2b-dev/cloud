@@ -343,6 +343,23 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  // #4189: under Playwright's clock (`page.clock.install`), requestAnimationFrame runs on fake time, which advances only
+  // as the test lets it; a paused clock never shows a frame. settled() waits for real frames, so it still settles.
+  test("settled() settles a page whose fake clock is paused", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.clock.install({ time: new Date("2026-11-27T12:00:00Z") });
+      await page.setContent(`<!doctype html><p id="text">text</p>`);
+      await page.clock.pauseAt(new Date("2026-11-27T12:01:00Z"));
+      // before the fix this waited for a frame of the paused fake clock and never returned
+      await settled(page);
+      expect(await page.locator("#text").textContent()).toBe("text");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
   test("settled() names the animations of a page that keeps animating", async () => {
     const context = await browser.newContext();
     try {
