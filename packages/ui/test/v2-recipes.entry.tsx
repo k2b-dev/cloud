@@ -1,5 +1,6 @@
 import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { type ScreenApp, ScreenFrame } from "../scripts/screen-frame";
 import * as actions from "../skills/k2b-ui/recipes/actions";
 import * as content from "../skills/k2b-ui/recipes/content";
 import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
@@ -7,8 +8,10 @@ import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
 import * as form from "../skills/k2b-ui/recipes/form";
 import * as formDetail from "../skills/k2b-ui/recipes/form-detail";
 import * as frame from "../skills/k2b-ui/recipes/frame";
+import * as home from "../skills/k2b-ui/recipes/home";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
+import * as overview from "../skills/k2b-ui/recipes/overview";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as settings from "../skills/k2b-ui/recipes/settings";
@@ -19,7 +22,7 @@ import * as table from "../skills/k2b-ui/recipes/table";
 // states before this bundle runs; the bundle mounts it in #root. The test then presses what a `press` state names.
 
 type State = (() => JSX.Element) | { render: () => JSX.Element; press: string | readonly string[] };
-type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?: Record<string, State> };
+type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?: Record<string, State>; app?: ScreenApp };
 
 const recipes: Record<string, Recipe> = {
   "actions.tsx": actions,
@@ -29,8 +32,10 @@ const recipes: Record<string, Recipe> = {
   "form-detail.tsx": formDetail,
   "form.tsx": form,
   "frame.tsx": frame,
+  "home.tsx": home,
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
+  "overview.tsx": overview,
   "record-groups.tsx": recordGroups,
   "settings.tsx": settings,
   "record.tsx": record,
@@ -64,6 +69,16 @@ if (chosen && root) {
   const state = chosen.state ? recipe.states?.[chosen.state] : undefined;
   if (chosen.state && !state) throw new Error(`v2-recipes: ${chosen.name} has no state ${chosen.state}`);
   const view = !state ? recipe.default : typeof state === "function" ? state : state.render;
-  render(() => createComponent(view, {}), root);
+  // in the frame of a host, as Fibel and the skill's pictures show every recipe
+  render(
+    () =>
+      createComponent(ScreenFrame, {
+        app: recipe.app,
+        get children() {
+          return createComponent(view, {});
+        },
+      }),
+    root,
+  );
 }
 window.__mounted = true;

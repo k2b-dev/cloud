@@ -586,6 +586,229 @@ export const fixtures = {
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
   table: TableFixture,
+  // fixed widths without grips (W2, Notebooks admin): a narrow number and a deed column, the text columns take the rest
+  tableFixed: () =>
+    shell(
+      <Pane label="Notizbücher">
+        <Table
+          label="Notizbücher"
+          rows={[
+            { name: "Werkstatt", owner: "Mira Solberg", pages: "1.284" },
+            { name: "Kundenakten Nord", owner: "Felix Thal", pages: "36" },
+            { name: "Rezepte", owner: "Jule Amsel", pages: "4" },
+          ]}
+          columns={[
+            { title: "Notizbuch", cell: (row) => row.name },
+            { title: "Besitzer", cell: (row) => row.owner },
+            { title: "Seiten", width: { fixed: 100 }, align: "end", cell: (row) => row.pages },
+            {
+              title: "Aktion",
+              width: { fixed: 56 },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für ${row.name}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // number, text and deeds (Notebooks admin #4264): the description takes the room, the deed keeps its narrow width
+  tableFixedText: () =>
+    shell(
+      <Pane label="Notizbücher">
+        <Table
+          label="Notizbücher"
+          rows={[
+            { pages: "1.284", name: "Werkstatt", place: "Küche Lindqvist, Obergeschoss links neben dem Lager" },
+            { pages: "36", name: "Kundenakten Nord", place: "Büro" },
+            { pages: "4", name: "Rezepte", place: "Küche Lindqvist, Erdgeschoss" },
+            { pages: "212", name: "Lieferanten", place: "Archiv, Regal 3" },
+            { pages: "18", name: "Messen", place: "Halle 2" },
+          ]}
+          columns={[
+            { title: "Seiten", width: { fixed: 100 }, align: "end", cell: (row) => row.pages },
+            { title: "Name", cell: (row) => row.name },
+            { title: "Ort", cell: (row) => row.place },
+            {
+              title: "Aktionen",
+              width: { fixed: 72 },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für Notizbuch ${row.pages}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // a small table with groups and rows of two lines (public page, PS #4227): a group head is one quiet line
+  tableGroups: () =>
+    shell(
+      <Pane label="Programm">
+        <Table
+          label="Programm"
+          rowKey={(row) => row.key}
+          group={(row) => ({
+            key: row.day,
+            // one head a word, one a chip: both stand at the same height
+            head: () => (row.day.startsWith("Sonntag") ? <Chip status="warn">{row.day}</Chip> : <Text weight="strong">{row.day}</Text>),
+            meta: row.count,
+          })}
+          rows={[
+            { key: "a", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Werkstattführung", host: "Mira Solberg", time: "10:00" },
+            { key: "b", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Lackierwerk", host: "Felix Thal", time: "14:00" },
+            { key: "c", day: "Sonntag, 29. Nov.", count: "1 Führung", title: "Holzlager", host: "Jule Amsel", time: "11:00" },
+          ]}
+          columns={[
+            { title: "Führung", width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.title, row.host] }) },
+            { title: "Zeit", width: { fixed: 80 }, numeric: true, cell: (row) => row.time },
+          ]}
+        />
+      </Pane>,
+    ),
+  // a short and a long text column beside a fixed deed (delta review of #4209): together they fill the row exactly
+  tableShortLong: () =>
+    shell(
+      <Pane label="Rollen">
+        <Table
+          label="Rollen"
+          rows={[
+            { role: "Gast", text: "Darf lesen und kommentieren, aber nichts ändern oder freigeben; sieht keine Preise und Kunden" },
+            { role: "Admin", text: "Darf alles, auch Rollen vergeben und Daten exportieren" },
+            { role: "Leser", text: "Liest" },
+            { role: "Team", text: "Arbeitet mit, darf Einträge anlegen, ändern und verschieben" },
+          ]}
+          columns={[
+            { title: "Rolle", cell: (row) => row.role },
+            { title: "Beschreibung", cell: (row) => row.text },
+            {
+              title: "Aktionen",
+              width: { fixed: 72 },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für ${row.role}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // an open entry whose form ends at the bottom of a phone, under the floating main action (W3, Spaces #4197)
+  detailForm: () =>
+    shell(
+      <Pane.Split>
+        <Pane label="Aufgaben">
+          <List label="Aufgaben">
+            <Row icon="checkbox" lines={["Angebot prüfen"]} current />
+          </List>
+        </Pane>
+        <Pane detail back={{ label: "Aufgaben", href: "#aufgaben" }} label="Aufgabe">
+          <Section title="Angaben">
+            {Array.from({ length: 14 }, (_, index) => (
+              <Field label={`Feld ${index + 1}`}>
+                <Input value={`Wert ${index + 1}`} />
+              </Field>
+            ))}
+          </Section>
+        </Pane>
+      </Pane.Split>,
+    ),
+  // every kind of scroller under the floating main action on the phone (W3, Spaces break-ui v4): a list, a table's
+  // phone rows, a record, a board of status columns; each long enough to scroll, its last thing a deed
+  fabList: () =>
+    shell(
+      <Pane label="Aufgaben">
+        <List label="Aufgaben">
+          {Array.from({ length: 24 }, (_, index) => (
+            <Row icon="checkbox" lines={[`Aufgabe ${index + 1}`, "Werkstatt · heute"]} action={{ label: "Erledigt" }} />
+          ))}
+        </List>
+      </Pane>,
+    ),
+  fabTable: () =>
+    shell(
+      <Pane label="Rechnungen">
+        <Table
+          label="Rechnungen"
+          rows={Array.from({ length: 24 }, (_, index) => ({
+            number: `RE-${1000 + index}`,
+            customer: `Kunde ${index + 1}`,
+            amount: "1.280,00 €",
+          }))}
+          columns={[
+            { title: "Nummer", cell: (row) => row.number },
+            { title: "Kunde", cell: (row) => row.customer },
+            { title: "Betrag", align: "end", cell: (row) => row.amount },
+          ]}
+          phone={(row) => ({ lines: [row.customer, row.number], time: row.amount })}
+          open={() => ({ href: "#rechnung" })}
+        />
+      </Pane>,
+    ),
+  fabRecord: () =>
+    shell(
+      <Pane label="Kunde">
+        {Array.from({ length: 4 }, (_, section) => (
+          <Section title={`Angaben ${section + 1}`}>
+            <Facts
+              items={Array.from({ length: 6 }, (_, index) => ({ label: `Feld ${index + 1}`, value: `Wert ${section * 6 + index + 1}` }))}
+            />
+          </Section>
+        ))}
+        <Section title="Zum Schluss">
+          <Bar end={<Button label="Kunde archivieren">Archivieren</Button>} />
+        </Section>
+      </Pane>,
+    ),
+  fabBoard: () =>
+    shell(
+      <Pane label="Tafel">
+        {["Offen", "In Arbeit", "Erledigt"].map((state) => (
+          <Section title={state} count={8}>
+            <List label={state}>
+              {Array.from({ length: 8 }, (_, index) => (
+                <Row icon="checkbox" lines={[`${state}: Aufgabe ${index + 1}`]} action={{ label: "Verschieben" }} />
+              ))}
+            </List>
+          </Section>
+        ))}
+      </Pane>,
+    ),
+  // a last column of digits only at exactly the width the table reckons as its least (delta review r4): digits are the
+  // widest signs, and a fallback font draws them wider than Plex
+  tableDigits: () =>
+    shell(
+      <Pane label="Konten">
+        <Table
+          label="Konten"
+          rows={[
+            { title: "Nachlassverwaltung Oberhauser-Wettstein", number: "123456789012345" },
+            { title: "Familie Oswald", number: "987654321098765" },
+            { title: "Architekturbüro Winter", number: "100000000000000" },
+            { title: "Stadtwerke Auental", number: "555555555555555" },
+            { title: "Praxis Dr. Lindqvist", number: "4" },
+            { title: "J", number: "42" },
+          ]}
+          columns={[
+            { title: "Kunde", width: { min: 200, default: 300 }, cell: (row) => row.title },
+            { title: "Konto", numeric: true, cell: (row) => row.number },
+          ]}
+        />
+      </Pane>,
+    ),
+  // an amount in the last column of a narrow table (Codex review of #4209): it is never cut, the table scrolls instead
+  tableAmount: () =>
+    shell(
+      <Pane label="Rechnungen">
+        <Table
+          label="Rechnungen"
+          rows={[
+            { title: "Nachlassverwaltung Oberhauser-Wettstein", sum: "12.345.678,90 €" },
+            { title: "Familie Oswald", sum: "1.280,00 €" },
+            { title: "Architekturbüro Winter", sum: "640,00 €" },
+            { title: "Stadtwerke Auental", sum: "4.611.686,00 €" },
+            { title: "Praxis Dr. Lindqvist", sum: "−42,50 €" },
+            { title: "J", sum: "0,30 €" },
+          ]}
+          columns={[
+            { title: "Kunde", width: { min: 200, default: 300 }, cell: (row) => row.title },
+            { title: "Betrag", align: "end", cell: (row) => row.sum },
+          ]}
+        />
+      </Pane>,
+    ),
   grid: GridFixture,
   controls: ControlsFixture,
   messages: MessagesFixture,

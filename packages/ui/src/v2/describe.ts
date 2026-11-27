@@ -143,6 +143,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""})`;
     }
     if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}${element.hasAttribute("data-image") ? " picture" : ""}`;
+    if (name === "Avatar.Stack") return `@{${element.getAttribute("aria-label") ?? ""}}`;
+    if (name === "Mark") {
+      const kind = element.querySelector(".k2-mk-kind")?.textContent;
+      return `[${element.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${kind ? ` ${kind}` : ""}${element.hasAttribute("data-image") ? " picture" : ""}]`;
+    }
+    if (name === "Spark") return `spark ${quote(element.getAttribute("aria-label"))}`;
     if (name === "Icon") return element.getAttribute("aria-label") ? `icon ${quote(element.getAttribute("aria-label"))}` : "";
     if (name === "Text") {
       const type = element.getAttribute("data-type");
@@ -320,7 +326,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Tiles": {
         const tiles = [...element.querySelectorAll(".k2-tile-title")].map((tile) => clip(tile.textContent ?? "", 30));
-        return `Tiles ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
+        const variant = element.getAttribute("data-variant");
+        return `Tiles${variant ? ` ${variant}` : ""} ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
       }
       case "Section":
       case "Group": {
@@ -344,7 +351,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const time = kid(element, ".k2-row-time")?.textContent;
         const meta = element.querySelector(".k2-row-meta")?.textContent;
         const lead = kid(element, ".k2-row-lead")?.querySelector("[data-k2-part]");
-        const leadWord = lead && part(lead) === "Avatar" ? ` @${lead.getAttribute("aria-label")}` : "";
+        const leadWord =
+          lead && part(lead) === "Avatar"
+            ? ` @${lead.getAttribute("aria-label")}`
+            : lead && part(lead) === "Mark"
+              ? ` [${lead.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${lead.hasAttribute("data-image") ? " picture" : ""}]`
+              : "";
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
         const tail = kidsMatching(element, ".k2-row-end, .k2-row-marks").flatMap(words);
@@ -425,6 +437,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
+        if (element.hasAttribute("data-activity"))
+          return `Entry @${kid(kid(element, ".k2-row-lead"), ".k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${text(".k2-row-l2")}`;
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
       }
       default:
@@ -445,7 +459,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         problems.push(`loose text ${quote(node.textContent, 30)} in Band: put it in <Text>`);
       if (node.nodeType !== 1) continue;
       const child = node as Element;
-      if (ownedChild(child)) continue;
+      // the rule a primitive makes for itself (a split's context column): part of that primitive, not the screen's
+      if (ownedChild(child) || child.matches("style[data-k2-rule]")) continue;
       problems.push(
         `plain <${child.tagName.toLowerCase()}> in ${where} ${quote(child.textContent, 30)}: no primitive owns it; use Band, Section, Group, List, Table, Notice or Text`,
       );
@@ -557,9 +572,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
-      // words kept only as the name of a control that gave way to its symbol are not cut: they are not in sight at all.
-      // Only a label hidden that way counts (at most 1 px, taken out of the flow and clipped away, as sr-only text);
-      // a label squeezed to 1 px in a broken layout is still cut.
+      // Words kept only as the name of a control that gave way to its symbol (a narrow status row keeps the symbol of
+      // ListOrder) are not cut: they are not in sight at all. Only a label hidden that way counts (at most 1 px, taken
+      // out of the flow and clipped away, as sr-only text), and only while the control still has a name; a label
+      // squeezed to 1 px in a broken layout is still cut.
       const shown = label.getBoundingClientRect();
       const labelStyle = getComputedStyle(label);
       const visuallyHidden =
@@ -567,7 +583,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         (shown.width <= 1 || shown.height <= 1) &&
         labelStyle.position === "absolute" &&
         (labelStyle.clipPath !== "none" || labelStyle.clip !== "auto");
-      if (visuallyHidden) continue;
+      const named = (control.getAttribute("aria-label") ?? label.textContent ?? "").trim() !== "";
+      if (visuallyHidden && named) continue;
       if (label.scrollWidth > label.clientWidth + 1 || shown.right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
@@ -586,12 +603,28 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const box = fab.getBoundingClientRect();
     // Fields and the buttons of a bar in the content (a form's footer): rows and their buttons slide under it while the
     // list scrolls, which is fine.
+    // How far the page can still move a control up: what its scrollers (and the page) have left to scroll down. A control
+    // that scrolling lifts above the button (the end of a column keeps that room free) is reached; only one that stays
+    // under it is covered.
+    // Only scrolling that moves the control past the button counts: a scroller that holds the button too moves both.
+    const lift = (control: Element) => {
+      let left = 0;
+      for (let node = control.parentElement; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 1 && !node.contains(fab))
+          left += node.scrollHeight - node.clientHeight - node.scrollTop;
+      }
+      const page = document.scrollingElement;
+      if (page && getComputedStyle(fab).position === "fixed") left += page.scrollHeight - page.clientHeight - page.scrollTop;
+      return left;
+    };
     const covered = [...root.querySelectorAll(".k2-btn, input:not(.k2-mark-input), select, textarea")].filter((control) => {
       if (control === fab || fab.contains(control) || hidden(control)) return false;
       const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
       if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || (bar && parentOf(bar)?.hasAttribute("data-slot")))) return false;
       const other = control.getBoundingClientRect();
-      return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
+      if (!(other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom)) return false;
+      return other.bottom - lift(control) > box.top;
     });
     if (covered.length)
       problems.push(

@@ -114,6 +114,15 @@ export function Fixture() {
               ]}
               time="Mo"
             />
+            {/* a chip whose words are JSX (Codex review of #4209): its words are made once, for the tip and the text */}
+            <Row
+              lines={["Wörter als JSX", "im Chip"]}
+              marks={
+                <Chip status="warn">
+                  <Text weight="medium">Wartet</Text>
+                </Chip>
+              }
+            />
             <Row lines={["Zwei Zeilen", "mit Marken"]} marks={<Chip status="ok">bezahlt</Chip>} />
           </List>
         </Pane>

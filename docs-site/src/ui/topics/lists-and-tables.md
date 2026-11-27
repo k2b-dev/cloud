@@ -10,7 +10,7 @@ Many things of one kind. Use a `List` when each entry reads as a line of text, a
 
 Open invoices with a status row: the lead says how many, the figures follow, the filter sits at the end. Each row opens its invoice and has one deed. Switch the state: empty, loading and failed stand where the rows would stand, and nothing above them moves.
 
-<Example recipe="table" height="440" default="Rows" />
+<Example recipe="table" height="640" default="Rows" />
 
 ## A list beside the open entry
 
@@ -81,16 +81,16 @@ Reorder by dragging, and a tree. Until they ship, use the nearest part and write
 ### Do
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
-- Give every wide table a `phone(row)`.
-- Put the count and key figures in the `StatusRow`.
-- Keep row text short; long text is cut with "…".
+- Give every wide table a `phone(row)`, and put the count and key figures in the `StatusRow`.
+- Keep row text short (it is cut with "…"); mark numbers, amounts and times with `align: "end"` or `numeric`: they are never cut, and their column grows to the longest value.
+- Show a person in a cell as `{ avatar, lines: [name] }`, not as an `Inline` of `Avatar` and `Text`.
 
 ### Don't
 
 - Draw your own lines between rows or around a table.
 - Open entries with `onClick` when they have an address.
 - Put "Erneut versuchen" anywhere but `Failed`.
-- Shrink columns on the phone; `drop` them.
+- Shrink columns when room runs out; `drop` them (they leave one by one from the last, as the table gets narrower).
 
 ## Next
 

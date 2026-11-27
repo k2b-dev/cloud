@@ -19,10 +19,10 @@ import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, custom, Dot, Icon } from "./marks";
+import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
-import type { Action, OnNavigate, Person, Status } from "./types";
+import { type Action, type OnNavigate, type Person, type Status, type Width, widthRange } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,11 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /**
+   * Text a machine wrote, read sign by sign: a stack trace, a log message, a command. Monospace, and its line breaks
+   * and spaces stay as written; a line longer than its place wraps at any sign. In the flow of a column it is a block.
+   */
+  mono?: boolean;
   /**
    * The full words as a tooltip, for text its place may cut (a long title in a head): the same words, never a hint
    * of something else.
@@ -69,6 +74,7 @@ export const Text = (props: TextProps) => (
     data-k2-part="Text"
     data-type={props.type}
     data-tone={props.tone}
+    data-mono={props.mono ? "" : undefined}
   >
     {props.children}
   </Dynamic>
@@ -298,10 +304,13 @@ export type RowProps = {
   lines: RowLines;
   /** A quiet note after the title, such as a count or an address. */
   meta?: JSX.Element;
-  /** The lead: a symbol in the colour of its area … */
+  /** The lead: a quiet symbol for what the row is … */
   icon?: string;
-  /** … the data colour of that symbol … */
-  color?: string;
+  /**
+   * … the mark of the thing the row stands for (a base, a file with its thumbnail, a table): its symbol on a tint of
+   * its colour, or its picture; 24 px in a row of one line, 32 px in a row of two or three …
+   */
+  mark?: MarkProps;
   /** … or a person. */
   avatar?: Person;
   /** Unread: a dot leads and the first two lines turn 600. */
@@ -355,6 +364,9 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
   </Show>
 );
 
+/** The signs of a deed at the end of a row beyond which it stands under the text in a column under 640 px. */
+const longDeed = 24;
+
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
@@ -381,9 +393,10 @@ export const Row = (props: RowProps) => {
       data-yours={props.yours ? "" : undefined}
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
+      data-mark={props.mark && !props.avatar && !props.select ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
-      data-action={props.action ? "" : undefined}
-      style={custom({ "--k2-c": props.color })}
+      // a long deed (more than 24 signs, some 170 px) stands under the text in a narrow column, never beside a squeezed one
+      data-action={props.action ? ([...props.action.label].length > longDeed ? "long" : "") : undefined}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}
@@ -411,14 +424,21 @@ export const Row = (props: RowProps) => {
               when={props.avatar}
               fallback={
                 <Show
-                  when={props.icon}
+                  when={props.mark}
                   fallback={
-                    <Show when={props.unread}>
-                      <Dot status="ok" />
+                    <Show
+                      when={props.icon}
+                      fallback={
+                        <Show when={props.unread}>
+                          <Dot status="ok" />
+                        </Show>
+                      }
+                    >
+                      {(name) => <Icon name={name()} />}
                     </Show>
                   }
                 >
-                  {(name) => <Icon name={name()} />}
+                  {(mark) => <Mark {...mark()} />}
                 </Show>
               }
             >
@@ -462,10 +482,16 @@ export const Row = (props: RowProps) => {
 
 // ── Table ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Two lines of a cell: the line itself and a quiet second line under it. */
-export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
+/**
+ * The lines of a cell: the line itself and a quiet second line under it; with `avatar` a person before them (a user,
+ * a group). The lines are cut with "…", never in the middle of a sign.
+ */
+export type CellLines = { lines: readonly [JSX.Element, JSX.Element] | readonly [JSX.Element]; avatar?: Person };
 
-/** What a cell shows: one line, or two lines named as such (`{ lines: [first, second] }`). */
+/**
+ * What a cell shows: one line, two lines named as such (`{ lines: [first, second] }`), or a person with one or two
+ * lines (`{ avatar, lines: [name] }`).
+ */
 export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
@@ -473,16 +499,29 @@ export type Column<T> = {
   title: string;
   /** What a cell shows: one line, or two lines named as such. */
   cell: (row: T) => CellValue;
-  /** Numbers and amounts stand at the end. */
+  /** Numbers and amounts stand at the end; a column at the end is `numeric`. */
   align?: "start" | "end";
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
-   * default wide; cut text never widens it.
+   * Numbers, amounts, times and durations: a cut one reads as another value ("12.345.678,…"), so they are never cut.
+   * Tabular figures; the column is at least as wide as its longest text value, beyond its `width`. Set by
+   * `align: "end"`; give it to a time or date column at the start.
    */
-  width?: { min: number; default: number };
+  numeric?: boolean;
+  /**
+   * The width of the column, its minimum and default in px: a column that can be dragged wider or narrower (a grip in
+   * its head); in a small table it is its default wide where the row has room and shares the room left with the other
+   * columns that can give way; where the row has less, it gives way down to its minimum. `{ fixed }` is that width
+   * without a grip, such as a narrow column of row actions; it neither gives way nor grows. Columns without a width
+   * share the rest of the row by how much their text asks for (at least 96 px each). Cut text never widens a column.
+   */
+  width?: Width;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
-  /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
+  /**
+   * Drops away where the table has no room for it (rule 7: columns drop, they do not shrink): in a table with column
+   * widths one by one from the last such column as its place gets narrower than the columns need, and all of them in a
+   * column narrower than 480 px.
+   */
   drop?: boolean;
   /**
    * The rows can be sorted by this column: its head is pressed to sort. Give the address of the page sorted so
@@ -520,7 +559,14 @@ type TableBase<T> = {
    * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
    * the second line, such as the state of the entry as a chip.
    */
-  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element; marks?: JSX.Element };
+  phone?: (row: T) => {
+    lines: readonly [JSX.Element, JSX.Element];
+    avatar?: Person;
+    /** The thing's mark (a file's thumbnail, a base's symbol), as `Row mark`. */
+    mark?: MarkProps;
+    time?: JSX.Element;
+    marks?: JSX.Element;
+  };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
    * come; `rows` (3 when not set) and `lines` (1 or 2) say how many and how high.
@@ -564,11 +610,24 @@ const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
  * The grip at the start of a column head: it moves the width of the column before it (`useGrip`). A column is at
  * most as wide as the table's visible width; the table scrolls sideways when its columns need more.
  */
-const ColumnGrip = (props: { label: string; width: { min: number; default: number }; value: number; onChange: (px: number) => void }) => {
+const ColumnGrip = (props: {
+  label: string;
+  width: { min: number; default: number };
+  /** The width a drag gave the column; nothing while it stands by the table's layout. */
+  size: number | undefined;
+  onChange: (px: number | undefined) => void;
+}) => {
   const grip = useGrip({
     label: () => props.label,
-    value: () => props.value,
+    value: () => props.size ?? props.width.default,
     onChange: (px) => props.onChange(px),
+    // a column never dragged moves from where it stands, also wider than its default (delta review r2)
+    start: (now) => props.size ?? now,
+    // Escape puts back what was before the drag, also "never dragged"
+    undo: () => {
+      const size = props.size;
+      return () => props.onChange(size);
+    },
     min: () => props.width.min,
     reset: () => props.width.default,
     direction: () => 1,
@@ -597,6 +656,31 @@ const isPair = (value: CellValue): value is CellLines =>
   !(typeof Node !== "undefined" && value instanceof Node) &&
   "lines" in value;
 
+/** The range of a column that can be dragged; a `fixed` width or none has no grip. */
+const resizable = <T,>(column: Column<T>) => (column.width && !("fixed" in column.width) ? column.width : undefined);
+
+/** A column of numbers, amounts or times: never cut. */
+const isNumeric = <T,>(column: Column<T>) => column.numeric ?? column.align === "end";
+
+/**
+ * The signs of a text value, of a cell's first line (the value; the quiet line under it is a note that may wrap); 0
+ * for what is not text, which is not measured.
+ */
+const signsOf = (value: CellValue): number => {
+  if (typeof value === "string" || typeof value === "number") return [...String(value)].length;
+  if (isPair(value)) return signsOf(value.lines[0]);
+  return 0;
+};
+
+/**
+ * What a column without a width counts with (its default and its minimum), and the room a figure takes in those sums:
+ * 10 px, above what any font gives a figure of the row's 13 px (Plex 7.6, a fallback font 8.3), so a column reckoned
+ * for a number never falls short of what the number takes.
+ */
+const flexibleColumn = 160;
+const flexibleMin = 96;
+const figureWidth = 10;
+
 /**
  * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
  * The head is made where it stands (the table and the phone list each make their own), so it is a function.
@@ -622,7 +706,163 @@ export const Table = <T,>(props: TableProps<T>) => {
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  const lines = () => (loading()?.lines === 2 || values().some((row) => row.some(isPair)) ? "2" : "1");
+  const lines = () =>
+    loading()?.lines === 2 || values().some((row) => row.some((value) => isPair(value) && value.lines.length === 2)) ? "2" : "1";
+  // A numeric column is at least as wide as its longest text value, and its head, in signs (`ch`, the width of a
+  // figure). A column whose values are no text (parts made by the app) is not measured and keeps its width.
+  const signs = createMemo(() =>
+    props.columns.map((column, index) => {
+      if (!isNumeric(column)) return 0;
+      const longest = values().reduce((most, row) => Math.max(most, signsOf(row[index]!)), 0);
+      return longest === 0 ? 0 : Math.max(longest, signsOf(column.title));
+    }),
+  );
+  // The room each column's content asks for, in px: a text its signs at about 7 px and the padding of its cell, a part
+  // the app made (a chip, a link, a button) as much as a column without a width; at least its head. The columns
+  // without a width share the rest of the row in this measure, so the one with more to say gets more room.
+  const rooms = createMemo(() =>
+    props.columns.map((column, index) => {
+      const text = (signs: number) => Math.max(signs, 1) * 7 + 32;
+      const ask = (value: CellValue) =>
+        typeof value === "string" || typeof value === "number" || isPair(value)
+          ? text(signsOf(value))
+          : value === undefined || value === null || typeof value === "boolean"
+            ? 0
+            : flexibleColumn;
+      return values().reduce((most, row) => Math.max(most, ask(row[index]!)), text(signsOf(column.title)));
+    }),
+  );
+  // What each column needs, in px: at least `lo` (its minimum; a numeric one its longest value) and at most `hi` (its
+  // default). A column without a width counts with 96 and 160 px.
+  // A `fixed` width is its minimum and its default at once; so is a width a person dragged with the grip (`sizes`).
+  // The widths the grips gave columns, by index; a column keeps its own width until then.
+  const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
+  const held = (index: number) =>
+    sizes()[index] !== undefined || (props.columns[index]?.width ? "fixed" in props.columns[index]!.width! : false);
+  const need = createMemo(() =>
+    props.columns.map((column, index) => {
+      const fit = (signs()[index] ?? 0) > 0 ? (signs()[index] ?? 0) * figureWidth + 32 : 0;
+      const dragged = sizes()[index];
+      // a dragged column holds the width it was given; the others give way and drop as before (delta review r2: holding
+      // them all at their default made them jump and a drop column leave on the first drag)
+      const span = dragged !== undefined ? { min: dragged, default: dragged } : column.width ? widthRange(column.width) : undefined;
+      const lo = Math.max(span?.min ?? flexibleMin, fit);
+      return { lo, hi: Math.max(span?.default ?? flexibleColumn, lo) };
+    }),
+  );
+  const box = props.select ? 44 : 0;
+  // In a small table with widths every column moves between its minimum and its default with the width of the table's
+  // place (`100cqw`, the table's container), so together they fill it: at the sum of the defaults each has its default,
+  // at the sum of the minimums each its minimum. The stylesheet decides, on the server's page too.
+  // The sums are over the columns shown: after `drop` columns left, the others share the room among themselves.
+  // Above the sum of the defaults the room left is shared among the columns with a width that can give way (minimum
+  // below default), in the measure they give way: no column takes all of it, and an action column at the end leaves
+  // no air on the right. Columns without a width take the rest themselves (below).
+  const round = (value: number) => Math.round(value * 10000) / 10000;
+  // A column's share of a room, given every column's part (0: not sharing), rounded. The last sharing column takes
+  // what the others leave, so the shares never add up to more than the room (delta review r2: 0.1 px a column made
+  // the table scroll by 1 px).
+  const share = (index: number, parts: readonly number[]) => {
+    const sum = parts.reduce((all, part) => all + part, 0);
+    if (sum <= 0 || parts[index]! <= 0) return 0;
+    const last = parts.findLastIndex((part) => part > 0);
+    if (index !== last) return round(parts[index]! / sum);
+    return round(1 - parts.reduce((taken, part, at) => (at === last || part <= 0 ? taken : taken + round(part / sum)), 0));
+  };
+  const shrink = (index: number, gone: ReadonlySet<number> = new Set()) => {
+    const { lo, hi } = need()[index]!;
+    const shown = (at: number) => !gone.has(at);
+    const isFree = (at: number) => shown(at) && props.columns[at]!.width === undefined;
+    // a column without a width only fills what is left, so it counts with its minimum: the others reach their default
+    // as soon as the row holds them and that minimum
+    const reach = (at: number) => (isFree(at) ? need()[at]!.lo : need()[at]!.hi);
+    const least = need().reduce((sum, each, at) => (shown(at) ? sum + each.lo : sum), box);
+    const most = need().reduce((sum, _, at) => (shown(at) ? sum + reach(at) : sum), box);
+    const below =
+      hi === lo || most <= least
+        ? `${lo}px`
+        : `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${share(
+            index,
+            need().map((each, at) => (shown(at) && !isFree(at) ? each.hi - each.lo : 0)),
+          )}), ${hi}px)`;
+    // What grows: the columns without a width (below); without them, the columns that can give way, in the measure they
+    // do; when every column is fixed, the last one, so there is always one that takes the rest of the row.
+    const free = need().filter((_, at) => isFree(at)).length;
+    // The columns without a width fill the whole rest of the row together. Each keeps its minimum; what the row has
+    // beyond the others and those minimums (100cqw − most) goes to them in the measure their content asks for more
+    // than its minimum. So they sum to the row exactly from `least` on, and a short column raised to its minimum
+    // takes nothing from the long one's share (delta review of #4209: no sideways scroll at medium widths).
+    if (free > 0 && isFree(index)) {
+      const extras = need().map((each, at) => (isFree(at) ? Math.max(rooms()[at]! - each.lo, 0) : 0));
+      const parts = extras.some((extra) => extra > 0) ? extras : need().map((_, at) => (isFree(at) ? 1 : 0));
+      return `max(${lo}px, calc(${lo}px + (100cqw - ${most}px) * ${share(index, parts)}))`;
+    }
+    if (free > 0) return below;
+    const spans = need().map((each, at) => (shown(at) && props.columns[at]!.width && !held(at) ? each.hi - each.lo : 0));
+    const lastShown = props.columns.findLastIndex((_, at) => shown(at));
+    const weight = spans.some((span) => span > 0) ? share(index, spans) : index === lastShown ? 1 : 0;
+    if (weight === 0) return below;
+    return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${weight}))`;
+  };
+  const colWidth = (column: Column<T>, index: number, gone?: ReadonlySet<number>): string | undefined => {
+    const count = signs()[index] ?? 0;
+    const fit = count > 0 ? `calc(${count}ch + 12px + var(--k2-edge))` : undefined;
+    // a small table with widths sizes every column, also one without a width of its own; a large table keeps defaults
+    const fixed = sizes()[index] ?? (column.width ? widthRange(column.width).default : undefined);
+    const base = grid() ? (fixed !== undefined ? `${fixed}px` : undefined) : sized() ? shrink(index, gone) : undefined;
+    return base && fit ? `max(${base}, ${fit})` : (base ?? fit);
+  };
+  const measured = () => signs().some((count) => count > 0);
+  const id = createUniqueId();
+  // A table of fixed columns is never narrower than the columns that stay need at their minimum: in a place narrower
+  // than that it scrolls sideways (with a fade at the edge it continues past), so no column squeezes a number.
+  const least = () =>
+    sized() && !grid() ? need().reduce((sum, width, index) => (props.columns[index]!.drop ? sum : sum + width.lo), box) : undefined;
+  // Rule 7 by the room of the table: the `drop` columns go one by one, from the last, as the table's place gets
+  // narrower than the columns it shows need at their minimum. The room is known from the widths (and the measured
+  // numbers), so the stylesheet decides on the server's page too; it is one container query per table.
+  const steps = createMemo(() => {
+    if (!sized()) return [] as { column: number; below: number }[];
+    // a large table keeps its columns at their default (it never shrinks them), so its steps reckon with the defaults
+    const widths = need().map((width) => (grid() ? width.hi : width.lo));
+    let room = widths.reduce((sum, width) => sum + width, box);
+    const out: { column: number; below: number }[] = [];
+    for (let index = props.columns.length - 1; index >= 0; index--) {
+      if (!props.columns[index]!.drop) continue;
+      out.push({ column: index, below: room });
+      room -= widths[index]!;
+    }
+    return out;
+  });
+  const step = (index: number) => {
+    const at = steps().findIndex((entry) => entry.column === index);
+    return at < 0 ? undefined : String(at + 1);
+  };
+  // A large table lays itself out by its content, so a column leaves whole; a table of fixed columns keeps the column
+  // in its grid of columns (a group row spans them all) at no width, so the others keep theirs.
+  const hide = (selector: string) =>
+    grid() ? `${selector} { display: none; }` : `${selector} { width: 0; padding: 0; visibility: hidden; overflow: hidden; }`;
+  // Each step hides its column and, in a table of fixed columns, gives the columns still shown their widths anew over
+  // themselves, so they fill the room the column left instead of the last one taking all of it.
+  const dropRule = () =>
+    steps()
+      .map((entry, at) => {
+        const scope = `.k2-ui [data-k2-table="${id}"]`;
+        const gone = new Set(
+          steps()
+            .slice(0, at + 1)
+            .map((each) => each.column),
+        );
+        const widths = grid()
+          ? []
+          : props.columns.flatMap((column, index) => {
+              const width = gone.has(index) ? undefined : colWidth(column, index, gone);
+              const place = index + 1 + (props.select ? 1 : 0);
+              return width ? [`${scope} col:nth-child(${place}) { --k2-col-w: ${width}; }`] : [];
+            });
+        return `@container k2-table (width < ${entry.below}px) { ${[hide(`${scope} [data-drop-step="${at + 1}"]`), ...widths].join(" ")} }`;
+      })
+      .join(" ");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -660,10 +900,6 @@ export const Table = <T,>(props: TableProps<T>) => {
     select.onChange(on ? [...select.selected, rowKey] : select.selected.filter((selectedKey) => selectedKey !== rowKey));
   };
   const span = () => props.columns.length + (props.select ? 1 : 0);
-  // The widths the grips gave columns, by index; a column keeps its default until then.
-  const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
-  const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
-  const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
@@ -685,7 +921,18 @@ export const Table = <T,>(props: TableProps<T>) => {
           content
         ),
       );
-    return isPair(value) ? [first(value.lines[0]), line(value.lines[1], true)] : first(value);
+    if (!isPair(value)) return first(value);
+    const [head, second] = value.lines;
+    const parts = second === undefined ? first(head) : [first(head), line(second, true)];
+    // a person leads the lines (the name stands in them, so the picture adds no name of its own)
+    return value.avatar ? (
+      <span class="k2-cell-person">
+        <Avatar {...value.avatar} decorative />
+        <span class="k2-cell-lines">{parts}</span>
+      </span>
+    ) : (
+      parts
+    );
   };
 
   const table = () => (
@@ -695,7 +942,11 @@ export const Table = <T,>(props: TableProps<T>) => {
         data-k2-part="Table"
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
+        data-k2-table={steps().length > 0 ? id : undefined}
       >
+        <Show when={steps().length > 0}>
+          <style>{dropRule()}</style>
+        </Show>
         {/* said outside the table, which is busy while its rows load */}
         <Show when={loading()}>
           <LoadingStatus />
@@ -707,15 +958,23 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-grid={grid() ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
+          style={least() ? { "min-width": `${least()}px` } : undefined}
         >
-          <Show when={sized()}>
+          <Show when={sized() || measured()}>
             <colgroup>
               <Show when={props.select}>
                 <col style={{ width: "44px" }} />
               </Show>
-              {/* every column is its default wide; in a small table the last one takes the rest of the row */}
+              {/* every column between its minimum and default (a large table: its default), sharing the room left in a small
+                  table; a numeric one at least as wide as its longest value. A column that drops leaves with its cells. */}
               <For each={props.columns}>
-                {(column, index) => <col style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined} />}
+                {(column, index) => (
+                  <col
+                    data-drop={column.drop ? "" : undefined}
+                    data-drop-step={step(index())}
+                    style={custom({ "--k2-col-base": colWidth(column, index()) })}
+                  />
+                )}
               </For>
             </colgroup>
           </Show>
@@ -733,18 +992,28 @@ export const Table = <T,>(props: TableProps<T>) => {
                   <th
                     scope="col"
                     data-align={column.align}
+                    data-numeric={isNumeric(column) ? "" : undefined}
                     data-drop={column.drop ? "" : undefined}
+                    data-drop-step={step(index())}
                     data-sticky={firstSticky(index())}
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width}>
+                    {/* a grip only where the column before can be dragged; a fixed width has none */}
+                    <Show when={index() > 0 ? resizable(props.columns[index() - 1]!) : undefined}>
                       {(width) => (
                         <ColumnGrip
                           label={props.columns[index() - 1]?.title ?? ""}
                           width={width()}
-                          value={columnWidth(index() - 1) ?? width().default}
-                          onChange={(px) => setSizes((sizes) => ({ ...sizes, [index() - 1]: px }))}
+                          size={sizes()[index() - 1]}
+                          onChange={(px) =>
+                            setSizes((sizes) => {
+                              const next = { ...sizes };
+                              if (px === undefined) delete next[index() - 1];
+                              else next[index() - 1] = px;
+                              return next;
+                            })
+                          }
                         />
                       )}
                     </Show>
@@ -793,7 +1062,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                         {(column, columnIndex) => (
                           <td
                             data-align={column.align}
+                            data-numeric={isNumeric(column) ? "" : undefined}
                             data-drop={column.drop ? "" : undefined}
+                            data-drop-step={step(columnIndex())}
                             data-sticky={firstSticky(columnIndex())}
                             style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                           >
@@ -851,7 +1122,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                           {(column, columnIndex) => (
                             <td
                               data-align={column.align}
+                              data-numeric={isNumeric(column) ? "" : undefined}
                               data-drop={column.drop ? "" : undefined}
+                              data-drop-step={step(columnIndex())}
                               data-sticky={firstSticky(columnIndex())}
                               style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                             >
@@ -889,10 +1162,14 @@ export const Table = <T,>(props: TableProps<T>) => {
                       (() => {
                         const form = phone()(item.row);
                         const target = props.open?.(item.row);
+                        // the lines are clamped (the title to two lines, the line under it to one): words cut so say
+                        // all of them on hover
+                        const tip = (line: JSX.Element) => (typeof line === "string" ? <span title={line}>{line}</span> : line);
                         return (
                           <Row
-                            lines={form.lines}
+                            lines={[tip(form.lines[0]), tip(form.lines[1])]}
                             avatar={form.avatar}
+                            mark={form.mark}
                             time={form.time}
                             marks={form.marks}
                             strong

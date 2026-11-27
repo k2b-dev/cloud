@@ -34,6 +34,16 @@ export type GripOptions = {
   measure: (grip: HTMLElement) => { now: number; max: number } | undefined;
   /** The boxes whose size changes the column or its room (the column, its neighbours, their row): measured again then. */
   observe: (grip: HTMLElement) => Iterable<Element>;
+  /**
+   * Where a move starts, given the rendered width: by default the smaller of the value and that width (a flex may hold
+   * the column below its value). A table column that was never dragged starts where it stands.
+   */
+  start?: (now: number) => number;
+  /**
+   * Called as a drag starts; returns what puts the column back when the drag is cancelled (Escape). By default the
+   * value it had goes back to `onChange`.
+   */
+  undo?: () => () => void;
 };
 
 /**
@@ -62,7 +72,7 @@ export function useGrip(options: GripOptions) {
   };
   const clamp = (px: number, most: number) => Math.round(Math.min(Math.max(px, options.min()), Math.max(most, options.min())));
   // where a move starts: the width the column has, which its flex may hold below its value
-  const start = (now: number) => Math.min(options.value(), now);
+  const start = (now: number) => (options.start ? options.start(now) : Math.min(options.value(), now));
   // the way the column grows on screen: +1 to the right
   const sign = () => options.direction() * (grip && getComputedStyle(grip).direction === "rtl" ? -1 : 1);
   const said = () => seen()?.now ?? Math.round(options.value());
@@ -103,6 +113,7 @@ export function useGrip(options: GripOptions) {
     grip.focus({ preventScroll: true });
     const element = grip;
     const before = options.value();
+    const undo = options.undo?.() ?? (() => options.onChange(before));
     const from = start(now.now);
     const x = event.clientX;
     const way = sign();
@@ -123,7 +134,7 @@ export function useGrip(options: GripOptions) {
       onMove: (sample) => options.onChange(clamp(from + (sample.x - x) * way, now.max)),
       onEnd: (_, canceled) => {
         done();
-        if (canceled) options.onChange(before);
+        if (canceled) undo();
       },
     });
     element.addEventListener("lostpointercapture", lost);

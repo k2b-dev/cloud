@@ -10,7 +10,7 @@ What stands above the page for a moment: a dialog for a short task, a question b
 
 The members of a space. "Einladen" opens a dialog with its fields and its own one primary; on the phone it is a sheet from the bottom. Removing a member asks first with `Dialog.confirm` and then answers with a toast and "Rückgängig". Sending an invitation again answers with a toast that says whether it worked. Switch the state to see each one open.
 
-<Example recipe="dialogs" height="560" default="Members" />
+<Example recipe="dialogs" height="720" default="Members" />
 
 Everything above the page keeps these rules:
 

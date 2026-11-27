@@ -4,16 +4,21 @@
 import {
   Bar,
   Button,
+  Chip,
   Choice,
   Dialog,
   Field,
+  Inline,
   Input,
   List,
+  Mark,
   Menu,
   type MenuEntry,
+  Nav,
   Pane,
   Row,
   Section,
+  StatusRow,
   Text,
   useToast,
   Workspace,
@@ -23,15 +28,40 @@ import { createSignal, For } from "solid-js";
 type Member = { id: string; name: string; initials: string; color: string; role: string };
 type Invitation = { email: string; sent: string; reachable: boolean };
 
+// The app this screen belongs to: its colour tints the page and marks it in the host's rail.
+export const app = { color: "#4f46e5", icon: "layout-kanban" };
+
+// Each space has its colour and symbol, the same in the sidebar, the head and every sentence.
+const space = {
+  north: { icon: "tool", color: "#c2410c" },
+  office: { icon: "briefcase", color: "#2563eb" },
+  fair: { icon: "confetti", color: "#db2777" },
+  site: { icon: "building", color: "#0e7490" },
+};
+const invitationMark = { icon: "mail-forward", color: "#4f46e5" };
+
 const members: Member[] = [
   { id: "m1", name: "Jana Petersen", initials: "JP", color: "#2563eb", role: "Verwalten" },
   { id: "m2", name: "Jonas Wolf", initials: "JW", color: "#047857", role: "Bearbeiten" },
   { id: "m3", name: "Mira Aydın", initials: "MA", color: "#c2410c", role: "Bearbeiten" },
   { id: "m4", name: "Tobias Kern", initials: "TK", color: "#7c3aed", role: "Lesen" },
+  { id: "m5", name: "Felix Thal", initials: "FT", color: "#0e7490", role: "Bearbeiten" },
+  { id: "m6", name: "Sami Yilmaz", initials: "SY", color: "#a16207", role: "Bearbeiten" },
+  { id: "m7", name: "Lena Hartwig", initials: "LH", color: "#db2777", role: "Lesen" },
 ];
+// what each member did here last, so the list says who is active
+const last: Record<string, string> = {
+  m1: "heute aktiv · 14 Aufgaben",
+  m2: "heute aktiv · 9 Aufgaben",
+  m3: "gestern · 6 Aufgaben",
+  m4: "vor 3 Wochen",
+  m5: "heute aktiv · 11 Aufgaben",
+  m6: "Mo. · 4 Aufgaben",
+  m7: "vor 2 Tagen",
+};
 const invitations: Invitation[] = [
-  { email: "einkauf@stadtwerke-auental", sent: "eingeladen am 18. Nov.", reachable: false },
-  { email: "lea.brandt@holzwerk-brandt.de", sent: "eingeladen am 21. Nov.", reachable: true },
+  { email: "einkauf@stadtwerke-auental", sent: "Adresse ohne Domain · eingeladen am 18. Nov.", reachable: false },
+  { email: "lea.brandt@holzwerk-brandt.de", sent: "zugestellt · eingeladen am 21. Nov.", reachable: true },
 ];
 const roles = ["Lesen", "Bearbeiten", "Verwalten"];
 
@@ -72,9 +102,37 @@ export default function SpaceMembers() {
   return (
     <Workspace
       primary={{ label: "Einladen", icon: "user-plus", onClick: () => setInviting(true) }}
+      sidebar={
+        <Nav
+          title="Spaces"
+          icon="layout-kanban"
+          groups={[
+            {
+              items: [
+                { label: "Meine Aufgaben", icon: "checkbox", count: 12, href: "#meine" },
+                { label: "Kalender", icon: "calendar", href: "#kalender" },
+              ],
+            },
+            {
+              label: "Bereiche",
+              items: [
+                { label: "Werkstatt Nord", ...space.north, current: true },
+                { label: "Büro", ...space.office, count: 3, href: "#buero" },
+                { label: "Messe 2027", ...space.fair, href: "#messe" },
+                { label: "Baustelle Oswald", ...space.site, dot: "warn", href: "#oswald" },
+              ],
+            },
+          ]}
+        />
+      }
       head={
         <Bar
-          start={<Text type="body">Mitglieder · Werkstatt Nord</Text>}
+          start={
+            <Inline>
+              <Mark {...space.north} />
+              <Text type="lead">Werkstatt Nord</Text>
+            </Inline>
+          }
           end={
             <Button variant="primary" icon="user-plus" onClick={() => setInviting(true)}>
               Einladen
@@ -83,14 +141,23 @@ export default function SpaceMembers() {
         />
       }
     >
-      <Pane label="Mitglieder">
+      <Pane
+        label="Mitglieder"
+        status={
+          <StatusRow
+            lead={`${list().length} Mitglieder`}
+            facts={[{ value: 3, after: "heute aktiv" }]}
+            filters={<Chip status="warn">1 Einladung kommt nicht an</Chip>}
+          />
+        }
+      >
         <Section icon="users" title="Mitglieder" count={list().length}>
           <List label="Mitglieder">
             <For each={list()}>
               {(member) => (
                 <Row
                   avatar={{ name: member.name, initials: member.initials, color: member.color }}
-                  lines={[member.name, member.role]}
+                  lines={[member.name, `${member.role} · ${last[member.id] ?? ""}`]}
                   end={<Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />}
                 />
               )}
@@ -102,7 +169,7 @@ export default function SpaceMembers() {
             <For each={invitations}>
               {(invitation) => (
                 <Row
-                  icon="mail"
+                  mark={invitationMark}
                   lines={[invitation.email, invitation.sent]}
                   action={{ label: "Erneut senden", icon: "send", onClick: () => resend(invitation) }}
                 />

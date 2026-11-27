@@ -1,4 +1,5 @@
 import { createComponent, type JSX } from "solid-js";
+import type { ScreenApp } from "../../../../packages/ui/scripts/screen-frame";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
 import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
@@ -6,8 +7,10 @@ import * as filteredTable from "../../../../packages/ui/skills/k2b-ui/recipes/fi
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
 import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-detail";
 import * as frame from "../../../../packages/ui/skills/k2b-ui/recipes/frame";
+import * as home from "../../../../packages/ui/skills/k2b-ui/recipes/home";
 import * as listDetail from "../../../../packages/ui/skills/k2b-ui/recipes/list-detail";
 import * as mail from "../../../../packages/ui/skills/k2b-ui/recipes/mail";
+import * as overview from "../../../../packages/ui/skills/k2b-ui/recipes/overview";
 import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
 import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/record-groups";
 import * as settings from "../../../../packages/ui/skills/k2b-ui/recipes/settings";
@@ -35,6 +38,8 @@ export type RecipeModule = {
   states?: Readonly<Record<string, RecipeState>>;
   /** The language of the recipe's sample text, so the library's own words ("Erneut versuchen") match it. */
   locale?: string;
+  /** The app the screen belongs to (its colour and symbol); its frame marks it in the rail and tints the page. */
+  app?: ScreenApp;
 };
 
 /** Recipes write their sample text in German (see the skill), so German is the default for the library's words. */
@@ -49,8 +54,10 @@ export const recipes = {
   form,
   "form-detail": formDetail,
   frame,
+  home,
   "list-detail": listDetail,
   mail,
+  overview,
   record,
   "record-groups": recordGroups,
   settings,
@@ -69,6 +76,12 @@ export const recipeNames: readonly RecipeName[] = Object.keys(recipes).filter(is
 export const recipeStates = (name: RecipeName): Readonly<Record<string, RecipeState>> => {
   const recipe: RecipeModule = recipes[name];
   return recipe.states ?? {};
+};
+
+/** The app a recipe's frame shows: its own `app`, else none (v2's blue, nothing marked in the rail). */
+export const recipeApp = (name: RecipeName): ScreenApp | undefined => {
+  const recipe: RecipeModule = recipes[name];
+  return recipe.app;
 };
 
 /** The language a recipe renders in: its own `locale`, else German. */

@@ -7,6 +7,26 @@ onNavigate?, onClick?, meta?, forward?, disabled? }`, `Width = { min, default }`
 "ok" | "warn" | "bad"`, `Person = { name, initials?, color?, image? }` (`image` is the address of a picture). Icons are
 Tabler names without `ti-` (`plus`, `package`).
 
+## All parts in one line each
+
+- **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
+  `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
+  (`tone`), `Cells`, `Tiles`, `Canvas`.
+- **Structure:** `Section`, `Group`, `Disclosure`.
+- **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
+  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  `Chip`, `Progress`, `Spark`, `Steps`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
+  `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
+  `CodeInput`, `Slider`, `ColorInput`.
+- **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
+  `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
+- **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
+  `Popover` (panel or `tip`), `useToast`.
+- **States:** `Empty`, `Loading`, `Failed`.
+- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
+  and `@k2b/ui/v2/testing` for Playwright tests.
+
 **Links that open in place.** Every `href` stays a real `<a href>`: it works
 before the page is live and opens in a new tab with a modifier key. Beside
 it, `onNavigate` (type `OnNavigate`, the `LinkNavigateEvent` of
@@ -66,8 +86,24 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
-- `side`: the info column of a record; quieter sections, a `more` link
-  becomes a row.
+- `side`: the context column (the info column of a record, what a form
+  feeds, a chart beside a table); quieter sections, a `more` link becomes a
+  row. In a `Pane.Split` of exactly one main column and this context column
+  after it, the context stands beside only where the split holds both at
+  their default widths (400 px without a `width`). With less it gives way
+  to the end of the main column, at its full width, and the split scrolls
+  in one piece: the main column is never squeezed and nothing hides; it
+  needs no room of the workspace, so the sidebar never becomes a drawer for
+  it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
+  main column that needs it (a table: beside only on a large screen). In
+  any other split (a list, its reader and an info column) it stands beside
+  as every column does.
+- A detail that grows on a large screen is the same part: under the
+  detail's one `head` (and what spans both, such as a hero band), a
+  `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
+  side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
+  from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
+  and in reading order below that.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -105,14 +141,26 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron), `loading` (a bar lies on value and `meta`;
+`href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
+as orders per day this week), `loading` (a bar lies on value and `meta`;
 what is there keeps its room unseen under it, a value not there yet is one
-line; symbol and label stay). Use for the key statements of a record.
+line; symbol and label stay). Use for the key statements of a record or
+the home of a place.
 
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href? }[]`, `more` (an action after them), `label`. Never nested.
+href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+Never nested. With `color` the symbol becomes the thing's `Mark`.
+
+`variant="card"`: each thing a card in a grid (at least 240 px a card) for
+an overview of things with a face, such as the bases of Grids. A card
+adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
+in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
+at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
+the card's colour). The whole card opens its `href`. `create` adds the last
+card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
+and `choices` as round chips (templates). Cards hold no box and no line.
 
 ### Canvas
 
@@ -156,7 +204,9 @@ inside it.
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
-- lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
+- lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
+  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -190,14 +240,25 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 ### Table
 
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
-returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
-numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+returning one value, `{ lines: [line, quietLine] }`, or a person with lines
+(`{ avatar, lines: [name] }`: picture and lines, each cut with "…"; never an
+`Inline` of `Avatar` and `Text`), `align: "end"` for numbers and amounts,
+`numeric` for a time or date column at the start (both: tabular figures,
+never cut, the column at least as wide as its longest text value),
+`width={{ min, default }}` (its default where the row has room, sharing the
+room left with the other columns that can give way; down to its minimum
+where it has less; cut text never widens it; a grip in the head that a drag or the keys move; with
+`{ fixed }` that width without a grip, for a narrow column of row actions), `wrap` (one text column may take 3
+lines), `drop` (leaves when the table has no room for it: one by one from
+the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
-page itself if it needs one. The last column takes the rest. Chips,
+page itself if it needs one. The row is always filled: the columns without a
+width (at least 96 px each) share the rest of it by how much their text asks
+for, so a short column stays short and a long description gets the room;
+without them the columns that can give way grow; when every column is fixed,
+the last one takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 
@@ -243,6 +304,9 @@ one.
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`mono` for text a machine wrote (a stack trace, a log message, a command):
+monospace 12/18, its line breaks and spaces kept, long lines wrapped at any
+sign.
 `title` gives text its full words as a tooltip where its place may cut it:
 the title of an open entry in its detail's head takes two lines, then "…".
 Two lines make that head 65 px: beside a list, its line then no longer meets
@@ -274,6 +338,18 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
+  the colour of its kind: table, form, PDF), `image` (a thumbnail over the
+  symbol; while it loads and when it fails the symbol shows), `kind` (the
+  type on its corner: `PDF`), `label` (without one it is decoration beside
+  its name). The place sets the size: 20 in the sidebar and in a sentence,
+  24 leading a row of one line, 32 leading a row of two or three, 36 on a
+  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+- `Avatar.Stack`: `people`, `max` (3), `label`. People over each other with
+  a ring and "+n"; one picture with every name.
+- `Spark`: `values` (oldest first), `label` (what the bars show). A few bars
+  of a short history, the last in full colour; beside a number, never
+  instead of it.
 
 ## Controls
 
@@ -383,7 +459,9 @@ lines instead of cutting a thing.
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
   problem there, `"running"` for work that runs now: a small turning mark
-  in the dot's place that says "Läuft"). An item with `items` instead of `icon` and a link folds
+  in the dot's place that says "Läuft"), `color` (the place's data colour:
+  its symbol becomes its `Mark`, the same as in its rows and on its card).
+  An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
@@ -428,7 +506,11 @@ lines instead of cutting a thing.
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
-  title, state: { icon, label, tone? }, text, href? }[]`.
+  title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
+  who did what, `{ person, text, time, place?, href? }[]`. The sentence
+  names the person in `<Text weight="strong">` and the thing with its
+  `Mark` and name; place and time stand quiet under it. A form or a
+  workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
   optional `base` (the view's state, where "Zurücksetzen" returns),

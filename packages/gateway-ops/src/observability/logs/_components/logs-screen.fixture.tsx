@@ -1,16 +1,28 @@
 import { LocaleProvider } from "@k2b/ui";
 import { logSearchOf, logsQuery, parseLogsAddress } from "../query";
 import LogsScreen from "./LogsScreen";
-import { FIXTURE_NOW, FIXTURE_TIME_ZONE, FIXTURE_TODAY, fixtureArea, fixtureEntries, fixtureSearch } from "./logs-fixture-data";
+import {
+  FIXTURE_NOW,
+  FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
+  fixtureArea,
+  fixtureEntries,
+  fixtureSearch,
+  worstEntries,
+} from "./logs-fixture-data";
 
-/** The screen for one address, as the page renders it: `state` "loadfail" stands for a log store that does not answer. */
-export const LogsScreenFixture = (props: { search: string; locale?: string; state?: "normal" | "loadfail" }) => {
+/**
+ * The screen for one address, as the page renders it: `state` "loadfail" stands for a log store that does not answer;
+ * `fixture` "worst" swaps the invented entries for the realistic worst case (break-ui).
+ */
+export const LogsScreenFixture = (props: { search: string; locale?: string; state?: "normal" | "loadfail"; fixture?: "worst" }) => {
+  const entries = props.fixture === "worst" ? worstEntries : fixtureEntries;
   const locale = props.locale ?? "de";
   const query = logsQuery(locale);
   const address = parseLogsAddress(query, new URLSearchParams(props.search), FIXTURE_NOW);
   const failed = props.state === "loadfail";
-  const data = failed ? null : fixtureSearch(logSearchOf(address.state, FIXTURE_NOW), address.page);
-  const open = address.entry ? (fixtureEntries.find((entry) => entry.id === address.entry) ?? null) : null;
+  const data = failed ? null : fixtureSearch(logSearchOf(address.state, FIXTURE_NOW), address.page, entries);
+  const open = address.entry ? (entries.find((entry) => entry.id === address.entry) ?? null) : null;
   return (
     <LocaleProvider locale={locale}>
       <LogsScreen

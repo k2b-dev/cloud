@@ -39,6 +39,12 @@ The one way to let people filter, sort or group a list or table. Recipe:
 | `bool` | "2FA ist aus" | yes or no |
 | `text` | "Request-ID ist 7f3a9c" | one field |
 
+A `numberRange` writes its numbers with `unit` after them, or with `format`
+(`Intl.NumberFormatOptions` in the render locale) as the table writes them:
+`format: { style: "currency", currency: "EUR" }` gives "ab 12.345.678,90 €".
+A `choice` with every value chosen filters nothing and says so: "Stufe ist
+beliebig".
+
 A field with `required` (a log's time range) is framed like a field and has
 no × at its default; changed, it is tinted and × returns it to the default.
 

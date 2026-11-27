@@ -30,6 +30,8 @@
  *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
  *   whole and cuts a line at its end only with "…".
+ * - **overlap, number, clip** (`measure-v2-text.ts`): no text lies on a control that is not its own; a number, an
+ *   amount or a time is never cut; text cut at the edge of a box ends in "…", never cut through a sign.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -44,6 +46,7 @@
  */
 import type { Page } from "playwright";
 import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
+import { measureTextInPage } from "./measure-v2-text";
 import { settled } from "./settled";
 
 export type V2LayoutOptions = {
@@ -65,8 +68,13 @@ export type V2LayoutOptions = {
   oneLine?: string;
   /** Drawn marks whose lines are no dividers, such as the track of steps; their text is still measured. */
   figure?: string;
-  /** Text that has no type role, such as initials in an avatar. */
+  /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
+  /**
+   * Controls laid over the page on purpose, which may hide text under them: the search of a phone head opens over its
+   * tabs while it has the focus. Any other control over text is a finding.
+   */
+  covers?: string;
 };
 
 export type V2GripMeasure = {
@@ -86,6 +94,12 @@ export type V2Layout = {
   inside: string[];
   /** Cut control labels and one-line texts that wrap. */
   cut: string[];
+  /** Text that lies on a control that is not its own (see `measure-v2-text.ts`). */
+  overlap: string[];
+  /** Numbers, amounts and times that are cut. */
+  number: string[];
+  /** Text cut through a sign at the edge of a box, without "…". */
+  clip: string[];
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
@@ -749,7 +763,8 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     prose: options.prose ?? "[data-k2-prose]",
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
-    untyped: options.untyped ?? "[data-k2-avatar]",
+    untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
+    covers: options.covers ?? '[data-slot="head"] .k2-input[data-search]:focus-within :is(input, .k2-input-end *)',
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
     // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
@@ -811,12 +826,32 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     if (JSON.stringify(now) !== JSON.stringify(then))
       grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
   }
-  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
+  const text = await page.evaluate(measureTextInPage, {
+    root: limits.root,
+    skip: limits.skip,
+    controls: limits.controls,
+    covers: limits.covers,
+  });
+  const problems = [
+    ...dom.pseudo,
+    ...dom.edge,
+    ...dom.double,
+    ...dom.inside,
+    ...dom.cut,
+    ...text.overlap,
+    ...text.number,
+    ...text.clip,
+    ...dom.type,
+    ...grip,
+  ];
   return {
     edge: dom.edge,
     double: dom.double,
     inside: dom.inside,
     cut: dom.cut,
+    overlap: text.overlap,
+    number: text.number,
+    clip: text.clip,
     type: dom.type,
     grip,
     grips,
