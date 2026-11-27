@@ -7,8 +7,9 @@ import { MailScreen } from "./mail-screen";
 
 export default function MailTabletScreen() {
   onMount(() => {
-    // only where the sidebar is a drawer: in a wide window its button is not shown and nothing opens
-    const button = document.querySelector<HTMLButtonElement>(".k2-ws-toggle");
+    // the head's first button is the drawer's, shown only where the sidebar is a drawer: in a wide window nothing opens
+    // (by its place, not by the inner part's class, which markup outside @k2b/ui does not name: v2-part-classes)
+    const button = document.querySelector<HTMLButtonElement>('[data-k2-workspace] [data-slot="head"] > button');
     if (button && button.getClientRects().length > 0) button.click();
   });
   return <MailScreen />;
