@@ -209,5 +209,5 @@ export const states = {
   dialog: { render: () => <SpaceMembers />, press: "Einladen" },
   confirm: { render: () => <SpaceMembers />, press: ["Aktionen für Jonas Wolf", "Entfernen"] },
   undo: { render: () => <SpaceMembers />, press: ["Aktionen für Jonas Wolf", "Entfernen", "Entfernen"] },
-  error: { render: () => <SpaceMembers />, press: "Erneut senden" },
+  error: { render: () => <SpaceMembers />, press: "Erneut senden einkauf@stadtwerke-auental" },
 };
