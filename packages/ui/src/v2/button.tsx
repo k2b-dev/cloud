@@ -2,7 +2,7 @@ import { type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { linkOr } from "./link";
-import { Avatar, Icon } from "./marks";
+import { Face, Icon } from "./marks";
 import type { Action, OnNavigate, Person } from "./types";
 
 type ButtonBase = {
@@ -102,7 +102,7 @@ export const Button = (props: ButtonProps) => {
     >
       <>
         <Show when={props.avatar} fallback={<Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>}>
-          {(person) => <Avatar {...person()} decorative />}
+          {(person) => <Face {...person()} decorative />}
         </Show>
         <Show when={!iconOnly()}>
           <span class="k2-btn-label">{label()}</span>
@@ -157,14 +157,15 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
   </Show>
 );
 
-/** The copy button beside a value (internal to Facts). */
-export const CopyButton = (props: { label: string; value: string }) => {
+/** The copy button beside a value (internal to Facts); `disabled` while the value is on its way. */
+export const CopyButton = (props: { label: string; value: string; disabled?: boolean }) => {
   const t = useUiMessages();
   return (
     <Button
       variant="ghost"
       icon="copy"
       label={`${t().copy}: ${props.label}`}
+      disabled={props.disabled}
       onClick={() => {
         void navigator.clipboard?.writeText(props.value);
       }}

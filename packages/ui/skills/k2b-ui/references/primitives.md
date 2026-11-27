@@ -12,12 +12,13 @@ Tabler names without `ti-` (`plus`, `package`).
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
   (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`.
+- **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `Check`, `Choice`.
+  `Chip`, `Progress`, `Spark`, `Steps`, `QrCode`, `CodeDisplay`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
+  `Select`, `DateInput`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
+  `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
@@ -56,7 +57,11 @@ The working surface of an app: one per screen.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
-  and folds back, its words kept, on blur or Escape.
+  and folds back, its words kept, on blur or Escape. A host that offers the
+  page's search in a bar of its own (the Cloud shell's phone bar) marks the
+  v2 scope with `data-k2-host-search`: the folded search then leaves the head
+  to its tabs and the Tab key's order on the phone, and the host focuses the
+  field from its bar (a head with a path opens it over the first row).
 
 ### Pane
 
@@ -66,7 +71,9 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
   with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
-  line.
+  line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
+  limits, Enter back to the default) move the width; a reload starts at the
+  default again. The sidebar's grip works the same.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -116,16 +123,35 @@ fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
 
-2–4 equal cells with a line between; stacked on the phone. A cell:
+2–6 equal cells with a line between, never one tall cell alone in a row:
+two side by side down to the phone, three while each gets 150 px (else two,
+then the third as one line across: label left, value right), four in a row
+or two by two (below a pane of 880 px), five or six in rows of three. A
+cell under 220 px sets its value in 14 px across its width. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
-as orders per day this week). Use for the key statements of a record or
-the home of a place.
+as orders per day this week), `meter: { value, of, label? }` (a value with
+a limit, "1,5 von 3 h": a thin bar under it, amber from the limit on),
+`loading` (a bar lies on value and `meta`; what is there keeps its room
+unseen under it, a value not there yet is one line; symbol and label stay,
+a `trend` keeps its place unseen). Use for the key statements of a record
+or the home of a place.
+The cells count themselves in their order to stand in these forms: each
+`Cells.Cell` stays in the same island as its `Cells` (never an island root
+of its own).
 
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+
+`variant="media"`: photos, pages and videos in a grid of at least 160 px.
+A tile adds `image` (its picture, 4:3), `kind` (`PDF`, a video's length),
+`people` (the first is the owner, 16 px), `sign` (`{ icon, label }` at the
+end of its quiet line, such as the sharing state) and `key`. `select: {
+selected, onChange(key, on) }` puts a box on each picture; it shows under
+the pointer, with the focus, on touch, and on all tiles while one is
+selected; a selected tile is blue with a line inside its edge.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
@@ -136,6 +162,9 @@ at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
 the card's colour). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
+Among media, `create` is the last tile too: a dashed picture with a plus,
+then its `title` and `meta` ("Neuer Ordner", "oder Dateien hierher
+ziehen").
 
 ### Canvas
 
@@ -146,7 +175,21 @@ component's root and never in a plain element. A `Chart` of `@k2b/ui`
 fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
 drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
-moves.
+moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
+of another page). Directly in its `Pane`, it takes the height left under
+head and status by layout alone, from the first render (never measure it
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it.
+
+### QrCode and CodeDisplay
+
+Pairing a device. `QrCode`: `svg` (from `qr.toSvg(link)` of
+`@k2b/stdlib/qr`) and `label`; 192 px on a white well in the middle of
+its column, white in the dark theme too, shown as a picture so markup in
+the SVG never runs. `CodeDisplay`: `value` (spaces group it, "482 913")
+and `label`; large monospaced figures in the middle, heard character by
+character. Both stand in a `Band`, a `Section` or a `Dialog`.
 
 ## Structure
 
@@ -155,9 +198,16 @@ moves.
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
 `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
-`Pane side`, where the link becomes a row), children. No line under
+`Pane side`, where the link becomes a row), `id` (an anchor for a link
+such as `/me#screen`), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
+
+### Section.Columns
+
+Sections side by side, such as the groups of a place's home: two columns
+where both get at least 360 px, one below that. Each section keeps its
+head and its one line at the end; no line stands between the columns.
 
 ### Group
 
@@ -165,8 +215,8 @@ What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`
 (head grows to 56), `state` (a `Chip`; for a running state such as "Läuft"
 `state={<Text weight="medium"><Icon name="gavel" /> Läuft</Text>}`; or an amount),
 `actions` (text buttons),
-`menu` (more deeds behind "…"), `folded` (head only, with a chevron),
-children. No line inside; never a `Group` in a `Group`, and never in a
+`menu` (more deeds behind "…"), `folded` (starts as head only; its
+chevron opens and closes it in place), children. No line inside; never a `Group` in a `Group`, and never in a
 `Band` (the band's line would cut the frame). Groups stand in a `Section`
 or directly in a `Pane`. A group's way (arrived → … → paid) is `Steps`
 inside it.
@@ -180,7 +230,7 @@ inside it.
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
-  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  table; 32 px, and a row of one line with it is 44 px), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
@@ -189,6 +239,10 @@ inside it.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
+- `states` (chips that must be read whole, such as the checks of a domain:
+  colour, symbol, word): under the lines on the title's text edge; they
+  wrap to more lines instead of being cut, on the phone too, and the row
+  grows only when they are there.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
@@ -212,22 +266,38 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 ### Table
 
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
-returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
-numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, grip in the head), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+returning one value, `{ lines: [line, quietLine] }`, or a person with lines
+(`{ avatar, lines: [name] }`: picture and lines, each cut with "…"; never an
+`Inline` of `Avatar` and `Text`), `align: "end"` for numbers and amounts,
+`numeric` for a time or date column at the start (both: tabular figures,
+never cut, the column at least as wide as its longest text value),
+`width={{ min, default }}` (its default where the row has room, sharing the
+room left with the other columns that can give way; down to its minimum
+where it has less; cut text never widens it; a grip in the head that a drag or the keys move; with
+`{ fixed }` that width without a grip, for a narrow column of row actions), `wrap` (one text column may take 3
+lines), `drop` (leaves when the table has no room for it: one by one from
+the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
-page itself if it needs one. The last column takes the rest. Chips,
+page itself if it needs one. The row is always filled: the columns without a
+width (at least 96 px each) share the rest of it by how much their text asks
+for, so a short column stays short and a long description gets the room;
+without them the columns that can give way grow; when every column is fixed,
+the last one takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
-onOpen }` makes each row open its entry.
+onOpen }` makes each row open its entry. A column's `mark(row)` leads its
+cell with the thing's `Mark` (a file's thumbnail or type, 32 px; the
+table's rows are then 44 px, as the mockup's lists), its
+`avatar(row)` with a person (the name in the cell names it); `phone(row)`
+takes a `mark` as well.
 
 A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
 column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
-=> { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
+=> { key, head: () => JSX, meta?, count? }` (a group head as text in 600 with
+its count, no band; no line under it, none under the last row), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
 `aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
 }` (on the phone each row becomes a two-line row instead: `time` top right,
@@ -237,6 +307,24 @@ Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
 are cut off at 390 px (the outline reports it). A phone row opens what
 `open(row)` names; a row's other deeds live on the page it opens.
+
+Rows in levels (Files, a page tree): `tree: { children(row), branch(row),
+expanded?, onExpandedChange?, load?, more?, loadMore? }` with `rowKey`, not
+with `group`. `rows` are the top level; an open row's `children` stand under
+it, 20 px further in per level (at most eight steps). `children(row)` is
+`undefined` while not loaded; `load(row, { signal })` fetches them the first
+time the row opens (the arrow turns, a rejection leaves a red mark, opening
+again retries). `more(row | null)` says that more children (or top rows)
+exist (`true` or a count), and a last row "Weitere laden" calls
+`loadMore(row | null)`; the focus goes on to the first new row. The table
+is then a treegrid: one Tab stop, Up/Down/Home/End move, Right opens and
+enters, Left closes (also a row that is still loading: its late answer
+opens nothing) and goes to the parent, Enter opens the row, Space selects
+with `select` (the boxes are no Tab stops). A level that pages says its
+whole size (`aria-setsize`, -1 while `more` is `true`); a page that
+fails says so on its "Weitere laden" row, and Enter tries again; the focus
+follows the new rows only while it waited on that row. `expanded` left out: the table keeps it, starting
+with the way to `current`. On the phone only the top level shows.
 
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
 rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
@@ -251,7 +339,12 @@ edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
-line with `end` (such as a print button).
+line with `end` (such as a print button). `loading` while the values are on
+their way: labels, hints and copy buttons (not yet usable) stay, and a
+quiet bar lies on each value. A value that is there (a refresh) keeps its
+exact room unseen under the bar (lines, chips, wrapping); a value not there
+yet (`""`) is a bar of one line. Give `copy: ""` where a value will have
+one.
 
 ### Text
 
@@ -260,13 +353,18 @@ line with `end` (such as a print button).
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`mono` for text a machine wrote (a stack trace, a log message, a command):
+monospace 12/18, its line breaks and spaces kept, long lines wrapped at any
+sign.
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 
 ### Prose
 
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
-safe links only) or children.
+safe links only) or children. Code stands in the mono face: a word on a
+quiet tint, a block on its own surface that scrolls sideways; a CodeBlock
+inside keeps its own lines.
 
 ### Inline
 
@@ -294,11 +392,22 @@ lines instead of cutting a thing.
   its name). The place sets the size: 20 in the sidebar and in a sentence,
   24 leading a row of one line, 32 leading a row of two or three, 36 on a
   card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
-- `Avatar.Stack`: `people`, `max` (3), `label`. People over each other with
-  a ring and "+n"; one picture with every name.
-- `Spark`: `values` (oldest first), `label` (what the bars show). A few bars
-  of a short history, the last in full colour; beside a number, never
-  instead of it.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
+  other with a ring and "+n"; one picture with every name. In a narrow
+  place (a 90 px column) it shows the faces it holds whole and counts the
+  rest; the count is always right and never cut, from the first render.
+- `Spark`: `values` (oldest first), `label`: what the bars say as one
+  sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
+  never only the title of the data. A few bars of a short history, the
+  last strongest; beside a number, never instead of it.
+- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
+  `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
+  `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
+  the primitives derive readable foregrounds themselves (symbols and bars
+  3:1, type 4.5:1, light and dark), so a pale yellow works too.
+- `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
+  the open thing at the top of its detail, 4:3 from text edge to text edge;
+  the symbol stands while it loads, fails or is missing.
 
 ## Controls
 
@@ -314,9 +423,24 @@ lines instead of cutting a thing.
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
+- `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
+  change says "geändert · vorher 12 Std." under its control), `action`
+  (one quiet deed after the value, such as "Auf Standard zurücksetzen"
+  while the value differs from its default), one control as child. One
+  setting of a settings page: the name (13, 500) alone in a column of 240
+  px, beside the middle of the control in a column of 300 px; the one line
+  of help and what it was under the control. One column, the hint under
+  the name, when its pane is narrower than 640 px (800 px with an
+  `action`; by the pane, not the window). `compact` (a number with its unit, a short
+  selection) and a `Check` keep the value beside the name also there. A
+  column of settings ends above the phone's floating main action. Never
+  stack `Field`s
+  as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
-  such as "Sekunden", or "optional"), one control as child. `Field.Row`
+  such as "Sekunden", or "optional"), `action` (one quiet deed at the end
+  of the label line instead, such as "Auf Standard zurücksetzen"; the field
+  keeps its height), one control as child. `Field.Row`
   puts fields side by side (one column on the phone). `required` keeps the
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
@@ -328,9 +452,65 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
-- `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
-  `placeholder`.
-- `DateInput`: `value`, `onInput`, `placeholder`.
+  A search the server answers takes `name` and `send={{ action, params,
+  onSearch }}`: the field is its own GET form, so Enter loads `action`
+  with the text and `params` (the rest of the address) also without
+  JavaScript; `onSearch` searches in place where JavaScript runs. It keeps
+  its place in a head and folds on the phone, and its form is named by
+  `label`. Never wrap it in a `<form>` and never put it inside one: forms
+  do not nest, and the browser drops the inner one (`describeV2` reports
+  both).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
+- `Select`: `options` (strings or `{ value, label, disabled }`), `value`,
+  `onChange`, `placeholder`, `disabled` (a grey well, the value still
+  shown, while it cannot be changed).
+- `TagsInput`: several short values as chips in one field (domains,
+  server addresses): `value`, `onChange`, `suggestions` (values to pick
+  while typing; any other text is taken on Enter), `placeholder`,
+  `disabled`. Backspace in the empty field takes the last chip back.
+- `ImageInput`: one image: `value` (its address), `onChange` (the new
+  address, or `null` when removed), `transform` (file to address; by
+  default a square picture as a data URL; upload and return a URL for
+  large files), `accept`, `round` (a person's picture), `disabled`. A
+  dropped or pasted file counts as chosen.
+- `Slider`: a number on a range: `value`, `onChange` (every step),
+  `onCommit` (the drag or key press ended: save here), `min`, `max`,
+  `step`, `format` (`Intl.NumberFormat` options, such as percent),
+  `disabled`. The number reads at the end.
+- `ColorInput`: a colour as `#rrggbb`: `value`, `onChange`, `onCommit`,
+  `swatches` (presets), `disabled`. Swatch and code (any CSS colour typed
+  in), a surface of saturation and brightness, a hue slider, the presets.
+- `CodeInput`: a one-time or pairing code, a box per character: `value`,
+  `onInput`, `onComplete` (the last box filled), `length` (6),
+  `characters` (`digits` or `alphanumeric`), `autocomplete`
+  (`one-time-code` by default; `off` for a code shown on another device),
+  `disabled`.
+- `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
+  writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
+  text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
+  the calendar symbol opens `DatePicker` below the field. A form gets the
+  date key under `name`; text that is no date (also "2026-02-30") marks the
+  field and makes the form invalid. `timeZone` says which day "heute" is
+  ("UTC" by default); give the same zone on the server and in the island.
+- `DatePicker`: one month of days to pick from (a calendar grid: arrows,
+  PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
+  the week; six weeks, so its height never changes). `value`, `onPick`,
+  `min`, `max`, `timeZone` (which day is today), `label`, `error`,
+  `onClear` ("Leeren"), `autoFocus`; `time` adds the ui-sdk time input: hour
+  and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
+  in American English; typing, arrows, Backspace; never the browser's time
+  field), applied
+  with "Übernehmen". `view="weeks"` (with a required `min`, usually today) shows six
+  weeks from the week of `min` as one grid instead of whole months, for a moment ahead ("Später", an
+  expiry): one row per week over the ends of months, the 1st shows the
+  month's short name, keys move the weeks, the arrows by six. Use it inside a
+  popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
@@ -348,10 +528,27 @@ lines instead of cutting a thing.
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
   problem there), `color` (the place's data colour: its symbol becomes its
-  `Mark`, the same as in its rows and on its card). An item with `items` instead of `icon` and a link folds
+  `Mark`, the same as in its rows and on its card). `quota: { label, value,
+  of, text }` shows what the open place uses above the foot ("Werkstatt ·
+  38,2 von 100 GB" over a bar; amber from 75 %, red from 90 %). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+  A group with `tree` in place of `items` holds places in levels (the
+  folders of Files, the pages of a notebook): `tree: { label, items,
+  current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
+  place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
+  `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
+  load on the first open through `load(key, { signal })`), `more` (`true`
+  or a count: a last entry "Weitere laden" calls `loadMore(key | null)`),
+  `menu` (a "…" under the pointer, a right-click, Shift+F10). A press on a
+  place opens its page; the arrow, Right and Left fold it without leaving
+  the page. The way to `current` stands open (also when `current` changes);
+  give the loaded nodes down to it. The tree is one Tab stop and scrolls on
+  its own in the sidebar; levels step 12 px in, at most six steps.
+- Counts of `Nav` and `Tabs`: a number is written in the page's language and
+  in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
+  you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
@@ -361,7 +558,8 @@ lines instead of cutting a thing.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
+- `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
+  where it does not fit before the filters), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
   the row never refreshes), `facts: { before?, value?, after? }[]` (where
@@ -370,25 +568,44 @@ lines instead of cutting a thing.
   `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
-  `Button variant="ghost" menu`; leave on the phone),
-  `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
+  they keep only their symbols, the words stay their names; leave on the
+  phone),
+  `selection: { count, meta?, actions, clear }` (while rows are selected the
+  row becomes the bar of what can be done with them; `meta` says quietly
+  what is selected after the count, such as "12,9 MB · 3 Bilder"; the count
+  stands in 14 px 600; from five deeds on the first three stand and the rest
+  wait in "Mehr", so give the deeds in their order of use).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
+  From five places on, the first place and the page stand and every place
+  between folds into a menu "…" in its order, the same on the server and in
+  the browser. The page keeps its whole name: where room runs out the places
+  between shorten with "…" first, then the first place, the page only when
+  nothing else is left; whole names show on hover. The deeds at the end keep
+  their words before the path does. In an `Inline` with a chip (a folder's
+  sharing) the path behaves the same, and on the phone it gives way there
+  too while the chip stays.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
-  now, and the sentence says why), children (the sentence and its
+  now, and the sentence says why), `primary` (the one thing to do, such as
+  "Neu laden": a framed button after one quiet text button at most; it is
+  no primary of the page), children (the sentence and its
   consequence). Use it for errors with a way out instead of "try again"
-  buttons of your own.
+  buttons of your own. `bad` is an alert, `warn` a polite status (heard
+  when it appears or changes, such as "Wartet auf das andere Gerät"),
+  `note` and `ai` are read with the page.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
-  who did what, `{ person, text, time, place?, href? }[]`. The sentence
+  who did what, `{ person, text, time, place?, href?, onNavigate? }[]`
+  (`onNavigate` opens the thing in place, as on rows). The sentence
   names the person in `<Text weight="strong">` and the thing with its
-  `Mark` and name; place and time stand quiet under it. A form or a
+  `Mark` and name; place and time stand quiet under it, and without a
+  place the time stands at the end of the sentence. A form or a
   workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
@@ -397,7 +614,18 @@ lines instead of cutting a thing.
   `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
   current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
   for the phone sheet). It writes the address itself. See
-  [list queries](list-queries.md).
+  [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
+  display such as list or grid) makes the bar the one status row of its
+  list (52 px) with `results` in quiet words before it: the page head then
+  has two rows, path and deeds, then this bar. `display` (`MenuSection`s,
+  such as "Darstellung" with list and grid, or a colour choice) puts each
+  section as a menu of its own in the end on the desktop; on the phone,
+  where the end has no room, sort, grouping and these sections fold into
+  one menu "Ansicht" at the end of the bar. Give every choice that changes
+  how the list shows to `display`, never to `end` alone, so the phone keeps
+  it. While entries are selected a
+  `StatusRow selection` takes its place at the same height; on the phone the
+  selection's actions float at the bottom, symbol over word.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
@@ -419,18 +647,24 @@ lines instead of cutting a thing.
   Escape and the close button close it, focus returns to what opened it.
   `dismissible={false}`: a press outside, a swipe and the back gesture do
   not close it; Escape, the close button and the foot still do.
-- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
+  `stepwise`: steps in one place (a code, then its confirmation) keep the
+  height of the tallest step while open, so the foot does not jump.
+- `Dialog.confirm({ title, confirm, description?, cancel?, danger? })`: resolves
   `true` when the person agrees. An alert dialog without a close button,
   never a sheet; focus starts on the other button, Escape answers no, a
-  press outside does nothing. Call it from a menu entry with `void`, so the
-  menu closes while it asks.
+  press outside does nothing. `danger` makes the agreeing button red, for
+  a deed that destroys (delete, revoke, remove a device). Call it from a
+  menu entry with `void`, so the menu closes while it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the
   quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
   head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
+  `disabled`, `color` (the data colour of what it stands for, such as an
+  area of a notebook: a dot in the symbol's place, or the symbol in that
+  colour; a hex colour is kept at 3:1, `oklch()` and `var()` stand as
+  given, anything else leaves the entry neutral), `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side); or `"separator"` between groups; or a
   section `{ title, items }` under a quiet heading. A section with
@@ -446,7 +680,9 @@ lines instead of cutting a thing.
   right-click.
 - `Popover`: a panel behind a button: the button's look like `Menu`,
   `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
+  and a press outside close it. Like the menu's "…", a button without words
+  stays in a head on the phone; there the panel is a sheet from the bottom,
+  which a swipe down also closes. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
@@ -463,7 +699,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the way out), `secondary` (a second, quieter way out after it, as a
+  text button, such as "Filter zurücksetzen" and "Ganzes Notizbuch
+  zeigen"; the first stays the one a focus that comes to the state reaches).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.

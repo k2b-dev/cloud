@@ -44,13 +44,13 @@ The identity of the record in the head `Bar start`: picture, name, kinds and ide
 
 ### Cells
 
-Two to four key statements side by side, with the area's colour; one under the other on the phone.
+Two to six key statements side by side, with the area's colour; never one tall cell alone in a row: four two by two in a narrow pane, two to a row on the phone, an odd last one as one line across.
 
 <Props of="Cells Cells.Cell" />
 
 ### Section
 
-A titled part with a count, at most two text buttons, a summary and one link to all of it at the end.
+A titled part with a count, at most two text buttons, a summary and one link to all of it at the end; `id` makes it the target of a link such as `/me#screen`.
 
 <Props of="Section" />
 

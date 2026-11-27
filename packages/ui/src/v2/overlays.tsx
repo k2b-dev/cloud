@@ -27,6 +27,12 @@ export type DialogProps = {
    * `true` by default.
    */
   dismissible?: boolean;
+  /**
+   * The dialog shows one step after another in the same place, such as a code and then its confirmation: while open it
+   * keeps the height of its tallest step so far, so a shorter step does not make it jump (its foot stays where it
+   * stood); never higher than the window. Without it the dialog follows its content.
+   */
+  stepwise?: boolean;
 };
 
 /** What takes the focus first in a dialog: a field, a link or a button in its content, else an action of its foot. */
@@ -37,10 +43,11 @@ const focusable =
 const phoneQuery = "not all and (min-width: 768px)";
 
 /**
- * Whether the window is the v2 phone; false on the server, where a dialog is closed anyway. In the browser it is known
- * from the start, so a dialog on the phone is a sheet from its first render on (and core prepares the sheet early).
+ * Whether the window is the v2 phone; false on the server, where a dialog or panel is closed anyway. In the browser it
+ * is known from the start, so a dialog or a popover's panel on the phone is a sheet from its first render on (and core
+ * prepares the sheet early). Internal: `Dialog` and `Popover`.
  */
-const usePhone = () => {
+export const usePhone = () => {
   const [phone, setPhone] = createSignal(!isServer && matchMedia(phoneQuery).matches);
   onMount(() => {
     const media = matchMedia(phoneQuery);
@@ -96,10 +103,20 @@ export const Dialog = (props: DialogProps) => {
   // The content's box keeps its height while its parts grow inside it (it scrolls), so the parts are watched too, and
   // parts that come later as well. Nothing is watched while the dialog is closed.
   let watching: { sizes: ResizeObserver; parts: MutationObserver } | undefined;
+  // A stepwise dialog keeps the height of its tallest step while it is open, so a shorter step does not make it jump
+  // (it would shrink and centre again); it never grows past the window. It starts anew when it opens again.
+  const keep = (body: HTMLElement) => {
+    const popup = body.parentElement;
+    if (!popup || !props.stepwise) return;
+    const kept = Number.parseFloat(popup.style.getPropertyValue("--k2-dialog-kept")) || 0;
+    const height = popup.getBoundingClientRect().height;
+    if (height > kept) popup.style.setProperty("--k2-dialog-kept", `${height}px`);
+  };
   const stop = () => {
     watching?.sizes.disconnect();
     watching?.parts.disconnect();
     watching = undefined;
+    body?.parentElement?.style.removeProperty("--k2-dialog-kept");
   };
   onCleanup(stop);
   createEffect(() => {
@@ -108,7 +125,10 @@ export const Dialog = (props: DialogProps) => {
   const watch = (element: HTMLElement) => {
     body = element;
     stop();
-    const sizes = new ResizeObserver(() => measure(element));
+    const sizes = new ResizeObserver(() => {
+      measure(element);
+      keep(element);
+    });
     const observeAll = () => {
       sizes.disconnect();
       sizes.observe(element);
@@ -167,6 +187,8 @@ export type ConfirmOptions = {
   confirm: string;
   /** The words of the other button; "Abbrechen" by default. */
   cancel?: string;
+  /** Agreeing destroys something (deletes, revokes, removes a device): the agreeing button is red. */
+  danger?: boolean;
 };
 
 /**
@@ -253,7 +275,13 @@ const ConfirmSurface = (props: { question: Question<ConfirmOptions> }) => {
             <parts.Close class="k2-btn" data-k2-part="Button">
               <span class="k2-btn-label">{parts.payload()?.cancel ?? t().cancel}</span>
             </parts.Close>
-            <parts.Close class="k2-btn" data-k2-part="Button" data-variant="primary" value="confirm">
+            <parts.Close
+              class="k2-btn"
+              data-k2-part="Button"
+              data-variant="primary"
+              data-danger={parts.payload()?.danger ? "" : undefined}
+              value="confirm"
+            >
               <span class="k2-btn-label">{parts.payload()?.confirm}</span>
             </parts.Close>
           </div>

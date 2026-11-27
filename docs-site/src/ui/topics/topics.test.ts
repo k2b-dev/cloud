@@ -37,7 +37,7 @@ describe("recipes", () => {
   });
 
   test("the recipes of topic 2 offer their states", () => {
-    expect(Object.keys(recipeStates("table"))).toEqual(["empty", "loading", "failed"]);
+    expect(Object.keys(recipeStates("table"))).toEqual(["empty", "loading", "failed", "worst", "one", "huge"]);
     expect(Object.keys(recipeStates("list-detail"))).toEqual(["closed", "loading"]);
   });
 });
@@ -68,7 +68,7 @@ describe("topic pages", () => {
   test("Lists and tables is finished and is the reference page", () => {
     const topic = topics.find((candidate) => candidate.slug === "lists-and-tables");
     expect(topic?.parsed.front.status).toBeUndefined();
-    expect(topic?.parts).toEqual(["List", "Row", "Table", "StatusRow", "Pane.Split", "Empty · Loading · Failed"]);
+    expect(topic?.parts).toEqual(["List", "Row", "Table", "Trees", "StatusRow", "Pane.Split", "Empty · Loading · Failed"]);
   });
 
   test("a wrong shape is named", () => {
@@ -107,7 +107,7 @@ describe("the Markdown twin for search and read_doc", () => {
   });
 
   test("carries each recipe's path, states and whole file", () => {
-    expect(twin).toContain("`packages/ui/skills/k2b-ui/recipes/table.tsx` (states: empty, loading, failed)");
+    expect(twin).toContain("`packages/ui/skills/k2b-ui/recipes/table.tsx` (states: empty, loading, failed, worst, one, huge)");
     expect(twin).toContain(`\`\`\`tsx\n${recipeSource.table?.trimEnd()}\n\`\`\``);
     expect(twin).toContain("`packages/ui/skills/k2b-ui/recipes/list-detail.tsx` (states: closed, loading)");
   });

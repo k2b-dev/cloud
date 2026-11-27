@@ -17,6 +17,7 @@ const filterMessages = i18n.define({
       upTo: "up to",
       between: ({ min, max }: { min: string; max: string }) => `${min} to ${max}`,
       moreValues: ({ count }: { count: number }) => `${count} more`,
+      anyValue: "any",
       yes: "yes",
       no: "no",
       addFilter: "Filter",
@@ -95,6 +96,7 @@ const filterMessages = i18n.define({
       upTo: "bis",
       between: ({ min, max }: { min: string; max: string }) => `${min} bis ${max}`,
       moreValues: ({ count }: { count: number }) => `${count} weitere`,
+      anyValue: "beliebig",
       yes: "ja",
       no: "nein",
       addFilter: "Filter",
@@ -175,3 +177,5 @@ export const useFilterMessages = (): (() => FilterMessages) => {
 };
 
 export const checkFilterMessages = () => filterMessages.check();
+/** The words in one language, such as for a check that a German screen shows no English ones. */
+export const resolveFilterMessages = (locale: string): FilterMessages => filterMessages.resolve([locale]).t;

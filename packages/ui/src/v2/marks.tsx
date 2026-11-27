@@ -1,12 +1,19 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createSignal, For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { personColor } from "../surfaces/person-color";
+import { colorStyle, safeColor, safeValue } from "./colors";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
-  const entries = Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined);
+  const entries = Object.entries(values).flatMap(([key, value]): [string, string][] => {
+    if (value === undefined) return [];
+    // a data colour is validated and brings its readable foregrounds; anything else is the primitive's own number
+    if (key === "--k2-c") return Object.entries(colorStyle(value) ?? {});
+    return safeValue(value) ? [[key, value]] : [];
+  });
   return entries.length ? Object.fromEntries(entries) : undefined;
 };
 
@@ -85,7 +92,12 @@ const createPicture = (src: () => string | undefined) => {
   return { state, Picture };
 };
 
-export const Avatar = (props: AvatarProps) => {
+const faceColor = (color: string | undefined): JSX.CSSProperties | undefined => (color === undefined ? undefined : { "--k2-c": color });
+
+// A face, and in a stack its place from 1 on, which the stylesheet reads to let the later ones give way (a sibling
+// count such as :nth-of-type cannot see through an island's wrapper). A button with a person uses the face alone, so
+// a bundle with buttons carries no stack.
+export const Face = (props: AvatarProps & { place?: number }) => {
   // Shown, the initials under the picture leave, as a picture may be transparent.
   const picture = createPicture(() => props.image);
   return (
@@ -93,12 +105,14 @@ export const Avatar = (props: AvatarProps) => {
       class="k2-av"
       data-k2-part="Avatar"
       data-k2-avatar=""
+      data-place={props.place === undefined ? undefined : String(props.place)}
       data-image={props.image ? (picture.state() ?? "") : undefined}
       role="img"
       aria-label={props.name}
       aria-hidden={props.decorative ? "true" : undefined}
-      // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud.
-      style={custom({ "--k2-c": props.color ?? personColor(props.name) })}
+      // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud. A face reads
+      // only the colour itself, none of the inks a mark derives from it; one that is no colour leaves it neutral.
+      style={faceColor(props.color === undefined ? personColor(props.name) : safeColor(props.color))}
     >
       {initialsOf(props)}
       <picture.Picture />
@@ -117,27 +131,42 @@ export type AvatarStackProps = {
 
 /**
  * People side by side, each over the one before it with a ring of the surface, and "+n" for the rest. The stack is
- * one picture with one name; the avatars in it are decoration. 20 px in a row, a tile and a cell, 24 px elsewhere.
+ * one picture with one name; the avatars in it are decoration. 20 px everywhere, each over the one before by 2 px.
  */
-Avatar.Stack = (props: AvatarStackProps) => {
-  const shown = () => props.people.slice(0, Math.max(1, props.max ?? 3));
-  const rest = () => props.people.length - shown().length;
+const AvatarStack = (props: AvatarStackProps) => {
+  // at most five faces; fewer when the place is narrow (the stylesheet decides by the stack's own width)
+  const shown = () => props.people.slice(0, Math.min(5, Math.max(1, props.max ?? 3)));
+  // "+n" for each number of faces the place may leave visible: the stylesheet shows the one that matches, so the count
+  // is always right and always whole, from the server's first render on
+  const counts = () =>
+    shown()
+      .map((_, index) => ({ visible: index + 1, rest: props.people.length - (index + 1) }))
+      .filter((count) => count.rest > 0);
+  // everyone shows: the stack needs no room for a count while its faces fit (the stylesheet works out its width)
+  const all = () => props.people.length <= shown().length;
   return (
     <span
       class="k2-avs"
       data-k2-part="Avatar.Stack"
+      data-k={String(shown().length)}
+      data-all={all() ? "" : undefined}
       role="img"
       aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
+      style={custom({ "--k2-avs-n": String(shown().length), "--k2-avs-rest": all() ? "0" : "1" })}
     >
-      <For each={shown()}>{(person) => <Avatar {...person} decorative />}</For>
-      <Show when={rest() > 0}>
-        <span class="k2-avs-rest" aria-hidden="true">
-          +{rest()}
-        </span>
-      </Show>
+      <For each={shown()}>{(person, index) => <Face {...person} decorative place={index() + 1} />}</For>
+      <For each={counts()}>
+        {(count) => (
+          <span class="k2-avs-rest" data-visible={String(count.visible)} aria-hidden="true">
+            {`+${count.rest}`}
+          </span>
+        )}
+      </For>
     </span>
   );
 };
+
+export const Avatar = /* @__PURE__ */ Object.assign((props: AvatarProps) => <Face {...props} />, { Stack: AvatarStack });
 
 export type MarkProps = {
   /** A Tabler icon for the kind of thing, such as `table`, `folder-filled` or `tool`. */
@@ -161,8 +190,9 @@ export type MarkProps = {
 /**
  * What a thing looks like: its symbol on a tint of its colour, or its picture, in one square place. Every row, tile
  * and sidebar entry that stands for a thing leads with it (rule: each thing carries its mark). The place sets the
- * size: 20 px in the sidebar and in a sentence, 24 px leading a row of one line, 32 px leading a row of two or three
- * lines, 36 px on a tile.
+ * size: 20 px in the sidebar and in a sentence, 32 px leading a row or a table's cell (a row of one line is then 44 px;
+ * on the phone 40 px in a row of 56),
+ * 36 px on a tile.
  */
 export const Mark = (props: MarkProps) => {
   const picture = createPicture(() => props.image);
@@ -188,10 +218,55 @@ export const Mark = (props: MarkProps) => {
   );
 };
 
+export type PreviewProps = {
+  /** What the picture shows, for assistive technology, such as "Vorschau von Ansicht Front Eiche.jpg". */
+  label: string;
+  /** The thing's symbol, which stands while the picture loads, when it fails, and for a thing without a picture. */
+  icon: string;
+  /** The data colour of the thing or of its kind, as on its `Mark`. */
+  color?: string;
+  /** The address of the picture: a photo, the first page of a PDF, a frame of a video. */
+  image?: string;
+  /** The type on the corner, such as `PDF`, or the length of a video, such as `2:14`. */
+  kind?: string;
+};
+
+/**
+ * A large picture of the open thing at the top of its detail: 4:3 from text edge to text edge, round like the thing's
+ * mark. Without a picture, or while it loads or fails, the thing's symbol stands large on the
+ * tint of its colour in the same place, so nothing moves. It stands where the detail's text starts; it is never a
+ * box inside a box.
+ */
+export const Preview = (props: PreviewProps) => {
+  const picture = createPicture(() => props.image);
+  return (
+    <div
+      class="k2-mk k2-preview"
+      data-k2-part="Preview"
+      data-image={props.image ? (picture.state() ?? "") : undefined}
+      role="img"
+      aria-label={props.label}
+      style={custom({ "--k2-c": props.color })}
+    >
+      <Icon name={props.icon} />
+      <picture.Picture />
+      <Show when={props.kind}>
+        <span class="k2-mk-kind" data-k2-glyph="">
+          {props.kind}
+        </span>
+      </Show>
+    </div>
+  );
+};
+
 export type SparkProps = {
   /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. */
   values: readonly number[];
-  /** What the bars show, such as "Änderungen der letzten 7 Tage". It names the drawing; the values are not read out. */
+  /**
+   * What the bars say, in one sentence a person who cannot see them gets the same from: the thing, the direction and
+   * the numbers that matter, such as "Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen". Not only the title
+   * of the data ("Änderungen der letzten 7 Tage"): a rise, a fall and a flat line would then say the same.
+   */
   label: string;
 };
 
@@ -264,6 +339,9 @@ export type ChipProps = {
 
 /** A round mark that shows a state, a tag, an amount or a count. Never a colour without a word. */
 export const Chip = (props: ChipProps) => {
+  // the words are made once and read from here, for the tip and the text: reading `children` twice would make its
+  // JSX twice, and the browser would look for nodes the server never sent
+  const words = resolveChildren(() => props.children);
   const pressable = () => props.href !== undefined || props.onClick !== undefined;
   const kind = () =>
     props.yours
@@ -292,6 +370,10 @@ export const Chip = (props: ChipProps) => {
       data-kind={kind()}
       aria-pressed={props.onClick && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       data-pressed={props.pressed ? "" : undefined}
+      title={(() => {
+        const shown = words();
+        return typeof shown === "string" ? shown : undefined;
+      })()}
       style={custom({ "--k2-c": "color" in props ? props.color : undefined })}
     >
       <Show when={props.status}>{(status) => <span class="k2-dot" data-status={status()} />}</Show>
@@ -300,9 +382,20 @@ export const Chip = (props: ChipProps) => {
       </Show>
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
-      {props.children}
+      {/* the words wrap to two lines where the chip stands free, and are cut with "…" where its place keeps one line
+          (a table row, the marks of a row, a head); the whole words then stand in the tip */}
+      <span class="k2-chip-text">{words()}</span>
     </Dynamic>
   );
+};
+
+/**
+ * A count as the render locale writes it ("12.840" in German, "12,840" in English); words the app gives ("+8",
+ * "99+") stay as they are. Internal: the counts of tabs, nav entries, sections and groups.
+ */
+export const Count = (props: { value: number | string }) => {
+  const locale = useLocale();
+  return <>{typeof props.value === "number" ? new Intl.NumberFormat(locale()).format(props.value) : props.value}</>;
 };
 
 /** A small round dot of a state (internal: a row marks "unread" with it, the sidebar "new"). */
@@ -320,6 +413,8 @@ export type ProgressProps = {
 /** A thin bar with its value. */
 export const Progress = (props: ProgressProps) => {
   const share = () => (props.of > 0 ? Math.max(0, Math.min(1, props.value / props.of)) : 0);
+  // more than the whole (day 23 of 22): the bar is full, and the part beyond the whole shows in the colour of waiting
+  const over = () => props.of > 0 && props.value > props.of;
   return (
     <span
       class="k2-progress"
@@ -327,10 +422,18 @@ export const Progress = (props: ProgressProps) => {
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={props.of}
-      aria-valuenow={props.value}
+      aria-valuenow={over() ? props.of : props.value}
+      aria-valuetext={over() ? props.label : undefined}
+      data-over={over() ? "" : undefined}
       aria-label={props.label}
     >
-      <span class="k2-progress-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
+      <span
+        class="k2-progress-track"
+        style={custom({
+          "--k2-p": `${Math.round(share() * 1000) / 10}%`,
+          "--k2-whole": over() ? `${Math.round((props.of / props.value) * 1000) / 10}%` : undefined,
+        })}
+      >
         <i />
       </span>
       <Show when={props.label}>

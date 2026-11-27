@@ -13,13 +13,15 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
+import { Avatar, Chip, Count, custom, Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
@@ -30,7 +32,7 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 type NavEntryBase = {
   /** The words of the entry. */
   label: string;
-  /** A count at the end, such as unread mails. */
+  /** A count at the end, such as unread mails: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -88,9 +90,18 @@ export type NavGroup = {
    * Postfach" and "Gelöschte Postfächer"; `label` names the button.
    */
   action?: Action | { label: string; items: readonly MenuEntry[] };
-  /** The entries of the group. */
-  items: readonly NavItem[];
-};
+} & (
+  | {
+      /** The entries of the group. */
+      items: readonly NavItem[];
+      tree?: undefined;
+    }
+  | {
+      /** Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`. */
+      tree: NavTree;
+      items?: undefined;
+    }
+);
 
 export type NavProps = {
   /** The app's name and symbol at the top. */
@@ -101,20 +112,34 @@ export type NavProps = {
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
+  /**
+   * What the open place uses of what it may, above the foot: a storage of 100 GB, seats of a plan. Its name and the
+   * words ("38,2 von 100 GB") on one line, a bar under them in the app colour, amber from 75 % and red from 90 %.
+   */
+  quota?: { label: string; value: number; of: number; text: string };
 };
+
+/**
+ * A count as the page says it: a number in the page's language and whole (12.345 in German, 12,345 in English, never
+ * "9.999+"), words such as "99+" as the app gives them.
+ */
+const countIn = (count: number | string, locale: string) => (typeof count === "number" ? count.toLocaleString(locale) : count);
 
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
-const NavEnd = (props: { item: NavItem }) => (
-  <>
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
-  </>
-);
+const NavEnd = (props: { item: NavItem }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <span class="k2-ni-name">{props.item.label}</span>
+      <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+      <Show when={props.item.count !== undefined}>
+        <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
   <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
@@ -213,10 +238,38 @@ export const Nav = (props: NavProps) => (
               <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
             </div>
           </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
+          <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+            {(tree) => <NavTreeView {...tree()} />}
+          </Show>
         </>
       )}
     </Index>
+    <Show when={props.quota}>
+      {(quota) => {
+        const share = () => (quota().of > 0 ? Math.max(0, Math.min(1, quota().value / quota().of)) : 0);
+        return (
+          <div
+            class="k2-nav-quota"
+            data-k2-part="Nav.Quota"
+            data-status={share() >= 0.9 ? "bad" : share() >= 0.75 ? "warn" : undefined}
+            role="meter"
+            aria-label={quota().label}
+            aria-valuemin={0}
+            aria-valuemax={quota().of}
+            aria-valuenow={quota().value}
+            aria-valuetext={quota().text}
+          >
+            <span class="k2-nav-quota-line">
+              <span>{quota().label}</span>
+              <span>{quota().text}</span>
+            </span>
+            <span class="k2-nav-quota-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
+              <i />
+            </span>
+          </div>
+        );
+      }}
+    </Show>
     <Show when={props.foot?.length}>
       <div class="k2-nav-foot">
         <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
@@ -232,7 +285,7 @@ export type Tab = {
   label: string;
   /** A Tabler icon before the name. */
   icon?: string;
-  /** A quiet count after the name. */
+  /** A quiet count after the name: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -258,21 +311,24 @@ export type TabsProps = {
 };
 
 /** The words of a tab: its symbol, its name and its count. */
-const TabFace = (props: { tab: Tab }) => (
-  <>
-    <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
-    {props.tab.label}
-    <Show when={props.tab.count !== undefined}>
-      <span class="k2-tab-count">{props.tab.count}</span>
-    </Show>
-  </>
-);
+const TabFace = (props: { tab: Tab }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
+      {props.tab.label}
+      <Show when={props.tab.count !== undefined}>
+        <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, locale: string): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : String(tab.count),
+  meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -301,6 +357,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  */
 export const Tabs = (props: TabsProps) => {
   const t = useUiMessages();
+  const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
@@ -345,7 +402,7 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -392,34 +449,65 @@ export const Tabs = (props: TabsProps) => {
 /**
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
  * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
+ *
+ * A deep path folds by its length, the same on the server and in the browser, so nothing moves: from five places on,
+ * the first and the page stand, and every place between goes into a menu "…" in its order. The page keeps its whole
+ * name: where the room runs out the places between shorten with "…" first, then the first; the page only when
+ * nothing else is left. Every shortened name shows whole on hover.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
-export const Path = (props: PathProps) => (
-  <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
-    <For each={props.items}>
-      {(item, index) => (
-        <>
-          <Show when={index() > 0}>
-            <Icon name="chevron-right" />
-          </Show>
-          <Show
-            when={index() === props.items.length - 1}
-            fallback={
-              <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
-                <a class="k2-path-step" href={item.href}>
-                  {item.label}
-                </a>
-              </Show>
-            }
-          >
-            <b aria-current="page">{item.label}</b>
-          </Show>
-        </>
-      )}
-    </For>
-  </nav>
-);
+type PathItem = PathProps["items"][number];
+
+/** How many places a path shows before the places between its first and its page fold into a menu. */
+const PATH_SHOWN = 4;
+/** The longest name that stays narrower than the 48 px a long name shortens to (six letters of 14 px type). */
+const PATH_SHORT = 6;
+
+export const Path = (props: PathProps) => {
+  const t = useOverlayMessages();
+  // a deep path shows its first place and the page; every place between goes into the menu "…"
+  const folded = () => (props.items.length > PATH_SHOWN ? props.items.slice(1, -1) : []);
+  // a short name ("2026", "Q1") is narrower than the 48 px a long one shortens to, so it stays whole as it is
+  const short = (item: PathItem) => (item.label.length <= PATH_SHORT ? "" : undefined);
+  const step = (item: PathItem, last: boolean, between: boolean) =>
+    last ? (
+      <b aria-current="page" title={item.label} data-short={short(item)}>
+        {item.label}
+      </b>
+    ) : item.href !== undefined ? (
+      <a class="k2-path-step" href={item.href} data-near={between ? "" : undefined} data-short={short(item)} title={item.label}>
+        {item.label}
+      </a>
+    ) : (
+      <span class="k2-path-step" data-near={between ? "" : undefined} data-short={short(item)} title={item.label}>
+        {item.label}
+      </span>
+    );
+  const shown = () => (folded().length ? [props.items[0]!, props.items.at(-1)!] : props.items);
+  return (
+    <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
+      <For each={shown()}>
+        {(item, index) => (
+          <>
+            <Show when={index() > 0}>
+              <Icon name="chevron-right" />
+            </Show>
+            <Show when={index() === 1 && folded().length}>
+              <Menu
+                icon="dots"
+                label={t().levelsAbove}
+                items={folded().map((place) => ({ label: place.label, href: place.href, disabled: place.href === undefined }))}
+              />
+              <Icon name="chevron-right" />
+            </Show>
+            {step(item, index() === shown().length - 1, index() > 0 && index() < shown().length - 1)}
+          </>
+        )}
+      </For>
+    </nav>
+  );
+};
 
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -434,7 +522,10 @@ export type StatusFact = {
 };
 
 export type StatusRowProps = {
-  /** The one main statement, such as "7 unread". */
+  /**
+   * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
+   * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   */
   lead: string;
   /**
    * The results refresh in place, such as after a filter changed: `true` shows a quiet turning mark after the lead
@@ -451,18 +542,27 @@ export type StatusRowProps = {
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
-  /** Filters or a segment at the end; they leave on the phone. */
+  /**
+   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
+   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
+   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   */
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out.
+   * actions, and the way out. `meta`: a quiet word on what is selected after the count, such as "12,9 MB · 3 Bilder".
    */
-  selection?: { count: string; actions: readonly Action[]; clear: Action };
+  selection?: { count: string; meta?: string; actions: readonly Action[]; clear: Action };
 };
 
+/** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
+const SELECTION_SHOWN = 3;
+
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
+
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
+  const overlay = useOverlayMessages();
   const filters = resolveChildren(() => props.filters);
   return (
     <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
@@ -515,8 +615,37 @@ export const StatusRow = (props: StatusRowProps) => {
             <span class="k2-status-lead" aria-live="polite">
               {selection().count}
             </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            <Show when={selection().meta}>{(meta) => <span class="k2-status-meta">{meta()}</span>}</Show>
+            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
+                On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
+            <span class="k2-status-actions">
+              <For
+                each={
+                  selection().actions.length > SELECTION_SHOWN + 1 ? selection().actions.slice(0, SELECTION_SHOWN) : selection().actions
+                }
+              >
+                {(action) => <ActionButton action={action} titled />}
+              </For>
+              <Show when={selection().actions.length > SELECTION_SHOWN + 1}>
+                <Menu
+                  icon="dots"
+                  titled
+                  items={selection()
+                    .actions.slice(SELECTION_SHOWN)
+                    .map((action) => ({
+                      label: action.label,
+                      icon: action.icon,
+                      meta: action.meta,
+                      href: action.href,
+                      onNavigate: action.onNavigate,
+                      onClick: action.onClick,
+                      disabled: action.disabled,
+                    }))}
+                >
+                  {overlay().more}
+                </Menu>
+              </Show>
+            </span>
             <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>
         )}
@@ -527,8 +656,12 @@ export const StatusRow = (props: StatusRowProps) => {
 
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type NoticeProps = {
-  /** What it is: a note of a person, a summary by AI, something wrong, something waiting. */
+type NoticeBase = {
+  /**
+   * What it is: a note of a person, a summary by AI, something wrong, something waiting. Assistive technology hears
+   * `bad` at once (an alert) and `warn` politely when it appears or changes (a status); `note` and `ai` are read
+   * with the page.
+   */
   tone: "note" | "ai" | "bad" | "warn";
   /** A symbol other than the one of the tone, such as a pin for a pinned note. */
   icon?: string;
@@ -536,11 +669,28 @@ export type NoticeProps = {
   title?: string;
   /** Quiet words after the title: who and when. */
   meta?: string;
-  /** Text buttons at the end; at most two. */
-  actions?: TwoActions;
   /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
+
+/** At most two deeds in all: two quiet text buttons, or the one thing to do and one quiet deed beside it. */
+export type NoticeProps = NoticeBase &
+  (
+    | {
+        /** Text buttons at the end; at most two. */
+        actions?: TwoActions;
+        primary?: undefined;
+      }
+    | {
+        /** One quiet text button before the primary deed. */
+        actions?: readonly [Action];
+        /**
+         * The one thing to do, such as "Neu laden" when the page is offline: a framed button at the end, after the
+         * quiet deed. It is no primary of the page; the page keeps its own one.
+         */
+        primary: Action;
+      }
+  );
 
 const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
 
@@ -551,7 +701,9 @@ export const Notice = (props: NoticeProps) => (
     data-k2-part="Notice"
     data-tone={props.tone}
     data-title={props.title ? "" : undefined}
-    role={props.tone === "bad" ? "alert" : "note"}
+    // something wrong interrupts; something waiting is a state, heard politely when it appears or changes; a person's
+    // note and a summary by AI are content to read
+    role={props.tone === "bad" ? "alert" : props.tone === "warn" ? "status" : "note"}
   >
     <Icon name={props.icon ?? toneIcon[props.tone]} />
     <Show when={props.title}>
@@ -564,9 +716,10 @@ export const Notice = (props: NoticeProps) => (
       </span>
     </Show>
     <span class="k2-notice-text">{props.children}</span>
-    <Show when={props.actions?.length}>
+    <Show when={props.actions?.length || props.primary}>
       <span class="k2-notice-end">
         <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
+        <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
       </span>
     </Show>
   </div>
@@ -600,12 +753,14 @@ export type ActivityEntry = {
    * `<Mark icon color />` followed by its name, so it looks the same as in its list.
    */
   text: JSX.Element;
-  /** When, such as "09:42" or "gestern, 16:40". */
+  /** When, such as "09:42" or "gestern, 16:40": at the end of the sentence, or under it after the place. */
   time: string;
   /** Where, quiet before the time, such as the base "Werkstatt". */
   place?: string;
-  /** The page of the thing that changed: the sentence becomes the link. */
+  /** The page of the thing that changed: the sentence becomes the link … */
   href?: string;
+  /** … which opens in place on a plain click, while it still opens in a new tab (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
 };
 
 export type DigestProps =
@@ -619,7 +774,7 @@ export type DigestProps =
     }
   | {
       items?: never;
-      /** What people did, newest first: an avatar, a sentence that may wrap, then place and time. */
+      /** What people did, newest first: an avatar, a sentence that may wrap with the time at its end, or place and time under it. */
       activity: readonly ActivityEntry[];
       children?: never;
       /** The name of the list, for assistive technology. */
@@ -652,7 +807,8 @@ export const Digest = (props: DigestProps) => {
                 class="k2-row"
                 data-k2-part="Digest.Entry"
                 data-activity=""
-                data-lines="2"
+                // without a place the time stands at the end of the sentence, as in a row; with one, under it
+                data-lines={entry.place ? "2" : "1"}
                 data-open={entry.href !== undefined ? "" : undefined}
                 role="listitem"
               >
@@ -660,9 +816,13 @@ export const Digest = (props: DigestProps) => {
                   <Avatar {...entry.person} />
                 </span>
                 <span class="k2-row-l1">
-                  <RowOpen href={entry.href}>{entry.text}</RowOpen>
+                  <RowOpen href={entry.href} onNavigate={entry.onNavigate}>
+                    {entry.text}
+                  </RowOpen>
                 </span>
-                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
+                <Show when={entry.place} fallback={<span class="k2-row-time">{entry.time}</span>}>
+                  {(place) => <span class="k2-row-l2">{`${place()} · ${entry.time}`}</span>}
+                </Show>
               </div>
             )}
           </For>
@@ -689,7 +849,9 @@ export const Digest = (props: DigestProps) => {
                 </span>
                 <span class="k2-digest-state">
                   <Icon name={entry.state.icon} tone={entry.state.tone} />
-                  {entry.state.label}
+                  <span class="k2-digest-state-text" title={entry.state.label}>
+                    {entry.state.label}
+                  </span>
                 </span>
                 <span class="k2-digest-text">{entry.text}</span>
                 <Show when={entry.href !== undefined}>
@@ -786,7 +948,8 @@ export const RecordHead = (props: RecordHeadProps) => (
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
     <For each={props.ids}>
       {(id) => (
-        <span class="k2-record-id">
+        // where the head has no room the words give way with "…"; the whole identifier stands in the tip
+        <span class="k2-record-id" title={id.label ? `${id.label} ${id.value}` : id.value}>
           <Show when={id.icon && !id.label}>
             <Icon name={id.icon!} />
           </Show>

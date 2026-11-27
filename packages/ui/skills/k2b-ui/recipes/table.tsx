@@ -1,15 +1,18 @@
-// Recipe: a table of things with a face. The status row says what matters today with a number and toned chips; each
-// row leads with the thing's mark, shows the person in charge as an avatar and its state as colour, symbol and word.
+// Recipe: a table of things with a face. One strip of key figures says what matters today (`Cells`); each row leads
+// with the thing's mark, shows the person in charge as an avatar and its state as colour, symbol and word.
 // Each row opens its invoice and, when it is overdue, has one deed; on the phone the table becomes two-line rows with the same mark.
-// Empty, loading and failed stand where the rows would stand, and nothing above them moves (see `states` at the end).
-import { Avatar, Bar, Button, Chip, Failed, Inline, Input, Mark, Nav, Pane, StatusRow, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
+// Empty, loading and failed stand where the rows would stand (see `states` at the end).
+import { Bar, Button, Cells, Chip, Failed, Input, Nav, Pane, Table, Tabs, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#15803d", icon: "coin-euro" };
+export const app = { name: "Finanzen", color: "#15803d", icon: "coin-euro" };
 
 // One colour per kind of document, the same in every list, card and sentence of the app.
+// One mark per kind of document, the same in every list, card and sentence of the app.
 const kind = {
   invoice: { icon: "file-invoice", color: "#2563eb" },
+  partial: { icon: "receipt-2", color: "#c2410c" },
+  service: { icon: "tool", color: "#0e7490" },
 };
 const people = {
   ada: { name: "Ada Renz" },
@@ -25,21 +28,63 @@ type Invoice = {
   state: "overdue" | "reminded" | "open" | "partly";
   amount: string;
   owner: { name: string };
+  /** The kind of document; a plain invoice when not set. */
+  kind?: keyof typeof kind;
 };
 
 const invoices: Invoice[] = [
   { number: "RE-0042", customer: "Holzwerk Brandt", due: "12. Nov.", state: "overdue", amount: "1.280,00 €", owner: people.ada },
-  { number: "RE-0039", customer: "Praxis Dr. Lindqvist", due: "17. Nov.", state: "reminded", amount: "2.940,00 €", owner: people.felix },
+  {
+    number: "RE-0039",
+    kind: "partial",
+    customer: "Praxis Dr. Lindqvist",
+    due: "17. Nov.",
+    state: "reminded",
+    amount: "2.940,00 €",
+    owner: people.felix,
+  },
   { number: "RE-0044", customer: "Bäckerei Oswald", due: "23. Nov.", state: "overdue", amount: "318,40 €", owner: people.ada },
   { number: "RE-0047", customer: "Familie Oswald", due: "26. Nov.", state: "open", amount: "420,50 €", owner: people.lena },
-  { number: "RE-0048", customer: "Stadtwerke Auental", due: "28. Nov.", state: "partly", amount: "6.100,00 €", owner: people.sami },
+  {
+    number: "RE-0048",
+    kind: "partial",
+    customer: "Stadtwerke Auental",
+    due: "28. Nov.",
+    state: "partly",
+    amount: "6.100,00 €",
+    owner: people.sami,
+  },
   { number: "RE-0051", customer: "Architekturbüro Winter", due: "2. Dez.", state: "open", amount: "140,00 €", owner: people.felix },
-  { number: "RE-0052", customer: "Kanzlei Berger & Kern", due: "4. Dez.", state: "open", amount: "1.775,00 €", owner: people.ada },
+  {
+    number: "RE-0052",
+    kind: "service",
+    customer: "Kanzlei Berger & Kern",
+    due: "4. Dez.",
+    state: "open",
+    amount: "1.775,00 €",
+    owner: people.ada,
+  },
   { number: "RE-0055", customer: "Hotel Seeblick", due: "6. Dez.", state: "open", amount: "3.260,00 €", owner: people.lena },
-  { number: "RE-0058", customer: "Gemeinde Ohlsbach", due: "9. Dez.", state: "open", amount: "12.480,00 €", owner: people.sami },
-  { number: "RE-0061", customer: "Weingut Hartwig", due: "11. Dez.", state: "open", amount: "890,00 €", owner: people.felix },
+  {
+    number: "RE-0058",
+    kind: "partial",
+    customer: "Gemeinde Ohlsbach",
+    due: "9. Dez.",
+    state: "open",
+    amount: "12.480,00 €",
+    owner: people.sami,
+  },
+  {
+    number: "RE-0061",
+    kind: "service",
+    customer: "Weingut Hartwig",
+    due: "11. Dez.",
+    state: "open",
+    amount: "890,00 €",
+    owner: people.felix,
+  },
   { number: "RE-0063", customer: "Autohaus Renz", due: "12. Dez.", state: "open", amount: "2.115,30 €", owner: people.ada },
-  { number: "RE-0064", customer: "Physio Kern", due: "15. Dez.", state: "open", amount: "260,00 €", owner: people.lena },
+  { number: "RE-0064", kind: "service", customer: "Physio Kern", due: "15. Dez.", state: "open", amount: "260,00 €", owner: people.lena },
 ];
 
 // A state is always colour, sign and word together: a status chip, never a bare word.
@@ -65,7 +110,7 @@ export default function OpenInvoices(props: Props) {
             {
               items: [
                 { label: "Übersicht", icon: "layout-dashboard", href: "#" },
-                { label: "Rechnungen", icon: "file-invoice", count: 12, current: true },
+                { label: "Rechnungen", icon: "file-invoice", current: true },
                 { label: "Angebote", icon: "file-description", count: 5, href: "#angebote" },
                 { label: "Belege", icon: "receipt", count: 23, href: "#belege", dot: "warn" },
               ],
@@ -106,25 +151,36 @@ export default function OpenInvoices(props: Props) {
       }
       primary={{ label: "Rechnung", icon: "plus" }}
     >
-      <Pane
-        label="Offene Rechnungen"
-        status={
-          <StatusRow
-            lead={props.failed ? "Nicht geladen" : props.loading ? "Wird geladen" : ready() ? "33.000,20 € offen" : "Alles bezahlt"}
-            facts={ready() ? [{ value: rows().length, after: "Rechnungen" }] : []}
-            filters={
-              ready() ? (
-                <>
-                  <Chip status="bad">3 überfällig · 4.538,40 €</Chip>
-                  <Chip yours icon="mail-forward">
-                    2 Mahnungen fällig
-                  </Chip>
-                </>
-              ) : undefined
-            }
-          />
-        }
-      >
+      <Pane label="Offene Rechnungen">
+        {/* the key figures as one strip above the table: what is open, what is late, what to send today; the count
+            of invoices stands once, in the tab. A failed load shows no figures, they are data too. */}
+        {!props.failed && (
+          <Cells>
+            <Cells.Cell
+              icon="file-invoice"
+              label="Offen"
+              value={ready() ? "33.000,20 €" : "0,00 €"}
+              meta={ready() ? "fällig bis 15. Dez." : "nichts offen"}
+              loading={props.loading}
+            />
+            <Cells.Cell
+              icon="alert-triangle"
+              color="#dc2626"
+              label="Überfällig"
+              value={ready() ? "4.538,40 €" : "0,00 €"}
+              meta={ready() ? "3 Rechnungen, älteste seit 12. Nov." : undefined}
+              loading={props.loading}
+            />
+            <Cells.Cell
+              icon="mail-forward"
+              label="Mahnungen fällig"
+              value={ready() ? "2" : "keine"}
+              meta={ready() ? "heute zu senden" : undefined}
+              href={ready() ? "#mahnungen" : undefined}
+              loading={props.loading}
+            />
+          </Cells>
+        )}
         {props.failed ? (
           <Failed text="Die Rechnungen konnten nicht geladen werden. Es wurde nichts geändert." onRetry={() => location.reload()} />
         ) : (
@@ -137,7 +193,7 @@ export default function OpenInvoices(props: Props) {
             empty={{ icon: "receipt", text: "Keine offenen Rechnungen. Neue stehen hier, sobald sie verschickt sind." }}
             // On the phone each invoice is a row of two lines with its mark; seven column widths never fit 390 px.
             phone={(row) => ({
-              mark: kind.invoice,
+              mark: kind[row.kind ?? "invoice"],
               lines: [row.customer, `${row.number} · fällig am ${row.due}`],
               time: row.amount,
               marks: row.state === "open" ? undefined : <Chip status={stateOf[row.state].status}>{stateOf[row.state].label}</Chip>,
@@ -146,27 +202,32 @@ export default function OpenInvoices(props: Props) {
             columns={[
               {
                 title: "Rechnung",
-                width: { min: 110, default: 120 },
-                // the thing's mark leads its name; `Inline` keeps the one gap between them
-                cell: (row) => (
-                  <Inline>
-                    <Mark {...kind.invoice} />
-                    <Text>{row.number}</Text>
-                  </Inline>
-                ),
+                width: { min: 125, default: 170 },
+                // the thing's mark leads its name
+                mark: (row) => kind[row.kind ?? "invoice"],
+                cell: (row) => row.number,
               },
-              { title: "Kunde", width: { min: 130, default: 140 }, cell: (row) => row.customer },
+              { title: "Kunde", width: { min: 150, default: 220 }, cell: (row) => row.customer },
               {
                 title: "Zustand",
-                width: { min: 110, default: 120 },
-                cell: (row) => <Chip status={stateOf[row.state].status}>{stateOf[row.state].label}</Chip>,
+                width: { min: 125, default: 170 },
+                // a chip only where something is off; "offen" is the plain rule of this list
+                cell: (row) =>
+                  row.state === "open" ? "offen" : <Chip status={stateOf[row.state].status}>{stateOf[row.state].label}</Chip>,
               },
-              { title: "Fällig", width: { min: 70, default: 80 }, cell: (row) => row.due, drop: true },
+              { title: "Fällig", width: { min: 70, default: 120 }, numeric: true, cell: (row) => row.due, drop: true },
               // the person in charge as a face; the avatar carries the name
-              { title: "Person", width: { min: 64, default: 64 }, drop: true, cell: (row) => <Avatar {...row.owner} /> },
-              { title: "Betrag", width: { min: 90, default: 100 }, align: "end", cell: (row) => row.amount },
+              {
+                title: "Person",
+                width: { min: 100, default: 120 },
+                drop: true,
+                avatar: (row) => row.owner,
+                cell: (row) => row.owner.name.split(" ")[0],
+              },
+              { title: "Betrag", width: { min: 90, default: 140 }, align: "end", cell: (row) => row.amount },
               {
                 title: "Aktion",
+                width: { min: 56, default: 80 },
                 cell: (row) =>
                   row.state === "overdue" ? (
                     // the one deed of a row as a quiet icon button; its name says what it does
@@ -188,4 +249,44 @@ export const states = {
   empty: () => <OpenInvoices rows={[]} />,
   loading: () => <OpenInvoices loading />,
   failed: () => <OpenInvoices failed />,
+  worst: () => <OpenInvoices rows={worstInvoices} />,
+  one: () => <OpenInvoices rows={[invoices[0]!]} />,
+  huge: () => <OpenInvoices rows={hugeInvoices} />,
 };
+
+// The realistic worst case for Fibel's Example and the recipe test: customers at the length people write them, an address
+// that cannot wrap, amounts in the millions and below zero. `one` is a single invoice; `huge` an unpaginated long list.
+const worstInvoices: Invoice[] = [
+  {
+    number: "RE-2611-0042-NACHLASS-SONNENHALDE",
+    customer: "Nachlassverwaltung Oberhauser-Wettstein & Söhne Antiquitäten GmbH & Co. KG",
+    due: "31. Dez. 2026",
+    state: "overdue",
+    owner: people.ada,
+    amount: "12.345.678,90 €",
+  },
+  {
+    number: "RE-2611-0043-ERBENGEMEINSCHAFT-OBERHAUSER-WETTSTEIN-NACHLASS",
+    customer:
+      "Erbengemeinschaft Oberhauser-Wettstein, vertreten durch Rechtsanwältin Dr. Aleksandra Wiśniewska-Kowalczyk, Kanzlei am Markt",
+    due: "31. Dez. 2026",
+    state: "open",
+    owner: people.felix,
+    amount: "4.611.686,00 €",
+  },
+  { number: "RE-1", customer: "J", due: "1. Jan.", state: "open", owner: people.felix, amount: "0,30 €" },
+  {
+    number: "RE-2611-0051",
+    customer: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+    due: "2. Dez.",
+    state: "open",
+    owner: people.felix,
+    amount: "−42,50 €",
+  },
+  { number: "RE-2611-0052", customer: "Đặng Thị Ngọc Hân", due: "3. Dez.", state: "overdue", owner: people.ada, amount: "1.284,00 €" },
+  { number: "RE-2611-0053", customer: "王秀英", due: "4. Dez.", state: "open", owner: people.felix, amount: "1.000.000,00 €" },
+];
+const hugeInvoices: Invoice[] = Array.from({ length: 1000 }, (_, index) => ({
+  ...invoices[index % 3]!,
+  number: `RE-2611-${String(index + 1).padStart(4, "0")}`,
+}));

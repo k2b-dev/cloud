@@ -1,8 +1,8 @@
 // Recipe: list with detail. A sidebar, a head with views and the main action, a list beside the open entry.
 // Each source leads with the mark of its kind and shows its state as colour and word; the open one fills its pane with
 // figures, facts, its latest events and who changed it. On the phone the detail pane leaves; open the entry as its own
-// page (its own route) there. The open entry comes from the address: with none open, the detail's place says so;
-// while loading, the list holds its place.
+// page (its own route) there. The open entry comes from the address: with none open, the sources stand as a dense
+// table across the page; while loading, the list and the detail's place hold their room.
 import {
   Avatar,
   Bar,
@@ -21,6 +21,7 @@ import {
   Row,
   Section,
   StatusRow,
+  Table,
   Tabs,
   Text,
   Workspace,
@@ -28,7 +29,7 @@ import {
 import { Show } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#0e7490", icon: "activity" };
+export const app = { name: "Pulse", color: "#0e7490", icon: "activity" };
 
 // One mark per kind of source, the same in the sidebar, the list and every sentence.
 const kind = {
@@ -52,11 +53,11 @@ const sources: Source[] = [
   { id: "s1", name: "Lackfabrik Nordhaus", kind: "webhook", today: "1.240 Ereignisse heute", seen: "09:42", state: "ok" },
   { id: "s3", name: "Spedition Kraus", kind: "webhook", today: "386 Ereignisse heute", seen: "09:40", state: "ok" },
   { id: "s4", name: "Bestellungen Shop", kind: "webhook", today: "212 Ereignisse heute", seen: "09:38", state: "ok" },
-  { id: "s6", name: "rechnung@werkstatt.de", kind: "mail", today: "18 Mails heute", seen: "09:31", state: "ok" },
+  { id: "s6", name: "rechnung@werkstatt.example", kind: "mail", today: "18 Mails heute", seen: "09:31", state: "ok" },
   { id: "s7", name: "Wetterdienst Ortenau", kind: "poll", today: "96 Abrufe heute", seen: "09:30", state: "ok" },
   { id: "s8", name: "Zeiterfassung Montage", kind: "webhook", today: "74 Ereignisse heute", seen: "09:12", state: "ok" },
   { id: "s9", name: "Bank Geschäftskonto", kind: "poll", today: "4 Abrufe heute", seen: "08:00", state: "ok" },
-  { id: "s10", name: "anfrage@werkstatt.de", kind: "mail", today: "7 Mails heute", seen: "08:47", state: "ok" },
+  { id: "s10", name: "anfrage@werkstatt.example", kind: "mail", today: "7 Mails heute", seen: "08:47", state: "ok" },
   { id: "s11", name: "Maschinen Halle 2", kind: "webhook", today: "1.902 Ereignisse heute", seen: "09:42", state: "ok" },
 ];
 const stateLabel = { ok: "Läuft", warn: "Wartet", bad: "Gestört" } as const;
@@ -66,10 +67,12 @@ type Props = { open?: string | null; loading?: boolean };
 export default function SourcesScreen(props: Props) {
   // the entry the address names; `null` when it names none
   const open = () => (props.loading || props.open === null ? undefined : sources.find((source) => source.id === (props.open ?? "s2")));
+  // with no source open the sources stand as a dense table across the page; with one open, as rows beside it
+  const closed = () => !props.loading && !open();
   return (
     <Workspace
-      // a detail opens beside the list: the sidebar keeps room for it, and its place says so while none is open
-      detail
+      // a detail opens beside the list: the sidebar keeps room for it, and its place says so while it loads
+      detail={closed() ? undefined : true}
       detailEmpty={{ icon: "activity", text: "Keine Quelle ausgewählt" }}
       sidebar={
         <Nav
@@ -78,7 +81,7 @@ export default function SourcesScreen(props: Props) {
           groups={[
             {
               items: [
-                { label: "Quellen", icon: "plug", current: true, count: sources.length, dot: "bad" },
+                { label: "Quellen", icon: "plug", current: true, dot: "bad" },
                 { label: "Ereignisse", icon: "list", href: "#ereignisse" },
                 { label: "Regeln", icon: "route", count: 14, href: "#regeln" },
               ],
@@ -101,7 +104,7 @@ export default function SourcesScreen(props: Props) {
             <Tabs
               label="Ansichten"
               items={[
-                { label: "Alle", count: sources.length, current: true },
+                { label: "Alle", current: true },
                 { label: "Gestört", count: 1, href: "#gestoert" },
                 { label: "Wartet", count: 1, href: "#wartet" },
               ]}
@@ -116,39 +119,72 @@ export default function SourcesScreen(props: Props) {
       }
       primary={{ label: "Neue Quelle", icon: "plus" }}
     >
-      <Pane.Split>
-        <Pane
-          label="Quellen"
-          width={{ min: 320, default: 400 }}
-          status={
-            <StatusRow
-              lead={props.loading ? "Wird geladen" : "3.920 Ereignisse heute"}
-              facts={props.loading ? [] : [{ value: sources.length, after: "Quellen" }]}
-              filters={props.loading ? undefined : <Chip status="bad">1 gestört</Chip>}
-            />
-          }
-        >
-          {props.loading ? (
-            <Loading rows={8} lines={2} />
-          ) : (
-            <List label="Quellen">
-              {sources.map((source) => (
-                <Row
-                  mark={kind[source.kind]}
-                  lines={[source.name, `${kindName[source.kind]} · ${source.today}`]}
-                  time={source.seen}
-                  // only what is not fine speaks up; "Läuft" on every row would be noise
-                  marks={source.state === "ok" ? undefined : <Chip status={source.state}>{stateLabel[source.state]}</Chip>}
-                  current={source.id === open()?.id}
-                  href={`#${source.id}`}
-                />
-              ))}
-            </List>
-          )}
-        </Pane>
-        <Show when={open()}>{(source) => <SourceDetail source={source()} />}</Show>
-      </Pane.Split>
+      <Show when={!closed()} fallback={<SourcesTable />}>
+        <Pane.Split>
+          <Pane
+            label="Quellen"
+            width={{ min: 320, default: 400 }}
+            status={
+              <StatusRow
+                // the troubled ones are counted once, in the views above
+                lead={props.loading ? "Wird geladen" : `${sources.length} Quellen`}
+              />
+            }
+          >
+            {props.loading ? (
+              <Loading rows={8} lines={2} />
+            ) : (
+              <List label="Quellen">
+                {sources.map((source) => (
+                  <Row
+                    mark={kind[source.kind]}
+                    lines={[source.name, `${kindName[source.kind]} · ${source.today}`]}
+                    time={source.seen}
+                    // only what is not fine speaks up; "Läuft" on every row would be noise
+                    marks={source.state === "ok" ? undefined : <Chip status={source.state}>{stateLabel[source.state]}</Chip>}
+                    current={source.id === open()?.id}
+                    href={`#${source.id}`}
+                  />
+                ))}
+              </List>
+            )}
+          </Pane>
+          <Show when={open()}>{(source) => <SourceDetail source={source()} />}</Show>
+        </Pane.Split>
+      </Show>
     </Workspace>
+  );
+}
+
+/** Every source as one line across the page, while none is open: kind, today, when it was last heard, its state. */
+function SourcesTable() {
+  return (
+    <Pane label="Quellen" status={<StatusRow lead={`${sources.length} Quellen`} />}>
+      <Table
+        label="Quellen"
+        rows={sources}
+        rowKey={(source) => source.id}
+        open={(source) => ({ href: `#${source.id}` })}
+        // on the phone the same two-line rows as beside an open source
+        phone={(source) => ({
+          mark: kind[source.kind],
+          lines: [source.name, `${kindName[source.kind]} · ${source.today}`],
+          time: source.seen,
+          marks: source.state === "ok" ? undefined : <Chip status={source.state}>{stateLabel[source.state]}</Chip>,
+        })}
+        columns={[
+          { title: "Quelle", width: { min: 200, default: 300 }, mark: (source) => kind[source.kind], cell: (source) => source.name },
+          { title: "Art", width: { min: 90, default: 130 }, drop: true, cell: (source) => kindName[source.kind] },
+          { title: "Heute", width: { min: 140, default: 220 }, cell: (source) => source.today.replace(/ heute$/, "") },
+          { title: "Zuletzt", width: { min: 80, default: 110 }, numeric: true, drop: true, cell: (source) => source.seen },
+          {
+            title: "Zustand",
+            // "läuft" is the plain rule; only what is not fine speaks up with colour
+            cell: (source) => (source.state === "ok" ? "läuft" : <Chip status={source.state}>{stateLabel[source.state]}</Chip>),
+          },
+        ]}
+      />
+    </Pane>
   );
 }
 
@@ -159,6 +195,8 @@ function SourceDetail(props: { source: Source }) {
     <Pane
       detail
       label={open.name}
+      // on the phone the source is a page of its own: its one bar is the way back to the list
+      back={{ label: "Quellen", href: "#" }}
       head={
         <Bar
           start={
@@ -194,7 +232,6 @@ function SourceDetail(props: { source: Source }) {
         <Facts
           items={[
             { label: "Art", value: "Abruf alle 5 Minuten" },
-            { label: "Zustand", value: <Chip status={open.state}>{stateLabel[open.state]}</Chip> },
             {
               label: "Zuständig",
               value: (
@@ -204,7 +241,7 @@ function SourceDetail(props: { source: Source }) {
                 </Inline>
               ),
             },
-            { label: "Adresse", value: "api.holzwerk-brandt.de/v2/lager", mono: true },
+            { label: "Adresse", value: "api.holzwerk.example/v2/lager", mono: true },
             { label: "Schlüssel", value: "pk_7f3a…c21", copy: "pk_7f3a9be0c21" },
           ]}
         />

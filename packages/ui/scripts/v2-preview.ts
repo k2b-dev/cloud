@@ -29,6 +29,9 @@ Steps, cheapest first; each prints its findings and the run goes on:
 Options:
   --text           steps 1-3 only, without a browser (outline from the server markup, no widths)
   --png <dir>      also save a light screenshot per width as <dir>/<name>-<width>.png
+  --state <name>   a recipe of the k2b-ui skill only: mount it live in the browser in this state (its \`states\`
+                   export) and press what the state names, so an open dialog or menu stands in the picture; the
+                   screenshot is <dir>/<name>-<state>-<width>.png
   --width <list>   widths in px, comma separated (default 1440,390)
   --height <px>    viewport height (default 900)
   --help           this text
@@ -46,7 +49,7 @@ const usage = (message: string): never => {
   console.error(`v2-preview: ${message} (see --help)`);
   process.exit(2);
 };
-const valued = ["--png", "--width", "--height"];
+const valued = ["--png", "--width", "--height", "--state"];
 const flags = new Set(["--text", ...valued]);
 const files: string[] = [];
 for (let index = 0; index < args.length; index++) {
@@ -65,6 +68,10 @@ const option = (name: string) => {
 };
 const textOnly = args.includes("--text");
 const pngDir = option("--png");
+const state = option("--state");
+const recipesDir = resolve(import.meta.dir, "../skills/k2b-ui/recipes");
+if (state && dirname(file) !== recipesDir) usage("--state works on the recipes of the k2b-ui skill only");
+if (state && textOnly) usage("--state needs the browser; leave out --text");
 if (textOnly && pngDir) usage("--png needs the browser; leave out --text");
 const widths = (option("--width") ?? "1440,390").split(",").map(Number);
 const height = Number(option("--height") ?? 900);
@@ -137,17 +144,21 @@ const { renderToString } = await import("solid-js/web");
 const { describeV2 } = await import("../src/v2/describe");
 const { ScreenFrame } = await import("./screen-frame");
 const { LocaleProvider } = await import("../src/intl/locale");
+const { transparentIslands } = await import("./v2-island-css");
 
 let markup = "";
+// The screen renders in the language of its sample text, as Fibel shows a recipe: its own `locale` export, else German
+// (the recipes write German). Without it the library's own words ("Zurücksetzen") would stay English beside German data.
+let locale = "de";
 try {
   const screen = (await import(file)) as { default?: () => unknown; app?: { color: string; icon: string }; locale?: string };
   if (typeof screen.default !== "function") throw new Error("the file has no default export that is a component");
   const component = screen.default as Parameters<typeof createComponent>[0];
-  // the screen stands in the frame of a host (tinted page, rail), as a person sees it: never a bare white page. The
-  // library's own words follow the screen's `locale`, else German like the page and the recipes' sample text.
+  if (typeof screen.locale === "string") locale = screen.locale;
+  // the screen stands in the frame of a host (tinted page, rail), as a person sees it: never a bare white page
   markup = renderToString(() =>
     createComponent(LocaleProvider, {
-      locale: screen.locale ?? "de",
+      locale,
       get children() {
         return createComponent(ScreenFrame, {
           app: screen.app,
@@ -164,8 +175,8 @@ try {
   process.exit(1);
 }
 
-// v2.css as it ships: the v2 sheet, then the chart's own stylesheet (see scripts/build.ts)
-const css = `${readFileSync(join(uiRoot, "src/v2/v2.css"), "utf8")}\n${readFileSync(join(uiRoot, "src/styles/chart.css"), "utf8")}`;
+// v2.css as it ships: the v2 sheet that looks through island wrappers, then the chart's own stylesheet (see scripts/build.ts)
+const css = `${transparentIslands(readFileSync(join(uiRoot, "src/v2/v2.css"), "utf8"))}\n${readFileSync(join(uiRoot, "src/styles/chart.css"), "utf8")}`;
 const fontFace = (weight: number) => {
   const path = join(uiRoot, `node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff2`);
   return existsSync(path)
@@ -182,7 +193,7 @@ const tablerCss = () => {
   );
 };
 const page = (fonts: boolean) =>
-  `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${fonts ? [400, 500, 600].map(fontFace).join("") + tablerCss() : ".ti{display:inline-block;width:1em;height:1em}"}</style>` +
+  `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><style>${fonts ? [400, 500, 600].map(fontFace).join("") + tablerCss() : ".ti{display:inline-block;width:1em;height:1em}"}</style>` +
   `<style>${css}</style><style>html,body{margin:0;height:100%;background:#fff}body{color-scheme:light}.frame{position:fixed;inset:0;display:flex}` +
   // the island wrappers of @k2b/ssr take no box, as its page template says, so a screen in an island fills the frame
   `solid-island,solid-client{display:contents}</style></head>` +
@@ -203,6 +214,9 @@ if (textOnly) {
 // 4. Measure in Chromium at each width.
 const { launchBrowser } = await import("../test/browser");
 const { describeV2Page, measureV2Layout, settled } = await import("../src/v2/testing");
+// A state of a recipe is mounted live from the recipes' browser bundle (as the recipe tests and Fibel do), so overlays
+// that open only in the browser stand in the picture.
+const bundle = state ? await (await import("../test/v2-behavior/harness")).demoBundle("../v2-recipes") : undefined;
 const browser = await launchBrowser().catch((error: unknown) => {
   console.error(`v2-preview: the browser did not start: ${error instanceof Error ? error.message : String(error)}`);
   return process.exit(3);
@@ -211,12 +225,41 @@ try {
   for (const width of widths) {
     const tab = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, colorScheme: "light" });
     try {
-      await tab.setContent(page(true));
-      await settled(tab);
+      if (bundle && state) {
+        await tab.setContent(page(true).replace('<div class="frame">', '<div class="frame" id="root">'));
+        await tab.evaluate(() => {
+          // the server markup of the default screen gives way to the live one
+          const root = document.getElementById("root");
+          if (root) root.innerHTML = "";
+        });
+        await tab.addScriptTag({ content: `window.__recipe = ${JSON.stringify({ name: basename(file), state })};` });
+        await tab.addScriptTag({ content: bundle });
+        await tab.waitForFunction(() => (window as unknown as { __mounted?: boolean }).__mounted === true);
+        await settled(tab);
+        const presses = await tab.evaluate(
+          ([name, wanted]) =>
+            (window as unknown as { __recipes: Record<string, Record<string, readonly string[]>> }).__recipes[name]?.[wanted] ?? null,
+          [basename(file), state] as const,
+        );
+        if (presses === null) usage(`${basename(file)} has no state ${state}`);
+        for (const name of presses ?? []) {
+          await tab
+            .getByRole("button", { name, exact: true })
+            .or(tab.getByRole("menuitem", { name, exact: true }))
+            .or(tab.getByRole("menuitemradio", { name, exact: true }))
+            .locator("visible=true")
+            .first()
+            .click();
+          await settled(tab);
+        }
+      } else {
+        await tab.setContent(page(true));
+        await settled(tab);
+      }
       const outline = await describeV2Page(tab, ".k2-sf-card");
       if (outline.includes("\nProblems (")) failed = true;
       section(`outline at ${width} px`, outline.split("\n"));
-      const layout = await measureV2Layout(tab, { root: "[data-k2-workspace], .frame" });
+      const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
       if (layout.problems.length) failed = true;
       section(
         `layout at ${width} px (${layout.measured.lines} lines, ${layout.measured.texts} texts measured)`,
@@ -227,7 +270,7 @@ try {
       );
       if (pngDir) {
         mkdirSync(resolve(pngDir), { recursive: true });
-        const target = join(resolve(pngDir), `${basename(file).replace(/\.tsx?$/, "")}-${width}.png`);
+        const target = join(resolve(pngDir), `${basename(file).replace(/\.tsx?$/, "")}${state ? `-${state}` : ""}-${width}.png`);
         writeFileSync(target, await tab.screenshot({ fullPage: false }));
         console.log(`\nscreenshot: ${relative(process.cwd(), target)}`);
       }

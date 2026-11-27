@@ -25,7 +25,7 @@ import {
 import { For, type JSX } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "users" };
+export const app = { name: "Kunden", color: "#2563eb", icon: "users" };
 
 const area = { money: "#8e1b6f", deliveries: "#c2410c", todo: "#2563eb" };
 // One mark per category of article, the same in every list of the app.
@@ -77,7 +77,7 @@ const ottilie = (): Customer => ({
   kinds: ["Privat"],
   ids: [{ label: "Kunde", value: "7K4QX", copy: true }],
   customers: "412",
-  counts: { deliveries: "4", money: "12" },
+  counts: { deliveries: "3", money: "12" },
   note: { text: "Ruft lieber an, als Mails zu schreiben. Abholung nur samstags.", meta: "Ada Renz, 12. Nov." },
   money: { amount: "532,30 €", meta: "1 Rechnung offen" },
   deliveries: { value: "2 laufen", meta: "Abrechnung am 15. Dez." },
@@ -136,7 +136,7 @@ const ottilie = (): Customer => ({
     { mark: category.silver, name: "Silberbesteck, 84 Teile", meta: "EL-2611-00009 · abholbereit", time: "verkauft 2.100 €" },
   ],
   itemCount: "8",
-  contact: { phone: "+49 30 5550 142", email: "o.brandner@example.de", address: "Lindenallee 14, 77933 Lahr", language: "Deutsch" },
+  contact: { phone: "+49 30 5550 142", email: "o.brandner@post.example", address: "Lindenallee 14, 77933 Lahr", language: "Deutsch" },
   team: [
     { person: people.ada, role: "Beratung und Verträge" },
     { person: people.lena, role: "Fotos und Katalog" },
@@ -239,7 +239,8 @@ export default function CustomerOverview(props: Props) {
             icon="currency-euro"
             color={area.money}
             label="Geld heute"
-            value={props.empty ? "0,00 €" : <Chip amount="out">{customer.money.amount}</Chip>}
+            // an amount is a number, not a pill
+            value={props.empty ? "0,00 €" : customer.money.amount}
             meta={props.empty ? "nichts offen" : customer.money.meta}
             href="#geld"
           />
@@ -300,7 +301,21 @@ export default function CustomerOverview(props: Props) {
               ) : props.empty ? (
                 <Empty icon="package" text="Noch keine Einlieferung." action={{ label: "Einlieferung erfassen", icon: "plus" }} />
               ) : (
-                <Digest items={customer.history.map((entry) => ({ icon: "package", color: area.deliveries, ...entry }))} />
+                // each delivery as a row: its id over the sentence, the date at the end, its state as a chip
+                <List label="Vorgänge">
+                  <For each={customer.history}>
+                    {(entry) => (
+                      <Row
+                        mark={{ icon: "package", color: area.deliveries }}
+                        lines={[entry.title, entry.text]}
+                        time={entry.date}
+                        marks={
+                          entry.state.tone ? <Chip status={entry.state.tone}>{entry.state.label}</Chip> : <Chip>{entry.state.label}</Chip>
+                        }
+                      />
+                    )}
+                  </For>
+                </List>
               )}
             </Section>
             <Section

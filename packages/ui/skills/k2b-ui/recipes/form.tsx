@@ -21,12 +21,13 @@ import {
   Row,
   Section,
   Select,
+  Table,
   Text,
   Workspace,
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#0e7490", icon: "activity" };
+export const app = { name: "Pulse", color: "#0e7490", icon: "activity" };
 
 // One mark per kind of source, the same in the sidebar, the list and this form.
 const kind = {
@@ -40,6 +41,22 @@ type Values = { name: string; kind: string; interval: string; url: string };
 type Errors = Partial<Record<keyof Values, string>>;
 
 const source: Values = { name: "Lackfabrik Nordhaus", kind: "Abruf", interval: "30", url: "https://nordhaus.example/hook" };
+// The fields of the last delivery, each with the mark of its kind, and where the source puts them.
+const fieldKind = {
+  text: { icon: "letter-case", color: "#475569" },
+  number: { icon: "number", color: "#0e7490" },
+  date: { icon: "calendar", color: "#7c3aed" },
+  amount: { icon: "currency-euro", color: "#15803d" },
+};
+const fields: { name: string; kind: keyof typeof fieldKind; sample: string; target: string }[] = [
+  { name: "artikel", kind: "text", sample: "Klarlack seidenmatt 5 l", target: "Bestand · Artikel" },
+  { name: "menge", kind: "number", sample: "6", target: "Bestand · Menge" },
+  { name: "charge", kind: "text", sample: "CH-2611-0442", target: "Bestand · Charge" },
+  { name: "lieferdatum", kind: "date", sample: "26.11.2026", target: "Wareneingang · Tag" },
+  { name: "preis", kind: "amount", sample: "214,00 €", target: "Finanzen · Beleg" },
+  { name: "lieferschein", kind: "text", sample: "LS-88213", target: "Wareneingang · Nummer" },
+];
+
 // What the server answered on the last save: one error at its field, one conflict for the whole form.
 const answer: Errors = { url: "Diese Adresse antwortet nicht (HTTP 404).", interval: "Mindestens 60 Sekunden." };
 
@@ -51,7 +68,7 @@ export default function SourceForm(props: Props) {
   const conflict = props.conflict ?? true;
   return (
     <Workspace
-      primary={{ label: "Speichern", icon: "check", disabled: conflict || props.saving }}
+      // the form's footer holds its one primary, on the phone too; a floating "Speichern" would say it twice
       sidebar={
         <Nav
           title="Pulse"
@@ -84,15 +101,6 @@ export default function SourceForm(props: Props) {
               <Path label="Ort" items={[{ label: "Quellen", href: "#quellen" }, { label: values.name || "Neue Quelle" }]} />
             </Inline>
           }
-          end={
-            <>
-              <Button href="#">Abbrechen</Button>
-              {/* the one primary of the page: dimmed while the conflict lasts, turning while the save runs */}
-              <Button variant="primary" type="submit" disabled={conflict} busy={props.saving}>
-                Speichern
-              </Button>
-            </>
-          }
         />
       }
     >
@@ -124,6 +132,36 @@ export default function SourceForm(props: Props) {
               <Choice name="notify" label="Benachrichtigen" options={["Bei jedem Fehler", "Einmal am Tag"]} value="Bei jedem Fehler" />
               <Check name="active" switch label="Sofort aktiv" checked />
             </Section>
+            {/* what the last delivery carried and where each field goes: the form's work in context */}
+            <Section
+              icon="arrows-exchange"
+              title="Felder aus der Quelle"
+              count={fields.length}
+              more={{ label: "Zuordnung ändern", forward: true }}
+            >
+              <Table
+                label="Felder aus der Quelle"
+                rows={fields}
+                phone={(field) => ({ mark: fieldKind[field.kind], lines: [field.name, `${field.sample} → ${field.target}`] })}
+                columns={[
+                  { title: "Feld", width: { min: 140, default: 200 }, mark: (field) => fieldKind[field.kind], cell: (field) => field.name },
+                  { title: "Zuletzt", width: { min: 120, default: 220 }, drop: true, cell: (field) => field.sample },
+                  { title: "Geht nach", cell: (field) => field.target },
+                ]}
+              />
+            </Section>
+            {/* the form ends with its deeds: cancel, then the page's one primary, dimmed while the conflict lasts and
+                turning while the save runs */}
+            <Bar
+              end={
+                <>
+                  <Button href="#">Abbrechen</Button>
+                  <Button variant="primary" type="submit" disabled={conflict} busy={props.saving}>
+                    Speichern
+                  </Button>
+                </>
+              }
+            />
           </Pane>
           {/* the side column only while it is full: what the source feeds, and who changed it */}
           <Pane side label="Was sie liefert" width={{ min: 280, default: 340 }}>
@@ -143,6 +181,32 @@ export default function SourceForm(props: Props) {
                 </List>
               ) : (
                 <Empty icon="route" text="Nach dem Speichern kann eine Regel diese Quelle nutzen." />
+              )}
+            </Section>
+            <Section icon="activity" title="Letzte Abrufe" count={values.name ? 4 : undefined}>
+              {values.name ? (
+                <List label="Letzte Abrufe">
+                  <Row
+                    mark={{ icon: "clock-x", color: "#dc2626" }}
+                    lines={["Keine Antwort", "HTTP 404 · nach 1,2 s"]}
+                    time="09:44"
+                    marks={<Chip status="bad">Fehler</Chip>}
+                  />
+                  <Row
+                    mark={{ icon: "clock-x", color: "#dc2626" }}
+                    lines={["Keine Antwort", "HTTP 404 · nach 1,1 s"]}
+                    time="09:43"
+                    marks={<Chip status="bad">Fehler</Chip>}
+                  />
+                  <Row mark={{ icon: "package", color: "#0e7490" }} lines={["6 Gebinde geliefert", "Lieferschein LS-88213"]} time="09:12" />
+                  <Row
+                    mark={{ icon: "package", color: "#0e7490" }}
+                    lines={["2 Gebinde geliefert", "Lieferschein LS-88207"]}
+                    time="gestern"
+                  />
+                </List>
+              ) : (
+                <Empty icon="activity" text="Nach dem Speichern steht hier jeder Abruf." />
               )}
             </Section>
             <Section icon="history" title="Geändert">

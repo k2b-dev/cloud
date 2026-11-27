@@ -4,6 +4,7 @@ import { type ScreenApp, ScreenFrame } from "../scripts/screen-frame";
 import * as actions from "../skills/k2b-ui/recipes/actions";
 import * as content from "../skills/k2b-ui/recipes/content";
 import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
+import * as files from "../skills/k2b-ui/recipes/files";
 import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
 import * as form from "../skills/k2b-ui/recipes/form";
 import * as formDetail from "../skills/k2b-ui/recipes/form-detail";
@@ -12,10 +13,14 @@ import * as home from "../skills/k2b-ui/recipes/home";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
 import * as overview from "../skills/k2b-ui/recipes/overview";
+import * as pairing from "../skills/k2b-ui/recipes/pairing";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
+import * as settings from "../skills/k2b-ui/recipes/settings";
+import * as settingsPage from "../skills/k2b-ui/recipes/settings-page";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
+import * as tree from "../skills/k2b-ui/recipes/tree";
 
 // The recipes of the k2b-ui skill in the browser, as Fibel's Example shows them: the page names a recipe and one of its
 // states before this bundle runs; the bundle mounts it in #root. The test then presses what a `press` state names.
@@ -27,6 +32,7 @@ const recipes: Record<string, Recipe> = {
   "actions.tsx": actions,
   "content.tsx": content,
   "dialogs.tsx": dialogs,
+  "files.tsx": files,
   "filtered-table.tsx": filteredTable,
   "form-detail.tsx": formDetail,
   "form.tsx": form,
@@ -35,10 +41,14 @@ const recipes: Record<string, Recipe> = {
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
   "overview.tsx": overview,
+  "pairing.tsx": pairing,
   "record-groups.tsx": recordGroups,
+  "settings.tsx": settings,
   "record.tsx": record,
+  "settings-page.tsx": settingsPage,
   "states.tsx": states,
   "table.tsx": table,
+  "tree.tsx": tree,
 };
 
 declare global {

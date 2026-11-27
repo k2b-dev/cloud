@@ -2,13 +2,19 @@ import { createSignal, Show } from "solid-js";
 import {
   Bar,
   Button,
+  Cells,
   Check,
   Chip,
   Choice,
+  CodeInput,
+  ColorInput,
   DateInput,
   Digest,
+  Disclosure,
   Facts,
   Field,
+  Group,
+  ImageInput,
   Input,
   List,
   Pane,
@@ -16,7 +22,9 @@ import {
   Row,
   Section,
   Select,
+  Slider,
   Table,
+  TagsInput,
   Text,
   Workspace,
 } from "../src/v2";
@@ -29,6 +37,8 @@ import {
 declare global {
   /** How often a cell of the table and the probe in the field row were made, on this side of the page. */
   var __k2Made: { cells: number; probe: number } | undefined;
+  /** Puts the facts and the cells into their loading form, or back (#4152). */
+  var __k2FactsLoading: ((on: boolean) => void) | undefined;
 }
 
 const made = () => {
@@ -54,6 +64,8 @@ const orders: Order[] = [
 export function Fixture() {
   const [side, setSide] = createSignal(true);
   const [opened, setOpened] = createSignal("nichts");
+  const [loading, setLoading] = createSignal(false);
+  globalThis.__k2FactsLoading = setLoading;
   return (
     <Workspace
       head={
@@ -102,6 +114,15 @@ export function Fixture() {
               ]}
               time="Mo"
             />
+            {/* a chip whose words are JSX (Codex review of #4209): its words are made once, for the tip and the text */}
+            <Row
+              lines={["Wörter als JSX", "im Chip"]}
+              marks={
+                <Chip status="warn">
+                  <Text weight="medium">Wartet</Text>
+                </Chip>
+              }
+            />
             <Row lines={["Zwei Zeilen", "mit Marken"]} marks={<Chip status="ok">bezahlt</Chip>} />
           </List>
         </Pane>
@@ -136,6 +157,10 @@ export function Fixture() {
             <Field name="delivery" label="Übergabe">
               <Choice name="delivery" options={["Abholung", "Lieferung"]} value="Lieferung" />
             </Field>
+            {/* a word for a day: the server and the browser read it in the same zone, so both say 1 January 2027 */}
+            <Field name="since" label="Seit">
+              <DateInput value="heute" timeZone="Europe/Berlin" />
+            </Field>
             <Field name="notify" label="Benachrichtigung">
               <Check label="Kunde benachrichtigen" />
             </Field>
@@ -143,18 +168,90 @@ export function Fixture() {
               <Check label="Einige Positionen" checked="mixed" onChange={() => undefined} />
             </Field>
             <Field name="contact" label="Ansprechperson">
-              <Input placeholder="Wer nimmt ab?" />
+              <Input placeholder="Wer nimmt ab?" autocomplete="name" maxLength={80} spellcheck={false} autocapitalize="words" />
+            </Field>
+            <Field name="code" label="Abholcode">
+              <Input type="password" autocomplete="one-time-code" inputMode="numeric" maxLength={6} />
             </Field>
             <Field name="note" label="Notiz">
               <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />
             </Field>
           </Section>
+          {/* the form controls beyond text (#4191): each renders the same on the server and in the browser */}
+          <Section title="Einstellungen">
+            <Field name="session" label="Sitzungsdauer" action={{ label: "Auf Standard zurücksetzen", icon: "restore" }}>
+              <Input value="7 Tage" disabled />
+            </Field>
+            <Field name="hosts" label="Server">
+              <TagsInput value={["mx1.example", "mx2.example"]} placeholder="Server" />
+            </Field>
+            <Field name="logo" label="Logo">
+              <ImageInput value={null} onChange={() => undefined} />
+            </Field>
+            <Field name="code" label="Code">
+              <CodeInput />
+            </Field>
+            <Field name="dim" label="Abdunkeln" hint="In Prozent.">
+              <Slider value={30} step={10} />
+            </Field>
+            <Field name="accent" label="Akzentfarbe">
+              <ColorInput value="#0f766e" swatches={["#0f766e", "#1d4ed8"]} />
+            </Field>
+            <Disclosure title="Was gilt für laufende Sitzungen?">
+              <Text type="body">Sie laufen bis zu ihrem Ende.</Text>
+            </Disclosure>
+            <Group title="Lieferung 4711" folded>
+              <Text type="body">Drei Pakete.</Text>
+            </Group>
+          </Section>
           <Facts
+            loading={loading()}
             items={[
               { label: "Kundennr.", value: "K-1042", copy: "K-1042" },
               { label: "Ort", value: "Auental", hint: "Lager Nord" },
             ]}
           />
+          {/* values that keep their room while they refresh: lines, a token that breaks, a chip; one not yet there */}
+          <Facts
+            loading={loading()}
+            items={[
+              {
+                label: "Anschrift",
+                value: (
+                  <>
+                    Holzweg 12
+                    <br />
+                    79102 Auental
+                    <br />
+                    Deutschland
+                  </>
+                ),
+              },
+              { label: "Schlüssel", value: "k2b_live_7Q4mX9pR2sT8vW1yZ3aB5cD6eF7gH8jK9", mono: true, copy: "k2b_live_7Q4mX9" },
+              { label: "Status", value: <Chip status="warn">Offen</Chip> },
+              { label: "Notiz", value: loading() ? "" : "Kommt morgen" },
+            ]}
+          />
+          <Facts
+            inline
+            loading={loading()}
+            items={[
+              { label: "Stand", value: "Angebot" },
+              { label: "Termin", value: "12. Dezember 2026" },
+              { label: "Betrag", value: "1.240,00 €" },
+              { label: "Ansprechperson", value: "Jonas Hartwig" },
+            ]}
+          />
+          <Cells>
+            <Cells.Cell icon="inbox" label="Offen" value="12" meta="3 davon heute" loading={loading()} />
+            <Cells.Cell
+              icon="check"
+              label="Erledigt"
+              value="31"
+              meta="Zuletzt die Treppe im Haus am Hang, der Einbauschrank im Flur und die Küche"
+              loading={loading()}
+            />
+          </Cells>
           <Prose
             markdown={
               'Guten Tag,\n\n<script>window.__k2Bad = 1</script> <img src=x onerror="window.__k2Bad = 2"> [Link](javascript:alert(1))\n\n![Pixel](https://example.com/pixel.png) [Datei](ftp://example.com/a) [Seite](https://example.com) [Post](mailto:post@example.com)'

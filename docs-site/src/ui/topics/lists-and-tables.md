@@ -8,7 +8,7 @@ Many things of one kind. Use a `List` when each entry reads as a line of text, a
 
 ## A table to compare
 
-Open invoices with a status row: the lead says how many, the figures follow, the filter sits at the end. Each row opens its invoice and has one deed. Switch the state: empty, loading and failed stand where the rows would stand, and nothing above them moves.
+Open invoices under one strip of key figures: what is open, what is late, which reminders are due today; the count stands once, in the tab. Each row opens its invoice and has one deed. Switch the state: empty, loading and failed stand where the rows would stand; a failed load shows no figures.
 
 <Example recipe="table" height="640" default="Rows" />
 
@@ -17,6 +17,12 @@ Open invoices with a status row: the lead says how many, the figures follow, the
 Sources of Pulse: two-line rows, the open one tinted, its detail beside the list. The open entry is in the address, so reload and back show the same. On the phone the detail leaves and an entry opens as its own page.
 
 <Example recipe="list-detail" height="560" default="Open" />
+
+## Folders as a tree
+
+Files with its folder tree: the sidebar's `Nav` group takes a `tree`, the table takes `tree` for rows in levels. The open folder comes from the address, so the way to it stands open on the server's page. The arrow, or Right and Left, folds a folder without opening it; a press on its name opens it. Load only what opens: a folder loads its children the first time it opens (`load`), a level with thousands of entries ends in "Weitere laden", and a folder that failed to load shows a red mark until opening it again works.
+
+<Example recipe="tree" height="560" />
 
 ## List or table?
 
@@ -54,9 +60,15 @@ Columns of like things: fixed widths, cut text, dropped columns and two-line row
 
 <Props of="Table Column" />
 
+### Trees
+
+Places in levels: a `Nav` group's `tree` (each place a `NavTreeNode`) and a table's `tree` (rows whose children stand under them). Both are one Tab stop with the keys of the tree pattern; on the phone a table shows its top level.
+
+<Props of="NavTree NavTreeNode TableTree" />
+
 ### StatusRow
 
-Above the rows: the one statement, key figures and filters; a selection bar while rows are selected.
+Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. From five deeds on, the bar shows the first three and folds the rest into "Mehr" in their order.
 
 <Props of="StatusRow" />
 
@@ -74,23 +86,23 @@ The states, in the place of the rows; their rules are in [States and notices](/e
 
 ## Not in v2 yet
 
-Reorder by dragging, and a tree. Until they ship, use the nearest part and write `// k2b-ui gap: …` at that place.
+Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui gap: …` at that place.
 
 ## Do and don't
 
 ### Do
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
-- Give every wide table a `phone(row)`.
-- Put the count and key figures in the `StatusRow`.
-- Keep row text short; long text is cut with "…".
+- Give every wide table a `phone(row)`. Put its key figures in one strip of `Cells` above it, or its one statement in a `StatusRow`; say the count once.
+- Keep row text short (it is cut with "…"); mark numbers, amounts and times with `align: "end"` or `numeric`: they are never cut, and their column grows to the longest value.
+- Show a person in a cell as `{ avatar, lines: [name] }`, not as an `Inline` of `Avatar` and `Text`.
 
 ### Don't
 
 - Draw your own lines between rows or around a table.
 - Open entries with `onClick` when they have an address.
 - Put "Erneut versuchen" anywhere but `Failed`.
-- Shrink columns on the phone; `drop` them.
+- Shrink columns when room runs out; `drop` them (they leave one by one from the last, as the table gets narrower).
 
 ## Next
 

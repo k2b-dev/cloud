@@ -18,13 +18,25 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="home" height="720" default="Busy" />
 
-## Table with a status row
+## A folder of files
+
+<Example recipe="files" height="720" default="List" />
+
+## A settings page
+
+<Example recipe="settings-page" height="720" default="Changed" />
+
+## Table with key figures
 
 <Example recipe="table" height="640" default="Rows" />
 
 ## Table people filter
 
 <Example recipe="filtered-table" height="600" default="Filtered" />
+
+## Folders as a tree
+
+<Example recipe="tree" height="560" />
 
 ## Record
 
@@ -42,6 +54,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="form-detail" height="640" default="Filled" />
 
+## Settings with more than text
+
+<Example recipe="settings" height="760" />
+
 ## Deeds and menus
 
 <Example recipe="actions" height="560" default="Open" />
@@ -57,6 +73,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 ## A page to read
 
 <Example recipe="content" height="560" default="Text" />
+
+## Pairing a device
+
+<Example recipe="pairing" height="640" />
 
 ## Mail
 

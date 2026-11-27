@@ -37,11 +37,12 @@ screen, recipe, test screen and documentation example:
    (`StatusRow` lead or `Cells`), plus chips with a tone for what lets a
    person act. A count such as "6 Einträge" is quiet meta text, never the
    biggest text.
-3. **A state is colour, sign and word:** a status `Chip`, a dot or symbol
-   with its word in the tone, never a bare word. A value with a limit gets
-   a `Progress` bar, a short history a `Spark`.
+3. **A state is colour, sign and word** where it needs a person (a chip
+   for the exception; the usual state stays a plain word, not a chip in
+   every row). A limit gets a `Progress` bar, a short history a `Spark`.
 4. **Space structures; lines only separate groups.** Group heads are text
-   (title and count), not grey bands; no line under the last row.
+   (title and count), not grey bands; no line under the last row, never two
+   lines at one edge (a group head line under a row line).
 5. **No empty half.** A detail pane only while something is open; a side
    column only when it is full of useful things (activity, rules, people).
 6. **People are visible:** avatars, `Avatar.Stack` with "+n", and
@@ -49,16 +50,18 @@ screen, recipe, test screen and documentation example:
    (`Digest activity`).
 7. **Four type sizes, dense.** 12 meta, 13 row, 14 title, 18 statement,
    set by the primitives; more information per screen than a classic
-   admin page. Dense is not busy and never says a thing twice.
+   admin page. Dense is not busy: each fact once (a count in the tab, not
+   again in the status row), no statement without something to act on.
 8. **Real dense sample data** in recipes, fixtures and tests: German
    names, colours, people, states, ten rows and more. Never "Tabelle 1",
    never four rows on a white page.
-9. **The page head has at most two full-width rows** above list and
-   detail: path or views with the actions, then filters with count, order
-   and view. Never four rows of head.
-10. **Settings are rows, not a form letter:** label and hint on the left,
-    the value at a fixed width beside it, its current state visible at a
-    glance; never full-width fields stacked one under the other.
+9. **The page head is one block** of at most two rows, one line under it:
+   path or views with the search and ONE create action (a `Menu` when there
+   are several ways), then `FilterBar` with count, order and view at its
+   `end`. The open place is the `Nav` entry, not repeated in the head.
+10. **Settings are `Setting` rows, not a form letter:** label and hint on
+    the left, the value at a fixed width beside it, its current state
+    visible at a glance; never full-width fields stacked one under the other.
 
 Prove it before you show it: in the monorepo `v2-preview` draws the
 screen in its host's frame (rail, tinted page); elsewhere compare the bare
@@ -99,9 +102,16 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
   puts `k2-ui` on the page's main area and loads v2.css with the app's accent
   tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
   and loads `@k2b/ui/v2.css`.
-- A screen is a component that returns one `Workspace`.
-- Strings come from the app's message catalog; recipes inline German sample
-  text only to look like the real thing.
+- A screen is one `Workspace`, rendered on the server; only what needs the
+  browser is an island (`.island.tsx`: a button with its action, a field, a
+  row's actions, a filter bar). v2.css and `describeV2` look through the island
+  wrappers; never make the whole screen one island. An island imports only
+  from `@k2b/ui/v2` (also `useLocale`); the `@k2b/ui` entry belongs to v1.
+- Strings come from the app's catalog; recipes inline German sample text.
+- On the phone one search place and no empty head row: a host whose bar
+  holds the page's search marks the v2 scope with `data-k2-host-search`. A
+  detail `Pane` always has `back`: on the phone a page with its way back and
+  title, not the list's views.
 
 ## What to use for what
 
@@ -109,54 +119,56 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | --- | --- | --- |
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
+| folders or pages in levels | in the sidebar a `Nav` group with `tree` (`load`, `loadMore`); in the content `Table` with `rowKey` and `tree` | `tree.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
-| the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
+| the one main statement of a list | `StatusRow` in `Pane status` | `states.tsx`, `list-detail.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
 | a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
 | an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
-| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
+| the newest few, who did what | `Digest`, `Digest activity` | `record.tsx`, `overview.tsx` |
 | several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
-| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`, [list queries](references/list-queries.md); the address holds the state), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
+| files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
+| a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
-| 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
-| a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
+| 2–6 key numbers side by side, one strip | `Cells` with `Cells.Cell` (`trend` for a short history, `meter` for a limit; elsewhere `Spark`) | `table.tsx`, `record.tsx`, `home.tsx` |
+| a titled part of a page; parts side by side | `Section` (title, count, ≤ 2 actions, `more`); `Section.Columns` | `record.tsx`, `home.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
 | the way of a thing (arrived → … → paid) | `Steps` | `record-groups.tsx` |
-| the newest few on a first page | `Digest` | `record.tsx` |
-| labels with values | `Facts` (`inline` for one line) | `record.tsx` |
+| labels with values; a token to copy | `Facts` (`inline` for one line; `mono` and `copy` for a key) | `record.tsx` |
 | something wrong, waiting, a person's note, an AI summary | `Notice` with `tone` (`bad`, `warn`, `note`, `ai`) | `list-detail.tsx` |
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
+| short values (domains), an image, a one-time code, a range, a colour | `TagsInput`, `ImageInput`, `CodeInput`, `Slider`, `ColorInput` in a `Field` or `Setting` | `settings.tsx` (all but `CodeInput`) |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen"; not in a `Setting` yet) | – |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | – |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
 | a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
-| a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
+| pairing a device: a QR code to scan, a code to compare | `QrCode` (SVG from `@k2b/stdlib/qr`), `CodeDisplay`; steps in a `Dialog stepwise` | `pairing.tsx` |
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
-| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
+| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
+| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only; a connection that retries says so in the `StatusRow`, a fault a person must fix is a `Notice` naming the deed | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
-| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | `actions.tsx` |
-| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | `actions.tsx` |
-| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | `actions.tsx` |
-| a short hint on a button | `Popover tip` around the `Button` | `actions.tsx` |
+| more deeds behind "…" or a button; the same on a right-click | `Menu` with `items` (submenus, ticks, `danger`); `Menu.Context` around the `Row` | `actions.tsx` |
+| a small panel or a short hint behind a button | `Popover` with `title` and `content`; `Popover tip` | `actions.tsx` |
 | "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | `dialogs.tsx` |
 | a short task above the page (invite, save as a template) | `Dialog` with `title`, `foot`, `open`; a sheet on the phone | `dialogs.tsx` |
-| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })` | `dialogs.tsx` |
+| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })`; `danger: true` when it destroys | `dialogs.tsx`, `pairing.tsx` |
 
 ## The rules, and why
 
@@ -187,8 +199,8 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
 without a head action has its "Save" as the one primary in its footer
-`Bar`; a form shown beside a page that has a head primary saves with a
-default (framed) button. An open dialog or sheet is a surface of its own
+`Bar`; while a form is open beside a list, it holds the one create action
+and the head offers no "New" beside it. An open dialog or sheet is a surface of its own
 and has its own one primary (such as "Erstellen").
 
 What a list has open belongs in the address: render the `Pane detail` only
@@ -196,34 +208,22 @@ while the address names an entry, give its `back` an `href` to the list
 without that entry, and make rows open with `href` (plus `onNavigate` to
 open in place). Reload, back and forward then show the same page.
 
-"Erneut versuchen" belongs to one place only: `Failed`, standing where data
-that failed to load once would stand. A connection that retries on its own
-says so in the `StatusRow` without a button; something a person must fix is
-a `Notice` that names the deed.
-
 ## Primitives
 
 Every part with its props and place: [primitives](references/primitives.md).
-Not there yet (write a `k2b-ui gap` comment, never a replacement):
-the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
-a code block with highlighting, an image or video viewer, and an assistant
-message or answer card.
-
-Filters, sorts and groups have exactly one way: declare them with
-`defineListQuery`, show them with `FilterBar` and `ListOrder`; the address
-holds the state. Read [list queries](references/list-queries.md).
+Not there yet (write a `k2b-ui gap` comment, never a replacement): the mail
+and chat composer and a Markdown editor (from `@k2b/editor`), a code block
+with highlighting, a full image or video viewer, an assistant answer card.
 
 ## See what you built
 
 Cheapest first; stop at the first step that finds something, fix, repeat.
 
-1. **Types** reject wrong props (a `Button` with only an icon and no
-   `label`, a `Chip` with two kinds).
+1. **Types** reject wrong props (an icon `Button` without a `label`).
 2. **The rule `v2-app-layout-css`** (`bun run check` in the Cloud monorepo)
    reports `class`, `style`, spreads and stylesheets outside `Canvas`.
 3. **The outline** from `describeV2` lists every part with its text and
-   count, and ends with `Problems` when something is off. About 30 lines,
-   no picture.
+   count, and ends with `Problems` when something is off; no picture.
 4. **The layout measurement** (`measureV2Layout`) checks edges, double
    lines, type roles and grips at 1440 and 390 px.
 5. **A screenshot** only when the outline leaves a doubt.

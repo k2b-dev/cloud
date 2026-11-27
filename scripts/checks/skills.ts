@@ -15,11 +15,18 @@ const recipeFindings = (skillDir: string): Finding[] => {
   const listed = existsSync(index) ? readFileSync(index, "utf8") : "";
   const findings: Finding[] = [];
   const recipes = readdirSync(recipesDir).filter((name) => name.endsWith(".tsx"));
-  // A picture or a description without its recipe teaches a screen that no longer exists.
+  // A picture or a description without its recipe teaches a screen that no longer exists. A picture of a state
+  // (`v2-preview --state`) is `<recipe>-<state>-<width>.png` and needs the recipe to export that state.
   const imagesDir = join(skillDir, "images");
-  for (const image of isDirectory(imagesDir) ? readdirSync(imagesDir) : [])
-    if (!recipes.includes(`${image.replace(/-\d+\.png$/, "")}.tsx`))
+  const hasState = (recipe: string, state: string) =>
+    recipes.includes(`${recipe}.tsx`) &&
+    new RegExp(`^export const states = \\{[\\s\\S]*^\\s+"?${state}"?:`, "m").test(readFileSync(join(recipesDir, `${recipe}.tsx`), "utf8"));
+  for (const image of isDirectory(imagesDir) ? readdirSync(imagesDir) : []) {
+    const shown = image.replace(/-\d+\.png$/, "");
+    const cut = shown.lastIndexOf("-");
+    if (!recipes.includes(`${shown}.tsx`) && !(cut > 0 && hasState(shown.slice(0, cut), shown.slice(cut + 1))))
       findings.push({ file: join(imagesDir, image), message: "Picture has no recipe in recipes/; delete it or add the recipe." });
+  }
   for (const match of listed.matchAll(/^## ([\w-]+\.tsx)/gm))
     if (!recipes.includes(match[1]!))
       findings.push({ file: index, message: `references/recipes.md describes ${match[1]}, which is not in recipes/.` });

@@ -24,7 +24,7 @@ Every state keeps these rules:
 ### Empty
 
 - The data loaded, and there is nothing (yet), or nothing that matches the filter.
-- One sentence and one way out.
+- One sentence and one way out; a second, quieter one only when a person often needs it, such as "Ganzes Notizbuch zeigen" after "Filter zurücksetzen".
 
 ### Failed
 
@@ -42,7 +42,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Empty
 
-Nothing to show (yet): a round sign, one sentence, the one way out.
+Nothing to show (yet): a round sign, one sentence, the way out, and at most a second, quieter one after it.
 
 <Props of="Empty" />
 
@@ -60,7 +60,7 @@ Data that failed to load once, with "Erneut versuchen" in the language of the pa
 
 ### Notice
 
-A band with a sign, a sentence and its consequence, and at most two deeds; a deed that cannot be taken now is `disabled`, and the sentence says why.
+A band with a sign, a sentence and its consequence, and at most two deeds; a deed that cannot be taken now is `disabled`, and the sentence says why. Assistive technology hears `bad` at once and `warn` politely when it appears or changes.
 
 <Props of="Notice" />
 

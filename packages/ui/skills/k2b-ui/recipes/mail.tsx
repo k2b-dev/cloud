@@ -108,7 +108,7 @@ const threads: Thread[] = [
 const open = threads[0]!;
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#0f766e", icon: "mail" };
+export const app = { name: "Mail", color: "#0f766e", icon: "mail" };
 
 export default function MailScreen() {
   return (
@@ -133,8 +133,8 @@ export default function MailScreen() {
             {
               label: "Geteilt",
               items: [
-                { label: "info@werkstatt.de", icon: "building-store", color: "#0f766e", count: 4, href: "#info" },
-                { label: "rechnung@werkstatt.de", icon: "receipt", color: "#8e1b6f", href: "#rechnung" },
+                { label: "info@werkstatt.example", icon: "building-store", color: "#0f766e", count: 4, href: "#info" },
+                { label: "rechnung@werkstatt.example", icon: "receipt", color: "#8e1b6f", href: "#rechnung" },
               ],
             },
           ]}
@@ -146,7 +146,7 @@ export default function MailScreen() {
             <Tabs
               label="Ansichten"
               items={[
-                { label: "Alle", count: 42, current: true },
+                { label: "Alle", current: true },
                 { label: "Handlungsbedarf", count: 5 },
               ]}
             />
@@ -167,8 +167,8 @@ export default function MailScreen() {
           status={
             <StatusRow
               select={{ label: "Alle auswählen" }}
-              lead="7 ungelesen"
-              facts={[{ before: "Heute", value: 12, after: "erledigt" }]}
+              // what "Alle auswählen" takes; the unread ones are counted once, in the sidebar
+              lead="42 Nachrichten"
             />
           }
         >
@@ -199,6 +199,8 @@ export default function MailScreen() {
         <Pane
           detail
           label="Nachricht"
+          // on the phone the message is a page of its own: its one bar is the way back to the inbox
+          back={{ label: "Posteingang", href: "#" }}
           head={
             <Bar
               start={<Text type="lead">{open.subject}</Text>}

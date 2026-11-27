@@ -12,6 +12,12 @@ A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the 
 
 <Example recipe="content" height="560" default="Text" />
 
+## Pairing a device
+
+A tablet is paired with Cloud: the QR code to scan, the code both devices show to compare, and the wait for the tablet as a `Notice` that assistive technology hears politely. The section is a link target (`id="pair"`), and removing the device asks with a red "Entfernen". Switch the state to see it paired.
+
+<Example recipe="pairing" height="640" />
+
 ## A chart in a screen
 
 A chart is the `Chart` of `@k2b/ui` (data types in `@k2b/ui/charts`, every kind in [Charts](/en/ui/charts)) in a `Canvas` with a height, directly in its `Section`. The chart fills the `Canvas`; with no data, `Empty` stands in place of the `Canvas`.
@@ -50,15 +56,39 @@ Values with their labels; `mono` and `copy` make a key, a token or an ID easy to
 
 ### Tiles
 
-Like things to press, such as attachments and media files; each opens its file.
+Like things to press, such as attachments and media files; each opens its file. `variant="media"` shows photos, pages and videos as a grid of pictures that people select.
 
 <Props of="Tiles Tile" />
+
+### Preview
+
+The large picture of the open thing at the top of its detail, 4:3; its symbol stands while the picture loads, fails or is missing.
+
+<Props of="Preview" />
 
 ### Canvas
 
 The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is free, and the rules do not measure it.
 
 <Props of="Canvas" />
+
+### QrCode
+
+A QR code to scan with another device, on a white well in the middle of its column; the app makes the SVG with `@k2b/stdlib/qr`.
+
+<Props of="QrCode" />
+
+### CodeDisplay
+
+A code a person compares between two devices or reads aloud, in large figures; heard character by character.
+
+<Props of="CodeDisplay" />
+
+### Disclosure
+
+Something that opens in place, such as the answer to a question. Its content is made only while it is open: a closed answer is not in the page, so the browser's find in page does not reach it.
+
+<Props of="Disclosure" />
 
 ## Not in v2 yet
 

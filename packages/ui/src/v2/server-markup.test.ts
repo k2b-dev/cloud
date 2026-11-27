@@ -13,7 +13,9 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane } = await import("./layout");
 const { Input } = await import("./controls");
-const { Text } = await import("./content");
+const { Text, QrCode, CodeDisplay } = await import("./content");
+const { Notice } = await import("./components");
+const { Section } = await import("./structure");
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -39,4 +41,56 @@ test("a multi-line field sends its value as the text of its textarea, leading bl
   }
   // no value: an empty textarea
   expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz" }))).toContain(">\n</textarea>");
+});
+
+// Pairing a device (#4173): a waiting state is heard politely, a section is a link target, a QR code is a named
+// picture whose markup never runs, and a code to compare is heard character by character.
+test("a waiting notice is a status, a section takes an anchor, a QR code and a code to compare are named", () => {
+  const notice = (tone: "bad" | "warn" | "note" | "ai") => renderToString(() => createComponent(Notice, { tone, children: "Wartet" }));
+  expect(notice("bad")).toContain('role="alert"');
+  expect(notice("warn")).toContain('role="status"');
+  expect(notice("note")).toContain('role="note"');
+  expect(notice("ai")).toContain('role="note"');
+  expect(renderToString(() => createComponent(Section, { title: "Bildschirm", id: "screen" }))).toContain('id="screen"');
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="1" height="1"/></svg>';
+  const qr = renderToString(() => createComponent(QrCode, { svg, label: "QR-Code zum Koppeln" }));
+  expect(qr).toContain('alt="QR-Code zum Koppeln"');
+  expect(qr).toContain(`src="data:image/svg+xml,${encodeURIComponent(svg)}"`);
+  expect(qr).not.toContain("<script>");
+  const code = renderToString(() => createComponent(CodeDisplay, { value: "482 913", label: "Vergleichscode" }));
+  expect(code).toContain('aria-label="Vergleichscode: 4 8 2 9 1 3"');
+  expect(code).toContain(">482 913<");
+});
+
+// A password manager reads the server's markup, before the island hydrates: what it may fill in stands there (#4173).
+test("a text field sends autocomplete, length, keyboard, spelling and capitals in the server's markup", () => {
+  const markup = renderToString(() =>
+    createComponent(Input, {
+      label: "Code",
+      name: "code",
+      type: "password",
+      autocomplete: "one-time-code",
+      maxLength: 8,
+      inputMode: "numeric",
+      spellcheck: false,
+      autocapitalize: "off",
+    }),
+  );
+  const input = markup.match(/<input[^>]*>/)?.[0] ?? "";
+  for (const attribute of [
+    'name="code"',
+    'autocomplete="one-time-code"',
+    'maxlength="8"',
+    'inputmode="numeric"',
+    'spellcheck="false"',
+    'autocapitalize="off"',
+  ])
+    expect(input).toContain(attribute);
+  expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", spellcheck: true }))).toContain(
+    'spellcheck="true"',
+  );
+  // without them the field stays as it was: no attribute is guessed
+  expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
+    /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
+  );
 });

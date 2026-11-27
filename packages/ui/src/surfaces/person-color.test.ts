@@ -30,4 +30,12 @@ describe("person colors", () => {
     expect(personColor("Nora Brandt")).toBe(PERSON_COLORS[personTint("Nora Brandt")]!);
     expect(new Set(["Ada", "Ben", "Cleo", "Dan", "Eve", "Finn", "Gus", "Hanna"].map(personColor)).size).toBeGreaterThan(3);
   });
+
+  test("people side by side mostly differ: the people of the recipes take at least six of the eight colors", () => {
+    // with the plain hash Felix Thal, Jonas Kern and Mira Solberg shared one teal; eight colors for eight names give about
+    // five or six different ones on average, so this pins the names the screens of the skill show
+    const people = ["Felix Thal", "Jonas Kern", "Mira Solberg", "Sami Yilmaz", "Petra Lindqvist", "Jana Berger", "Lena Vogt", "Tom Brandt"];
+    expect(new Set(people.map(personColor)).size).toBeGreaterThanOrEqual(6);
+    expect(new Set(people.slice(0, 4).map(personColor)).size).toBe(4);
+  });
 });

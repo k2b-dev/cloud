@@ -127,7 +127,7 @@ All three components render on the server. Link navigation works without browser
   color="cyan"
 />
 
-<LinkCard href="/app/capabilities/pulse" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
+<LinkCard href="/apps/pulse" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
 
 <AppOverview.Cards surface="plain">
   <LinkCard surface="plain" href="/storage/marketing" title="Team Marketing" description="Group · Cloud" icon="ti ti-users" />

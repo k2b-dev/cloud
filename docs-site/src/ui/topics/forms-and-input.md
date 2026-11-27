@@ -14,9 +14,20 @@ A new source with required fields, a range limit, an option and a switch. The se
 
 ## A form beside a list
 
-A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so the week's appointments stay in view while it is filled in. The page keeps that one primary, so the form saves with a default button in its own footer. On the phone the form is the page, with one way back to the list. A form that opens over the page is a `Dialog`; see [Dialogs and overlays](/en/ui/v2/dialogs-and-overlays).
+A new appointment as a `Pane detail`, so the week's appointments stay in view while it is filled in. While it is open, its "Termin anlegen" is the one create action: neither the head nor the phone offers "Neuer Termin" beside it. On the phone the form is the page, with one way back to the list. A form that opens over the page is a `Dialog`; see [Dialogs and overlays](/en/ui/v2/dialogs-and-overlays).
 
 <Example recipe="form-detail" height="640" default="Filled" />
+
+## A settings page
+
+Sign-in of an administration: the state first as key numbers with colour, symbol and word, then the settings by topic. A setting with a value per kind is a table; every other setting is a `Setting` row: its name alone on the left, its value in a column beside it and the one line of help under the value, so the names and the values each stand in one line and read at a glance. The page saves as a whole: a changed setting says what it was. Switch the state: nothing changed yet.
+
+<Example recipe="settings-page" height="720" default="Changed" />
+## Settings with more than text
+
+The sign-in page settings of an app, under a head with the page's title and in one line what it is for: a choice the operator fixed (a dimmed `Select`), allowed domains as tags, a logo, an accent colour, how dark the background is, and beside them who changed what. Switch the state: nothing set yet, and every control locked while a save runs or for a person who may only read.
+
+<Example recipe="settings" height="760" />
 
 ## Errors, conflicts and saving
 
@@ -38,7 +49,7 @@ A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so 
 
 - Many options, or options that come from data, such as customers.
 - Takes little room; `placeholder` says what to pick.
-- An option that cannot be chosen now is `disabled`.
+- An option that cannot be chosen now is `disabled`; so is the whole select while it cannot be changed.
 
 ## Parts
 
@@ -46,9 +57,15 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Field
 
-Names one control with a label, a hint or an error, and "optional" or a unit; `Field.Row` puts fields side by side.
+Names one control with a label, a hint or an error, and "optional" or a unit, or one deed at the end of its label line (`action`, such as "Auf Standard zurücksetzen"); `Field.Row` puts fields side by side.
 
 <Props of="Field Field.Row" />
+
+### Setting
+
+One setting of a settings page: the name alone on the left, the control in a column of 300 px beside it, the help and "geändert · vorher …" under the control; one column on the phone.
+
+<Props of="Setting" />
 
 ### Input
 
@@ -62,11 +79,47 @@ One choice from many options, in a list that opens.
 
 <Props of="Select SelectOption" />
 
+### TagsInput
+
+Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick.
+
+<Props of="TagsInput" />
+
+### ImageInput
+
+One image with its preview, a button to choose or change it and one to remove it; a dropped or pasted file counts as chosen.
+
+<Props of="ImageInput" />
+
+### Slider
+
+A number on a range, such as an opacity or a zoom, with the number as it reads at the end; `onCommit` saves when a drag ends.
+
+<Props of="Slider" />
+
+### ColorInput
+
+A colour: its swatch and code, a surface of saturation and brightness, a hue slider and the given swatches.
+
+<Props of="ColorInput" />
+
+### CodeInput
+
+A one-time or pairing code, one box per character; a phone offers a code from a message.
+
+<Props of="CodeInput" />
+
 ### DateInput
 
-A day, typed as the person reads it, with a calendar symbol.
+A day, typed as the person reads it ("24.11.2026", also "heute" or "+3"), or picked from the calendar its symbol opens. The form gets the date key; text that is no date marks the field and keeps the form from sending.
 
 <Props of="DateInput" />
+
+### DatePicker
+
+One month of days to pick from, inside a popover or a sheet: the arrows by day and week, PageUp and PageDown by month, Home and End to the week's ends, the locale's names and first weekday, and always six weeks. With `time` it adds hour and minute.
+
+<Props of="DatePicker" />
 
 ### Check
 
@@ -83,8 +136,9 @@ One choice from a few options, all visible.
 ## Not in v2 yet
 
 - A time field: a time is an `Input` with a placeholder such as "09:00".
-- `DateInput` has no picker yet and takes no `disabled`.
-- `Select` can dim single options (`SelectOption` `disabled`), but not the whole select.
+- `DateInput` takes no `disabled`.
+- An image cropper: `ImageInput` makes a square picture of the chosen file, or what its `transform` returns.
+- A template editor with a preview: until it ships, a field shows the v1 `TemplateEditor` in a `Dialog`.
 - A multiline `Input` with a `value` shows empty in the server's page until the page comes alive ([#4148](https://github.com/k2b-dev/cloud/issues/4148)).
 
 Until they ship, use the nearest part and write `// k2b-ui gap: …` at that place.

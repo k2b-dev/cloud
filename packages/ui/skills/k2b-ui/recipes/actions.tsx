@@ -28,7 +28,7 @@ import {
 import { createSignal, For, Show } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#c2410c", icon: "hammer" };
+export const app = { name: "Werkstatt", color: "#c2410c", icon: "hammer" };
 
 // One mark per kind of work, the same in the list, the detail and every sentence.
 const kind = {
@@ -180,7 +180,7 @@ export default function OfferActions(props: Props) {
           groups={[
             {
               items: [
-                { label: "Angebote", icon: "file-invoice", count: list().length, current: true },
+                { label: "Angebote", icon: "file-invoice", current: true },
                 { label: "Aufträge", icon: "clipboard-list", count: 34, href: "#auftraege" },
                 { label: "Kunden", icon: "users", count: 412, href: "#kunden" },
               ],
@@ -248,13 +248,7 @@ export default function OfferActions(props: Props) {
         <Pane
           label="Angebote"
           width={{ min: 320, default: 420 }}
-          status={
-            <StatusRow
-              lead="30.885,50 € offen"
-              facts={[{ value: list().length, after: "Angebote" }]}
-              filters={<Chip status="warn">2 laufen bald ab</Chip>}
-            />
-          }
+          status={<StatusRow lead="30.885,50 € offen" filters={<Chip status="warn">2 laufen bald ab</Chip>} />}
         >
           <List label="Offene Angebote">
             <For each={list()}>
@@ -336,7 +330,7 @@ export default function OfferActions(props: Props) {
               </Section>
               <Section icon="list" title="Positionen" count={3}>
                 <Row mark={{ icon: "wood", color: "#a16207" }} lines={["Fronten Eiche massiv, geölt", "14 Stück · 3.920,00 €"]} />
-                <Row mark={{ icon: "nut", color: "#475569" }} lines={["Beschläge Blum, Softclose", "28 Stück · 1.120,00 €"]} />
+                <Row mark={{ icon: "nut", color: "#475569" }} lines={["Topfscharniere, Softclose", "28 Stück · 1.120,00 €"]} />
                 <Row mark={{ icon: "truck", color: "#0e7490" }} lines={["Montage vor Ort", "2 Tage, 2 Personen · 2.200,00 €"]} />
               </Section>
             </Pane>

@@ -3,7 +3,8 @@ import { Bar, Button, Dialog, Field, Input, Pane, Section, Select, Text, Workspa
 
 // The v2 dialog in the place the mockup puts it: it asks before something is discarded, opened from a button in the
 // head that stays on the phone. `<html data-long>` gives the dialog more content than fits, so it scrolls.
-// `__k2Shorten()` takes that content away again, so the open dialog gets shorter. `<html data-two>` puts a second Workspace beside it; `__k2Drop(1 | 2)` takes one away, `__k2Ask()` asks
+// `<html data-to-end>` adds a button whose press scrolls the dialog's host, as a scroll into view does.
+// `__k2Shorten()` takes that content away again, so the open dialog gets shorter; `__k2Lengthen()` brings it. `<html data-two>` puts a second Workspace beside it; `__k2Drop(1 | 2)` takes one away, `__k2Ask()` asks
 // `Dialog.confirm` from outside both and writes the answer to `<body data-answer>`. `<html data-opened>` has the dialog
 // "Neuer Zugang" open from the start, as a page whose address names the dialog ("…/keys/new").
 
@@ -12,6 +13,11 @@ declare global {
     __k2Drop?: (which: 1 | 2) => void;
     __k2Ask?: () => void;
     __k2Shorten?: () => void;
+    /** Opens the stepwise dialog "Gerät koppeln" (a code, then a short confirmation). */
+    __k2Pair?: () => void;
+    /** Asks a dangerous question ("Gerät entfernen?") from the page. */
+    __k2AskDanger?: () => void;
+    __k2Lengthen?: () => void;
   }
 }
 
@@ -57,6 +63,17 @@ function Order() {
     );
   const [long, setLong] = createSignal(document.documentElement.dataset.long !== undefined);
   window.__k2Shorten = () => setLong(false);
+  const [pair, setPair] = createSignal(false);
+  const [step, setStep] = createSignal(1);
+  window.__k2Pair = () => {
+    setStep(1);
+    setPair(true);
+  };
+  window.__k2AskDanger = () =>
+    void Dialog.confirm({ title: "Gerät entfernen?", confirm: "Entfernen", danger: true }).then((answer) => {
+      document.body.dataset.answer = String(answer);
+    });
+  window.__k2Lengthen = () => setLong(true);
   return (
     <Workspace
       head={
@@ -113,6 +130,14 @@ function Order() {
         }
       >
         <Text>Die Angaben gehen verloren. Ein verworfener Auftrag lässt sich nicht wiederherstellen.</Text>
+        {/* `<html data-to-end>`: a button whose press scrolls the dialog's host, as a calendar's step that scrolls its day
+            into view does where the host does not snap back at once (iOS, #4167); the browsers of the tests snap a
+            script's `scrollIntoView` back themselves, so the press scrolls the host as that scroll would */}
+        {document.documentElement.dataset.toEnd !== undefined ? (
+          <Button onClick={(event) => event.currentTarget.closest(".k2-dialog")?.parentElement?.scrollBy({ top: -240 })}>
+            Zur ersten Zeile
+          </Button>
+        ) : null}
         <For each={long() ? Array.from({ length: 24 }, (_, index) => index + 1) : []}>
           {(line) => <Text>Position {line}: Korpus, Front und Beschläge.</Text>}
         </For>
@@ -151,6 +176,27 @@ function Order() {
         <Field name="key" label="Schlüssel">
           <Input value="k2b_live_7Q4mX9" />
         </Field>
+      </Dialog>
+      {/* steps in one place: the long first step sets the height, the short second keeps it */}
+      <Dialog
+        title="Gerät koppeln"
+        open={pair()}
+        onOpenChange={setPair}
+        stepwise
+        foot={
+          <Show when={step() === 1} fallback={<Button onClick={() => setPair(false)}>Fertig</Button>}>
+            <Button variant="primary" onClick={() => setStep(2)}>
+              Weiter
+            </Button>
+          </Show>
+        }
+      >
+        <Show when={step() === 1} fallback={<Text>Gekoppelt.</Text>}>
+          <Text>Öffne die App auf dem anderen Gerät.</Text>
+          <Text>Tippe dort auf „Mit Cloud koppeln“.</Text>
+          <Text>Scanne den Code oder gib ihn ein.</Text>
+          <Text>Vergleiche dann die Zahlen auf beiden Geräten.</Text>
+        </Show>
       </Dialog>
     </Workspace>
   );

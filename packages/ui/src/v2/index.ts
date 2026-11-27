@@ -10,6 +10,8 @@
  *   enforce this.
  */
 
+// The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
+export { useLocale } from "../intl/locale";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -40,6 +42,8 @@ export {
 } from "./components";
 export {
   type CellValue,
+  CodeDisplay,
+  type CodeDisplayProps,
   type Column,
   type Fact,
   Facts,
@@ -51,12 +55,15 @@ export {
   type OpenTarget,
   Prose,
   type ProseProps,
+  QrCode,
+  type QrCodeProps,
   Row,
   type RowLines,
   type RowProps,
   Table,
   type TableGroup,
   type TableProps,
+  type TableTree,
   Text,
   type TextProps,
 } from "./content";
@@ -65,16 +72,31 @@ export {
   type CheckProps,
   Choice,
   type ChoiceProps,
+  CodeInput,
+  type CodeInputProps,
+  ColorInput,
+  type ColorInputProps,
   DateInput,
   type DateInputProps,
   Field,
   type FieldProps,
+  ImageInput,
+  type ImageInputProps,
   Input,
   type InputProps,
+  type InputSend,
   Select,
   type SelectOption,
   type SelectProps,
+  Setting,
+  type SettingProps,
+  Slider,
+  type SliderProps,
+  TagsInput,
+  type TagsInputProps,
 } from "./controls";
+// A month of days to pick one from (with a time for points in time); DateInput opens it.
+export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
@@ -109,6 +131,8 @@ export {
   type IconProps,
   Mark,
   type MarkProps,
+  Preview,
+  type PreviewProps,
   Progress,
   type ProgressProps,
   Spark,
@@ -116,11 +140,20 @@ export {
 } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
+export type { NavTree, NavTreeNode } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
-export { Group, type GroupProps, Section, type SectionProps } from "./structure";
+export {
+  Disclosure,
+  type DisclosureProps,
+  Group,
+  type GroupProps,
+  Section,
+  type SectionColumnsProps,
+  type SectionProps,
+} from "./structure";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
 export type { Action, OnNavigate, Person, Status, TwoActions, Width } from "./types";

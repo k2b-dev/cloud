@@ -78,33 +78,36 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
       tabs: ['[data-slot="head"] > .k2-tabs-nav', "0,57 390x44"],
       notice: [".k2-notice", "0,101 390x137"],
-      cells: [".k2-cells", "0,238 390x279"],
-      section: [".k2-sec", "0,517 390x245"],
-      todo: [".k2-sec .k2-row", "0,569 390x92"],
+      // the key figures stand two by two on the phone (lane C), so the record is shorter by a row of cells
+      cells: [".k2-cells", "0,238 390x208"],
+      section: [".k2-sec", "0,446 390x245"],
+      todo: [".k2-sec .k2-row", "0,498 390x92"],
     },
   },
-  // akte-einlieferungen.html
+  // akte-einlieferungen.html. Changed from the mockup (26.11., Valentin's rules "no box in a box", "no double lines"):
+  // a Group inside a Section draws no frame, stands on the section's edges and one line parts it from the group before.
+  // At 1440 the group moves from x 270 to 250 and is 40 px wider; the section is 892 px high instead of 945.
   deliveries: {
     1440: {
-      section: [".k2-sec", "250,101 1125x945"],
-      group: [".k2-group", "270,185 1085x254"],
-      groupHead: [".k2-gh", "271,186 1083x56"],
-      steps: [".k2-steps", "271,286 1083x72"],
-      table: [".k2-group .k2-table", "271,636 1083x124"],
+      section: [".k2-sec", "250,101 1125x892"],
+      group: [".k2-group", "250,185 1125x252"],
+      groupHead: [".k2-gh", "250,185 1125x56"],
+      steps: [".k2-steps", "250,285 1125x72"],
+      table: [".k2-group .k2-table", "250,622 1125x124"],
       // the inline facts with their end: the part is the line around the list
-      facts: ['[data-k2-part="Facts"]', "271,836 1083x32"],
-      folded: [".k2-group[data-folded]", "270,897 1085x58"],
+      facts: ['[data-k2-part="Facts"]', "250,822 1125x32"],
+      folded: [".k2-group[data-folded]", "250,870 1125x57"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
-      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
-      section: [".k2-sec", "0,101 390x1421"],
-      group: [".k2-group", "16,205 358x382"],
-      groupHead: [".k2-gh", "17,206 356x84"],
-      steps: [".k2-steps", "17,354 356x148"],
-      table: [".k2-group .k2-table", "17,908 356x204"],
-      facts: ['[data-k2-part="Facts"]', "17,1192 356x64"],
-      folded: [".k2-group[data-folded]", "16,1285 358x102"],
+      // mockup v17: the steps stand 12 px apart on the phone; the group stands on the section's edges (see above)
+      section: [".k2-sec", "0,101 390x1352"],
+      group: [".k2-group", "0,205 390x380"],
+      groupHead: [".k2-gh", "0,205 390x84"],
+      steps: [".k2-steps", "0,353 390x148"],
+      table: [".k2-group .k2-table", "0,894 390x188"],
+      facts: ['[data-k2-part="Facts"]', "0,1162 390x64"],
+      folded: [".k2-group[data-folded]", "0,1242 390x101"],
     },
   },
   keys: { 1440: {}, 390: {} },
@@ -123,7 +126,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x56"],
       status: ['[data-k2-part="StatusRow"]', "0,56 390x52"],
-      phoneGroup: [".k2-table-phone .k2-bar", "0,108 390x36"],
+      phoneGroup: [".k2-table-phone-group", "0,108 390x36"],
       phoneRow: [".k2-table-phone .k2-row", "0,144 390x53"],
     },
   },

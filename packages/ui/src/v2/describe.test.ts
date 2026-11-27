@@ -30,6 +30,37 @@ const outline = (markup: string) => {
 const fixture = (name: keyof typeof fixtures) => outline(renderToString(() => createComponent(fixtures[name], {})));
 
 describe("describeV2", () => {
+  test("a state chip of a number alone is a problem: a state is never a colour without a word", () => {
+    expect(outline('<span class="k2-chip" data-k2-part="Chip" data-status="warn">7</span>')).toContain('state chip "7" has no word');
+    expect(outline('<span class="k2-chip" data-k2-part="Chip" data-status="warn">7 Anmeldungen</span>')).not.toContain("has no word");
+  });
+
+  test("a search inside a form of the page, and a form inside a form, are problems", () => {
+    const wrapped = outline(
+      '<form method="get"><span class="k2-input" data-k2-part="Input" data-search=""><input type="search" aria-label="Suche" /></span></form>',
+    );
+    expect(wrapped).toContain('- a search "Suche" stands inside a <form>: give its Input `send` instead of a form around it');
+    // a search that sends itself is fine on its own
+    expect(
+      outline(
+        '<form method="get" role="search" aria-label="Suche" class="k2-input" data-search=""><input type="search" name="q" /></form>',
+      ),
+    ).not.toContain("<form>");
+    // markup drops an inner form, so the nesting comes from code that builds the page
+    const window = new Window();
+    windows.push(window);
+    const outer = window.document.createElement("form");
+    const inner = window.document.createElement("form");
+    inner.setAttribute("aria-label", "Suche");
+    outer.append(inner);
+    const page = window.document.createElement("div");
+    page.className = "k2-ui";
+    page.append(outer);
+    expect(describeV2(page as unknown as Element)).toContain(
+      '- a <form> "Suche" stands inside another <form>: forms never nest, and the browser drops the inner one',
+    );
+  });
+
   test("outlines the mail fixture part by part", () => {
     const text = fixture("layout");
     expect(text).toContain('Workspace (sidebar, head) primary "Neu"');
@@ -152,6 +183,31 @@ describe("describeV2", () => {
     expect(text).toContain('Empty "Keine Unterhaltungen in diesem Ordner." ["Filter zurücksetzen"]');
     expect(text).toContain('Failed "Unterhaltungen konnten nicht geladen werden." ["Erneut versuchen"]');
     expect(text).toContain('- Failed "Verbindung unterbrochen." stands in a bar: Failed replaces the data that did not load');
+  });
+
+  test("looks through island wrappers: an island around a part changes nothing in the outline", () => {
+    const selectors = [
+      '[data-k2-part="Button"], [data-k2-part="Input"], [data-k2-part="Check"], [data-k2-part="Tabs"], [data-k2-part="Field"]',
+      '[data-k2-part="Bar"], [data-k2-part="Section"], [data-k2-part="Group"], [data-k2-part="List"], [data-k2-part="Notice"]',
+      '[data-k2-part="Row"], [data-k2-part="Cells.Cell"]',
+    ];
+    for (const name of Object.keys(fixtures) as (keyof typeof fixtures)[]) {
+      const markup = renderToString(() => createComponent(fixtures[name], {}));
+      const expected = outline(markup);
+      for (const selector of selectors) {
+        const window = new Window();
+        windows.push(window);
+        const document = window.document;
+        document.body.innerHTML = `<div class="k2-ui">${markup}</div>`;
+        const picked = [...document.querySelectorAll(selector)].filter((element) => !element.parentElement?.closest(selector));
+        picked.forEach((element, index) => {
+          const island = document.createElement(index % 2 ? "solid-client" : "solid-island");
+          element.replaceWith(island);
+          island.append(element);
+        });
+        expect(describeV2(document.body.firstElementChild as unknown as Element), `${name}: ${selector}`).toBe(expected);
+      }
+    }
   });
 
   test("says so when nothing on the page is v2", () => {

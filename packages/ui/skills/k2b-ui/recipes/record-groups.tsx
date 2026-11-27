@@ -2,7 +2,6 @@
 // one Group per thing that belongs together (here a delivery). A finished one is folded to its head. Inside a group: a
 // sentence, its way, its articles with their marks, a table, facts; no lines, no nesting.
 import {
-  Band,
   Bar,
   Button,
   Chip,
@@ -10,11 +9,10 @@ import {
   Facts,
   Failed,
   Group,
-  Inline,
   List,
   Loading,
-  Mark,
   Nav,
+  Notice,
   Pane,
   Progress,
   RecordHead,
@@ -29,7 +27,7 @@ import {
 import { For } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "users" };
+export const app = { name: "Kunden", color: "#2563eb", icon: "users" };
 
 const delivery = { icon: "package", color: "#c2410c" };
 const settlement = { icon: "calendar-dollar", color: "#8e1b6f" };
@@ -177,9 +175,12 @@ export default function CustomerDeliveries(props: Props) {
         <Bar
           start={<RecordHead name={data.name} avatar={{ name: data.name, color: data.color }} ids={data.ids} />}
           end={
-            <Button variant="primary" icon="plus">
-              Einlieferung
-            </Button>
+            <>
+              <Button icon="package-export">Herausgabe</Button>
+              <Button variant="primary" icon="plus">
+                Einlieferung
+              </Button>
+            </>
           }
         />
       }
@@ -198,21 +199,17 @@ export default function CustomerDeliveries(props: Props) {
           />
         }
       >
-        {/* One statement that stands out in the column: a band in a tone, not a message with a title and deeds. */}
+        {/* The one statement of the tab, with its sign: what comes next. */}
         {ready && (
-          <Band tone="note">
-            <Text type="body" weight="strong">
-              {data.next.title}
-            </Text>
-            <Text>{data.next.text}</Text>
-          </Band>
+          <Notice tone="note" icon="calendar-dollar" title={data.next.title}>
+            {data.next.text}
+          </Notice>
         )}
         <Section
           icon="package"
           color="#c2410c"
           title="Einlieferungen"
           count={ready ? data.counts.deliveries : undefined}
-          actions={[{ label: "Herausgabe", icon: "package-export" }]}
           summary={ready ? data.summary : undefined}
         >
           {props.failed ? (
@@ -252,15 +249,8 @@ export default function CustomerDeliveries(props: Props) {
                   columns={[
                     {
                       title: "Auslauftag",
-                      cell: (row) => ({
-                        lines: [
-                          <Inline>
-                            <Mark {...settlement} />
-                            <Text>{row.day}</Text>
-                          </Inline>,
-                          row.items,
-                        ],
-                      }),
+                      mark: () => settlement,
+                      cell: (row) => ({ lines: [row.day, row.items] }),
                     },
                     {
                       title: "Abrechnung",

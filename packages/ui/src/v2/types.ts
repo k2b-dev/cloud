@@ -9,8 +9,15 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
  */
 export type OnNavigate = (event: LinkNavigateEvent) => void | Promise<void>;
 
-/** The width of a column that can be dragged: its minimum and its default, in CSS px. Nothing else. */
-export type Width = { min: number; default: number };
+/**
+ * The width of a column, in CSS px: `{ min, default }` can be dragged between its minimum and wider; `{ fixed }` keeps
+ * that width without a grip, such as a narrow column of row actions.
+ */
+export type Width = { min: number; default: number } | { fixed: number };
+
+/** A width as minimum and default, and whether it is fixed (a fixed width is both, and has no grip). */
+export const widthRange = (width: Width): { min: number; default: number; fixed: boolean } =>
+  "fixed" in width ? { min: width.fixed, default: width.fixed, fixed: true } : { min: width.min, default: width.default, fixed: false };
 
 /**
  * An action as data. The primitive decides whether it becomes a button, an icon button or a text button, so the
@@ -51,12 +58,20 @@ export type Person = {
   image?: string;
 };
 
-/** The initials of a name: the first letters of its first two words. */
-export const initialsOf = (person: Person): string =>
-  person.initials ??
-  person.name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]!.toUpperCase())
-    .join("");
+/**
+ * Words after a name that are no name of their own: "Jr.", "Sr.", "II", "III", "IV"; "jun." and "sen." only with
+ * their dot, since Jun and Sen are surnames too ("Li Jun", "Amartya Sen").
+ */
+const SUFFIX = /^(?:jr\.?|sr\.?|jun\.|sen\.|ii|iii|iv)$/i;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+/** The first character a person sees of a word: a whole emoji or a letter with its accent, never half of one. */
+const first = (word: string) => graphemes.segment(word)[Symbol.iterator]().next().value?.segment ?? "";
+
+/** The initials of a name: the first letters of its first and its last word ("Charles Montgomery III": "CM"). */
+export const initialsOf = (person: Person): string => {
+  if (person.initials) return person.initials;
+  const words = person.name.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && SUFFIX.test(words.at(-1)!)) words.pop();
+  const ends = words.length > 1 ? [words[0]!, words.at(-1)!] : words;
+  return ends.map((word) => first(word).toLocaleUpperCase()).join("");
+};
