@@ -1,4 +1,6 @@
-import { sql } from "@k2b/cloud";
+import type { sql } from "@k2b/cloud";
+import type { ConcurrentIndex } from "@k2b/cloud/services/concurrent-index";
+import { replaceTrigger } from "../migrate-catalog";
 
 /** Mail's existing live topic also carries grant and restricted-membership invalidations. */
 export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => {
@@ -42,8 +44,11 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
   await tx`CREATE OR REPLACE TRIGGER room_access_updated AFTER UPDATE ON mail.conversation_messages
     FOR EACH ROW WHEN (OLD.conversation_id IS DISTINCT FROM NEW.conversation_id OR OLD.message_id IS DISTINCT FROM NEW.message_id)
     EXECUTE FUNCTION mail.enqueue_message_room_access_changed()`.simple();
-  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF mailbox_id OR DELETE ON mail.conversations
-    FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
+  // Background index builds lock drafts and conversations; an unchanged trigger leaves them alone.
+  await replaceTrigger(
+    tx,
+    "CREATE TRIGGER room_access_changed AFTER DELETE OR UPDATE OF mailbox_id ON mail.conversations FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()",
+  );
   await tx`CREATE OR REPLACE FUNCTION mail.enqueue_mailbox_room_access_changed() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
       PERFORM events.enqueue(gen_random_uuid(), 'mail', 'live', COALESCE(NEW.id, OLD.id)::text,
@@ -52,9 +57,11 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
     END $$`.simple();
   await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF deleted_at, sync_enabled OR DELETE ON mail.mailboxes
     FOR EACH ROW EXECUTE FUNCTION mail.enqueue_mailbox_room_access_changed()`.simple();
-  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF state, edit_mode, doc_generation, doc_frozen_cursor, doc_history_complete,
-    conversation_id, source_message_id, derived_from_message_id, mailbox_id OR DELETE ON mail.drafts
-    FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
+  await replaceTrigger(
+    tx,
+    "CREATE TRIGGER room_access_changed AFTER DELETE OR UPDATE OF state, edit_mode, doc_generation, doc_frozen_cursor, doc_history_complete, " +
+      "conversation_id, source_message_id, derived_from_message_id, mailbox_id ON mail.drafts FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()",
+  );
   await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER DELETE ON mail.sender_identities
     FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
   await tx`CREATE OR REPLACE TRIGGER room_access_updated AFTER UPDATE ON mail.sender_identities
@@ -70,16 +77,12 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
     EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
 };
 
-/** Startup builds this outside the migration transaction, without blocking ordinary draft writes. */
-export const migrateRoomAccessIndexes = async (): Promise<void> => {
-  const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
-    coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('mail.drafts_shared_derived_message_idx')), false) AS valid,
-    EXISTS (SELECT 1 FROM pg_stat_progress_create_index
-      WHERE index_relid = to_regclass('mail.drafts_shared_derived_message_idx')) AS building`;
-  if (index?.valid) return;
-  if (index?.building) throw new Error("Mail draft index is being built by another startup; retry startup when it completes");
-  // Retry an interrupted concurrent build on startup.
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_shared_derived_message_idx`.simple();
-  await sql`CREATE INDEX CONCURRENTLY drafts_shared_derived_message_idx ON mail.drafts (derived_from_message_id)
-    WHERE edit_mode = 'shared' AND state = 'draft'`.simple();
+/**
+ * The message trigger above finds the shared drafts derived from a removed message; without this index it reads every draft.
+ * Mail builds it in the background after the migration (`buildMailIndexes`).
+ */
+export const ROOM_ACCESS_INDEX: ConcurrentIndex = {
+  name: "drafts_shared_derived_message_idx",
+  table: "mail.drafts",
+  definition: "(derived_from_message_id) WHERE edit_mode = 'shared' AND state = 'draft'",
 };

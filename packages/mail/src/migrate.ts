@@ -9,21 +9,25 @@
  * Mail was first deployed. That history remains unsupported; an unknown newer
  * history is also refused without altering its data or suggesting a schema reset.
  */
-import { lazySync, sql } from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import { migrateWorkflowAi } from "@k2b/cloud/ai/tasks";
 import { logger } from "@k2b/cloud/services";
+import { type ConcurrentIndex, type ConcurrentIndexOutcome, ensureConcurrentIndexes } from "@k2b/cloud/services/concurrent-index";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
+import { applyIfMissing, applySchemaScript, replaceTrigger } from "./migrate-catalog";
 import {
   migrateReplyDrafts,
+  REPLY_DRAFT_INDEX,
   REPLY_DRAFT_MIGRATION_NAME,
   REPLY_DRAFT_MIGRATION_VERSION,
+  RETIRED_DRAFT_INDEXES,
   type ReplyDraftMigrationResult,
 } from "./migrate-reply-drafts";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
-import { migrateRoomAccessEvents, migrateRoomAccessIndexes } from "./service/room-access-events";
+import { migrateRoomAccessEvents, ROOM_ACCESS_INDEX } from "./service/room-access-events";
 import { MAIL_RULE_RETIREMENT_NAME, MAIL_RULE_RETIREMENT_VERSION, retireMailRules } from "./service/rule-retirement-migrate";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
@@ -105,7 +109,7 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.remote_resources ADD COLUMN IF NOT EXISTS sync_state jsonb NULL
     CONSTRAINT remote_resources_sync_state_check CHECK (sync_state IS NULL OR jsonb_typeof(sync_state) = 'object')`.simple();
-  await tx`ALTER TABLE mail.binding_folder_refs ADD COLUMN IF NOT EXISTS remote_folder_id text`.simple();
+  await applyIfMissing(tx, `ALTER TABLE mail.binding_folder_refs ADD COLUMN IF NOT EXISTS remote_folder_id text`);
   // Replace only the predecessor's CHECK, leaving already upgraded definitions untouched.
   await tx`DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.provider_connections'::regclass
@@ -130,14 +134,14 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // The operator-approved JMAP origin, the only one that receives the credentials. Same kind of addition.
   await tx`ALTER TABLE mail.provider_connections ADD COLUMN IF NOT EXISTS jmap_origin text`.simple();
   await tx`ALTER TABLE mail.schema_migrations ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS consolidated_count integer NOT NULL DEFAULT 0`.simple();
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS consolidated_count integer NOT NULL DEFAULT 0`);
   // Avoid validating a new CHECK while the column-addition transaction holds ACCESS EXCLUSIVE.
   await tx`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.drafts'::regclass AND conname = 'drafts_consolidated_count_check') THEN
       ALTER TABLE mail.drafts ADD CONSTRAINT drafts_consolidated_count_check CHECK (consolidated_count >= 0) NOT VALID;
     END IF;
   END $$`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS content_edited_at timestamptz`.simple();
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS content_edited_at timestamptz`);
   await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS forwarded_source_message_id uuid`.simple();
   await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS copied_source_message_id uuid`.simple();
   await tx`CREATE TABLE IF NOT EXISTS mail.reply_draft_retirements (
@@ -155,8 +159,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
         ROW(OLD.intent, OLD.sender_identity_id, OLD.signature_template_id, OLD.to_addresses, OLD.cc_addresses, OLD.bcc_addresses, OLD.subject, OLD.body_markdown, OLD.body_format, OLD.priority, OLD.request_delivery_receipt, OLD.request_read_receipt, OLD.quote_source, OLD.quote_locale, OLD.quote_time_zone) THEN NEW.content_edited_at = now(); END IF;
       RETURN NEW;
     END; $$`.simple();
-  await tx`CREATE OR REPLACE TRIGGER drafts_touch_content_edited_at BEFORE UPDATE ON mail.drafts
-    FOR EACH ROW EXECUTE FUNCTION mail.touch_draft_content_edited_at()`.simple();
+  await replaceTrigger(
+    tx,
+    "CREATE TRIGGER drafts_touch_content_edited_at BEFORE UPDATE ON mail.drafts FOR EACH ROW EXECUTE FUNCTION mail.touch_draft_content_edited_at()",
+  );
   await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_revision bigint`;
   await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_write_started boolean NOT NULL DEFAULT false`;
   // One checkpoint per folder lets waiting sync commands finish without retaining empty runs.
@@ -218,25 +224,34 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     name text PRIMARY KEY CHECK (name = 'shared_drafts_default'), details jsonb NOT NULL
   )`.simple();
   // Existing drafts retain their mode; mailbox switches affect only new user drafts.
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
-    CHECK (edit_mode IN ('lock', 'shared'))`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
-    CHECK (doc_generation > 0)`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_idle_through bigint`.simple();
-  await tx`CREATE INDEX IF NOT EXISTS drafts_document_coverage_idx ON mail.drafts
+  await applyIfMissing(
+    tx,
+    `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
+    CHECK (edit_mode IN ('lock', 'shared'))`,
+  );
+  await applyIfMissing(
+    tx,
+    `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
+    CHECK (doc_generation > 0)`,
+  );
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_idle_through bigint`);
+  await applyIfMissing(
+    tx,
+    `CREATE INDEX IF NOT EXISTS drafts_document_coverage_idx ON mail.drafts
     (GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id)
-    WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')`.simple();
+    WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')`,
+  );
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_log_policy (
     log_id text PRIMARY KEY, recovered_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_generation bigint`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_revision bigint`.simple();
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_generation bigint`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_revision bigint`);
   // Revision writers need the exact identities they read, including deletes.
   // A cursor alone cannot reconstruct an earlier state from a newer GC snapshot.
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_revisions (
@@ -328,7 +343,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.draft_document_rests ADD COLUMN IF NOT EXISTS quarantine_revision bigint
     CHECK (quarantine_revision > 0), ADD COLUMN IF NOT EXISTS quarantine_state bytea`.simple();
 
-  await tx.unsafe(automationLogSchema).simple();
+  await applySchemaScript(tx, automationLogSchema);
   await ensureMailWorkflowEffectOrderSchema(tx);
   await tx`CREATE TABLE IF NOT EXISTS mail.mailbox_logo_versions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -372,14 +387,20 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
   await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
   await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`.simple();
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`);
+  await applyIfMissing(tx, `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`);
   // List pages ask for the open drafts of a few conversations; this keeps that lookup independent of all other drafts.
-  await tx`CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
-    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`.simple();
-  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
-    REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
+  await applyIfMissing(
+    tx,
+    `CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
+    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`,
+  );
+  await applyIfMissing(
+    tx,
+    `ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
+    REFERENCES mail.compose_templates(id) ON DELETE SET NULL`,
+  );
   await tx`
     CREATE TABLE IF NOT EXISTS mail.conversation_keeps (
       conversation_id uuid PRIMARY KEY REFERENCES mail.conversations(id) ON DELETE CASCADE,
@@ -512,8 +533,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
-  await tx`ALTER TABLE mail.remote_message_refs ADD COLUMN IF NOT EXISTS remote_id text`.simple();
-  await tx`ALTER TABLE mail.draft_provider_snapshots ADD COLUMN IF NOT EXISTS remote_id text`.simple();
+  await applyIfMissing(tx, `ALTER TABLE mail.remote_message_refs ADD COLUMN IF NOT EXISTS remote_id text`);
+  await applyIfMissing(tx, `ALTER TABLE mail.draft_provider_snapshots ADD COLUMN IF NOT EXISTS remote_id text`);
   await tx`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
       WHERE conrelid = 'mail.remote_message_refs'::regclass AND conname = 'remote_message_refs_address_shape') THEN
@@ -533,9 +554,16 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       ) NOT VALID;
     END IF;
   END $$`.simple();
-  await tx`ALTER TABLE mail.draft_provider_snapshots DROP CONSTRAINT IF EXISTS draft_provider_snapshots_remote_shape`.simple();
-  await tx`ALTER TABLE mail.remote_message_refs
-    ALTER COLUMN uid_validity DROP NOT NULL, ALTER COLUMN uid DROP NOT NULL`.simple();
+  await tx`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'mail.draft_provider_snapshots'::regclass AND conname = 'draft_provider_snapshots_remote_shape') THEN
+      ALTER TABLE mail.draft_provider_snapshots DROP CONSTRAINT draft_provider_snapshots_remote_shape;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'mail.remote_message_refs'::regclass
+      AND attname IN ('uid_validity', 'uid') AND attnotnull) THEN
+      ALTER TABLE mail.remote_message_refs ALTER COLUMN uid_validity DROP NOT NULL, ALTER COLUMN uid DROP NOT NULL;
+    END IF;
+  END $$`.simple();
 };
 
 /** List-only membership keeps its provenance across copies, hydration and restarts. */
@@ -848,8 +876,8 @@ const migrationErrorCode = (error: unknown): string | null => {
 
 /**
  * Schema additions, each F6 batch and the rule retirement run under the
- * transaction-scoped advisory guard, which also holds behind a transaction pooler. The final
- * concurrent index build runs outside a transaction. A run
+ * transaction-scoped advisory guard, which also holds behind a transaction pooler. It builds no
+ * concurrent index: `buildMailIndexes` does that after it, without startup waiting. A run
  * that waits longer than `lock_timeout` for the guard or for DDL locks fails
  * with `55P03` and is retried with backoff; deadlock victims (`40P01`) retry too.
  */
@@ -892,7 +920,6 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
           END IF;
         END $$`.simple();
       });
-      await migrateRoomAccessIndexes();
       // F6 first, then the rule retirement: this is the 0.74 -> 0.75 -> Code order. F6 refuses before its
       // marker, and a refused retirement leaves at most F6's marker, so either refusal keeps a previous
       // image that can start and reconcile the blocking sends.
@@ -911,198 +938,185 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
   throw new Error("Mail migration retries exhausted");
 };
 
-/**
- * One Mail process builds any index at a time: concurrent expression/partial index builds can
- * wait on each other's snapshots, and Postgres cancels one of them. The lease is renewed while
- * the build runs.
+/*
+ * Indexes built next to live writes. Startup never waits for them: `buildMailIndexes` starts after the migration, and
+ * queries, triggers and the reply box work without them until they are valid. The helper builds one table at a time
+ * across every replica, leaves a build that runs elsewhere alone and replaces an interrupted one.
  */
-const INDEX_BUILD_LEASE_MS = 60_000;
-const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
-
-type BackgroundIndex = { name: string; table: string; ddl: string };
-const runtimeHistoryIndexes: BackgroundIndex[] = [
+const runtimeHistoryIndexes: ConcurrentIndex[] = [
   // Build the smaller auxiliary indexes before the potentially large sync-history indexes.
+  { name: "automation_log_retention_idx", table: "mail.automation_log", definition: "(created_at, id)" },
+  { name: "workflow_effect_order_expiry_idx", table: "mail.workflow_effect_order", definition: "(expires_at, event_id)" },
   {
-    name: "mail.automation_log_retention_idx",
-    table: "mail.automation_log",
-    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS automation_log_retention_idx
-      ON mail.automation_log (created_at, id)`,
-  },
-  {
-    name: "mail.workflow_effect_order_expiry_idx",
-    table: "mail.workflow_effect_order",
-    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS workflow_effect_order_expiry_idx
-      ON mail.workflow_effect_order (expires_at, event_id)`,
-  },
-  {
-    name: "mail.sync_runs_completed_retention_idx",
+    name: "sync_runs_completed_retention_idx",
     table: "mail.sync_runs",
-    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_completed_retention_idx
-      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed'`,
+    definition: "(COALESCE(finished_at, started_at), id) WHERE state = 'completed'",
   },
   {
-    name: "mail.sync_runs_error_retention_idx",
+    name: "sync_runs_error_retention_idx",
     table: "mail.sync_runs",
-    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_error_retention_idx
-      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed')`,
+    definition: "(COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed')",
   },
 ];
-const backfillActivityIndex: BackgroundIndex = {
-  name: "mail.activity_events_backfill_operation_idx",
+const backfillActivityIndex: ConcurrentIndex = {
+  name: "activity_events_backfill_operation_idx",
   table: "mail.activity_events",
-  ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS activity_events_backfill_operation_idx
-    ON mail.activity_events (mailbox_id, target_id, (metadata ->> 'operationId'))
-    WHERE action = 'incoming_automation.backfill.start'`,
+  definition: "(mailbox_id, target_id, (metadata ->> 'operationId')) WHERE action = 'incoming_automation.backfill.start'",
+  unique: true,
 };
-const commandTargetIndex: BackgroundIndex = {
-  name: "mail.commands_message_target_idx",
+const commandTargetIndex: ConcurrentIndex = {
+  name: "commands_message_target_idx",
   table: "mail.commands",
-  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS commands_message_target_idx
-    ON mail.commands USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind)
-    WHERE (target ? 'remoteMessageRefId'::text)`,
+  definition: "USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind) WHERE (target ? 'remoteMessageRefId'::text)",
 };
-const providerMessageIndex: BackgroundIndex = {
-  name: "mail.remote_message_refs_provider_message_idx",
+const providerMessageIndex: ConcurrentIndex = {
+  name: "remote_message_refs_provider_message_idx",
   table: "mail.remote_message_refs",
-  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS remote_message_refs_provider_message_idx
-    ON mail.remote_message_refs (md5(connector_ref ->> 'providerMessageId'), folder_id, message_id)
-    WHERE connector_ref ->> 'providerMessageId' IS NOT NULL`,
+  definition: "(md5(connector_ref ->> 'providerMessageId'), folder_id, message_id) WHERE connector_ref ->> 'providerMessageId' IS NOT NULL",
+};
+const remoteMessageIdIndex: ConcurrentIndex = {
+  name: "remote_message_refs_remote_id_idx",
+  table: "mail.remote_message_refs",
+  definition: "(folder_id, remote_id) WHERE remote_id IS NOT NULL",
+  unique: true,
+};
+const draftRemoteIdIndex: ConcurrentIndex = {
+  name: "draft_provider_snapshots_remote_id_idx",
+  table: "mail.draft_provider_snapshots",
+  definition: "(folder_id, remote_id, created_at DESC) WHERE remote_id IS NOT NULL",
 };
 
 // The mailbox's event feed reads newest first over its few kinds of actions; without it, a busy mailbox's feed page
 // reads past every read, flag, and move. The action list matches MAIL_ACTIVITY_FEED_ACTIONS in service/activity-feed.ts.
-const activityFeedIndex: BackgroundIndex = {
-  name: "mail.activity_events_mailbox_feed_idx",
+const activityFeedIndex: ConcurrentIndex = {
+  name: "activity_events_mailbox_feed_idx",
   table: "mail.activity_events",
-  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_events_mailbox_feed_idx
-    ON mail.activity_events USING btree (mailbox_id, id DESC)
+  definition: `USING btree (mailbox_id, id DESC)
     WHERE (action = ANY (ARRAY[${MAIL_ACTIVITY_FEED_ACTIONS.map((action) => `'${action}'::text`).join(", ")}]))`,
 };
 
 // A drag orders its people by whom the person assigned lately; without it, that read passes every update of the mailbox.
-const actorAssignmentIndex: BackgroundIndex = {
-  name: "mail.activity_events_actor_assignment_idx",
+const actorAssignmentIndex: ConcurrentIndex = {
+  name: "activity_events_actor_assignment_idx",
   table: "mail.activity_events",
-  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_events_actor_assignment_idx
-    ON mail.activity_events USING btree (mailbox_id, actor_id, id DESC)
-    WHERE (action = 'conversation.collaboration_updated'::text)`,
+  definition: "USING btree (mailbox_id, actor_id, id DESC) WHERE (action = 'conversation.collaboration_updated'::text)",
 };
 
 // Work lists show open conversations only; without it, a folder's list reads past every done conversation.
-const openConversationIndex: BackgroundIndex = {
-  name: "mail.conversations_mailbox_open_latest_idx",
+const openConversationIndex: ConcurrentIndex = {
+  name: "conversations_mailbox_open_latest_idx",
   table: "mail.conversations",
-  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS conversations_mailbox_open_latest_idx
-    ON mail.conversations USING btree (mailbox_id, latest_message_at DESC, id DESC)
-    WHERE (work_status <> 'done'::text)`,
+  definition: "USING btree (mailbox_id, latest_message_at DESC, id DESC) WHERE (work_status <> 'done'::text)",
 };
 
-type IndexConnection = Awaited<ReturnType<SqlClient["reserve"]>>;
-const readBackgroundIndexState = async (db: SqlClient | IndexConnection, index: BackgroundIndex) => {
-  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
-    SELECT to_regclass(${index.name}) IS NOT NULL AS present,
-      EXISTS (
-        SELECT 1 FROM pg_index
-        WHERE indexrelid = to_regclass(${index.name}) AND indisvalid AND indisready AND indislive
-      ) AS valid,
-      EXISTS (
-        SELECT 1 FROM pg_stat_progress_create_index progress
-        WHERE progress.datname = current_database()
-          AND (progress.relid = to_regclass(${index.table}) OR progress.relid IS NULL)
-      ) AS building
-  `;
-  return state ?? { present: false, valid: false, building: false };
-};
-
-/** One statement per step, no session state: safe through a transaction pooler. Never throws. */
-const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Promise<"ready" | "busy" | "built" | "failed"> => {
-  try {
-    if ((await readBackgroundIndexState(pool, index)).valid) return "ready";
-    const mutex = indexBuildMutex();
-    const lease = await mutex.acquire({ resource: "mail-indexes" });
-    if (!lease) return "busy";
-    // runtime-timer: lease of a migration step during startup, which is not background work.
-    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
-    renewal.unref();
-    try {
-      // Bun must not pipeline foreground queries behind DDL waiting for old snapshots or writers.
-      const db = await pool.reserve();
-      try {
-        const before = await readBackgroundIndexState(db, index);
-        if (before.valid) return "ready";
-        if (before.building) return "busy";
-        // Names are internal constants, never request input. Replace interrupted builds on restart.
-        const drop = () => db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.name}`).simple();
-        if (before.present) await drop();
-        log.info("Building Mail background index", { index: index.name });
-        const startedAt = performance.now();
-        try {
-          await db.unsafe(index.ddl).simple();
-        } catch (error) {
-          const after = await readBackgroundIndexState(db, index);
-          if (after.valid) return "ready";
-          if (after.building) return "busy";
-          log.warn("Mail background index build failed; the next start retries", { index: index.name, error: String(error) });
-          await drop();
-          return "failed";
-        }
-        if (!(await readBackgroundIndexState(db, index)).valid) return "busy";
-        log.info("Built Mail background index", { index: index.name, durationMs: Math.round(performance.now() - startedAt) });
-        return "built";
-      } finally {
-        db.release();
-      }
-    } finally {
-      clearInterval(renewal);
-      await mutex.release(lease).catch(() => false);
-    }
-  } catch (error) {
-    log.warn("Mail background index unavailable; the next start retries", { index: index.name, error: String(error) });
-    return "failed";
-  }
-};
-
-const folderIdentityIndexes: BackgroundIndex[] = [
+const folderIdentityIndexes: ConcurrentIndex[] = [
   {
-    name: "mail.binding_folder_refs_imap_path_idx",
+    name: "binding_folder_refs_imap_path_idx",
     table: "mail.binding_folder_refs",
-    ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS binding_folder_refs_imap_path_idx
-      ON mail.binding_folder_refs (binding_id, remote_path) WHERE remote_folder_id IS NULL`,
+    definition: "(binding_id, remote_path) WHERE remote_folder_id IS NULL",
+    unique: true,
   },
   {
-    name: "mail.binding_folder_refs_jmap_id_idx",
+    name: "binding_folder_refs_jmap_id_idx",
     table: "mail.binding_folder_refs",
-    ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS binding_folder_refs_jmap_id_idx
-      ON mail.binding_folder_refs (binding_id, remote_folder_id) WHERE remote_folder_id IS NOT NULL`,
+    definition: "(binding_id, remote_folder_id) WHERE remote_folder_id IS NOT NULL",
+    unique: true,
   },
 ];
 
-/** Keep the predecessor's path rule until both replacement indexes are usable. */
-export const buildFolderIdentityIndexes = async (pool: SqlClient = sql): Promise<"ready" | "busy" | "built" | "failed"> => {
-  let built = false;
-  for (const index of folderIdentityIndexes) {
-    const result = await buildBackgroundIndex(index, pool);
-    if (result === "busy" || result === "failed") return result;
-    built ||= result === "built";
+/**
+ * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
+ * then the body, so it must stay identical to the rank in `service/search.ts`.
+ */
+const bm25Index: ConcurrentIndex = {
+  name: "message_contents_bm25_idx",
+  table: "mail.message_contents",
+  definition: `USING bm25 ((COALESCE(subject, '') || ' ' || COALESCE(subject, '') || ' ' || COALESCE(plain_text, '')))
+    WITH (text_config = 'simple')`,
+};
+
+/** Every table a background build may hold; the migration takes no conflicting lock on them while one runs. */
+export const MAIL_CONCURRENT_INDEXES: readonly ConcurrentIndex[] = [
+  REPLY_DRAFT_INDEX,
+  ROOM_ACCESS_INDEX,
+  ...runtimeHistoryIndexes,
+  backfillActivityIndex,
+  commandTargetIndex,
+  providerMessageIndex,
+  remoteMessageIdIndex,
+  draftRemoteIdIndex,
+  openConversationIndex,
+  activityFeedIndex,
+  actorAssignmentIndex,
+  bm25Index,
+  ...folderIdentityIndexes,
+];
+
+const build = (indexes: readonly ConcurrentIndex[], purpose: string, pool: SqlClient = sql) =>
+  ensureConcurrentIndexes(indexes, { log, purpose, db: pool });
+
+const indexValid = async (db: SqlClient, name: string): Promise<boolean> => {
+  const [row] = await db<{ valid: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_index
+    WHERE indexrelid = to_regclass(${name}) AND indisvalid AND indisready AND indislive) AS valid`;
+  return row?.valid ?? false;
+};
+
+/** On a reserved connection, so ordinary pool queries never queue behind the drop's wait for older transactions. */
+const dropIndex = async (pool: SqlClient, name: string): Promise<void> => {
+  const db = await pool.reserve();
+  try {
+    await db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS mail.${name}`).simple();
+  } finally {
+    db.release();
   }
+};
+
+/** The reply box's unique backstop, then the indexes it replaced. Never throws. */
+export const buildReplyDraftIndex = async (pool: SqlClient = sql): Promise<ConcurrentIndexOutcome> => {
+  const outcome = await build([REPLY_DRAFT_INDEX], "reply box", pool);
+  if (outcome !== "ready" && outcome !== "built") return outcome;
+  for (const name of RETIRED_DRAFT_INDEXES) {
+    try {
+      const [index] = await pool<{ present: boolean }[]>`SELECT to_regclass(${`mail.${name}`}) IS NOT NULL AS present`;
+      if (index?.present) await dropIndex(pool, name);
+    } catch (error) {
+      log.warn("A retired Mail draft index was not dropped; the next start retries", { index: name, error: String(error) });
+      break;
+    }
+  }
+  return outcome;
+};
+
+export const buildRoomAccessIndex = (pool: SqlClient = sql) => build([ROOM_ACCESS_INDEX], "shared draft access", pool);
+export const buildBackfillActivityIndex = (pool: SqlClient = sql) => build([backfillActivityIndex], "backfill activity", pool);
+export const buildCommandTargetIndex = (pool: SqlClient = sql) => build([commandTargetIndex], "command target", pool);
+export const buildRemoteMessageIdIndex = (pool: SqlClient = sql) => build([remoteMessageIdIndex], "provider message id", pool);
+export const buildDraftRemoteIdIndex = (pool: SqlClient = sql) => build([draftRemoteIdIndex], "provider draft id", pool);
+export const buildProviderMessageIndex = (pool: SqlClient = sql) => build([providerMessageIndex], "provider message", pool);
+export const buildOpenConversationIndex = (pool: SqlClient = sql) => build([openConversationIndex], "open conversation", pool);
+export const buildActivityFeedIndex = (pool: SqlClient = sql) => build([activityFeedIndex], "activity feed", pool);
+export const buildActorAssignmentIndex = (pool: SqlClient = sql) => build([actorAssignmentIndex], "assignment history", pool);
+
+/** Keep the predecessor's path rule until both replacement indexes are usable. */
+export const buildFolderIdentityIndexes = async (pool: SqlClient = sql): Promise<ConcurrentIndexOutcome> => {
+  const result = await build(folderIdentityIndexes, "folder identity", pool);
+  if (result === "busy" || result === "failed") return result;
   try {
     return await pool.begin(async (tx) => {
       // The final metadata change must never queue behind long-running writers.
       await tx`SET LOCAL lock_timeout = '250ms'`;
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
       for (const index of folderIdentityIndexes) {
-        if (!(await readBackgroundIndexState(tx, index)).valid) return "busy";
+        if (!(await indexValid(tx, `mail.${index.name}`))) return "busy";
       }
       const [legacy] = await tx<{ present: boolean }[]>`
         SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.binding_folder_refs'::regclass
           AND conname = 'binding_folder_refs_binding_id_remote_path_key') AS present
       `;
-      if (legacy?.present) {
-        await tx`ALTER TABLE mail.binding_folder_refs
-          DROP CONSTRAINT binding_folder_refs_binding_id_remote_path_key`.simple();
-        built = true;
-      }
-      return built ? "built" : "ready";
+      if (!legacy?.present) return result;
+      await tx`ALTER TABLE mail.binding_folder_refs
+        DROP CONSTRAINT binding_folder_refs_binding_id_remote_path_key`.simple();
+      return "built";
     });
   } catch (error) {
     log.warn("Mail folder identity migration unfinished; the next start retries", { error: String(error) });
@@ -1110,41 +1124,11 @@ export const buildFolderIdentityIndexes = async (pool: SqlClient = sql): Promise
   }
 };
 
-export const buildBackfillActivityIndex = (pool: SqlClient = sql) => buildBackgroundIndex(backfillActivityIndex, pool);
-export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
-export const buildRemoteMessageIdIndex = (pool: SqlClient = sql) =>
-  buildBackgroundIndex(
-    {
-      name: "mail.remote_message_refs_remote_id_idx",
-      table: "mail.remote_message_refs",
-      ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS remote_message_refs_remote_id_idx
-    ON mail.remote_message_refs (folder_id, remote_id) WHERE remote_id IS NOT NULL`,
-    },
-    pool,
-  );
-export const buildDraftRemoteIdIndex = (pool: SqlClient = sql) =>
-  buildBackgroundIndex(
-    {
-      name: "mail.draft_provider_snapshots_remote_id_idx",
-      table: "mail.draft_provider_snapshots",
-      ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS draft_provider_snapshots_remote_id_idx
-    ON mail.draft_provider_snapshots (folder_id, remote_id, created_at DESC) WHERE remote_id IS NOT NULL`,
-    },
-    pool,
-  );
-export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
-export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
-export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);
-export const buildActorAssignmentIndex = (pool: SqlClient = sql) => buildBackgroundIndex(actorAssignmentIndex, pool);
-
 let runtimeHistoryBuild: Promise<void> | undefined;
 export const buildRuntimeHistoryIndexes = (pool: SqlClient = sql): Promise<void> => {
   runtimeHistoryBuild ??= (async () => {
     try {
-      for (const index of runtimeHistoryIndexes) {
-        const result = await buildBackgroundIndex(index, pool);
-        if (result === "busy" || result === "failed") return;
-      }
+      await build(runtimeHistoryIndexes, "Mail history retention", pool);
     } finally {
       runtimeHistoryBuild = undefined;
     }
@@ -1153,80 +1137,34 @@ export const buildRuntimeHistoryIndexes = (pool: SqlClient = sql): Promise<void>
 };
 
 /**
- * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
- * then the body, so it must stay identical to the rank in `service/search.ts`.
+ * The index as the database sees it. Search uses it only when it is a valid BM25 index; an index of another kind
+ * under its name counts as valid to the build helper, so it is replaced first.
  */
-const BM25_INDEX_DDL = `CREATE INDEX CONCURRENTLY IF NOT EXISTS message_contents_bm25_idx
-  ON mail.message_contents USING bm25 ((COALESCE(subject, '') || ' ' || COALESCE(subject, '') || ' ' || COALESCE(plain_text, '')))
-  WITH (text_config = 'simple')`;
-
-/**
- * The index as the database sees it. Search uses it only when it is a valid BM25 index; `building`
- * tells a build that is still running, in any process, from one that was interrupted. Postgres
- * hides which index another role builds, so any index build of another role in this database
- * counts, such as an operator's own build of this index.
- */
-const readBm25IndexState = async (db: SqlClient | IndexConnection = sql) => {
-  const [state] = await db<{ installed: boolean; present: boolean; valid: boolean; building: boolean }[]>`
+const readBm25IndexState = async (db: SqlClient = sql) => {
+  const [state] = await db<{ installed: boolean; present: boolean; bm25: boolean }[]>`
     SELECT
       EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed,
       to_regclass('mail.message_contents_bm25_idx') IS NOT NULL AS present,
       EXISTS (
-        SELECT 1
-        FROM pg_index index_state
-        JOIN pg_class index_class ON index_class.oid = index_state.indexrelid
-        JOIN pg_am access_method ON access_method.oid = index_class.relam
-        WHERE index_state.indexrelid = to_regclass('mail.message_contents_bm25_idx')
-          AND access_method.amname = 'bm25'
-          AND index_state.indisvalid
-          AND index_state.indisready
-          AND index_state.indislive
-      ) AS valid,
-      EXISTS (
-        SELECT 1
-        FROM pg_stat_progress_create_index progress
-        WHERE progress.datname = current_database()
-          AND (progress.index_relid = to_regclass('mail.message_contents_bm25_idx') OR progress.index_relid IS NULL)
-      ) AS building
+        SELECT 1 FROM pg_class index_class JOIN pg_am access_method ON access_method.oid = index_class.relam
+        WHERE index_class.oid = to_regclass('mail.message_contents_bm25_idx') AND access_method.amname = 'bm25'
+      ) AS bm25
   `;
-  return state ?? { installed: false, present: false, valid: false, building: false };
-};
-
-const dropBm25Index = async (db: IndexConnection): Promise<void> => {
-  await db`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
+  return state ?? { installed: false, present: false, bm25: false };
 };
 
 /**
- * Builds the optional BM25 index when the operator installed pg_textsearch. The build runs
- * concurrently, so mail keeps arriving, and under a NATS lease, so one process builds at a time.
- * Mail does not wait for it: search ranks natively until the index is valid. A build that fails is
- * removed, and the next start tries again; an index left invalid by an interrupted build is
- * replaced, and one that another process is still building is left alone.
- * Every database step is one statement without session state, so a transaction pooler may send
- * each to another backend. Never throws.
+ * Builds the optional BM25 index when the operator installed pg_textsearch. Mail does not wait for it: search ranks
+ * natively until the index is valid. The build runs until it is done: pg_textsearch reacts to a cancel request only
+ * once it has read every message, so a time limit would discard a finished build and repeat it on the next start.
+ * Never throws.
  */
-export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready" | "busy" | "built" | "failed"> => {
+export const buildOptionalSearchIndex = async (): Promise<"unavailable" | ConcurrentIndexOutcome> => {
   try {
     const before = await readBm25IndexState();
     if (!before.installed) return "unavailable";
-    if (before.valid) return "ready";
-    const mutex = indexBuildMutex();
-    const lease = await mutex.acquire({ resource: "mail-indexes" });
-    if (!lease) return "busy";
-    // runtime-timer: lease of a migration step during startup, which is not background work.
-    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
-    renewal.unref();
-    try {
-      const db = await sql.reserve();
-      try {
-        return await buildBm25Index(db);
-      } finally {
-        db.release();
-      }
-    } finally {
-      clearInterval(renewal);
-      await mutex.release(lease).catch(() => false);
-    }
+    if (before.present && !before.bm25) await dropIndex(sql, bm25Index.name);
+    return await build([bm25Index], "optional BM25 search");
   } catch (error) {
     log.warn("Optional BM25 index for Mail search is unavailable; search stays native", {
       error: error instanceof Error ? error.message : String(error),
@@ -1235,37 +1173,24 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready
   }
 };
 
-const buildBm25Index = async (db: IndexConnection): Promise<"ready" | "busy" | "built" | "failed"> => {
-  // Another process may have finished the build since the first look, or still build it, for
-  // example an operator in a maintenance window or a process whose lease ran out.
-  const before = await readBm25IndexState(db);
-  if (before.valid) return "ready";
-  if (before.building) {
-    log.info("An index build is already running in this database; the next start checks the optional BM25 index again");
-    return "busy";
-  }
-  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted.
-  if (before.present) await dropBm25Index(db);
-  log.info("Building the optional BM25 index for Mail search");
-  const startedAt = performance.now();
-  // The build runs until it is done. pg_textsearch reacts to a cancel request or statement_timeout
-  // only once it has read every message, so a time limit would discard a finished build and repeat
-  // it on the next start.
-  try {
-    await db.unsafe(BM25_INDEX_DDL).simple();
-  } catch (error) {
-    const after = await readBm25IndexState(db);
-    if (after.valid) return "ready";
-    if (after.building) return "busy";
-    log.warn("Optional BM25 index for Mail search was not built; search stays native", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    await dropBm25Index(db);
-    return "failed";
-  }
-  // IF NOT EXISTS skips the build when another build created the index in the meantime; it waits
-  // for that build, and the index is valid only if that build succeeded.
-  if (!(await readBm25IndexState(db)).valid) return "busy";
-  log.info("Built the optional BM25 index for Mail search", { durationMs: Math.round(performance.now() - startedAt) });
-  return "built";
+/**
+ * Every Mail index above, in order, for startup to begin without waiting. A busy build defers the rest until the next
+ * start: concurrent builds of partial and expression indexes wait for each other's snapshots, and Postgres cancels one
+ * of them. Never throws.
+ */
+export const buildMailIndexes = async (): Promise<void> => {
+  if ((await buildReplyDraftIndex()) === "busy") return;
+  if ((await buildRoomAccessIndex()) === "busy") return;
+  await buildRuntimeHistoryIndexes();
+  if ((await buildBackfillActivityIndex()) === "busy") return;
+  if ((await buildCommandTargetIndex()) === "busy") return;
+  if ((await buildProviderMessageIndex()) === "busy") return;
+  if ((await buildRemoteMessageIdIndex()) === "busy") return;
+  if ((await buildDraftRemoteIdIndex()) === "busy") return;
+  if ((await buildOpenConversationIndex()) === "busy") return;
+  if ((await buildActivityFeedIndex()) === "busy") return;
+  if ((await buildActorAssignmentIndex()) === "busy") return;
+  await buildOptionalSearchIndex();
+  // Last: its final rule change gives up after a short lock wait and must not defer the builds above.
+  await buildFolderIdentityIndexes();
 };

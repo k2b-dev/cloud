@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
+import type { ConcurrentIndex } from "@k2b/cloud/services/concurrent-index";
 import { eraseRetiredDraftInTransaction, retireDraftInTransaction } from "./service/draft-retirement";
 import { hasLegacyReplyBodyEvidence } from "./service/reply-draft-body-evidence";
 
@@ -44,18 +45,6 @@ const bestBodyEvidenceDraft = async (db: typeof sql, conversationId: string): Pr
     }
     cursor = rows.at(-1)!.id;
   }
-};
-
-/** Build a supporting partial index once; subsequent batches group only open user reply drafts. */
-const prepareConsolidationIndex = async () => {
-  const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
-    coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('mail.drafts_reply_consolidation_idx')), false) AS valid,
-    EXISTS (SELECT 1 FROM pg_stat_progress_create_index WHERE index_relid = to_regclass('mail.drafts_reply_consolidation_idx')) AS building`;
-  if (index?.valid) return;
-  if (index?.building) throw new Error("Mail consolidation index is being built by another startup; retry startup when it completes");
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_reply_consolidation_idx`.simple();
-  await sql`CREATE INDEX CONCURRENTLY drafts_reply_consolidation_idx ON mail.drafts (conversation_id)
-    WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`.simple();
 };
 
 /** Refuse conflicting committed sends and unsafe deliveries before the marker or any deletion. */
@@ -197,11 +186,31 @@ const batch = () =>
     return result;
   });
 
-/** Startup waits for the unique index. Concurrent DDL keeps ordinary table writes available. */
+/**
+ * The database backstop of the reply box: at most one open person reply draft per conversation. The rule itself holds
+ * without it: every writer that puts a draft into a conversation's reply box takes that conversation's reply-box lock
+ * and looks first (`lockConversationReplyDraft`, conversation merges, F6). So startup never waits for this unique
+ * index; Mail builds it in the background after the migration (`buildMailIndexes`), and until then the locks alone
+ * keep the rule.
+ */
+export const REPLY_DRAFT_INDEX: ConcurrentIndex = {
+  name: "drafts_one_open_reply_idx",
+  table: "mail.drafts",
+  definition: "(conversation_id) WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')",
+  unique: true,
+};
+
+/** Indexes of earlier releases that the reply box replaced; the background builds drop them. */
+export const RETIRED_DRAFT_INDEXES = [
+  "drafts_reply_consolidation_idx",
+  "drafts_untouched_suggestion_author_idx",
+  "drafts_untouched_suggestion_idx",
+] as const;
+
+/** Consolidates legacy duplicates in bounded batches. It builds no index, so no snapshot or build holds the start. */
 export const migrateReplyDrafts = async (): Promise<ReplyDraftMigrationResult> => {
   const [previous] = await sql<{ details: ReplyDraftMigrationResult }[]>`SELECT details FROM mail.schema_migrations
     WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION}`;
-  if (!previous?.details.completed) await prepareConsolidationIndex();
   await initialize();
   if (!previous?.details.completed) await backfillSourceAttachments();
   let result = await batch();
@@ -215,19 +224,6 @@ export const migrateReplyDrafts = async (): Promise<ReplyDraftMigrationResult> =
     }
     result = next;
   }
-  const [index] = await sql<{ valid: boolean; building: boolean }[]>`SELECT
-    coalesce((SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('mail.drafts_one_open_reply_idx')), false) AS valid,
-    EXISTS (SELECT 1 FROM pg_stat_progress_create_index
-      WHERE index_relid = to_regclass('mail.drafts_one_open_reply_idx')) AS building`;
-  if (!index?.valid) {
-    if (index?.building) throw new Error("Mail draft index is being built by another startup; retry startup when it completes");
-    await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_one_open_reply_idx`.simple();
-    await sql`CREATE UNIQUE INDEX CONCURRENTLY drafts_one_open_reply_idx ON mail.drafts (conversation_id)
-      WHERE origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`.simple();
-  }
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_reply_consolidation_idx`.simple();
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_untouched_suggestion_author_idx`.simple();
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.drafts_untouched_suggestion_idx`.simple();
   return sql.begin(async (tx) => {
     await tx`SET LOCAL lock_timeout = '10s'`;
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.migrations', 0))`;

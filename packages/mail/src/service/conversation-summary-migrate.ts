@@ -1,8 +1,9 @@
 import type { sql } from "bun";
+import { applyIfMissing } from "../migrate-catalog";
 
 /** Additions shared by startup and schema fixtures; all statements are idempotent. */
 export const migrateConversationSummaries = async (db: typeof sql): Promise<void> => {
-  await db`ALTER TABLE mail.conversations ADD COLUMN IF NOT EXISTS summary_metadata jsonb NOT NULL DEFAULT '{}'::jsonb`;
+  await applyIfMissing(db, `ALTER TABLE mail.conversations ADD COLUMN IF NOT EXISTS summary_metadata jsonb NOT NULL DEFAULT '{}'::jsonb`);
   // Older writers recorded the actor and exact summary revision in activity, including clears.
   await db`WITH latest AS (
     SELECT candidate.id AS conversation_id, a.actor_kind, a.actor_id, a.created_at,
