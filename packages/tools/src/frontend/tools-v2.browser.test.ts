@@ -93,6 +93,67 @@ for (const name of SCREENS)
     }
   }, 60_000);
 
+// break-ui: the realistic worst cases through the harness address (the same props the server passes), never a switch
+// in the product. A long task typed into the search, a search with exactly one hit, the English catalog, and the
+// longest password the generator allows with symbols. Each holds at 390 and 1440 px without sideways scrolling.
+const worstCases: { name: string; query: string; act?: (page: Page) => Promise<void>; expect?: (page: Page) => Promise<void> }[] = [
+  {
+    name: "worst-search-long",
+    query: "screen=catalog&q=" + encodeURIComponent("Rechnung als PDF mit eigenem Briefkopf und Fußzeile erstellen"),
+  },
+  {
+    name: "worst-search-one",
+    query: "screen=catalog&q=uuid",
+    expect: async (page) => void (await page.getByText("1 passendes Werkzeug", { exact: true }).waitFor()),
+  },
+  { name: "worst-catalog-en", query: "screen=catalog&locale=en" },
+  {
+    name: "worst-password-64",
+    query: "screen=password",
+    act: async (page) => {
+      await page
+        .getByRole("spinbutton", { name: /Zeichen/ })
+        .or(page.getByRole("textbox", { name: /Zeichen/ }))
+        .first()
+        .fill("64");
+      // the switch draws its own mark over its input: press its words, as a person does
+      await page.getByText("Symbole", { exact: true }).click();
+      await page.getByRole("switch", { name: "Symbole" }).and(page.locator(":checked")).waitFor({ state: "attached" });
+    },
+    // the whole password stands in its drawing: nothing cut at its edge, nothing to scroll
+    expect: async (page) => {
+      await page.waitForFunction(() => {
+        const element = document.querySelector('[data-k2-part="Canvas"] > div');
+        return element !== null && element.textContent?.length === 64 && element.scrollHeight <= element.clientHeight;
+      });
+    },
+  },
+];
+for (const worst of worstCases)
+  test(`break-ui: ${worst.name} holds at 390 and 1440 px`, async () => {
+    for (const width of [390, 1440]) {
+      const page = await browser.newPage({ viewport: { width, height: width < 600 ? 844 : 900 } });
+      try {
+        const errors = pageErrors(page);
+        await page.goto(`${server.url.href}?${worst.query}`);
+        await page.locator('[data-k2-part="Workspace"]').waitFor();
+        await worst.act?.(page);
+        await worst.expect?.(page);
+        const sideways = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+        expect({ width, errors, sideways, ...(await check(page, worst.name, width)) }).toEqual({
+          width,
+          errors: [],
+          sideways: false,
+          loaders: 0,
+          problems: null,
+          layout: [],
+        });
+      } finally {
+        await page.close();
+      }
+    }
+  }, 60_000);
+
 test("the catalog finds a tool by task and keeps the search in the address", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {

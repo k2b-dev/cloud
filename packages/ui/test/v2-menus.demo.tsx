@@ -1,5 +1,5 @@
-import { createSignal, For } from "solid-js";
-import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "../src/v2";
+import { createSignal, For, Show } from "solid-js";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, Text, useToast, Workspace } from "../src/v2";
 
 // Menu, Popover and Toast of v2 in the places the mockup puts them: the "…" of a head (07-formular-menue), a filter
 // panel and a hint in the same head, a context menu and a "…" on rows, a tab "Weitere" that opens the views without a
@@ -136,6 +136,23 @@ export function Demo() {
               >
                 Antwort
               </Menu>
+              {/* a panel behind a button without words: it stays in the head on the phone, as the "…" does */}
+              <Popover
+                icon="eye"
+                label="Vorschau"
+                title="Vorschau"
+                content={
+                  <>
+                    <Check name="images" label="Bilder zeigen" checked={urgent()} onChange={setUrgent} />
+                    {/* the panel gets shorter when the box is ticked: its sheet must keep its place on the bottom */}
+                    <Show when={!urgent()}>
+                      <Text>Bilder in Nachrichten werden erst nach einem Klick geladen.</Text>
+                      <Text>So erfährt kein Absender, wann eine Nachricht geöffnet wurde.</Text>
+                      <Text>Absender, denen du vertraust, lassen sich einzeln freigeben.</Text>
+                    </Show>
+                  </>
+                }
+              />
               <Menu label="Weitere Aktionen" items={head()} />
             </>
           }

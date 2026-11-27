@@ -1,8 +1,8 @@
 import { encoding, i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Choice, Empty, Facts, Field, Input, Pane, Section } from "@k2b/ui/v2";
-import { createMemo, createSignal, Show } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import { Choice, Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { createMemo, createSignal } from "solid-js";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
 type Direction = "encode" | "decode";
@@ -85,52 +85,64 @@ export default function EncodingTool() {
   const outputLabel = () => (direction() === "encode" ? t().formatOutputLabel({ format: FORMAT_NAMES[format()] }) : t().decodedText);
   return (
     <ToolsScreen tool="encoding">
-      <Pane label={w().result} scrollKey="tools-encoding">
-        <Band label={w().settings}>
-          <Field.Row>
-            <Field label={w().direction}>
-              <Choice
-                name="encoding-direction"
-                value={direction()}
-                onChange={(value) => setDirection(value as Direction)}
-                options={[
-                  { value: "encode", label: t().encode },
-                  { value: "decode", label: t().decode },
-                ]}
-              />
-            </Field>
-            <Field label={w().format}>
-              <Choice
-                name="encoding-format"
-                value={format()}
-                onChange={(value) => setFormat(value as Format)}
-                options={[
-                  { value: "base64", label: "Base64" },
-                  { value: "hex", label: "Hex" },
-                  { value: "base32", label: "Base32" },
-                ]}
-              />
-            </Field>
-          </Field.Row>
-          <Field
-            label={direction() === "encode" ? t().inputTextLabel : t().formatInputLabel({ format: FORMAT_NAMES[format()] })}
-            hint={direction() === "encode" ? t().encodeDescription : t().decodeDescription({ format: FORMAT_NAMES[format()] })}
-            error={result().error}
-          >
-            <Input
-              multiline
-              placeholder={direction() === "encode" ? t().encodePlaceholder : t().decodePlaceholder}
-              value={input()}
-              onInput={setInput}
-            />
-          </Field>
-        </Band>
-        <Section icon="transform" title={w().result}>
-          <Show when={result().output} fallback={<Empty icon="transform" text={w().nothingYet} />}>
-            <Facts items={[{ label: outputLabel(), value: result().output, mono: true, copy: result().output }]} />
-          </Show>
-        </Section>
-      </Pane>
+      <ToolPanes
+        kind="converter"
+        scrollKey="tools-encoding"
+        input={{
+          label: w().input,
+          children: (
+            <>
+              <Field.Row>
+                <Field label={w().direction}>
+                  <Choice
+                    name="encoding-direction"
+                    value={direction()}
+                    onChange={(value) => setDirection(value as Direction)}
+                    options={[
+                      { value: "encode", label: t().encode },
+                      { value: "decode", label: t().decode },
+                    ]}
+                  />
+                </Field>
+                <Field label={w().format}>
+                  <Choice
+                    name="encoding-format"
+                    value={format()}
+                    onChange={(value) => setFormat(value as Format)}
+                    options={[
+                      { value: "base64", label: "Base64" },
+                      { value: "hex", label: "Hex" },
+                      { value: "base32", label: "Base32" },
+                    ]}
+                  />
+                </Field>
+              </Field.Row>
+              <Field
+                label={direction() === "encode" ? t().inputTextLabel : t().formatInputLabel({ format: FORMAT_NAMES[format()] })}
+                hint={direction() === "encode" ? t().encodeDescription : t().decodeDescription({ format: FORMAT_NAMES[format()] })}
+                error={result().error}
+              >
+                <Input
+                  multiline
+                  placeholder={direction() === "encode" ? t().encodePlaceholder : t().decodePlaceholder}
+                  value={input()}
+                  onInput={setInput}
+                />
+              </Field>
+            </>
+          ),
+        }}
+        result={{
+          label: w().result,
+          children: (
+            <>
+              <Section icon="transform" title={w().result} summary={result().output ? undefined : w().nothingYet}>
+                <Facts items={[{ label: outputLabel(), value: result().output || "–", mono: true, copy: result().output || undefined }]} />
+              </Section>
+            </>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }

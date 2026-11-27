@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Choice, Field, Input, Pane, Section, Text } from "@k2b/ui/v2";
+import { Band, Button, Choice, Field, Input, Section, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onMount } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -209,37 +209,53 @@ export default function LoremIpsumGenerator() {
         </>
       }
     >
-      <Pane label={w().result} scrollKey="tools-lorem">
-        <Band label={w().settings}>
-          <Field label={w().kind}>
-            <Choice
-              name="lorem-mode"
-              value={mode()}
-              onChange={(value) => setMode(value as Mode)}
-              options={[
-                { value: "paragraphs", label: t().paragraphs },
-                { value: "sentences", label: t().sentences },
-                { value: "words", label: t().words },
-              ]}
-            />
-          </Field>
-          <Field label={t().count} hint={countDescription()} optional={`1–${maxCount()}`}>
-            <Input
-              type="number"
-              min={1}
-              max={maxCount()}
-              value={String(count())}
-              onInput={(value) => {
-                const next = Number.parseInt(value, 10);
-                if (Number.isFinite(next)) setCount(Math.min(maxCount(), Math.max(1, next)));
-              }}
-            />
-          </Field>
-        </Band>
-        <Section icon="align-left" title={w().result}>
-          <For each={paragraphs()}>{(paragraph) => <Text type="body">{paragraph}</Text>}</For>
-        </Section>
-      </Pane>
+      <ToolPanes
+        kind="generator"
+        scrollKey="tools-lorem"
+        input={{
+          label: w().settings,
+          children: (
+            <>
+              <Band label={w().settings}>
+                <Field label={w().kind}>
+                  <Choice
+                    name="lorem-mode"
+                    value={mode()}
+                    onChange={(value) => setMode(value as Mode)}
+                    options={[
+                      { value: "paragraphs", label: t().paragraphs },
+                      { value: "sentences", label: t().sentences },
+                      { value: "words", label: t().words },
+                    ]}
+                  />
+                </Field>
+                <Field label={t().count} hint={countDescription()} optional={`1–${maxCount()}`}>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={maxCount()}
+                    value={String(count())}
+                    onInput={(value) => {
+                      const next = Number.parseInt(value, 10);
+                      if (Number.isFinite(next)) setCount(Math.min(maxCount(), Math.max(1, next)));
+                    }}
+                  />
+                </Field>
+              </Band>
+            </>
+          ),
+        }}
+        result={{
+          label: w().result,
+          children: (
+            <>
+              <Section icon="align-left" title={w().result}>
+                <For each={paragraphs()}>{(paragraph) => <Text type="body">{paragraph}</Text>}</For>
+              </Section>
+            </>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }

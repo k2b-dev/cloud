@@ -1,8 +1,8 @@
 import { crypto, i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Empty, Facts, Field, Input, Pane, Section } from "@k2b/ui/v2";
-import { createEffect, createSignal, Show } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import { Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { createEffect, createSignal } from "solid-js";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
 export const hashMessages = i18n.define({
@@ -41,23 +41,38 @@ export default function HashGenerator() {
   });
   return (
     <ToolsScreen tool="hash">
-      <Pane label={w().result} scrollKey="tools-hash">
-        <Band label={w().input}>
-          <Field label={t().inputLabel} hint={t().inputDescription}>
-            <Input multiline placeholder={t().inputPlaceholder} value={input()} onInput={setInput} />
-          </Field>
-        </Band>
-        <Section icon="hash" title={w().result}>
-          <Show when={input()} fallback={<Empty icon="hash" text={w().nothingYet} />}>
-            <Facts
-              items={[
-                { label: "SHA-256", value: sha256() || "…", mono: true, copy: sha256() || undefined },
-                { label: "FNV-1a", value: fnv1a(), hint: t().notCryptographic, mono: true, copy: fnv1a() },
-              ]}
-            />
-          </Show>
-        </Section>
-      </Pane>
+      <ToolPanes
+        kind="converter"
+        scrollKey="tools-hash"
+        input={{
+          label: w().input,
+          children: (
+            <Field label={t().inputLabel} hint={t().inputDescription}>
+              <Input multiline placeholder={t().inputPlaceholder} value={input()} onInput={setInput} />
+            </Field>
+          ),
+        }}
+        result={{
+          label: w().result,
+          children: (
+            <Section icon="hash" title={w().result} summary={input() ? undefined : w().nothingYet}>
+              {/* before any text, one quiet line where the result will stand */}
+              <Facts
+                items={[
+                  { label: "SHA-256", value: input() ? sha256() || "…" : "–", mono: true, copy: (input() && sha256()) || undefined },
+                  {
+                    label: "FNV-1a",
+                    value: input() ? fnv1a() : "–",
+                    hint: t().notCryptographic,
+                    mono: true,
+                    copy: input() ? fnv1a() : undefined,
+                  },
+                ]}
+              />
+            </Section>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }

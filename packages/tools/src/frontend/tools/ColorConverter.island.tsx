@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Field, Input, Pane, Section } from "@k2b/ui/v2";
+import { Band, Button, Canvas, Facts, Field, Input, Section } from "@k2b/ui/v2";
 import { batch, createSignal } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -12,6 +12,10 @@ export const colorMessages = i18n.define({
     en: {
       hint: "Edit any field and the other formats update automatically.",
       colorPicker: "Color Picker",
+      contrast: "Contrast",
+      onWhite: "On white",
+      onBlack: "On black",
+      ratio: ({ ratio, grade }: { ratio: string; grade: string }) => `${ratio} : 1 · ${grade}`,
       hexDescription: "6-digit hex color code",
       rgbDescription: "Red, Green, Blue — each 0–255",
       hslDescription: "Hue 0–360, Saturation 0–100%, Lightness 0–100%",
@@ -22,6 +26,10 @@ export const colorMessages = i18n.define({
     de: {
       hint: "Ändere ein Feld und die anderen Formate werden automatisch aktualisiert.",
       colorPicker: "Farbauswahl",
+      contrast: "Kontrast",
+      onWhite: "Auf Weiß",
+      onBlack: "Auf Schwarz",
+      ratio: ({ ratio, grade }) => `${ratio} : 1 · ${grade}`,
       hexDescription: "6-stelliger Hex-Farbcode",
       rgbDescription: "Rot, Grün und Blau, jeweils 0 bis 255",
       hslDescription: "Farbton 0 bis 360, Sättigung und Helligkeit 0 bis 100 %",
@@ -106,6 +114,21 @@ const parseHsl = (s: string): [number, number, number] | null => {
 
 type Source = "hex" | "rgb" | "hsl" | "picker";
 
+/** Relative luminance (WCAG 2.x) of an sRGB colour. */
+export const luminance = ([r, g, b]: [number, number, number]): number => {
+  const channel = (value: number) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+};
+
+/** The WCAG contrast ratio between two luminances, and the level normal text reaches (AAA 7, AA 4.5, else none). */
+export const contrast = (a: number, b: number) => {
+  const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  return { ratio, grade: ratio >= 7 ? "AAA" : ratio >= 4.5 ? "AA" : "–" };
+};
+
 export default function ColorConverter() {
   const locale = useLocale();
   const t = () => colorMessages.resolve([locale()]).t;
@@ -187,73 +210,101 @@ export default function ColorConverter() {
 
   const copy = useToolCopy();
   const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
+  const number = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }).format(value);
+  // against white (luminance 1) or black (0); an unreadable colour says nothing
+  const ratioText = (ground: number) => {
+    const rgb = hexToRgb(pickerColor());
+    if (!rgb) return "–";
+    const result = contrast(luminance(rgb), ground);
+    return t().ratio({ ratio: number(result.ratio), grade: result.grade });
+  };
   const copyButton = (value: () => string) => <Button variant="ghost" icon="copy" label={w().copy} onClick={() => void copy(value())} />;
   return (
     <ToolsScreen tool="color">
-      <Pane label={w().result} scrollKey="tools-color">
-        <Section icon="palette" title={t().colorPicker} summary={t().hint}>
-          {/* k2b-ui gap: v2 has no colour picker; the swatch opens the browser's own picker until it has one. */}
-          <Canvas label={t().colorPicker} height={96}>
-            <label style={{ display: "block", height: "100%", margin: "0 20px", position: "relative", cursor: "pointer" }}>
-              <span
-                style={{
-                  display: "block",
-                  height: "100%",
-                  "border-radius": "8px",
-                  border: "1px solid rgb(0 0 0 / 0.1)",
-                  "background-color": pickerColor(),
-                }}
+      <ToolPanes
+        kind="generator"
+        scrollKey="tools-color"
+        result={{
+          label: w().result,
+          children: (
+            <Section icon="palette" title={t().colorPicker} summary={t().hint}>
+              {/* k2b-ui gap: v2 has no colour picker; the swatch opens the browser's own picker until it has one. */}
+              <Canvas label={t().colorPicker} height={240}>
+                <label style={{ display: "block", height: "100%", margin: "0 20px", position: "relative", cursor: "pointer" }}>
+                  <span
+                    style={{
+                      display: "block",
+                      height: "100%",
+                      "border-radius": "8px",
+                      border: "1px solid rgb(0 0 0 / 0.1)",
+                      "background-color": pickerColor(),
+                    }}
+                  />
+                  <input
+                    type="color"
+                    aria-label={t().colorPicker}
+                    value={pickerColor()}
+                    onInput={(event) => {
+                      setPickerColor(event.currentTarget.value);
+                      syncFrom("picker");
+                    }}
+                    style={{ position: "absolute", inset: "0", width: "100%", height: "100%", opacity: "0", cursor: "pointer" }}
+                  />
+                </label>
+              </Canvas>
+              {/* what the colour is good for: its contrast to white and black text grounds, as WCAG counts it */}
+              <Facts
+                items={[
+                  { label: t().onWhite, value: ratioText(1) },
+                  { label: t().onBlack, value: ratioText(0) },
+                ]}
               />
-              <input
-                type="color"
-                aria-label={t().colorPicker}
-                value={pickerColor()}
-                onInput={(event) => {
-                  setPickerColor(event.currentTarget.value);
-                  syncFrom("picker");
-                }}
-                style={{ position: "absolute", inset: "0", width: "100%", height: "100%", opacity: "0", cursor: "pointer" }}
-              />
-            </label>
-          </Canvas>
-        </Section>
-        <Band label={w().input}>
-          <Field label="HEX" hint={t().hexDescription} error={hexError()}>
-            <Input
-              icon="hash"
-              placeholder="#000000"
-              value={hex()}
-              end={copyButton(hex)}
-              onInput={(value) => {
-                setHex(value);
-                syncFrom("hex");
-              }}
-            />
-          </Field>
-          <Field label="RGB" hint={t().rgbDescription} error={rgbError()}>
-            <Input
-              placeholder="255, 255, 255"
-              value={rgb()}
-              end={copyButton(() => `rgb(${rgb()})`)}
-              onInput={(value) => {
-                setRgb(value);
-                syncFrom("rgb");
-              }}
-            />
-          </Field>
-          <Field label="HSL" hint={t().hslDescription} error={hslError()}>
-            <Input
-              placeholder="360, 100%, 100%"
-              value={hsl()}
-              end={copyButton(() => `hsl(${hsl()})`)}
-              onInput={(value) => {
-                setHsl(value);
-                syncFrom("hsl");
-              }}
-            />
-          </Field>
-        </Band>
-      </Pane>
+            </Section>
+          ),
+        }}
+        input={{
+          label: w().input,
+          children: (
+            // k2b-ui gap: a v2 Input for technical values in monospace (HEX, RGB, HSL); the fields stay proportional
+            <Band label={w().input}>
+              <Field label="HEX" hint={t().hexDescription} error={hexError()}>
+                <Input
+                  icon="hash"
+                  placeholder="#000000"
+                  value={hex()}
+                  end={copyButton(hex)}
+                  onInput={(value) => {
+                    setHex(value);
+                    syncFrom("hex");
+                  }}
+                />
+              </Field>
+              <Field label="RGB" hint={t().rgbDescription} error={rgbError()}>
+                <Input
+                  placeholder="255, 255, 255"
+                  value={rgb()}
+                  end={copyButton(() => `rgb(${rgb()})`)}
+                  onInput={(value) => {
+                    setRgb(value);
+                    syncFrom("rgb");
+                  }}
+                />
+              </Field>
+              <Field label="HSL" hint={t().hslDescription} error={hslError()}>
+                <Input
+                  placeholder="360, 100%, 100%"
+                  value={hsl()}
+                  end={copyButton(() => `hsl(${hsl()})`)}
+                  onInput={(value) => {
+                    setHsl(value);
+                    syncFrom("hsl");
+                  }}
+                />
+              </Field>
+            </Band>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }
