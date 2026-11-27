@@ -3,9 +3,9 @@ title: Mail capability targets
 navTitle: Mail capabilities
 section: Platform services
 order: 554
-description: Address Mail Actions at one mailbox and keep their contained resources in that mailbox.
+description: Address Mail Actions at one mailbox, keep their contained resources in that mailbox, and offer attachments in the file chooser.
 tags: [mail, capabilities, agents]
-updated: 2026-11-02
+updated: 2026-11-27
 ---
 
 # Mail capability targets
@@ -109,3 +109,56 @@ personal automation mandate rules continue to apply.
 
 For incoming-message handlers, keyword limits, catch-up and previews, see
 [Mail automations with Code](/en/docs/platform/mail-code-automations).
+
+## Offer attachments in the file chooser
+
+Mail is a read-only source named **Mail** in every file chooser, beside
+**This device** and Files. Someone can attach a file they once received by
+mail without downloading and uploading it again. Mail declares
+`fileProvider: { list: "attachment.files.list", read: "attachment.content.read" }`
+and has no `save`. See [File providers](/en/docs/platform/file-providers).
+
+The source has these folders:
+
+1. One folder for each mailbox the person can read and has not hidden. The
+   folder name is the mailbox's address, or the mailbox name if it has no
+   connection.
+2. Years, then months, newest first. Month names use the person's language.
+3. One folder for each sender in that month, named `Name (address)` or by
+   address only. Mail without a sender is under **Unknown sender**.
+4. The attachments from that sender in that month, newest first.
+
+Inline images that the message body references by Content-ID are not in the
+source. Images smaller than 4 KiB are not in the source either, because they
+are usually signature logos. The Mail list's image previews use the same
+rule. Months are in UTC, because capabilities do not know the person's time
+zone. Attachments of a message that is no longer in a folder are not in the
+source.
+
+Access follows the Mail list. A person with access to the whole mailbox sees
+all its attachments. A person with assigned access sees only the attachments
+of their assigned conversations, and their years, months and senders. A
+person who reads one mailbox never sees the folders of another mailbox.
+Credential scopes and resource-bound service accounts limit the source the
+same way as other Mail reads. `attachment.content.read` checks access again
+for each file. It streams the stored attachment with a limit of 100 MiB.
+
+Each folder is one indexed query with keyset pagination of up to 100
+entries. A mailbox folder costs six statements, whatever the page size: one
+to find the mailbox, four for access, and one for the folder.
+
+### Upgrade
+
+The upgrade adds the table `mail.attachment_files` and its indexes. It
+changes no existing data. Mail fills the table when it stores a message.
+After start, Mail adds the attachments that were stored before the upgrade
+in a background job, 100 attachments per transaction. The job saves its
+position in `mail.attachment_files_backfill`. A restart or a second replica
+continues from that position. Until the job is done, the source shows only
+part of the older attachments.
+
+A replica that still runs an older image does not add attachments to the
+table. Upgrade all Mail replicas together. If an older replica received
+mail after the job finished, delete the single row of
+`mail.attachment_files_backfill`. Mail then runs the job again on its next
+start. A new run adds only the missing attachments.

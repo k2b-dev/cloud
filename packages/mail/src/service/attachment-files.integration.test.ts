@@ -196,6 +196,9 @@ suite("Mail attachments as a file-provider source", () => {
     } while (cursor && pages.length < 20);
     return pages;
   };
+  // report.pdf and photo.jpg share one message and date; their order between them is the attachment ID's.
+  const aliceFiles = ["photo.jpg", "report.pdf", "a3.txt", "a2.txt", "a1.txt"];
+  const inDateOrder = (names: string[]) => [...names.slice(0, 2).sort(), ...names.slice(2)];
   const alice: Address = { name: "Alice Example", address: "alice@example.test" };
   const bob: Address = { name: "", address: "bob@example.test" };
   let march = "";
@@ -310,8 +313,13 @@ suite("Mail attachments as a file-provider source", () => {
 
   test("a sender's folder lists their attachments newest first, without inline images or signature logos", async () => {
     const page = unwrap(await list(reader, { parent: aliceMarch }));
-    expect(page.items.map((entry) => entry.name)).toEqual(["report.pdf", "photo.jpg", "a3.txt", "a2.txt", "a1.txt"]);
-    expect(page.items[0]).toMatchObject({ kind: "file", size: 6000, mediaType: "application/pdf", updatedAt: "2026-03-10T09:00:00.000Z" });
+    expect(inDateOrder(page.items.map((entry) => entry.name))).toEqual(aliceFiles);
+    expect(page.items.find((entry) => entry.name === "report.pdf")).toMatchObject({
+      kind: "file",
+      size: 6000,
+      mediaType: "application/pdf",
+      updatedAt: "2026-03-10T09:00:00.000Z",
+    });
     const stored = await sql<{ filename: string }[]>`
       SELECT a.filename FROM mail.attachments a JOIN mail.message_contents mc ON mc.id = a.message_id
       WHERE mc.mailbox_id = ${mailbox.id}::uuid ORDER BY a.filename
@@ -325,13 +333,10 @@ suite("Mail attachments as a file-provider source", () => {
     const pages = await all(reader, aliceMarch, 2);
     expect(pages.map((page) => page.items.length)).toEqual([2, 2, 1]);
     expect(pages.at(-1)?.next).toBeNull();
-    expect(pages.flatMap((page) => page.items.map((entry) => entry.name))).toEqual([
-      "report.pdf",
-      "photo.jpg",
-      "a3.txt",
-      "a2.txt",
-      "a1.txt",
-    ]);
+    // The pages hold the unpaged listing in its order, each file once.
+    const unpaged = unwrap(await list(reader, { parent: aliceMarch })).items.map((entry) => entry.id);
+    expect(pages.flatMap((page) => page.items.map((entry) => entry.id))).toEqual(unpaged);
+    expect(inDateOrder(pages.flatMap((page) => page.items.map((entry) => entry.name)))).toEqual(aliceFiles);
     const senders = await all(reader, march, 1);
     expect(senders.flatMap((page) => page.items.map((entry) => entry.name))).toEqual([
       "Alice Example (alice@example.test)",
@@ -345,7 +350,7 @@ suite("Mail attachments as a file-provider source", () => {
   test("an assigned-only reader sees only the attachments of their conversations", async () => {
     expect(await items(assigned, { parent: mailbox.shortId })).toEqual(["2026"]);
     expect(await items(assigned, { parent: march })).toEqual(["Alice Example (alice@example.test)"]);
-    expect(await items(assigned, { parent: aliceMarch })).toEqual(["report.pdf", "photo.jpg"]);
+    expect(inDateOrder(await items(assigned, { parent: aliceMarch }))).toEqual(["photo.jpg", "report.pdf"]);
     expect(await items(assigned, { parent: bobMarch })).toEqual([]);
     expect(await items(assigned, { parent: `${mailbox.shortId}/2025/12/-` })).toEqual([]);
   });
@@ -355,7 +360,13 @@ suite("Mail attachments as a file-provider source", () => {
       expect(await list(reader, { parent })).toMatchObject({ ok: false, error: { status: 404 } });
     }
     expect(await list(stranger, { parent: mailbox.shortId })).toMatchObject({ ok: false, error: { status: 404 } });
-    for (const parent of [`${mailbox.shortId}/26`, `${mailbox.shortId}/2026/13`, `${mailbox.shortId}/2026/03/x`, "../etc"]) {
+    for (const parent of [
+      `${mailbox.shortId}/26`,
+      `${mailbox.shortId}/0000`,
+      `${mailbox.shortId}/2026/13`,
+      `${mailbox.shortId}/2026/03/x`,
+      "../etc",
+    ]) {
       expect(await list(reader, { parent })).toMatchObject({ ok: false, error: { status: 404 } });
     }
   });
@@ -365,9 +376,9 @@ suite("Mail attachments as a file-provider source", () => {
       mailCapabilities.queries["attachment.files.list"].run(FileProviderListInputSchema.parse(input), capabilityContext(user));
     const listed = await run(reader, { parent: aliceMarch, limit: 1 });
     if (!listed.ok) throw new Error(listed.error.message);
-    expect(listed.data.data.items.map((entry) => entry.name)).toEqual(["report.pdf"]);
+    expect(listed.data.data.items).toHaveLength(1);
     expect(listed.data.page?.hasMore).toBe(true);
-    const file = listed.data.data.items[0]!;
+    const file = unwrap(await list(reader, { parent: aliceMarch })).items.find((entry) => entry.name === "report.pdf")!;
     const read = mailCapabilities.queries["attachment.content.read"];
     const opened = await read.run({ id: file.id }, capabilityContext(reader));
     if (!opened.ok) throw new Error(opened.error.message);
@@ -445,7 +456,7 @@ suite("Mail attachments as a file-provider source", () => {
     const first = await backfillAttachmentFiles();
     expect(first.completed).toBe(true);
     expect(await snapshot()).toEqual(before);
-    expect(await items(reader, { parent: aliceMarch })).toEqual(["report.pdf", "photo.jpg", "a3.txt", "a2.txt", "a1.txt"]);
+    expect(inDateOrder(await items(reader, { parent: aliceMarch }))).toEqual(aliceFiles);
     // A finished backfill is one read; a reset one runs again over indexed rows without adding any.
     expect(await backfillAttachmentFiles()).toEqual(first);
     await sql`DELETE FROM mail.attachment_files_backfill`;

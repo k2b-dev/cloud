@@ -15,7 +15,7 @@ type SqlFragment = Bun.SQL.Query<unknown>;
  * which `attachment.content.read` opens with the same access rule.
  */
 const MAILBOX = "[0-9A-Za-z]{6}";
-const FOLDER = new RegExp(`^(${MAILBOX})(?:/(\\d{4})(?:/(0[1-9]|1[0-2])(?:/(-|e:[^/]{1,1024}))?)?)?$`);
+const FOLDER = new RegExp(`^(${MAILBOX})(?:/([1-9]\\d{3})(?:/(0[1-9]|1[0-2])(?:/(-|e:[^/]{1,1024}))?)?)?$`);
 const UNKNOWN_SENDER = "-";
 
 type Folder =
@@ -186,27 +186,59 @@ const listYears = async (
 ): Promise<Result<FileProviderListData>> => {
   const cursor = readCursor(YearCursor, input.cursor);
   if (!cursor.ok) return cursor;
-  const before = cursor.data?.year ?? null;
-  const rows = await sql<{ year: number; latest: Date }[]>`
-    SELECT extract(year FROM f.month)::int AS year, max(f.internal_date) AS latest
-    FROM mail.attachment_files f
-    WHERE f.mailbox_id = ${mailboxId}::uuid
-      AND (${before}::int IS NULL OR f.month < make_date(${before}::int, 1, 1))
-      AND ${visibleFile(access)}
-    GROUP BY 1
-    ORDER BY 1 DESC
-    LIMIT ${input.limit + 1}
-  `;
+  const before = cursor.data ? `${String(cursor.data.year).padStart(4, "0")}-01-01` : "infinity";
+  const rows = await monthsWithFiles(mailboxId, access, { from: "-infinity", before, step: "year", limit: input.limit });
   const shown = rows.slice(0, input.limit);
   const last = shown.at(-1);
   return ok(
     page(
       shown
         .filter((row) => query === null || String(row.year).includes(query))
-        .map((row) => ({ kind: "folder" as const, id: yearId(mailbox, row.year), name: String(row.year), updatedAt: iso(row.latest) })),
+        .map((row) => ({ kind: "folder" as const, id: yearId(mailbox, row.year), name: String(row.year) })),
       rows.length > input.limit && last ? JSON.stringify({ year: last.year }) : null,
     ),
   );
+};
+
+/**
+ * The newest months below `before` that hold a file the reader may see, one per year or per month, at most
+ * `limit + 1`. A loose index scan: each step is one descent of the folder index below the previous hit, so a mailbox
+ * with years of attachments costs one step per year or month, not one row per attachment.
+ */
+const monthsWithFiles = async (
+  mailboxId: string,
+  access: MailboxAccess,
+  range: { from: string; before: string; step: "year" | "month"; limit: number },
+) => {
+  const below = range.step === "year" ? sql`date_trunc('year', found.month)::date` : sql`found.month`;
+  const rows = await sql<{ year: number; month: number }[]>`
+    WITH RECURSIVE found AS (
+      (
+        SELECT f.month, 1 AS depth
+        FROM mail.attachment_files f
+        WHERE f.mailbox_id = ${mailboxId}::uuid AND f.month >= ${range.from}::date AND f.month < ${range.before}::date
+          AND ${visibleFile(access)}
+        ORDER BY f.month DESC
+        LIMIT 1
+      )
+      UNION ALL
+      SELECT (
+        SELECT f.month
+        FROM mail.attachment_files f
+        WHERE f.mailbox_id = ${mailboxId}::uuid AND f.month >= ${range.from}::date AND f.month < ${below}
+          AND ${visibleFile(access)}
+        ORDER BY f.month DESC
+        LIMIT 1
+      ), found.depth + 1
+      FROM found
+      WHERE found.month IS NOT NULL AND found.depth <= ${range.limit}
+    )
+    SELECT extract(year FROM month)::int AS year, extract(month FROM month)::int AS month
+    FROM found
+    WHERE month IS NOT NULL
+    ORDER BY found.month DESC
+  `;
+  return rows;
 };
 
 type Messages = ReturnType<typeof mailCapabilityMessages>;
@@ -221,19 +253,9 @@ const listMonths = async (
 ): Promise<Result<FileProviderListData>> => {
   const cursor = readCursor(MonthCursor, input.cursor);
   if (!cursor.ok) return cursor;
-  const before = cursor.data?.month ?? null;
-  const rows = await sql<{ month: number; latest: Date }[]>`
-    SELECT extract(month FROM f.month)::int AS month, max(f.internal_date) AS latest
-    FROM mail.attachment_files f
-    WHERE f.mailbox_id = ${mailboxId}::uuid
-      AND f.month >= make_date(${folder.year}::int, 1, 1)
-      AND f.month < CASE WHEN ${before}::int IS NULL THEN make_date(${folder.year}::int + 1, 1, 1)
-        ELSE make_date(${folder.year}::int, ${before}::int, 1) END
-      AND ${visibleFile(access)}
-    GROUP BY f.month
-    ORDER BY f.month DESC
-    LIMIT ${input.limit + 1}
-  `;
+  const year = String(folder.year).padStart(4, "0");
+  const before = cursor.data ? `${year}-${pad(cursor.data.month)}-01` : `${String(folder.year + 1).padStart(4, "0")}-01-01`;
+  const rows = await monthsWithFiles(mailboxId, access, { from: `${year}-01-01`, before, step: "month", limit: input.limit });
   const shown = rows.slice(0, input.limit);
   const last = shown.at(-1);
   return ok(
@@ -243,7 +265,6 @@ const listMonths = async (
           kind: "folder" as const,
           id: monthId(folder.mailbox, folder.year, row.month),
           name: t.attachmentMonth({ month: row.month }),
-          updatedAt: iso(row.latest),
         }))
         .filter((entry) => query === null || entry.name.toLowerCase().includes(query.toLowerCase())),
       rows.length > input.limit && last ? JSON.stringify({ month: last.month }) : null,
