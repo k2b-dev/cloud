@@ -178,7 +178,7 @@ export const consume = async (params: {
 export const expireUnissued = async (params: { db: typeof sql; clientId: string; userId: string | null }): Promise<void> => {
   await params.db`
     UPDATE oauth.codes
-    SET expires_at = LEAST(expires_at, now() - INTERVAL '1 second')
+    SET expires_at = LEAST(expires_at, 'epoch'::timestamptz)
     WHERE client_id = ${params.clientId}
       AND (${params.userId}::uuid IS NULL OR user_id = ${params.userId}::uuid)
       AND authority_issued_at IS NULL

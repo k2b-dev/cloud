@@ -15,7 +15,7 @@ import { rejectBrowserSignIn } from "./sign-in";
 export const expireUnissued = async (params: { db: typeof sql; clientId: string; userId: string | null }): Promise<void> => {
   await params.db`
     UPDATE oauth.device_authorizations
-    SET expires_at = LEAST(expires_at, now() - INTERVAL '1 second')
+    SET expires_at = LEAST(expires_at, 'epoch'::timestamptz)
     WHERE client_id = ${params.clientId}
       AND (${params.userId}::uuid IS NULL OR user_id = ${params.userId}::uuid)
       AND status IN ('pending', 'approved', 'consumed')

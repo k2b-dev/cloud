@@ -84,6 +84,13 @@ suiteFor(
         expect(await familyStates(fixture.clientId)).toEqual({ [ada!.userId]: "revoked", [ben!.userId]: "revoked" });
         expect(await oauth.refreshTokens.rotate(ben!.refreshToken, fixture.client)).toEqual({ ok: false, error: "invalid_grant" });
         expect(await open()).toEqual({ codes: 0, devices: 0 });
+        // ended for good: a token exchange whose transaction began long before the disconnect sees them expired too
+        const [earlier] = await sql<{ codes: number; devices: number }[]>`
+          SELECT (SELECT count(*)::int FROM oauth.codes WHERE client_id = ${fixture.clientId} AND expires_at >= now() - INTERVAL '1 day') AS codes,
+            (SELECT count(*)::int FROM oauth.device_authorizations
+              WHERE client_id = ${fixture.clientId} AND expires_at > now() - INTERVAL '1 day') AS devices
+        `;
+        expect(earlier).toEqual({ codes: 0, devices: 0 });
 
         // one audit entry per revoke: who, which client, which person or all
         const events = await sql<
