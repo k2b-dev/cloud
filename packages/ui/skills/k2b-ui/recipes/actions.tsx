@@ -123,7 +123,8 @@ export default function OfferActions(props: Props) {
               </Menu>
               <Menu label="Ansicht" icon="adjustments-horizontal" items={view()} />
               <Menu
-                variant="primary" floats
+                variant="primary"
+                floats
                 icon="plus"
                 items={[
                   { label: "Leeres Angebot", icon: "file" },

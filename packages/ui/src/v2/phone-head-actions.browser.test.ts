@@ -13,7 +13,8 @@ import { describeV2Page } from "./testing";
 // list's head gives way, and its main action is the floating button alone. The search stays in reach of the host.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
-const testCss = "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
+const testCss =
+  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
 let browser: Browser;
 let client: string;
@@ -45,7 +46,8 @@ const withPage = async (kind: "chat" | "list" | "bare" | "detail" | "nofab", wid
   }
 };
 
-const headHeight = (page: Page) => page.evaluate(() => document.querySelector('[data-slot="head"] > .k2-bar')!.getBoundingClientRect().height);
+const headHeight = (page: Page) =>
+  page.evaluate(() => document.querySelector('[data-slot="head"] > .k2-bar')!.getBoundingClientRect().height);
 
 test("390: a chat's head with its menu keeps its height, and the menu opens and acts", async () => {
   await withPage("chat", 390, async (page) => {
@@ -89,7 +91,9 @@ test("390: the host's bar still reaches the folded search of a head that gave wa
   await withPage("list", 390, async (page) => {
     // as Cloud's shell does it (packages/cloud/src/browser/page-search.ts)
     await page.evaluate(() =>
-      document.querySelector<HTMLInputElement>('[data-k2-host-search] [data-slot="head"] [data-k2-part="Input"][data-search] > input')!.focus(),
+      document
+        .querySelector<HTMLInputElement>('[data-k2-host-search] [data-slot="head"] [data-k2-part="Input"][data-search] > input')!
+        .focus(),
     );
     await page.keyboard.type("Angebot");
     await page.keyboard.press("Enter");
