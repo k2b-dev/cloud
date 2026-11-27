@@ -89,9 +89,9 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
   deliveries: {
     // The section head of 27.11. (Valentin, settings-headings-study A): its summary stands right under the title, so the
     // head is 14 px lower than in the mockup and all below it moves 14 px up; its framed buttons of 30 px (taste rule 5)
-    // add 2 px (section 945 → 932, group 185 → 173).
+    // add 2 px (section 945 → 933, group 185 → 173).
     1440: {
-      section: [".k2-sec", "250,101 1125x932"],
+      section: [".k2-sec", "250,101 1125x933"],
       group: [".k2-group", "270,173 1085x254"],
       groupHead: [".k2-gh", "271,174 1083x56"],
       steps: [".k2-steps", "271,274 1083x72"],
@@ -105,7 +105,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down; the section head of
       // 27.11. is 14 px lower (its summary right under the title), so all below it moves 14 px up; its two framed buttons
       // with their words stand under the summary on the phone (taste rule 5), 42 px
-      section: [".k2-sec", "0,101 390x1448"],
+      section: [".k2-sec", "0,101 390x1449"],
       group: [".k2-group", "16,233 358x382"],
       groupHead: [".k2-gh", "17,234 356x84"],
       steps: [".k2-steps", "17,382 356x148"],

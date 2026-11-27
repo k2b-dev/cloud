@@ -136,7 +136,7 @@ test("1440 px, a settings section in a pane of 420 px: A, the pane decides and n
   });
 });
 
-test("1440 px, a section that holds a table keeps A and its full width", async () => {
+test("1440 px, a section that holds a large table keeps A and its full width", async () => {
   await withPage("detail", 1440, async (page) => {
     const found = await shape(page);
     expectA(found);

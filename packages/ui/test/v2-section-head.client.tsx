@@ -5,7 +5,7 @@ import { List, Pane, Row, Section, Table, Text, Workspace } from "../src/v2";
 // - `form`: a settings screen whose sections are B where the pane is wide and A where it is narrow, then a list
 //   and a table of their own, whose rows draw the subtle lines;
 // - `narrow`: the same form section in a pane of 420 px beside another, at a wide window (A: the container decides);
-// - `detail`: a detail page whose one section holds a table (A at every width, its full width, no line under it).
+// - `detail`: a detail page whose one section holds a large table (A at every width, its full width, no line under it).
 
 declare global {
   interface Window {
@@ -85,6 +85,7 @@ render(
           >
             <Table
               label="Aufgaben"
+              sticky
               rows={[{ name: "Quittung", due: "18. Nov." }]}
               columns={[
                 { title: "Aufgabe", cell: (row) => row.name },
