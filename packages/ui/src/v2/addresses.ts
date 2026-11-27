@@ -5,6 +5,7 @@
  * (`Berg, Anna <a@b.example>`); a space ends a bare address. A quote or a `<` that is never closed holds the rest of
  * the text, which is then no address and stays. The time grows with the length of the text, never faster.
  */
+import { addressOf } from "./address-of";
 
 export type ScannedAddresses = {
   /** The addresses in their display form (`Name <a@b.example>` or `a@b.example`), in their order. */
@@ -18,11 +19,7 @@ const separator = (c: string) => c === "," || c === ";" || c === "\n" || c === "
 const hard = (c: string) => c === ";" || c === "\n" || c === "\r";
 const space = (c: string) => c === " " || c === "\t";
 
-/** The address of a display form: what stands in `<…>`, or the whole. */
-export const addressOf = (display: string): string => {
-  const open = display.lastIndexOf("<");
-  return (open >= 0 && display.endsWith(">") ? display.slice(open + 1, -1) : display).trim();
-};
+export { addressOf };
 
 /** Whether a text is one address: a local part, an @ and a domain with a dot, no spaces, quotes or brackets. */
 export const isAddress = (text: string): boolean => {
