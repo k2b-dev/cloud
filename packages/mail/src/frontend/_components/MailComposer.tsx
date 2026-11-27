@@ -467,6 +467,19 @@ export default function MailComposer(props: {
       ? props.host.openDraft(draftId)
       : leaveTo(mailDraftHref(props.mailboxId, draftId, props.returnHref, { popout: props.popout }));
   const sharedT = () => mailSharedDraftMessages.resolve([locale()]).t;
+  /** Where the device's unsent text went, as the server answered. */
+  const restNoticeText = () => {
+    const current = sharedState();
+    if (current?.restCopied === "open") return sharedT().restCopied;
+    if (current?.restCopied) return current.recoveryDraft ? sharedT().restCopiedClosedOther : sharedT().restCopiedClosed;
+    return current?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged;
+  };
+  /** A kept copy opens the ordinary draft that holds it; only a recovered draft is a Rest draft. */
+  const restNoticeAction = () => {
+    const current = sharedState();
+    if (!current?.recoveryDraft) return sharedT().reopen;
+    return current.restCopied ? sharedT().openDraft : sharedT().openRest;
+  };
   onBeforeLeave((event) => {
     const current = sharedState();
     if (!current || (!current.rejectedEdit && !current.structuring && (!current.dirty || (current.remembering && current.locallySaved))))
@@ -2315,20 +2328,22 @@ export default function MailComposer(props: {
             />
           )}
         </Show>
-        <Show when={sharedState()?.recoveryDraft || (sharedState()?.restUnchanged && !ownSendCloses())}>
+        <Show when={sharedState()?.recoveryDraft || sharedState()?.restCopied || (sharedState()?.restUnchanged && !ownSendCloses())}>
           <div class="mail-inline-draft-notice" data-tone="neutral" role="status">
-            <span class="min-w-0 flex-1">{sharedState()?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged}</span>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                const recovery = sharedState()?.recoveryDraft;
-                if (recovery) openOtherDraft(recovery.id);
-                else window.location.reload();
-              }}
-            >
-              {sharedState()?.recoveryDraft ? sharedT().openRest : sharedT().reopen}
-            </Button>
+            <span class="min-w-0 flex-1">{restNoticeText()}</span>
+            <Show when={sharedState()?.restCopied !== "closed"}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  const recovery = sharedState()?.recoveryDraft;
+                  if (recovery) openOtherDraft(recovery.id);
+                  else window.location.reload();
+                }}
+              >
+                {restNoticeAction()}
+              </Button>
+            </Show>
           </div>
         </Show>
       </>
@@ -4261,23 +4276,25 @@ export default function MailComposer(props: {
         />
       </div>
 
-      <Show when={sharedState()?.recoveryDraft || (sharedState()?.restUnchanged && !ownSendCloses())}>
+      <Show when={sharedState()?.recoveryDraft || sharedState()?.restCopied || (sharedState()?.restUnchanged && !ownSendCloses())}>
         <div
           class="absolute inset-x-3 bottom-14 z-30 flex max-h-[45%] flex-wrap items-center gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-sm shadow-[var(--k2b-shadow-toolbar)]"
           role="status"
         >
-          <span class="min-w-0 flex-1">{sharedState()?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged}</span>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              const recovery = sharedState()?.recoveryDraft;
-              if (recovery) openOtherDraft(recovery.id);
-              else window.location.reload();
-            }}
-          >
-            {sharedState()?.recoveryDraft ? sharedT().openRest : sharedT().reopen}
-          </Button>
+          <span class="min-w-0 flex-1">{restNoticeText()}</span>
+          <Show when={sharedState()?.restCopied !== "closed"}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                const recovery = sharedState()?.recoveryDraft;
+                if (recovery) openOtherDraft(recovery.id);
+                else window.location.reload();
+              }}
+            >
+              {restNoticeAction()}
+            </Button>
+          </Show>
         </div>
       </Show>
       {/* Phones set the tools closer, so the labelled send action and every tool keep one row in each language. */}
