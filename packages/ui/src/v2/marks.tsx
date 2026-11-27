@@ -1,13 +1,23 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
+import { safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
-  const entries = Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined);
+  const entries = Object.entries(values).flatMap(([key, value]): [string, string][] => {
+    if (value === undefined) return [];
+    // a data colour comes from data: only a real colour passes, else the primitive stays neutral; anything else is the
+    // primitive's own number and never ends its declaration
+    if (key === "--k2-c") {
+      const color = safeColor(value);
+      return color === undefined ? [] : [[key, color]];
+    }
+    return safeValue(value) ? [[key, value]] : [];
+  });
   return entries.length ? Object.fromEntries(entries) : undefined;
 };
 
