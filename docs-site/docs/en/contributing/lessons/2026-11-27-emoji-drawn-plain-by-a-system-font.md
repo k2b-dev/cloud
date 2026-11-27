@@ -1,0 +1,6 @@
+### An emoji in text was drawn as a plain glyph of a system font
+
+- **What happened:** In Chromium, an emoji such as 😀 in v2 or v1 text was drawn as a plain, single-colour glyph instead of the system's colour emoji. The font stacks named only IBM Plex and then `system-ui`/`sans-serif`, and a system text font that has a plain glyph for the emoji caught it first.
+- **Root cause:** Font fallback takes the first font in the stack that has the character. The colour emoji font came after the system text fonts. Naming the emoji fonts directly after Plex would have fixed that, but they also hold text symbols (digits, ©, ↔, ✔), and those would have turned into colour emoji while Plex loads or wherever Plex lacks them.
+- **Error class:** A font stack whose order decides which font draws a character, with a font that covers more than it should.
+- **Guard:** `k2-emoji` is an `@font-face` in `v2.css` and `fonts.css` with `local()` sources for the system's colour emoji fonts. Its `unicode-range` covers only the pictographic blocks, their joiners, the emoji variation selector and the tags of flags. It stands right after Plex in the v2 and v1 stacks. `packages/ui/src/v2/emoji-font.browser.test.ts` checks in Chromium and WebKit that an emoji draws in colour in all four stacks, and that ✓ ★ → ⌘ keep their text glyph and width.
