@@ -176,8 +176,8 @@ const sidebarDefault: Width = { min: 200, default: 248 };
 const flexibleMin = 400;
 
 /**
- * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
- * says so, since the workspace counts it once, open or closed.
+ * A column of the workspace and what it needs at least: its minimum, or for a column without a width 400 px or its
+ * `min`; a detail says so, since the workspace counts it once, open or closed.
  */
 type Column = { readonly need: number; readonly detail: boolean };
 /**
@@ -389,6 +389,12 @@ export type PaneProps = {
   status?: JSX.Element;
   /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
   width?: Width;
+  /**
+   * A column without `width` (the main column) that needs more than 400 px, such as 640 for a query and its result.
+   * It keeps that much inside `Pane.Split`, and its workspace counts it: the sidebar becomes a drawer where it does not
+   * fit beside it. Less than 400 keeps 400.
+   */
+  min?: number;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
   /**
@@ -421,6 +427,8 @@ export type PaneProps = {
 export const Pane = (props: PaneProps) => {
   // the width the grip beside it gave it; its default until then
   const [size, setSize] = createSignal<number>();
+  // what a column without a width keeps: 400 px, or the more it names
+  const flexible = () => Math.max(flexibleMin, props.min ?? 0);
   const entry: SplitEntry = {
     get width() {
       return props.width;
@@ -435,7 +443,7 @@ export const Pane = (props: PaneProps) => {
   // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
   useContext(ColumnsContext)?.register({
     get need() {
-      return props.width?.min ?? flexibleMin;
+      return props.width?.min ?? flexible();
     },
     get detail() {
       return props.detail === true;
@@ -473,7 +481,7 @@ export const Pane = (props: PaneProps) => {
       data-side={props.side ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        "--k2-pane-min": props.width ? `${props.width.min}px` : props.min !== undefined ? `${flexible()}px` : undefined,
       })}
     >
       {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
