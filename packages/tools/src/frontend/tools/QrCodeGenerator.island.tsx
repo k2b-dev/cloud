@@ -3,10 +3,11 @@
 // app declares lean-qr as a direct dep so it's installed in the container.
 import { qr } from "@k2b/stdlib/qr";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Check, Empty, Facts, Field, Input, Pane, Section, Select, Text } from "@k2b/ui/v2";
+import { Band, Button, Canvas, Check, ColorInput, Empty, Facts, Field, Input, Pane, Section, Select, Slider, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import ToolsScreen from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
+import { parseEventMoment } from "./event-moment";
 import { qrMessages } from "./qr-messages";
 
 type Mode = "text" | "wifi" | "email" | "tel" | "vcard" | "event";
@@ -72,6 +73,16 @@ export default function QrCodeGenerator() {
   const [evLocation, setEvLocation] = createSignal("");
   const [evStart, setEvStart] = createSignal("");
   const [evEnd, setEvEnd] = createSignal("");
+  // a typed moment counts only when it is a real date and time; otherwise the field says so and no event is made
+  const eventStart = () => parseEventMoment(evStart());
+  const eventEnd = () => parseEventMoment(evEnd());
+  const startError = () => (evStart().trim() && !eventStart() ? t().evMomentInvalid : undefined);
+  const endError = () =>
+    evEnd().trim() && !eventEnd()
+      ? t().evMomentInvalid
+      : eventStart() && eventEnd() && eventEnd()! < eventStart()!
+        ? t().evEndBeforeStart
+        : undefined;
   const [evDescription, setEvDescription] = createSignal("");
 
   // === Display settings (shared) ===
@@ -122,12 +133,12 @@ export default function QrCodeGenerator() {
             })
           : "";
       case "event":
-        return evTitle().trim()
+        return evTitle().trim() && !startError() && !endError()
           ? qr.event({
               title: evTitle(),
               location: evLocation(),
-              start: evStart(),
-              end: evEnd(),
+              start: eventStart() ?? "",
+              end: eventEnd() ?? "",
               description: evDescription(),
             })
           : "";
@@ -135,6 +146,18 @@ export default function QrCodeGenerator() {
         return "";
     }
   });
+
+  // What the page shows of the content: a Wi-Fi password stands masked, as anyone beside the screen could read it;
+  // copying still gives the whole content, as the code itself holds it.
+  const shownPayload = () =>
+    mode() === "wifi" && wifiPassword() && wifiSsid().trim()
+      ? qr.wifi({
+          ssid: wifiSsid(),
+          password: "••••••••",
+          encryption: wifiEncryption() as "WPA" | "WEP" | "nopass",
+          hidden: wifiHidden(),
+        })
+      : payload();
 
   // === QR rendering ===
   const qrSvg = createMemo(() => {
@@ -207,9 +230,10 @@ export default function QrCodeGenerator() {
       optional?: boolean;
       type?: "password" | "email" | "tel" | "url";
       multiline?: boolean;
+      error?: string;
     } = {},
   ) => (
-    <Field label={label} hint={extra.hint} optional={extra.optional ? w().optional : undefined}>
+    <Field label={label} hint={extra.hint} error={extra.error} optional={extra.optional ? w().optional : undefined}>
       <Input
         type={extra.type}
         icon={extra.icon}
@@ -338,15 +362,18 @@ export default function QrCodeGenerator() {
                     placeholder: t().evLocationPlaceholder,
                     optional: true,
                   })}
-                  {/* k2b-ui gap: v2 has no date-and-time picker yet; start and end are typed as "2026-06-15 14:30". */}
+                  {/* k2b-ui gap: v2 has no date-and-time field (DateInput takes days only); start and end are typed, read by
+                      parseEventMoment, and a field that holds no real moment says so. */}
                   <Field.Row>
-                    {field(t().evStartLabel, evStart, (value) => setEvStart(value.trim().replace(" ", "T")), {
-                      placeholder: "2026-06-15 14:30",
+                    {field(t().evStartLabel, evStart, setEvStart, {
+                      placeholder: "15.06.2026 14:30",
                       optional: true,
+                      error: startError(),
                     })}
-                    {field(t().evEndLabel, evEnd, (value) => setEvEnd(value.trim().replace(" ", "T")), {
-                      placeholder: "2026-06-15 16:00",
+                    {field(t().evEndLabel, evEnd, setEvEnd, {
+                      placeholder: "15.06.2026 16:00",
                       optional: true,
+                      error: endError(),
                     })}
                   </Field.Row>
                   {field(t().evDescriptionLabel, evDescription, setEvDescription, {
@@ -370,23 +397,17 @@ export default function QrCodeGenerator() {
                   ]}
                 />
               </Field>
-              {/* k2b-ui gap: v2 has no colour picker; colours are typed as HEX values. */}
               <Field.Row>
-                {field(t().fgLabel, fgColor, setFgColor, { hint: t().fgDescription, placeholder: "#000000" })}
-                {field(t().bgLabel, bgColor, setBgColor, { hint: t().bgDescription, placeholder: "#ffffff" })}
+                <Field label={t().fgLabel} hint={t().fgDescription}>
+                  <ColorInput value={fgColor()} onChange={setFgColor} />
+                </Field>
+                <Field label={t().bgLabel} hint={t().bgDescription}>
+                  <ColorInput value={bgColor()} onChange={setBgColor} />
+                </Field>
               </Field.Row>
               <Check switch label={t().transparentLabel} checked={transparentBg()} onChange={setTransparentBg} />
               <Field label={t().sizeLabel} hint={t().sizeDescription} optional="100–1000 px">
-                <Input
-                  type="number"
-                  min={100}
-                  max={1000}
-                  value={String(size())}
-                  onInput={(value) => {
-                    const next = Number.parseInt(value, 10);
-                    if (Number.isFinite(next)) setSize(Math.min(1000, Math.max(100, next)));
-                  }}
-                />
+                <Slider min={100} max={1000} step={10} value={size()} onChange={setSize} />
               </Field>
             </Section>
           </Pane>
@@ -414,7 +435,7 @@ export default function QrCodeGenerator() {
                 </Show>
               </Canvas>
               <Show when={payload()}>
-                <Facts items={[{ label: t().contentHeading, value: payload(), mono: true, copy: payload() }]} />
+                <Facts items={[{ label: t().contentHeading, value: shownPayload(), mono: true, copy: payload() }]} />
               </Show>
             </Section>
             <Band label={t().localNote}>

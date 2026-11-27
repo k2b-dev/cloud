@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Choice, Field, Input, Section, Text } from "@k2b/ui/v2";
+import { Band, Button, Choice, Field, Section, Slider, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onMount } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
@@ -230,16 +230,7 @@ export default function LoremIpsumGenerator() {
                   />
                 </Field>
                 <Field label={t().count} hint={countDescription()} optional={`1–${maxCount()}`}>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={maxCount()}
-                    value={String(count())}
-                    onInput={(value) => {
-                      const next = Number.parseInt(value, 10);
-                      if (Number.isFinite(next)) setCount(Math.min(maxCount(), Math.max(1, next)));
-                    }}
-                  />
+                  <Slider min={1} max={maxCount()} value={count()} onChange={setCount} />
                 </Field>
               </Band>
             </>
