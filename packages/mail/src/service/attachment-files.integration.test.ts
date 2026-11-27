@@ -37,6 +37,7 @@ suite("Mail attachments as a file-provider source", () => {
   const userIds: string[] = [];
   const mailboxIds: string[] = [];
   const requestIds: string[] = [];
+  const serviceAccountIds: string[] = [];
   let owner: User;
   let reader: User;
   let assigned: User;
@@ -278,6 +279,8 @@ suite("Mail attachments as a file-provider source", () => {
       if (accessIds.length > 0)
         await sql`DELETE FROM auth.access WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${accessIds}::jsonb))`;
     }
+    if (serviceAccountIds.length > 0)
+      await sql`DELETE FROM auth.service_accounts WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${serviceAccountIds}::jsonb))`;
     if (requestIds.length > 0)
       await sql`DELETE FROM audit.events WHERE request_id IN (SELECT jsonb_array_elements_text(${requestIds}::jsonb))`;
     if (userIds.length > 0)
@@ -353,6 +356,62 @@ suite("Mail attachments as a file-provider source", () => {
     expect(inDateOrder(await items(assigned, { parent: aliceMarch }))).toEqual(["photo.jpg", "report.pdf"]);
     expect(await items(assigned, { parent: bobMarch })).toEqual([]);
     expect(await items(assigned, { parent: `${mailbox.shortId}/2025/12/-` })).toEqual([]);
+  });
+
+  test("service accounts see the source like their other Mail reads: bound to one mailbox and capped by scopes", async () => {
+    const serviceContext = async (kind: "agent" | "resource_bound", scopes: string[]): Promise<MailRequestContext> => {
+      const name = `Files ${kind} ${scopes.join(" ") || "unscoped"} ${suffix}`;
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+        VALUES (${name}, ${kind}, ${kind === "resource_bound" ? "mail" : null}, ${kind === "resource_bound" ? "mailbox" : null},
+          ${kind === "resource_bound" ? mailbox.id : null}::uuid) RETURNING id
+      `;
+      if (!row) throw new Error("Service account fixture missing");
+      serviceAccountIds.push(row.id);
+      const context: MailRequestContext = {
+        actor: {
+          kind: "service_account",
+          serviceAccount: {
+            id: row.id,
+            name,
+            kind,
+            status: "active",
+            delegatedUserId: null,
+            appId: kind === "resource_bound" ? "mail" : null,
+            resourceType: kind === "resource_bound" ? "mailbox" : null,
+            resourceId: kind === "resource_bound" ? mailbox.id : null,
+            createdBy: null,
+            createdAt: "2026-11-27T10:00:00.000Z",
+          },
+          delegatedUser: null,
+          scopes,
+        },
+        accessSubject: { type: "service_account", serviceAccountId: row.id },
+        requestId: `mail-files-service-${row.id}`,
+      };
+      for (const target of [mailbox.id, other.id])
+        unwrap(
+          await grantMailboxAccess({ context: contextFor(owner), mailboxId: target, principal: context.accessSubject, permission: "read" }),
+        );
+      return context;
+    };
+    const serviceList = (context: MailRequestContext, parent?: string) =>
+      listAttachmentFiles(context, { limit: 50, ...(parent ? { parent } : {}) }, "en");
+    // Granted on both mailboxes, but bound to one: only that one, in the root and below it.
+    const bound = await serviceContext("resource_bound", ["mail:read"]);
+    expect(unwrap(await serviceList(bound)).items.map((entry) => entry.name)).toEqual([address]);
+    expect(inDateOrder(unwrap(await serviceList(bound, aliceMarch)).items.map((entry) => entry.name))).toEqual(aliceFiles);
+    expect(await serviceList(bound, other.shortId)).toMatchObject({ ok: false, error: { status: 404 } });
+    // A credential without a Mail scope reads nothing, whatever its grants.
+    const unscoped = await serviceContext("agent", []);
+    expect(unwrap(await serviceList(unscoped)).items).toEqual([]);
+    expect(await serviceList(unscoped, mailbox.shortId)).toMatchObject({ ok: false, error: { status: 404 } });
+    const scoped = await serviceContext("agent", ["mail:read"]);
+    expect(
+      unwrap(await serviceList(scoped))
+        .items.map((entry) => entry.name)
+        .sort(),
+    ).toEqual([address, `Other files ${suffix}`].sort());
   });
 
   test("a reader of one mailbox never reaches another one, and malformed folders are not found", async () => {
