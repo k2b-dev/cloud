@@ -342,6 +342,10 @@
 .k2-ui .k2-icon[data-tone="subtle"] {
   color: var(--k2-subtle);
 }
+/* a data colour by meaning takes the place of the tone; it comes in as --k2-c, checked to be a colour */
+.k2-ui .k2-icon[data-color] {
+  color: var(--k2-c);
+}
 .k2-ui .k2-text[data-tone="ok"] {
   color: var(--k2-ok);
 }
@@ -2161,8 +2165,9 @@
   background: var(--k2-ok);
 }
 
-/* A range on a shared scale: a quiet track the width of its place, the range on it from its start to its end. The bar
-   is at least 4 px, so a range of one value still shows. */
+/* A range on a shared scale: a quiet track the width of its place, the range on it from its start to its end, in the
+   writing direction (the scale's start at the line's start). The bar is at least 4 px, so a range of one value still
+   shows, and a range at the scale's very end keeps those 4 px inside the track. */
 .k2-ui .k2-range {
   position: relative;
   display: block;
@@ -2175,11 +2180,15 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: var(--k2-range-start);
-  right: var(--k2-range-end);
+  inset-inline-start: min(var(--k2-range-start), calc(100% - 4px));
+  inset-inline-end: var(--k2-range-end);
   min-width: 4px;
   border-radius: var(--k2-r-round);
   background: var(--k2-range-fill, var(--k2-n600));
+}
+/* right to left the colours run from the right, as the scale does */
+.k2-ui .k2-range:dir(rtl) {
+  --k2-range-way: to left;
 }
 /* forced colours replace backgrounds: the track keeps an outline, the range fills in the text colour */
 @media (forced-colors: active) {
