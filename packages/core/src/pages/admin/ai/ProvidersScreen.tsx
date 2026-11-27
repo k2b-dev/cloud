@@ -368,7 +368,7 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
           }
         />
       }
-      primary={deep() ? undefined : { label: t().addProvider, icon: "plus", onClick: () => setAdding("provider") }}
+      primary={data().open.p ? undefined : { label: t().addProvider, icon: "plus", onClick: () => setAdding("provider") }}
     >
       <Pane.Split>
         <Show
