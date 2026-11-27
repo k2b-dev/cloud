@@ -10,7 +10,7 @@ import type { Browser } from "playwright";
 import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
-import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
+import { loadShellAssets, openShellPage, type ShellAssets } from "../../../../scripts/fixtures/shell-page";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { ipaHostsService } from "../service";
 import { denseGroups, denseUngrouped, LONG_GROUP, LONG_HOST, worstGroups, worstUngrouped } from "./_components/hosts-fixture-data";

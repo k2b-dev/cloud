@@ -5,7 +5,7 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { cloudShellSheets } from "../../../../../scripts/fixtures/cloud-shell-sheets";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { loadShellAssets, type ShellAssets } from "../../../../ui/test/shell-page";
+import { loadShellAssets, type ShellAssets } from "../../../../../scripts/fixtures/shell-page";
 
 // Hosts on v2, from invented hosts: the screen keeps the v2 layout rules at desktop, tablet and phone width with normal,
 // worst-case and no data; a group and a host open beside the list, and their deeds ask before they change anything.
