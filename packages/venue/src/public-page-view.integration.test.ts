@@ -211,7 +211,13 @@ suite("Venue public page view", () => {
         location: `/app/venue/${cafe}/public?section=${week}`,
       });
       const marked = await expectStatus(await send("GET", old.headers.get("location")!, admin), 200, "marked section");
-      expect(marked).toMatch(new RegExp(`data-section-row="${week}" data-selected=""`));
+      // the marked section is the current row of the sections list: its row, up to the next one, names the section
+      const list = marked.slice(Math.max(marked.indexOf('aria-label="Sections"'), marked.indexOf('aria-label="Abschnitte"')));
+      const current = list.indexOf('data-current=""');
+      expect(current).toBeGreaterThan(-1);
+      const next = list.indexOf('data-k2-part="Row"', current);
+      expect(list.slice(current, next === -1 ? undefined : next)).toContain("Opening week");
+      expect(list.indexOf('data-current=""', current + 1)).toBe(-1);
 
       for (const path of [`/app/venue/${cafe}/public-sections/${week}`, `/app/venue/${cafe}/public`]) {
         const response = await send("GET", path, staff);

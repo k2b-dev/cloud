@@ -139,6 +139,7 @@ suite("Venue routes with public IDs", () => {
     try {
       ids.feedbackView = "feedback";
       ids.publicView = "public";
+      ids.accessTab = "access";
 
       const venue = { id: "venue" };
       const steps: Step[] = [
@@ -368,6 +369,9 @@ suite("Venue routes with public IDs", () => {
         { method: "GET", route: "/app/venue/:id", params: venue, status: 302 },
         { method: "GET", route: "/app/venue/:id/:view", params: { id: "venue", view: "feedbackView" }, status: 200 },
         { method: "GET", route: "/app/venue/:id/:view", params: { id: "venue", view: "publicView" }, status: 200 },
+        // The settings page and its tabs resolve the Venue by its public ID like the views.
+        { method: "GET", route: "/app/venue/:id/settings", params: venue, status: 200 },
+        { method: "GET", route: "/app/venue/:id/settings/:tab", params: { id: "venue", tab: "accessTab" }, status: 200 },
         // Links from before the Public page view lead there, with the section marked.
         { method: "GET", route: "/app/venue/:id/public-sections/:sectionId", params: { id: "venue", sectionId: "section" }, status: 302 },
         { method: "GET", route: "/app/venue/public/:id", params: venue, as: "anonymous", status: 200 },
