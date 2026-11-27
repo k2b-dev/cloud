@@ -2,11 +2,13 @@ import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess } from "../service/access";
 import "./_components/ssr-test-plugin";
+import { loadBaseChoices } from "./base-choices";
 
 const { default: gridsPage } = await import("./page");
 
@@ -31,13 +33,25 @@ const app = (userId: string) =>
     })
     .get("/app/grids", ...gridsPage);
 
+const cookieOf = (settings: Record<string, unknown>) => `settings-app-grids=${encodeURIComponent(JSON.stringify(settings))}`;
 const open = (userId: string, path: string, lastPath?: string) =>
-  app(userId).request(path, {
-    headers: {
-      "accept-language": "de",
-      ...(lastPath ? { cookie: `settings-app-grids=${encodeURIComponent(JSON.stringify({ lastPath }))}` } : {}),
-    },
-  });
+  app(userId).request(path, { headers: { "accept-language": "de", ...(lastPath ? { cookie: cookieOf({ lastPath }) } : {}) } });
+
+/** The statements a step sends, and what it returned. */
+const metered = async <T,>(step: () => T | Promise<T>): Promise<{ statements: number; result: T }> => {
+  const meter = await meterSql();
+  try {
+    const results: T[] = [];
+    const statements = await meter.during(async () => {
+      results.push(await step());
+    });
+    const [result] = results;
+    if (results.length !== 1 || result === undefined) throw new Error("the step ran no result");
+    return { statements: statements.length, result };
+  } finally {
+    await meter.close();
+  }
+};
 
 beforeAll(async () => {
   if (!testInfra.database) return;
@@ -72,16 +86,23 @@ afterAll(async () => {
 });
 
 describe("Grids' start", () => {
-  postgresTest("opens the page of the base worked in last, with its table and record", async () => {
+  postgresTest("opens the page of the base worked in last, with its table and record, in 2 statements", async () => {
     const last = `/app/grids/${fixture.older.shortId}/table/TABLE1?record=REC001`;
-    const response = await open(fixture.reader, "/app/grids", last);
+    // the last base by its id, and its grants: whether the person may still open it
+    const { statements, result: response } = await metered(() => open(fixture.reader, "/app/grids", last));
+    expect(statements).toBe(2);
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(last);
   });
 
   postgresTest("opens the newest base the person may open without a last base, or when that base is closed to them", async () => {
-    for (const last of [undefined, `/app/grids/${fixture.closed.shortId}`]) {
-      const response = await open(fixture.reader, "/app/grids", last);
+    // without a last base the newest the person may open (1); a closed last base costs its id and grants first (3)
+    for (const [last, expected] of [
+      [undefined, 1],
+      [`/app/grids/${fixture.closed.shortId}`, 3],
+    ] as const) {
+      const { statements, result: response } = await metered(() => open(fixture.reader, "/app/grids", last));
+      expect(statements).toBe(expected);
       expect(response.status).toBe(302);
       expect(response.headers.get("location")).toBe(`/app/grids/${fixture.newer.shortId}`);
     }
@@ -94,8 +115,10 @@ describe("Grids' start", () => {
     expect(create.headers.get("location")).toBe(`/app/grids/${fixture.older.shortId}?new=finance`);
   });
 
-  postgresTest("before the first base: no sidebar, the question and four ways, the dialog from the address", async () => {
-    const response = await open(fixture.newcomer, "/app/grids?new=inventory");
+  postgresTest("before the first base: no sidebar, the line and four ways, the dialog from the address, in 1 statement", async () => {
+    // the newest base the person may open (none): the four ways come from the templates in the code
+    const { statements, result: response } = await metered(() => open(fixture.newcomer, "/app/grids?new=inventory"));
+    expect(statements).toBe(1);
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain("Leg deine erste Base an");
@@ -105,5 +128,15 @@ describe("Grids' start", () => {
     expect(html).toContain("Noch ohne Tabellen");
     expect(html).not.toContain('data-k2-part="Nav"');
     expect(html).toContain('href="/app/grids?new=finance"');
+  });
+
+  postgresTest("the switcher's bases: the ones opened last first, the rest by name, the closed one nowhere, in 1 statement", async () => {
+    const cookie = cookieOf({ recentBases: [fixture.older.shortId, fixture.closed.shortId] });
+    const { statements, result } = await metered(() => loadBaseChoices({ userId: fixture.reader, userGroups: [] }, cookie, "de"));
+    expect(statements).toBe(1);
+    expect(result).toEqual({
+      recent: [{ id: fixture.older.shortId, name: "Werkstatt" }],
+      others: [{ id: fixture.newer.shortId, name: "Lager" }],
+    });
   });
 });

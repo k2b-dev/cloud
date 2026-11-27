@@ -1,8 +1,9 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
-import { currentActorUser } from "../api/permissions";
+import { currentAccessSubject, currentActorUser } from "../api/permissions";
 import { ssr } from "../config";
 import { gridsService } from "../service";
+import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "../service/permission-resolver";
 import { withParam } from "./_components/overview/bases-query";
 import { BLANK } from "./_components/overview/CreateBaseDialog";
 import GridsStart, { type StartWay } from "./_components/overview/GridsStart.island";
@@ -30,19 +31,22 @@ export default ssr<AuthContext>(async (c) => {
   const create = new URL(c.req.url).searchParams.get("new")?.trim() || null;
   const subject = { userId: user.id, userGroups: user.memberofGroupIds };
 
-  const newest = await gridsService.base.listVisible({ ...subject, limit: 1 });
-  const first = newest.items[0];
-  if (first) {
-    const cookie = c.req.header("Cookie");
-    // the base of the last page, while the person may still open it
-    const lastId = parseLastGridsPath(cookie)?.split(/[/?#]/)[3];
-    const lastBase = lastId ? await gridsService.base.getByShortId(lastId) : null;
-    const last = lastBase
-      ? recentBasePath(cookie, (await gridsService.base.listVisible({ ...subject, baseId: lastBase.id, limit: 1 })).items)
-      : null;
-    const home = `/app/grids/${lastBase && last ? lastBase.shortId : first.shortId}`;
-    return c.redirect(create ? withParam(home, "new", create) : (last ?? home), 302);
+  const cookie = c.req.header("Cookie");
+  const home = (base: { shortId: string }) => `/app/grids/${base.shortId}`;
+  const go = (base: { shortId: string }, page?: string | null) =>
+    c.redirect(create ? withParam(home(base), "new", create) : (page ?? home(base)), 302);
+
+  // the base of the last page, while the person may still open it: the base by its id and its grants (2 statements)
+  const lastId = parseLastGridsPath(cookie)?.split(/[/?#]/)[3];
+  const lastBase = lastId ? await gridsService.base.getByShortId(lastId) : null;
+  if (lastBase) {
+    const grants = await loadBaseGrantsForSubject({ baseId: lastBase.id, subject: currentAccessSubject(c) });
+    if (hasAtLeast(resolveEffectivePermission(grants, { baseId: lastBase.id }), "read"))
+      return go(lastBase, recentBasePath(cookie, [lastBase]));
   }
+  // else the newest base the person may open (1 statement, from their own grants)
+  const [newest] = await gridsService.base.listVisibleItems({ ...subject, limit: 1 });
+  if (newest) return go(newest);
 
   const templates = gridsService.template.list(locale);
   const words = overviewMessages.resolve([locale]).t;

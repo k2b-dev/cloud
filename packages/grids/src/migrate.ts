@@ -540,6 +540,10 @@ const defineSchema = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_bases_short_id ON grids.bases USING btree (short_id)
   `.simple();
+  // the live bases newest first, as Grids' start and the switcher read them (`listVisible`); a small table, built here
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_bases_live_newest ON grids.bases USING btree (created_at DESC, id DESC) WHERE (deleted_at IS NULL)
+  `.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.files (
       id uuid DEFAULT gen_random_uuid() NOT NULL,

@@ -69,6 +69,7 @@ export const gridsService = {
   base: {
     list: bases.list,
     listVisible: bases.listVisible,
+    listVisibleItems: bases.listVisibleItems,
     overviewActivity: bases.overviewActivity,
     catalog: baseCatalog.listForBase,
     get: bases.get,

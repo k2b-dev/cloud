@@ -10,14 +10,14 @@ export type BaseChoice = { id: string; name: string };
 /** The bases a person can switch to: the ones opened last first (as the cookie names them), then all others by name. */
 export type BaseChoices = { recent: BaseChoice[]; others: BaseChoice[] };
 
-/** Reads the bases the person may open once and orders them for the switcher. */
+/** Reads the bases the person may open once (one statement) and orders them for the switcher. */
 export const loadBaseChoices = async (
   subject: { userId: string; userGroups: string[] },
   cookie: string | undefined,
   locale: string,
 ): Promise<BaseChoices> => {
-  const visible = await gridsService.base.listVisible({ ...subject, limit: BASE_CHOICES_LIMIT });
-  const byId = new Map(visible.items.map((base) => [base.shortId, { id: base.shortId, name: base.name }]));
+  const visible = await gridsService.base.listVisibleItems({ ...subject, limit: BASE_CHOICES_LIMIT });
+  const byId = new Map(visible.map((base) => [base.shortId, { id: base.shortId, name: base.name }]));
   // a base opened last that the person may no longer open, or that no longer exists, drops out here
   const recent = parseRecentBases(cookie).flatMap((id) => byId.get(id) ?? []);
   const opened = new Set(recent.map((base) => base.id));

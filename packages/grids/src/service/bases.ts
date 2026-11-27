@@ -56,7 +56,7 @@ export const list = async (opts: { includeDeleted?: boolean } = {}): Promise<Bas
   return rows.map(mapRow);
 };
 
-export const listVisible = async (params: {
+type VisibleParams = {
   userId: string | null;
   userGroups: string[];
   serviceAccountId?: string | null;
@@ -66,9 +66,13 @@ export const listVisible = async (params: {
   query?: string;
   limit?: number;
   offset?: number;
-}): Promise<{ items: Base[]; total: number }> => {
-  const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
-  const offset = Math.max(params.offset ?? 0, 0);
+};
+
+/**
+ * The bases a subject may read, as one query to page and one to count. It starts from the subject's own grants (a base
+ * is visible only through one of them), so its cost follows the bases the subject reaches, not all bases.
+ */
+const visibleQuery = (params: VisibleParams) => {
   const query = params.query?.trim().toLowerCase();
   const conditions: any[] = [sql`b.deleted_at IS NULL`];
   if (params.baseId) conditions.push(sql`b.id = ${params.baseId}::uuid`);
@@ -81,7 +85,6 @@ export const listVisible = async (params: {
       OR LOWER(b.short_id) LIKE ${pattern} ESCAPE '\\'
     )`);
   }
-  const where = conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
 
   const serviceAccountId = params.serviceAccountId ?? null;
   const subject: AccessSubject | null = params.userId
@@ -98,6 +101,13 @@ export const listVisible = async (params: {
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
+  // only bases with a grant of the subject's own can be visible: the candidates come from those grants (indexed)
+  conditions.push(sql`b.id IN (
+    SELECT ba.base_id FROM grids.base_access ba
+    JOIN auth.access a ON a.id = ba.access_id
+    WHERE ${principalTiers.serviceAccount} OR ${principalTiers.user} OR ${principalTiers.group} OR ${principalTiers.authenticated}
+  )`);
+  const where = conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
   const permissionRank = sql`CASE a.permission WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 ELSE 0 END`;
   const rankFor = (principal: "serviceAccount" | "user" | "group" | "authenticated") => {
     const principalWhere = principalTiers[principal];
@@ -112,7 +122,6 @@ export const listVisible = async (params: {
       WHERE ba.base_id = b.id AND ${principalWhere}
     )`;
   };
-
   const ranked = () => sql`
     SELECT b.*,
       ${rankFor("serviceAccount")} AS service_account_rank,
@@ -123,20 +132,34 @@ export const listVisible = async (params: {
     WHERE ${where}
   `;
   const visibleWhere = sql`COALESCE(service_account_rank, user_rank, group_rank, auth_rank, 0) >= 1`;
-  const [countRow] = await sql<{ total: number }[]>`
-    SELECT COUNT(*)::int AS total
-    FROM (${ranked()}) visible
-    WHERE ${visibleWhere}
-  `;
-  const rows = await sql<DbRow[]>`
-    SELECT *
-    FROM (${ranked()}) visible
-    WHERE ${visibleWhere}
-    ORDER BY created_at DESC, id DESC
-    LIMIT ${limit} OFFSET ${offset}
-  `;
+  const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
+  const offset = Math.max(params.offset ?? 0, 0);
+  return {
+    count: () => sql<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total
+      FROM (${ranked()}) visible
+      WHERE ${visibleWhere}
+    `,
+    rows: () => sql<DbRow[]>`
+      SELECT *
+      FROM (${ranked()}) visible
+      WHERE ${visibleWhere}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `,
+  };
+};
+
+/** The bases a subject may read, newest first, one page of them with their count. */
+export const listVisible = async (params: VisibleParams): Promise<{ items: Base[]; total: number }> => {
+  const query = visibleQuery(params);
+  const [countRow] = await query.count();
+  const rows = await query.rows();
   return { items: rows.map(mapRow), total: countRow?.total ?? 0 };
 };
+
+/** The same page of bases without their count, in one statement: for a choice that needs no total (a switcher, a start). */
+export const listVisibleItems = async (params: VisibleParams): Promise<Base[]> => (await visibleQuery(params).rows()).map(mapRow);
 
 /**
  * Returns the base or null. Soft-deleted bases return null by default —
