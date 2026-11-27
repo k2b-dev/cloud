@@ -4,7 +4,12 @@ import { NotFoundState } from "@k2b/ui";
 import { currentActorUser } from "../../api/permissions";
 import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";
+import { getBaseActivity } from "../../service/base-activity";
+import BaseHome from "../_components/frame/BaseHome.island";
+import { toHomeActivity } from "../_components/frame/base-activity-model";
+import { homeTab, resourcesQuery } from "../_components/frame/resources-query";
 import { parseDocumentViewMode, parseNavigationExpansion } from "../_components/sidebar/GridsSettingsStore";
+import RememberGridsPath from "../_components/sidebar/RememberGridsPath.island";
 import GridsWorkspace from "../_components/workspace/GridsWorkspace";
 import { projectPublicWorkspaceState } from "../_components/workspace/workspace-public-state";
 import { loadGridsWorkspaceState } from "../_components/workspace/workspace-state";
@@ -78,13 +83,34 @@ export default ssr<AuthContext>(async (c) => {
   if (!state) throw new Error("Workspace state projection is missing");
   state.initialNavigationExpansion = parseNavigationExpansion(c.req.header("Cookie"), state.base.id);
 
+  const scope = gridsPageScope(state.base.id, state.route.kind === "records" ? state.route.initialSelectedRecord : null);
+  // Route kinds rebuilt on UI v2; the others still render the v1 workspace until their part moves.
+  if (state.route.kind === "overview" || state.route.kind === "empty") {
+    const params = new URL(c.req.url).searchParams;
+    const query = resourcesQuery(locale).parse(params).state;
+    // what happens in the base, from the tables and workflows this person may read only
+    const { catalog } = loadedState;
+    const readable = catalog.tables.filter((table) => table.kind === "stored" && (catalog.tableLevels[table.id] ?? "none") !== "none");
+    const workflows = catalog.workflows.filter((workflow) => (catalog.workflowLevels[workflow.id] ?? "none") !== "none");
+    const activity = toHomeActivity(
+      await getBaseActivity(
+        loadedState.base.id,
+        readable.map((table) => table.id),
+        workflows.map((workflow) => workflow.id),
+        { timeZone: (await getDateConfig(c)).timeZone },
+      ),
+      new Map(readable.map((table) => [table.id, table.shortId])),
+    );
+    return () => (
+      <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
+        <RememberGridsPath />
+        <BaseHome state={state} query={query} tab={homeTab(params, (state.navigation?.groups.length ?? 0) > 0)} activity={activity} />
+      </Layout>
+    );
+  }
+
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      title={state.title}
-      context={{ scope: gridsPageScope(state.base.id, state.route.kind === "records" ? state.route.initialSelectedRecord : null) }}
-    >
+    <Layout c={c} fullWidth title={state.title} context={{ scope }}>
       <GridsWorkspace userId={user.id} state={state} />
     </Layout>
   );

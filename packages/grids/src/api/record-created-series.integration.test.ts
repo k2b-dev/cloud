@@ -163,6 +163,8 @@ describe("a table's new records per day", () => {
   });
 
   postgresTest("answer the same before and after their index, which builds without pausing record writes", async () => {
+    // every other background index stands first, so the builds below count this one alone
+    await ensureRecordBackgroundIndexes();
     await sql`DROP INDEX CONCURRENTLY IF EXISTS grids.idx_grids_records_table_created_live`;
     expect(await indexValid()).toBe(false);
     const before = await getRecordCreatedSeries(fixture.tableId, { days: 7, timeZone: "Europe/Berlin", now: NOW });
@@ -207,6 +209,8 @@ describe("a table's new records per day", () => {
   });
 
   postgresTest("a failed index build waits out its retry interval before it builds again", async () => {
+    // every other background index stands first, so the builds below count this one alone
+    await ensureRecordBackgroundIndexes();
     await sql`DROP INDEX CONCURRENTLY IF EXISTS grids.idx_grids_records_table_created_live`;
     const holder = await sql.reserve();
     const builder = await sql.reserve();

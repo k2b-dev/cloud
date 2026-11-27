@@ -399,6 +399,8 @@ export const dropOrphanedFieldIndexes = async (db?: SQL): Promise<number> => {
 export const RECORD_BACKGROUND_INDEXES = {
   // the new records per day of a table (its head's series) read a range, not every live record of the table
   idx_grids_records_table_created_live: "ON grids.records USING btree (table_id, created_at) WHERE (deleted_at IS NULL)",
+  // a base home names the records changed last: a few newest per table, not a sort of every record
+  idx_grids_records_table_updated_live: "ON grids.records USING btree (table_id, updated_at DESC) WHERE (deleted_at IS NULL)",
 } as const;
 
 /** How long a failed record index waits before this process builds it again: the maintenance's idle interval. */
