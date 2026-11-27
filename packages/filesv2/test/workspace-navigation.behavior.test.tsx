@@ -260,7 +260,8 @@ describe("Filesv2 progressive navigation", () => {
                 },
               ],
               usage: [{ baseId: "home", bytes: 1_250_000, complete: false }],
-              members: [{ baseId: "ipa", members: 6 }],
+              members: [{ baseId: "ipa", members: 6, people: [{ name: "Ada Lind" }, { name: "Bob Berger" }] }],
+              daily: null,
             },
             now: "2026-10-20T12:30:00.000Z",
           },
@@ -284,7 +285,11 @@ describe("Filesv2 progressive navigation", () => {
     // the short form: today the time alone
     expect(home[3]).toEndWith("Bob Berger · 10:30 AM");
     expect(cards()[0]!.querySelector('[data-k2-part="Avatar"]')).not.toBeNull();
-    expect(cells(cards()[1]!).slice(1)).toEqual(["6 people", "—", "—"]);
+    // the group's people as faces with "+n", named in words: the names the server read and how many more belong to it
+    const stack = cards()[1]!.querySelector('[data-k2-part="Avatar.Stack"]');
+    expect(stack?.getAttribute("aria-label")).toBe("Ada Lind, Bob Berger and 4 more");
+    expect(stack?.querySelectorAll('[data-k2-part="Avatar"]')).toHaveLength(2);
+    expect(cells(cards()[1]!).slice(2)).toEqual(["—", "—"]);
     const failed = () => [...dom.root.querySelectorAll('[data-k2-part="Failed"]')];
     expect(failed()).toHaveLength(2);
     failed()[0]!.querySelector<HTMLButtonElement>("button")!.click();

@@ -146,7 +146,7 @@ export default ssr<AuthContext>(async (c) => {
           .catch(() => null),
         // the storage table: each fact alone, so one that fails leaves only its cells empty
         // the page never walks a storage: it shows the counts kept in Valkey and leaves the rest to the route
-        filesService.storageFacts({ ...requestCall(c), requestAbort: c.req.raw.signal }, { walk: false }),
+        filesService.storageFacts({ ...requestCall(c), requestAbort: c.req.raw.signal }, { walk: false, timeZone }),
       ]);
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });

@@ -245,6 +245,7 @@ export function historyFixture(rows: ActivityCandidate[] = [candidate()]) {
       byId: async (id) => rows.find((row) => row.id === id) ?? null,
       // the storage table's column is read in SQL alone (storage-changes.integration.test.ts)
       latestChanges: async () => [],
+      changesPerDay: async () => [],
       shareAccess: async (input) => ({
         pageNetworks: 0,
         from: input.from,

@@ -64,6 +64,10 @@ export type LatestChangeRow = {
   actor_user_id: string | null;
   via: string;
 };
+/** A storage's content changes on one day of the reader; the row of the total over all storages has no binding. */
+export type DailyChangeRow =
+  | { binding_id: string; area: Binding["area"]; kind: Binding["kind"]; identity_id: string; day: string; changes: number }
+  | { binding_id: null; area: null; kind: null; identity_id: null; day: string; changes: number };
 /** Changes to what a storage holds; reads, shares, comments and checks are no change of its content. */
 const CONTENT_ACTIONS: readonly HistoryAction[] = [
   "folder.create",
@@ -317,6 +321,46 @@ export const activityReaderData = {
         ) sides ORDER BY sides.effective DESC,sides.id DESC LIMIT 1
       ) latest
       WHERE b.id=ANY(${ids}::uuid[]) AND b.area='cloud' AND b.lifecycle='active'`;
+    return readQuery(query, budget);
+  },
+  /**
+   * How many finished content changes each given storage had per day from `from` to `to` (`YYYY-MM-DD`, both included)
+   * in `timeZone`, and in rows with a null binding the total over all of them, where a change between two of them counts
+   * once. A change counts for a storage on the same sides and inside the same path as in `latestChanges`. One statement
+   * for all storages, each a range of its base's effective-time indexes; the rows are bounded by the bindings asked for
+   * (the reader's own) times the days.
+   */
+  async changesPerDay(
+    input: { serverUrl: string; bindingIds: string[]; from: string; to: string; timeZone: string },
+    budget?: ActivityReadBudget,
+  ): Promise<DailyChangeRow[]> {
+    if (!input.bindingIds.length) return [];
+    budget?.check();
+    const actions = toPgTextArray([...CONTENT_ACTIONS]);
+    const ids = toPgUuidArray(input.bindingIds);
+    const start = sql`((${input.from}::date)::timestamp AT TIME ZONE ${input.timeZone})`;
+    const end = sql`((${input.to}::date + 1)::timestamp AT TIME ZONE ${input.timeZone})`;
+    const day = sql`to_char(coalesce(a.finished_at,a.started_at) AT TIME ZONE ${input.timeZone},'YYYY-MM-DD')`;
+    const query = sql<DailyChangeRow[]>`SELECT changed.binding_id,changed.area,changed.kind,changed.identity_id,
+        changed.day,count(DISTINCT changed.id)::integer AS changes
+      FROM (
+        SELECT b.id AS binding_id,b.area,b.kind,b.identity_id,a.id,${day} AS day
+        FROM filesv2.bases b JOIN filesv2.activity a ON a.base_id=b.id
+        WHERE b.id=ANY(${ids}::uuid[]) AND b.area='cloud' AND b.lifecycle='active'
+          AND coalesce(a.finished_at,a.started_at)>=${start} AND coalesce(a.finished_at,a.started_at)<${end}
+          AND a.server_url=${input.serverUrl} AND a.state='done' AND a.action=ANY(${actions}::text[])
+          AND ((a.root=b.root AND (a.path_before=b.path OR starts_with(a.path_before,b.path || '/')))
+            OR (a.base_after_id IS NULL AND coalesce(a.root_after,a.root)=b.root
+              AND (a.path_after=b.path OR starts_with(a.path_after,b.path || '/'))))
+        UNION
+        SELECT b.id,b.area,b.kind,b.identity_id,a.id,${day}
+        FROM filesv2.bases b JOIN filesv2.activity a ON a.base_after_id=b.id
+        WHERE b.id=ANY(${ids}::uuid[]) AND b.area='cloud' AND b.lifecycle='active'
+          AND coalesce(a.finished_at,a.started_at)>=${start} AND coalesce(a.finished_at,a.started_at)<${end}
+          AND a.server_url=${input.serverUrl} AND a.state='done' AND a.action=ANY(${actions}::text[])
+          AND coalesce(a.root_after,a.root)=b.root AND (a.path_after=b.path OR starts_with(a.path_after,b.path || '/'))
+      ) changed
+      GROUP BY GROUPING SETS ((changed.binding_id,changed.area,changed.kind,changed.identity_id,changed.day),(changed.day))`;
     return readQuery(query, budget);
   },
   /** One statement keeps totals and networks on the same snapshot during concurrent rollup.

@@ -23,6 +23,7 @@ import {
   ShareAccessInput,
   type StorageLastChange,
 } from "../activity-contracts";
+import type { StorageChangeSeries } from "../contracts";
 import { type ActivityCandidate, type ActivityPosition, activityReaderData, type CandidateInput } from "../data/activity-reader";
 import type { Binding, bindings } from "../data/bases";
 import type { ShareRow } from "../data/shares";
@@ -32,6 +33,7 @@ import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate } from "./filegate-facade";
 import { relativePath } from "./paths";
+import { changeDays, dailySeries } from "./storage-days";
 
 export type ActivityReadCall = UserFilesCall & { requestAbort?: AbortSignal };
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
@@ -611,6 +613,30 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         );
         await names(items, budget);
         return items;
+      });
+    },
+    /**
+     * How many content changes each of the given storages had per day of the reader's last `CHANGE_DAYS` days in
+     * `timeZone`, and all of them together: the series of the storage table and its hero. The caller authorized the
+     * bindings as for `storageChanges`. One statement for all of them (`changesPerDay`), in the read budget.
+     */
+    async storageChangesPerDay(
+      call: ActivityReadCall,
+      scope: { serverUrl: string; bindingIds: readonly string[] },
+      when: { now: Date; timeZone: string },
+    ): Promise<StorageChangeSeries> {
+      const days = changeDays(when.now, when.timeZone);
+      return withActivityReadBudget(call.requestAbort, async (budget) => {
+        const rows = await budget.run(() =>
+          data.changesPerDay(
+            { serverUrl: scope.serverUrl, bindingIds: [...scope.bindingIds], from: days[0]!, to: days.at(-1)!, timeZone: when.timeZone },
+            budget,
+          ),
+        );
+        return dailySeries(
+          days,
+          rows.map((row) => ({ baseId: row.binding_id === null ? null : publicId(row), day: row.day, changes: row.changes })),
+        );
       });
     },
     async shareAccess(call: ActivityReadCall, rawInput: ShareAccessInput): Promise<ShareAccessCounts> {

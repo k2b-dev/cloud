@@ -148,7 +148,7 @@ const USAGE_BUDGET_MS = 2_000;
 const USAGE_LOCK_SECONDS = 30;
 /** A count stays this long in Valkey, so the storage table reads fast again; changes show after it. */
 const USAGE_TTL_SECONDS = 300;
-/** The platform counts at most this many groups per call. */
+/** The platform reads at most this many groups per call. */
 const MEMBER_COUNT_BATCH = 50;
 const UsageCacheSchema = z.union([
   z.object({ bytes: z.number().nonnegative(), complete: z.boolean() }),
@@ -1822,26 +1822,26 @@ export function createFilesService(
     return { items: counted, pending: missing.some((storage) => !walkedIds.has(storage.baseId)) };
   }
   /**
-   * How many people belong to each of the reader's group storages, for the storage table: counts only, from the
-   * platform, which counts a group only for its own members. In batches of the platform's limit.
+   * Who belongs to each of the reader's group storages, for the storage table: how many and the first few by name, from
+   * the platform, which reads a group only for its own members. In batches of the platform's limit, one statement each.
    */
   async function storageMembers(call: UserFilesCall, state: Awaited<ReturnType<typeof context>>): Promise<StorageMembers[]> {
     if (state.machine) return [];
     const groups = state.candidates.filter((item) => item.kind === "groups" && !state.personalGroupIds.has(item.identity_id));
-    const counted: { baseId: string; members: number }[] = [];
+    const counted: StorageMembers[] = [];
     for (let start = 0; start < groups.length; start += MEMBER_COUNT_BATCH) {
       const batch = groups.slice(start, start + MEMBER_COUNT_BATCH);
-      const counts = new Map(
+      const read = new Map(
         (
-          await deps.identities.groupMemberCounts(
+          await deps.identities.groupMembers(
             call.actor,
             batch.map((item) => item.identity_id),
           )
-        ).map((row) => [row.groupId, row.members]),
+        ).map((row) => [row.groupId, row]),
       );
       for (const item of batch) {
-        const members = counts.get(item.identity_id);
-        if (members !== undefined) counted.push({ baseId: `${item.area}:${item.kind}:${item.identity_id}`, members });
+        const group = read.get(item.identity_id);
+        if (group) counted.push({ baseId: `${item.area}:${item.kind}:${item.identity_id}`, members: group.members, people: group.people });
       }
     }
     return counted;
@@ -1850,10 +1850,14 @@ export function createFilesService(
   return {
     storageMembers,
     /**
-     * The storage table's facts: who changed each storage last, what it holds, how many belong to it. Each part is
-     * read alone and is null when it failed, so one that fails leaves only its own cells empty.
+     * The storage table's facts: who changed each storage last, what it holds, who belongs to it, and its changes per
+     * day of the reader's last month in `timeZone`. Each part is read alone and is null when it failed, so one that
+     * fails leaves only its own cells empty.
      */
-    async storageFacts(call: UserFilesCall & { requestAbort?: AbortSignal }, options: { walk: boolean }): Promise<StorageFacts> {
+    async storageFacts(
+      call: UserFilesCall & { requestAbort?: AbortSignal },
+      options: { walk: boolean; timeZone: string },
+    ): Promise<StorageFacts> {
       // each part fails alone and leaves its cells empty; the log says which
       const failed =
         (part: string) =>
@@ -1863,20 +1867,18 @@ export function createFilesService(
         };
       // the reader's storages once for every part: one context, one read of their bindings
       const whole = await wholeStorages(call).catch(failed("storages"));
-      const [changes, usage, members] = await Promise.all([
-        whole
-          ? activityReader
-              .storageChanges(call, {
-                serverUrl: whole.state.config.url,
-                bindingIds: whole.storages.map((storage) => storage.binding.id),
-              })
-              .catch(failed("changes"))
-          : null,
+      // the activity reads see the same storages: those the reader may read as a whole, on their server
+      const scope = whole ? { serverUrl: whole.state.config.url, bindingIds: whole.storages.map((storage) => storage.binding.id) } : null;
+      const [changes, usage, members, daily] = await Promise.all([
+        scope ? activityReader.storageChanges(call, scope).catch(failed("changes")) : null,
         whole ? storageUsage(call, whole, { walk: options.walk, signal: call.requestAbort }).catch(failed("usage")) : null,
         whole ? storageMembers(call, whole.state).catch(failed("members")) : null,
+        scope
+          ? activityReader.storageChangesPerDay(call, scope, { now: new Date(), timeZone: options.timeZone }).catch(failed("daily"))
+          : null,
       ]);
       call.requestAbort?.throwIfAborted();
-      return { changes, usage: usage?.items ?? null, usagePending: usage?.pending ?? false, members };
+      return { changes, usage: usage?.items ?? null, usagePending: usage?.pending ?? false, members, daily };
     },
     ...lifecycle,
     /** Private history-reader hook: authorize the current item before comparing any stored endpoint. */

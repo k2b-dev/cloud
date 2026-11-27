@@ -468,6 +468,8 @@ export const browserMessages = i18n.define({
       v2LastChange: "Last change",
       v2People: "People",
       v2GroupMembers: (count: number) => (count === 1 ? "1 person" : `${count} people`),
+      // the avatar stack's name: the people it names, and how many more belong to the storage
+      v2GroupPeople: (input: { names: string; more: number }) => (input.more ? `${input.names} and ${input.more} more` : input.names),
       v2RecentlyOpened: "Recently opened",
       v2RevokeLink: "Revoke link",
       otherStorage: "another storage",
@@ -968,6 +970,7 @@ export const browserMessages = i18n.define({
       v2LastChange: "Letzte Änderung",
       v2People: "Personen",
       v2GroupMembers: (count: number) => (count === 1 ? "1 Person" : `${count} Personen`),
+      v2GroupPeople: (input: { names: string; more: number }) => (input.more ? `${input.names} und ${input.more} weitere` : input.names),
       v2RecentlyOpened: "Zuletzt geöffnet",
       // the deed, apart from the state "Widerrufen" of a revoked link in the same column
       v2RevokeLink: "Link widerrufen",

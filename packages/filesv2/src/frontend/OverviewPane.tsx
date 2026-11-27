@@ -1,5 +1,5 @@
 import { formatFileViewSize, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Failed, List, type OnNavigate, Pane, Row, Section, Table, Text } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Failed, List, type OnNavigate, Pane, Row, Section, Table, Text } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry, StorageFacts } from "../contracts";
@@ -80,6 +80,20 @@ export default function OverviewPane(props: {
     if (base.kind === "users") return b().onlyYou;
     const count = members().get(base.id)?.members;
     return count === undefined ? "—" : b().v2GroupMembers(count);
+  };
+  // who belongs to a group storage as faces with "+n", named in words; where the server named nobody, the count
+  const people = (base: BaseSummary) => {
+    const group = base.kind === "groups" ? members().get(base.id) : undefined;
+    if (!group?.people.length) return kind(base);
+    const names = group.people.map((person) => person.name).join(", ");
+    return (
+      <Avatar.Stack
+        people={group.people}
+        total={group.members}
+        max={3}
+        label={b().v2GroupPeople({ names, more: group.members - group.people.length })}
+      />
+    );
   };
   const used = (base: BaseSummary) => {
     const value = usage().get(base.id);
@@ -188,7 +202,7 @@ export default function OverviewPane(props: {
                 title: b().v2People,
                 width: { min: 96, default: 104 },
                 drop: true,
-                cell: (base) => (base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : kind(base)),
+                cell: (base) => (base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : people(base)),
               },
               { title: b().v2Used, width: { min: 84, default: 92 }, align: "end", drop: true, cell: (base) => used(base) },
               {

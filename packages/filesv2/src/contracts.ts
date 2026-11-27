@@ -62,8 +62,21 @@ export type BaseSummary = {
  * stopped at the scan limit is `complete: false`, a lower bound. Storages that could not be counted are left out.
  */
 export type StorageUsage = { baseId: string; bytes: number; complete: boolean };
-/** How many people belong to a group storage; counted only for the storages the reader belongs to. */
-export type StorageMembers = { baseId: string; members: number };
+/**
+ * Who belongs to a group storage: how many people, and the first five of them by name for an avatar stack. Read only for
+ * the storages whose group the reader belongs to.
+ */
+export type StorageMembers = { baseId: string; members: number; people: { name: string }[] };
+/** How many days the storage table's changes per day cover: a month, today included. */
+export const CHANGE_DAYS = 30;
+/** A storage's content changes per day: `CHANGE_DAYS` entries, the oldest first, the last one today. */
+export type StorageDailyChanges = { baseId: string; days: number[] };
+/**
+ * Content changes per day of the reader's last `CHANGE_DAYS` days in their time zone, from the activity log: per storage
+ * the reader may read as a whole, and in `total` over all of them, where a change between two of them counts once.
+ * `from` is the first day (`YYYY-MM-DD`). A storage without a change in these days has no entry: its days are zeros.
+ */
+export type StorageChangeSeries = { from: string; total: number[]; storages: StorageDailyChanges[] };
 /**
  * What the storage table shows beside each storage's name. Each part is read alone and is null when it failed, so its
  * cells say "—" and the rest stands.
@@ -74,6 +87,7 @@ export type StorageFacts = {
   /** Some storage has no count yet: the page asks the route once more, which may count it. */
   usagePending: boolean;
   members: StorageMembers[] | null;
+  daily: StorageChangeSeries | null;
 };
 export type FileEntry = {
   revision?: string;

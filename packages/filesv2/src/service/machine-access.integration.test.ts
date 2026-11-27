@@ -32,6 +32,12 @@ import { templateService } from "./templates";
 useTestAppRegistry(["filesv2"]);
 
 const suite = suiteFor("database", "nats", "valkey");
+/**
+ * What the storage table costs for any number of group storages (measured 27.11.2026): the reader and their storages,
+ * one statement for the people of up to 50 groups, and the two activity reads, each in its budget frame (BEGIN, its
+ * timeout, the read, COMMIT). Names ride the people's statement; the changes per day add one frame of four.
+ */
+const STORAGE_FACTS_STATEMENTS = 26;
 suite("Files machine storage through actual API tokens", () => {
   let runtime: ProcessSync | undefined;
   let gateway: Awaited<ReturnType<typeof activityFilegate>> | undefined;
@@ -940,23 +946,29 @@ suite("Files machine storage through actual API tokens", () => {
         });
 
         // a grant on a subfolder describes that folder, not the storage: no size and no last change, also on the route
-        const folderOnly = await service.storageFacts(folderReader.call, { walk: true });
+        const folderOnly = await service.storageFacts(folderReader.call, { walk: true, timeZone: "UTC" });
         expect(of(folderOnly.usage, storage.baseId)).toBeUndefined();
         expect(of(folderOnly.changes, storage.baseId)).toBeUndefined();
+        // nor its changes per day: the storage has no series and adds nothing to the reader's total
+        expect(of(folderOnly.daily?.storages ?? null, storage.baseId)).toBeUndefined();
+        expect(folderOnly.daily?.total.at(-1)).toBe(0);
 
         // a reader of the root: the page shows only kept counts and says one is missing; the route counts it
-        const page = await service.storageFacts(rootReader.call, { walk: false });
+        const page = await service.storageFacts(rootReader.call, { walk: false, timeZone: "UTC" });
         expect(of(page.usage, storage.baseId)).toBeUndefined();
         expect(page.usagePending).toBe(true);
         expect(of(page.changes, storage.baseId)?.time).toBeDefined();
-        const route = await service.storageFacts(rootReader.call, { walk: true });
+        // the upload of today counts for the reader of the root, in the storage's series and in the total
+        expect(of(page.daily?.storages ?? null, storage.baseId)?.days.at(-1)).toBe(1);
+        expect(page.daily?.total.at(-1)).toBe(1);
+        const route = await service.storageFacts(rootReader.call, { walk: true, timeZone: "UTC" });
         expect(of(route.usage, storage.baseId)?.bytes).toBeGreaterThanOrEqual(520);
         // the next page shows the count the route kept, without a walk
-        const again = await service.storageFacts(rootReader.call, { walk: false });
+        const again = await service.storageFacts(rootReader.call, { walk: false, timeZone: "UTC" });
         expect(of(again.usage, storage.baseId)).toEqual(of(route.usage, storage.baseId));
         expect(again.usagePending).toBe(false);
         // the kept count never reaches the subfolder's reader
-        const folderLater = await service.storageFacts(folderReader.call, { walk: true });
+        const folderLater = await service.storageFacts(folderReader.call, { walk: true, timeZone: "UTC" });
         expect(of(folderLater.usage, storage.baseId)).toBeUndefined();
         expect(of(folderLater.changes, storage.baseId)).toBeUndefined();
       }),
@@ -975,21 +987,22 @@ suite("Files machine storage through actual API tokens", () => {
         const reader = await person("Gone reader");
         await service.grantStorage(call(), storage.id, { path: "", principal: { type: "user", userId: reader.id }, permission: "read" });
         // the walk fails: no size, no pending, the rest of the table stands
-        const route = await service.storageFacts(reader.call, { walk: true });
+        const route = await service.storageFacts(reader.call, { walk: true, timeZone: "UTC" });
         expect(of(route.usage, storage.baseId)).toBeUndefined();
         expect(route.usagePending).toBe(false);
         expect(of(route.changes, storage.baseId)?.time).toBeDefined();
         // the failure is kept: the next page does not ask for this storage again
-        expect((await service.storageFacts(reader.call, { walk: false })).usagePending).toBe(false);
+        expect((await service.storageFacts(reader.call, { walk: false, timeZone: "UTC" })).usagePending).toBe(false);
       }),
     60000,
   );
 
   test(
-    "the storage table costs the same statements for two group storages as for five",
+    "the storage table costs the same statements for two group storages as for five, with the names of their people",
     () =>
       withLocalLinux(async () => {
         const member = await person("Group member");
+        const colleague = await person("Colleague in every group");
         let gid = 260000 + Math.floor(Math.random() * 10000);
         const join = async (count: number) => {
           for (let index = 0; index < count; index++) {
@@ -997,7 +1010,7 @@ suite("Files machine storage through actual API tokens", () => {
             const [group] = await sql<
               { id: string }[]
             >`INSERT INTO auth.groups(cn,name,provider,gid_number) VALUES(${name},${name},'local',${gid}) RETURNING id`;
-            await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${member.id}::uuid,${group!.id}::uuid)`;
+            await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${member.id}::uuid,${group!.id}::uuid),(${colleague.id}::uuid,${group!.id}::uuid)`;
             await sql`INSERT INTO filesv2.bases(area,kind,identity_id,identity_name,root,path,uid_number,gid_number,lifecycle)
             VALUES('cloud','groups',${group!.id}::uuid,${name},'cloud',${`${prefix}/groups/${name}`},NULL,${gid},'active')`;
             gid++;
@@ -1006,7 +1019,7 @@ suite("Files machine storage through actual API tokens", () => {
         const count = async () => {
           const meter = await meterSql();
           try {
-            return (await meter.during(() => service.storageFacts(member.call, { walk: false }))).length;
+            return await meter.during(() => service.storageFacts(member.call, { walk: false, timeZone: "Europe/Berlin" }));
           } finally {
             await meter.close();
           }
@@ -1015,8 +1028,17 @@ suite("Files machine storage through actual API tokens", () => {
         const two = await count();
         await join(3);
         const five = await count();
-        expect((await service.storageFacts(member.call, { walk: false })).members?.length).toBe(5);
-        expect(five).toBe(two);
+        const facts = await service.storageFacts(member.call, { walk: false, timeZone: "Europe/Berlin" });
+        expect(facts.members?.length).toBe(5);
+        // the names ride the count's statement: one per batch of groups, never one per storage
+        for (const storage of facts.members ?? [])
+          expect(storage).toMatchObject({ members: 2, people: [{ name: "Colleague in every group" }, { name: "Group member" }] });
+        // the series is read for every storage at once; the new groups had no change yet
+        expect(facts.daily?.total).toHaveLength(30);
+        // the parts read side by side, so their statements interleave in any order
+        expect(five.toSorted()).toEqual(two.toSorted());
+        expect(five.filter((statement) => statement.startsWith("WITH RECURSIVE wanted"))).toHaveLength(1);
+        expect(five).toHaveLength(STORAGE_FACTS_STATEMENTS);
       }),
     60000,
   );

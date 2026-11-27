@@ -3,6 +3,7 @@ import {
   type AuthContext,
   auth,
   getLocale,
+  getTimeZone,
   jsonResponse,
   middleware,
   REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
@@ -152,8 +153,17 @@ const api = new Hono<AuthContext>()
   )
   .get(
     "/storage-facts",
-    middleware.openapi({ summary: "Who changed each storage of the user last, what it holds and how many belong to it", ...requiresAuth }),
-    async (c) => respond(c, ok(await filesService.storageFacts({ ...requestCall(c), requestAbort: c.req.raw.signal }, { walk: true }))),
+    middleware.openapi({
+      summary: "Who changed each storage of the user last, what it holds, who belongs to it and its changes per day",
+      ...requiresAuth,
+    }),
+    async (c) =>
+      respond(
+        c,
+        ok(
+          await filesService.storageFacts({ ...requestCall(c), requestAbort: c.req.raw.signal }, { walk: true, timeZone: getTimeZone(c) }),
+        ),
+      ),
   )
   .get("/favorites", middleware.openapi({ summary: "Favorite entries of the user", ...requiresAuth }), async (c) =>
     respond(c, ok(await filesService.favorites(requestCall(c)))),

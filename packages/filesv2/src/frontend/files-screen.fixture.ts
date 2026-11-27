@@ -1,5 +1,16 @@
 import type { ActivityEntry, ActivityPage, ActivitySide, ShareAccessCounts } from "../activity-contracts";
-import type { BaseSummary, FileEntry, FileVersion, MarkdownLaunch, MarkedEntry, SharePage, ShareView, StorageFacts } from "../contracts";
+import {
+  type BaseSummary,
+  CHANGE_DAYS,
+  type FileEntry,
+  type FileVersion,
+  type MarkdownLaunch,
+  type MarkedEntry,
+  type SharePage,
+  type ShareView,
+  type StorageChangeSeries,
+  type StorageFacts,
+} from "../contracts";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 // Invented folders for the v2 folder screen's browser test and design review: a fixed "now", no real people or files.
@@ -484,8 +495,32 @@ export function fixtureStorageFacts(fixture: FixtureCase, storages: readonly Bas
         : [{ baseId: base.id, bytes: 1_250_000 * (index + 1) ** 3, complete: !(fixture === "worst" && index === 1) }],
     ),
     usagePending: false,
-    members: shown.filter((base) => base.kind === "groups").map((base, index) => ({ baseId: base.id, members: ((index * 5) % 23) + 2 })),
+    // a group names its first people (at most five, as the platform reads them) and counts all of them; in the worst
+    // case every third names nobody, so its cell keeps the count
+    members: shown
+      .filter((base) => base.kind === "groups")
+      .map((base, index) => {
+        const members = ((index * 5) % 23) + 7;
+        const names = fixture === "worst" ? (index % 3 === 2 ? [] : WORST_PEOPLE) : PEOPLE.map((person) => person.name);
+        const people = names.slice(0, Math.min(5, members)).map((name) => ({ name }));
+        return { baseId: base.id, members: Math.max(members, people.length), people };
+      }),
+    daily: fixtureDaily(fixture, shown),
   };
+}
+
+/** Changes per day of the last month (invented): some quiet days per storage, today the busiest; the total sums them. */
+function fixtureDaily(fixture: FixtureCase, shown: readonly BaseSummary[]): StorageChangeSeries {
+  const today = FIXTURE_NOW.slice(0, 10);
+  const from = new Date(Date.parse(`${today}T12:00:00.000Z`) - (CHANGE_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  const storages = shown.map((base, index) => ({
+    baseId: base.id,
+    days: Array.from({ length: CHANGE_DAYS }, (_, day) =>
+      (day * 7 + index * 3) % 5 === 0 ? 0 : ((day + index) % 6) + (day === CHANGE_DAYS - 1 ? 4 : 0),
+    ),
+  }));
+  const total = Array.from({ length: CHANGE_DAYS }, (_, day) => storages.reduce((sum, storage) => sum + storage.days[day]!, 0));
+  return { from, total, storages };
 }
 
 /** All storage: the favorites, and what this person did last. */

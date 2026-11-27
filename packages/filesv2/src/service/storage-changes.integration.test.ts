@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, expect, test } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { resolveDisplayNames } from "@k2b/cloud/server";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
@@ -145,6 +145,84 @@ suite("Files storage table: who changed each storage last", () => {
     } finally {
       await meter.close();
     }
+  });
+
+  describe("changes per day", () => {
+    // 00:30 on 16 May in Berlin, still 15 May in UTC: the reader's day decides
+    const now = new Date("2030-05-15T22:30:00.000Z");
+    const days = (bindingIds: string[], timeZone = "Europe/Berlin") =>
+      reader().storageChangesPerDay(call, scope(bindingIds), { now, timeZone });
+    const path = (binding: Binding, name: string) => ({ path_before: `${binding.path}/${name}`, path_after: `${binding.path}/${name}` });
+
+    test("each storage counts its content changes per day of the reader, and the total each change once", async () => {
+      // today in Berlin: after its midnight, also when UTC still says yesterday
+      await seed({ ...path(historyBinding, "a.md"), finished_at: new Date("2030-05-15T22:10:00.000Z") });
+      // yesterday in Berlin: 23:50 local
+      await seed({ ...path(historyBinding, "a.md"), finished_at: new Date("2030-05-15T21:50:00.000Z") });
+      // 29 days back is the first day of the series; 30 days back is outside it
+      await seed({ ...path(historyBinding, "a.md"), finished_at: new Date("2030-04-17T10:00:00.000Z") });
+      await seed({ ...path(historyBinding, "a.md"), finished_at: new Date("2030-04-16T10:00:00.000Z") });
+      // no change of what the storage holds, not finished, or outside the storage's own path
+      await seed({ ...path(historyBinding, "a.md"), action: "share.create", finished_at: new Date("2030-05-15T22:00:00.000Z") });
+      await seed({ ...path(historyBinding, "a.md"), state: "failed", finished_at: new Date("2030-05-15T22:00:00.000Z") });
+      await seed({ path_before: "users/alicia/b.md", path_after: "users/alicia/b.md", finished_at: new Date("2030-05-15T22:00:00.000Z") });
+      // a move from home into the group counts for both storages, and once in the total
+      await seed({
+        action: "item.move",
+        base_after_id: groupId,
+        path_before: `${home}/Plan.pdf`,
+        path_after: "groups/werkstatt/Plan.pdf",
+        finished_at: new Date("2030-05-15T22:20:00.000Z"),
+      });
+      // a storage the reader cannot read counts nowhere, also not in the total
+      await seed({ base_id: foreignId, ...path(foreign, "x"), finished_at: new Date("2030-05-15T22:00:00.000Z") });
+
+      const series = await days([baseId, groupId]);
+      expect(series.from).toBe("2030-04-17");
+      const of = (id: string) => series.storages.find((storage) => storage.baseId === id)?.days;
+      const own = of(publicBaseId)!;
+      expect(own).toHaveLength(30);
+      expect([own[0], own.at(-2), own.at(-1)]).toEqual([1, 1, 2]);
+      expect(own.reduce((sum, value) => sum + value, 0)).toBe(4);
+      const group = of(`cloud:groups:${groupIdentity}`)!;
+      expect(group.reduce((sum, value) => sum + value, 0)).toBe(1);
+      expect(group.at(-1)).toBe(1);
+      expect(series.storages.map((storage) => storage.baseId)).not.toContain(`cloud:groups:${otherId}`);
+      expect([series.total[0], series.total.at(-2), series.total.at(-1)]).toEqual([1, 1, 2]);
+      expect(series.total).toHaveLength(30);
+
+      // in UTC the same changes fall on other days: both late ones are still 15 May, today
+      const utc = await days([baseId], "UTC");
+      expect(utc.from).toBe("2030-04-16");
+      expect(utc.total.at(-1)).toBe(3);
+      expect(utc.total[0]).toBe(1);
+    });
+
+    test("the series of all storages cost one read in its budget frame, and a storage without changes has none", async () => {
+      for (let minute = 0; minute < 20; minute++)
+        await seed({
+          ...path(historyBinding, "a.md"),
+          finished_at: new Date(`2030-05-1${minute % 5}T08:${String(minute).padStart(2, "0")}:00.000Z`),
+        });
+      const meter = await meterSql();
+      try {
+        let series: Awaited<ReturnType<typeof days>> | undefined;
+        const statements = await meter.during(async () => {
+          series = await days([baseId, groupId]);
+        });
+        // BEGIN, its timeout, the one read for all storages, COMMIT
+        expect(statements).toHaveLength(4);
+        expect(statements[2]).toStartWith("SELECT changed.binding_id");
+        expect(series!.storages.map((storage) => storage.baseId)).toEqual([publicBaseId]);
+        expect(series!.total.reduce((sum, value) => sum + value, 0)).toBe(20);
+      } finally {
+        await meter.close();
+      }
+      expect(await reader().storageChangesPerDay(call, scope([]), { now, timeZone: "UTC" })).toMatchObject({
+        storages: [],
+        total: Array(30).fill(0),
+      });
+    });
   });
 
   test("a reader of no storage reads nothing", async () => {

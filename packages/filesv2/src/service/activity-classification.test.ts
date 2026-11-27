@@ -31,8 +31,10 @@ const files: Record<string, Classification> = {
   activityForEntry: read,
   movementChain: read,
   shareAccess: read,
-  // the storage table: the newest change from Postgres, usage counted by Filegate below each path, member counts
+  // the storage table: the newest change and the changes per day from Postgres, usage counted by Filegate below each
+  // path, the people of a group from the platform
   storageChanges: read,
+  storageChangesPerDay: read,
   storageMembers: read,
   storageFacts: read,
   machineStorage: read,
@@ -183,7 +185,7 @@ function dummyService() {
       inventory: unused,
       provisioningUsers: unused,
       provisioningIdentity: unused,
-      groupMemberCounts: unused,
+      groupMembers: unused,
     },
     bindings: { findAll: unused, find: unused, claim: unused, byId: unused, path: unused },
     displayNames: unused,

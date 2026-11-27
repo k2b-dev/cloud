@@ -767,6 +767,12 @@ describe("the views beside the folders on v2", () => {
       await tab.waitForFunction(() =>
         document.querySelector("table[aria-label='Alle Ablagen'] tbody")?.textContent?.includes("Mira Sommer"),
       );
+      // who belongs to a group storage: three faces and "+n", named in words; the personal storage is "Nur du"
+      const stack = storageRows.locator("[data-k2-part='Avatar.Stack']");
+      expect(await stack.count()).toBe(1);
+      expect(await stack.getAttribute("aria-label")).toBe("Mira Sommer, Felix Thal, Jana Krüger, Sven Yilmaz und 3 weitere");
+      expect(await stack.locator("[data-k2-part=Avatar]").count()).toBe(3);
+      expect(await storageRows.first().innerText()).toContain("Nur du");
       await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
       // beside the storages, the viewer's own last changes in the row design of Activity, under their day
       const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
