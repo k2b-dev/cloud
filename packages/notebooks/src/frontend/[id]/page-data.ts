@@ -14,8 +14,8 @@ import { notebooksService } from "@/service";
 import { countOpenAnnotations } from "@/service/annotation-count";
 import * as annotations from "@/service/annotations";
 import { loadBookNote } from "@/service/book";
+import type { Note } from "@/service/notes";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
-import { resolveNotebookNoteIds } from "@/service/tree-levels";
 import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
 import { parseGraphViewState } from "./_components/graph/view-state";
@@ -38,12 +38,13 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   if (!notebook) return { kind: "not_found" as const };
 
   const notebookId = notebook.id;
-  const permission = hasRole(user, "admin")
-    ? "admin"
-    : await notebooksService.notebook.permission.get({
-        notebookId,
-        userId: user.id,
-      });
+  // Capture the cursor before the snapshot (below), beside the access check: events published while the snapshot loads
+  // may replay redundantly, but an event can never be skipped between SSR and the browser subscription. That is why
+  // the notebook is read twice: once to find it and its access, once as the snapshot after the cursor.
+  const [permission, workspaceCursor] = await Promise.all([
+    hasRole(user, "admin") ? ("admin" as const) : notebooksService.notebook.permission.get({ notebookId, userId: user.id }),
+    notebooksService.workspaceEvents.latestCursor({ notebookId }),
+  ]);
   if (permission === "none") return { kind: "access_denied" as const };
 
   const isAdmin = permission === "admin";
@@ -54,10 +55,6 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const from = c.req.query("from");
   const graphFrom = isGraphMode ? (permission === "read" ? "book" : isPresentationMode(from) ? from : undefined) : undefined;
   const graphShell = isGraphMode ? (graphFrom === "book" ? "book" : "workspace") : undefined;
-  // Capture before the snapshot. Events published while the snapshot loads may
-  // replay redundantly, but an event can never be skipped between SSR and the
-  // browser subscription.
-  const workspaceCursor = await notebooksService.workspaceEvents.latestCursor({ notebookId });
   const snapshotNotebook = await notebooksService.notebook.get({ id: notebookId });
   if (!snapshotNotebook) return { kind: "not_found" as const };
   notebook = snapshotNotebook;
@@ -76,7 +73,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const sidebarScope = { notebookId, sort: settings.treeSort, locale, homepageId: notebook.homepageNoteId };
   const detailPanelOpen = parseDetailPanelOpen(cookieHeader);
   const noteParam = c.req.param("noteId");
-  const selectedNoteId = await resolveSelectedNoteId({
+  const resolvedNote = await resolveSelectedNote({
     notebookId,
     noteParam,
     graphNoteParam: isGraphMode ? c.req.query("note") : undefined,
@@ -88,12 +85,17 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
         ? notebooksService.note.sidebar.firstNote({ ...sidebarScope, sort: "title", book: true })
         : notebooksService.note.sidebar.firstNote({ ...sidebarScope, sort: "title", homepageId: null }),
   });
+  const selectedNoteId = resolvedNote?.shortId ?? null;
   if (noteParam && !selectedNoteId) return { kind: "not_found" as const };
+  // the note the page shows, read once for this request; Book reads its own document view
+  const selectedRow =
+    resolvedNote && !resolvedNote.row ? await readNoteInNotebook(notebookId, resolvedNote.shortId) : (resolvedNote?.row ?? null);
 
   const selected = await loadSelectedNote({
     notebookId,
     notebookShortId: notebook.shortId,
     selectedNoteId,
+    selectedRow,
     geoCaller: { cookie: c.req.header("Cookie"), authorization: c.req.header("Authorization"), locale, signal: c.req.raw.signal },
     isVersionsMode,
     canWrite,
@@ -121,41 +123,48 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     locked: !!selected.note?.lockedAt,
   });
   const readonlyMode = presentationMode !== "write";
-  const graph = isGraphMode ? await notebooksService.notebook.graphView({ notebookId, noteId: selected.internalNoteId }) : null;
-  const versionHistory =
+  const selectedCommentNote = selectedRow && selected.note && !isVersionsMode && !isGraphMode && !isBookMode ? selectedRow : null;
+  const selectedInternalId = selectedRow?.id ?? null;
+  const sidebarFilter = parseSidebarFilter(new URL(c.req.url).searchParams);
+  const showDetailPanel = !!selected.note && !isVersionsMode && !isGraphMode && !isBookMode;
+  // Everything below depends only on the notebook and the note read above, so it loads in one step.
+  const [
+    graph,
+    versionHistory,
+    attachmentCount,
+    tags,
+    favoriteRows,
+    commentsPage,
+    pageTemplates,
+    initialAnnotations,
+    bookNavigation,
+    sidebarTree,
+    sidebarList,
+    memberPermission,
+    appUrl,
+    bookOpenComments,
+  ] = await Promise.all([
+    isGraphMode ? notebooksService.notebook.graphView({ notebookId, noteId: selected.internalNoteId }) : null,
     isVersionsMode && selected.note && selected.internalNoteId
-      ? await notebooksService.note.versions
-          .list({
-            noteId: selected.internalNoteId,
-            pagination: { page: 1, perPage: 20, offset: 0 },
-          })
+      ? notebooksService.note.versions
+          .list({ noteId: selected.internalNoteId, pagination: { page: 1, perPage: 20, offset: 0 } })
           .catch(() => null)
-      : null;
-  const publicVersionHistory = versionHistory
-    ? { ...versionHistory, versions: versionHistory.versions.map((version) => ({ ...version, noteId: selected.note!.id })) }
-    : null;
-  const selectedCommentNote =
-    selected.note && !isVersionsMode && !isGraphMode && !isBookMode
-      ? await notebooksService.note.getByShortId({ shortId: selected.note.id })
-      : null;
-  const [attachmentCount, tags, favoriteRows, commentsPage, pageTemplates] = await Promise.all([
+      : null,
     notebooksService.attachment.count({ notebookId }),
     notebooksService.tag.listForNotebook({ notebookId }),
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
-    selectedCommentNote?.notebookId === notebookId
+    selectedCommentNote
       ? notebooksService.note.comments.listPage({
           notebookId,
           noteId: selectedCommentNote.id,
           viewerUserId: user.id,
           pagination: { page: 1, perPage: 30 },
         })
-      : Promise.resolve(null),
+      : null,
     notebooksService.pageTemplate.list({ notebookId, permission, locale }),
-  ]);
-  // The margin's comments arrive with the page, so its first render already shows them where they belong.
-  const initialAnnotations =
-    selectedCommentNote?.notebookId === notebookId && selected.note
-      ? await annotations
+    // The margin's comments arrive with the page, so its first render already shows them where they belong.
+    selectedCommentNote && selected.note
+      ? annotations
           .list(
             selected.note.id,
             {},
@@ -169,7 +178,22 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
           )
           .then((result) => (result.ok ? result.data : null))
           .catch(() => null)
-      : null;
+      : null,
+    readsBook ? loadBookNavigation(notebook, selectedInternalId, locale) : EMPTY_NAVIGATION,
+    notebooksService.note.sidebar.tree({ ...sidebarScope, selectedNoteId: selectedInternalId }),
+    loadFirstListPage(notebookId, user.id, sidebarFilter),
+    // Everyone with access of their own, a group's, or all signed-in people's may see who else has access; public
+    // access alone may not. `GET /:id/access/members` decides the same way.
+    showDetailPanel && !hasRole(user, "admin")
+      ? notebooksService.notebook.access.memberPermission({ notebookId, subject: c.get("accessSubject") })
+      : null,
+    get<string>("app.url"),
+    // Without the count Book just leaves out its comments entry; the note itself still opens.
+    isBookMode && selected.internalNoteId ? countOpenAnnotations(selected.internalNoteId).catch(() => 0) : 0,
+  ]);
+  const publicVersionHistory = versionHistory
+    ? { ...versionHistory, versions: versionHistory.versions.map((version) => ({ ...version, noteId: selected.note!.id })) }
+    : null;
   const initialCommentsPage =
     commentsPage && selected.note
       ? {
@@ -177,14 +201,6 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
           items: commentsPage.items.map((comment) => toPublicNoteComment(comment, notebook.shortId, selected.note!.id)),
         }
       : null;
-
-  const sidebarFilter = parseSidebarFilter(new URL(c.req.url).searchParams);
-  const [selectedInternalId] = selectedNoteId ? [...(await resolveNotebookNoteIds(notebookId, [selectedNoteId])).values()] : [];
-  const bookNavigation = readsBook ? await loadBookNavigation(notebook, selectedInternalId ?? null, locale) : EMPTY_NAVIGATION;
-  const [sidebarTree, sidebarList] = await Promise.all([
-    notebooksService.note.sidebar.tree({ ...sidebarScope, selectedNoteId: selectedInternalId ?? null }),
-    loadFirstListPage(notebookId, user.id, sidebarFilter),
-  ]);
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
@@ -206,15 +222,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     presentationMode: isGraphMode ? graphFrom : requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
-  const showDetailPanel = !!selected.note && !isVersionsMode && !isGraphMode && !isBookMode;
-  // Everyone with access of their own, a group's, or all signed-in people's may see who else has access; public
-  // access alone may not. `GET /:id/access/members` decides the same way.
-  const accessVisible =
-    showDetailPanel &&
-    (hasRole(user, "admin") ||
-      (await notebooksService.notebook.access.memberPermission({ notebookId, subject: c.get("accessSubject") })) !== "none");
-
-  const appUrl = await get<string>("app.url");
+  const accessVisible = showDetailPanel && (hasRole(user, "admin") || (memberPermission ?? "none") !== "none");
   const requestUrl = new URL(c.req.url);
 
   return {
@@ -255,7 +263,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     initialCommentsPage,
     initialAnnotations,
     // Without the count Book just leaves out its comments entry; the note itself still opens.
-    bookOpenComments: isBookMode && selected.internalNoteId ? await countOpenAnnotations(selected.internalNoteId).catch(() => 0) : 0,
+    bookOpenComments,
     dateConfig: ctx.dateConfig,
   };
 }
@@ -274,28 +282,36 @@ function parseGraphBack(back: string | undefined, notebookShortId: string): stri
   }
 }
 
-async function resolveSelectedNoteId(params: {
+/** A note of this notebook by its short id, or null when it is gone or belongs to another notebook. */
+async function readNoteInNotebook(notebookId: string, shortId: string): Promise<Note | null> {
+  const note = await notebooksService.note.getByShortId({ shortId });
+  return note?.notebookId === notebookId ? note : null;
+}
+
+/**
+ * The note the page opens: the one in the address, else the graph's, the last opened, the homepage or the first in the
+ * order. Each candidate that is read comes back with its row, so the page reads the note no second time.
+ */
+async function resolveSelectedNote(params: {
   notebookId: string;
   noteParam: string | undefined;
   graphNoteParam: string | undefined;
   lastNoteId: string | null;
   homepageNoteId: string | null;
   firstNoteId: () => Promise<string | null> | string | null;
-}): Promise<string | null> {
-  const resolveNoteInNotebook = async (shortId: string | null | undefined): Promise<string | null> => {
+}): Promise<{ shortId: string; row: Note | null } | null> {
+  const candidate = async (shortId: string | null | undefined) => {
     if (!shortId) return null;
-    const note = await notebooksService.note.getByShortId({ shortId });
-    return note?.notebookId === params.notebookId ? note.shortId : null;
+    const row = await readNoteInNotebook(params.notebookId, shortId);
+    return row ? { shortId: row.shortId, row } : null;
   };
-
-  const resolvedFromPath = await resolveNoteInNotebook(params.noteParam);
   // An explicit link must never display another note under the requested URL.
-  if (params.noteParam) return resolvedFromPath;
-  const resolvedFromGraph = await resolveNoteInNotebook(params.graphNoteParam);
-  if (resolvedFromGraph) return resolvedFromGraph;
-  const resolvedFromCookie = await resolveNoteInNotebook(params.lastNoteId);
-  const resolvedHomepage = await resolveNoteInNotebook(params.homepageNoteId);
-  return resolvedFromPath ?? resolvedFromCookie ?? resolvedHomepage ?? (await params.firstNoteId());
+  if (params.noteParam) return candidate(params.noteParam);
+  const found =
+    (await candidate(params.graphNoteParam)) ?? (await candidate(params.lastNoteId)) ?? (await candidate(params.homepageNoteId));
+  if (found) return found;
+  const first = await params.firstNoteId();
+  return first ? { shortId: first, row: null } : null;
 }
 
 async function loadSelectedNote(params: {
@@ -303,6 +319,8 @@ async function loadSelectedNote(params: {
   notebookId: string;
   notebookShortId: string;
   selectedNoteId: string | null;
+  /** The note read once above (null when it is not in this notebook). */
+  selectedRow: Note | null;
   isVersionsMode: boolean;
   canWrite: boolean;
   userId: string;
@@ -364,8 +382,8 @@ async function loadSelectedNote(params: {
   }
 
   if (params.requestedMode === "graph") {
-    const note = await notebooksService.note.getByShortId({ shortId: params.selectedNoteId });
-    if (note?.notebookId !== params.notebookId) {
+    const note = params.selectedRow;
+    if (!note) {
       return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
     }
     return {
@@ -389,8 +407,8 @@ async function loadSelectedNote(params: {
   }
 
   if (params.isVersionsMode) {
-    const noteMeta = await notebooksService.note.getByShortId({ shortId: params.selectedNoteId });
-    if (noteMeta?.notebookId !== params.notebookId) {
+    const noteMeta = params.selectedRow;
+    if (!noteMeta) {
       return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
     }
     const note = {
@@ -420,13 +438,14 @@ async function loadSelectedNote(params: {
     notebookId: params.notebookId,
     notebookShortId: params.notebookShortId,
     noteId: params.selectedNoteId,
+    note: params.selectedRow,
     canWrite: params.canWrite,
     userId: params.userId,
     bypassAccess: params.bypassAccess,
   });
   if (!routeState) return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
   return {
-    internalNoteId: null,
+    internalNoteId: params.selectedRow?.id ?? null,
     note: routeState.note,
     routeState,
     tocItems: routeState.tocItems,

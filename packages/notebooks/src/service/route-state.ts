@@ -85,6 +85,8 @@ type LoadSelectedNoteParams = {
   canWrite: boolean;
   userId: string;
   bypassAccess: boolean;
+  /** The note when the caller has read it already (the page loader), so it is read once per request. */
+  note?: Note | null;
 };
 
 const toSelectedNote = async (note: Note): Promise<SelectedNoteRouteState["note"]> => ({
@@ -103,7 +105,7 @@ const toSelectedNote = async (note: Note): Promise<SelectedNoteRouteState["note"
 
 export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams): Promise<SelectedNoteRouteState | null> => {
   // The saved Markdown is all a note needs to open; its Yjs state loads only when someone edits it.
-  const note = await notebooksService.note.getByShortId({ shortId: params.noteId });
+  const note = params.note !== undefined ? params.note : await notebooksService.note.getByShortId({ shortId: params.noteId });
   if (!note || note.notebookId !== params.notebookId) return null;
 
   const readonlyMode = !params.canWrite || !!note.lockedAt;

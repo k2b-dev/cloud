@@ -447,6 +447,11 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`ALTER TABLE notebooks.attachments ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_short_id ON notebooks.attachments(short_id)`.simple();
+  // The attachments view pages a notebook's files newest first (service/attachments.ts): the index holds that order.
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_attachments_notebook_created
+    ON notebooks.attachments(notebook_id, created_at DESC, id DESC)
+  `.simple();
   console.log("  ✓ notebooks.attachments table");
 
   // Index table for `#tag` references inside note bodies. Reindexed on
