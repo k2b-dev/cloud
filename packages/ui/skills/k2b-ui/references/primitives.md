@@ -121,10 +121,22 @@ The only place for own drawing and own CSS (a map, a chart). `label`
 (required), `height` in px. It must stand directly in a primitive
 (`<Band><Canvas …/></Band>` or directly in a `Pane`), never as a
 component's root and never in a plain element. A `Chart` of `@k2b/ui`
-fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
+fills it (`style={{ height: "100%" }}`) with `v2.css` alone. A `Calendar`
+of `@k2b/ui` in a `Canvas` lies flat: no edge or corners of its own, never a
+card in the screen; write no CSS for that. While the
 drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
-moves.
+moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
+of another page). Directly in its `Pane`, it takes the height left under
+head and status by layout alone, from the first render (never measure it
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it. The pane asks only for
+the drawing's 240 px, never for what the drawing holds: one drawing that
+asks for no height of its own (a chat column) takes the whole height, and
+what is taller (its history) scrolls inside it, the composer stays in sight.
+No absolute positioning is needed. A fill `Canvas` holds one child, the
+drawing: a second child stands in a row of its own under it and is cut away.
 
 ## Structure
 
@@ -219,6 +231,24 @@ Give every table whose column widths add up to more than a phone (about
 are cut off at 390 px (the outline reports it). A phone row opens what
 `open(row)` names; a row's other deeds live on the page it opens.
 
+Rows in levels (Files, a page tree): `tree: { children(row), branch(row),
+expanded?, onExpandedChange?, load?, more?, loadMore? }` with `rowKey`, not
+with `group`. `rows` are the top level; an open row's `children` stand under
+it, 20 px further in per level (at most eight steps). `children(row)` is
+`undefined` while not loaded; `load(row, { signal })` fetches them the first
+time the row opens (the arrow turns, a rejection leaves a red mark, opening
+again retries). `more(row | null)` says that more children (or top rows)
+exist (`true` or a count), and a last row "Weitere laden" calls
+`loadMore(row | null)`; the focus goes on to the first new row. The table
+is then a treegrid: one Tab stop, Up/Down/Home/End move, Right opens and
+enters, Left closes (also a row that is still loading: its late answer
+opens nothing) and goes to the parent, Enter opens the row, Space selects
+with `select` (the boxes are no Tab stops). A level that pages says its
+whole size (`aria-setsize`, -1 while `more` is `true`); a page that
+fails says so on its "Weitere laden" row, and Enter tries again; the focus
+follows the new rows only while it waited on that row. `expanded` left out: the table keeps it, starting
+with the way to `current`. On the phone only the top level shows.
+
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
 rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
 no rows and nothing loading, the empty state stands in place of the table.
@@ -264,7 +294,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress
+### Icon, Avatar, Chip, Progress, Ticks
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -281,6 +311,15 @@ lines instead of cutting a thing.
   height. Use it for a column of states in a dense table or list, where a
   chip on every line is too loud.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
+  the writing direction; at most 60 in a table cell, more are cut at its
+  end), `label` (always "what, period: what happened", such as
+  "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen"),
+  `color` (the data colour of what it belongs to; default the app),
+  `stretch` (in a detail: slots 2 px apart grow up to 12 px, a wider place
+  keeps the strip at its start). Ok is soft, a failure red and taller, a
+  slot without data a low stub; 140 × 20 px in a table cell. The one column
+  of a list that shows its data over time; never decoration.
 
 ## Controls
 
@@ -394,6 +433,18 @@ lines instead of cutting a thing.
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+  A group with `tree` in place of `items` holds places in levels (the
+  folders of Files, the pages of a notebook): `tree: { label, items,
+  current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
+  place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
+  `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
+  load on the first open through `load(key, { signal })`), `more` (`true`
+  or a count: a last entry "Weitere laden" calls `loadMore(key | null)`),
+  `menu` (a "…" under the pointer, a right-click, Shift+F10). A press on a
+  place opens its page; the arrow, Right and Left fold it without leaving
+  the page. The way to `current` stands open (also when `current` changes);
+  give the loaded nodes down to it. The tree is one Tab stop and scrolls on
+  its own in the sidebar; levels step 12 px in, at most six steps.
 - Counts of `Nav` and `Tabs`: a number is written in the page's language and
   in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
   you give (`"99+"`, `"+8"`) stay as they are.
