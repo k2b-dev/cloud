@@ -73,7 +73,7 @@ In **Edit mode**, use **New** on the base overview, or the base's **…** menu a
 
 You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. Workflow email templates are in **Settings → Email templates**. Viewing, creating, editing, and deleting them require **Manage** access to the base.
 
-In **Overview**, switch between **Groups** for shared shortcuts and **All resources** for everything by kind. Search by name, and add the **Type** filter to narrow the list. The tab, the search, and the filter are part of the URL, so links, reloads, and browser history keep them. By default, a base with groups opens on **Groups**, and a base without groups opens on **All resources**. Opening a form still opens its form dialog; in **Edit mode**, its **…** menu also offers **Edit form**.
+In **Overview**, switch between **Groups** for shared shortcuts and **All resources** for everything by kind. Search by name, table, or kind. The tab and the search are part of the URL, so links, reloads, and browser history keep them. At the top, the overview shows how many records are new today with the last 14 days, open finalizations, and workflow runs that failed in the last 24 hours. Each table shows its record count and its new records per day. **Recently changed** lists the last changed records with who changed them. You see only the tables and workflows you can open. By default, a base with groups opens on **Groups**, and a base without groups opens on **All resources**. Opening a form still opens its form dialog; in **Edit mode**, its **…** menu also offers **Edit form**.
 
 ## Organize the navigation into groups {icon="layout-dashboard"}
 
