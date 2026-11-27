@@ -67,10 +67,12 @@ test("a centred pane and tiles that share a row are placed by the server's marku
   expect(renderToString(() => createComponent(Pane, { label: "Notizbücher", children: "Start" }))).not.toContain("data-center");
   const tiles = (perRow?: number) =>
     renderToString(() => createComponent(Tiles, { label: "Wege", perRow, items: [{ icon: "notebook", title: "Tagebuch" }] }));
-  expect(tiles(4)).toMatch(/data-per-row=""[^>]*style="--k2-per-row:\s*4"/);
+  expect(tiles(4)).toMatch(/data-per-row=""[^>]*style="--k2-per-row:\s*4;\s*--k2-per-row-half:\s*2"/);
+  // where n do not fit, a row holds half of them, rounded up
+  expect(tiles(3)).toMatch(/--k2-per-row-half:\s*2"/);
   // a count is a whole number of at least one
-  expect(tiles(2.7)).toMatch(/--k2-per-row:\s*2"/);
-  expect(tiles(-3)).toMatch(/--k2-per-row:\s*1"/);
+  expect(tiles(2.7)).toMatch(/--k2-per-row:\s*2;/);
+  expect(tiles(-3)).toMatch(/--k2-per-row:\s*1;\s*--k2-per-row-half:\s*1"/);
   expect(tiles(undefined)).not.toContain("data-per-row");
   expect(tiles(undefined)).not.toContain("--k2-per-row");
 });

@@ -7,10 +7,12 @@ import {
   createUniqueId,
   For,
   type JSX,
+  Match,
   onCleanup,
   onMount,
   children as resolveChildren,
   Show,
+  Switch,
   splitProps,
   useContext,
 } from "solid-js";
@@ -452,7 +454,8 @@ export type PaneProps = {
    * The content stands in the middle of the column: across at its own measure, at most that of four cards (4 × 240 px
    * with their gaps, between the text edges), and in the middle of the height where it fits. Taller content starts at
    * the top and scrolls, as in any pane; on the phone it always starts at the top. For a page with little on it and
-   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. It draws no
+   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. A line of text
+   * stands centred over them, on the phone at the start. It draws no
    * line and no box of its own, and it is CSS alone, so the server's first render already stands there.
    */
   center?: boolean;
@@ -929,6 +932,11 @@ export type Tile = {
   href?: string;
   /** … in place on a plain click (see `OnNavigate`). */
   onNavigate?: OnNavigate;
+  /**
+   * Without `href`: the deed of the whole tile, such as opening the dialog that makes a notebook from a template. The
+   * tile's name is then a button, and the whole tile presses it.
+   */
+  onOpen?: () => void;
   /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
   color?: string;
   /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
@@ -939,7 +947,62 @@ export type Tile = {
   foot?: string;
   /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
   trend?: SparkProps;
+  /**
+   * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
+   * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
+   * It is a picture of the content: assistive technology reads the card by its name.
+   */
+  preview?: TilePreview;
 };
+
+/** What a card's preview shows: the app gives the words, the card draws them. */
+export type TilePreview =
+  | { table: { columns: readonly string[]; rows: readonly (readonly string[])[] } }
+  | { page: { title: string; text?: string } }
+  | { icon: string };
+
+/** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
+const TILE_PREVIEW_PHONE_COLUMNS = 2;
+
+const TilePreviewView = (props: { preview: TilePreview }) => (
+  <span class="k2-tile-preview" aria-hidden="true">
+    <Switch>
+      <Match when={"table" in props.preview && props.preview.table}>
+        {(table) => (
+          <table class="k2-tile-pv-table">
+            <thead>
+              <tr>
+                <For each={table().columns}>
+                  {(column, index) => <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{column}</th>}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={table().rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>
+                      {(cell, index) => <td data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{cell}</td>}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        )}
+      </Match>
+      <Match when={"page" in props.preview && props.preview.page}>
+        {(page) => (
+          <span class="k2-tile-pv-page">
+            <b>{page().title}</b>
+            <Show when={page().text}>{(text) => <span>{text()}</span>}</Show>
+          </span>
+        )}
+      </Match>
+      <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
+    </Switch>
+  </span>
+);
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
 export type TileCreate = {
@@ -968,7 +1031,9 @@ export type TilesProps = {
   create?: TileCreate;
   /**
    * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
-   * the page. A tile never gets narrower than 240 px for it: below that they wrap, down to one under the other.
+   * the page. A tile never gets narrower than 240 px for it: where n do not fit, they stand in rows of half of them
+   * (four as 2 × 2, never 3 + 1), and below that one under the other. On the phone a row always holds half of them,
+   * even below 240 px a tile.
    */
   perRow?: number;
   /** One deed after the tiles, such as "Alle herunterladen". */
@@ -980,7 +1045,7 @@ export type TilesProps = {
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
     <span class="k2-tile-title">
-      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
         {props.tile.title}
       </RowOpen>
     </span>
@@ -994,9 +1059,11 @@ const TileCard = (props: { tile: Tile }) => (
   <div
     class="k2-tile"
     role="listitem"
-    data-open={props.tile.href !== undefined ? "" : undefined}
+    data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
+    data-preview={props.tile.preview ? "" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
+    <Show when={props.tile.preview}>{(preview) => <TilePreviewView preview={preview()} />}</Show>
     <span class="k2-tile-top">
       <Mark icon={props.tile.icon} color={props.tile.color} />
       <TileName tile={props.tile} />
@@ -1056,13 +1123,19 @@ const TileMake = (props: { create: TileCreate }) => (
   </div>
 );
 
+/** How many tiles share a row, a whole number of at least one, and the half (rounded up) they fall back to. */
+const perRowStyle = (perRow: number) => {
+  const count = Math.max(1, Math.floor(perRow));
+  return custom({ "--k2-per-row": String(count), "--k2-per-row-half": String(Math.ceil(count / 2)) });
+};
+
 export const Tiles = (props: TilesProps) => (
   <div
     class="k2-tiles"
     data-k2-part="Tiles"
     data-variant={props.variant}
     data-per-row={props.perRow ? "" : undefined}
-    style={props.perRow ? custom({ "--k2-per-row": String(Math.max(1, Math.floor(props.perRow))) }) : undefined}
+    style={props.perRow ? perRowStyle(props.perRow) : undefined}
     role="list"
     aria-label={props.label}
   >
@@ -1071,7 +1144,7 @@ export const Tiles = (props: TilesProps) => (
       fallback={
         <For each={props.items}>
           {(tile) => (
-            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}>
               <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
                 {(color) => <Mark icon={tile.icon} color={color()} />}
               </Show>
