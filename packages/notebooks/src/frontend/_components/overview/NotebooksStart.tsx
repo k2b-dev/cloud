@@ -106,7 +106,8 @@ export default function NotebooksStart(props: {
               color: "var(--k2-app)",
               title: way.name,
               meta: t().pageCount({ count: way.pages.length }),
-              preview: way.preview,
+              // a template without a table or page text still shows its sign there, so all cards keep one shape
+              preview: way.preview ?? { icon: way.icon },
               href: `/app/notebooks?new=${encodeURIComponent(way.id)}`,
               onNavigate: () => open(way.id),
             }))}

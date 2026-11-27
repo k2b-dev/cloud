@@ -161,7 +161,12 @@ for (const width of [1440, 1920, 1024, 390]) {
       expect(await cards.nth(2).locator(".k2-tile-preview").innerText()).toContain("Camembert");
       expect(await cards.nth(0).innerText()).toContain("1 Seite");
       // the fourth template waits in the dialog
-      expect(await page.locator(".k2-tile-title").filter({ hasText: /^Gartentagebuch$/ }).count()).toBe(0);
+      expect(
+        await page
+          .locator(".k2-tile-title")
+          .filter({ hasText: /^Gartentagebuch$/ })
+          .count(),
+      ).toBe(0);
       const pane = await box(page, '[data-k2-part="Pane"] > .k2-scroll');
       const tiles = await box(page, '[data-k2-part="Tiles"]');
       const tops = await cards.evaluateAll((all) => all.map((element) => Math.round(element.getBoundingClientRect().top)));
@@ -203,6 +208,8 @@ for (const [sample, path] of samples)
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
         expect(layout.measured.texts).toBeGreaterThan(0);
+        // every card keeps one shape: a template without a table or page text shows its sign as its preview
+        expect(await page.locator(".k2-tile-preview").count()).toBe(await page.locator("[data-k2-part='Tiles'] .k2-tile").count());
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       } finally {
         await page.close();
