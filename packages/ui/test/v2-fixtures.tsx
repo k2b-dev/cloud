@@ -373,7 +373,7 @@ export const TableFixture = () =>
           { title: "Treppe Haus am Hang", who: "Architekturbüro Winter", note: "kurz", state: "warn" as const, sum: "640,00 €" },
         ]}
         columns={[
-          { title: "Titel", width: { min: 160, default: 260 }, cell: (row) => row.title },
+          { title: "Titel", width: { min: 160, default: 260 }, grow: true, cell: (row) => row.title },
           { title: "Kunde", width: { min: 120, default: 180 }, cell: (row) => row.who, drop: true },
           { title: "Notiz", width: { min: 200, default: 300 }, wrap: true, cell: (row) => row.note },
           {
@@ -612,11 +612,12 @@ const MessagesFixture = () => (
         rowKey={(order) => order.id}
         columns={[
           { title: "Auftrag", width: { min: 160, default: 240 }, cell: (order) => order.name },
+          { title: "Kunde", width: { min: 120, default: 160 }, cell: (order) => order.customer },
           { title: "Betrag", width: { min: 80, default: 120 }, align: "end", cell: (order) => order.sum },
         ]}
         rows={[
-          { id: "AU-1", name: "Einbauschrank Flur", sum: "180,50 €" },
-          { id: "AU-2", name: "Treppe Haus am Hang", sum: "617,00 €" },
+          { id: "AU-1", name: "Einbauschrank Flur", customer: "Familie Oswald", sum: "180,50 €" },
+          { id: "AU-2", name: "Treppe Haus am Hang", customer: "Architekturbüro Winter", sum: "617,00 €" },
         ]}
         phone={(order) => ({ lines: [order.name, order.sum] })}
       />

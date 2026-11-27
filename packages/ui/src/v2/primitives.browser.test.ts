@@ -527,8 +527,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           };
         });
         expect(table.chip).toEqual([true, true]);
-        expect(table.heads.slice(0, -1)).toEqual([260, 180, 300, 140]);
-        expect(table.heads.at(-1)!).toBeGreaterThanOrEqual(120);
+        // every column is its default wide; the title, named to grow, takes the rest (not the amount at the end)
+        expect(table.heads.slice(1)).toEqual([180, 300, 140, 120]);
+        expect(table.heads[0]!).toBeGreaterThanOrEqual(260);
         expect(table.cut).toBe(true);
         expect(table.wrapLines).toBe(3);
         expect(table.cells[1]).toBe(heights.row);
@@ -791,6 +792,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             };
           });
           expect(found.reply).toBe(edge);
+          // the order grows and has no grip; the customer's grip stands in the head of the amount, not on the phone
           if (width < textEdge.phoneBelow) {
             expect(found.phoneText).toBe(edge);
             expect(found.grips).toBe(0);
