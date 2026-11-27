@@ -1,7 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Avatar, Chip, Table } from "@k2b/ui/v2";
 import type { SpaceColumn, SpaceItem } from "@/contracts";
-import { formatDeadline } from "@/presentation/deadline";
+import { deadlineDayKey, formatDeadline } from "@/presentation/deadline";
 import { useSpaceMessages } from "../../messages";
 import { itemPeople } from "../list/ItemRow";
 import { isInactiveTask, itemLastActivityAt } from "../shared/item-activity";
@@ -25,9 +25,20 @@ export default function ItemsTable(props: Props) {
   const columnsById = () => new Map(props.columns.map((column) => [column.id, column]));
   const href = (item: SpaceItem) => `${props.baseUrl}${props.baseUrl.includes("?") ? "&" : "?"}item=${item.id}`;
   const isEvent = (item: SpaceItem) => Boolean(item.startsAt && item.endsAt);
+  // An event names its day once, as a deadline does ("Thu, Oct 15", the year only when it is not this one): one day
+  // with its times as a range, several days with both ends. An all-day event ends at midnight, exclusive.
+  const day = (at: Date) => formatDeadline(deadlineDayKey(at.toISOString(), props.dateConfig), props.dateConfig);
+  const eventSchedule = (startsAt: string, endsAt: string, allDay: boolean) => {
+    const start = new Date(startsAt);
+    const end = new Date(allDay ? Date.parse(endsAt) - 1 : endsAt);
+    const sameDay = day(start) === day(end);
+    if (allDay) return sameDay ? day(start) : `${day(start)} – ${day(end)}`;
+    const [from, to] = [dates.formatTime(start, props.dateConfig), dates.formatTime(end, props.dateConfig)];
+    return sameDay ? `${day(start)}, ${from}–${to}` : `${day(start)}, ${from} – ${day(end)}, ${to}`;
+  };
   const schedule = (item: SpaceItem) =>
     item.startsAt && item.endsAt
-      ? `${dates.formatDateTime(item.startsAt, props.dateConfig)} – ${dates.formatDateTime(item.endsAt, props.dateConfig)}`
+      ? eventSchedule(item.startsAt, item.endsAt, item.allDay)
       : item.deadline
         ? formatDeadline(item.deadline, props.dateConfig)
         : "—";

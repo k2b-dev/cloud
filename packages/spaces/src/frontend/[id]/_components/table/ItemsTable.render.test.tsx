@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,7 +84,7 @@ test("states are quiet words; the kind is the title's sign in the Space's colour
   expect(html).not.toContain(">Kind<");
 });
 
-const renderTable = (item: SpaceItem) =>
+const renderTable = (item: SpaceItem, dateConfig?: { timeZone: string }) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "en",
@@ -96,10 +96,29 @@ const renderTable = (item: SpaceItem) =>
           tags: [],
           currentUserId: "33333333-3333-4333-8333-333333333333",
           baseUrl: "/app/spaces/Space1",
+          dateConfig,
         });
       },
     }),
   );
+
+// The Schedule column is 200 px: an event names its day once and its times as a range, as the list row does.
+beforeEach(() => setSystemTime(new Date("2026-10-01T10:00:00Z")));
+afterEach(() => setSystemTime());
+
+test("an event's schedule names its day once: one day with its times, several days with both ends", () => {
+  const berlin = { timeZone: "Europe/Berlin" };
+  const sameDay = renderTable(task({ startsAt: "2026-10-15T12:00:00.000Z", endsAt: "2026-10-15T13:00:00.000Z" }), berlin);
+  expect(sameDay).toContain("Thu, Oct 15, 14:00–15:00");
+  expect(sameDay).not.toContain("Oct 15, 2026");
+  const overnight = renderTable(task({ startsAt: "2026-10-15T20:00:00.000Z", endsAt: "2026-10-16T07:00:00.000Z" }), berlin);
+  expect(overnight).toContain("Thu, Oct 15, 22:00 – Fri, Oct 16, 09:00");
+  // An all-day event ends at midnight, exclusive: one day stays one day, three days name their last.
+  const oneDay = renderTable(task({ startsAt: "2026-10-15T22:00:00.000Z", endsAt: "2026-10-16T22:00:00.000Z", allDay: true }), berlin);
+  expect(oneDay).toContain("Fri, Oct 16<");
+  const threeDays = renderTable(task({ startsAt: "2026-10-15T22:00:00.000Z", endsAt: "2026-10-18T22:00:00.000Z", allDay: true }), berlin);
+  expect(threeDays).toContain("Fri, Oct 16 – Sun, Oct 18");
+});
 
 test("names whoever works on the task once, first, as on it", () => {
   const mira = { id: "44444444-4444-4444-8444-444444444444", kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
