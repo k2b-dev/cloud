@@ -8,6 +8,7 @@ import MailTabletScreen from "./MailTabletScreen.island";
 import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
+import { SettingsScreen } from "./settings-screen";
 import TableScreen from "./TableScreen.island";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
@@ -92,6 +93,16 @@ export const v2Screens = {
     phone: { back: "Kunden" },
     rail: kundenRail,
     render: () => <DeliveriesScreen />,
+  },
+  settings: {
+    title: "Einstellungen · Zeiten und Schichten",
+    description:
+      "The settings of a place in Standorte: every section is a settings section (`form`). On a wide pane its title, its one sentence and its button stand in a column at the left and its content beside it; on the phone they stand above it. The line between sections is stronger than the lines between rows, and the last one draws none.",
+    mockup: "settings-headings-study v2 (A, B)",
+    app: "#2563eb",
+    phone: { app: "Standorte" },
+    rail: { apps: ["world", "book", "message", "coffee", "leaf"], current: "coffee" },
+    render: () => <SettingsScreen />,
   },
   table: {
     title: "Große Tabelle",

@@ -81,25 +81,41 @@ const expectA = (found: Awaited<ReturnType<typeof shape>>) => {
 
 const title = typeRoles.title;
 
-test("every head: no symbol, a calm title of 15 px at 600, the count quiet beside it", async () => {
-  for (const which of ["form", "detail"] as const)
-    await withPage(which, 1440, async (page) => {
+test("every head: no symbol, a calm title of 15 px at 600 (in B the column's label at 14 px), the count quiet beside it", async () => {
+  for (const [which, width, font] of [
+    ["detail", 1440, `${title.size}px/${title.lineHeight}px ${title.weight}`],
+    ["form", 390, `${title.size}px/${title.lineHeight}px ${title.weight}`],
+    ["form", 1440, `${typeRoles.body.size}px/${typeRoles.body.lineHeight}px 600`],
+  ] as const)
+    await withPage(which, width, async (page) => {
       const found = await shape(page);
-      expect([found.symbols, found.font, found.countWeight]).toEqual([0, `${title.size}px/${title.lineHeight}px ${title.weight}`, "400"]);
+      expect([which, width, found.symbols, found.font, found.countWeight]).toEqual([which, width, 0, font, "400"]);
       expect(Math.abs(found.count!.bottom - found.title!.bottom)).toBeLessThanOrEqual(3);
     });
+});
+
+test("a section's buttons are small framed buttons, at the end of the title's row", async () => {
+  await withPage("detail", 1440, async (page) => {
+    const button = await page.evaluate(() => {
+      const element = document.querySelector('[data-k2-part="Section"] .k2-sh-end .k2-btn')!;
+      const style = getComputedStyle(element);
+      return [element.getAttribute("data-variant"), style.borderTopWidth, Math.round(element.getBoundingClientRect().height)];
+    });
+    // the default (framed) variant carries no data-variant
+    expect(button).toEqual([null, "1px", 28]);
+  });
 });
 
 test("1440 px, a settings screen (`form`) in a wide pane: B, the head a column of 240 px at the left, the content beside it", async () => {
   await withPage("form", 1440, async (page) => {
     const found = await shape(page);
-    // the head column: title, summary under it, the deeds under the summary
-    expect(found.head!.right - found.section!.left).toBeLessThanOrEqual(240 + 1);
+    // the head column: 240 px of text after the text edge; title on one line, summary under it, the deeds under that
+    expect(found.head!.right - found.title!.left).toBe(240);
     expect(found.summary!.top).toBeGreaterThanOrEqual(found.title!.bottom);
     expect(found.actions!.top).toBeGreaterThanOrEqual(found.summary!.bottom);
-    expect(found.actions!.right).toBeLessThanOrEqual(found.section!.left + 240);
+    expect(found.actions!.right).toBeLessThanOrEqual(found.head!.right);
     // the content starts 40 px after the column, on the head's top
-    expect(found.firstRow!.left).toBeGreaterThanOrEqual(found.section!.left + 240 + 40 - 20);
+    expect(found.firstRow!.left).toBe(found.head!.right + 40 - (found.title!.left - found.section!.left));
     expect(found.firstRow!.top).toBeLessThan(found.summary!.bottom);
   });
 });
@@ -134,5 +150,16 @@ test("the line between sections is clearly stronger than the very subtle lines b
     });
     // all 1 px: between sections n300, between rows n100 (structure keeps n200)
     expect(lines).toEqual({ section: "rgb(212, 212, 216)", row: "rgb(244, 244, 245)", cell: "rgb(244, 244, 245)" });
+  });
+});
+
+test("the last section of a pane draws no line under itself (its pixel stays, so nothing moves)", async () => {
+  await withPage("detail", 1440, async (page) => {
+    const last = await page.evaluate(() => {
+      const section = document.querySelector('[data-k2-part="Section"]')!;
+      const style = getComputedStyle(section);
+      return [section === section.parentElement?.lastElementChild, style.borderBottomWidth, style.borderBottomColor];
+    });
+    expect(last).toEqual([true, "1px", "rgba(0, 0, 0, 0)"]);
   });
 });

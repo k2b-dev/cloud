@@ -869,6 +869,16 @@
 .k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
   border-block: 0;
 }
+/* The last part of a pane draws no line under itself: below it ends the column, there is nothing to separate. The
+   line keeps its pixel (transparent), so nothing moves. */
+.k2-ui .k2-pane > .k2-scroll > :is(.k2-sec, .k2-row, .k2-band, .k2-bar):last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
+  border-bottom-color: transparent;
+}
+.k2-ui .k2-pane > .k2-scroll > .k2-table-scroll:nth-last-child(1 of :not(.k2-table-phone)) {
+  --k2-table-end: 1px solid transparent;
+}
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
 .k2-ui .k2-cells {
@@ -1015,7 +1025,6 @@
   display: flex;
   gap: 4px;
   align-items: center;
-  margin-right: -8px;
 }
 .k2-ui .k2-sh > .k2-sec-summary {
   grid-area: summary;
@@ -1029,25 +1038,40 @@
 @container k2-pane (min-width: 800px) {
   .k2-ui .k2-sec[data-form] {
     display: flow-root;
-    padding-block: 24px;
+    padding-block: 28px;
   }
   .k2-ui .k2-sec[data-form] > .k2-sh {
     float: left;
+    box-sizing: content-box;
     width: 240px;
     min-height: 0;
     padding: 0 0 0 var(--k2-edge);
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "title" "summary" "end";
     align-content: start;
+    row-gap: 4px;
+  }
+  /* the title is the label of the column: the text's size at 600, so a long one stays on its line */
+  .k2-ui .k2-sec[data-form] > .k2-sh > .k2-sh-title,
+  .k2-ui .k2-sec[data-form] > .k2-sh > .k2-sh-title > h3 {
+    font: var(--k2-t-body);
+    font-weight: 600;
   }
   .k2-ui .k2-sec[data-form] > .k2-sh > .k2-sh-end {
     justify-self: start;
     height: auto;
-    margin: 12px 0 0 -8px;
+    margin-top: 8px;
   }
+  /* the content keeps the reading measure, so a short setting does not stretch its words and deeds apart */
   .k2-ui .k2-sec[data-form] > :not(.k2-sh) {
-    margin-left: calc(240px + 40px - var(--k2-edge));
+    margin-left: calc(240px + 40px);
+    max-width: var(--k2-measure);
   }
+}
+/* in a settings section the entries are rows of their own (the study's A and B): the quiet line stands between them */
+.k2-ui .k2-sec[data-form] > .k2-row:not(:last-child),
+.k2-ui .k2-sec[data-form] > .k2-list > .k2-row:not(:last-child) {
+  border-bottom: var(--k2-hairline-subtle);
 }
 .k2-ui .k2-stile {
   width: 20px;
@@ -2566,14 +2590,14 @@
 }
 /* the place picks the control height, so the air above and below is equal and at least 6 px:
    head 56 → 36, status row 52 → 36, bar 40 → 28, a row → 28. A control never turns square in a band. */
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-sh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
   height: var(--k2-h-control-small);
   padding: 0 8px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-sh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
   width: var(--k2-h-control-small);
   padding: 0;
 }
@@ -5188,9 +5212,10 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  /* a head action with a leading symbol keeps only the symbol; its words stay its title and name (not `display: none`,
-     which took them). One without a leading symbol keeps its words, also with a trailing chevron (forward, menu) */
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
+  /* A section's one button keeps its words ("+ Zeiten", the study's A). Where it has two, a button with a leading
+     symbol keeps only the symbol, so the title keeps its room; its words stay its title and name (not `display: none`,
+     which took them). One without a leading symbol keeps its words, also with a trailing chevron (forward, menu). */
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:not(:only-child):has(> .k2-icon:first-child) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;

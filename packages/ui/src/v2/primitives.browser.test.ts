@@ -366,8 +366,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // A section's head actions keep their name everywhere. On the phone an action with a LEADING symbol shows only the
-  // symbol and keeps its words as its name and hint; a trailing chevron ("forward", "menu") is no reason to hide them.
+  // A section's head actions keep their name everywhere. On the phone, beside a second button, an action with a LEADING
+  // symbol shows only the symbol and keeps its words as its name and hint; a trailing chevron ("forward", "menu") is no
+  // reason to hide them. A section's only button keeps its words.
   for (const width of [1440, 390])
     test(
       `${width} px: section head actions keep their names; only a leading symbol may stand for the words`,
@@ -1037,7 +1038,7 @@ describe("v2 heads that sort lead to an address", () => {
 
 describe("v2 section heads on the phone", () => {
   test(
-    "390: a section's actions keep only their symbols and keep their words as their names",
+    "390: a section's one button keeps its words in sight (the study's A: '+ Todo anlegen')",
     async () => {
       const page = await open("structure", { width: 390 });
       try {
@@ -1047,8 +1048,8 @@ describe("v2 section heads on the phone", () => {
           const label = button.querySelector(".k2-btn-label")!.getBoundingClientRect();
           return { label: label.width > 1 && label.height > 1, inHead: button.closest(".k2-sh") !== null };
         });
-        // the words are not in sight; the symbol stands alone
-        expect(shape).toEqual({ label: false, inHead: true });
+        // a section with two buttons shows their symbols only (see "section head actions keep their names")
+        expect(shape).toEqual({ label: true, inHead: true });
       } finally {
         await page.close();
       }

@@ -6,13 +6,14 @@ import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import type { Action, TwoActions } from "./types";
 
-const HeadActions = (props: { actions?: TwoActions }) => (
+/** The buttons of a head: quiet text buttons in a group's tinted head, small framed buttons in a section's. */
+const HeadActions = (props: { actions?: TwoActions; variant: "text" | "secondary" }) => (
   <For each={props.actions}>
     {(action) => (
       <Button
-        variant="text"
+        variant={props.variant}
         icon={action.icon}
-        // on the phone the head keeps only the symbol: the words stay the button's name and hint
+        // where a head keeps only the symbol (a group's on the phone), the words stay the button's name and hint
         title={action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
@@ -31,14 +32,18 @@ export type SectionProps = {
   title: string;
   /** A quiet count after the title. */
   count?: number | string;
-  /** At most two text buttons in the head; on the phone they keep only their symbol. */
+  /**
+   * At most two small framed buttons in the head, such as "+ Zeiten". On the phone one button keeps its words; of two,
+   * a button with a symbol keeps only the symbol.
+   */
   actions?: TwoActions;
   /** One sentence that says what the section is for: the quiet line right under the title. */
   summary?: JSX.Element;
   /**
    * A section of a settings or form screen. Where its pane is wide (800 px and more), its title, summary and buttons
-   * stand in a column of 240 px at the left and its content at the right; in a narrower pane it is an ordinary section.
-   * Leave it out on detail and overview pages.
+   * stand in a column of 240 px at the left and its content at the right, at the reading measure; in a narrower pane it
+   * is an ordinary section. Its rows are entries of their own, so the quiet line stands between them. Leave it out on
+   * detail and overview pages.
    */
   form?: boolean;
   /**
@@ -83,7 +88,7 @@ export const Section = (props: SectionProps) => {
         </Show>
         <Show when={props.actions?.length}>
           <span class="k2-sh-end">
-            <HeadActions actions={props.actions} />
+            <HeadActions actions={props.actions} variant="secondary" />
           </span>
         </Show>
       </div>
@@ -190,7 +195,7 @@ export const Group = (props: GroupProps) => {
                 />
               )}
             </Show>
-            <HeadActions actions={props.actions} />
+            <HeadActions actions={props.actions} variant="text" />
             <Show when={props.folded}>
               <fold.Trigger
                 class="k2-btn"
