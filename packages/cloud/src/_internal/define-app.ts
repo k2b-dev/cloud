@@ -1,4 +1,5 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
+import { aiConfigRequestScope } from "../ai/config-reads";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
 import { APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes } from "../api/app-migration-trigger";
@@ -1033,6 +1034,8 @@ export const defineApp = <
       let pwaAssets: ReturnType<typeof readPwaStaticAssets> | undefined;
       const server = new Hono<AuthContext>()
         .use("*", sessionOriginGuard(opts.sessionlessRoutes))
+        // A GET reads the AI configuration once, however many of its parts ask (`readAiConfigOnce`).
+        .use("*", aiConfigRequestScope)
         .all(PUBLIC_SURFACE_PREFIX, publicSurface)
         .all(`${PUBLIC_SURFACE_PREFIX}/*`, publicSurface)
         .use("*", routeTemplate)

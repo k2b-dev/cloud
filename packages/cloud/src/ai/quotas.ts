@@ -3,6 +3,7 @@ import { sql } from "../runtime/clients";
 import { type AccessSubject, buildAccessPrincipalCondition } from "../server/services/access";
 import { hasBillableAiPricing } from "../shared/ai-costs";
 import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaIdentity, type AiQuotaSnapshot } from "../shared/ai-quotas";
+import { readAiConfigOnce } from "./config-reads";
 import { readAiSettingsState } from "./settings";
 import type { AiSettingsState } from "./types";
 
@@ -26,8 +27,12 @@ export const quotaWindow = (anchor: string, hours: number, now: Date) => {
 };
 export const aiQuotas = {
   async config(db: SQL = sql): Promise<AiQuotaConfig> {
-    const [row] = await db<AiQuotaConfig[]>`SELECT enabled,revision,rules,unit,background FROM ai.cost_config WHERE singleton`;
-    return row ? { ...row, background: row.background ?? undefined } : { enabled: false, revision: 0, rules: [], unit: "EUR" };
+    const read = async (): Promise<AiQuotaConfig> => {
+      const [row] = await db<AiQuotaConfig[]>`SELECT enabled,revision,rules,unit,background FROM ai.cost_config WHERE singleton`;
+      return row ? { ...row, background: row.background ?? undefined } : { enabled: false, revision: 0, rules: [], unit: "EUR" };
+    };
+    // Read once per request through the shared client; a transaction reads its own state.
+    return db === sql ? { ...(await readAiConfigOnce("quotas:config", read)) } : read();
   },
   async save(input: AiQuotaConfig, actorId: string) {
     const config = AiQuotaConfigSchema.parse(input);
