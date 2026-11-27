@@ -170,6 +170,8 @@ describe("the notes list on v2", () => {
     const { context, tab, errors } = await open(wide, PATH);
     try {
       const search = tab.getByRole("searchbox", { name: "Notizen durchsuchen" });
+      // the name says what it searches; the placeholder stays short, so the head never cuts it
+      expect(await search.getAttribute("placeholder")).toBe("Suchen");
       await search.fill("Stand 4B");
       await search.press("Enter");
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Stand 4B");

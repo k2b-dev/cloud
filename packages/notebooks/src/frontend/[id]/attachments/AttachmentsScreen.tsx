@@ -172,7 +172,7 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
                 type="search"
                 icon="search"
                 label={t().searchAttachmentsLabel}
-                placeholder={t().searchAttachments}
+                placeholder={words().search}
                 value={props.search}
                 onKeyDown={(event) => {
                   if (event.isComposing) return;

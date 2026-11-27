@@ -119,7 +119,7 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                   type="search"
                   icon="search"
                   label={t().searchNotes}
-                  placeholder={t().searchNotes}
+                  placeholder={t().search}
                   value={state().search ?? ""}
                   onKeyDown={(event) => {
                     if (event.isComposing) return;
@@ -232,6 +232,8 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                 title: t().tags,
                 width: { min: 120, default: 170 },
                 drop: true,
+                // k2b-ui gap: Table cells (R) – a cell's content ends with "…" and shows its full text as a hint; until
+                // then a second tag that does not fit is cut at the column's edge.
                 cell: (note) => (
                   <Inline>
                     <For each={note.tags.slice(0, 2)}>

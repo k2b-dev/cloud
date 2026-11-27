@@ -13,6 +13,8 @@ export const notesListMessages = i18n.define({
       noFavorites: "no favorites",
       tag: "Tag",
       searchNotes: "Search notes",
+      /** The head field's placeholder: short, so it is never cut; its name stays `searchNotes`. */
+      search: "Search",
       lastChanged: "Last changed",
       created: "Created",
       title: "Title",
@@ -49,6 +51,7 @@ export const notesListMessages = i18n.define({
       noFavorites: "keine Favoriten",
       tag: "Tag",
       searchNotes: "Notizen durchsuchen",
+      search: "Suchen",
       lastChanged: "Zuletzt geändert",
       created: "Erstellt",
       title: "Titel",

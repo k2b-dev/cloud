@@ -127,7 +127,8 @@
 }
 
 /* Quick filters stay on one line, so choosing a long tag never moves the tree. Chips that do not fit shorten their
-   labels (the label's own fade), each down to its symbol and about three characters (`3ch` plus the chip's padding,
+   labels (the label's own fade; k2b-ui gap: a chip that ends its label with "…", G), each down to its symbol and
+   about three characters (`3ch` plus the chip's padding,
    symbol and gap; the tag chip also keeps its chevron); none is cut at the sidebar's edge. */
 .notebook-sidebar-chips {
   display: flex;
