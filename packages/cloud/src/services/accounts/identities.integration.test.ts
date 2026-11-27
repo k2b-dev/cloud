@@ -171,6 +171,21 @@ suite("public account identity reads against isolated Postgres", () => {
     const many = Array.from({ length: 51 }, () => crypto.randomUUID());
     await expect(service.groupMembers(actor, many)).rejects.toMatchObject({ code: "too_many_groups" });
   });
+  test("a guest member keeps the count but never reads a name, as guests cannot list a group's members", async () => {
+    const member = await user("member");
+    await db`UPDATE auth.users SET display_name='Jonas Kern' WHERE id=${member.user.id}::uuid`;
+    const [row] = await db<
+      { id: string }[]
+    >`INSERT INTO auth.users(uid,provider,profile,admin) VALUES('visitor','local','guest',false) RETURNING id`;
+    const guest: RequestActor = {
+      kind: "user",
+      user: buildProjectedUser({ id: row!.id, uid: "visitor", provider: "local", profile: "guest", effective_admin: false }),
+    };
+    const team = await group("projekt");
+    await db`INSERT INTO auth.user_groups_v2 VALUES(${member.user.id}::uuid,${team}::uuid),(${row!.id}::uuid,${team}::uuid)`;
+    expect(await service.groupMembers(guest, [team])).toEqual([{ groupId: team, members: 2, people: [] }]);
+    expect((await service.groupMembers(member, [team]))[0]?.people).toEqual([{ name: "Jonas Kern" }, { name: "visitor" }]);
+  });
   test("a large group names only its first five people by name and counts all of them", async () => {
     const team = await group("grosses-team");
     const people = ["Ute", "Tom", "Sami", "Rita", "Paul", "Olga", "Nils"];

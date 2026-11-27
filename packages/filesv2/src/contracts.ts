@@ -63,8 +63,8 @@ export type BaseSummary = {
  */
 export type StorageUsage = { baseId: string; bytes: number; complete: boolean };
 /**
- * Who belongs to a group storage: how many people, and the first five of them by name for an avatar stack. Read only for
- * the storages whose group the reader belongs to.
+ * Who belongs to a group storage: how many people, and the first five of them by name for an avatar stack (none for a
+ * guest, who cannot list a group's members). Read only for the storages whose group the reader belongs to.
  */
 export type StorageMembers = { baseId: string; members: number; people: { name: string }[] };
 /** How many days the storage table's changes per day cover: a month, today included. */

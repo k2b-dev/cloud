@@ -314,8 +314,9 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
     },
     /**
      * Who belongs to each of the given groups: how many people, members of nested groups of the same provider counted
-     * once, and the first five of them by name (the display name, else the account name; never a mail
-     * address). An expired account neither counts nor is named.
+     * once, and the first five of them by name (the display name, else the account name; never a mail address) for a
+     * full account; a guest, who cannot list a group's members, gets the count alone. An expired account neither counts
+     * nor is named.
      * Only groups the actor belongs to themselves are read; any other group is left out, so neither a count nor a name
      * ever tells about a group the actor is not in. One statement for at most 50 groups per call.
      */
@@ -325,6 +326,8 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
       if (!groupIds.every((id) => groupIdSchema.safeParse(id).success)) throw new AccountIdentityError("invalid_group_id", 400);
       const ids = [...new Set(groupIds)];
       if (!ids.length) return [];
+      // a guest may not list a group's members (the directory gives guests no relation filters): the count, never a name
+      const named = row.profile === "user";
       const rows = await db()<{ group_id: string; members: number; names: string[] }[]>`
         WITH RECURSIVE wanted AS (
           SELECT g.id AS root_id, g.id AS group_id, g.provider
@@ -345,7 +348,7 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
           JOIN auth.users u ON u.id = ug.user_id AND (u.account_expires IS NULL OR u.account_expires > now())
         )
         SELECT root_id AS group_id, count(*)::integer AS members,
-          (array_agg(name ORDER BY lower(name), id))[1:${GROUP_MEMBER_NAMES}::int]::text[] AS names
+          CASE WHEN ${named}::boolean THEN (array_agg(name ORDER BY lower(name), id))[1:${GROUP_MEMBER_NAMES}::int] ELSE ARRAY[]::text[] END::text[] AS names
         FROM people
         GROUP BY root_id
       `;

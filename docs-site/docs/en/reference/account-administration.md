@@ -41,7 +41,7 @@ their route policies, credential scopes and resource permissions.
 | --- | --- |
 | `self(actor)` | Current user and `{ localLinuxEnabled, freeipaEnabled }` availability |
 | `groups(actor, { after? })` | A page of the caller's effective groups, including nested membership |
-| `groupMembers(actor, groupIds)` | `[{ groupId, members, people }]` for at most 50 groups: how many people are in each group, members of nested groups of the same provider counted once, and `people` as `{ name }` for the first five by name (the display name, else the account name, never a mail address). Expired accounts neither count nor appear. Only groups the caller belongs to are read; any other group is left out, without a count or a name. More than 50 IDs fail with `too_many_groups`, an ID that is not a UUID with `invalid_group_id` |
+| `groupMembers(actor, groupIds)` | `[{ groupId, members, people }]` for at most 50 groups: how many people are in each group, members of nested groups of the same provider counted once, and `people` as `{ name }` for the first five by name (the display name, else the account name, never a mail address); a guest caller gets the count with an empty `people`, as guests cannot list a group's members. Expired accounts neither count nor appear. Only groups the caller belongs to are read; any other group is left out, without a count or a name. More than 50 IDs fail with `too_many_groups`, an ID that is not a UUID with `invalid_group_id` |
 | `inventory(actor, { kind, provider, after?, id?, name? })` | Administrator-only page of known users or groups |
 
 Users contain `{ id, provider, username, profile, posix }`. `posix` is either
