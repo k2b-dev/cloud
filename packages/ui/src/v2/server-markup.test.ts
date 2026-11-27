@@ -85,6 +85,25 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   );
 });
 
+test("Failed writes out the button a `Button` with its icon and words draws, so a change to Button reaches it", async () => {
+  const { Failed } = await import("./failed");
+  const { Button } = await import("./button");
+  const { resolveUiMessages } = await import("../intl/messages");
+  // the same markup apart from hydration keys, Solid's markers and spacing inside a class list or before a tag's end
+  const button = (markup: string) =>
+    markup
+      .match(/<button\b[\s\S]*?<\/button>/)?.[0]
+      .replace(/ data-hk="[^"]*"/g, "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/\s+>/g, ">")
+      .replace(/class="([^"]*)"/g, (_, names: string) => `class="${names.trim().split(/\s+/).join(" ")}"`);
+  const failed = renderToString(() => createComponent(Failed, { text: "Nicht geladen.", onRetry: () => undefined }));
+  const retry = resolveUiMessages().retry;
+  const plain = renderToString(() => createComponent(Button, { icon: "refresh", children: retry }));
+  expect(button(failed)).toBeDefined();
+  expect(button(failed)).toBe(button(plain));
+});
+
 test("Ticks are drawn by the server alone: a picture with its sentence and one tick per slot", async () => {
   const { Ticks } = await import("./marks");
   const markup = renderToString(() =>
