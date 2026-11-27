@@ -69,7 +69,9 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       cells: [".k2-cells", "250,166 1125x117"],
       section: [".k2-sec", "250,283 765x181"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
-      facts: [".k2-facts", "1016,499 359x200"],
+      // the mockup's 200 px and two rows of 32 px more: the kinds of the head ("Kundentyp", "Art") also stand in the
+      // facts, since on the phone they give way to the name (decision of 27.11., #4465)
+      facts: [".k2-facts", "1016,499 359x264"],
       // the rail of the shell beside the app: its logo and the open app (Kunden)
       railLogo: [".ui-v2-rail__logo", "-44,4 32x32"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],

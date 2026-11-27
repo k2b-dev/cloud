@@ -803,7 +803,10 @@ export type RecordHeadProps = {
   name: string;
   /** The picture or initials before the name. */
   avatar?: Person;
-  /** Kinds of the record, such as "Private". */
+  /**
+   * Kinds of the record, such as "Private". Kinds sum up: whatever a kind says also stands in the record's `Facts`,
+   * because on the phone kinds give way to the name.
+   */
   kinds?: readonly string[];
   /**
    * Identifiers and contact at a glance. They give way when the head has no room (cut, then out of sight; always on
