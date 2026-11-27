@@ -529,7 +529,10 @@ export async function openMailDraftDocumentClient(options: {
       });
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
-    /** The room refused this device's input on the live generation; only a Rest draft can keep it. */
+    /**
+     * The room refused this device's own unacknowledged input on the live generation; only a copy can keep it.
+     * A reopen without such input (an access or history check) refuses nothing and copies nothing.
+     */
     let refused = false;
     const fatal = (error: SharedTextProviderError) => {
       const expired = error.code === "SESSION_EXPIRED";
@@ -541,7 +544,7 @@ export async function openMailDraftDocumentClient(options: {
       state.error = true;
       emit();
       if (error.reopen) {
-        refused = true;
+        refused = cleanupProvider?.hasUnsentChanges() ?? false;
         options.onFrozen();
         void recover().catch(fail);
       }

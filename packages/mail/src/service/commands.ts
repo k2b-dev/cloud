@@ -36,6 +36,7 @@ import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
 import { materializeOutboundMessage, type OutboundMessageProjection } from "./outbound-message-projection";
 import { measureMimeStream } from "./outbound-mime";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
+import { restRecoveryCopiesInTransaction } from "./drafts";
 import { loadSendContent, sendContentChanged } from "./send-content";
 import {
   queuedSenderVerificationPayloadSchema,
@@ -661,6 +662,8 @@ const createSendOutbox = async (params: {
     internalDate: effectiveScheduledAt,
     byteLength,
   });
+  if (params.context)
+    await restRecoveryCopiesInTransaction({ db: params.db, context: params.context, mailboxId: params.mailboxId, draftId: prepared.draftId });
   await params.db`
     UPDATE mail.drafts
     SET

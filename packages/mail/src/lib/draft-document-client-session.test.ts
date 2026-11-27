@@ -581,6 +581,23 @@ test("JetStream echo is durable without a snapshot POST; explicit save still adv
   }
 });
 
+test("a reopen without unsent input of this device keeps nothing as a copy", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    await until(() => client.state().ready);
+    // An access or history check closes the room with a reopen; this device has nothing the room refused.
+    f.sockets[0]!.receive("error", { docId: "Draft1", code: "RESYNC_REQUIRED", message: "Reopen required", reopen: true });
+    await until(() => client.state().terminal && client.state().message.includes("changed"));
+    await expect(client.retry()).rejects.toThrow("changed");
+    const rests = () => f.requests.filter((request) => new URL(request.url, "http://localhost").pathname.endsWith("/rest"));
+    expect(rests()).toHaveLength(0);
+    expect(client.state()).toMatchObject({ restCopied: false, recoveryDraft: null, restUnchanged: false });
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test("old SSR generation without offline bytes opens the freshly authorized generation once, then unchanged creates no Rest draft", async () => {
   const f = fixture("2", true);
   try {
