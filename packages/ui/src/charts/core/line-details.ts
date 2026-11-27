@@ -126,12 +126,13 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   // A track is a strip of its own under the plot, its label above it; the X axis's labels stand under the track.
   const full = computePlotArea(width, height, padding, !!opts.xAxis?.label, !!opts.yAxis?.label, header.height, legendHeight);
   const trackHeight = track ? (track.height ?? 48) : 0;
-  const area = track ? { ...full, y1: full.y1 - trackHeight - LINE_TRACK_GAP } : full;
-  const strip = track && { ...full, y0: full.y1 - trackHeight };
+  const lineArea = { ...full, y1: full.y1 - trackHeight - LINE_TRACK_GAP };
   // The line stays the chart's main measure: its plot is at least as tall as the track, and tall enough that its Y
-  // labels (12 px apart at the tick font) do not run together.
-  if (track && area.y1 - area.y0 < Math.max(trackHeight, (yAxis.ticks.length - 1) * 12))
-    throw new RangeError("A line track needs a plot at least as tall as the track: give the chart more height");
+  // labels (12 px apart at the tick font) do not run together. A chart that gets smaller than that (a small widget, a
+  // narrow pane) draws its line without the track and says so on the SVG; the line's own points still carry the X.
+  const trackOmitted = !!track && lineArea.y1 - lineArea.y0 < Math.max(trackHeight, (yAxis.ticks.length - 1) * 12);
+  const area = track && !trackOmitted ? lineArea : full;
+  const strip = track && !trackOmitted ? { ...full, y0: full.y1 - trackHeight } : undefined;
   const xMap = pickMapper(xAxis.scale),
     yMap = pickMapper(yAxis.scale);
   const x = (value: number) => xMap(value, xAxis.domain, [area.x0, area.x1]);
@@ -371,6 +372,6 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   const fraction = Math.min(0.8, Math.max(0, area.x0 / width));
   return svg.replace(
     "<svg ",
-    `<svg data-line-details="true" data-line-default-x="${defaultX}" data-line-axis-room="true" style="--k2b-line-label-room:${labelRoom}px;--k2b-line-axis-fraction:${fraction};--k2b-line-axis-expand:${1 / (1 - fraction)}" `,
+    `<svg data-line-details="true"${trackOmitted ? ' data-track="omitted"' : ""} data-line-default-x="${defaultX}" data-line-axis-room="true" style="--k2b-line-label-room:${labelRoom}px;--k2b-line-axis-fraction:${fraction};--k2b-line-axis-expand:${1 / (1 - fraction)}" `,
   );
 };

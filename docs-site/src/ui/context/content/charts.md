@@ -211,8 +211,10 @@ a second Y axis over the lines; a second measure gets a track of its own.
   `domain` says otherwise, and a track of zeros (a dry day) keeps 0 to 1;
   `height` sets the strip (default 48 px). Each bar stands under its X and
   carries its value as a title. The X axis's labels stand under the track. The
-  line's plot stays at least as tall as the track; a chart too low for both
-  throws, so give it more height.
+  line's plot stays at least as tall as the track: a chart too low for both,
+  such as a small widget, draws the line alone and marks the drawing with
+  `data-track="omitted"`, so show the track's values elsewhere too, such as in
+  a table.
 
 ```tsx
 <Chart kind="line" timeAxis={{ timeZone: "Europe/Berlin" }}

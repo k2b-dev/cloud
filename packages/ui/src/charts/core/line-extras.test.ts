@@ -196,9 +196,16 @@ test("a dry day keeps the track's scale at 0 to 1, never around 0", () => {
   expect(dry).not.toContain('<rect class="k2b-line-bar"');
 });
 
-test("a track never squeezes the line: below a plot as tall as the track the chart asks for more height", () => {
-  expect(() => renderChartSvg(day, 480, 120)).toThrow(RangeError);
-  expect(() => renderChartSvg(day, 480, 240)).not.toThrow();
+test("a track never squeezes the line: a chart too low for both draws the line alone and says the track is omitted", () => {
+  // a small widget or a narrow pane: no error, the line over the whole plot, no track
+  const low = renderChartSvg(day, 480, 120);
+  expect(low).toContain('data-track="omitted"');
+  expect(low).not.toContain('class="k2b-line-track"');
+  expect(low).toContain('<path class="stdlib-chart-line');
+  // tall enough: the track is there, and nothing says it is omitted
+  const tall = renderChartSvg(day, 480, 240);
+  expect(tall).toContain('class="k2b-line-track"');
+  expect(tall).not.toContain("data-track=");
 });
 
 test("a line chart without the extras draws as before", () => {
