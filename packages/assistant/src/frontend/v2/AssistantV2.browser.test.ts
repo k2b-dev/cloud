@@ -983,6 +983,9 @@ describe("Assistant on v2", () => {
 
   const openInThisChat = async (page: Page) => {
     await page.locator('[data-k2-workspace] [data-slot="head"]').getByRole("button", { name: "Weitere Aktionen für diesen Chat" }).click();
+    // On the phone the menu is a sheet that slides in (also with reduced motion); press its entry once it rests, as the
+    // ui's own menu tests do.
+    await settled(page);
     await page.getByRole("menuitem", { name: "In diesem Chat" }).click();
   };
 
