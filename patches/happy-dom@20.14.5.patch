@@ -1,0 +1,23 @@
+diff --git a/lib/cookie/urilities/CookieExpireUtility.js b/lib/cookie/urilities/CookieExpireUtility.js
+--- a/lib/cookie/urilities/CookieExpireUtility.js
++++ b/lib/cookie/urilities/CookieExpireUtility.js
+@@ -9,7 +9,7 @@ export default class CookieExpireUtility {
+      * @returns "true" if cookie has expired.
+      */
+     static hasExpired(cookie) {
+-        return cookie.expires && cookie.expires.getTime() < Date.now();
++        return cookie.expires && cookie.expires.getTime() <= Date.now();
+     }
+ }
+ //# sourceMappingURL=CookieExpireUtility.js.map
+diff --git a/src/cookie/urilities/CookieExpireUtility.ts b/src/cookie/urilities/CookieExpireUtility.ts
+--- a/src/cookie/urilities/CookieExpireUtility.ts
++++ b/src/cookie/urilities/CookieExpireUtility.ts
+@@ -11,6 +11,6 @@ export default class CookieExpireUtility {
+ 	 * @returns "true" if cookie has expired.
+ 	 */
+ 	public static hasExpired(cookie: ICookie): boolean | null {
+-		return cookie.expires && cookie.expires.getTime() < Date.now();
++		return cookie.expires && cookie.expires.getTime() <= Date.now();
+ 	}
+ }
