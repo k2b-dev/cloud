@@ -203,12 +203,13 @@ drawing: a second child stands in a row of its own under it and is cut away.
 ### Section
 
 A titled part with a calm head and no symbol: `title` (15/22 600), `count`
-(quiet beside it), `actions` (≤ 2 text buttons at the end of the title's
-row), `summary` (the one sentence that says what it is for, the quiet line
-right under the title), `form` (a section of a settings or form screen:
-where its pane is 800 px and wider, title, summary and buttons stand in a
-column of 240 px at the left and the content 40 px beside it; leave it out
-on detail and overview pages),
+(quiet beside it), `actions` (≤ 2 framed buttons of 30 px with
+symbol and verb, also on the phone), `summary` (the one sentence that says
+what it is for, the quiet line right under the title). By default, in a pane
+of 960 px and more, title, summary and buttons stand in a column of 232 px and
+the content 48 px beside it, and the section with its line ends at 1040 px
+(the measure); a section that holds a table, tiles or a drawing keeps its full
+width, and a narrower pane stacks head and content.
 `measure` (its head, sentence and rows keep the reading measure of `Prose`,
 720 px of text, so a short list in a wide pane stays together; its line
 still reaches the column's edges), `more` (one link under the rows, its

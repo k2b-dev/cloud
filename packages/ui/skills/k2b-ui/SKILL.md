@@ -23,7 +23,10 @@ props may change in any release; check the types of the installed version.
 
 ## The look is part of done
 
-Every screen follows [the look](references/look.md): a screen brief before
+Every screen starts as a mockup and then follows the look: the Fibel page
+**The look** (`/en/ui/look`) holds the thirteen rules as do and don't, the
+workflow and the tokens for custom parts; [look](references/look.md) adds a
+screen brief before
 code, one hero with its real trend, the app's colour where it means
 something, one data picture per row, a tinted head for the open object, a
 large screen that uses its room; dense, not busy: each thing has its mark
@@ -157,9 +160,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    in a group) wraps its cells instead; keep its texts short.
 8. **Round is what you press; square is what structures.** Buttons, chips,
    inputs and tiles are round; panes, bands, sections, groups are square.
-9. **Lines separate groups, not entries or the parts of one thing.** No
-   line under a section head, none between its entries, none inside a
-   `Group`.
+9. **Lines in two weights.** The clear line separates groups (sections,
+   a head block, a table head); the hair, barely there, stands between
+   rows. No line under a section head, none inside a `Group`, none under
+   the last row or section.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
