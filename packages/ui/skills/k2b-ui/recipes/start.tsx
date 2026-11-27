@@ -8,7 +8,7 @@ const APP = "#ca8a04";
 
 const notebooks: Tile[] = [
   {
-    icon: "notebook",
+    icon: "plus",
     title: "Leeres Notizbuch",
     meta: "1 Seite",
     color: APP,
@@ -20,16 +20,7 @@ const notebooks: Tile[] = [
     title: "Tagebuch",
     meta: "6 Seiten",
     color: APP,
-    preview: {
-      table: {
-        columns: ["Eintrag", "Nächster Schritt", "Status"],
-        rows: [
-          ["Heimische Hecke", "Ins Gartentagebuch", "nächste Durchsicht"],
-          ["Kaffee mit Anna", "Kalender", "geplant"],
-          ["Buch über Üben", "Recherchieren", "ausstehend"],
-        ],
-      },
-    },
+    preview: { page: { title: "Tagebuch", text: "Beginne hier. Schreibe täglich eine kurze Notiz." } },
     onOpen: () => undefined,
   },
   {
