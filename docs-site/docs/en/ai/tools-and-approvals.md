@@ -215,9 +215,9 @@ of points.
 | Kind | Data and options |
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
-| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `legendValues` (opt-in cursor values), `area`, `smooth`, `points` (a hollow point on every value, off by default), series `style`, `step: "after" | "before" | "middle"`, `zero`, `forecast: {from, band?: [low, high][]}`, `threshold: {value, label}` and `marker: {at, label}`. Forecast bounds match the first series from `from`, sorted by X, including null gaps; every low must be at most its high. |
+| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `legendValues` (opt-in cursor values), `area`, `smooth`, `points` (a hollow point on every value, off by default), series `style`, `step: "after" \| "before" \| "middle"`, `zero`, `forecast: {from, band?: [low, high][]}`, `threshold: {value, label}` and `marker: {at, label}`. Forecast bounds match the first series from `from`, sorted by X, including null gaps; every low must be at most its high. |
 | `waterfall` | `start: {label, value}`, `steps: [{label, value}]`, `end: {label}`. Positive steps are inflows, negative steps outflows; the closing balance is calculated. `format`. |
-| `area` | `layout: "stacked"`, ordered `x: (string | number)[]`, `series: [{label, data: (number | null)[]}]`; equal lengths, nonnegative values. `normalize: true` shows 100 %; tooltip retains share and amount. Nulls interrupt the stack; a zero total is a gap only in normalized mode. `legend`, `format`. |
+| `area` | `layout: "stacked"`, ordered `x: (string \| number)[]`, `series: [{label, data: (number \| null)[]}]`; equal lengths, nonnegative values. `normalize: true` shows 100 %; tooltip retains share and amount. Nulls interrupt the stack; a zero total is a gap only in normalized mode. `legend`, `format`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
 | `gauge` | `value`; `min`, `max`, `label`, `unit`, `format`, `thresholds` |
@@ -225,7 +225,7 @@ of points.
 | `boxplot` | `data: [{label, values: number[]}]`; `yAxis`, `references` |
 | `heatmap` | `data: [{x, y, value}]`, with text categories and each x/y pair once; at most 17 rows (y categories), and column labels that fit a phone-wide chart; `min`, `max`, `showValues`, `format` |
 | `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters. Optional shared `min`, `max`, `unit`, `format`, `thresholds`. |
-| `stat` | `value`; `format`, `unit`, `delta` (change in the value's units), `better: "up" | "down"`, `sparkline: number[]` |
+| `stat` | `value`; `format`, `unit`, `delta` (change in the value's units), `better: "up" \| "down"`, `sparkline: number[]` |
 
 Axes accept `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" |
 "log"` and `format`. Number formats are `{style?: "number" | "percent" |

@@ -1,20 +1,14 @@
 import { LocaleProvider, MobileShell, TabBar, type TabBarItem } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { buildMetadata } from "../_internal/build-metadata";
-import { registeredPwaBuilds } from "../_internal/runtime-watcher";
+import { servedStylesheets } from "../_internal/page-stylesheets";
+import { registeredCoreRoutes } from "../_internal/runtime-watcher";
 import { PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "../contracts/pwa";
-import { pwaBuild } from "../contracts/pwa-builds";
-import { getLocale } from "../server/locale";
-import { visiblePwaParts } from "./app-navigation";
 import type { LayoutContext } from "./layout-context";
+import PwaLayoutV2 from "./PwaLayoutV2";
 import PwaPartCount from "./PwaPartCount.island";
 import PwaRuntime from "./PwaRuntime.island";
-import { pwaMessages } from "./pwa-messages";
-import { getDisplayRuntimeContext } from "./runtime";
+import { pwaFrame } from "./pwa-frame";
 import TimezoneCookie from "./TimezoneCookie.island";
-
-/** Parts with their own tab; Start lists every part and doubles as "More". */
-const TAB_PARTS = 3;
 
 export type PwaLayoutProps = {
   /** The request context; the layout also sets the page's framing and referrer headers. */
@@ -37,11 +31,27 @@ export type PwaLayoutProps = {
   bare?: boolean;
   /**
    * The page opens as a screen of its own below 48rem, such as one chat with its composer at the bottom edge: the tab
-   * bar steps aside. A part that changes this in place calls `MobileShell.setScreen` from `@k2b/ui`.
+   * bar steps aside. A part that changes this in place calls `MobileShell.setScreen` from `@k2b/ui`, on v2
+   * `setPwaScreen` from `@k2b/cloud/browser/pwa-screen`.
    */
   screen?: boolean;
+  /**
+   * The page is built with `@k2b/ui/v2` (provisional): the frame is v2 too, and the page loads Core's v2.css alone.
+   * Without `bare` the frame holds the content in a `Workspace` with the head and one `Pane`; with `bare` the page
+   * returns its own `Workspace`. Beside a Core without v2.css the page keeps the v1 frame, its content in a v2 scope.
+   */
+  ui?: "v2";
+  /**
+   * With `ui="v2"` and without `bare`: the page's status row under the head, such as a `StatusRow` with "Heute: 15
+   * ungelesen · 5 fällig"; it stays while the content scrolls.
+   */
+  status?: JSX.Element;
   children: JSX.Element;
 };
+
+/** A bare v2 page in the v1 frame fills the shell's area, as its `Workspace` expects; inline, since the frame's
+ * stylesheet is the older Core's. */
+const FILL = "display:flex;flex:1 1 auto;flex-direction:column;min-width:0;min-height:0";
 
 /**
  * The frame of every page in the installable mobile app (preview): the app's document head, a phone shell with a
@@ -50,31 +60,27 @@ export type PwaLayoutProps = {
  * `ssr.pwaAccess`.
  */
 export default function PwaLayout(props: PwaLayoutProps) {
+  // A Core from before the v2 frame serves no v2.css, and its global.css holds no rules for that frame: beside it the
+  // page keeps the v1 frame, with its own v2 content in a v2 scope.
+  const v2 = props.ui === "v2";
+  if (v2 && servedStylesheets("v2", registeredCoreRoutes()) === "v2") return <PwaLayoutV2 {...props} />;
   const { c } = props;
-  const locale = getLocale(c);
-  const t = pwaMessages.resolve([locale]).t;
-  const user = c.get("user");
-  const cloud = c.get("settings")?.app?.name || "Cloud";
-  const page = c.get("page");
-  page.title = props.title;
-  page.pwa = { name: cloud };
-  // No app page may be framed, and none leaks its address to another site.
-  c.header("Referrer-Policy", "no-referrer");
-  c.header("Content-Security-Policy", "frame-ancestors 'none'");
-
-  const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
-  const path = new URL(c.req.raw.url).pathname;
-  const owner = page.pwaOwner;
-  const ownBuild = pwaBuild(buildMetadata);
-  const coreBuild = registeredPwaBuilds().core;
-  const builds = { ...(owner && ownBuild ? { [owner]: ownBuild } : {}), ...(coreBuild ? { core: coreBuild } : {}) };
-  // A part's badge calls for attention in the sidebar and on its tab; without one, its summary's count stays quiet in
-  // the sidebar. One watcher reads every route of the page.
-  const countRoutes = [...new Set(parts.flatMap((part) => [part.pwa.badge, part.pwa.summary].filter((path) => path !== undefined)))];
+  const { locale, t, user, cloud, page, parts, path, builds, countRoutes, tabs, currentTab, settingsHref, currentPart } = pwaFrame(
+    c,
+    props.title,
+  );
+  if (v2) page.appUi = "v2";
+  // Read inside the LocaleProvider below: the page's content takes the request's locale from it.
+  const content = () =>
+    v2 ? (
+      <div class="k2-ui" data-ui="v2" style={props.bare ? FILL : undefined}>
+        {props.children}
+      </div>
+    ) : (
+      props.children
+    );
   const badge = (part: (typeof parts)[number]) =>
     part.pwa.badge ? <PwaPartCount endpoint={part.pwa.badge} endpoints={countRoutes} attention /> : undefined;
-  const tabs = parts.slice(0, TAB_PARTS);
-  const currentTab = tabs.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
   // Start is titled with the installation's name; a part's first page carries the part's name.
   const items: TabBarItem[] = [
     { id: "start", label: t.start, title: cloud, icon: "ti ti-home", href: PWA_SCOPE, current: !currentTab },
@@ -88,11 +94,6 @@ export default function PwaLayout(props: PwaLayoutProps) {
     })),
   ];
   // The sidebar names the installation itself, so Start is titled Start there; Settings is a destination of its own.
-  const settingsHref = `${PWA_SCOPE}settings`;
-  const currentPart = parts.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
-  // A part takes its app colour for selection and accents, as an app does on the web; Start and Settings keep Cloud's.
-  page.appAccent = currentPart?.appearance?.accent;
-  page.appPrimary = currentPart?.appearance?.primary;
   const sidebar = (
     <MobileShell.Sidebar
       label={t.tabs}
@@ -128,7 +129,7 @@ export default function PwaLayout(props: PwaLayoutProps) {
         footer={user && parts.length > 0 ? <TabBar label={t.tabs} items={items} /> : undefined}
         sidebar={user ? sidebar : undefined}
       >
-        {props.children}
+        {content()}
       </MobileShell>
       <PwaRuntime
         keepalive={!!user}

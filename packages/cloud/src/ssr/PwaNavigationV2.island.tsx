@@ -1,0 +1,66 @@
+import { Rail, TabBar } from "@k2b/ui/v2";
+import { onCleanup, onMount, Show } from "solid-js";
+import { appBadgeCount, watchAppBadges } from "./app-badges";
+
+/** One place of the Cloud app, as the server knows it. */
+export type PwaNavEntry = {
+  id: string;
+  label: string;
+  /** A Tabler icon name, such as `home`. */
+  icon: string;
+  href: string;
+  current: boolean;
+  /** The part's `pwa.badge` route: a count that calls for attention, in the rail and on its tab. */
+  badge?: string;
+  /** Its app's colour for its symbol in the rail, as the app bar shows it on this page's canvas. */
+  tone?: { light: string; dark: string };
+};
+
+export type PwaNavigationV2Props = {
+  /** The installation's name, which names the rail. */
+  title: string;
+  /** The installation's logo. */
+  logo: string;
+  start: PwaNavEntry;
+  parts: PwaNavEntry[];
+  settings: PwaNavEntry;
+  /** The name of the tab bar. */
+  tabsLabel: string;
+  /** Start and every part as tabs below 768 px: four, then "More" with the others; none without parts. */
+  tabs: PwaNavEntry[];
+  /** A screen of its own: the tab bar steps aside (`hidden`) and `setPwaScreen` brings it back in place. */
+  screen?: boolean;
+  /** Every badge route of the page, read once a minute like the web's. */
+  endpoints: string[];
+};
+
+/**
+ * The navigation of a v2 Cloud app page (`PwaLayout ui="v2"`): from 768 px a v2 `Rail` as Cloud's app bar, with the
+ * installation's logo, Start, every part and Settings at the foot; below 768 px a `TabBar` of Start and the parts. A
+ * part's badge is a count that calls for attention in both. One island for both, for the counts the browser reads; its
+ * two parts take their places in the frame's grid.
+ */
+export default function PwaNavigationV2(props: PwaNavigationV2Props) {
+  onMount(() => onCleanup(watchAppBadges(props.endpoints)));
+  const read = (route: string | undefined) => (route ? appBadgeCount({ endpoint: route }) : 0);
+  const item = (entry: PwaNavEntry) => ({
+    label: entry.label,
+    icon: entry.icon,
+    href: entry.href,
+    current: entry.current,
+    ...(entry.tone ? { tone: entry.tone } : {}),
+    get unread() {
+      return read(entry.badge);
+    },
+  });
+  return (
+    <>
+      <div class="pwa-v2-nav">
+        <Rail label={props.title} logo={props.logo} items={[props.start, ...props.parts].map(item)} foot={[item(props.settings)]} />
+      </div>
+      <Show when={props.tabs.length > 0}>
+        <TabBar label={props.tabsLabel} items={props.tabs.map(item)} hidden={props.screen} />
+      </Show>
+    </>
+  );
+}

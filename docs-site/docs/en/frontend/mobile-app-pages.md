@@ -63,8 +63,8 @@ mark; `0`, an error, or another answer shows none.
 
 `summary` (optional) names a `GET` route that says what waits in the part, as
 a `PwaPartSummary`: `{ "count": n, "text": "…" }`. Start shows `text` under
-the part instead of its `description`, and the sidebar shows `count` quietly
-beside a part without a `badge`. Write `text` in the request's locale, as one
+the part instead of its `description`, and the v1 frame's sidebar shows `count`
+quietly beside a part without a `badge`. Write `text` in the request's locale, as one
 line of at most 200 characters, such as "5 tasks for you · 1 today". Start reserves an
 empty summary line until the route answers, and clears it when a read fails. The line
 stays the same height when live text arrives; long text is truncated visually. Parts
@@ -73,7 +73,8 @@ without a summary route keep their `description`.
 `order` (optional) fixes the part's position on Start, in the sidebar, and in
 the tab bar, which shows the first three parts. Parts with an `order` come
 first, lowest first. Parts without one follow, sorted by name in the reader's
-language; equal orders also sort by name. Use a positive integer for a part
+language, numbers as people count them (Nord 2 before Nord 10); equal orders
+also sort by name. Use a positive integer for a part
 that people open every day, so its tab stays in the same place in every
 language. People cannot change the order.
 
@@ -184,11 +185,13 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | --- | --- |
 | `c` | The request context |
 | `title` | Header heading and document title |
-| `sidebarTitle` | Optional heading beside the sidebar, where the sidebar already names the installation; `title` by default |
+| `sidebarTitle` | Optional heading on wide screens, where the sidebar or the rail already shows the installation; `title` by default. Beside the v2 rail, a heading that only repeats the open place does not show |
 | `back` | Optional `{ href, label, withSidebar }` for going up inside the part, for example from a detail to its list; `withSidebar: false` hides it beside the sidebar |
 | `actions` | At most two icon buttons at the end of the header |
 | `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
 | `screen` | Below 48 rem, the page opens as a screen of its own without the tab bar, such as one chat with its composer at the bottom edge; a part that opens or leaves such a screen in place calls [`MobileShell.setScreen`](/en/ui/layout/mobile-shell) |
+| `ui` | `"v2"` (provisional) for a page built with `@k2b/ui/v2`; see [The v2 frame](#the-v2-frame) |
+| `status` | With `ui="v2"` and without `bare`: the page's status row under the head, such as a `StatusRow`; it stays while the content scrolls |
 | `children` | The page content, in the app's only scroll area |
 
 It renders the app's document head, a
@@ -225,6 +228,72 @@ returns to the page where the tab was tapped. A repeat tap does not start the
 load over. The header shows Start with the installation's name and a part
 with its `name`, so title the part's first page with the application's name,
 as Spaces does. Otherwise the title changes when the page arrives.
+
+### The v2 frame
+
+Set `ui="v2"` (provisional, like `@k2b/ui/v2`) when the part's page is built
+with `@k2b/ui/v2`. The props, the access with `ssr.pwaAccess`, the launch
+bounce, the headers, the remembered address, and the browser behavior stay the
+same. The page then loads Core's `/public/v2.css` in place of `global.css`, as
+[`MinimalLayout ui="v2"`](/en/docs/frontend/layout-and-navigation) does, and
+no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
+
+- Below 768 px the page fills the window: its head at the top below the
+  status bar and the notch, in one colour with them, and the `TabBar` of
+  `@k2b/ui/v2` at the bottom, above the home indicator. It holds Start and
+  every part: up to five tabs, or four and **More**, which opens a sheet with
+  the other parts and their counts. Settings marks no tab. A badge's count
+  stands on its tab, and the tab's name says it in words, such as "Chat, 3
+  unread". Start shows the installation's logo beside its title. With
+  `screen`, the tab bar steps aside and the page keeps clear of the home
+  indicator itself; a part that opens or leaves such a screen in place calls
+  `setPwaScreen(element, screen)` from `@k2b/cloud/browser/pwa-screen`, which
+  also works when the page shows in the v1 frame beside an older Core.
+- From 768 px a v2 `Rail` stands beside the page, as Cloud's app bar on
+  every other Cloud page: the installation's logo, Start, every part in its
+  app's colour, and Settings at its foot; each place's name shows as a hint.
+  A part's badge is a count on its symbol; its summary stays on Start.
+- The frame owns the way to Settings: below 768 px Start's head holds it,
+  since Settings is no tab; beside the rail its foot leads there. A page
+  never adds its own Settings button.
+- Beside the rail the head shows no title that only repeats the open place
+  (such as "Start" or a part's name); a head left empty by that leaves there.
+  The phone keeps its title.
+- Without `bare`, the frame puts the content in a `Workspace` whose head holds
+  `back`, the title (`sidebarTitle` from 768 px), and `actions` (kept on the
+  phone, where the app has no shell bar to take them), with one
+  scrolling `Pane` and its `status` row. Write the content from v2 bands,
+  sections, and rows. Give each row one signal, such as a count chip, not a
+  bold title, a chip, and a number in its second line at once.
+- With `bare`, the page's island returns its own `Workspace` without a
+  sidebar, with its panes and heads. Only the panes scroll; the document
+  never does. The frame then shows no `back`, `actions`, `sidebarTitle`, or
+  `status`; in development the server warns when a bare page passes them.
+- The frame holds the page's toaster and confirm dialog (`PageHosts` of
+  `@k2b/ui/v2`). An island calls `useToast` or `Dialog.confirm` and they answer
+  there, one host per page; an island needs no `Workspace` of its own for them.
+- Offline (with what follows: what was loaded stays visible, and loading and
+  saving work again once the device is online), Chrome signed in to another account, and a new version show in a
+  `NoticeStack` of `@k2b/ui/v2`: notices that float above the tab bar until
+  their state ends. A new version offers **Reload**. Nothing on the page
+  moves, and the panes keep the room the notices cover free at their end.
+  Each offers **Hide**; a hidden offline notice comes again the next time the
+  device goes offline.
+- A page that is no part's place, such as Settings, opens as a `screen` with
+  `back` to Start, so it has a way back and no tab claims it.
+
+```tsx
+<PwaLayout c={c} ui="v2" title={t(c).title} bare>
+  <InventoryWorkspace items={items} />
+</PwaLayout>
+```
+
+A Core from before the v2 frame serves no `/public/v2.css`, and its
+`global.css` has no rules for that frame. Beside such a Core the page keeps
+`global.css` and the v1 frame, with its own v2 content in a v2 scope, so it
+stays usable during a rolling update. Upgrade Core before the parts, as for
+every shared stylesheet; see
+[Upgrade Core before v2 visitor pages](/en/docs/operations/deployment-requirements#upgrade-core-before-v2-visitor-pages).
 
 ### iPad and monitor
 
@@ -403,7 +472,8 @@ When the installation cannot be reached or the gateway cannot reach the
 application, the app shows its offline page with **Try again**. While a part's
 application is not registered, its pages show the app's not-found page. An
 open page shows a "You're offline" notice above the tab bar until the
-connection returns.
+connection returns; on a v2 page the notice also says that what was loaded
+stays visible and that loading and saving work again once the device is online.
 
 A cached part does not become an offline application: starting or reloading it
 without the network shows the offline page, because its document and data are

@@ -14,7 +14,9 @@ export type Width = { min: number; default: number };
 
 /**
  * The width of a pane or a table column: one that can be dragged (`Width`), or `{ fixed }`, one width in CSS px
- * without a grip, for a page to read rather than to arrange (a visitor page, a wall screen).
+ * without a grip, for a page to read rather than to arrange (a visitor page, a wall screen). On the main column of a
+ * context split (`Pane side`) it only sets the width that decides whether the context stands beside or gives way;
+ * there the main column always takes the rest of the row.
  */
 export type ColumnWidth = Width | { fixed: number };
 
@@ -63,12 +65,26 @@ export type Person = {
   image?: string;
 };
 
-/** The initials of a name: the first letters of its first two words. */
-export const initialsOf = (person: Person): string =>
-  person.initials ??
-  person.name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]!.toUpperCase())
-    .join("");
+/** Name parts that are no name of their own: generations, titles after a name and degrees ("III", "Jr.", "PhD"). */
+const isNameSuffix = (word: string) => /^(?:II|III|IV|V|VI|VII|VIII)$/.test(word) || /^(?:jr|sr|jun|sen|phd|md|mba|esq)\.?$/i.test(word);
+
+/** The first letter of a word as the reader sees it: a whole emoji or accented letter, never half of one. */
+let graphemes: Intl.Segmenter | null | undefined;
+const firstGrapheme = (word: string): string => {
+  graphemes ??= typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+  if (graphemes) for (const { segment } of graphemes.segment(word)) return segment;
+  return Array.from(word)[0] ?? "";
+};
+
+/**
+ * The initials of a name: the first letters of its first and last word ("Ada Lovelace" AD → AL). Words that start
+ * with no letter or digit (an emoji, a dash) and suffixes such as "III" or "Jr." are left out; a name of only such
+ * words keeps its first letter as it is (an emoji stays whole).
+ */
+export const initialsOf = (person: Person): string => {
+  if (person.initials) return person.initials;
+  const words = person.name.split(/\s+/).filter(Boolean);
+  const named = words.filter((word, index) => /^[\p{L}\p{N}]/u.test(word) && !(index > 0 && isNameSuffix(word)));
+  const picked = named.length > 1 ? [named[0]!, named.at(-1)!] : named.length === 1 ? named : words.slice(0, 1);
+  return picked.map((word) => firstGrapheme(word).toLocaleUpperCase()).join("");
+};

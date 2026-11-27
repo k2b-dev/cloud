@@ -34,8 +34,9 @@ const { default: PwaLayout } = await import("./PwaLayout");
 const apps: RuntimeAppMeta[] = Array.from({ length: 12 }, (_, index) => ({
   id: `app-${index}`,
   name:
-    ["Dashboard", "Mail", "Contacts", "Grids", "Files", "Notebooks", "Calendar", "Assistant", "FAQ", "Pulse", "Tasks", "Tools"][index] ??
-    `App ${index}`,
+    ["Dashboard", "Mail", "Contacts", "Grids", "Files", "Notebooks", "Calendar", "Assistant", "Catalog", "Pulse", "Tasks", "Tools"][
+      index
+    ] ?? `App ${index}`,
   icon: "ti ti-box",
   description: "Manage projects, documents and daily work in your team.",
   routes: [`/app/app-${index}`, `/admin/app-${index}`],
@@ -58,6 +59,14 @@ const apps: RuntimeAppMeta[] = Array.from({ length: 12 }, (_, index) => ({
         ],
       }
     : {}),
+}));
+const pwaParts: RuntimeAppMeta[] = ["chat", "mail", "spaces", "files"].map((id) => ({
+  id: `pwa-${id}`,
+  name: id,
+  icon: "ti ti-box",
+  description: "An invented part of the Cloud app.",
+  routes: [`/pwa/${id}`],
+  pwa: { href: `/pwa/${id}`, badge: `/pwa/${id}/unread`, summary: `/pwa/${id}/summary` },
 }));
 const documents: HelpDocumentManifest[] = Array.from({ length: 8 }, (_, index) => ({
   id: `app-0-topic-${index}`,
@@ -123,7 +132,15 @@ const server = new Hono<Environment>()
       (c) => () => createComponent(MinimalLayout, { c, preferences: c.req.query("preferences") !== "false", children: "Minimal page" }),
     ),
   )
-  .get("/pwa", ...app.ssr<Environment>((c) => () => createComponent(PwaLayout, { c, title: "Projects", children: "Phone page" })));
+  .get("/pwa", ...app.ssr<Environment>((c) => () => createComponent(PwaLayout, { c, title: "Projects", children: "Phone page" })))
+  // The v2 frame with four parts that all count: its sidebar, tab bar and counts are one island.
+  .get(
+    "/pwa-v2",
+    ...app.ssr<Environment>((c) => {
+      c.set("runtime", { apps: [...apps, ...pwaParts] });
+      return () => createComponent(PwaLayout, { c, ui: "v2", title: "Projects", children: "Phone page" });
+    }),
+  );
 
 const decodedProps = (html: string) =>
   [...html.matchAll(/\bdata-props="([^"]*)"/g)].map((match) =>
@@ -144,6 +161,8 @@ for (const path of [
   "/minimal?preferences=false",
   "/pwa?signed=true",
   "/pwa",
+  "/pwa-v2?signed=true",
+  "/pwa-v2",
 ]) {
   test(`${path} stays within four shell instances and 20 KiB of decoded props`, async () => {
     const spies = [

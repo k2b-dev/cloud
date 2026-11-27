@@ -1,0 +1,259 @@
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import { useUiMessages } from "../intl/messages";
+import { Row } from "./content";
+import { linkOr } from "./link";
+import { custom, Icon } from "./marks";
+import { Dialog } from "./overlays";
+import { Popover } from "./popover";
+import type { OnNavigate } from "./types";
+
+// ── Unread ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A count that calls for attention, such as unread messages (internal; `Nav` and `TabBar` show it): a filled round
+ * figure in the app's colour, "99+" above 99, and for assistive technology the words, "3 unread", once. Nothing at 0.
+ */
+export const Unread = (props: { count: number | undefined }) => {
+  const t = useUiMessages();
+  const count = () => Math.max(0, Math.floor(props.count ?? 0));
+  return (
+    <Show when={count() > 0}>
+      <span class="k2-unread" data-k2-part="Unread" aria-hidden="true">
+        {count() > 99 ? "99+" : count()}
+      </span>
+      <span class="k2-hidden-text">{count() > 99 ? t().unreadMany : t().unread({ count: count() })}</span>
+    </Show>
+  );
+};
+
+// ── TabBar ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+export type TabBarItem = {
+  /** The words under the symbol, such as "Chat". */
+  label: string;
+  /** A Tabler icon. */
+  icon: string;
+  /** The page the tab leads to. */
+  href: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+  /** The open place. */
+  current?: boolean;
+  /** A count that calls for attention, such as unread messages; nothing at 0. */
+  unread?: number;
+};
+
+export type TabBarProps = {
+  /** The name of the bar for assistive technology, such as "App". */
+  label: string;
+  /**
+   * Every place of the app, in order. Up to five stand in the bar; with more, the first four stand there and a fifth
+   * tab, "More", opens a sheet with the others and their counts.
+   */
+  items: readonly TabBarItem[];
+  /**
+   * The bar steps aside for a screen of its own, such as one chat with its composer at the bottom edge. It stays in the
+   * page (as the `hidden` attribute, which a page script may also set on `.k2-tabbar`); floating notices then stand
+   * above the bottom safe area alone.
+   */
+  hidden?: boolean;
+};
+
+/** Tabs in the bar before "More" takes the fifth place. */
+const TAB_SLOTS = 5;
+
+const TabLink = (props: { item: TabBarItem }) => (
+  <Dynamic
+    component={linkOr(props.item.href, "a")}
+    href={props.item.href}
+    onNavigate={props.item.onNavigate}
+    class="k2-tab"
+    data-k2-part="TabBar.Tab"
+    aria-current={props.item.current ? "page" : undefined}
+  >
+    <Icon name={props.item.icon} />
+    <span class="k2-tab-label">{props.item.label}</span>
+    <Unread count={props.item.unread} />
+  </Dynamic>
+);
+
+/**
+ * The navigation of an app on the phone, at the bottom edge: a symbol and its words per place, the open one in the
+ * app's colour, a count that calls for attention as a filled figure on its symbol. It takes the bottom safe area into
+ * its own height. With more than five places, "More" opens a sheet with the others; while one of them is the open
+ * place, "More" is the current one. From 768 px it leaves, and the app's `Nav` or `Rail` takes its place. Its height is known to
+ * the stylesheet (the head's height, its line and the safe area), so a `NoticeStack` on the page stands above it from the
+ * server's page on.
+ */
+export const TabBar = (props: TabBarProps) => {
+  const t = useUiMessages();
+  const shown = () => (props.items.length <= TAB_SLOTS ? props.items : props.items.slice(0, TAB_SLOTS - 1));
+  const rest = () => (props.items.length <= TAB_SLOTS ? [] : props.items.slice(TAB_SLOTS - 1));
+  const restUnread = () => rest().reduce((sum, item) => sum + Math.max(0, item.unread ?? 0), 0);
+  const [open, setOpen] = createSignal(false);
+  const restCurrent = () => rest().some((item) => item.current);
+  return (
+    <nav class="k2-tabbar" data-k2-part="TabBar" aria-label={props.label} hidden={props.hidden || undefined}>
+      <For each={shown()}>{(item) => <TabLink item={item} />}</For>
+      <Show when={rest().length > 0}>
+        <button
+          type="button"
+          class="k2-tab"
+          data-k2-part="TabBar.More"
+          data-current={restCurrent() ? "" : undefined}
+          // the open place is in its sheet: assistive technology hears that "More" holds it
+          aria-current={restCurrent() ? "page" : undefined}
+          aria-haspopup="dialog"
+          aria-expanded={open() ? "true" : "false"}
+          onClick={() => setOpen(true)}
+        >
+          <Icon name="dots" />
+          <span class="k2-tab-label">{t().more}</span>
+          <Unread count={restUnread()} />
+        </button>
+        <Dialog title={t().more} open={open()} onOpenChange={setOpen}>
+          <For each={rest()}>
+            {(item) => (
+              <Row
+                icon={item.icon}
+                lines={[item.label]}
+                href={item.href}
+                // a place that opens in place closes the sheet first; a page load leaves it anyway
+                onNavigate={(() => {
+                  const navigate = item.onNavigate;
+                  return navigate
+                    ? (event: Parameters<OnNavigate>[0]) => {
+                        setOpen(false);
+                        return navigate(event);
+                      }
+                    : undefined;
+                })()}
+                current={item.current}
+                end={<Unread count={item.unread} />}
+              />
+            )}
+          </For>
+        </Dialog>
+      </Show>
+    </nav>
+  );
+};
+
+// ── Rail ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+export type RailItem = TabBarItem & {
+  /**
+   * The colour of its symbol at rest in each theme, such as its app's colour, which the platform derives to read on the
+   * canvas. Without it the symbol takes the rail's quiet ink.
+   */
+  tone?: { light: string; dark: string };
+};
+
+export type RailProps = {
+  /** The name of the rail for assistive technology, such as the installation's name. */
+  label: string;
+  /** The installation's logo at the top. */
+  logo?: string;
+  /** Every place of the app, in order; with more than fit, they scroll between the logo and the foot. */
+  items: readonly RailItem[];
+  /** Places at the foot, such as Settings; they always stay in view. */
+  foot?: readonly RailItem[];
+};
+
+const RailLink = (props: { item: RailItem }) => (
+  <Popover tip={props.item.label} side="right">
+    <Dynamic
+      component={linkOr(props.item.href, "a")}
+      href={props.item.href}
+      onNavigate={props.item.onNavigate}
+      class="k2-rail-item"
+      data-k2-part="Rail.Item"
+      aria-current={props.item.current ? "page" : undefined}
+      style={
+        props.item.tone ? custom({ "--k2-rail-tone-light": props.item.tone.light, "--k2-rail-tone-dark": props.item.tone.dark }) : undefined
+      }
+    >
+      <Icon name={props.item.icon} />
+      <span class="k2-hidden-text">{props.item.label}</span>
+      <Unread count={props.item.unread} />
+    </Dynamic>
+  </Popover>
+);
+
+/**
+ * The navigation of an app from 768 px, on the canvas beside its page, in the measures of Cloud's app bar: a column of
+ * 56 px with the logo at the top, one symbol of 20 px per place as a target of 44 px, the open one filled, a count that
+ * calls for attention on the symbol's corner, and the places of the foot at the bottom, always in view while the
+ * places above them scroll. Each place is a link in the tab order; its name names it for assistive technology and
+ * shows as a hint to its right. Below 768 px it leaves, and the `TabBar` takes its place with the same places.
+ * The platform may set its colours (`--k2-rail-ink`, `--k2-rail-hover`, `--k2-rail-current`, `--k2-rail-current-ink`,
+ * `--k2-rail-unread`); without them the rail takes v2's quiet ink and the app's tint.
+ */
+export const Rail = (props: RailProps) => (
+  <nav class="k2-rail" data-k2-part="Rail" aria-label={props.label}>
+    <Show when={props.logo}>
+      {(logo) => (
+        <div class="k2-rail-logo">
+          <img src={logo()} alt="" />
+        </div>
+      )}
+    </Show>
+    <div class="k2-rail-scroll">
+      <For each={props.items}>{(item) => <RailLink item={item} />}</For>
+    </div>
+    <Show when={props.foot?.length}>
+      <div class="k2-rail-foot">
+        <For each={props.foot}>{(item) => <RailLink item={item} />}</For>
+      </div>
+    </Show>
+  </nav>
+);
+
+// ── NoticeStack ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+export type NoticeStackProps = {
+  /** `Notice`s that stay until their state ends or the person hides them, such as "Offline" or a new version. */
+  children: JSX.Element;
+};
+
+/**
+ * Notices that float over the page at the bottom, above a `TabBar` and the bottom safe area, and stay until their state
+ * ends: offline, a new version. They float, so nothing on the page moves when one comes or goes; the page's panes keep
+ * the stack's height free at their end (`--k2-notice-stack` on the document), so the last row stays reachable. On the
+ * phone each deed is a framed button of at least 44 px in the end column. Give every notice a way to hide it.
+ */
+export const NoticeStack = (props: NoticeStackProps) => {
+  let stack: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!stack || typeof ResizeObserver === "undefined") return;
+    const root = document.documentElement;
+    const sizes = new ResizeObserver(() => measure());
+    // The room is what the stack covers of the window above the tab bar: from its top to the window's end, less the
+    // bar. A pane ends at the bar on the phone and near the window's end beside it, so the last row stays reachable.
+    // The bar is looked up each time, so a bar that comes later counts too, and its size is watched from then on; a
+    // hidden bar counts as none, the same bar the stylesheet places the stack above.
+    const measure = () => {
+      const bar = document.querySelector<HTMLElement>(".k2-tabbar");
+      if (bar) sizes.observe(bar);
+      const shown = bar && !bar.hidden ? bar : undefined;
+      const empty = !stack || stack.offsetHeight === 0;
+      const covered = empty ? 0 : innerHeight - stack!.getBoundingClientRect().top - (shown?.offsetHeight ?? 0);
+      root.style.setProperty("--k2-notice-stack", `${Math.max(0, Math.ceil(covered))}px`);
+    };
+    // the stack grows and shrinks with its notices, and moves with the bar (a screen of its own hides it) and the window
+    sizes.observe(stack);
+    addEventListener("resize", measure);
+    measure();
+    onCleanup(() => {
+      sizes.disconnect();
+      removeEventListener("resize", measure);
+      root.style.removeProperty("--k2-notice-stack");
+    });
+  });
+  return (
+    <div ref={stack} class="k2-notice-stack" data-k2-part="NoticeStack" aria-live="polite">
+      {props.children}
+    </div>
+  );
+};

@@ -75,6 +75,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
+| a list that can grow without end (mail, records, a log) | `List items rowKey row`: only the rows in view are in the page | – |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
@@ -93,6 +94,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
+| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
+| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
@@ -140,6 +145,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 9. **Lines separate groups, not entries or the parts of one thing.** No
    line under a section head, none between its entries, none inside a
    `Group`.
+10. **Every list that can grow without end scales.** Give such a list its
+   data (`List items rowKey row`, or a `Table`): only the rows in view are
+   in the page, so 10,000 rows cost what 30 do. Write rows out only for a
+   few fixed ones.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
@@ -163,12 +172,13 @@ a `Notice` that names the deed.
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
   (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`.
+- **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
   `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `DatePicker`, `Check`, `Choice`.
+  `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
+  `CodeInput`, `Slider`, `ColorInput`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

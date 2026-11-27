@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ import type { User } from "../contracts/shared";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
 import { session } from "../services/session";
+import * as badges from "./app-badges";
 import { pwaMessages } from "./pwa-messages";
 import type { RuntimeContext } from "./runtime";
 
@@ -24,6 +25,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");
+const { bareDrops } = await import("./PwaLayoutV2");
 const { useLocale } = await import("@k2b/ui");
 const { ssr } = defineApp({
   id: "inventory",
@@ -106,8 +108,13 @@ const page = ssr<AuthContext>(
     createComponent(PwaLayout, {
       c,
       title: c.req.query("title") ?? "Items",
-      back: c.req.query("back") ? { href: "/pwa/inventory", label: "Items" } : undefined,
-      actions: "[[actions]]",
+      back: c.req.query("back") ? { href: "/pwa/inventory", label: "Items", withSidebar: c.req.query("back") !== "phone" } : undefined,
+      sidebarTitle: c.req.query("sidebarTitle"),
+      status: c.req.query("status") ? "[[status]]" : undefined,
+      actions: c.req.query("noActions") === undefined ? "[[actions]]" : undefined,
+      ui: c.req.query("ui") === "v2" ? "v2" : undefined,
+      bare: c.req.query("bare") !== undefined,
+      screen: c.req.query("screen") !== undefined,
       get children() {
         return createComponent(LocaleEcho, {});
       },
@@ -401,4 +408,271 @@ describe("PwaLayout", () => {
   });
 
   test("catalog is complete", () => expect(pwaMessages.check()).toEqual([]));
+});
+
+// `ui="v2"`: the same page, its access and its redirects, in a v2 frame that loads Core's v2.css alone and no v1 shell.
+describe("PwaLayout ui v2", () => {
+  // The registered Core serves v2.css unless a test says otherwise.
+  let coreRoutes: ReturnType<typeof spyOn<typeof watcher, "registeredCoreRoutes">>;
+  beforeEach(() => {
+    coreRoutes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]);
+  });
+  afterEach(() => coreRoutes.mockRestore());
+  const v2Tabs = (document: Document) =>
+    [...document.querySelectorAll<HTMLElement>(".k2-tabbar > .k2-tab")].map((link) => ({
+      href: link.getAttribute("href"),
+      label: link.querySelector(".k2-tab-label")?.textContent,
+      current: link.getAttribute("aria-current") === "page",
+      badge: (islandProps(link.ownerDocument, "PwaNavigationV2.island.tsx") as { tabs: { href: string; badge?: string }[] }).tabs.find(
+        (tab) => tab.href === link.getAttribute("href"),
+      )?.badge,
+    }));
+  const v1Shell = /k2b-mobile-shell|k2b-tab-bar|k2b-button|k2b-placeholder|PwaRuntime\.island|PwaPartCount\.island/;
+
+  test("keeps the access and the launch bounce of every app page", async () => {
+    const response = await server.request("/pwa/inventory/42?ui=v2");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(`/pwa/_auth/session/launch?to=${encodeURIComponent("/pwa/inventory/42?ui=v2")}`);
+    signIn("web");
+    const web = await server.request("/pwa/inventory?ui=v2", { headers: { Cookie: "session_token=test-session" } });
+    expect(web.headers.get("location")).toStartWith("/pwa/_auth/session/launch?to=");
+  });
+
+  test("is a v2 page with Core's v2.css alone, its head, and no v1 shell", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const { response, html, document } = await render("/pwa/inventory?ui=v2&title=Shelf&back=1");
+    expect(response.status).toBe(200);
+    expect(document.title).toBe("Shelf");
+    const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((link) => link.getAttribute("href") ?? "");
+    expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(true);
+    expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(false);
+    expect(document.body.classList.contains("k2-ui")).toBe(true);
+    // The document is the v2 frame, not a MobileShell.
+    expect(document.documentElement.hasAttribute("data-pwa-v2")).toBe(true);
+    expect(html).not.toMatch(v1Shell);
+    const frame = document.querySelector(".k2-ui.pwa-v2");
+    expect(frame?.getAttribute("data-ui")).toBe("v2");
+    // Without `bare` the frame holds the page in a Workspace with the head and one Pane.
+    const head = frame?.querySelector('[data-k2-part="Workspace"] [data-slot="head"]');
+    expect(head?.querySelector(".pwa-v2-title")?.textContent).toBe("Shelf");
+    expect(head?.querySelector('.pwa-v2-back a[href="/pwa/inventory"]')?.getAttribute("aria-label")).toBe("Items");
+    // Kept on the phone, where a v2 head's end would otherwise give way to a shell bar the app does not have.
+    expect(head?.querySelector(".k2-bar-end > .pwa-v2-actions[data-keep]")?.textContent).toBe("[[actions]]");
+    expect(frame?.querySelector('main [data-k2-part="Pane"]')?.textContent).toContain("[[locale:en]]");
+    expect([response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
+      "no-referrer",
+      "frame-ancestors 'none'",
+    ]);
+  });
+
+  test("beside an older Core, whose sheets have no v2 frame, the page keeps global.css and shows in the v1 frame", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    coreRoutes.mockReturnValue(["/public/global.css"]);
+    const { document } = await render("/pwa/inventory?ui=v2&title=Shelf&back=1");
+    const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((link) => link.getAttribute("href") ?? "");
+    expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(true);
+    expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(false);
+    // Such a Core's sheets know the v1 frame only: none of the v2 frame's classes, and the document is a MobileShell.
+    expect(document.body.innerHTML).not.toContain("pwa-v2");
+    expect(document.documentElement.hasAttribute("data-k2b-mobile-shell")).toBe(true);
+    expect(document.querySelector("h1.k2b-mobile-shell__title")?.textContent).toBe("Shelf");
+    expect(document.querySelector('.k2b-mobile-shell__header a.k2b-mobile-shell__back[href="/pwa/inventory"]')).not.toBeNull();
+    expect(tabs(document).map((tab) => tab.label)).toEqual(["Start", "Inventory"]);
+    // The page's own v2 content stands in a v2 scope, in the app's v2 inks.
+    expect(document.querySelector(".k2b-mobile-shell .k2-ui[data-ui='v2']")?.textContent).toBe("[[locale:en]]");
+    expect(document.body.classList.contains("k2-ui")).toBe(false);
+  });
+
+  test("a badge is a count that calls for attention, on its tab and in the sidebar, in figures and words", async () => {
+    signIn("app");
+    apps = [
+      shell,
+      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread", summary: "/pwa/alpha/summary" } }),
+      part("beta", "Beta", { pwa: { href: "/pwa/beta", badge: "/pwa/beta/unread" } }),
+    ];
+    const counts = spyOn(badges, "appBadgeCount").mockImplementation((input) =>
+      input.endpoint === "/pwa/alpha/unread"
+        ? 3
+        : input.endpoint === "/pwa/beta/unread"
+          ? 120
+          : input.endpoint === "/pwa/alpha/summary"
+            ? 8
+            : 0,
+    );
+    try {
+      const { document } = await render("/pwa/?ui=v2", { "Accept-Language": "de" });
+      const tab = (href: string) => document.querySelector(`.k2-tabbar > .k2-tab[href="${href}"]`)!;
+      expect(tab("/pwa/alpha").querySelector(".k2-unread")?.textContent).toBe("3");
+      expect(tab("/pwa/alpha").querySelector(".k2-unread")?.getAttribute("aria-hidden")).toBe("true");
+      expect(tab("/pwa/alpha").querySelector(".k2-hidden-text")?.textContent).toBe("3 ungelesen");
+      expect(tab("/pwa/beta").querySelector(".k2-unread")?.textContent).toBe("99+");
+      expect(tab("/pwa/beta").querySelector(".k2-hidden-text")?.textContent).toBe("Mehr als 99 ungelesen");
+      expect([...document.querySelectorAll(".k2-tabbar > .k2-tab")].some((link) => link.hasAttribute("title"))).toBe(false);
+      // In the rail, as on Cloud's app bar, only the attention count stands on the symbol; a summary stays on Start.
+      const entry = document.querySelector('.pwa-v2-nav a[href="/pwa/alpha"]')!;
+      expect(entry.querySelector(".k2-unread")?.textContent).toBe("3");
+      expect(entry.textContent).not.toContain("8");
+      expect(document.querySelector(".pwa-v2-nav .k2-rail-logo img")?.getAttribute("src")).toBe("/branding/logo");
+    } finally {
+      counts.mockRestore();
+    }
+  });
+
+  test("Start, every part as tabs (four, then More), the open one marked; Settings marks no tab", async () => {
+    signIn("app");
+    apps = [shell, ...["alpha", "beta", "gamma", "delta", "inventory"].map((id) => part(id, id[0]!.toUpperCase() + id.slice(1)))];
+    const tabs = (document: Document) =>
+      [...document.querySelectorAll<HTMLElement>(".k2-tabbar > .k2-tab")].map(
+        (tab) => `${tab.textContent}${tab.matches("[aria-current], [data-current]") ? " *" : ""}`,
+      );
+    expect(tabs((await render("/pwa/inventory/42?ui=v2")).document)).toEqual(["Start", "Alpha", "Beta", "Delta", "More *"]);
+    // a part among the first ones marks its own tab
+    apps = [shell, ...["inventory", "whiskey", "xray", "yankee", "zeta"].map((id) => part(id, id[0]!.toUpperCase() + id.slice(1)))];
+    expect(tabs((await render("/pwa/inventory?ui=v2")).document)).toEqual(["Start", "Inventory *", "Whiskey", "Xray", "More"]);
+    expect(tabs((await render("/pwa/?ui=v2")).document)).toEqual(["Start *", "Inventory", "Whiskey", "Xray", "More"]);
+    expect(tabs((await render("/pwa/settings?ui=v2")).document)).toEqual(["Start", "Inventory", "Whiskey", "Xray", "More"]);
+    // Start shows the installation's logo on the phone, beside its title
+    expect((await render("/pwa/?ui=v2&title=Example%20Cloud")).document.querySelector(".pwa-v2-title img.pwa-v2-logo")).not.toBeNull();
+    expect((await render("/pwa/inventory?ui=v2")).document.querySelector(".pwa-v2-logo")).toBeNull();
+  });
+
+  test("a status row stands under the frame's head", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const { document } = await render("/pwa/inventory?ui=v2&status=1");
+    expect(document.querySelector('[data-k2-part="Pane"] [data-slot="status"]')?.textContent).toBe("[[status]]");
+  });
+
+  test("every part in the rail and as a tab, in its app's colour, with the routes of its badges", async () => {
+    signIn("app");
+    apps = [
+      shell,
+      part("zeta", "Zeta"),
+      part("inventory", "Inventory"),
+      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread" } }),
+      part("beta", "Beta", { pwa: { href: "/pwa/beta", summary: "/pwa/beta/summary" } }),
+    ];
+    const { document } = await render("/pwa/inventory/42?ui=v2");
+    expect(document.querySelector(".pwa-v2")?.hasAttribute("data-tabs")).toBe(true);
+    expect(document.querySelector(".k2-tabbar")?.getAttribute("aria-label")).toBe("App");
+    // five places fit: no More
+    expect(v2Tabs(document)).toEqual([
+      { href: "/pwa/", label: "Start", current: false, badge: undefined },
+      { href: "/pwa/alpha", label: "Alpha", current: false, badge: "/pwa/alpha/unread" },
+      { href: "/pwa/beta", label: "Beta", current: false, badge: undefined },
+      { href: "/pwa/inventory", label: "Inventory", current: true, badge: undefined },
+      { href: "/pwa/zeta", label: "Zeta", current: false, badge: undefined },
+    ]);
+    const navigation = islandProps(document, "PwaNavigationV2.island.tsx") as Record<string, unknown> & {
+      parts: ({ tone?: { light: string; dark: string } } & Record<string, unknown>)[];
+    };
+    // each part's symbol has its app's colour in both themes, as the app bar derives it
+    for (const entry of navigation.parts)
+      expect(entry.tone).toEqual({ light: expect.stringMatching(/^#/), dark: expect.stringMatching(/^#/) });
+    expect({ ...navigation, tabs: undefined, parts: navigation.parts.map(({ tone: _, ...entry }) => entry) } as Record<
+      string,
+      unknown
+    >).toEqual({
+      title: "Example Cloud",
+      logo: "/branding/logo",
+      start: { id: "start", label: "Start", icon: "home", href: "/pwa/", current: false },
+      parts: [
+        { id: "alpha", label: "Alpha", icon: "alpha", href: "/pwa/alpha", current: false, badge: "/pwa/alpha/unread" },
+        { id: "beta", label: "Beta", icon: "beta", href: "/pwa/beta", current: false },
+        { id: "inventory", label: "Inventory", icon: "inventory", href: "/pwa/inventory", current: true },
+        { id: "zeta", label: "Zeta", icon: "zeta", href: "/pwa/zeta", current: false },
+      ],
+      settings: { id: "settings", label: "Settings", icon: "settings", href: "/pwa/settings", current: false },
+      tabsLabel: "App",
+      tabs: undefined,
+      endpoints: ["/pwa/alpha/unread"],
+    });
+    // The rail's places are links in the server's page, before the counts arrive.
+    expect(document.querySelector('.pwa-v2-nav nav a[href="/pwa/inventory"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
+  test("a bare page brings its own workspace; a screen page has no tab bar", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const bare = (await render("/pwa/inventory?ui=v2&bare")).document;
+    expect(bare.querySelector(".pwa-v2-main")?.textContent).toBe("[[locale:en]]");
+    expect(bare.querySelector('[data-k2-part="Workspace"]')).toBeNull();
+    const screen = (await render("/pwa/inventory?ui=v2&bare&screen")).document.querySelector(".pwa-v2");
+    // The tabs stay in the page and step aside (the tab bar's own hidden state), so `setPwaScreen` can bring them back.
+    expect(screen?.hasAttribute("data-screen")).toBe(true);
+    expect(screen?.querySelector(".k2-tabbar")?.hasAttribute("hidden")).toBe(true);
+    expect(screen?.hasAttribute("data-tabs")).toBe(true);
+  });
+
+  test("names the page on wide screens by `sidebarTitle` and hides a back link the rail already leads to", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const { document } = await render("/pwa/inventory/42?ui=v2&title=Shelf&sidebarTitle=Shelves&back=phone");
+    expect(document.querySelector(".pwa-v2-title .pwa-v2-phone-only")?.textContent).toBe("Shelf");
+    expect(document.querySelector(".pwa-v2-title .pwa-v2-wide-only")?.textContent).toBe("Shelves");
+    expect(document.querySelector(".pwa-v2-back")?.getAttribute("data-with-sidebar")).toBe("hide");
+    expect(document.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(false);
+  });
+
+  test("beside the rail no title repeats the open place, and a head left empty by that leaves; the phone keeps it", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const repeats = (await render("/pwa/inventory?ui=v2&title=Inventory&noActions")).document;
+    expect(repeats.querySelector(".pwa-v2-title .pwa-v2-phone-only")?.textContent).toBe("Inventory");
+    expect(repeats.querySelector(".pwa-v2-title .pwa-v2-wide-only")).toBeNull();
+    expect(repeats.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(true);
+    // Start, titled with the installation's name on the phone and "Start" beside the rail
+    const start = (await render("/pwa/?ui=v2&title=Example%20Cloud&sidebarTitle=Start&noActions")).document;
+    expect(start.querySelector(".pwa-v2-title .pwa-v2-wide-only")).toBeNull();
+    expect(start.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(true);
+    // a head with the page's actions stays, without the repeated title
+    const actions = (await render("/pwa/inventory?ui=v2&title=Inventory")).document;
+    expect(actions.querySelector(".pwa-v2-main .k2-bar")?.hasAttribute("data-phone")).toBe(false);
+  });
+
+  test("without a person: no sidebar, no tabs, no keepalive and no timezone reload; builds reach the runtime", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const own = spyOn(builds, "pwaBuild").mockReturnValue("rendered-build");
+    const registered = spyOn(watcher, "registeredPwaBuilds").mockReturnValue({ core: "core-rendered" });
+    try {
+      const signedIn = (await render("/pwa/inventory?ui=v2")).document;
+      expect(islandProps(signedIn, "PwaRuntimeV2.island.tsx")).toMatchObject({
+        keepalive: true,
+        accountId: user.id,
+        cloud: "Example Cloud",
+        builds: { inventory: "rendered-build", core: "core-rendered" },
+        rememberAddress: { cookie: "pwa_last_address" },
+      });
+      tokenSpy.mockReturnValue(null);
+      const open = (await render("/pwa/open?ui=v2")).document;
+      expect(open.querySelector(".pwa-v2")?.hasAttribute("data-sidebar")).toBe(false);
+      expect(open.querySelector(".pwa-v2-nav")).toBeNull();
+      expect(open.querySelector(".k2-tabbar")).toBeNull();
+      expect(islandProps(open, "PwaRuntimeV2.island.tsx")).toMatchObject({ keepalive: false });
+      expect(islandProps(open, "TimezoneCookie.island.tsx")).toMatchObject({ reload: false });
+    } finally {
+      own.mockRestore();
+      registered.mockRestore();
+    }
+  });
+
+  test("names what a bare page's frame does not show, for the warning in development", () => {
+    expect(bareDrops({})).toEqual([]);
+    expect(
+      bareDrops({ back: { href: "/pwa/inventory", label: "Items" }, actions: "[[actions]]", sidebarTitle: "Items", status: "[[status]]" }),
+    ).toEqual(["back", "actions", "sidebarTitle", "status"]);
+  });
+
+  test("renders in the request locale", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory", { presentation: { baseLocale: "en", translations: { de: { name: "Lager" } } } })];
+    const { document } = await render("/pwa/inventory?ui=v2", { Cookie: "pwa_session=test-session; cloud.locale=de" });
+    expect(document.documentElement.getAttribute("lang")).toBe("de");
+    expect(document.querySelector("main")?.textContent).toContain("[[locale:de]]");
+    expect(v2Tabs(document).map((tab) => tab.label)).toEqual(["Start", "Lager"]);
+    expect((islandProps(document, "PwaNavigationV2.island.tsx") as { settings: { label: string } }).settings.label).toBe("Einstellungen");
+  });
 });

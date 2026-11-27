@@ -6,6 +6,7 @@
 
 @import "./v2-app-ink.css";
 @import "./minimal-layout.css";
+@import "./pwa-layout.css";
 
 /* global.css carries the Cloud shell, integration surfaces, and shared app
    utilities. Portable UI primitives live in @k2b/ui. This stylesheet is
@@ -43,6 +44,7 @@
 @import "./profile-picture.css";
 @import "./panel.css";
 @import "./privacy-screen.css";
+@import "./v2-rail.css";
 
 @theme {
   --color-dark: rgb(9 9 11);

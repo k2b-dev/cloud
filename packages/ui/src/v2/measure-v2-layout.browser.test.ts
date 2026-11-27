@@ -164,6 +164,39 @@ describe("v2.css in a browser", () => {
 });
 
 describe("measureV2Layout", () => {
+  // W5 (Pulse): a table wider than its column scrolls inside it, and what it holds is cut at the column's line, right
+  // beside the grip's pill. That content is not the pill: it made the pill look 0.5 to 1 px off its line at DPR 1.
+  const overflowing = columns(
+    '<div class="row">Leser</div>',
+    '<div style="overflow-x: auto"><table style="width: 600px; border-spacing: 0">' +
+      '<tr style="height: 186px"><td></td></tr>' +
+      '<tr style="height: 20px"><td style="padding: 0 0 0 241px"><span data-probe="cut" style="display: inline-block; width: 40px; height: 20px; vertical-align: top; background: var(--k2-text)"></span></td></tr>' +
+      "</table></div>",
+  );
+  for (const scale of [1, 2])
+    test(
+      `green at DPR ${scale}: an overflowing table cut at the line beside the grip is not the pill`,
+      async () => {
+        const page = await open(overflowing, { scale });
+        try {
+          // the table's content reaches the line at the pill's height, cut by its column
+          const cut = await page.$eval('[data-probe="cut"]', (span) => {
+            const r = span.getBoundingClientRect();
+            const grip = document.querySelector('[data-probe="grip"]')!.getBoundingClientRect();
+            return { right: r.right, gripLeft: grip.left, inside: r.top <= grip.top + 3 && r.bottom >= grip.top + 4 };
+          });
+          expect(cut.inside).toBe(true);
+          expect(cut.right).toBeGreaterThan(cut.gripLeft);
+          const result = await measureV2Layout(page);
+          expect(result.problems).toEqual([]);
+          expect(result.grips).toEqual([{ grip: '[data-probe="grip"]', dom: 0, pixels: 0, lineWidth: 1 }]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   for (const scale of [1, 2])
     test(
       `green at DPR ${scale}: lines reach their edges, no double line, roles only, the grip centred on its line`,
@@ -584,6 +617,28 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A control that gave way to its symbol keeps its words only as its name (sr-only, 1 px, clipped): the outline does
+  // not take that for a cut label. A label squeezed to 1 px without being hidden so is still cut.
+  test(
+    "the outline takes a visually hidden label as a name, and a label squeezed to 1 px as cut",
+    async () => {
+      const button = (probe: string, label: string) =>
+        `<button type="button" class="k2-btn" data-probe="${probe}"><i class="ti ti-plus k2-icon" aria-hidden="true"></i><span class="k2-btn-label" style="${label}">Todo anlegen</span></button>`;
+      const folded = await open(
+        columns(button("folded", "position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap")),
+      );
+      const squeezed = await open(columns(button("squeezed", "display:inline-block; width:1px; overflow:hidden; white-space:nowrap")));
+      try {
+        expect(await describeV2Page(folded)).not.toContain("cuts its label");
+        expect(await describeV2Page(squeezed)).toContain('"Todo anlegen" cuts its label');
+      } finally {
+        await folded.close();
+        await squeezed.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "red: a label cut by a parent that hides what overflows; a scroller does not cut",
     async () => {
@@ -658,6 +713,117 @@ describe("measureV2Layout", () => {
       } finally {
         await page.close();
         await lines.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // break-ui 25.11.: a sender pressed to 0 px by many marks, and "An" one letter per line beside a long sender.
+  test(
+    "red: text pressed to nothing and text standing one letter per line; green: a visually hidden name",
+    async () => {
+      const squeezed = columns(
+        '<div class="row" style="display:flex">' +
+          '<span data-probe="sender" style="min-width:0;flex:0 1 0;overflow:hidden">Aleksandra</span>' +
+          '<span style="flex:none;white-space:nowrap">Wartet · Reklamation Gewährleistung · bis Mo · Vorschlag</span></div>' +
+          '<div class="row" style="display:flex;width:240px">' +
+          '<span data-probe="to" style="flex:0 1 auto;min-width:0;overflow-wrap:anywhere">An</span>' +
+          '<span data-probe="name" style="flex:0 0 auto;width:8px;min-width:0;overflow-wrap:anywhere">Empfänger</span>' +
+          '<span style="flex:none;white-space:nowrap">von Kundenservice Gewährleistung und Reklamation</span></div>',
+      );
+      const hidden = columns(
+        '<div class="row">Eintrag<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Name</span></div>',
+      );
+      const page = await open(squeezed, { width: 900 });
+      const fine = await open(hidden);
+      try {
+        const found = (await measureV2Layout(page)).squeezed;
+        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="sender"\] "Aleksandra" is 0 px wide/));
+        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="name"\] "Empfänger" stands one letter per line/));
+        expect((await measureV2Layout(page)).problems).toEqual(expect.arrayContaining(found));
+        expect((await measureV2Layout(fine)).squeezed).toEqual([]);
+      } finally {
+        await page.close();
+        await fine.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // review of #4210: lines broken on purpose are no finding; text shown through an ancestor of 0 px is one.
+  test(
+    "green: short lines broken on purpose; red: text inside a box that an ancestor of 0 px cuts away",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row"><span data-probe="list" style="white-space:pre-line">1.\n2.\n3.\n4.</span></div>' +
+            '<div class="row" style="display:flex"><span style="flex:0 0 0;min-width:0;overflow:hidden"><span data-probe="inner" style="display:inline-block;width:120px">Aleksandra</span></span>' +
+            '<span style="flex:none;white-space:nowrap">Wartet · Reklamation · bis Mo · Vorschlag · Anhang · Schloss · Person · noch mehr</span></div>',
+        ),
+        { width: 900 },
+      );
+      try {
+        const found = (await measureV2Layout(page)).squeezed;
+        expect(found.filter((line) => line.includes('"list"'))).toEqual([]);
+        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="inner"\] "Aleksandra" is 0 px wide/));
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // gateway-ops (gate of #4210): the key figures of a StatusRow give way whole: they wrap out of sight below a line
+  // that hides what wraps, even where that line is pressed to 0 px. A figure out of sight is no finding.
+  test(
+    "green: figures that wrapped out of sight below a line that hides them",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row" style="display:flex">' +
+            '<span style="display:flex;flex-wrap:wrap;flex:0 1 auto;min-width:0;height:1lh;overflow:hidden">' +
+            '<span style="height:1lh"></span><span data-probe="fact" style="white-space:nowrap">6 Fehler</span></span>' +
+            '<span style="flex:none;white-space:nowrap">' +
+            "Wartet · Reklamation · bis Mo · Vorschlag · ".repeat(6) +
+            "</span></div>",
+        ),
+        { width: 900 },
+      );
+      try {
+        // the line that hides the figures is pressed to 0 px, and the figure stands below it
+        const where = await page.locator('[data-probe="fact"]').evaluate((fact) => {
+          const line = fact.parentElement!.getBoundingClientRect();
+          return { line: Math.round(line.width), below: fact.getBoundingClientRect().top >= line.bottom - 0.5 };
+        });
+        expect(where).toEqual({ line: 0, below: true });
+        expect((await measureV2Layout(page)).squeezed.filter((line) => line.includes('"fact"'))).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Files 26.11.: a column of min 440 px on a 390 px phone carried its rows (and their dates) past the screen.
+  test(
+    "red: a row past its column and a row's date past the row; green: a row that fits",
+    async () => {
+      const wide = await open(
+        columns(
+          '<div style="min-width:900px"><div class="k2-row" data-k2-part="Row" style="display:flex;justify-content:space-between"><span>Angebote</span><span>25.11.2026</span></div></div>' +
+            '<div class="k2-row" data-k2-part="Row" style="display:flex;position:relative"><span>Fotos</span><span style="position:absolute;right:-60px">27.11.2026</span></div>',
+        ),
+        { width: 900 },
+      );
+      const fine = await open(columns('<div class="k2-row" data-k2-part="Row"><span>Angebote</span></div>'), { width: 900 });
+      try {
+        const found = (await measureV2Layout(wide)).past;
+        expect(found).toContainEqual(expect.stringMatching(/^row "Angebote.*" runs [\d.]+ px past the edge of its column/));
+        expect(found).toContainEqual(expect.stringMatching(/"27\.11\.2026" stands [\d.]+ px past its row/));
+        expect((await measureV2Layout(fine)).past).toEqual([]);
+      } finally {
+        await wide.close();
+        await fine.close();
       }
     },
     TEST_TIMEOUT,

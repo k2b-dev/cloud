@@ -17,8 +17,12 @@ Open orders of a workshop: the sidebar holds the app's places, the head holds th
 The workspace decides from its own width, on the server's page too, so nothing jumps when the page comes alive. Switch the example to 1024 and 390 px to see each.
 
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
+- **Context column:** in a split of one main column and a `Pane side` after it, the context stands beside only where the split holds both at their default widths. Beside it, the main column always takes the rest of the row; a `{ fixed }` width on it only decides where the context gives way. With less it gives way to the end of the main column at its full width, and the split scrolls in one piece: the main column is never squeezed, and nothing hides. `side={{ from: 1400 }}` asks for a large screen (a table that needs its room). It needs no room of the workspace, so the sidebar never becomes a drawer for it. A list, its reader and an info column stay beside each other as before.
+- **A detail that grows:** the same part inside a `Pane detail`, under its one head: what it is on the left, who and what happened in a `Pane side` on the right. From a window of ~1680 px beside a list of 640 px it stands in two columns, below that in reading order.
 - **Phone (below 768 px):** the sidebar leaves, and head actions hide unless they have `keep`. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
 - **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
+- **An installed app:** where no shell holds the app's places, a `TabBar` at the bottom edge holds them on the phone: four places and "Mehr" with the others in a sheet. From 768 px it leaves, and the app's `Nav` or a `Rail` beside the page holds them.
+- **The bar names the page:** a pane with `back` and no `head` of its own, such as an editor whose name stood in the workspace's head, shows its `label` after the way back on the phone: "‹ Werkstatt  Notizen.md". The way back takes at most half the bar and is cut first; its whole name stays its hint.
 
 ## Tabs or path?
 
@@ -58,9 +62,21 @@ A bar of fixed height with one line below and two places, `start` and `end`; its
 
 ### Nav
 
-The app's places in the sidebar: groups with a heading and a deed, counts, dots, folding entries and a foot.
+The app's places in the sidebar: groups with a heading and a deed, quiet counts and counts that call for attention (`unread`, a filled figure read out as "3 ungelesen"), dots, folding entries and a foot; a brand's `logo` in the place of the icon.
 
 <Props of="Nav NavGroup NavItem" />
+
+### TabBar
+
+The places of an installed app on the phone, at the bottom edge with the safe area: four and "Mehr" with the others and their counts in a sheet; a count that calls for attention stands as a filled figure on its symbol and is read out in words. From 768 px it leaves.
+
+<Props of="TabBar TabBarItem" />
+
+### Rail
+
+The places of an app from 768 px, on the canvas beside its page, in the measures of Cloud's app bar: a column of 56 px with the logo at the top, a symbol of 20 px per place as a target of 44 px, the open one filled, a count that calls for attention on the symbol's corner, and the places of the `foot` (such as Settings) at the bottom, always in view while the places above them scroll. Each place is a link in the tab order, named by its words, which also show as a hint to its right. Below 768 px it leaves; give the `TabBar` the same places. A `tone` gives a place's symbol its own colour, such as its app's; the platform may set the rail's colours (`--k2-rail-ink`, `--k2-rail-hover`, `--k2-rail-current`, `--k2-rail-current-ink`, `--k2-rail-unread`), and Cloud sets the shell's.
+
+<Props of="Rail RailItem" />
 
 ### Tabs
 

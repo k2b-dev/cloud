@@ -1,5 +1,4 @@
-import { useLocale } from "@k2b/ui";
-import { Menu } from "@k2b/ui/v2";
+import { Menu, useLocale } from "@k2b/ui/v2";
 import { canonicalLocale } from "../shared/locale";
 import { type ProfilePreferenceLocale, profilePreferenceLocale, setLocalePreference } from "../shared/locale-preference";
 import type { CloudThemePreference } from "../shared/theme";

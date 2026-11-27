@@ -17,8 +17,8 @@ export type DialogProps = {
   open: boolean;
   /** Called with `false` when Escape, the close button, a press outside or a swipe closes the dialog. */
   onOpenChange: (open: boolean) => void;
-  /** The buttons at the foot, the main one last. */
-  foot: JSX.Element;
+  /** The buttons at the foot, the main one last; a dialog that only shows places to go, such as "More", has none. */
+  foot?: JSX.Element;
   /** Fields, a notice, text: the content scrolls when it is higher than the dialog. */
   children: JSX.Element;
   /**
@@ -133,13 +133,16 @@ export const Dialog = (props: DialogProps) => {
       // the first field takes the focus, not the close button; without one the first action of the foot
       initialFocus={firstFocus}
     >
+      {/* on the phone's sheet: the grip that says it can be swiped down (the swipe itself is core's) */}
+      <div class="k2-dialog-grip" aria-hidden="true" />
       <div class="k2-slot" data-slot="head">
         <div class="k2-bar">
           <div class="k2-bar-start">
             <dialog.Title class="k2-dialog-title">{props.title}</dialog.Title>
           </div>
           <div class="k2-bar-end">
-            <dialog.Close class="k2-btn" data-variant="ghost" data-icon-only="" aria-label={t().close} title={t().close}>
+            {/* it stays on the phone, where other buttons of a head give way: the sheet's one visible way out */}
+            <dialog.Close class="k2-btn" data-variant="ghost" data-icon-only="" data-keep="" aria-label={t().close} title={t().close}>
               <Icon name="x" />
             </dialog.Close>
           </div>
@@ -148,11 +151,13 @@ export const Dialog = (props: DialogProps) => {
       <div class="k2-dialog-body" ref={watch} onScroll={(event) => measure(event.currentTarget)}>
         {props.children}
       </div>
-      <div class="k2-slot" data-slot="foot" ref={foot}>
-        <div class="k2-bar">
-          <div class="k2-bar-end">{props.foot}</div>
+      <Show when={props.foot !== undefined}>
+        <div class="k2-slot" data-slot="foot" ref={foot}>
+          <div class="k2-bar">
+            <div class="k2-bar-end">{props.foot}</div>
+          </div>
         </div>
-      </div>
+      </Show>
     </dialog.Popup>
   );
 };
@@ -204,7 +209,8 @@ type Ask = (options: ConfirmOptions) => Promise<boolean>;
 const hostKey = Symbol.for("k2b.ui.v2.confirm");
 
 const pageAnswer = (): Ask | undefined => {
-  for (const host of document.querySelectorAll("[data-k2-workspace]")) {
+  // a living Workspace, or the page's hosts where the server renders the Workspace without a script (`PageHosts`)
+  for (const host of document.querySelectorAll("[data-k2-workspace], [data-k2-hosts]")) {
     const ask: unknown = Reflect.get(host, hostKey);
     if (typeof ask === "function") return (options) => Promise.resolve(Reflect.apply(ask, undefined, [options])).then(Boolean);
   }
