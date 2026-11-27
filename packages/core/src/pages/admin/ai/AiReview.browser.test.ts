@@ -107,7 +107,11 @@ test("a provider with 1,000 models keeps the layout rules (k2b-ui gap: no virtua
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${fixture.url}?locale=en&sec=providers&p=cortecs&state=worst`, { timeout: 60_000 });
   await page.locator('main.k2-ui[data-ready="true"]').waitFor();
-  expect(await main().getByRole("link", { name: /Modell 999/ }).count()).toBe(1);
+  expect(
+    await main()
+      .getByRole("link", { name: /Modell 999/ })
+      .count(),
+  ).toBe(1);
   expect((await measureV2Layout(page, { root: "main.k2-ui" })).problems).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
@@ -129,12 +133,11 @@ test("the AI sections stand under their entry in the admin bar, and an open prov
       .first()
       .isVisible(),
   ).toBe(true);
-  await main()
+  const model = main()
     .getByRole("link", { name: /GPT-OSS/ })
-    .first()
-    .click();
-  await page.waitForURL(/m=gpt-oss-120b/);
-  await page.locator('main.k2-ui[data-ready="true"]').waitFor();
+    .first();
+  expect(await model.getAttribute("href")).toBe("/admin/ai?sec=providers&p=cortecs&m=gpt-oss-120b");
+  await goto("sec=providers&p=cortecs&m=gpt-oss-120b");
   expect(await page.getByRole("textbox", { name: /^Display name/ }).inputValue()).toBe("GPT-OSS");
   // on the phone the open model is the page, with the way back to its provider
   await goto("sec=providers&p=cortecs&m=gpt-oss-120b", 390);
@@ -706,6 +709,6 @@ test("budgets lead with the cost of 30 days, and the switch in the head turns ev
   await goto("sec=budgets");
   expect(await main().locator('[data-k2-part="Cells"]').first().innerText()).toContain("Cost, 30 days");
   const write = page.waitForRequest((request) => request.method() === "PUT" && request.url().endsWith("/api/admin/core/ai-quotas"));
-  await flip(main(), "Budgets active");
+  await flip(main(), "On");
   expect((await write).postDataJSON()).toEqual(expect.objectContaining({ enabled: false, revision: 4 }));
 });

@@ -8,6 +8,7 @@ import {
   Button,
   Cells,
   Check,
+  Field,
   Icon,
   Inline,
   Input,
@@ -108,18 +109,9 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
             />
           }
           end={
-            <>
-              <Check
-                switch
-                label={t().budgetsOn}
-                checked={config().enabled}
-                disabled={toggling()}
-                onChange={(enabled) => void toggle(enabled)}
-              />
-              <Button variant={open() ? undefined : "primary"} icon="plus" href={aiAreaHref({ sec: "budgets", rule: "new" })}>
-                {t().addRule}
-              </Button>
-            </>
+            <Button variant={open() ? undefined : "primary"} icon="plus" href={aiAreaHref({ sec: "budgets", rule: "new" })}>
+              {t().addRule}
+            </Button>
           }
         />
       }
@@ -180,6 +172,16 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
             summary={t().unitLine({ p: unit() })}
             more={{ label: t().peopleUsage, href: aiAreaHref({ sec: "budgets", rule: "people" }), forward: true }}
           >
+            {/* every rule on or off at once; it stands with the rules, so the phone keeps it too */}
+            <Setting label={t().budgetsOn} hint={t().budgetsOnHint}>
+              <Check
+                switch
+                label={config().enabled ? t().on : t().off}
+                checked={config().enabled}
+                disabled={toggling()}
+                onChange={(enabled) => void toggle(enabled)}
+              />
+            </Setting>
             <Table
               label={t().rules}
               rows={config().rules}
@@ -221,17 +223,6 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
             />
           </Section>
           <Section icon="clock-bolt" title={t().jobs}>
-            <Row
-              mark={{ icon: "hand-stop", color: AI_COLOR }}
-              lines={[
-                t().brake,
-                background()?.enabled
-                  ? t().brakeOn({ warn: money(background()!.warnAt), stop: money(background()!.stopAt) })
-                  : t().brakeOff,
-              ]}
-              current={open() === "brake"}
-              href={aiAreaHref({ sec: "budgets", rule: "brake" })}
-            />
             <Row
               mark={{ icon: "user-cog", color: AI_COLOR }}
               lines={[
@@ -524,23 +515,25 @@ function BudgetDetail(props: { config: AiBudgetConfig; rule: string; models: Mod
               )}
             </For>
             {/* k2b-ui gap: no person and group picker in v2; the v1 picker stands in */}
-            <PrincipalPicker
-              existing={rule().grants.map((grant) => grant.principal)}
-              allowAuthenticated
-              allowServiceAccounts
-              placeholder={t().addPrincipal}
-              onSelect={(principal: Principal, display) => {
-                // Budgets need an identity; the picker never offers public access here.
-                if (principal.type === "public") return;
-                setRule((current) => ({
-                  ...current,
-                  grants: [
-                    ...current.grants,
-                    { principal, displayName: display.displayName, serviceAccountKind: display.serviceAccountKind, limit: 10 },
-                  ],
-                }));
-              }}
-            />
+            <Field label={t().addPrincipalLabel}>
+              <PrincipalPicker
+                existing={rule().grants.map((grant) => grant.principal)}
+                allowAuthenticated
+                allowServiceAccounts
+                placeholder={t().addPrincipal}
+                onSelect={(principal: Principal, display) => {
+                  // Budgets need an identity; the picker never offers public access here.
+                  if (principal.type === "public") return;
+                  setRule((current) => ({
+                    ...current,
+                    grants: [
+                      ...current.grants,
+                      { principal, displayName: display.displayName, serviceAccountKind: display.serviceAccountKind, limit: 10 },
+                    ],
+                  }));
+                }}
+              />
+            </Field>
           </Section>
           <Show when={!isNew()}>
             <Section icon="activity" title={t().usageNow}>

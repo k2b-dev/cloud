@@ -437,7 +437,7 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
           )}
         </Show>
       </Show>
-      <Section icon="cube" title={modelClass() ? t().clsModelHead : t().slotChoose} summary={slotHint(t(), props.slot)}>
+      <Section icon="cube" title={t().assignment} summary={slotHint(t(), props.slot)}>
         <Facts
           items={[
             {

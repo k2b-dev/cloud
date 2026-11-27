@@ -21,6 +21,7 @@ import {
   Choice,
   Disclosure,
   Facts,
+  Field,
   ImageInput,
   Inline,
   Input,
@@ -705,14 +706,16 @@ export default function ModelDetail(props: {
               )}
             </For>
             {/* k2b-ui gap: no person and group picker in v2; the v1 picker stands in */}
-            <PrincipalPicker
-              existing={draft().grants.map((grant) => grant.principal)}
-              placeholder={t().addPrincipal}
-              allowServiceAccounts
-              onSelect={(principal, display) =>
-                update({ grants: [...draft().grants, { principal, displayName: display.displayName, avatarHash: display.avatarHash }] })
-              }
-            />
+            <Field label={t().addPrincipalLabel}>
+              <PrincipalPicker
+                existing={draft().grants.map((grant) => grant.principal)}
+                placeholder={t().addPrincipal}
+                allowServiceAccounts
+                onSelect={(principal, display) =>
+                  update({ grants: [...draft().grants, { principal, displayName: display.displayName, avatarHash: display.avatarHash }] })
+                }
+              />
+            </Field>
           </Show>
         </Show>
       </Section>

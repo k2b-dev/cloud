@@ -94,11 +94,16 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
       Record<AiModelSlot, string | null>
     >;
   const connected = () => providers().filter((entry) => aiProviderState(entry) === "ok").length;
-  const broken = () =>
-    providers().filter((entry) => {
-      const state = aiProviderState(entry);
-      return state === "badkey" || state === "unreachable";
-    });
+  /** The exceptions by state, each with who: "1 Schlüssel fehlt · OpenAI" (identity B, rule 1). */
+  const problems = () =>
+    (["unreachable", "badkey", "nokey"] as const)
+      .map((state) => ({
+        state,
+        names: providers()
+          .filter((entry) => aiProviderState(entry) === state)
+          .map((entry) => entry.label),
+      }))
+      .filter((problem) => problem.names.length > 0);
   const price = (model: AiModel) =>
     model.pricing
       ? `${aiMoney(locale(), model.pricing.inputPerMillion, "EUR", 2)} / ${aiMoney(locale(), model.pricing.outputPerMillion, "EUR", 2)}`
@@ -157,7 +162,7 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
         },
         { title: t().colModels, width: { min: 72, default: 88 }, align: "end", cell: (entry) => String(entry.modelCount) },
         // which classes and tools this provider's models fill: what breaks when it breaks
-        { title: t().colUse, width: { min: 140, default: 220 }, drop: true, cell: (entry) => providerUse(entry.id) },
+        { title: t().colUse, width: { min: 160, default: 260 }, drop: true, cell: (entry) => providerUse(entry.id) },
         {
           title: t().dataBoundary,
           width: { min: 120, default: 140 },
@@ -376,16 +381,10 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
                     // the exceptions name who: "1 gestört · Cortecs" (identity B, rule 1)
                     facts={[
                       { value: data().models.length, after: t().modelsWord },
-                      ...(broken().length
-                        ? [
-                            {
-                              value: broken().length,
-                              after: `${t().brokenWord} · ${broken()
-                                .map((entry) => entry.label)
-                                .join(", ")}`,
-                            },
-                          ]
-                        : []),
+                      ...problems().map((problem) => ({
+                        value: problem.names.length,
+                        after: `${aiProviderStateLabel(t(), problem.state)} · ${problem.names.join(", ")}`,
+                      })),
                     ]}
                   />
                 ) : undefined
