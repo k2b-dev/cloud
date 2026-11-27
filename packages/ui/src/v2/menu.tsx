@@ -104,6 +104,15 @@ export type MenuProps = TriggerProps & {
 };
 
 /**
+ * Internal to @k2b/ui: the button is a shortcut for the pointer only, from the first markup on: no Tab stop, hidden
+ * from assistive technology, such as the "…" on a place of a tree or a tile of a grid that is one Tab stop. Only
+ * together with `Menu.Context` on the thing (a right-click and a long press, also with VoiceOver on a phone), an own
+ * Shift+F10 binding named in the thing's `aria-keyshortcuts`, and the hint of the thing (`aria-description`). That is
+ * why no app gets it: `PointerMenu` is used where those three stand.
+ */
+type MenuRootProps = MenuProps & { pointerOnly?: boolean };
+
+/**
  * Lines between groups: before the first dangerous entry after others, and around a section; no line at the start,
  * the end or twice.
  */
@@ -547,7 +556,7 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
  * head or a section; with words it is a framed button with a chevron. Keys, typeahead, focus and placement come from
  * the behaviour layer; the menu lines up with the end of a button on the right and the start of one on the left.
  */
-const MenuRoot = (props: MenuProps) => {
+const MenuRoot = (props: MenuRootProps) => {
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
@@ -577,6 +586,8 @@ const MenuRoot = (props: MenuProps) => {
         data-keep={iconOnly() ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
+        tabindex={props.pointerOnly ? -1 : undefined}
+        aria-hidden={props.pointerOnly ? "true" : undefined}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
@@ -658,4 +669,8 @@ const MenuContext = (props: MenuContextProps) => {
 };
 
 /** A menu behind a button, or with `Menu.Context` on a thing itself. */
-export const Menu = Object.assign(MenuRoot, { Context: MenuContext });
+const PublicMenu: (props: MenuProps) => JSX.Element = (props) => <MenuRoot {...props} />;
+export const Menu = Object.assign(PublicMenu, { Context: MenuContext });
+
+/** The "…" of a tree place or a media tile (internal, see `MenuRootProps`). */
+export const PointerMenu = (props: MenuProps) => <MenuRoot {...props} pointerOnly />;
