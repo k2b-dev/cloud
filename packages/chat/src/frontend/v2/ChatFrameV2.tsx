@@ -111,22 +111,6 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const v2 = () => chatV2Messages.resolve([locale()]).t;
-  /** The chats as the nav's own rows: the list's notices over the list (or the search's results). */
-  const chats: NavGroup = {
-    phone: "page",
-    list: () => (
-      <>
-        <For each={props.list.notices}>
-          {(notice) => (
-            <Notice tone={notice.tone} actions={notice.action ? [notice.action] : undefined}>
-              {notice.text}
-            </Notice>
-          )}
-        </For>
-        {props.list.content}
-      </>
-    ),
-  };
   return (
     <>
       <V2WorkspaceNavigation label={props.nav.label} groups={props.nav.groups} foot={props.nav.foot} />
@@ -150,7 +134,21 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
               onKeyDown: props.search.onKeyDown,
             }}
             primary={props.newChat}
-            groups={[...props.nav.groups, chats]}
+            groups={props.nav.groups}
+            // the chats are the nav's own rows, the phone's page: the list's notices over the list (or the search's results)
+            list={
+              <>
+                <For each={props.list.notices}>
+                  {(notice) => (
+                    <Notice tone={notice.tone} actions={notice.action ? [notice.action] : undefined}>
+                      {notice.text}
+                    </Notice>
+                  )}
+                </For>
+                {props.list.content}
+              </>
+            }
+            phone="page"
             foot={props.nav.foot}
           />
         }
