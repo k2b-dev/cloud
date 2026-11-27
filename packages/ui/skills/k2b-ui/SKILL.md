@@ -28,8 +28,7 @@ code, one hero with its real trend, the app's colour where it means
 something, one data picture per row, a tinted head for the open object, and
 a large screen that uses its room. Run its wireframe check on your pictures
 before you call a screen ready: a screen that fails it is not done, however
-clean it is.
-Dense, clear, with faces: the nine rules are in [recipes](references/recipes.md#how-a-screen-looks-dense-clear-with-faces).
+clean it is. Dense, clear, with faces: the nine rules are in [recipes](references/recipes.md#how-a-screen-looks-dense-clear-with-faces).
 
 ## Start here
 
