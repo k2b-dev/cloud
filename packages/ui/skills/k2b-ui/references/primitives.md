@@ -153,7 +153,7 @@ inside it.
 ### List and Row
 
 `List` holds `Row`s (`label` names it; `color` is the colour of the app the
-rows belong to, for the tint of the open and the chosen row, the page's app
+rows belong to, for the tint of the open row, the page's app
 by default). Rows part with the quiet line (`--k2-hairline-subtle`); the
 clear line (`--k2-hairline`) only separates two things: a head and its
 content, a list and its detail, one section and the next. A `Row`:
@@ -191,7 +191,7 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 ### Table
 
 `columns: Column<T>[]`, `rows: T[]`, `label`, `color` (as on `List`: the
-open and the chosen rows in the tint of the app they belong to; rows part
+open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text

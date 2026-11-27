@@ -207,7 +207,7 @@ export type ListProps = {
   /** A name for the list, for assistive technology. */
   label?: string;
   /**
-   * The colour of the app the rows belong to, for the tint of the open and the chosen row, such as rows of the files
+   * The colour of the app the rows belong to, for the tint of the open row, such as rows of the files
    * app inside another app; the app of the page by default.
    */
   color?: string;
@@ -517,7 +517,7 @@ type TableBase<T> = {
   /** A name for the table, for assistive technology. */
   label?: string;
   /**
-   * The colour of the app the rows belong to, for the tint of the open and the chosen rows, such as rows of the files
+   * The colour of the app the rows belong to, for the tint of the open row, such as rows of the files
    * app inside another app; the app of the page by default.
    */
   color?: string;
@@ -886,7 +886,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           <div class="k2-table-phone">
             {/* while the rows load, the phone shows rows of placeholders of two lines, not an empty list */}
             <Show when={!loading()} fallback={<Loading rows={loading()?.rows} lines={2} />}>
-              <List label={props.label}>
+              <List label={props.label} color={props.color}>
                 <For each={items()}>
                   {(item) =>
                     "group" in item ? (

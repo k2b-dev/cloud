@@ -1,7 +1,8 @@
 import { Bar, List, Pane, Row, Section, Table, Text, Workspace } from "../src/v2";
 
 // The lines and the open row of identity B: a list beside a detail, a section in the detail, a table of the page's
-// app and one of another app (its own `color`), each with an open row, the other one with a row chosen for a deed.
+// app and one of another app (its own `color`, also in its phone form), each with an open row, the other one with a
+// row chosen for a deed.
 
 type Order = { key: string; name: string; state: string };
 const orders: Order[] = [
@@ -37,6 +38,7 @@ export const LinesFixture = () => (
             rowKey={(row) => row.key}
             current="AU-101"
             select={{ selected: ["AU-102"], onChange: () => undefined, all: "Alle Belege", row: (row) => row.name }}
+            phone={(row) => ({ lines: [row.name, row.state], time: row.key })}
           />
         </Section>
       </Pane>
