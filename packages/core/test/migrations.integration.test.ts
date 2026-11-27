@@ -11,7 +11,6 @@ const runAllMigrations = async (): Promise<void> => {
   const applications = [
     "contacts",
     "dashboard",
-    "faq",
     "filesv2",
     "gateway-ops",
     "grids",

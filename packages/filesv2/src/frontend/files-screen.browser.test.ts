@@ -1106,8 +1106,9 @@ describe("the views beside the folders on v2", () => {
         }
       });
 
-  // waits for #4211: inside a split with a context column the virtual list does not find its scroller yet
-  test.todo("all storage of 200 storages opens at once and stays whole (#4211)", async () => {
+  // waits for #4340 (fixed at 5bcb6bd677, queued): inside a split with a context column the virtual list does not find
+  // its scroller yet, so it renders every row
+  test.todo("all storage of 200 storages opens at once and stays whole (#4340)", async () => {
     const started = performance.now();
     const { context, tab, errors } = await open(wide, "/app/filesv2", "huge");
     try {
@@ -1125,11 +1126,11 @@ describe("the views beside the folders on v2", () => {
     }
   });
 
-  // Activity's list stands beside its context column (who, where, what): it waits for #4211, where the virtual list
+  // Activity's list stands beside its context column (who, where, what): it waits for #4340, where the virtual list
   // finds its scroller inside such a split; the shares have no context column and run as ever
   for (const address of ["/app/filesv2?view=activity", "/app/filesv2?view=shares"])
     (address.includes("activity") ? test.todo : test)(
-      `${address} of 1,000 entries keeps only the rows in view and scrolls to its end${address.includes("activity") ? " (#4211)" : ""}`,
+      `${address} of 1,000 entries keeps only the rows in view and scrolls to its end${address.includes("activity") ? " (#4340)" : ""}`,
       async () => {
         const started = performance.now();
         const { context, tab, errors } = await open(wide, address, "huge");

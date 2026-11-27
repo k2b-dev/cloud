@@ -8,7 +8,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { personColor } from "../surfaces/person-color";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { gripTolerance, hairline, heights, textEdge, typeRoles } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
@@ -367,6 +367,36 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
+  // A section's head actions keep their name everywhere. On the phone an action with a LEADING symbol shows only the
+  // symbol and keeps its words as its name and hint; a trailing chevron ("forward", "menu") is no reason to hide them.
+  for (const width of [1440, 390])
+    test(
+      `${width} px: section head actions keep their names; only a leading symbol may stand for the words`,
+      async () => {
+        const page = await open("headActions", { width });
+        try {
+          // a label kept for its name is visually hidden at 1 px; words that stand are wider
+          const found = await page.evaluate(() =>
+            [...document.querySelectorAll('[data-k2-part="Section"] .k2-sh-end .k2-btn')].map((button) => {
+              const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
+              return { words: label.textContent, shown: label.getBoundingClientRect().width > 1, title: button.getAttribute("title") };
+            }),
+          );
+          const phone = width === 390;
+          expect(found).toEqual([
+            { words: "Filtern", shown: !phone, title: "Filtern" },
+            { words: "Weiter", shown: true, title: null },
+            { words: "Rohdaten anzeigen", shown: true, title: null },
+          ]);
+          for (const name of ["Filtern", "Weiter", "Rohdaten anzeigen"])
+            expect(await page.getByRole("button", { name, exact: true }).count()).toBe(1);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   // A long name of the list (a search) is cut with "…" on one line: the way back never leaves its bar, and the whole
   // name stays its accessible name and its hint under the pointer.
   test(
@@ -393,6 +423,52 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.cut).toEqual([]);
         expect(layout.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A detail without a head of its own (an editor) is named in the bar of its way back, where the workspace's head gives
+  // way: the name is the page, so the way back is cut first and takes at most half the bar.
+  test(
+    "390 px: a detail without a head names itself after its way back, which keeps at most half the bar",
+    async () => {
+      const page = await open("namedBack", { width: 390 });
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
+          const button = bar.querySelector<HTMLElement>(".k2-btn")!;
+          const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
+          const name = bar.querySelector<HTMLElement>(".k2-pane-back-name")!;
+          const box = bar.getBoundingClientRect();
+          return {
+            half: button.getBoundingClientRect().width <= box.width / 2 + 0.5,
+            backCut: label.scrollWidth > label.clientWidth,
+            name: name.textContent,
+            nameWhole: name.scrollWidth <= name.clientWidth,
+            after: name.getBoundingClientRect().left >= button.getBoundingClientRect().right,
+            inside: name.getBoundingClientRect().right <= box.right - Number.parseFloat(getComputedStyle(bar).paddingRight) + 0.5,
+            title: button.getAttribute("title"),
+          };
+        });
+        expect(found).toEqual({
+          half: true,
+          backCut: true,
+          name: "Notizen.md",
+          nameWhole: true,
+          after: true,
+          inside: true,
+          title: "Angebote und Ausschreibungen 2026",
+        });
+        // the way back keeps its whole name as a link; the outline says what the bar names
+        expect(await page.getByRole("link", { name: "Angebote und Ausschreibungen 2026", exact: true }).count()).toBe(1);
+        // the name heads the page for assistive technology as well
+        expect(await page.getByRole("heading", { name: "Notizen.md", exact: true }).count()).toBe(1);
+        const outline = await describeV2Page(page, "[data-k2-workspace]");
+        expect(outline).toContain('Back "Angebote und Ausschreibungen 2026" link · names "Notizen.md"');
+        expect(outline).not.toContain("Problems (");
       } finally {
         await page.close();
       }
