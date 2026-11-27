@@ -1,11 +1,13 @@
 import {
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   Index,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -414,35 +416,111 @@ export const Tabs = (props: TabsProps) => {
 
 /**
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
- * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
+ * The page it names stays whole; without room the places before it shorten first, and then the ones between the first
+ * place and the parent go into a "…" that opens them as a menu. On the phone the path gives way to the phone bar of the
+ * shell, which names the page; its head stays only for a search.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
-export const Path = (props: PathProps) => (
-  <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
-    <For each={props.items}>
-      {(item, index) => (
-        <>
-          <Show when={index() > 0}>
-            <Icon name="chevron-right" />
-          </Show>
-          <Show
-            when={index() === props.items.length - 1}
-            fallback={
-              <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
-                <a class="k2-path-step" href={item.href}>
-                  {item.label}
-                </a>
-              </Show>
-            }
-          >
-            <b aria-current="page">{item.label}</b>
-          </Show>
-        </>
-      )}
-    </For>
-  </nav>
+/** The chevron between two places, as `Icon` draws it; it leaves with a place that folds into "…". */
+const Chevron = (props: { folded?: boolean; fold?: boolean }) => (
+  <i
+    class="ti ti-chevron-right k2-icon"
+    data-k2-part="Icon"
+    data-name="chevron-right"
+    role="img"
+    aria-hidden="true"
+    data-folded={props.folded ? "" : undefined}
+    data-fold={props.fold ? "" : undefined}
+  />
 );
+
+export const Path = (props: PathProps) => {
+  const t = useUiMessages();
+  // Whether the places between the first one and the parent go into "…". Measured in the browser from the widths every
+  // place would take; the server sends every place, and the stylesheet shortens them until then.
+  const [folded, setFolded] = createSignal(false);
+  const middle = (index: number) => index > 0 && index < props.items.length - 2;
+  let nav: HTMLElement | undefined;
+  onMount(() => {
+    if (!nav) return;
+    const measure = () => {
+      if (!nav || props.items.length < 4) return setFolded(false);
+      const places = [...nav.querySelectorAll<HTMLElement>(":scope > .k2-path-step, :scope > b")];
+      // the chevron before the parent never folds, so it gives the width of every chevron
+      const chevron = nav.querySelector<HTMLElement>(":scope > .k2-icon:not([data-folded], [data-fold])")?.offsetWidth ?? 0;
+      const gap = Number.parseFloat(getComputedStyle(nav).columnGap) || 0;
+      // a place's own width (scrollWidth), also while it is shortened or folded away; the whole path in one line
+      const need =
+        places.reduce((sum, place) => sum + Math.max(place.scrollWidth, place.offsetWidth), 0) +
+        (places.length - 1) * chevron +
+        gap * (2 * places.length - 2);
+      setFolded(need > nav.clientWidth + 0.5);
+    };
+    let frame = 0;
+    const later = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    measure();
+    const sizes = new ResizeObserver(later);
+    sizes.observe(nav);
+    void document.fonts?.ready.then(later);
+    createEffect(on(() => props.items.map((item) => item.label).join("\u0000"), later, { defer: true }));
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+    });
+  });
+  const fold = (): MenuEntry[] =>
+    props.items
+      .filter((_, index) => middle(index))
+      .map((item) => (item.href !== undefined ? { label: item.label, href: item.href } : { label: item.label, disabled: true }));
+  return (
+    <nav ref={nav} class="k2-path" data-k2-part="Path" aria-label={props.label}>
+      <For each={props.items}>
+        {(item, index) => {
+          const away = () => folded() && middle(index());
+          return (
+            <>
+              <Show when={index() > 0}>
+                <Chevron folded={away()} />
+              </Show>
+              <Show
+                when={index() === props.items.length - 1}
+                fallback={
+                  <Show
+                    when={item.href !== undefined}
+                    fallback={
+                      <span class="k2-path-step" data-folded={away() ? "" : undefined}>
+                        {item.label}
+                      </span>
+                    }
+                  >
+                    <a class="k2-path-step" href={item.href} data-folded={away() ? "" : undefined} tabIndex={away() ? -1 : undefined}>
+                      {item.label}
+                    </a>
+                  </Show>
+                }
+              >
+                <b aria-current="page">{item.label}</b>
+              </Show>
+              <Show when={index() === 0 && folded()}>
+                <Chevron fold />
+                <span class="k2-path-fold" data-fold="">
+                  <Menu variant="text" icon="dots" label={t().morePlaces} items={fold()} />
+                </span>
+              </Show>
+            </>
+          );
+        }}
+      </For>
+    </nav>
+  );
+};
 
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
