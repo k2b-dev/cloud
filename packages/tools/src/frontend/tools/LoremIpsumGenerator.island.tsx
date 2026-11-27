@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Button, Choice, Field, Section, Slider, Text } from "@k2b/ui/v2";
+import { Button, Choice, Field, Prose, Section, Slider } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onMount } from "solid-js";
 import ToolsScreen, { ToolPane } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
@@ -233,9 +233,11 @@ export default function LoremIpsumGenerator() {
           </Section>
         }
         result={
-          // a text to read: it keeps the reading measure, as the options under it
+          // a text to read, in paragraphs: it keeps the reading measure, as the options above it
           <Section icon="align-left" title={w().result} measure>
-            <For each={paragraphs()}>{(paragraph) => <Text type="body">{paragraph}</Text>}</For>
+            <Prose>
+              <For each={paragraphs()}>{(paragraph) => <p>{paragraph}</p>}</For>
+            </Prose>
           </Section>
         }
       />
