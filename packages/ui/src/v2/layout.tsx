@@ -15,12 +15,14 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
+import { Menu, type MenuItem } from "./menu";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
@@ -609,17 +611,35 @@ export type BarProps = {
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
+ *
+ * Where the end does not fit beside the whole start (six actions beside tabs on the phone), its buttons that do not fit
+ * move into a menu "…" at its end, in their order, the last first; the primary action, a menu and a search never fold.
+ * Only when nothing more can fold does the start give way: its words shorten with "…". The browser measures this once
+ * the page is alive; a bar that fits is never changed.
  */
 export const Bar = (props: BarProps) => {
   const start = resolveChildren(() => props.start);
   const end = resolveChildren(() => props.end);
+  // the entries of the buttons that do not fit; none on the server's page
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  let bar: HTMLDivElement | undefined;
+  onMount(() => {
+    if (bar && end() !== undefined) onCleanup(watchFold(bar, setFolded));
+  });
   return (
-    <div class="k2-bar" data-k2-part="Bar">
+    <div ref={bar} class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
       <Show when={end() !== undefined}>
-        <div class="k2-bar-end">{end()}</div>
+        <div class="k2-bar-end">
+          {end()}
+          <Show when={folded().length > 0}>
+            <span class="k2-bar-fold">
+              <Menu items={folded()} />
+            </span>
+          </Show>
+        </div>
       </Show>
     </div>
   );

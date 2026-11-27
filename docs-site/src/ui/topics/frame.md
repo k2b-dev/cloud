@@ -52,7 +52,7 @@ A column that scrolls, with no padding: a head, a status that stays, a `width` i
 
 ### Bar
 
-A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place.
+A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place. Buttons of the `end` that do not fit beside the whole `start` move into a menu "…" at its end, in their order; the primary action, a menu and a search stay. Only when nothing more can fold does the `start` shorten its words with "…".
 
 <Props of="Bar" />
 

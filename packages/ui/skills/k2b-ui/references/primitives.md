@@ -95,6 +95,15 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
 
+Where the `end` does not fit beside the whole `start` (six kept actions
+beside tabs on the phone), its buttons that do not fit move into a menu
+"…" at its end, in their order, the last first. The primary action, a
+`Menu`, a search and a button that opens a menu never fold. Only when
+nothing more can fold does the `start` give way: its text and buttons
+shorten with "…". The browser measures this once the page is alive; a
+bar that fits is never changed. Do not build a second "…" by hand for
+the same actions.
+
 ### Band
 
 A block of free height with one line below. `tone`: `note`, `ai`, `yours`,
