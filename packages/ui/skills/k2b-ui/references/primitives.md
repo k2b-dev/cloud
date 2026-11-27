@@ -391,7 +391,11 @@ lines instead of cutting a thing.
   in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
   you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
-  current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
+  current?, defaultOn?, menu? }[]`. `defaultOn: "phone" | "wide"` names the
+  view a page opens on below and from 768 px while no tab is `current`: the
+  server's page marks both and the stylesheet shows the one for the width, so
+  nothing moves; the browser then makes it current. The app picks the view the
+  same way (in the browser, or both in the page). In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
   the tab ("Weitere +8") opens the views that have no tab of their own; it
   stands at the end and its `count` counts its own entries. A tab is never

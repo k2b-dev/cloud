@@ -7,7 +7,8 @@
  * - a place the live page measures after hydration does not count: a grip in the middle of the part of its line in
  *   sight (`--k2-grip-top`, layout.tsx), and what a column grip says once it has measured its column: the width the
  *   column has and the most it can take (`aria-valuenow`, `aria-valuetext`, `aria-valuemax` of a separator,
- *   `useGrip`). Add a property here only for such a measured value, never for a mismatch;
+ *   `useGrip`), and the `aria-current` of a tab that is the default of one width (`defaultOn`), which the browser
+ *   sets once it knows the width. Add a property here only for such a measured value, never for a mismatch;
  * - the Workspace's toast region (`data-slot="toast-region"`, toast.tsx) is made a popover and measures the viewport
  *   into custom properties once core binds it: its `popover` and its `--` properties do not count. Empty, it is
  *   closed and shows nothing either way.
@@ -17,8 +18,10 @@
 export const sentVsLive = (): string[] => {
   const measured = new Set(["--k2-grip-top"]);
   const measuredAttributes = new Set(["aria-valuenow", "aria-valuetext", "aria-valuemax"]);
+  // a tab that is the default of one width (`defaultOn`) becomes current once the browser knows the width
   const measuredAttribute = (element: Element, name: string) =>
-    measuredAttributes.has(name) && element.getAttribute("role") === "separator";
+    (measuredAttributes.has(name) && element.getAttribute("role") === "separator") ||
+    (name === "aria-current" && element.hasAttribute("data-default-on"));
   const sent = Reflect.get(window, "__k2Sent");
   const live = document.getElementById("root");
   if (!(sent instanceof Node) || !live) return ["the page holds no sent copy (window.__k2Sent) or no #root"];
