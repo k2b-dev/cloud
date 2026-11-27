@@ -74,6 +74,8 @@
   /* text edge: 20 px from 768 px, 16 px below; after an icon 24 px further in */
   --k2-edge: 20px;
   --k2-edge-icon: calc(var(--k2-edge) + 24px);
+  /* one level deeper in content: a row of a note's outline, a row of a table's tree */
+  --k2-level-step: 20px;
 
   /* the least a bar's start keeps of its name (the open item, the path's page) before it gives way no further */
   --k2-start-least: 16ch;
@@ -1180,6 +1182,29 @@
 .k2-ui .k2-row > * {
   min-width: 0;
 }
+/* a row at a level (Row level): one step further in per level, five steps at the sixth; its line stays edge to
+   edge, and nothing folds */
+.k2-ui .k2-row[data-level] {
+  padding-left: calc(var(--k2-edge) + var(--k2-level-steps, 0) * var(--k2-level-step));
+}
+.k2-ui .k2-row[data-level="1"] {
+  --k2-level-steps: 0;
+}
+.k2-ui .k2-row[data-level="2"] {
+  --k2-level-steps: 1;
+}
+.k2-ui .k2-row[data-level="3"] {
+  --k2-level-steps: 2;
+}
+.k2-ui .k2-row[data-level="4"] {
+  --k2-level-steps: 3;
+}
+.k2-ui .k2-row[data-level="5"] {
+  --k2-level-steps: 4;
+}
+.k2-ui .k2-row[data-level="6"] {
+  --k2-level-steps: 5;
+}
 .k2-ui .k2-row-lead {
   grid-area: lead;
   align-self: center;
@@ -1688,7 +1713,7 @@
 }
 .k2-ui .k2-table td[data-tree-cell] {
   position: relative;
-  padding-left: calc(var(--k2-edge) + 24px + min(var(--k2-tree-level, 1) - 1, 8) * 20px);
+  padding-left: calc(var(--k2-edge) + 24px + min(var(--k2-tree-level, 1) - 1, 8) * var(--k2-level-step));
 }
 .k2-ui .k2-table tr[data-tree-row] {
   outline: none;
@@ -1708,7 +1733,7 @@
 .k2-ui .k2-tree-chev {
   position: absolute;
   top: 50%;
-  left: calc(var(--k2-edge) + min(var(--k2-tree-level, 1) - 1, 8) * 20px);
+  left: calc(var(--k2-edge) + min(var(--k2-tree-level, 1) - 1, 8) * var(--k2-level-step));
   width: 20px;
   height: 20px;
   margin-top: -10px;

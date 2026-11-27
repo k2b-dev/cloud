@@ -50,7 +50,7 @@ Many like things, one per line; `label` names it. Rows part with a quiet line, a
 
 ### Row
 
-One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it.
+One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it. `level` sets an entry 1 to 6 levels deep in a flat list, such as the headings of a note, without folding.
 
 <Props of="Row" />
 

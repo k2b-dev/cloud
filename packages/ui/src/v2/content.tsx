@@ -344,6 +344,12 @@ export type RowProps = {
   /** The open one (its detail is shown), in the tint of the app; like `current` of `Nav`, `Tabs` and `Table`. */
   current?: boolean;
   /**
+   * The depth of the entry in a flat list, 1 to 6, such as the headings of a note: each level stands 20 px further
+   * in (`--k2-level-step`, the step of `Table tree`), and in a `List` assistive technology hears it as
+   * `aria-level`. Nothing folds; for places that open and close, use a `Nav` group's `tree` or `Table tree`.
+   */
+  level?: 1 | 2 | 3 | 4 | 5 | 6;
+  /**
    * The row stands in a selection, such as "10 ausgewählt" (pair it with `StatusRow selection`): a box in the lead,
    * named by the title, and the blue tint while `selected`, as `Table select` draws it. The box takes the place of the
    * lead's symbol, person or dot. Open and selected combine: a selected row stays blue, and stays the open one.
@@ -412,13 +418,21 @@ export const Row = (props: RowProps) => {
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
   const title = createUniqueId();
+  // a level outside 1..6 (a heading level 0 or 7 from data) stands at the edge and says nothing
+  const level = () => {
+    const given = props.level;
+    return given !== undefined && Number.isInteger(given) && given >= 1 && given <= 6 ? given : undefined;
+  };
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-level is set only with the listitem role, which supports it (ARIA 1.2).
     <div
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
+      data-level={level()}
+      aria-level={inList ? level() : undefined}
       data-unread={props.unread ? "" : undefined}
       data-strong={props.strong ? "" : undefined}
       data-current={props.current ? "" : undefined}
