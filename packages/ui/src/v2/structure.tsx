@@ -30,8 +30,6 @@ export type SectionProps = {
   color?: string;
   /** The title of the section. */
   title: string;
-  /** Its address on the page, so a link can lead to it (`/me#groups`). */
-  id?: string;
   /** A quiet count after the title. */
   count?: number | string;
   /** At most two text buttons in the head; on the phone they keep only their symbol. */
@@ -40,6 +38,8 @@ export type SectionProps = {
   summary?: JSX.Element;
   /** The way to all of it, at the end ("All deliveries ›"). */
   more?: Action;
+  /** An anchor for a link to this section, such as `screen` for `/me#screen`; unique on the page. */
+  id?: string;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
   children?: JSX.Element;
 };
