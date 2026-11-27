@@ -27,6 +27,8 @@ export type AssistantFrameV2Props = {
   /** Where the page stands after "Gustav": the open chat, Project or view. */
   path: Accessor<readonly { label: string; href?: string }[]>;
   newChat: Accessor<Action>;
+  /** A list screen (My apps, a Project): on the phone New chat floats as the page's main action (B, look rules). */
+  fab?: Accessor<boolean>;
   /** The view has a primary action of its own, such as Save on a settings page. */
   pagePrimary?: Accessor<boolean>;
   /** The chat, a Project or a view: the Assistant's own surface, drawn by the shared chat parts. */
@@ -111,6 +113,13 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
       <V2WorkspaceNavigation label={nav.label()} groups={nav.groups()} foot={nav.foot()} />
       <Workspace
         sidebarLabel={v2().sidebarWidth}
+        // On the phone the host's bar holds the one search and the head gives way; on a list screen New chat floats
+        // instead. A chat (its composer) and a settings page (its foot) have no floating action.
+        primary={
+          props.fab?.()
+            ? { label: props.newChat().label, icon: "plus", disabled: props.newChat().disabled, onClick: () => props.newChat().onClick?.() }
+            : undefined
+        }
         sidebar={<Nav title={t().assistant} icon="moustache" groups={nav.groups()} foot={nav.foot()} />}
         head={
           <Bar

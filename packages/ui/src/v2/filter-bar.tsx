@@ -1,16 +1,4 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  createUniqueId,
-  For,
-  type JSX,
-  on,
-  onCleanup,
-  onMount,
-  children as resolveChildren,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useListbox } from "./behavior/lists";
@@ -32,7 +20,7 @@ import type {
 } from "./list-query";
 import { Lookup } from "./lookup";
 import { Icon } from "./marks";
-import { Menu, type MenuEntry, type MenuItem, type MenuSection } from "./menu";
+import { Menu, type MenuEntry, type MenuItem } from "./menu";
 import { Dialog } from "./overlays";
 import { useToast } from "./toast";
 
@@ -300,19 +288,6 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
   views?: FilterBarViews;
   /** What the list shows, such as "9 Artikel": the phone sheet's button reads "9 Artikel zeigen". */
   results?: string;
-  /**
-   * At the end of the bar, after `results` in quiet words: how the list shows, such as its `ListOrder` and a choice
-   * of list or grid. With it the bar is the one status row of its list (52 px), so the page head keeps at most two
-   * rows (head, then this bar); while entries are selected a `StatusRow selection` takes its place at the same
-   * height. On the phone it leaves; the sheet holds sort and group there.
-   */
-  end?: JSX.Element;
-  /**
-   * How the list shows beside its order, each a choice of one: "Darstellung" (Liste, Raster), "Farbe" (nach Tag, nach
-   * Status). On the desktop each stands as a menu after `end`, named by its chosen value; on the phone they join sort
-   * and grouping in one menu "Ansicht" at the bar's end, so nothing of how the list shows is out of reach.
-   */
-  display?: readonly MenuSection[];
 };
 
 /**
@@ -495,24 +470,9 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   });
 
   const fieldCount = () => active().filter(([key, definition]) => !isDefault(key, definition)).length;
-  // the end of the bar is made once and read from here: reading the prop again would make its JSX again
-  const tail = resolveChildren(() => props.end);
-  // The phone's one menu of how the list shows: the sort, the grouping, then the app's own choices (display).
-  const viewSections = (): MenuEntry[] => {
-    const sort = sortSection(props.query, props.state, t(), apply);
-    const group = groupSection(props.query, props.state, t(), apply);
-    return [...(sort ? [sort] : []), ...(group ? [group] : []), ...(props.display ?? [])];
-  };
 
   return (
-    <div
-      class="k2-fbar"
-      data-k2-part="FilterBar"
-      data-tail={tail() !== undefined || props.display?.length ? "" : undefined}
-      data-view={props.display?.length ? "" : undefined}
-      role="group"
-      aria-label={t().filters}
-    >
+    <div class="k2-fbar" data-k2-part="FilterBar" role="group" aria-label={t().filters}>
       <Button variant="secondary" icon="adjustments-horizontal" onClick={() => openSheet({})}>
         {t().filterCount}
         <Show when={fieldCount() > 0}>
@@ -588,37 +548,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
           </span>
         </Show>
       </div>
-      {/* on the phone: the order alone opens the sheet; with choices of how the list shows, one menu holds them all */}
-      <Show
-        when={props.display?.length}
-        fallback={<OrderButtons query={props.query} state={props.state} onOpen={(display) => openSheet({ display })} />}
-      >
-        <span class="k2-fbar-view">
-          <Menu icon="adjustments-horizontal" items={viewSections()}>
-            {t().view}
-          </Menu>
-        </span>
-      </Show>
-      <Show when={tail() !== undefined || props.display?.length}>
-        <div class="k2-fbar-tail">
-          <Show when={props.results}>
-            <span class="k2-fbar-results">{props.results}</span>
-          </Show>
-          {tail()}
-          <For each={props.display}>
-            {(section) => {
-              const chosen = () => section.items.find((item) => item.value === section.choice);
-              return (
-                <span class="k2-fbar-display">
-                  <Menu icon={chosen()?.icon} label={section.title} items={[section]}>
-                    {chosen()?.label ?? section.title}
-                  </Menu>
-                </span>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
+      <OrderButtons query={props.query} state={props.state} onOpen={(display) => openSheet({ display })} />
       <Show when={props.views && props.views.stores.length > 0 ? props.views : undefined}>
         {(views) => (
           <div class="k2-fbar-end">
@@ -1427,48 +1357,6 @@ const groupEntries = <F extends Fields, S extends string, G extends string>(quer
   return [{ value: "", label: t.noGroups }, ...Object.entries(groups).map(([key, group]) => ({ value: key, label: group.label }))];
 };
 
-/**
- * The sort as a section of a menu with one choice; a choice whose state the address cannot hold is locked, so a choice
- * never drops the filters. `ListOrder` and the phone's menu "Ansicht" share it.
- */
-const sortSection = <F extends Fields, S extends string, G extends string>(
-  query: ListQuery<F, S, G>,
-  state: ListQueryState<F, S, G>,
-  t: FilterMessages,
-  change: (edit: (params: URLSearchParams) => void) => unknown,
-): MenuSection | undefined => {
-  if (query.sort.fixed) return undefined;
-  const edit = (value: string) => (params: URLSearchParams) => params.set("sort", value);
-  return {
-    title: t.sort,
-    choice: `${state.sort.field}.${state.sort.direction}`,
-    onChoose: (value) => change(edit(value)),
-    items: sortEntries(query, t).map((entry) => ({
-      label: entry.label,
-      value: entry.value,
-      disabled: !follow(query, state, edit(entry.value)),
-    })),
-  };
-};
-
-/** The grouping as a section of a menu with one choice, locked as the sort is; nothing when the list has no groups. */
-const groupSection = <F extends Fields, S extends string, G extends string>(
-  query: ListQuery<F, S, G>,
-  state: ListQueryState<F, S, G>,
-  t: FilterMessages,
-  change: (edit: (params: URLSearchParams) => void) => unknown,
-): MenuSection | undefined => {
-  const entries = groupEntries(query, t);
-  if (entries.length < 2) return undefined;
-  const edit = (value: string) => (params: URLSearchParams) => (value ? params.set("group", value) : params.delete("group"));
-  return {
-    title: t.group,
-    choice: state.group ?? "",
-    onChoose: (value) => change(edit(value)),
-    items: entries.map((entry) => ({ label: entry.label, value: entry.value, disabled: !follow(query, state, edit(entry.value)) })),
-  };
-};
-
 export type ListOrderProps<F extends Fields, S extends string, G extends string> = {
   query: ListQuery<F, S, G>;
   state: ListQueryState<F, S, G>;
@@ -1506,12 +1394,44 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
           </span>
         }
       >
-        <Menu icon="arrows-sort" label={t().sort} items={[sortSection(props.query, props.state, t(), change)!]}>
+        <Menu
+          icon="arrows-sort"
+          label={t().sort}
+          items={[
+            {
+              title: t().sort,
+              choice: `${props.state.sort.field}.${props.state.sort.direction}`,
+              onChoose: (value) => change((params) => params.set("sort", value)),
+              items: sortEntries(props.query, t()).map((entry) => ({
+                label: entry.label,
+                value: entry.value,
+                disabled: !follow(props.query, props.state, (params) => params.set("sort", entry.value)),
+              })),
+            },
+          ]}
+        >
           {words().sort}
         </Menu>
       </Show>
       <Show when={groups().length > 1}>
-        <Menu icon="stack-2" label={t().group} items={[groupSection(props.query, props.state, t(), change)!]}>
+        <Menu
+          icon="stack-2"
+          label={t().group}
+          items={[
+            {
+              title: t().group,
+              choice: props.state.group ?? "",
+              onChoose: (value) => change((params) => (value ? params.set("group", value) : params.delete("group"))),
+              items: groups().map((entry) => ({
+                label: entry.label,
+                value: entry.value,
+                disabled: !follow(props.query, props.state, (params) =>
+                  entry.value ? params.set("group", entry.value) : params.delete("group"),
+                ),
+              })),
+            },
+          ]}
+        >
           {words().group ? t().groupBy({ field: words().group ?? "" }) : t().noGroups}
         </Menu>
       </Show>

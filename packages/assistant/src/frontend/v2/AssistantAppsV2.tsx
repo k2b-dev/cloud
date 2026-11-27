@@ -1,24 +1,38 @@
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Chip, Empty, Failed, Pane, Section, StatusRow, Table, Text } from "@k2b/ui/v2";
+import { Button, Canvas, Chip, Empty, Failed, Inline, Pane, StatusRow, Table } from "@k2b/ui/v2";
 import { Show } from "solid-js";
+import { ASSISTANT_ACCENT } from "../../accent";
+import { nextCodeRun } from "../../code-summary";
 import CodeDay from "../CodeDay";
-import { type CodeCardStatus, type CodeOverviewItem, cardStatus } from "../code-overview";
+import { type CodeCardStatus, type CodeOverviewItem, cardStatus, needsPerson } from "../code-overview";
 import {
   type CodeOverviewProps,
   cardDescription,
   cardLastText,
-  cardWhen,
   codeHref,
   createCodeOverview,
+  dayOrTime,
   STATE,
   viewText,
 } from "../code-overview-view";
 
 const CHIP = { danger: "bad", warning: "warn" } as const;
+/** Whether a state needs the person, so it is a chip with its colour. */
+const CHIP_OF = (status: CodeCardStatus) => STATE[status].tone === "danger" || STATE[status].tone === "warning";
+
+/** Each Code's mark: Gustav's colour, the symbol of what starts it (B: never grey without a reason). */
+const markOf = (item: CodeOverviewItem) => {
+  const automations = item.automations ?? [];
+  const kind = automations.length === 1 ? automations[0]!.kind : null;
+  const icon =
+    kind === "schedule" ? "clock" : kind === "event" ? "bolt" : kind === "manual" ? "hand-finger" : kind === "route" ? "world-www" : "code";
+  return { icon, color: ASSISTANT_ACCENT };
+};
 
 /**
- * My apps & automations on v2 (screen brief 1 in the PR, recipe "overview"): one statement of today's runs with what
- * needs the person beside it, the day line under it, then one dense row per app. The same state as v1
+ * My apps & automations on v2 (screen brief 1 in the PR, recipe "overview", identity B): the hero says how many runs
+ * today, its exceptions stand beside it as the chips that also filter (B rule 1), the day line is the hero's picture,
+ * then one line per app (B rule 4). Explanations stand in the empty state only. The same state as v1
  * (`createCodeOverview`): the filter in the address, live runs, further pages.
  */
 export default function AssistantAppsV2(props: CodeOverviewProps) {
@@ -29,44 +43,52 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
     const line = o.line();
     return line ? line.succeeded + line.failed + line.running + line.planned + line.grouped : null;
   };
-  // As the recipe: a state that needs the person is a chip with its dot, every other one a plain word.
+  // As the recipe: a state that needs the person is a chip with its dot, every other one a plain word (B rule 7).
   const state = (status: CodeCardStatus) => {
     const shown = STATE[status];
     return shown.tone === "danger" || shown.tone === "warning" ? <Chip status={CHIP[shown.tone]}>{shown.word(t())}</Chip> : shown.word(t());
   };
-  const when = (item: CodeOverviewItem) => cardWhen(item, cardStatus(item), t(), locale(), props.timeZone, o.now());
+  /** One meaning per column: when the Code runs next, else "–". */
+  const next = (item: CodeOverviewItem) => {
+    const at = cardStatus(item) === "on" ? nextCodeRun(item) : null;
+    return at ? dayOrTime(at, t(), locale(), props.timeZone, o.now()) : "–";
+  };
+  const needingYou = () => o.items().filter((item) => needsPerson(cardStatus(item)));
+  const running = () => o.items().filter((item) => cardStatus(item) === "running");
   const create = () => ({ label: t().codeCreateInChat, icon: "sparkles", onClick: () => props.onCreateInChat() });
+  const toggle = (filter: "attention" | "paused") => o.choose(o.filter() === filter ? "all" : filter);
 
   return (
     <Pane
       label={t().myCode}
       status={
         <Show when={o.page()}>
+          {/* k2b-ui gap (DP hero band): the hero is "n runs today" as figure 30 in Gustav's colour with the day line as
+              its trend; until the band lands, the status row carries the statement and its exceptions. */}
           <StatusRow
             lead={runsToday() === null ? t().myCode : t().appsRunsToday({ count: runsToday() ?? 0 })}
             loading={o.line() === undefined}
             facts={[{ value: o.counts().all, after: t().appsFactApps }]}
             filters={
-              <Show when={o.showsFilters()}>
-                <Show when={o.counts().attention > 0 || o.filter() === "attention"}>
-                  <Button
-                    icon="alert-circle"
-                    pressed={o.filter() === "attention"}
-                    onClick={() => o.choose(o.filter() === "attention" ? "all" : "attention")}
-                  >
-                    {t().appsFilterAttention({ count: o.counts().attention })}
-                  </Button>
+              <>
+                {/* The exceptions, never the norm: what needs the person and what is paused filter the list too. */}
+                <Show when={needingYou().length > 0 || o.filter() === "attention"}>
+                  <Chip status="bad" pressed={o.filter() === "attention"} onClick={() => toggle("attention")}>
+                    {t().appsExceptionNeedsYou({ count: needingYou().length, name: needingYou()[0]?.title ?? "" })}
+                  </Chip>
+                </Show>
+                <Show when={running().length > 0}>
+                  <Chip ai>{t().appsExceptionRunning({ count: running().length, name: running()[0]!.title })}</Chip>
                 </Show>
                 <Show when={o.counts().paused > 0 || o.filter() === "paused"}>
-                  <Button
-                    icon="player-pause"
-                    pressed={o.filter() === "paused"}
-                    onClick={() => o.choose(o.filter() === "paused" ? "all" : "paused")}
-                  >
-                    {t().appsFilterPaused({ count: o.counts().paused })}
-                  </Button>
+                  <Chip status="warn" pressed={o.filter() === "paused"} onClick={() => toggle("paused")}>
+                    {t().appsExceptionPaused({ count: o.counts().paused })}
+                  </Chip>
                 </Show>
-              </Show>
+                <Button icon="sparkles" onClick={() => props.onCreateInChat()}>
+                  {t().codeCreateInChat}
+                </Button>
+              </>
             }
           />
         </Show>
@@ -76,63 +98,62 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
         when={o.page() !== null}
         fallback={<Failed text={`${t().codeLoadFailed} ${t().codeLoadFailedHint}`} onRetry={() => void o.load()} />}
       >
-        <Show when={!o.empty()} fallback={<Empty icon="code" text={`${t().codeEmpty} ${t().codeEmptyHint}`} action={create()} />}>
-          <Section title={t().appsToday}>
-            {/* k2b-ui gap: no v2 primitive draws a day of marks on a time axis; v1's day line stands bare here until the
-                design study decides the hero's look. */}
-            <Canvas label={t().appsToday}>
-              <CodeDay
-                bare
-                line={o.page() === undefined ? undefined : o.line()}
-                bounds={o.dayBounds()}
-                titles={o.titles()}
-                timeZone={props.timeZone}
-                onRetry={() => void o.completeExtras(true)}
-              />
-            </Canvas>
-          </Section>
-          <Section title={t().myCode} count={o.page() ? o.visible().length : undefined} actions={[create()]} summary={t().codeRunsAsYou}>
-            <Table
-              label={t().myCode}
-              rowKey={(item) => item.id}
-              rows={o.visible()}
-              loading={o.page() === undefined ? { rows: 4, lines: 2 } : false}
-              empty={{
-                icon: "filter",
-                text: t().appsFilterEmpty,
-                action: { label: t().appsFilterAll({ count: o.counts().all }), onClick: () => o.choose("all") },
-              }}
-              open={(item) => ({ href: codeHref(item.id) })}
-              columns={[
-                // B rule 4: one line per row on the desktop; the schedule is a column of its own, not a second line.
-                {
-                  title: t().appsColumnName,
-                  mark: () => ({ icon: "code" }),
-                  cell: (item) => item.title,
-                  width: { min: 160, default: 240 },
-                },
-                { title: t().appsColumnSchedule, cell: (item) => cardDescription(item, t(), locale()) },
-                { title: t().appsColumnState, cell: (item) => state(cardStatus(item)), width: { min: 210, default: 210 } },
-                {
-                  title: t().appsColumnLast,
-                  // The column head says "Zuletzt"; the cell says what happened, once.
-                  cell: (item) => cardLastText(item, cardStatus(item), t(), locale(), props.timeZone, o.now()) ?? t().codeRunUnknown,
-                  drop: true,
-                },
-                { title: t().appsColumnWhen, cell: when, align: "end", width: { min: 110, default: 130 } },
-                // k2b-ui gap: the runs of the last days as one dot per result (v1's DotStrip) has no public v2 part;
-                // the column comes back with it.
-              ]}
-              // On the phone always two lines: the name; its schedule and when, joined with "·" (B rule 4).
-              phone={(item) => ({
-                lines: [item.title, [cardDescription(item, t(), locale()), when(item)].filter(Boolean).join(" · ")],
-                mark: { icon: "code" },
-                time: STATE[cardStatus(item)].word(t()),
-              })}
+        <Show
+          when={!o.empty()}
+          // The explanations belong to the empty state, not to every day (B: only what counts).
+          fallback={<Empty icon="code" text={`${t().codeEmpty} ${t().codeEmptyHint} ${t().codeRunsAsYou}`} action={create()} />}
+        >
+          {/* k2b-ui gap: no v2 primitive draws a day of marks on a time axis (lane N extends the state timeline of #4233);
+              v1's day line stands bare here, its runs in Gustav's soft colour, without a legend. */}
+          <Canvas label={t().appsToday}>
+            <CodeDay
+              bare
+              line={o.page() === undefined ? undefined : o.line()}
+              bounds={o.dayBounds()}
+              titles={o.titles()}
+              timeZone={props.timeZone}
+              onRetry={() => void o.completeExtras(true)}
             />
-          </Section>
+          </Canvas>
+          <Table
+            label={t().myCode}
+            rowKey={(item) => item.id}
+            rows={o.visible()}
+            loading={o.page() === undefined ? { rows: 4, lines: 2 } : false}
+            empty={{
+              icon: "filter",
+              text: t().appsFilterEmpty,
+              action: { label: t().appsFilterAll({ count: o.counts().all }), onClick: () => o.choose("all") },
+            }}
+            open={(item) => ({ href: codeHref(item.id) })}
+            columns={[
+              // B rule 4: one line per row on the desktop; the schedule is a column of its own, not a second line.
+              // k2b-ui gap: #4223 (Column mark): the name leads with Gustav's mark per trigger once a column can carry one;
+              // until then the name stands alone on the desktop (the phone row already shows the mark).
+              { title: t().appsColumnName, cell: (item) => item.title, width: { min: 160, default: 240 } },
+              { title: t().appsColumnSchedule, cell: (item) => cardDescription(item, t(), locale()) },
+              { title: t().appsColumnState, cell: (item) => state(cardStatus(item)), width: { min: 210, default: 210 } },
+              {
+                title: t().appsColumnLast,
+                // The column head says "Zuletzt"; the cell says what happened, once.
+                cell: (item) => cardLastText(item, cardStatus(item), t(), locale(), props.timeZone, o.now()) ?? t().codeRunUnknown,
+                drop: true,
+              },
+              { title: t().appsColumnNext, cell: next, align: "end", width: { min: 110, default: 140 } },
+              // k2b-ui gap: the runs of the last days (B rule 2) come with G's Ticks (#4353).
+            ]}
+            // On the phone always two lines: the name; its schedule and next run, joined with "·" (B rule 4).
+            phone={(item) => ({
+              lines: [item.title, [cardDescription(item, t(), locale()), next(item) === "–" ? "" : next(item)].filter(Boolean).join(" · ")],
+              mark: markOf(item),
+              // A state that needs the person keeps its colour on the phone too; every other one is a quiet word.
+              time: CHIP_OF(cardStatus(item)) ? undefined : STATE[cardStatus(item)].word(t()),
+              marks: CHIP_OF(cardStatus(item)) ? state(cardStatus(item)) : undefined,
+            })}
+          />
           <Show when={o.page()?.nextCursor}>
-            <Band>
+            {/* Further apps after the last row; a failed page offers the same again. */}
+            <Inline>
               <Button
                 variant="text"
                 icon={o.more() === "failed" ? "refresh" : "chevron-down"}
@@ -141,11 +162,8 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
               >
                 {o.more() === "failed" ? t().codeLoadMoreFailed : t().codeLoadMore}
               </Button>
-            </Band>
+            </Inline>
           </Show>
-          <Band>
-            <Text muted>{t().codeElsewhere}</Text>
-          </Band>
         </Show>
       </Show>
     </Pane>

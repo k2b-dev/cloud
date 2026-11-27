@@ -76,6 +76,12 @@ export const codeViewMessages = i18n.define({
       appsFactApps: "apps",
       appsColumnName: "Name",
       appsColumnSchedule: "Schedule",
+      appsColumnNext: "Next run",
+      appsExceptionNeedsYou: ({ count, name }: { count: number; name: string }) =>
+        count === 1 ? `1 needs you · ${name}` : `${count} need you · ${name} …`,
+      appsExceptionRunning: ({ count, name }: { count: number; name: string }) =>
+        count === 1 ? `1 running · ${name}` : `${count} running · ${name} …`,
+      appsExceptionPaused: ({ count }: { count: number }) => `${count} paused`,
       appsColumnState: "State",
       appsColumnLast: "Last",
       appsColumnWhen: "When",
@@ -148,6 +154,10 @@ export const codeViewMessages = i18n.define({
       appsFactApps: "Apps",
       appsColumnName: "Name",
       appsColumnSchedule: "Zeitplan",
+      appsColumnNext: "Nächster Lauf",
+      appsExceptionNeedsYou: ({ count, name }) => (count === 1 ? `1 braucht dich · ${name}` : `${count} brauchen dich · ${name} …`),
+      appsExceptionRunning: ({ count, name }) => (count === 1 ? `1 läuft · ${name}` : `${count} laufen · ${name} …`),
+      appsExceptionPaused: ({ count }) => `${count} pausiert`,
       appsColumnState: "Zustand",
       appsColumnLast: "Zuletzt",
       appsColumnWhen: "Wann",

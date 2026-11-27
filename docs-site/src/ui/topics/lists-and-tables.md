@@ -56,7 +56,7 @@ Columns of like things: fixed widths, cut text, dropped columns and two-line row
 
 ### StatusRow
 
-Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. From five deeds on, the bar shows the first three and folds the rest into "Mehr" in their order.
+Above the rows: the one statement, key figures and filters; a selection bar while rows are selected.
 
 <Props of="StatusRow" />
 

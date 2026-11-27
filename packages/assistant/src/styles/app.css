@@ -1170,7 +1170,11 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-project-composer-v2 { padding: 16px 20px 20px; }
 .k2b-ui .assistant-project-context-v2 { padding: 16px 20px 20px; }
 /* v2: the day line stands bare in its section on the pane's text edge; its look waits for the design study. */
-.k2b-ui .assistant-apps__today[data-bare] { padding: 0 20px 12px; }
+.k2b-ui .assistant-apps__today[data-bare] { padding: 16px 20px 12px; }
+/* B: the bare day line is the hero's picture. Its sentence moved to the exceptions beside the hero, the axis says the
+   rest, so no head and no legend; runs in Gustav's soft colour, red only for a failure (the axis keeps its label). */
+.k2b-ui .assistant-apps__today[data-bare] :is(.assistant-apps__today-head, .assistant-apps__legend) { display: none; }
+.k2b-ui .assistant-apps__today[data-bare] .assistant-apps__mark[data-state="succeeded"] { background: color-mix(in srgb, var(--k2-app, #8e1b6f) 45%, var(--k2b-surface)); }
 /* Three columns of cards with 14 px between them; two on a narrow pane, one on a phone. */
 .k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 @container (max-width: 52rem) {

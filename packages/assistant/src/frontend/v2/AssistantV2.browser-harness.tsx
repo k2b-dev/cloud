@@ -60,7 +60,11 @@ render(
           <LayoutRail currentPath={location.pathname} name="Cloud" />
           <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col" data-cloud-app-area="">
             <LayoutHeader authenticated launchpad title="Gustav" />
-            <main class="layout-content-main min-h-0 min-w-0 flex-1 flex flex-col k2-ui">
+            <main
+              class="layout-content-main min-h-0 min-w-0 flex-1 flex flex-col k2-ui"
+              // As Cloud's Layout ui="v2" with the rail: the shell's phone bar holds the page's one search.
+              data-k2-host-search=""
+            >
               <AssistantWorkspace {...window.harness.props} />
             </main>
           </div>

@@ -24,7 +24,7 @@ Every state keeps these rules:
 ### Empty
 
 - The data loaded, and there is nothing (yet), or nothing that matches the filter.
-- One sentence and one way out; a second, quieter one only when a person often needs it, such as "Ganzes Notizbuch zeigen" after "Filter zurücksetzen".
+- One sentence and one way out.
 
 ### Failed
 
@@ -42,7 +42,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Empty
 
-Nothing to show (yet): a round sign, one sentence, the way out, and at most a second, quieter one after it.
+Nothing to show (yet): a round sign, one sentence, the one way out.
 
 <Props of="Empty" />
 

@@ -18,12 +18,6 @@ A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so 
 
 <Example recipe="form-detail" height="640" default="Filled" />
 
-## A settings page
-
-Sign-in of an administration: the state first as key numbers with colour, symbol and word, then the settings by topic. A setting with a value per kind is a table; every other setting is a `Setting` row, with its name and hint on the left and its value in a column beside them, so the values stand in one line and read at a glance. The page saves as a whole: a changed setting says what it was. Switch the state: nothing changed yet.
-
-<Example recipe="settings-page" height="720" default="Changed" />
-
 ## Settings with more than text
 
 The sign-in settings of an app: a field that goes back to its default through the deed at the end of its label line, a choice the operator fixed (a dimmed `Select`), allowed domains as tags, a logo, an accent colour, how dark the background is, a code from another device, and questions that open in place. Switch the state: nothing set yet, and every control locked while a save runs or for a person who may only read.
@@ -62,12 +56,6 @@ Names one control with a label, a hint or an error, and "optional" or a unit, or
 
 <Props of="Field Field.Row" />
 
-### Setting
-
-One setting of a settings page: name and hint on the left, the control in a column of 300 px beside them, "geändert · vorher …" under it; one column on the phone.
-
-<Props of="Setting" />
-
 ### Input
 
 A text field of one line or several (`multiline`), a number, an address or a search.
@@ -82,7 +70,7 @@ One choice from many options, in a list that opens.
 
 ### TagsInput
 
-Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick.
+Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick. With `type="email"` it takes e-mail addresses: a comma, a semicolon or a paste of several turns them into chips, `Name <address>` and `"Berg, Anna" <address>` as well. A value is the address in the form it came in, and the same address in other letters is one chip. A text that is no address stays in the field with a sentence why, and the form is not sent until it is fixed. While a person types, an address becomes a chip when a separator closes it; the last one when they press Enter, paste or leave the field. Every `TagsInput` takes at most `max` values (200 addresses by default, as one To of Mail) and says how many it left out. Each chip's button is named for what it removes; Backspace in the empty field takes the last one back, and a status says what was added or removed.
 
 <Props of="TagsInput" />
 
