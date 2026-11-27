@@ -47,7 +47,7 @@ export default ssr<AuthContext>(async (c) => {
   const templates = gridsService.template.list(locale);
   const words = overviewMessages.resolve([locale]).t;
   const ways: StartWay[] = [
-    { id: BLANK, name: words.blankBase, icon: "database-plus", preview: null },
+    { id: BLANK, name: words.blankBase, icon: "plus", preview: null },
     ...START_TEMPLATES.flatMap((id) => {
       const template = templates.find((each) => each.id === id);
       return template

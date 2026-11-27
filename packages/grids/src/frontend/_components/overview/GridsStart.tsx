@@ -3,6 +3,7 @@ import { useLocale } from "@k2b/ui";
 import { Pane, Text, Tiles, Workspace } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
+import { KIND_MARKS } from "../frame/kind-marks";
 import { BASES_PAGE_PATH, withParam } from "./bases-query";
 import CreateBaseDialog, { type BaseTemplate } from "./CreateBaseDialog";
 import { overviewMessages } from "./messages";
@@ -12,7 +13,7 @@ export type StartWay = {
   id: string;
   name: string;
   icon: string;
-  preview: { tables: number; table: string; columns: string[] } | null;
+  preview: { tables: number; table: string; columns: string[]; rows: string[][] } | null;
 };
 
 export type GridsStartProps = {
@@ -51,24 +52,21 @@ export default function GridsStart(props: GridsStartProps) {
   return (
     <Workspace>
       <Pane label={t().getStarted} center>
-        <Text type="lead">{t().firstBaseQuestion}</Text>
+        <Text type="lead">{t().firstBaseTitle}</Text>
         <Tiles
           variant="card"
           perRow={4}
           label={t().waysToStart}
           items={props.ways.map((way) => ({
             icon: way.icon,
-            color: "var(--k2-app)",
+            // each way makes a base: the base's mark, as the switcher shows it
+            color: KIND_MARKS.base.color,
             title: way.name,
             href: withParam(BASES_PAGE_PATH, "new", way.id),
             onNavigate: (event: LinkNavigateEvent) => open(event, way.id),
-            // under the name its main table with its first columns; the tables it makes as its figure
-            ...(way.preview
-              ? {
-                  meta: `${way.preview.table} · ${way.preview.columns.join(", ")}`,
-                  stats: [{ icon: "table", label: t().tableCount({ count: way.preview.tables, formatted: number(way.preview.tables) }) }],
-                }
-              : { meta: t().blankBaseFoot }),
+            // under the name how many tables it makes (mockup empty-start-tiles v4)
+            meta: way.preview ? t().tableCount({ count: way.preview.tables, formatted: number(way.preview.tables) }) : t().blankBaseFoot,
+            // k2b-ui gap (Tile preview, asked of W2): the main table's columns and first sample rows above the name
           }))}
         />
       </Pane>

@@ -98,10 +98,11 @@ describe("Grids' start", () => {
     const response = await open(fixture.newcomer, "/app/grids?new=inventory");
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("Womit soll deine erste Base beginnen?");
+    expect(html).toContain("Leg deine erste Base an");
     for (const way of ["Leere Base", "Private Finanzen", "Inventar", "Rechnungswesen"]) expect(html).toContain(way);
-    // the main tables with real columns, from the templates themselves
-    expect(html).toContain("Transaktionen · Datum, Zahlungspartner, Konto");
+    // how many tables each template makes, from the templates themselves
+    expect(html).toContain("5 Tabellen");
+    expect(html).toContain("Noch ohne Tabellen");
     expect(html).not.toContain('data-k2-part="Nav"');
     expect(html).toContain('href="/app/grids?new=finance"');
   });

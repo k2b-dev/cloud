@@ -77,23 +77,72 @@ const summarizeTemplate = (template: GridTemplate): TemplateSummary => ({
 
 export const list = (locale?: string): TemplateSummary[] => getTemplates(locale).map(summarizeTemplate);
 
-/** Kinds of field a preview leaves out: they tell little of the table (an id, a file, a computed or looked-up value). */
-const PREVIEW_SKIPS = new Set(["id", "file", "formula", "lookup"]);
+/** Kinds of field a preview shows: words, dates, numbers, choices and the names of linked records. */
+const PREVIEW_TYPES = new Set(["text", "email", "url", "phone", "date", "number", "select", "relation"]);
+const isOption = (value: unknown): value is { id: string; label: string } =>
+  !!value &&
+  typeof value === "object" &&
+  "id" in value &&
+  typeof value.id === "string" &&
+  "label" in value &&
+  typeof value.label === "string";
+/** Columns and rows of a preview: a glance, as a small card holds it. */
+const PREVIEW_COLUMNS = 3;
+const PREVIEW_ROWS = 3;
 
-/** What a start tile shows of a template: the tables it makes, and its main table (most fields) with its first columns. */
-export type TemplatePreview = { tables: number; table: string; columns: string[] };
+/**
+ * What a start tile shows of a template: the tables it makes, and its main table (most fields) with its first columns
+ * and its first sample records, as the base will hold them.
+ */
+export type TemplatePreview = { tables: number; table: string; columns: string[]; rows: string[][] };
 
-export const preview = (id: string, locale?: string): TemplatePreview | null => {
+export const preview = (id: string, locale = "en", now = new Date()): TemplatePreview | null => {
   const template = getTemplate(id, locale);
   const main = template?.tables.reduce((most, table) => (table.fields.length > most.fields.length ? table : most));
   if (!template || !main) return null;
+  const records = template.records ?? [];
+  const byKey = new Map(records.map((record) => [record.key, record]));
+  const tableOf = new Map(template.tables.map((table) => [table.key, table]));
+  const samples = records.filter((record) => record.table === main.key).slice(0, PREVIEW_ROWS);
+  const present = (value: unknown) => value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && !value.length);
+  // a linked record by the first words its table names it with
+  const nameOf = (ref: unknown): string => {
+    const record = isRef(ref) ? byKey.get(ref.key) : undefined;
+    const words = record && tableOf.get(record.table)?.fields.find((field) => field.type === "text" && present(record.values[field.key]));
+    return record && words ? String(record.values[words.key]) : "";
+  };
+  const show = (field: (typeof main.fields)[number], value: unknown): string => {
+    if (!present(value)) return "";
+    if (field.type === "relation") return (Array.isArray(value) ? value : [value]).map(nameOf).filter(Boolean).join(", ");
+    if (field.type === "select") {
+      const raw = field.config?.options;
+      const options = Array.isArray(raw) ? raw.filter(isOption) : [];
+      return (Array.isArray(value) ? value : [value])
+        .map((each) => options.find((option) => option.id === each)?.label ?? String(each))
+        .join(", ");
+    }
+    if (field.type === "date") {
+      const iso = isDateExpression(value) ? formatTemplateDate(value, now) : String(value);
+      return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(
+        new Date(`${iso.slice(0, 10)}T00:00:00Z`),
+      );
+    }
+    if (field.type === "number") {
+      const text = String(value);
+      const digits = text.includes(".") ? text.split(".")[1]!.length : 0;
+      return new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(text));
+    }
+    return String(value);
+  };
+  // the first columns the first sample fills, so no column of the glance stands empty
+  const columns = main.fields
+    .filter((field) => PREVIEW_TYPES.has(field.type) && present(samples[0]?.values[field.key]))
+    .slice(0, PREVIEW_COLUMNS);
   return {
     tables: template.tables.length,
     table: main.name,
-    columns: main.fields
-      .filter((field) => !PREVIEW_SKIPS.has(field.type))
-      .slice(0, 3)
-      .map((field) => field.name),
+    columns: columns.map((field) => field.name),
+    rows: samples.map((record) => columns.map((field) => show(field, record.values[field.key]))),
   };
 };
 

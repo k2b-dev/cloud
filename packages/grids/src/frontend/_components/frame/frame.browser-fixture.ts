@@ -84,24 +84,50 @@ const TEMPLATES: BaseTemplate[] = [
 /** Grids before the first base: blank and the three templates the page offers, with their real main tables. */
 export const startFixture = (params: URLSearchParams): GridsStartProps => ({
   ways: [
-    { id: "blank", name: "Leere Base", icon: "database-plus", preview: null },
+    { id: "blank", name: "Leere Base", icon: "plus", preview: null },
     {
       id: "finance",
       name: "Private Finanzen",
       icon: "wallet",
-      preview: { tables: 5, table: "Transaktionen", columns: ["Datum", "Zahlungspartner", "Konto"] },
+      preview: {
+        tables: 5,
+        table: "Transaktionen",
+        columns: ["Datum", "Zahlungspartner", "Konto"],
+        rows: [
+          ["01.04.", "Arbeitgeber GmbH", "Hauptkonto"],
+          ["02.04.", "Vermieter", "Hauptkonto"],
+          ["05.04.", "Markt vor Ort", "Visa"],
+        ],
+      },
     },
     {
       id: "inventory",
       name: "Inventar",
       icon: "packages",
-      preview: { tables: 6, table: "Gegenstände", columns: ["Aktuelle Ausleihposition", "Name", "Kategorie"] },
+      preview: {
+        tables: 6,
+        table: "Gegenstände",
+        columns: ["Name", "Kategorie", "Lagerort"],
+        rows: [
+          ["Sony-A7-Gehäuse", "Kameras", "Studioregal"],
+          ["Funkmikrofon-Set", "Audio", "Studioregal"],
+          ["HDMI-Kabel, 5 m", "Kabel", "Lagerschrank"],
+        ],
+      },
     },
     {
       id: "billing",
       name: "Rechnungswesen",
       icon: "receipt",
-      preview: { tables: 3, table: "Rechnungen", columns: ["Dokumentart", "Geschäftspartner", "Belegdatum"] },
+      preview: {
+        tables: 3,
+        table: "Rechnungen",
+        columns: ["Dokumentart", "Geschäftspartner", "Belegdatum"],
+        rows: [
+          ["Rechnung", "Beispiel-Geschäftspartner (vor Ausstellung ersetzen)", "15.11."],
+          ["Provisionsgutschrift", "Beispiel-Geschäftspartner (vor Ausstellung ersetzen)", "15.11."],
+        ],
+      },
     },
   ],
   templates: TEMPLATES,
