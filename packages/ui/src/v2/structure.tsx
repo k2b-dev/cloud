@@ -48,7 +48,10 @@ export type SectionProps = {
    * line still reaches the edges of its column. Below the measure it changes nothing.
    */
   measure?: boolean;
-  /** The way to all of it, at the end ("All deliveries ›"). */
+  /**
+   * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge (after the symbol where the
+   * section has one), never at the right. In a side column it is a row of its own.
+   */
   more?: Action;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
   children?: JSX.Element;

@@ -88,7 +88,7 @@ const statusTone = (outcome: AuditOutcome): StatusTone => {
 
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const state: AuditState = {
     search: (c.req.query("search") ?? "").trim(),
     actor: (c.req.query("actor") ?? "").trim(),
