@@ -9,6 +9,7 @@ import { type Context, Hono } from "hono";
 import { type Component, createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellAsset, adminShellRuntime } from "../admin-v2.shell-fixture";
 import type { AiFixtureApi, AiFixtureInput, AiFixtureRequest } from "./fixture-types";
 
 const user: User = {
@@ -137,7 +138,7 @@ export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const state = c.req.query("state") ?? "normal";
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", adminShellRuntime());
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "KI", theme });
@@ -191,6 +192,8 @@ export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
     port: options.port ?? 0,
     async fetch(request) {
       const url = new URL(request.url);
+      const shellAsset = adminShellAsset(url.pathname);
+      if (shellAsset) return shellAsset;
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);

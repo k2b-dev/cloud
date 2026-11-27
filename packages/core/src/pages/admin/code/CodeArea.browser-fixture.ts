@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellAsset, adminShellRuntime } from "../admin-v2.shell-fixture";
 import {
   CODE_FIXTURE_STATES,
   codeFixtureData,
@@ -107,11 +108,12 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const state = CODE_FIXTURE_STATES.find((entry) => entry === c.req.query("state")) ?? "normal";
     c.req.raw.headers.set("x-cloud-locale", locale);
+    // the shell as a running Cloud has it, plus the workshop app some automations belong to
+    const shell = adminShellRuntime();
     c.set("runtime", {
+      ...shell,
       apps: [
-        { id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] },
-        { id: "mail", name: "Mail", description: "Mail", icon: "ti ti-mail", routes: ["/app/mail"] },
-        { id: "spaces", name: "Spaces", description: "Tasks", icon: "ti ti-checkbox", routes: ["/app/spaces"] },
+        ...shell.apps,
         { id: "werkstatt", name: "Werkstattbuch", description: "Workshop", icon: "ti ti-tool", routes: ["/app/werkstatt"] },
       ],
     });
@@ -331,8 +333,8 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     port: options.port ?? 0,
     async fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/branding/logo")
-        return new Response(Bun.file(resolve(import.meta.dir, "../../../../../cloud/public/logo.svg")));
+      const shellAsset = adminShellAsset(url.pathname);
+      if (shellAsset) return shellAsset;
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);
