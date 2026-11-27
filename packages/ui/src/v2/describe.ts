@@ -654,6 +654,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         `the floating main action ${quote(fab.textContent, 24)} covers ${covered.map((control) => quote(control.getAttribute("aria-label") ?? control.textContent, 24) || `<${control.tagName.toLowerCase()}>`).join(", ")} at this width: a form or dialog belongs on its own page (route) on the phone`,
       );
   }
+  // Forms never nest: markup drops an inner form, and the search in it with it. A search sends itself (`Input send`)
+  // and stands in no form of the page.
+  for (const inner of root.querySelectorAll("form form"))
+    problems.push(
+      `a <form> ${quote(inner.getAttribute("aria-label"), 24)} stands inside another <form>: forms never nest, and the browser drops the inner one`,
+    );
+  for (const search of root.querySelectorAll("form .k2-input[data-search]:not(form)"))
+    problems.push(
+      `a search ${quote(search.querySelector("input")?.getAttribute("aria-label"), 24)} stands inside a <form>: give its Input \`send\` instead of a form around it`,
+    );
   if (!lines.length) problems.push("no v2 part found: render the screen inside an element with the class k2-ui");
   if (problems.length) lines.push("", `Problems (${problems.length}):`, ...problems.map((problem) => `- ${problem}`));
   return lines.join("\n");

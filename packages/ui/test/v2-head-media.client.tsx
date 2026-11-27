@@ -9,6 +9,7 @@ import {
   DeepPathScreen,
   EmptyWaysScreen,
   GroupsScreen,
+  InvitationScreen,
   LongAddressScreen,
   ProseCodeScreen,
   RowStatesScreen,
@@ -38,7 +39,10 @@ declare global {
       | "path"
       | "path-chip"
       | "split-canvas"
+      | "split-tall-canvas"
+      | "invitation"
       | "selection"
+      | "selection-four"
       | "long"
       | "areas"
       | "structure"
@@ -75,16 +79,18 @@ render(
         <AreasMenuScreen />
       ) : which === "empty-ways" ? (
         <EmptyWaysScreen />
-      ) : which === "selection" ? (
-        <SelectionScreen />
+      ) : which === "selection" || which === "selection-four" ? (
+        <SelectionScreen four={which === "selection-four"} />
       ) : which === "view-statement" ? (
         <ViewStatementScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (
         <DeepPathScreen chip={which === "path-chip"} />
-      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
-        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
+      ) : which === "invitation" ? (
+        <InvitationScreen />
+      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" || which === "split-tall-canvas" ? (
+        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} tall={which === "split-tall-canvas"} />
       ) : which === "cells" || which === "cells-narrow" ? (
         <CellsScreen narrow={which === "cells-narrow"} />
       ) : (

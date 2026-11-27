@@ -1,14 +1,17 @@
 import { createSignal } from "solid-js";
 import {
+  Band,
   Bar,
   Button,
   Canvas,
   Cells,
   Check,
   Chip,
+  Dialog,
   Digest,
   Empty,
   Failed,
+  Field,
   FilterBar,
   Group,
   Inline,
@@ -139,7 +142,9 @@ export const CellsScreen = (props: { narrow?: boolean }) => {
 
 // `split`: the drawing's pane stands in a `Pane.Split` (a board or a calendar beside the place of its detail, W3 #4197).
 // `list`: a long list stands in the split too, one under the other on the phone; it must not squeeze the drawing.
-export const CanvasFillScreen = (props: { split?: boolean; list?: boolean }) => {
+// `tall`: the drawing's content is taller than the split (the days of a calendar on the phone): its pane keeps the
+// split's height and scrolls inside, never growing past it (W3, Spaces' phone calendar).
+export const CanvasFillScreen = (props: { split?: boolean; list?: boolean; tall?: boolean }) => {
   const pane = () => (
     <Pane
       label="Vorlage"
@@ -155,9 +160,17 @@ export const CanvasFillScreen = (props: { split?: boolean; list?: boolean }) => 
       status={<StatusRow lead="Entwurf" facts={[{ value: 3, after: "Seiten" }]} />}
     >
       <Canvas label="Editor der Vorlage" height="fill">
-        <div class="editor" style={{ height: "100%", overflow: "auto", background: "#fafafa" }}>
-          <p>Sehr geehrte Frau Lindqvist,</p>
-        </div>
+        {props.tall ? (
+          <div class="calendar" style={{ height: "100%", overflow: "auto" }}>
+            <div class="days" style={{ height: "1260px", background: "#fafafa" }}>
+              <p>Montag</p>
+            </div>
+          </div>
+        ) : (
+          <div class="editor" style={{ height: "100%", overflow: "auto", background: "#fafafa" }}>
+            <p>Sehr geehrte Frau Lindqvist,</p>
+          </div>
+        )}
       </Canvas>
     </Pane>
   );
@@ -391,7 +404,8 @@ export const GroupsScreen = () => (
 );
 
 // A selection with six deeds in a column beside a side column: the first three stand, the rest wait in "Mehr".
-export const SelectionScreen = () => (
+// `four`: four deeds with long words and the size of the selection, as Files shows them (W1b #4206 r5)
+export const SelectionScreen = (props: { four?: boolean }) => (
   <Workspace>
     <Pane.Split>
       <Pane
@@ -400,15 +414,22 @@ export const SelectionScreen = () => (
           <StatusRow
             lead=""
             selection={{
-              count: "3 ausgewählt",
-              actions: [
-                { label: "Teilen", icon: "share" },
-                { label: "Verschieben", icon: "folder-symlink" },
-                { label: "Als ZIP laden", icon: "download" },
-                { label: "Löschen", icon: "trash" },
-                { label: "In Ordner kopieren", icon: "copy" },
-                { label: "PDFs zusammenführen", icon: "stack-2" },
-              ],
+              count: props.four ? "3 ausgewählt · 12,4 MB" : "3 ausgewählt",
+              actions: props.four
+                ? [
+                    { label: "Teilen", icon: "share" },
+                    { label: "Herunterladen", icon: "download" },
+                    { label: "In den Ordner verschieben", icon: "folder-symlink" },
+                    { label: "In den Papierkorb", icon: "trash" },
+                  ]
+                : [
+                    { label: "Teilen", icon: "share" },
+                    { label: "Verschieben", icon: "folder-symlink" },
+                    { label: "Als ZIP laden", icon: "download" },
+                    { label: "Löschen", icon: "trash" },
+                    { label: "In Ordner kopieren", icon: "copy" },
+                    { label: "PDFs zusammenführen", icon: "stack-2" },
+                  ],
               clear: { label: "Auswahl aufheben", onClick: () => {} },
             }}
           />
@@ -545,3 +566,36 @@ export const SettingChangeScreen = () => {
     </Workspace>
   );
 };
+
+// The worst case of an invitation dialog on the phone (Spaces, W3): a notice of many lines above a field, and a list of
+// addresses as chips in a band, one of them longer than the dialog.
+export const InvitationScreen = () => (
+  <Workspace>
+    <Pane label="Termin">
+      <Text>Jahresinventur</Text>
+    </Pane>
+    <Dialog title="Einladung vorbereiten" open onOpenChange={() => {}} foot={<Button variant="primary">Weiter in Mail</Button>}>
+      <Notice tone="note" title="Vor dem Senden prüfen">
+        Jährliche Sicherheitsunterweisung für alle Lagermitarbeitenden einschließlich der Aushilfen und der Nachtschicht · Noch wird nichts
+        gesendet. Wer diese Einladung schon bekommen hat, bekommt eine Änderung statt einer neuen.
+      </Notice>
+      <Field label="Postfach">
+        <Input value="Lagerlogistik Nord – Disposition, Wareneingang und Versand" />
+      </Field>
+      <Band label="Teilnehmende">
+        <Inline>
+          {[
+            "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+            "a@b.test",
+            "first.last+billing@example.com",
+            ...Array.from({ length: 12 }, (_, index) => `mitglied${index}@example.com`),
+          ].map((address) => (
+            <Chip icon="x" onClick={() => {}}>
+              {address}
+            </Chip>
+          ))}
+        </Inline>
+      </Band>
+    </Dialog>
+  </Workspace>
+);

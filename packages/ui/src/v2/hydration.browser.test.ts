@@ -198,9 +198,10 @@ test("an entry that opens something holds no control inside a control, and each 
     await row.getByRole("button", { name: "Mehr zu Holzwerk" }).click();
     expect(await hash()).toBe("#angebot");
     await page.getByText("Geöffnet: mehr").waitFor();
-    await page.getByRole("button", { name: "Jonas Hartwig" }).click();
+    await page.getByRole("button", { name: "Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: jonas").waitFor();
-    await page.getByRole("button", { name: "Annehmen" }).click();
+    // the row's deed is named by its words and then the row's title
+    await page.getByRole("button", { name: "Annehmen Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: annehmen").waitFor();
     // a digest entry and a table row open from anywhere on them, their own links stay theirs
     // a link in the title of a row stays its own; the row is opened by the element named by that title

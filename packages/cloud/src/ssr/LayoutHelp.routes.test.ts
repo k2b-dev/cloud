@@ -11,7 +11,6 @@ const registeredHelpApps = [
   "contacts",
   "core",
   "dashboard",
-  "faq",
   "gateway-ops",
   "grids",
   "ipa-hosts",

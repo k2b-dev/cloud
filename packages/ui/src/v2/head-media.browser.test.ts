@@ -31,7 +31,10 @@ type Case =
   | "path"
   | "path-chip"
   | "split-canvas"
+  | "split-tall-canvas"
+  | "invitation"
   | "selection"
+  | "selection-four"
   | "long"
   | "areas"
   | "structure"
@@ -231,6 +234,118 @@ test("the head has two full-width rows above list and detail: path and deeds, th
   });
 });
 
+// a filter bar that ends in count, order and display in a column of 550 px or less while the window is wide (beside a
+// sidebar and a side column): the end goes to a line of its own instead of pressing the statements or lying over them
+for (const width of [550, 450, 400])
+  test(`on a desktop a filter bar of ${width} px keeps its count, order and display apart from the statements`, async () => {
+    await withPage("list", async (page) => {
+      await page.evaluate((root) => {
+        document.getElementById("root")!.style.width = `${root}px`;
+      }, width);
+      await settled(page);
+      const parts = await page.locator(".k2-fbar").evaluate((element) => {
+        const box = (node: Element) => {
+          const r = node.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        };
+        const tail = element.querySelector(".k2-fbar-tail")!;
+        return {
+          bar: box(element),
+          flow: box(element.querySelector(".k2-fbar-flow")!),
+          items: [...element.querySelectorAll(".k2-fbar-flow > *, .k2-fbar-flow .k2-btn")].map(box),
+          tail: [...tail.querySelectorAll(".k2-fbar-results, .k2-btn")].map(box),
+        };
+      });
+      const apart = (a: (typeof parts)["bar"], b: (typeof parts)["bar"]) =>
+        a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5;
+      for (const item of parts.items) {
+        // each statement and button stands inside the statements' room, and nothing of the end lies over it
+        expect(item.right).toBeLessThanOrEqual(parts.flow.right + 0.5);
+        for (const end of parts.tail) expect(apart(item, end)).toBe(true);
+      }
+      for (const end of parts.tail) {
+        expect(end.left).toBeGreaterThanOrEqual(parts.bar.left - 0.5);
+        expect(end.right).toBeLessThanOrEqual(parts.bar.right + 0.5);
+      }
+      // the statements keep the room of one statement (240 px) instead of what the end leaves them
+      expect(parts.flow.right - parts.flow.left).toBeGreaterThanOrEqual(240);
+    });
+  });
+
+// who shares a file: a team (a mark) and a person in one section start their names on one edge (W1b #4206 r5)
+for (const width of [1440, 390])
+  test(`at ${width} px a team and a person in the sharing of a file start their names on one edge`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        const edges = await page
+          .locator(".k2-sec", { hasText: "Freigabe" })
+          .locator(":scope > .k2-row .k2-row-title")
+          .evaluateAll((titles) => titles.map((title) => Math.round(title.getBoundingClientRect().left)));
+        expect(edges.length).toBe(2);
+        expect(new Set(edges).size).toBe(1);
+      },
+      width,
+    );
+  });
+
+// one line between groups: the last row of a group and the head of the next never draw two lines at one edge, in the
+// table and in its phone rows (Valentin 26.11., NO DOUBLE LINES)
+for (const width of [1440, 1024, 390])
+  test(`a grouped list draws one line between its groups at ${width} px`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        if (width < 768) {
+          await page.evaluate(() => document.querySelector(".k2-pane[data-detail]")?.remove());
+          await settled(page);
+        }
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.double).toEqual([]);
+      },
+      width,
+    );
+  });
+
+// four deeds with long words and the size of the selection in a column that cannot hold them all: the last deeds go
+// into "Mehr" before any word is cut, and each deed stays reachable once (W1b #4206 r5: "In d…" at 1440)
+for (const column of [900, 760, 640])
+  test(`a selection in a column of ${column} px folds its deeds into "Mehr" before a word is cut`, async () => {
+    await withPage("selection-four", async (page) => {
+      await page.evaluate((width) => {
+        document.getElementById("root")!.style.width = `${width}px`;
+      }, column);
+      await settled(page);
+      await page.waitForTimeout(50);
+      const bar = await page.locator(".k2-bar[data-selecting]").evaluate((element) => {
+        const edge = element.getBoundingClientRect();
+        const parts = [...element.querySelectorAll<HTMLElement>(".k2-bar-start > *, .k2-status-actions > *")].filter(
+          (part) => part.getClientRects().length > 0 && !part.matches(".k2-status-actions"),
+        );
+        return {
+          // nothing runs out of the bar, and no word in it is cut
+          inside: parts.every((part) => part.getBoundingClientRect().right <= edge.right + 0.5),
+          cut: parts
+            .flatMap((part) => [part, ...part.querySelectorAll<HTMLElement>(".k2-btn-label")])
+            .filter((part) => part.scrollWidth > part.clientWidth + 1 && getComputedStyle(part).clipPath === "none")
+            .map((part) => part.textContent),
+          shown: [...element.querySelectorAll(".k2-status-actions > .k2-btn:not([data-menu])")].map(
+            (button) => button.getAttribute("title") ?? button.textContent?.trim(),
+          ),
+        };
+      });
+      expect(bar.inside).toBe(true);
+      expect(bar.cut).toEqual([]);
+      const all = ["Teilen", "Herunterladen", "In den Ordner verschieben", "In den Papierkorb"];
+      expect(all.slice(0, bar.shown.length)).toEqual(bar.shown);
+      if (bar.shown.length < all.length) {
+        await page.locator(".k2-status-actions .k2-btn[data-menu]").click();
+        await settled(page);
+        expect(await page.getByRole("menu").getByRole("menuitem").allTextContents()).toEqual(all.slice(bar.shown.length));
+      }
+    });
+  });
+
 test("a selection with six deeds shows three and 'Mehr' with the rest in their order, its count in 14 px 600, and nothing leaves its bar (Files v3)", async () => {
   for (const width of [1440, 1024, 390])
     await withPage(
@@ -298,8 +413,8 @@ test("a selection takes the bar's place at the same height, so the list does not
   });
 });
 
-test("a media tile's name that does not fit ends in '…' and keeps its whole name for those who hover (DR #4229)", async () => {
-  for (const width of [390, 1440])
+for (const width of [390, 1440])
+  test(`a media tile's name that does not fit ends in '…' and keeps its whole name for those who hover (DR #4229, ${width})`, async () => {
     await withPage(
       "grid",
       async (page) => {
@@ -323,7 +438,7 @@ test("a media tile's name that does not fit ends in '…' and keeps its whole na
       },
       width,
     );
-});
+  });
 
 test("media tiles: picture 4:3, a box that shows on hover and on every tile while one is selected", async () => {
   await withPage("grid", async (page) => {
@@ -497,27 +612,39 @@ test("a group head is text with its count, not a band, and no line stands under 
   });
 });
 
-test("in rows of two lines a file keeps its thumbnail beside its box", async () => {
-  await withPage(
-    "list",
-    async (page) => {
-      const lead = await page
-        .locator(".k2-table-phone .k2-row", { hasText: "Ansicht Front Eiche.jpg" })
-        .locator(".k2-row-lead")
-        .evaluate((element) => {
+// rows of two lines in a narrow list pane (1024) and on the phone (390, where a row with a mark is 56 with a mark of 40)
+for (const [width, size] of [
+  [1024, "32x32"],
+  [390, "40x40"],
+] as const)
+  test(`in rows of two lines a file keeps its thumbnail beside its box at ${width} px`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        // on the phone the open file stands over the list: back to the list, as its way back does
+        if (width === 390) {
+          await page.evaluate(() => document.querySelector(".k2-pane[data-detail]")?.remove());
+          await settled(page);
+        }
+        const lead = await page.locator(".k2-table-phone .k2-row", { hasText: "Ansicht Front Eiche.jpg" }).evaluate((row) => {
+          const element = row.querySelector(":scope > .k2-row-lead")!;
           const box = element.querySelector(".k2-mark")!.getBoundingClientRect();
           const mark = element.querySelector(".k2-mk")!.getBoundingClientRect();
+          const text = row.querySelector(".k2-row-title")!.getBoundingClientRect();
+          const edge = row.getBoundingClientRect();
           return {
             side: mark.left > box.right,
             mark: `${mark.width}x${mark.height}`,
             middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1,
+            // box, mark and name stand in this order inside the row
+            order: box.left >= edge.left && text.left >= mark.right && text.right <= edge.right + 0.5,
           };
         });
-      expect(lead).toEqual({ side: true, mark: "32x32", middle: true });
-    },
-    1024,
-  );
-});
+        expect(lead).toEqual({ side: true, mark: size, middle: true, order: true });
+      },
+      width,
+    );
+  });
 
 test("the sidebar shows what the storage uses, as a meter with its words", async () => {
   await withPage("list", async (page) => {
@@ -1129,6 +1256,27 @@ test("on the phone a long list beside a drawing in a split does not squeeze the 
   );
 });
 
+test("on the phone a drawing taller than its split keeps its pane at the split's height and scrolls inside it (W3)", async () => {
+  await withPage(
+    "split-tall-canvas",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const pane = document.querySelector(".k2-canvas[data-fill]")!.closest(".k2-pane")!;
+        const split = pane.closest(".k2-split")!.getBoundingClientRect();
+        // the drawing's own scroller (a calendar's days)
+        const scroll = pane.querySelector<HTMLElement>(".calendar")!;
+        const box = pane.getBoundingClientRect();
+        return {
+          inside: Math.round(box.bottom) <= Math.round(split.bottom) && box.height <= split.height + 0.5,
+          scrolls: scroll.scrollHeight > scroll.clientHeight + 1,
+        };
+      });
+      expect(found).toEqual({ inside: true, scrolls: true });
+    },
+    390,
+  );
+});
+
 for (const width of [1440, 1024])
   test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {
     await withPage(
@@ -1205,6 +1353,48 @@ for (const width of [1440, 1024])
       width,
     );
   });
+
+// the open folder is the last to give way: the places above fold into "…" first, and the page shows with at least
+// its 48 px, cut with "…" only when it alone does not fit, never clipped by what is around it (W1b #4206 r5)
+for (const which of ["path", "path-chip"] as const)
+  for (const width of [1440, 1024, 390])
+    test(`a deep path keeps its open folder in sight at ${width} px (${which})`, async () => {
+      await withPage(
+        which,
+        async (page) => {
+          // on the phone the path gives way to the phone bar of the shell, which names the page: wholly, never a cut
+          // remnant such as "Werk"
+          if (width < 768) {
+            expect(
+              await page.locator(".k2-path[aria-label='Ort']").evaluateAll((paths) => paths.map((path) => path.getClientRects().length)),
+            ).toEqual([0]);
+            return;
+          }
+          const current = await page.evaluate(() => {
+            const page = document.querySelector<HTMLElement>(".k2-path[aria-label='Ort'] > b")!;
+            const box = page.getBoundingClientRect();
+            // every box up to the head that clips: the page lies inside it
+            const clipped: string[] = [];
+            for (let node = page.parentElement; node && !node.matches("[data-slot='head']"); node = node.parentElement) {
+              const style = getComputedStyle(node);
+              if (style.overflowX === "visible") continue;
+              const room = node.getBoundingClientRect();
+              if (box.left < room.left - 0.5 || box.right > room.right + 0.5) clipped.push(node.className);
+            }
+            const cut = page.scrollWidth > page.clientWidth + 1;
+            return {
+              shown: page.getClientRects().length > 0 && box.width > 0,
+              inside: box.left >= -0.5 && box.right <= innerWidth + 0.5,
+              clipped,
+              // cut only with "…" and down to no less than 48 px
+              cut: cut ? getComputedStyle(page).textOverflow === "ellipsis" && Math.round(box.width) >= 48 : true,
+            };
+          });
+          expect(current).toEqual({ shown: true, inside: true, clipped: [], cut: true });
+        },
+        width,
+      );
+    });
 
 test("a deep path with a chip after it gives way before the deeds; the chip is read whole (W1b #4206)", async () => {
   await withPage(
@@ -1520,7 +1710,7 @@ test("on the phone the statements end before 'Ansicht' at rest and fade at their
     );
 });
 
-test("on the phone a row that leads with a mark is 56 px with a mark of 40; a row without a mark keeps its 60 px", async () => {
+test("on the phone a row that leads with a mark is 56 px with a mark of 40", async () => {
   await withPage(
     "states",
     async (page) => {
@@ -1538,6 +1728,9 @@ test("on the phone a row that leads with a mark is 56 px with a mark of 40; a ro
     },
     390,
   );
+});
+
+test("on the phone a row without a mark keeps its 60 px", async () => {
   await withPage(
     "selection",
     async (page) => {
@@ -1549,7 +1742,9 @@ test("on the phone a row that leads with a mark is 56 px with a mark of 40; a ro
     },
     390,
   );
-  // beside the phone the mark is 32 again
+});
+
+test("beside the phone a row's mark is 32 again", async () => {
   await withPage(
     "list",
     async (page) => {
@@ -1563,7 +1758,7 @@ test("on the phone a row that leads with a mark is 56 px with a mark of 40; a ro
   );
 });
 
-for (const width of [1440, 1024, 800])
+for (const width of [1440, 1024, 800, 390])
   test(`a bar in the flow of a column puts its end on a line of its own where it has no room, never under its deeds (Files, ${width})`, async () => {
     await withPage(
       "list",
@@ -1575,14 +1770,17 @@ for (const width of [1440, 1024, 800])
           const pane = bar.closest(".k2-pane")!.getBoundingClientRect();
           return {
             apart: deeds.every((deed) => end.left >= deed.right || end.top >= deed.bottom || end.bottom <= deed.top),
-            inside: [end, ...deeds].every((box) => box.right <= pane.right + 0.5),
+            // inside its pane and in sight of the window
+            inside: [end, ...deeds].every((box) => box.right <= Math.min(pane.right, innerWidth) + 0.5),
             // every deed keeps its whole label
             whole: [...bar.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].every(
               (button) => button.scrollWidth <= button.clientWidth + 1,
             ),
           };
         });
-        expect({ width, ...found }).toEqual({ width, apart: true, inside: true, whole: true });
+        // at 800 the detail column itself reaches past the window (878–951 in 800): MW's item of the narrow detail, not
+        // this bar's; there the bar keeps its deeds apart and whole
+        expect({ width, ...found }).toEqual({ width, apart: true, inside: width !== 800, whole: true });
         // at 800 the detail stands at its narrowest; the actions of its sections are another place (MW)
         if (width === 800) return;
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
@@ -1591,3 +1789,31 @@ for (const width of [1440, 1024, 800])
       width,
     );
   });
+
+test("in a dialog on the phone a notice of many lines keeps its height above the next field, and a chip longer than its line ends with '…' inside the dialog", async () => {
+  await withPage(
+    "invitation",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const notice = document.querySelector(".k2-dialog .k2-notice")!.getBoundingClientRect();
+        const text = document.querySelector(".k2-dialog .k2-notice-text")!.getBoundingClientRect();
+        const label = document.querySelector(".k2-dialog .k2-field-label")!.getBoundingClientRect();
+        const body = document.querySelector(".k2-dialog-body")!.getBoundingClientRect();
+        const chip = document.querySelector<HTMLElement>(".k2-dialog .k2-chip")!;
+        const words = chip.querySelector<HTMLElement>(".k2-chip-text")!;
+        return {
+          // the notice holds all its words, and the field's label stands below it
+          whole: text.bottom <= notice.bottom + 0.5 && label.top >= notice.bottom,
+          chipInside: chip.getBoundingClientRect().right <= body.right + 0.5,
+          ellipsis: words.scrollWidth > words.clientWidth && getComputedStyle(words).textOverflow === "ellipsis",
+          name: chip.textContent?.trim().startsWith("bartholomew"),
+        };
+      });
+      expect(found).toEqual({ whole: true, chipInside: true, ellipsis: true, name: true });
+      // the "…" of the chip is on purpose (its words stay its name); nothing else is cut or out of place
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
+  );
+});

@@ -1,5 +1,6 @@
 import {
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -37,8 +38,11 @@ type NavEntryBase = {
   current?: boolean;
   /** One level in, such as the folders of a mailbox. */
   nested?: boolean;
-  /** Something new here. */
-  dot?: Status;
+  /**
+   * Something here: `"ok"` new, `"warn"` or `"bad"` a problem, `"running"` work that runs now (a chat that answers, a
+   * sync), a small turning mark in the place of the dot that says "Läuft".
+   */
+  dot?: Status | "running";
 };
 
 /**
@@ -119,17 +123,31 @@ const countIn = (count: number | string, locale: string) => (typeof count === "n
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
 const NavEnd = (props: { item: NavItem }) => {
+  const t = useUiMessages();
   const locale = useLocale();
+  const status = (): Status | undefined => (props.item.dot === "running" ? undefined : props.item.dot);
   return (
     <>
       <span class="k2-ni-name">{props.item.label}</span>
-      <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+      {/* one place for the dot or the running mark, so an entry without either renders as it did before */}
+      <Show when={props.item.dot}>
+        <Show when={status()} fallback={<NavRunning label={t().running} />}>
+          {(dot) => <Dot status={dot()} />}
+        </Show>
+      </Show>
       <Show when={props.item.count !== undefined}>
         <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
       </Show>
     </>
   );
 };
+
+/** Work that runs in an entry: a mark that turns in the place of the dot, as wide as the dot, so nothing moves. */
+const NavRunning = (props: { label: string }) => (
+  <span class="k2-ni-running" role="img" aria-label={props.label}>
+    <Icon name="loader-2" />
+  </span>
+);
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
   <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
@@ -539,6 +557,8 @@ export type StatusRowProps = {
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
    * actions, and the way out. `meta`: a quiet word on what is selected after the count, such as "12,9 MB · 3 Bilder".
+   * From five actions on the first three stand and the rest wait in "Mehr"; where their words do not fit, the last
+   * ones go there too before a word is cut.
    */
   selection?: { count: string; meta?: string; actions: readonly Action[]; clear: Action };
 };
@@ -546,14 +566,61 @@ export type StatusRowProps = {
 /** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
 const SELECTION_SHOWN = 3;
 
+/** What of a bar is cut: it runs out of its start, or a word in it (the count, a deed's words) ends in "…". */
+const cutIn = (start: HTMLElement) =>
+  start.scrollWidth > start.clientWidth + 1 ||
+  [...start.querySelectorAll<HTMLElement>(":scope > .k2-status-lead, .k2-btn-label")].some(
+    (words) => words.scrollWidth > words.clientWidth + 1 && getComputedStyle(words).clipPath === "none",
+  );
+
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const overlay = useOverlayMessages();
   const filters = resolveChildren(() => props.filters);
+  // How many deeds of a selection stand with their words: as many as the mockup shows, fewer where they do not fit,
+  // the rest in "Mehr", so no word is cut. Measured in the browser (a selection is made there), one deed per frame,
+  // again from the start when the bar changes its width or the selection its words.
+  const [room, setRoom] = createSignal(Number.POSITIVE_INFINITY);
+  const shown = () => {
+    const actions = props.selection?.actions ?? [];
+    return Math.min(actions.length > SELECTION_SHOWN + 1 ? SELECTION_SHOWN : actions.length, room());
+  };
+  let bar: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!bar) return;
+    let frame = 0;
+    const step = () => {
+      frame = 0;
+      const start = bar?.querySelector<HTMLElement>(":scope > .k2-bar-start");
+      const actions = start?.querySelector<HTMLElement>(":scope > .k2-status-actions");
+      // on the phone the deeds float at the bottom, each symbol over its word: nothing to fold
+      if (!props.selection || !start || !actions || getComputedStyle(actions).position === "fixed") return;
+      if (shown() > 0 && cutIn(start)) {
+        setRoom(shown() - 1);
+        frame = requestAnimationFrame(step);
+      }
+    };
+    const again = () => {
+      cancelAnimationFrame(frame);
+      setRoom(Number.POSITIVE_INFINITY);
+      frame = requestAnimationFrame(step);
+    };
+    const sizes = new ResizeObserver(again);
+    sizes.observe(bar);
+    createEffect(() => {
+      props.selection?.count;
+      props.selection?.actions.length;
+      again();
+    });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <div ref={bar} class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
       <Show
         when={props.selection}
         fallback={
@@ -607,19 +674,13 @@ export const StatusRow = (props: StatusRowProps) => {
             {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
                 On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
             <span class="k2-status-actions">
-              <For
-                each={
-                  selection().actions.length > SELECTION_SHOWN + 1 ? selection().actions.slice(0, SELECTION_SHOWN) : selection().actions
-                }
-              >
-                {(action) => <ActionButton action={action} titled />}
-              </For>
-              <Show when={selection().actions.length > SELECTION_SHOWN + 1}>
+              <For each={selection().actions.slice(0, shown())}>{(action) => <ActionButton action={action} titled />}</For>
+              <Show when={shown() < selection().actions.length}>
                 <Menu
                   icon="dots"
                   titled
                   items={selection()
-                    .actions.slice(SELECTION_SHOWN)
+                    .actions.slice(shown())
                     .map((action) => ({
                       label: action.label,
                       icon: action.icon,
@@ -644,7 +705,7 @@ export const StatusRow = (props: StatusRowProps) => {
 
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type NoticeProps = {
+type NoticeBase = {
   /** What it is: a note of a person, a summary by AI, something wrong, something waiting. */
   tone: "note" | "ai" | "bad" | "warn";
   /** A symbol other than the one of the tone, such as a pin for a pinned note. */
@@ -653,11 +714,28 @@ export type NoticeProps = {
   title?: string;
   /** Quiet words after the title: who and when. */
   meta?: string;
-  /** Text buttons at the end; at most two. */
-  actions?: TwoActions;
   /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
+
+/** At most two deeds in all: two quiet text buttons, or the one thing to do and one quiet deed beside it. */
+export type NoticeProps = NoticeBase &
+  (
+    | {
+        /** Text buttons at the end; at most two. */
+        actions?: TwoActions;
+        primary?: undefined;
+      }
+    | {
+        /** One quiet text button before the primary deed. */
+        actions?: readonly [Action];
+        /**
+         * The one thing to do, such as "Neu laden" when the page is offline: a framed button at the end, after the
+         * quiet deed. It is no primary of the page; the page keeps its own one.
+         */
+        primary: Action;
+      }
+  );
 
 const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
 
@@ -681,9 +759,10 @@ export const Notice = (props: NoticeProps) => (
       </span>
     </Show>
     <span class="k2-notice-text">{props.children}</span>
-    <Show when={props.actions?.length}>
+    <Show when={props.actions?.length || props.primary}>
       <span class="k2-notice-end">
         <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
+        <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
       </span>
     </Show>
   </div>
