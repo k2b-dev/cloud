@@ -111,13 +111,14 @@ export const cutTail = (text: string, keep: CutProps["keep"]): number => {
  * Words cut in the middle where they have no room, so their end stays readable: "bob.lange-adr…@example.com",
  * "Angebot_Holzwerk…nal_v3.pdf". Their whole words show on hover. Use it for addresses and file names in a row,
  * a tile or a head; other text is cut at its end by the place it stands in. Words without such an end (a name
- * without a domain or an extension) stay plain text, so the place cuts them at their end too.
+ * without a domain or an extension) stay plain text, so the place cuts them at their end too, and say them on hover.
  */
 export const Cut = (props: CutProps) => {
   const split = () => props.text.length - cutTail(props.text, props.keep);
   const head = () => props.text.slice(0, split());
   return (
-    <Show when={split() < props.text.length} fallback={props.text}>
+    // words cut at their end still say all of them on hover
+    <Show when={split() < props.text.length} fallback={<span title={props.text}>{props.text}</span>}>
       <span class="k2-midcut" title={props.text}>
         {/* a start of a few letters is never cut: "…" would stand for nearly all of it */}
         <Show when={head()}>
