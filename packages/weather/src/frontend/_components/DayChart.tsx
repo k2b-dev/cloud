@@ -11,7 +11,7 @@ const BASE = RAIN_TOP + RAIN;
 /** The drawing's height: the hours' labels stand under the base line. */
 export const DAY_CHART_HEIGHT = BASE + 28;
 /** Left: the degrees' labels; right: the text edge. */
-const LEFT = 52;
+const LEFT = 60;
 const RIGHT = 20;
 /** The x of the drawing is 0–1000 across the plot; the labels sit on the same share in HTML. */
 const WIDTH = 1000;
@@ -56,6 +56,10 @@ const across = (part: number) => `calc(${LEFT}px + (100% - ${LEFT + RIGHT}px) * 
  * rain as blue bars under it on the same hours, the night shaded, and "now" as a dot with its degrees. Strong for the
  * data, thin for the grid, a hairline for the base. The words of the curve stand in the canvas label; the drawing
  * itself is decoration for assistive technology.
+ *
+ * k2b-ui gap: `Chart` has no `bands` (shaded x-ranges such as the night), no `colorScale` for a line (its colour by
+ * value), and no bar series on its own axis beside a line on one time axis; owner G. When they land, the day moves onto
+ * `Chart` with the stops of `weather-scale.ts`, and this drawing goes.
  */
 export default function DayChart(props: { hours: readonly WeatherHour[]; rain: string; locale: string }) {
   const count = () => props.hours.length;
@@ -139,15 +143,15 @@ export default function DayChart(props: { hours: readonly WeatherHour[]; rain: s
             />
           )}
         </For>
-        {/* the rain: blue bars on the same hours, their full height a certain rain */}
+        {/* the rain: blue bars on the same hours, their full height a certain rain; the first and last stay in the plot */}
         <For each={props.hours}>
           {(hour, index) => (
             <Show when={hour.rainChance}>
               {(chance) => (
                 <rect
-                  x={xOf(index()) - slot() * 0.22}
+                  x={Math.max(0, xOf(index()) - slot() * 0.22)}
                   y={BASE - (RAIN * chance()) / 100}
-                  width={slot() * 0.44}
+                  width={Math.min(WIDTH, xOf(index()) + slot() * 0.22) - Math.max(0, xOf(index()) - slot() * 0.22)}
                   height={(RAIN * chance()) / 100}
                   style={{ fill: cssColor(TONE_COLORS.rain) }}
                 />

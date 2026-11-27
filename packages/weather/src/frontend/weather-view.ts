@@ -22,7 +22,7 @@ export type WeatherHour = {
   rain: string;
   rainChance: number | null;
 };
-/** `low` and `high` are the plain numbers behind `range`, for the week's bars on one scale. */
+/** `low` and `high` are the plain numbers behind `lowText` and `highText`, for the week's bars on one scale. */
 export type WeatherDay = {
   day: string;
   icon: string;
@@ -31,6 +31,8 @@ export type WeatherDay = {
   range: string;
   low: number;
   high: number;
+  lowText: string;
+  highText: string;
   rain: string;
   rainChance: number | null;
   sunshine: string;
@@ -172,6 +174,8 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
         range: `${degrees(entry.tempMin)} / ${degrees(entry.tempMax)}`,
         low: entry.tempMin,
         high: entry.tempMax,
+        lowText: degrees(entry.tempMin),
+        highText: degrees(entry.tempMax),
         rain: entry.precipitationProbability ? percent(entry.precipitationProbability) : missing,
         rainChance: entry.precipitationProbability || null,
         sunshine: `${number(entry.sunshine / 60, 1)} h`,

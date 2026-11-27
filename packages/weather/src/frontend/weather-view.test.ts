@@ -53,6 +53,15 @@ describe("the weather of a location in the reader's words", () => {
     expect(weather.hourly[0]).toMatchObject({ time: "Jetzt", degrees: 8, rain: "–" });
   });
 
+  test("carries the numbers and kinds behind the words: a day's low and high, a sign's tone, the night", () => {
+    const night = data();
+    night.hourly[3]!.icon = "clear-night";
+    const weather = format.weather(night);
+    expect(weather).toMatchObject({ tone: "plain", degrees: 8.4 });
+    expect(weather.daily[0]).toMatchObject({ tone: "rain", low: 2.9, high: 9.1, lowText: "2,9°", highText: "9,1°" });
+    expect(weather.hourly.map((hour) => hour.night)).toEqual([false, false, false, true, false]);
+  });
+
   test("stays quiet on an ordinary day without a daily forecast", () => {
     const weather = format.weather(data({ chances: [0, 20, 40, null], gust: 49, daily: false }));
     expect(weather.alerts).toEqual([]);

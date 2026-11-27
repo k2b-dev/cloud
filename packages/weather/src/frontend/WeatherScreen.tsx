@@ -19,6 +19,7 @@ import {
   type NavGroup,
   Notice,
   Pane,
+  RangeBar,
   RecordHead,
   Section,
   Table,
@@ -32,10 +33,9 @@ import { apiClient } from "@/api/client";
 import { weatherMessages } from "../messages";
 import DayChart from "./_components/DayChart";
 import RadarCard from "./_components/RadarCard";
-import RangeBar from "./_components/RangeBar";
 import { buildDisplayUrl } from "./params";
-import { temperatureColor, toneColor, type WeatherTone } from "./weather-scale";
-import type { GeoResult, WeatherNow, WeatherOpen, WeatherPlace } from "./weather-view";
+import { temperatureColor, temperatureStops, toneColor, type WeatherTone } from "./weather-scale";
+import type { GeoResult, WeatherDay, WeatherNow, WeatherOpen, WeatherPlace } from "./weather-view";
 
 export type WeatherScreenProps = {
   places: readonly WeatherPlace[];
@@ -206,12 +206,21 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
       <Icon name="temperature" color={temperatureColor(hour.degrees)} /> {hour.temperature}
     </>
   );
+  // a day from its low to its high on the week's one scale, coloured cold to warm
+  const range = (day: WeatherDay) => (
+    <RangeBar
+      from={day.low}
+      to={day.high}
+      domain={week()}
+      stops={temperatureStops}
+      label={t().rangeLabel({ low: day.lowText, high: day.highText })}
+    />
+  );
   const facts = () => [...(w().today ? [`${t().high} ${w().today!.high}`, `${t().low} ${w().today!.low}`] : []), ...w().alerts];
   return (
     <Pane label={t().weatherFor({ name: props.open.name })} scrollKey={`weather-${props.open.id}`}>
       {/* k2b-ui gap: the hero band (one figure 30/34 with its trend beside it) comes from lane DP (#4360); until then the
-          figure and the day are one drawing. The day itself is drawn here: line and bars on one time axis, a line
-          coloured by its values and shaded hours are not in `Chart` yet (lane Y). */}
+          figure and its words stand in the drawing of the day (DayChart). */}
       <Canvas
         label={t().dayAhead({
           now: `${w().temperature} ${w().condition}`,
@@ -221,7 +230,11 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
       >
         <div style={{ padding: "16px 20px 4px", display: "flex", "flex-wrap": "wrap", "align-items": "center", gap: "4px 16px" }}>
           <span style={{ display: "inline-flex", "align-items": "center", gap: "10px" }}>
-            <i class={`ti ti-${w().icon}`} aria-hidden="true" style={{ "font-size": "28px", "line-height": 1, color: toneColor(w().tone) }} />
+            <i
+              class={`ti ti-${w().icon}`}
+              aria-hidden="true"
+              style={{ "font-size": "28px", "line-height": 1, color: toneColor(w().tone) }}
+            />
             <span style={{ font: "600 30px/36px var(--k2-font)", color: "var(--k2-text)", "font-variant-numeric": "tabular-nums" }}>
               {w().temperature}
             </span>
@@ -242,7 +255,16 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
               <Table
                 label={t().sevenDayForecast}
                 rows={w().daily}
-                phone={(day) => ({ lines: [`${day.day} · ${day.range}`, day.condition], time: day.rain })}
+                // on the phone too the week reads at a glance: the sign and the range, the bar under them
+                phone={(day) => ({
+                  lines: [
+                    <>
+                      <Icon name={day.icon} label={day.condition} color={toneColor(day.tone)} /> {day.day} · {day.range}
+                    </>,
+                    range(day),
+                  ],
+                  time: rain(day),
+                })}
                 columns={[
                   { title: t().day, width: { min: 64, default: 88 }, cell: (day) => day.day },
                   { title: t().condition, width: { min: 140, default: 168 }, cell: sign },
@@ -250,20 +272,13 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
                     title: t().low,
                     width: { min: 56, default: 64 },
                     align: "end",
-                    cell: (day) => day.range.split(" / ")[0],
+                    cell: (day) => day.lowText,
                   },
                   {
                     title: t().temperature,
-                    cell: (day) => (
-                      <RangeBar
-                        low={day.low}
-                        high={day.high}
-                        domain={week()}
-                        label={t().rangeLabel({ low: day.range.split(" / ")[0]!, high: day.range.split(" / ")[1]! })}
-                      />
-                    ),
+                    cell: range,
                   },
-                  { title: t().high, width: { min: 56, default: 64 }, cell: (day) => day.range.split(" / ")[1] },
+                  { title: t().high, width: { min: 56, default: 64 }, cell: (day) => day.highText },
                   { title: t().rainChance, width: { min: 80, default: 88 }, align: "end", cell: rain },
                   { title: t().sunshineDay, width: { min: 64, default: 72 }, align: "end", drop: true, cell: (day) => day.sunshine },
                 ]}
@@ -275,7 +290,15 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
               <Table
                 label={t().hourlyForecast}
                 rows={w().hourly}
-                phone={(hour) => ({ lines: [`${hour.time} · ${hour.temperature}`, hour.condition], time: hour.rain })}
+                phone={(hour) => ({
+                  lines: [
+                    <>
+                      {hour.time} · {degrees(hour)}
+                    </>,
+                    sign(hour),
+                  ],
+                  time: rain(hour),
+                })}
                 columns={[
                   { title: t().time, width: { min: 64, default: 80 }, cell: (hour) => hour.time },
                   { title: t().condition, width: { min: 160, default: 220 }, cell: sign },

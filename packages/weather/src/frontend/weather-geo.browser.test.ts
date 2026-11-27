@@ -329,3 +329,60 @@ test("two places of the same name read apart by their state in the sidebar", asy
     await page.close();
   }
 }, 30_000);
+
+// Weather v4 (review 27.11.: "das klebt hier oben", "zu sehr Wireframe-MVP"): the day has air above its warmest label
+// and no label cut at the drawing's edge, its rain bars stay in the plot, the week stands on one scale in colour, the
+// signs carry the colours of weather, and a missing week is one quiet line, not a hole.
+for (const width of [1440, 390])
+  test(`the day breathes, the week stands on one scale, and the signs carry their colours at ${width} px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      for (const name of ["record", "worst"] as const) {
+        await page.goto(`${server.url.href}?screen=${name}`);
+        const canvas = page.locator('[data-k2-part="Canvas"]').first();
+        await canvas.locator("svg").waitFor();
+        const day = await canvas.evaluate((drawing) => {
+          const box = drawing.getBoundingClientRect();
+          const labels = [...drawing.querySelectorAll("span")]
+            .filter((span) => span.textContent?.trim() && !span.querySelector("span"))
+            .map((span) => span.getBoundingClientRect());
+          const plot = drawing.querySelector("svg")!.getBoundingClientRect();
+          const bars = [...drawing.querySelectorAll("svg rect")]
+            .map((rect) => rect.getBoundingClientRect())
+            .filter((rect) => rect.height < 40);
+          const line = drawing.querySelector('svg path[style*="stroke"]')!;
+          return {
+            cut: labels.filter(
+              (label) => label.top < box.top || label.bottom > box.bottom || label.left < box.left || label.right > box.right,
+            ).length,
+            barsInPlot: bars.every((bar) => bar.left >= plot.left - 0.5 && bar.right <= plot.right + 0.5),
+            stroke: getComputedStyle(line).stroke,
+          };
+        });
+        expect({ name, cut: day.cut, barsInPlot: day.barsInPlot }).toEqual({ name, cut: 0, barsInPlot: true });
+        // the line takes the colour of its degrees, not the chart's one colour
+        expect(day.stroke).toContain("url(");
+      }
+      // the record's week: seven bars on one scale, the coldest day starting at the scale's start
+      await page.goto(`${server.url.href}?screen=record`);
+      const bars = page.locator('[data-k2-part="RangeBar"]');
+      expect(await bars.count()).toBe(7);
+      expect(await bars.nth(3).getAttribute("aria-label")).toBe("-3,4° bis 4,6°");
+      // a sunny day's sign is amber, a rainy one blue: data colours, not the text ink
+      const colors = await page.evaluate(() => ({
+        ink: getComputedStyle(document.querySelector('[data-k2-part="Table"]')!).color,
+        signs: ["sun", "cloud-rain"].map(
+          (name) => getComputedStyle(document.querySelector(`[data-k2-part="Icon"][data-name="${name}"]`)!).color,
+        ),
+      }));
+      expect(colors.signs[0]).not.toBe(colors.signs[1]);
+      expect(colors.signs).not.toContain(colors.ink);
+      // the worst case without a week: one quiet line in its section, no empty state's hole
+      await page.goto(`${server.url.href}?screen=worst`);
+      const week = page.getByRole("region", { name: "7-Tage-Vorhersage" });
+      await week.getByText("Keine Vorhersage").waitFor();
+      expect((await week.boundingBox())!.height).toBeLessThan(90);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);

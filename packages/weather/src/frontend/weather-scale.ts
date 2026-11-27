@@ -79,5 +79,8 @@ export const cssColor = (color: ThemeColor) => `light-dark(${color.light}, ${col
 export const temperatureColor = (degrees: number) =>
   cssColor({ light: temperatureHex(degrees, "light"), dark: temperatureHex(degrees, "dark") });
 
+/** The scale's stops for CSS, as a `RangeBar` takes them: the week's bars run cold to warm along it. */
+export const temperatureStops = TEMPERATURE_STOPS.map((stop) => ({ at: stop.at, color: cssColor(stop.color) }));
+
 /** The colour of a weather sign for CSS; a plain sign keeps the quiet ink of the page. */
 export const toneColor = (tone: WeatherTone) => (tone === "plain" ? "var(--k2-muted)" : cssColor(TONE_COLORS[tone]));

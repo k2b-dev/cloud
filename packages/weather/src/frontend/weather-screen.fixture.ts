@@ -70,6 +70,8 @@ const weather: WeatherNow = {
     range: `${comma(low)}° / ${comma(high)}°`,
     low,
     high,
+    lowText: `${comma(low)}°`,
+    highText: `${comma(high)}°`,
     rain: chance ? `${chance} %` : "–",
     rainChance: chance || null,
     sunshine,
