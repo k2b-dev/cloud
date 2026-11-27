@@ -14,6 +14,8 @@
 export { useLocale } from "../intl/locale";
 // The bare address of a display form such as `"Berg, Anna" <anna@example.org>`, as an address field reads it.
 export { addressOf } from "./addresses";
+// News for assistive technology that the page shows nowhere as it happens (a run that changed its state).
+export { announce } from "./announce";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {

@@ -204,14 +204,9 @@ follows v2), a code block with highlighting, an image or video viewer, and an as
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with
-`defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
-lives in the address through that declaration; the server reads it with
-`parse`, and the app filters itself, on its server, with its own access
-checks (`@k2b/ui` filters nothing and stores nothing). In the island,
-keep one signal that mirrors that state: start it with what the server parsed
-and set it in `onChange`, as the recipe does. Never parse search parameters
-yourself, keep filter state the address does not hold, or build filter chips
-by hand. Read [list queries](references/list-queries.md).
+`defineListQuery`, show them with `FilterBar` and `ListOrder`; the app
+filters on its server. The rules (one signal, no own parsing, no filter chips
+by hand): [list queries](references/list-queries.md).
 
 ## See what you built
 
