@@ -1,6 +1,7 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { announce } from "../feedback/announce";
+import { cssColor } from "../internal/color";
 import type { CalendarController, CalendarEvent, CalendarEventTimeChange, CalendarExternalDrag, CalendarLabels } from "./Calendar";
 import {
   addDayKeys,
@@ -586,7 +587,7 @@ export const createTimeView = (props: TimeViewProps) => {
     cancelGesture?.();
     cancelGesture = undefined;
     const length = Math.max(15, Math.round(item.minutes));
-    const color = item.colorHex ?? COLOR_TOKENS[item.color ?? "blue"]!;
+    const color = eventAccent(item);
     let token: HTMLElement | undefined;
     let spring: { element: Element; timer: number } | undefined;
     const target =
@@ -1281,7 +1282,7 @@ export const TimeOverlays = (props: { view: TimeView; dayKey: string; expanded: 
             data-live="true"
             data-size={current().end - current().start < 40 ? "s" : "m"}
             data-warn={current().warn ? "true" : undefined}
-            style={{ ...box(current().start, current().end), "--k2b-calendar-accent": current().colorHex ?? "var(--k2b-action)" }}
+            style={{ ...box(current().start, current().end), "--k2b-calendar-accent": cssColor(current().colorHex) ?? "var(--k2b-action)" }}
             aria-hidden="true"
           >
             <span class="k2b-calendar-ghost__title">{current().title}</span>

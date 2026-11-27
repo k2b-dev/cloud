@@ -15,6 +15,7 @@ import {
 } from "solid-js";
 import { Button, ButtonLink } from "../actions/Button";
 import { Checkbox } from "../inputs/Checkbox";
+import { cssColor } from "../internal/color";
 import type {
   ChatDecisionAnswer,
   ChatDecisionFact,
@@ -283,7 +284,10 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
             <>
               <span aria-hidden="true">·</span>
               <span class="k2b-chat-decision__source">
-                <span class="k2b-chat-decision__tile k2b-icon-tile" style={source().accent ? { color: source().accent } : undefined}>
+                <span
+                  class="k2b-chat-decision__tile k2b-icon-tile"
+                  style={cssColor(source().accent) ? { color: cssColor(source().accent) } : undefined}
+                >
                   <i class={source().icon} aria-hidden="true" />
                 </span>
                 {source().name}
@@ -341,7 +345,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                   <p class="k2b-chat-decision__details-label">
                     <span
                       class="k2b-chat-decision__tile k2b-icon-tile"
-                      style={props.source?.accent ? { color: props.source.accent } : undefined}
+                      style={cssColor(props.source?.accent) ? { color: cssColor(props.source?.accent) } : undefined}
                     >
                       <i class={props.source?.icon} aria-hidden="true" />
                     </span>

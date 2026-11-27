@@ -28,7 +28,7 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; pag
 
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
   const search = (c.req.query("search") ?? "").trim();

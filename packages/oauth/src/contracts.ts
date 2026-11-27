@@ -86,6 +86,16 @@ export const OAuthClientParamSchema = z.object({
   id: z.uuid(),
 });
 
+export const OAuthClientConnectionParamSchema = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+});
+
+export const RevokedConnectionsSchema = z.object({
+  /** How many connections were live and are now revoked. */
+  revoked: z.number().int().nonnegative(),
+});
+
 export const CreateOAuthClientSchema = z.object({
   name: NameSchema,
   description: TextSchema.optional(),

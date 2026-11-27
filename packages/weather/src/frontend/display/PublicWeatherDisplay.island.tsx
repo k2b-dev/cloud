@@ -1,6 +1,7 @@
 import { timing } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Canvas, Notice, Pane, Workspace } from "@k2b/ui/v2";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { WeatherDataPayload } from "../../contracts";
 import { weatherMessages } from "../../messages";
@@ -107,30 +108,34 @@ export default function PublicWeatherDisplay(props: PublicWeatherDisplayProps) {
     refreshedAt: refreshedAt(),
   });
 
+  // The wall display is one free drawing at display size (its type is far beyond the four v2 roles), so it stands in a
+  // Canvas that fills the pane; a failed refresh is a notice laid over the drawing, so nothing on the wall moves.
   return (
-    <>
-      <Show when={weather.error() && weather.data()}>
-        <div class="fixed inset-x-4 bottom-4 z-10 mx-auto max-w-lg">
-          <NoticeCard tone="warning" title={t().refreshFailed} detail={weather.error()!.message}>
-            <Button variant="secondary" size="sm" onClick={() => schedule(0)}>
-              {t().retry}
-            </Button>
-          </NoticeCard>
-        </div>
-      </Show>
-      <Show
-        when={weather.data()}
-        fallback={
-          <DisplayUnavailable
-            message={weather.error()?.message ?? t().providerUnavailable}
-            refreshSeconds={props.refreshSeconds}
-            refreshedAt={refreshedAt()}
-            retrying
-          />
-        }
-      >
-        {props.detail ? <DetailDisplayView {...viewProps()} /> : <SimpleDisplayView {...viewProps()} />}
-      </Show>
-    </>
+    <Workspace>
+      <Pane label={props.location}>
+        <Canvas label={t().display}>
+          <Show
+            when={weather.data()}
+            fallback={
+              <DisplayUnavailable
+                message={weather.error()?.message ?? t().providerUnavailable}
+                refreshSeconds={props.refreshSeconds}
+                refreshedAt={refreshedAt()}
+                retrying
+              />
+            }
+          >
+            {props.detail ? <DetailDisplayView {...viewProps()} /> : <SimpleDisplayView {...viewProps()} />}
+          </Show>
+          <Show when={weather.error() && weather.data()}>
+            <div class="fixed inset-x-4 bottom-4 z-10 mx-auto max-w-lg">
+              <Notice tone="warn" title={t().refreshFailed} actions={[{ label: t().refreshNow, onClick: () => schedule(0) }]}>
+                {weather.error()!.message} {t().updatesResume}
+              </Notice>
+            </div>
+          </Show>
+        </Canvas>
+      </Pane>
+    </Workspace>
   );
 }

@@ -7,6 +7,22 @@ import { rejectBrowserSignIn } from "./sign-in";
 // OAuth Device Authorization Grant (RFC 8628)
 // ==========================
 
+/**
+ * End the device sign-ins of a client that have not issued tokens yet: the decided ones of one person, or every one
+ * when no person is given, whether or not the device already collected them. A disconnect also stops the sign-ins on
+ * their way. Runs in the caller's transaction.
+ */
+export const expireUnissued = async (params: { db: typeof sql; clientId: string; userId: string | null }): Promise<void> => {
+  await params.db`
+    UPDATE oauth.device_authorizations
+    SET expires_at = LEAST(expires_at, 'epoch'::timestamptz)
+    WHERE client_id = ${params.clientId}
+      AND (${params.userId}::uuid IS NULL OR user_id = ${params.userId}::uuid)
+      AND status IN ('pending', 'approved', 'consumed')
+      AND authority_issued_at IS NULL
+  `;
+};
+
 /** RFC 8628 §6.1: short enough to type, long enough that brute force stays bounded by the failure limit. */
 export const DEVICE_CODE_LIFETIME_SECONDS = 600;
 /** Core app-approval sign-ins expire after five minutes. */

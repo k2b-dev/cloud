@@ -134,7 +134,7 @@ export const loadWorkflowState = async (
   const visibleWorkflowIds = common.catalog.workflows.map((workflow) => workflow.id);
   const filters = parseWorkflowUrlState(common.chrome.url.searchParams);
   const [stats, runs, launchers, triggerState, initialSelectedRun] = await Promise.all([
-    getWorkflowRunStats(common.base.id, visibleWorkflowIds, { window: filters.window }),
+    getWorkflowRunStats(common.base.id, visibleWorkflowIds, { window: filters.window, timeZone: common.params.dateConfig?.timeZone }),
     listWorkflowRunsPage({
       baseId: common.base.id,
       workflowIds: visibleWorkflowIds,
