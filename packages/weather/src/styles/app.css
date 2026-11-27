@@ -56,8 +56,9 @@
   background: var(--wx-c);
 }
 
-/* Forced colours: the line, the rain and the dots draw in the text colour, the night in the quiet one, the tint under
-   the line goes; the radar's swatches keep the picture's colours, each with an outline, so the legend stays readable. */
+/* Forced colours: the line, the rain and the dots draw in the text colour; the night's shading and the tint under the
+   line go (a system colour over the whole evening would cover the day); the radar's swatches keep the picture's colours,
+   each with an outline, so the legend stays readable. */
 @media (forced-colors: active) {
   [data-k2-canvas] :is(.wx-line, .wx-rain, .wx-night, .wx-area, .wx-dot) {
     forced-color-adjust: none;
@@ -69,7 +70,7 @@
     fill: CanvasText;
   }
   [data-k2-canvas] .wx-night {
-    fill: GrayText;
+    fill: none;
   }
   [data-k2-canvas] .wx-area {
     fill: none;
