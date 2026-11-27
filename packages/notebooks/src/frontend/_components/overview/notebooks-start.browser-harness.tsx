@@ -4,7 +4,8 @@ import { openNewNotebookDialog } from "../../create-notebook-dialog";
 import NotebooksStart, { type StartPage, type StartTemplate } from "./NotebooksStart";
 
 // Test harness only (never shipped). `?data=` picks the templates: the demo pair (default), `worst` (the longest real
-// built-in names and descriptions in both languages plus a plausible longer one from a future language), `empty` (no
+// built-in names and descriptions in both languages plus a plausible longer one from a future language, with Japanese,
+// Arabic and Vietnamese pages, an address and a one-letter template without pages), `empty` (no
 // template at all) or `one`; `?lang=en` renders in English.
 const pages = (...titles: string[]): StartPage[] =>
   titles.map((title) => {
@@ -60,6 +61,8 @@ const worst: StartTemplate[] = [
     pages: pages(
       "Projektdokumentation",
       "引き継ぎ記録 🛠️",
+      "سجل التسليم › ملاحظات الوردية الصباحية",
+      "Biên bản bàn giao ca sáng › Danh sách việc còn tồn đọng",
       "https://intranet.nordwerk-instandhaltung.example.com/wiki/uebergabe/halle-7/fruehschicht",
     ),
   },

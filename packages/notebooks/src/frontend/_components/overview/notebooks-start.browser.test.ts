@@ -155,6 +155,31 @@ for (const width of [1440, 1024, 390]) {
   }, 60_000);
 }
 
+// break-ui: the longest names and descriptions, an emoji, an address, one letter, Japanese, Arabic and Vietnamese pages,
+// a template with 63 pages and one with none, no template at all, and one; the list and an open way to start
+const samples = [
+  ["worst", "/app/notebooks?data=worst"],
+  ["worst in English", "/app/notebooks?data=worst&lang=en"],
+  ["worst, 63 pages open", "/app/notebooks?data=worst&template=daily"],
+  ["worst, long names open", "/app/notebooks?data=worst&template=handover"],
+  ["worst, no pages open", "/app/notebooks?data=worst&template=j"],
+  ["no template", "/app/notebooks?data=empty"],
+  ["one template", "/app/notebooks?data=one"],
+] as const;
+for (const [sample, path] of samples)
+  for (const width of [390, 1440])
+    test(`break-ui ${sample} at ${width}: the workspace keeps the v2 rules and the page never scrolls sideways`, async () => {
+      const page = await open(width, path);
+      try {
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+        expect(layout.measured.texts).toBeGreaterThan(0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      } finally {
+        await page.close();
+      }
+    }, 60_000);
+
 test("the blank row makes a notebook after asking its name, and opens it", async () => {
   const page = await open();
   try {
