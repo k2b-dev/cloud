@@ -505,12 +505,12 @@ export function fixtureStorageFacts(fixture: FixtureCase, storages: readonly Bas
         const people = names.slice(0, Math.min(5, members)).map((name) => ({ name }));
         return { baseId: base.id, members: Math.max(members, people.length), people };
       }),
-    daily: fixtureDaily(fixture, shown),
+    daily: fixtureDaily(shown),
   };
 }
 
-/** Changes per day of the last month (invented): some quiet days per storage, today the busiest; the total sums them. */
-function fixtureDaily(fixture: FixtureCase, shown: readonly BaseSummary[]): StorageChangeSeries {
+/** Changes per day of the last month (invented): some quiet days per storage, more today; the total sums them. */
+function fixtureDaily(shown: readonly BaseSummary[]): StorageChangeSeries {
   const today = FIXTURE_NOW.slice(0, 10);
   const from = new Date(Date.parse(`${today}T12:00:00.000Z`) - (CHANGE_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
   const storages = shown.map((base, index) => ({
