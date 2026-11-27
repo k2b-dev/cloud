@@ -110,6 +110,24 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
           <Row mark={{ icon: "file-type-pdf", color: "#dc2626", kind: "PDF", label: "PDF" }} lines={["Angebot 2026-118.pdf", "312 KB"]} />
         </List>
       </Section>
+      {/* who or what a thing is, without a picture: a data list and a table of bases keep the mark's 24 */}
+      <Section title="Bases" count={2}>
+        <List label="Bases">
+          <Row mark={{ ...table }} lines={["Aufträge"]} time="vor 2 Min" />
+          <Row mark={{ ...form }} lines={["Auftrag annehmen", "Formular · 12 Felder"]} />
+        </List>
+        <Table
+          label="Tabellen"
+          rows={[
+            { key: "a", name: "Aufträge", rows: 318 },
+            { key: "k", name: "Kunden", rows: 42 },
+          ]}
+          columns={[
+            { title: "Tabelle", width: { min: 140, default: 200 }, mark: () => table, cell: (row) => row.name },
+            { title: "Einträge", width: { min: 80, default: 90 }, align: "end", cell: (row) => String(row.rows) },
+          ]}
+        />
+      </Section>
       <Section title="Aktivität">
         <Digest
           label="Aktivität"

@@ -1582,17 +1582,22 @@
   vertical-align: middle;
   min-width: 0;
 }
-/* a table whose rows lead with a thing's mark: 44 px rows and marks of 32, as the mockup's lists of files and folders */
+/* a table whose rows lead with a thing's mark: 44 px rows, as a list's */
 .k2-ui .k2-table[data-marks]:not([data-lines="2"]) td {
   height: var(--k2-h-row-mark);
 }
+/* the mark keeps its 24 in a cell, and 32 in a table that shows pictures of its things, as a list does */
+.k2-ui .k2-table:has(td > .k2-cell-lead > .k2-mk[data-preview]) {
+  --k2-lead: 32px;
+  --k2-lead-icon: 18px;
+}
 .k2-ui .k2-table td > .k2-cell-lead > .k2-mk {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: var(--k2-lead, 24px);
+  height: var(--k2-lead, 24px);
+  border-radius: calc(var(--k2-lead, 24px) / 4);
 }
 .k2-ui .k2-table td > .k2-cell-lead > .k2-mk > .k2-icon {
-  font-size: 18px;
+  font-size: var(--k2-lead-icon, 15px);
 }
 .k2-ui .k2-table td > .k2-cell-lead > .k2-mk > .k2-mk-kind {
   font-size: 8px;
@@ -2298,18 +2303,24 @@
 .k2-ui :is(.k2-row-l1, .k2-text) .k2-mk {
   margin: -2px 2px 0;
 }
-/* leading a row: 32, as the mockup's lists of files and folders; a row of one line is 44 px for it */
+/* a row that leads with a mark is 44 px; the mark keeps its 24 there (a base, a table, a client: who or what it is),
+   and 32 in a list that shows pictures of its things (a thumbnail or a type such as PDF: the mockup's lists of files
+   and folders), its other marks such as folders with them (the phone gives every mark of a row 40, below) */
 .k2-ui .k2-row[data-mark][data-lines="1"] {
   min-height: var(--k2-h-row-mark);
   padding-block: 6px;
 }
+.k2-ui :is(.k2-list:has(> .k2-row > .k2-row-lead > .k2-mk[data-preview]), .k2-row:has(> .k2-row-lead > .k2-mk[data-preview])) {
+  --k2-lead: 32px;
+  --k2-lead-icon: 18px;
+}
 .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: var(--k2-lead, 24px);
+  height: var(--k2-lead, 24px);
+  border-radius: calc(var(--k2-lead, 24px) / 4);
 }
 .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-icon {
-  font-size: 18px;
+  font-size: var(--k2-lead-icon, 15px);
 }
 .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-mk-kind {
   font-size: 8px;
@@ -5460,14 +5471,12 @@
   min-height: var(--k2-h-status);
   align-items: center;
 }
-@media (min-width: 768px) {
-  .k2-ui .k2-fbar[data-tail] {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-  .k2-ui .k2-fbar[data-tail] > .k2-fbar-flow {
-    flex: 1 1 240px;
-  }
+.k2-ui .k2-fbar[data-tail] {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.k2-ui .k2-fbar[data-tail] > .k2-fbar-flow {
+  flex: 1 1 240px;
 }
 .k2-ui .k2-fbar-tail {
   margin-left: auto;
@@ -6150,9 +6159,14 @@
     background: linear-gradient(90deg, transparent, var(--k2-surface));
     pointer-events: none;
   }
-  .k2-ui .k2-fbar-flow {
+  .k2-ui .k2-fbar-flow,
+  .k2-ui .k2-fbar[data-tail] > .k2-fbar-flow {
     flex-wrap: nowrap;
     flex: none;
+  }
+  /* one line that scrolls: the end of the wide bar is hidden here, so nothing wraps */
+  .k2-ui .k2-fbar[data-tail] {
+    flex-wrap: nowrap;
   }
   .k2-ui .k2-fbar-flow > :is(.k2-fbar-add, .k2-fbar-reset),
   .k2-ui .k2-fbar-and,

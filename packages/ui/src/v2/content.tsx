@@ -302,7 +302,8 @@ export type RowProps = {
   icon?: string;
   /**
    * … the mark of the thing the row stands for (a base, a file with its thumbnail, a table): its symbol on a tint of
-   * its colour, or its picture; 24 px in a row of one line, 32 px in a row of two or three …
+   * its colour, or its picture; 24 px, and 32 px in a list that shows pictures of its things (a mark with `image` or
+   * `kind`); the row is then 44 px, on the phone 56 with a mark of 40 …
    */
   mark?: MarkProps;
   /** … or a person. */
@@ -505,7 +506,10 @@ export type Column<T> = {
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
-  /** The cell leads with the thing's mark: a file's thumbnail or type, a base's symbol (24 px, rule: each thing its mark). */
+  /**
+   * The cell leads with the thing's mark: a base's symbol in 24 px, a file's thumbnail or type in 32 (with them every
+   * mark of the table), rule: each thing its mark.
+   */
   mark?: (row: T) => MarkProps;
   /** The cell leads with a person, such as the owner; the name in the cell names the avatar. */
   avatar?: (row: T) => Person;
@@ -759,7 +763,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
-          // a column that leads with the thing's mark makes every row 44 px with a mark of 32, as the mockup's lists
+          // a column that leads with the thing's mark makes every row 44 px, as the mockup's lists
           data-marks={props.columns.some((column) => column.mark) ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}

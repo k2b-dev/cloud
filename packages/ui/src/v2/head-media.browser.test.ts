@@ -466,22 +466,20 @@ for (const [width, size] of [
           await page.evaluate(() => document.querySelector(".k2-pane[data-detail]")?.remove());
           await settled(page);
         }
-        const lead = await page
-          .locator(".k2-table-phone .k2-row", { hasText: "Ansicht Front Eiche.jpg" })
-          .evaluate((row) => {
-            const element = row.querySelector(":scope > .k2-row-lead")!;
-            const box = element.querySelector(".k2-mark")!.getBoundingClientRect();
-            const mark = element.querySelector(".k2-mk")!.getBoundingClientRect();
-            const text = row.querySelector(".k2-row-title")!.getBoundingClientRect();
-            const edge = row.getBoundingClientRect();
-            return {
-              side: mark.left > box.right,
-              mark: `${mark.width}x${mark.height}`,
-              middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1,
-              // box, mark and name stand in this order inside the row
-              order: box.left >= edge.left && text.left >= mark.right && text.right <= edge.right + 0.5,
-            };
-          });
+        const lead = await page.locator(".k2-table-phone .k2-row", { hasText: "Ansicht Front Eiche.jpg" }).evaluate((row) => {
+          const element = row.querySelector(":scope > .k2-row-lead")!;
+          const box = element.querySelector(".k2-mark")!.getBoundingClientRect();
+          const mark = element.querySelector(".k2-mk")!.getBoundingClientRect();
+          const text = row.querySelector(".k2-row-title")!.getBoundingClientRect();
+          const edge = row.getBoundingClientRect();
+          return {
+            side: mark.left > box.right,
+            mark: `${mark.width}x${mark.height}`,
+            middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1,
+            // box, mark and name stand in this order inside the row
+            order: box.left >= edge.left && text.left >= mark.right && text.right <= edge.right + 0.5,
+          };
+        });
         expect(lead).toEqual({ side: true, mark: size, middle: true, order: true });
       },
       width,

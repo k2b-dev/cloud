@@ -185,7 +185,9 @@ inside it.
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
-  table; 32 px, and a row of one line with it is 44 px), or `avatar`, or a
+  table; 24 px, 32 in a list that shows pictures of its things (a mark
+  with `image` or `kind`, and the folders beside them); a row with a mark
+  is 44 px, on the phone 56 with a mark of 40), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
@@ -234,8 +236,9 @@ lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry. A column's `mark(row)` leads its
-cell with the thing's `Mark` (a file's thumbnail or type, 32 px; the
-table's rows are then 44 px, as the mockup's lists), its
+cell with the thing's `Mark` (a base's symbol 24 px; a file's thumbnail
+or type 32, and every mark of that table with it; the table's rows are
+then 44 px, as the mockup's lists), its
 `avatar(row)` with a person (the name in the cell names it); `phone(row)`
 takes a `mark` as well.
 
@@ -317,8 +320,8 @@ lines instead of cutting a thing.
   symbol; while it loads and when it fails the symbol shows), `kind` (the
   type on its corner: `PDF`), `label` (without one it is decoration beside
   its name). The place sets the size: 20 in the sidebar and in a sentence,
-  24 leading a row of one line, 32 leading a row of two or three, 36 on a
-  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+  24 leading a row or a cell, 32 there in a list or table that shows
+  pictures of its things (`image` or `kind`), 36 on a card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
 - `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
   other with a ring and "+n"; one picture with every name. In a narrow
   place (a 90 px column) it shows the faces it holds whole and counts the

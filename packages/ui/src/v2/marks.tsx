@@ -190,9 +190,9 @@ export type MarkProps = {
 /**
  * What a thing looks like: its symbol on a tint of its colour, or its picture, in one square place. Every row, tile
  * and sidebar entry that stands for a thing leads with it (rule: each thing carries its mark). The place sets the
- * size: 20 px in the sidebar and in a sentence, 32 px leading a row or a table's cell (a row of one line is then 44 px;
- * on the phone 40 px in a row of 56),
- * 36 px on a tile.
+ * size: 20 px in the sidebar and in a sentence, 24 px leading a row or a table's cell, and 32 px there when the list
+ * shows pictures of its things (a mark with `image` or `kind`, as files and media are; folders beside them take the
+ * same 32). A row that leads with a mark is 44 px; on the phone 56 with a mark of 40. 36 px on a tile.
  */
 export const Mark = (props: MarkProps) => {
   const picture = createPicture(() => props.image);
@@ -201,6 +201,7 @@ export const Mark = (props: MarkProps) => {
       class="k2-mk"
       data-k2-part="Mark"
       data-image={props.image ? (picture.state() ?? "") : undefined}
+      data-preview={props.image || props.kind ? "" : undefined}
       role="img"
       aria-label={props.label}
       aria-hidden={props.label ? undefined : "true"}

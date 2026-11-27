@@ -55,7 +55,29 @@ const box = (page: Page, selector: string) =>
       return `${Math.round(rect.width)}x${Math.round(rect.height)}`;
     });
 
-test("a mark takes its size from its place: 20 in the sidebar and a sentence, 32 leading rows of 44 px, 36 on a card", async () => {
+test("leading a row or a cell a mark is 24, and 32 where the list or table shows pictures of its things; the row is 44 either way", async () => {
+  await withPage(async (page) => {
+    const sizes = (selector: string) =>
+      page.locator(selector).evaluateAll((marks) =>
+        marks.map((mark) => {
+          const rect = mark.getBoundingClientRect();
+          const row = mark.closest(".k2-row, tr")!.getBoundingClientRect();
+          return `${Math.round(rect.width)}x${Math.round(rect.height)} in ${Math.round(row.height)}`;
+        }),
+      );
+    // who or what a thing is (a base, a table, a form): 24 in a row or cell of 44
+    // (a row of two lines keeps its 52)
+    expect(await sizes("[aria-label='Bases'] > .k2-row > .k2-row-lead > .k2-mk")).toEqual(["24x24 in 44", "24x24 in 52"]);
+    expect(await sizes("[aria-label='Tabellen'] td > .k2-cell-lead > .k2-mk")).toEqual(["24x24 in 44", "24x24 in 44"]);
+    // a list with thumbnails or types (files): 32, the table's mark beside them too, as a folder beside files
+    expect(await sizes("[aria-label='Dateien'] > .k2-row[data-lines='1'] > .k2-row-lead > .k2-mk")).toEqual([
+      "32x32 in 44",
+      "32x32 in 44",
+    ]);
+  });
+});
+
+test("a mark takes its size from its place: 20 in the sidebar and a sentence, 32 leading rows of files of 44 px, 36 on a card", async () => {
   await withPage(async (page) => {
     expect(await box(page, ".k2-ni .k2-mk")).toBe("20x20");
     // as the mockup's lists of files and folders: a row of one line that leads with a mark is 44 px, its mark 32
