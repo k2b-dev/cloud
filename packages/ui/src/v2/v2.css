@@ -5379,13 +5379,25 @@
   color: var(--k2-subtle);
   flex: none;
 }
+/* with count, order and display at its end the statements keep the room of one statement (240 px): in a narrower
+   column the end goes to a line of its own, at its end, instead of pressing the statements or lying over them */
 .k2-ui .k2-fbar[data-tail] {
   min-height: var(--k2-h-status);
   align-items: center;
 }
+@media (min-width: 768px) {
+  .k2-ui .k2-fbar[data-tail] {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .k2-ui .k2-fbar[data-tail] > .k2-fbar-flow {
+    flex: 1 1 240px;
+  }
+}
 .k2-ui .k2-fbar-tail {
   margin-left: auto;
   flex: none;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5398,6 +5410,9 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .k2-ui .k2-fbar-tail + .k2-fbar-end {
   margin-left: 0;

@@ -211,6 +211,44 @@ test("the head has two full-width rows above list and detail: path and deeds, th
   });
 });
 
+// a filter bar that ends in count, order and display in a column of 550 px or less while the window is wide (beside a
+// sidebar and a side column): the end goes to a line of its own instead of pressing the statements or lying over them
+for (const width of [550, 450, 400])
+  test(`on a desktop a filter bar of ${width} px keeps its count, order and display apart from the statements`, async () => {
+    await withPage("list", async (page) => {
+      await page.evaluate((root) => {
+        document.getElementById("root")!.style.width = `${root}px`;
+      }, width);
+      await settled(page);
+      const parts = await page.locator(".k2-fbar").evaluate((element) => {
+        const box = (node: Element) => {
+          const r = node.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        };
+        const tail = element.querySelector(".k2-fbar-tail")!;
+        return {
+          bar: box(element),
+          flow: box(element.querySelector(".k2-fbar-flow")!),
+          items: [...element.querySelectorAll(".k2-fbar-flow > *, .k2-fbar-flow .k2-btn")].map(box),
+          tail: [...tail.querySelectorAll(".k2-fbar-results, .k2-btn")].map(box),
+        };
+      });
+      const apart = (a: (typeof parts)["bar"], b: (typeof parts)["bar"]) =>
+        a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5;
+      for (const item of parts.items) {
+        // each statement and button stands inside the statements' room, and nothing of the end lies over it
+        expect(item.right).toBeLessThanOrEqual(parts.flow.right + 0.5);
+        for (const end of parts.tail) expect(apart(item, end)).toBe(true);
+      }
+      for (const end of parts.tail) {
+        expect(end.left).toBeGreaterThanOrEqual(parts.bar.left - 0.5);
+        expect(end.right).toBeLessThanOrEqual(parts.bar.right + 0.5);
+      }
+      // the statements keep the room of one statement (240 px) instead of what the end leaves them
+      expect(parts.flow.right - parts.flow.left).toBeGreaterThanOrEqual(240);
+    });
+  });
+
 test("a selection with six deeds shows three and 'Mehr' with the rest in their order, its count in 14 px 600, and nothing leaves its bar (Files v3)", async () => {
   for (const width of [1440, 1024, 390])
     await withPage(
@@ -414,27 +452,41 @@ test("the open file shows a large preview 4:3 from edge to edge, and the list le
   });
 });
 
-test("in rows of two lines a file keeps its thumbnail beside its box", async () => {
-  await withPage(
-    "list",
-    async (page) => {
-      const lead = await page
-        .locator(".k2-table-phone .k2-row", { hasText: "Ansicht Front Eiche.jpg" })
-        .locator(".k2-row-lead")
-        .evaluate((element) => {
-          const box = element.querySelector(".k2-mark")!.getBoundingClientRect();
-          const mark = element.querySelector(".k2-mk")!.getBoundingClientRect();
-          return {
-            side: mark.left > box.right,
-            mark: `${mark.width}x${mark.height}`,
-            middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1,
-          };
-        });
-      expect(lead).toEqual({ side: true, mark: "32x32", middle: true });
-    },
-    1024,
-  );
-});
+// rows of two lines in a narrow list pane (1024) and on the phone (390, where a row with a mark is 56 with a mark of 40)
+for (const [width, size] of [
+  [1024, "32x32"],
+  [390, "40x40"],
+] as const)
+  test(`in rows of two lines a file keeps its thumbnail beside its box at ${width} px`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        // on the phone the open file stands over the list: back to the list, as its way back does
+        if (width === 390) {
+          await page.evaluate(() => document.querySelector(".k2-pane[data-detail]")?.remove());
+          await settled(page);
+        }
+        const lead = await page
+          .locator(".k2-table-phone .k2-row", { hasText: "Ansicht Front Eiche.jpg" })
+          .evaluate((row) => {
+            const element = row.querySelector(":scope > .k2-row-lead")!;
+            const box = element.querySelector(".k2-mark")!.getBoundingClientRect();
+            const mark = element.querySelector(".k2-mk")!.getBoundingClientRect();
+            const text = row.querySelector(".k2-row-title")!.getBoundingClientRect();
+            const edge = row.getBoundingClientRect();
+            return {
+              side: mark.left > box.right,
+              mark: `${mark.width}x${mark.height}`,
+              middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1,
+              // box, mark and name stand in this order inside the row
+              order: box.left >= edge.left && text.left >= mark.right && text.right <= edge.right + 0.5,
+            };
+          });
+        expect(lead).toEqual({ side: true, mark: size, middle: true, order: true });
+      },
+      width,
+    );
+  });
 
 test("the sidebar shows what the storage uses, as a meter with its words", async () => {
   await withPage("list", async (page) => {
