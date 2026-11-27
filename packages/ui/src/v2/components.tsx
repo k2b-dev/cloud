@@ -1,12 +1,14 @@
 import {
   type ChildrenReturn,
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   Index,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -16,13 +18,14 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { watchFold } from "./bar-fold";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import { Menu, type MenuEntry, MenuTab } from "./menu";
-import { type NavTree, NavTreeView } from "./nav-tree";
+import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
+import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
+import type { NavTreeGroup } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
@@ -56,6 +59,11 @@ export type NavItem = NavEntryBase &
     | {
         /** A Tabler icon before the words. */
         icon: string;
+        /**
+         * The data colour of the place, such as a base, a storage or a mailbox: the symbol then stands on a tint of it,
+         * as the place's mark (`Mark`), so the same thing looks the same in the sidebar, a list and a tile.
+         */
+        color?: string;
         /** The page the entry leads to. */
         href?: string;
         /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
@@ -73,6 +81,7 @@ export type NavItem = NavEntryBase &
         /** The entries it folds away; they stand one level further in. */
         items: readonly NavItem[];
         icon?: undefined;
+        color?: undefined;
         href?: undefined;
         onNavigate?: undefined;
         onClick?: undefined;
@@ -95,8 +104,11 @@ export type NavGroup = {
       tree?: undefined;
     }
   | {
-      /** Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`. */
-      tree: NavTree;
+      /**
+       * Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`: made with
+       * `navTree`, which brings the tree's code along, so a `Nav` without a tree loads none of it.
+       */
+      tree: NavTreeGroup;
       items?: undefined;
     }
 );
@@ -213,7 +225,9 @@ const NavLink = (props: { item: NavItem; level: number }) => (
     aria-current={props.item.current ? "page" : undefined}
     data-level={props.level > 1 ? String(props.level) : undefined}
   >
-    <Icon name={props.item.icon ?? "point"} />
+    <Show when={props.item.color} fallback={<Icon name={props.item.icon ?? "point"} />}>
+      {(color) => <Mark icon={props.item.icon ?? "point"} color={color()} />}
+    </Show>
     <NavEnd item={props.item} />
   </Dynamic>
 );
@@ -302,7 +316,7 @@ export const Nav = (props: NavProps) => {
               </div>
             </Show>
             <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
-              {(tree) => <NavTreeView {...tree()} />}
+              {(tree) => <Dynamic component={tree().view} {...tree()} />}
             </Show>
           </>
         )}
@@ -395,6 +409,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
  * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
+ * A tab that holds the focus and hides hands it to the menu tab; a "More" that goes hands it to the last tab.
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
  */
@@ -407,6 +422,18 @@ export const Tabs = (props: TabsProps) => {
   // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
   let row: HTMLDivElement | undefined;
+  let nav: HTMLElement | undefined;
+  // A tab that holds the focus and hides for lack of room hands it to the menu tab ("Mehr" or the views' own), so it
+  // never falls to the page; a "Mehr" that holds it and goes, as every tab has room again, hands it to the last tab.
+  const place = (next: number) => {
+    const held = document.activeElement;
+    const fromMore = held !== null && nav?.querySelector(":scope > .k2-tab[data-k2-more]")?.contains(held) === true;
+    setFit(next);
+    if (!row || !nav || !held) return;
+    if (row.contains(held) && held.closest(".k2-tab")?.hasAttribute("data-overflow"))
+      [...nav.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]")].at(-1)?.focus();
+    else if (fromMore && !held.isConnected) [...row.querySelectorAll<HTMLElement>(":scope > .k2-tab:not([data-overflow])")].at(-1)?.focus();
+  };
   onMount(() => {
     if (!row) return;
     const measure = () => {
@@ -421,11 +448,11 @@ export const Tabs = (props: TabsProps) => {
         const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
         const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
         if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
-          setFit(Number.POSITIVE_INFINITY);
+          place(Number.POSITIVE_INFINITY);
           return;
         }
       }
-      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
+      place(index < 0 ? Number.POSITIVE_INFINITY : index);
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
     // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
@@ -459,7 +486,7 @@ export const Tabs = (props: TabsProps) => {
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
-    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
+    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
       <div class="k2-tabs" ref={row}>
         <Index each={plain()}>
           {(tab, index) => (
@@ -504,35 +531,164 @@ export const Tabs = (props: TabsProps) => {
 
 /**
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
- * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
+ * Without room the places before the page shorten first, each down to its own width or 12 characters, whichever is
+ * less; the page itself shortens last, with "…". When the places do not fit even so, they go into a "…" that opens them
+ * as a menu: first the ones between the first place and the parent (from four places on), then all of them. The
+ * server sends every place, shortened to its least, so a path with room never moves when the page comes alive; only a
+ * path that has no room even so folds once, in the browser. On the phone the path gives way to the phone bar of the
+ * shell, which names the page; its head stays only for a search.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
-export const Path = (props: PathProps) => (
-  <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
-    <For each={props.items}>
-      {(item, index) => (
-        <>
-          <Show when={index() > 0}>
-            <Icon name="chevron-right" />
-          </Show>
-          <Show
-            when={index() === props.items.length - 1}
-            fallback={
-              <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
-                <a class="k2-path-step" href={item.href}>
-                  {item.label}
-                </a>
+/** How much of a path stands in "…": nothing, the places between the first one and the parent, or every place. */
+type PathFold = 0 | 1 | 2;
+
+export const Path = (props: PathProps) => {
+  const t = useUiMessages();
+  // the server sends every place, shortened by the stylesheet; the browser folds only where even their least has no room
+  const [level, setLevel] = createSignal<PathFold>(0);
+  const last = () => props.items.length - 1;
+  const folds = (index: number, at: PathFold = level()) => index < last() && (at === 2 || (at === 1 && index > 0 && index < last() - 1));
+  let nav: HTMLElement | undefined;
+  onMount(() => {
+    if (!nav) return;
+    // a length as it lays out in the type of the element it is for
+    const width = (length: string, within: HTMLElement) => {
+      const probe = document.createElement("span");
+      probe.style.cssText = `position:absolute;visibility:hidden;width:${length}`;
+      within.append(probe);
+      const found = probe.offsetWidth;
+      probe.remove();
+      return found;
+    };
+    const measure = () => {
+      if (!nav) return;
+      const places = [...nav.querySelectorAll<HTMLElement>(":scope > .k2-path-step")];
+      const current = nav.querySelector<HTMLElement>(":scope > b");
+      if (places.length === 0 || !current) return setLevel(0);
+      // each place at its least (its own width or 12 characters), the page at its own or the start's least
+      // (`--k2-start-least`, the same least the bar's fold gives the start)
+      const cap = width("12ch", places[0]!);
+      const least = places.map((place) => Math.min(place.scrollWidth, cap));
+      const page = Math.min(current.scrollWidth, width("var(--k2-start-least)", current));
+      const more = nav.querySelector<HTMLElement>(":scope > .k2-path-fold")?.scrollWidth ?? 0;
+      const chevron = current.previousElementSibling instanceof HTMLElement ? current.previousElementSibling.offsetWidth : 0;
+      const step = chevron + 2 * (Number.parseFloat(getComputedStyle(nav).columnGap) || 0);
+      const room = nav.clientWidth + 0.5;
+      const sum = (widths: number[]) => widths.reduce((total, each) => total + each, 0);
+      const next: PathFold =
+        sum(least) + page + places.length * step <= room
+          ? 0
+          : places.length >= 3 && least[0]! + least.at(-1)! + more + page + 3 * step <= room
+            ? 1
+            : 2;
+      // a place that has the focus and folds hands it to "…", which holds it now
+      const focused = document.activeElement;
+      const at = places.findIndex((place) => place === focused);
+      const handsOver = at >= 0 && folds(at, next) && !folds(at);
+      setLevel(next);
+      if (handsOver) nav.querySelector<HTMLElement>(":scope > .k2-path-fold .k2-btn")?.focus();
+    };
+    let frame = 0;
+    const later = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    measure();
+    // the room, and the words of every place (a late font, new labels) change what fits
+    const sizes = new ResizeObserver(later);
+    const watch = () => {
+      if (!nav) return;
+      sizes.disconnect();
+      sizes.observe(nav);
+      for (const part of nav.querySelectorAll(":scope > .k2-path-step, :scope > b")) sizes.observe(part);
+    };
+    watch();
+    document.fonts?.addEventListener("loadingdone", later);
+    createEffect(
+      on(
+        () => props.items.map((item) => item.label).join("\u0000"),
+        () => {
+          watch();
+          later();
+        },
+        { defer: true },
+      ),
+    );
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+      document.fonts?.removeEventListener("loadingdone", later);
+    });
+  });
+  // The least of the whole path, from its words alone, so the server's page and the live one keep the same: each place
+  // at most 12 characters, the page at most 16 (`--k2-start-least`), a chevron and two gaps between each two. Beside a
+  // title in a bar's start, the title gives way until the path has this.
+  const least = () => {
+    const chars = props.items.reduce(
+      (sum, item, index) => sum + Math.min(item.label.length, index === props.items.length - 1 ? 16 : 12),
+      0,
+    );
+    return `calc(${chars}ch + ${Math.max(0, props.items.length - 1) * 30}px)`;
+  };
+  const fold = (): MenuEntry[] =>
+    props.items
+      .filter((_, index) => folds(index))
+      .map((item) => (item.href !== undefined ? { label: item.label, href: item.href } : { label: item.label, disabled: true }));
+  return (
+    <nav
+      ref={nav}
+      class="k2-path"
+      data-k2-part="Path"
+      data-fold={level()}
+      aria-label={props.label}
+      style={custom({ "--k2-path-least": least() })}
+    >
+      <For each={props.items}>
+        {(item, index) => {
+          const away = () => folds(index());
+          return (
+            <>
+              <Show when={index() > 0}>
+                <Icon name="chevron-right" />
               </Show>
-            }
-          >
-            <b aria-current="page">{item.label}</b>
-          </Show>
-        </>
-      )}
-    </For>
-  </nav>
-);
+              <Show
+                when={index() === last()}
+                fallback={
+                  <Show
+                    when={item.href !== undefined}
+                    fallback={
+                      <span class="k2-path-step" data-folded={away() ? "" : undefined}>
+                        {item.label}
+                      </span>
+                    }
+                  >
+                    <a class="k2-path-step" href={item.href} data-folded={away() ? "" : undefined} tabIndex={away() ? -1 : undefined}>
+                      {item.label}
+                    </a>
+                  </Show>
+                }
+              >
+                <b aria-current="page">{item.label}</b>
+              </Show>
+              {/* "…" stands after the first place, where it is laid out also while nothing folds, so the path can measure
+                  it; it shows only while it holds places */}
+              <Show when={index() === 0 && props.items.length > 1}>
+                <Icon name="chevron-right" />
+                <span class="k2-path-fold">
+                  <Menu variant="text" icon="dots" label={t().morePlaces} items={fold()} />
+                </span>
+              </Show>
+            </>
+          );
+        }}
+      </For>
+    </nav>
+  );
+};
 
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -588,7 +744,8 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out.
+   * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end,
+   * right after the last one in sight (the bar's fold), and the way out stays at the end of the bar.
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
@@ -605,8 +762,21 @@ export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
+  // While entries are selected, the bar's fold watches the row: the actions without room fold into "…" from the end,
+  // and the way out never. None on the server's page.
+  let bar: HTMLDivElement | undefined;
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const selecting = createMemo(() => props.selection !== undefined);
+  createEffect(() => {
+    if (!bar || !selecting()) return;
+    const fold = watchFold(bar, (entries) => setFolded(entries));
+    onCleanup(() => {
+      fold.stop();
+      setFolded([]);
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined} ref={bar}>
       <Show
         when={props.selection}
         fallback={
@@ -655,17 +825,29 @@ export const StatusRow = (props: StatusRowProps) => {
         }
       >
         {(selection) => (
-          <div class="k2-bar-start">
-            <Show when={props.select}>
-              {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
-            </Show>
-            <span class="k2-status-lead" aria-live="polite">
-              {selection().count}
-            </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
-            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
-          </div>
+          <>
+            <div class="k2-bar-start">
+              <Show when={props.select}>
+                {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
+              </Show>
+              <span class="k2-status-lead" aria-live="polite">
+                {selection().count}
+              </span>
+            </div>
+            {/* the actions fold from the end into "…" where they have no room (the bar's fold), the way out never; in a
+                narrow column they keep only their symbols first, the way out its ×; the words stay their names */}
+            <div class="k2-bar-end">
+              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+              <Show when={folded().length > 0}>
+                <span class="k2-bar-fold">
+                  <Menu items={folded()} />
+                </span>
+              </Show>
+              <span class="k2-status-clear" data-closes="">
+                <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
+              </span>
+            </div>
+          </>
         )}
       </Show>
     </div>
@@ -756,16 +938,45 @@ export type DigestEntry = {
   href?: string;
 };
 
+/** One thing a person (or a form, a workflow) did: who, a sentence, where and when. */
+export type ActivityEntry = {
+  /** Who did it: a person, or a form or workflow shown as one (`{ name: "Webformular" }`). */
+  person: Person;
+  /**
+   * What they did, as one sentence: `<Text weight="strong">` for names, and the thing itself as
+   * `<Mark icon color />` followed by its name, so it looks the same as in its list.
+   */
+  text: JSX.Element;
+  /** When, such as "09:42" or "gestern, 16:40". */
+  time: string;
+  /** Where, quiet before the time, such as the base "Werkstatt". */
+  place?: string;
+  /** The page of the thing that changed: the sentence becomes the link … */
+  href?: string;
+  /** … which opens in place on a plain click, while it still opens in a new tab (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+};
+
 export type DigestProps =
   | {
       /** The dated entries, newest first. */
       items: readonly DigestEntry[];
+      activity?: never;
       children?: never;
       /** The name of the list, for assistive technology. */
       label?: string;
     }
   | {
       items?: never;
+      /** What people did, newest first: an avatar, a sentence that may wrap, then place and time. */
+      activity: readonly ActivityEntry[];
+      children?: never;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    }
+  | {
+      items?: never;
+      activity?: never;
       /** Plain `Row`s whose second line is a sentence, instead of dated entries. */
       children: JSX.Element;
       /** The name of the list, for assistive technology. */
@@ -779,9 +990,36 @@ export type DigestProps =
 export const Digest = (props: DigestProps) => {
   // the entries hold JSX (their sentence): made once, here
   const items = createMemo(() => props.items);
+  const activity = createMemo(() => props.activity);
   return (
     <div class="k2-list k2-digest" data-k2-part="Digest" role="list" aria-label={props.label}>
-      <Show when={items()} fallback={props.children}>
+      <Show when={activity()}>
+        {(list) => (
+          <For each={list()}>
+            {(entry) => (
+              <div
+                class="k2-row"
+                data-k2-part="Digest.Entry"
+                data-activity=""
+                data-lines="2"
+                data-open={entry.href !== undefined ? "" : undefined}
+                role="listitem"
+              >
+                <span class="k2-row-lead">
+                  <Avatar {...entry.person} />
+                </span>
+                <span class="k2-row-l1">
+                  <RowOpen href={entry.href} onNavigate={entry.onNavigate}>
+                    {entry.text}
+                  </RowOpen>
+                </span>
+                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
+              </div>
+            )}
+          </For>
+        )}
+      </Show>
+      <Show when={items()} fallback={activity() ? undefined : props.children}>
         {(list) => (
           <For each={list()}>
             {(entry) => (
@@ -880,7 +1118,10 @@ export type RecordHeadProps = {
   name: string;
   /** The picture or initials before the name. */
   avatar?: Person;
-  /** Kinds of the record, such as "Private". */
+  /**
+   * Kinds of the record, such as "Private". Kinds sum up: whatever a kind says also stands in the record's `Facts`,
+   * because on the phone kinds give way to the name.
+   */
   kinds?: readonly string[];
   /**
    * Identifiers and contact at a glance. They give way when the head has no room (cut, then out of sight; always on

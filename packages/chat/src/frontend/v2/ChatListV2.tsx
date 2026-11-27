@@ -6,6 +6,7 @@ import {
   Icon,
   List,
   Loading,
+  type MarkProps,
   Menu,
   type MenuEntry,
   Notice,
@@ -61,10 +62,10 @@ const unreadMark = (row: Conversation): number | true | undefined =>
   row.unread > 0 ? row.unread : row.read?.unreadFromSeq != null ? true : undefined;
 
 /** A chat's sign: a person's or a group's initials, a channel's or a place's symbol in Chat's colour. */
-const sign = (row: Conversation): { icon?: string; color?: string; avatar?: { name: string } } => {
-  if (row.kind === "system") return { icon: iconName(row.icon ?? "ti ti-messages"), color: CHAT_COLOR };
-  if (row.icon) return { icon: iconName(row.icon), color: CHAT_COLOR };
-  if (row.channel) return { icon: "speakerphone", color: CHAT_COLOR };
+const sign = (row: Conversation): { mark?: MarkProps; avatar?: { name: string } } => {
+  if (row.kind === "system") return { mark: { icon: iconName(row.icon ?? "ti ti-messages"), color: CHAT_COLOR } };
+  if (row.icon) return { mark: { icon: iconName(row.icon), color: CHAT_COLOR } };
+  if (row.channel) return { mark: { icon: "speakerphone", color: CHAT_COLOR } };
   return { avatar: { name: row.title } };
 };
 
@@ -93,8 +94,7 @@ export function ChatRowV2(props: { row: Conversation; context: ChatRowsContext }
   return (
     <Menu.Context items={menu()}>
       <Row
-        icon={sign(row()).icon}
-        color={sign(row()).color}
+        mark={sign(row()).mark}
         avatar={sign(row()).avatar}
         lines={[row().title, line()]}
         meta={
@@ -251,8 +251,7 @@ export function ChatSearchV2(props: {
                   <Match when={hit.kind === "system" && hit}>
                     {(system) => (
                       <Row
-                        icon={iconName(system().icon)}
-                        color={CHAT_COLOR}
+                        mark={{ icon: iconName(system().icon), color: CHAT_COLOR }}
                         lines={[system().name, t().systemMembers]}
                         onOpen={() => props.onSystem(system().ref)}
                       />
@@ -261,8 +260,7 @@ export function ChatSearchV2(props: {
                   <Match when={hit.kind === "thread" && hit}>
                     {(thread) => (
                       <Row
-                        icon={threadIcon(thread())}
-                        color={CHAT_COLOR}
+                        mark={{ icon: threadIcon(thread()), color: CHAT_COLOR }}
                         lines={[thread().thread.name, t().searchThreadIn({ title: thread().conversation.title })]}
                         current={props.active.chatId === thread().conversation.id && props.active.view === thread().thread.id}
                         href={threadHref(thread().conversation.id, thread().thread.id, null, props.basePath)}

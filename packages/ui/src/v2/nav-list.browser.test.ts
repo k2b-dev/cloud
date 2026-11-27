@@ -13,8 +13,10 @@ import { measureV2Layout } from "./testing";
 // "page"`); an open detail is the page in its place.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
-const testCss =
-  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
+// Cloud's shared stylesheet gives every scroller a fixed 0.5rem bar in WebKit and Chromium (index.css, "scrollbars:
+// central rule"); the page carries it as Cloud does, so a list that would show its own bar takes room from its rows.
+const cloudScrollbar = "#root *::-webkit-scrollbar { width: 0.5rem; height: 0.5rem; }";
+const testCss = `html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; } ${cloudScrollbar}`;
 
 let browser: Browser;
 let bundle: string;

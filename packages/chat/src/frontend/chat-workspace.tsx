@@ -3563,7 +3563,7 @@ export function ChatWorkspaceView(
     try {
       await store.follow(chatId, threadId, on);
     } catch (failure) {
-      toast.error(failure instanceof ChatRequestError ? failure.message : t().followFailed);
+      toast.error(failure instanceof ChatRequestError ? failure.message : t().followFailed, { title: t().followFailedTitle });
     } finally {
       setFollowBusy(false);
     }

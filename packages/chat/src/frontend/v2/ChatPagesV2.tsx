@@ -110,8 +110,7 @@ export function ThreadsPageV2(props: {
   };
   const row = (view: ThreadView, name: string, unread: number, last: Thread["lastMessage"], fallback: string) => (
     <Row
-      icon={iconName(viewIcon(view, props.threads))}
-      color={CHAT_COLOR}
+      mark={{ icon: iconName(viewIcon(view, props.threads)), color: CHAT_COLOR }}
       lines={[name, preview(last, fallback)]}
       meta={unread > 0 ? unread.toLocaleString(locale()) : undefined}
       unread={unread > 0}
@@ -260,7 +259,7 @@ export function SystemThreadDirectoryV2(props: {
   /** Who spoke last, by their picture; the item's own sign while nobody has. */
   const face = (thread: Thread) => {
     const author = thread.lastMessage?.author;
-    if (!author) return { icon: iconName(threadIcon(thread)), color: CHAT_COLOR };
+    if (!author) return { mark: { icon: iconName(threadIcon(thread)), color: CHAT_COLOR } };
     return {
       avatar: {
         name: author.name,
@@ -355,8 +354,7 @@ export function DiscoverChannelsV2(props: DiscoverChannelsProps): JSX.Element {
             <For each={catalog.rows}>
               {(row) => (
                 <Row
-                  icon={iconName(row.icon ?? "ti ti-speakerphone")}
-                  color={CHAT_COLOR}
+                  mark={{ icon: iconName(row.icon ?? "ti ti-speakerphone"), color: CHAT_COLOR }}
                   lines={[row.title, channelLine(row, t())]}
                   action={
                     row.member

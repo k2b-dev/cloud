@@ -21,7 +21,7 @@ Proxy Auth lets admins protect external services through Traefik ForwardAuth by 
 
 :::reference
 - **Create a client:** Name the client, add a description if useful, and select at least one allowed group.
-- **Copy the verify URL:** Copy the URL after creation or from the client action menu, then place it in the Traefik ForwardAuth middleware.
+- **Copy the verify URL:** Copy the URL after creation, or open the client in the list and copy it there, then place it in the Traefik ForwardAuth middleware.
 - **Review group coverage:** The No groups stat highlights clients that are blocked until a group is configured.
 - **Update access:** Edit a client to change the description or allowed groups. Delete removes the client and invalidates its verify URL.
 :::
