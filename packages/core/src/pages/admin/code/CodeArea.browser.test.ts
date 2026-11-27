@@ -401,9 +401,9 @@ test("deleting an unused database asks first, cancelling keeps it, and a confirm
 });
 
 test("the huge Cloud keeps its pages bounded: one page of rows with Load more, ready at once", async () => {
-  const started = Date.now();
+  const started = performance.now();
   await goto("sec=code&state=huge");
-  const ready = Date.now() - started;
+  const ready = performance.now() - started;
   expect(await main().getByRole("row").count()).toBeLessThanOrEqual(21);
   await main().getByRole("link", { name: "Weitere laden" }).waitFor();
   await main().getByText("25.000 Automationen von 640 Besitzern").waitFor();
