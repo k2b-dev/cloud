@@ -869,7 +869,7 @@ const changedPlaces = (page: Page) =>
         // what it was can be read whole (a long value may end in "…"); on a very narrow line the word "geändert" gives
         // way to it
         whole: (() => {
-          const shown = setting.querySelector<HTMLElement>(".k2-field-was > .k2-chip")!;
+          const shown = setting.querySelector<HTMLElement>(".k2-field-was .k2-chip-text")!;
           return shown.scrollWidth <= shown.clientWidth + 1;
         })(),
         word: setting.querySelector(".k2-field-was-word")!.getBoundingClientRect().width > 1,
@@ -924,7 +924,7 @@ for (const pane of [360, 375])
               each.querySelector(".k2-field-label")?.textContent?.includes(name),
             )!;
           const read = (name: string) => {
-            const chip = setting(name).querySelector<HTMLElement>(".k2-field-was > .k2-chip")!;
+            const chip = setting(name).querySelector<HTMLElement>(".k2-field-was .k2-chip-text")!;
             const deed = setting(name).querySelector(".k2-field-action button")!.getBoundingClientRect();
             return {
               whole: chip.scrollWidth <= chip.clientWidth + 1,
@@ -1205,6 +1205,10 @@ test("key numbers never stand alone as a tall cell: four in a row or two by two,
         expect(layout.problems).toEqual([]);
       },
       width,
+      false,
+      // in IBM Plex: whether a value stands whole is a question of the font people see (a chip is never wider than its
+      // line and ends in "…", so the browser's own, wider font would cut "123.456,78 €")
+      true,
     );
 });
 for (const which of ["canvas", "split-canvas"] as const)

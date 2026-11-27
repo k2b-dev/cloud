@@ -3181,15 +3181,11 @@
   min-width: 0;
   max-width: 100%;
 }
-/* a long value before the change ends in "…" in its place, never over a neighbour */
+/* a long value before the change ends in "…" in its place (the chip's own words do), never over a neighbour */
 .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip {
   position: relative;
-  display: block;
   flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 24px;
 }
 .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action {
   grid-area: action;
@@ -3286,7 +3282,7 @@
    beside the edges' 40) both do not fit on the kept line: the word "geändert" gives way, read still, and the chip says
    what it was ("vorher 12 Std.") in the colour of a change. */
 @container k2-pane (max-width: 383.98px) {
-  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip > .k2-field-was-word {
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip .k2-field-was-word {
     position: absolute;
     width: 1px;
     height: 1px;
