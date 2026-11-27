@@ -220,6 +220,17 @@ test("Mail's reader: its own '…' takes the folded actions; a menu with a symbo
   });
 });
 
+test("a menu with a symbol and a name of its own at the end ('Filter') takes no folded actions", async () => {
+  await withPage(390, true, async (page) => {
+    await page.locator(head("tabs")).getByRole("button", { name: "Filter" }).click();
+    expect((await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents()).map((entry) => entry.trim())).toEqual([
+      "Nur ungelesene",
+    ]);
+    // what folds goes into the bar's own "…"
+    expect(await page.locator(`${head("tabs")} .k2-bar-fold`).count()).toBe(1);
+  });
+});
+
 test("a button that grows while the bar keeps its size (a late font, wider words) folds again: the start stays whole", async () => {
   await withPage(390, true, async (page) => {
     const before = (await edges(page, head("menu"))).start;

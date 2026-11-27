@@ -11,7 +11,7 @@ import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 // - "menu": a title, four actions and the head's own menu "…" at the end: the folded actions are its first section.
 // - "reader": Mail's reader in small: a long subject, the primary "Erledigt", four actions, a menu with words
 //   ("Später") and the head's own "…".
-// - "tabs": four tabs, two actions and the primary.
+// - "tabs": four tabs, two actions, the primary and a menu with a symbol of its own ("Filter") at the very end.
 
 declare global {
   interface Window {
@@ -187,11 +187,12 @@ export function Fixture() {
               }
               end={
                 <>
-                  <Button keep icon="filter" label="Filtern" onClick={deed("Filtern")} />
                   <Button keep icon="refresh" label="Aktualisieren" onClick={deed("Aktualisieren")} />
+                  <Button keep icon="download" label="Exportieren" onClick={deed("Exportieren")} />
                   <Button keep variant="primary" icon="plus" onClick={deed("Neu")}>
                     Neu
                   </Button>
+                  <Menu icon="filter" label="Filter" items={[{ label: "Nur ungelesene", onClick: deed("Nur ungelesene") }]} />
                 </>
               }
             />
