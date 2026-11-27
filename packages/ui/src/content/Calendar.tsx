@@ -1,7 +1,20 @@
 import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX, ParentProps } from "solid-js";
-import { createComputed, createEffect, createMemo, createSignal, For, mergeProps, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  createComputed,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  mergeProps,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import { Button } from "../actions/Button";
 import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSection } from "../actions/Dropdown";
 import { GestureMenu } from "../actions/GestureMenu";
@@ -691,6 +704,134 @@ const CalendarViewLinks = <V extends string>(props: {
 };
 
 /**
+ * The views on a phone: a menu in the head's one row that names the view on screen, so the views never take a row of
+ * their own and are no segmented control (that chooses a value, not what the page shows). The button opens the list
+ * through `popovertarget` and the views are links when the host names them by address, so the server's page switches
+ * views before any script runs.
+ */
+const CalendarViewMenu = <V extends string>(props: {
+  owner: CalendarProps<V>;
+  view: CalendarView | V;
+  options: Array<{ value: CalendarView | V; label: string }>;
+  /** The day selected in the month view: the other views open at it. */
+  focusDay?: Date | null;
+  onView: (view: CalendarView | V) => void;
+}): JSX.Element => {
+  const calendarMessages = useCalendarMessages();
+  const id = createUniqueId();
+  let trigger: HTMLButtonElement | undefined;
+  let list: HTMLDivElement | undefined;
+  const current = () => (props.view === "mobile-month" ? "month" : props.view);
+  const currentLabel = () => props.options.find((option) => option.value === current())?.label ?? "";
+  /** As `CalendarViewLinks`: links when the host names the views by their address. */
+  const hrefOf = (value: CalendarView | V) => {
+    if (props.owner.onViewChange || !props.owner.getViewHref) return undefined;
+    const day = props.focusDay;
+    const atDay = day && value !== current() ? props.owner.getDateHref?.(day, value) : undefined;
+    return atDay ?? props.owner.getViewHref(value);
+  };
+  const close = () => {
+    if (list?.matches(":popover-open")) list.hidePopover();
+  };
+  // a view chosen elsewhere, such as by a key, closes the list
+  createEffect(on(current, close, { defer: true }));
+  return (
+    <div class="k2b-calendar-view-menu">
+      <button
+        ref={trigger}
+        type="button"
+        class="k2b-button k2b-calendar-view-menu__trigger"
+        data-size="sm"
+        data-variant="input"
+        popovertarget={id}
+        aria-label={`${currentLabel()} · ${calendarMessages().calendarView}`}
+      >
+        <span>{currentLabel()}</span>
+        <i class="ti ti-chevron-down" aria-hidden="true" />
+      </button>
+      <div
+        ref={(element) => {
+          list = element;
+          // Below the button, at its end (its left in a right-to-left page), 8 px inside the screen; without a script
+          // the browser shows it in the middle.
+          element.addEventListener("beforetoggle", (event) => {
+            if (event.newState !== "open" || !trigger) return;
+            const rect = trigger.getBoundingClientRect();
+            const rtl = getComputedStyle(trigger).direction === "rtl";
+            element.style.top = `${rect.bottom + 4}px`;
+            element.style.bottom = "auto";
+            element.style.margin = "0";
+            element.style.left = rtl ? `${Math.max(8, rect.left)}px` : "auto";
+            element.style.right = rtl ? "auto" : `${Math.max(8, window.innerWidth - rect.right)}px`;
+          });
+          // once it shows, it has a width: a list wider than the room at its end moves back onto the screen
+          element.addEventListener("toggle", (event) => {
+            if (event.newState !== "open") return;
+            const box = element.getBoundingClientRect();
+            if (box.left < 8) element.style.left = "8px";
+            if (box.right > window.innerWidth - 8) element.style.left = `${Math.max(8, window.innerWidth - 8 - box.width)}px`;
+            if (box.left < 8 || box.right > window.innerWidth - 8) element.style.right = "auto";
+          });
+          // a list anchored to a button that moved would stand beside nothing
+          const resize = () => close();
+          window.addEventListener("resize", resize);
+          onCleanup(() => window.removeEventListener("resize", resize));
+        }}
+        id={id}
+        popover="auto"
+        class="k2b-calendar-view-menu__list"
+        role="group"
+        aria-label={calendarMessages().calendarView}
+      >
+        <For each={props.options}>
+          {(option) => {
+            const active = () => current() === option.value;
+            const href = () => hrefOf(option.value);
+            return (
+              <Show
+                when={href()}
+                fallback={
+                  <button
+                    type="button"
+                    class="k2b-calendar-view-menu__item"
+                    aria-current={active() ? "true" : undefined}
+                    onClick={() => {
+                      close();
+                      props.onView(option.value);
+                    }}
+                  >
+                    {option.label}
+                    <Show when={active()}>
+                      <i class="ti ti-check" aria-hidden="true" />
+                    </Show>
+                  </button>
+                }
+              >
+                {(target) => (
+                  <CalendarNavigationLink
+                    owner={props.owner}
+                    href={target()}
+                    intercept={() => {
+                      close();
+                      return false;
+                    }}
+                    anchorProps={{ class: "k2b-calendar-view-menu__item", "aria-current": active() ? "page" : undefined }}
+                  >
+                    {option.label}
+                    <Show when={active()}>
+                      <i class="ti ti-check" aria-hidden="true" />
+                    </Show>
+                  </CalendarNavigationLink>
+                )}
+              </Show>
+            );
+          }}
+        </For>
+      </div>
+    </div>
+  );
+};
+/**
  * The same day some months later, or the last day of that month when it is shorter: a step from January 31 lands on
  * February 28, never in March. stdlib's `addMonths` runs over into the next month.
  */
@@ -735,7 +876,6 @@ type CalendarHeaderNav = {
   openShortcuts: () => void;
 };
 
-const dayTitleOptions: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short", year: "numeric" };
 const weekTitleOptions: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
 
 /** Where today lies from the shown day or week before its view measured: the arrow of the Today button, or nothing. */
@@ -771,13 +911,6 @@ const CalendarHeader = <V extends string>(props: {
   };
   const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig(), props.owner.customViews);
   const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig(), props.owner.customViews);
-  /** The day view's title, such as "Fri, Oct 9, 2026" or "Fr, 9. Okt 2026". */
-  const formatDayTitle = (date: Date) =>
-    compactGermanDate(
-      new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...dayTitleOptions, timeZone: dateConfig().timeZone }).format(date),
-      dateConfig().locale,
-      true,
-    );
   const formatRange = (from: Date, to: Date) =>
     compactGermanDate(
       new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...weekTitleOptions, timeZone: dateConfig().timeZone }).formatRange(from, to),
@@ -787,7 +920,8 @@ const CalendarHeader = <V extends string>(props: {
   const timeMode = () => Boolean(props.owner.dayHours) && (props.view === "day" || props.view === "week");
   const title = () => {
     const shown = timeView()?.visibleKeys();
-    if (timeMode() && props.view === "day") return formatDayTitle(shown ? parseKey(shown.first) : props.date);
+    // the day view names its month: the day itself stands once, in the head of the day on screen
+    if (timeMode() && props.view === "day") return formatMonth(shown ? parseKey(shown.first) : props.date, dateConfig());
     if (timeMode()) {
       const start = shown ? parseKey(shown.first) : calendar.startOfWeek(props.date, dateConfig());
       return formatRange(start, shown ? parseKey(shown.last) : calendar.addDays(start, 6, dateConfig()));
@@ -814,7 +948,7 @@ const CalendarHeader = <V extends string>(props: {
     const context = dateConfig();
     if (props.view === "year") return [];
     const { year } = zonedYearMonth(props.date, context);
-    if (props.view === "month" || props.view === "mobile-month")
+    if (props.view === "month" || props.view === "mobile-month" || (timeMode() && props.view === "day"))
       return Array.from({ length: 12 }, (_, month) => formatMonth(zonedMonthDate(year, month, context), context));
     if (props.view === "week") {
       const first = calendar.startOfWeek(calendar.startOfMonth(props.date, context), context);
@@ -837,15 +971,13 @@ const CalendarHeader = <V extends string>(props: {
     return Array.from({ length: 12 }, (_, month) => month).flatMap((month) => {
       const first = zonedMonthDate(year, month, context);
       return Array.from({ length: 7 }, (_, offset) =>
-        timeMode()
-          ? formatDayTitle(calendar.addDays(first, 21 + offset, context))
-          : calendar.addDays(first, 21 + offset, context).toLocaleDateString(context.locale ?? "en", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-              timeZone: context.timeZone,
-            }),
+        calendar.addDays(first, 21 + offset, context).toLocaleDateString(context.locale ?? "en", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+          timeZone: context.timeZone,
+        }),
       );
     });
   });
@@ -1032,6 +1164,7 @@ const CalendarHeader = <V extends string>(props: {
           >
             <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
           </Show>
+          <CalendarViewMenu owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} onView={goView} />
         </Show>
         {props.owner.toolbarActions}
         <Show when={props.nav.commands().length > 0}>

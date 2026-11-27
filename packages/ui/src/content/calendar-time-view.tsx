@@ -7,6 +7,7 @@ import {
   addDayKeys,
   buildDays,
   type CalendarDayHours,
+  capBands,
   clockAt,
   DAY_MINUTES,
   type DayEntry,
@@ -14,12 +15,13 @@ import {
   type DayGeometry,
   type DayLane,
   type DayModel,
+  type DayMore,
   type DaySpan,
   dayKeyOf,
-  dayLanes,
   dayMinuteAt,
   dayTopTerms,
   dayYTerms,
+  drawnMinute,
   freeGaps,
   GAP_LABEL_MINUTES,
   GAP_LONG_MINUTES,
@@ -115,7 +117,10 @@ const COLOR_TOKENS: Record<string, string> = {
   zinc: "#a1a1aa",
 };
 export const eventAccent = (event: Pick<CalendarEvent, "color" | "colorHex">): string =>
-  cssColor(event.colorHex) ?? COLOR_TOKENS[event.color ?? "blue"]!;
+  event.colorHex && HEX_COLOR.test(event.colorHex) ? event.colorHex : COLOR_TOKENS[event.color ?? "blue"]!;
+
+/** A colour as `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`; anything else would leave a band without fill and edge. */
+const HEX_COLOR = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i;
 
 /** Minimum minutes an overlap counts for a band, about the height of its title. */
 const LANE_MINUTES = 20;
@@ -844,8 +849,11 @@ export const TimeBand = (props: {
   compact?: boolean;
   /** Day view: a tall band shows its place. */
   showLocation?: boolean;
-  /** The height of an hour on a wide screen, for the band's size class and title lines. */
+  /** The height of an hour on a wide screen and on a phone, for the band's size class and title lines. */
   hourPx: number;
+  phoneHourPx: number;
+  /** A phone's week lays later bands over earlier ones: the title stays above the first one laid over it. */
+  overlay?: boolean;
   tabIndex?: number;
   stop?: CalendarStop;
   scroller?: () => HTMLElement | undefined;
@@ -862,11 +870,33 @@ export const TimeBand = (props: {
   const running = () => now() >= props.band.start && now() < props.band.end && Number.isFinite(now());
   const past = () => now() >= props.band.end;
   const length = () => props.band.end - props.band.start;
-  const pixels = () => (length() / 60) * props.hourPx - 2;
-  const size = () => (pixels() < 27 ? "xs" : pixels() < 40 ? "s" : "m");
+  /** The drawn height from the band's start to `end` with `hourPx` to the hour; the open night is half as tall. */
+  const pixelsTo = (end: number, hourPx: number) =>
+    ((drawnMinute(end, wake(), props.expanded) - drawnMinute(visibleStart(), wake(), props.expanded)) / 60) * hourPx - 2;
+  const pixels = () => pixelsTo(visibleEnd(), props.hourPx);
+  // a long band of the day view is "l": its type grows with it on a wide screen
+  const size = () => (pixels() < 27 ? "xs" : pixels() < 40 ? "s" : props.hourPx >= 56 && pixels() >= 80 ? "l" : "m");
   const checked = () => view.checkedOf(event());
   const remaining = () => (running() ? view.messages().calendarRemaining({ duration: view.duration(props.band.end - now()) }) : undefined);
-  const lines = () => Math.max(1, Math.floor((pixels() - 24) / 15));
+  // The title takes whole lines, at most two, and the time stands below it when a line of it fits too: a line of the
+  // title is 15 px in the week, 16 px in the day view and 20 px when "l" (see the band's CSS), the time takes 19 px
+  // with its margin (21 px when "l"), and the band's padding 10 px. Nothing is cut through its letters. A phone has
+  // lower hours and the type of "m": its own lines and time, which the CSS of a phone chooses, so the server's markup
+  // is the same for both. Where a phone's week lays a later band over this one, the title and time end above it. A title
+  // of one line is one line of text cut once at its end, as Apple cuts it, never a first word with the rest hidden.
+  const layout = (pixels: number, titleLine: number, metaLine: number, padding: number) => {
+    const meta = pixels >= padding + titleLine + metaLine;
+    const lines = Math.min(2, Math.max(1, Math.floor((pixels - padding - (meta ? metaLine : 0)) / titleLine)));
+    return { meta, lines };
+  };
+  const large = () => size() === "l";
+  const wide = () => layout(pixels(), large() ? 20 : props.hourPx >= 56 ? 16 : 15, large() ? 21 : 19, 10);
+  const phone = () => {
+    const covered = props.overlay ? props.band.coveredAt : undefined;
+    const end = covered === undefined ? visibleEnd() : Math.min(visibleEnd(), covered);
+    // above a band laid over it, only the top padding counts
+    return layout(pixelsTo(end, props.phoneHourPx), props.hourPx >= 56 ? 16 : 15, 19, covered === undefined ? 10 : 5);
+  };
   return (
     <div
       class="k2b-calendar-band"
@@ -881,11 +911,16 @@ export const TimeBand = (props: {
       data-cut-bottom={props.band.end > limit() ? "true" : undefined}
       data-moving={view.movingId() === event().id ? "true" : undefined}
       data-display={event().display}
+      data-meta={wide().meta ? undefined : wide().lines === 1 ? "inline" : "none"}
+      data-meta-phone={phone().meta ? undefined : phone().lines === 1 ? "inline" : "none"}
+      data-lines={String(wide().lines)}
+      data-lines-phone={String(phone().lines)}
+      data-beside={props.band.beside ? "" : undefined}
       style={{
+        "--k2b-calendar-more": props.band.more ? "1.75rem" : undefined,
         "--k2b-calendar-accent": eventAccent(event()),
         "--k2b-calendar-lane": String(props.band.lane),
         "--k2b-calendar-lanes": String(props.band.lanes),
-        "--k2b-calendar-lines": String(lines()),
         "--k2b-calendar-progress": running() ? `${(((now() - props.band.start) / length()) * 100).toFixed(1)}%` : undefined,
         top: `calc(${termsCss(top())} + 1px)`,
         height: `max(var(--k2b-calendar-band-min), calc(${termsCss(subtractTerms(bottom(), top()))} - 2px))`,
@@ -906,8 +941,9 @@ export const TimeBand = (props: {
         faces={3}
         linkCount
         compact={props.compact}
-        timeLabel={`${view.clock(props.band.start)}–${view.clock(props.band.end)}`}
-        showLocation={props.showLocation && size() === "m" && pixels() >= 64}
+        timeLabel={view.clock(props.band.start)}
+        timeEnd={`–${view.clock(props.band.end)}`}
+        showLocation={props.showLocation && (size() === "m" || large()) && pixels() >= 64}
         remaining={remaining()}
         checkbox={checked() !== undefined}
         onCheck={view.checkOf(event())}
@@ -941,6 +977,115 @@ export const TimeBand = (props: {
         </Show>
       </Show>
     </div>
+  );
+};
+
+/**
+ * "+n": the entries of an overlap beyond two side by side, at the column's end where the first of them starts. It opens
+ * a popover with each of them, its time and its title, as the month view's "+n" opens its day.
+ */
+export const TimeMore = (props: {
+  view: TimeView;
+  more: DayMore<CalendarEvent>;
+  dayKey: string;
+  expanded: boolean;
+  tabIndex?: number;
+  stop?: CalendarStop;
+}) => {
+  const view = props.view;
+  const messages = useCalendarMessages();
+  let button: HTMLButtonElement | undefined;
+  let list: HTMLDivElement | undefined;
+  const [open, setOpen] = createSignal(false);
+  const label = () => messages().calendarMoreEventsAt({ count: props.more.bands.length, time: view.clock(props.more.minute) });
+  const top = () => dayTopTerms(view.wake(), props.expanded, props.more.minute);
+  // Pressing the "+n" of an open list closes it as a press outside before the click arrives: that click leaves it
+  // closed. A click with no press before it (a screen reader's, or after Escape closed the list) opens it.
+  let pressedOpen = false;
+  const toggle = () => {
+    const pressed = pressedOpen;
+    pressedOpen = false;
+    if (!list || !button) return;
+    if (list.matches(":popover-open")) {
+      list.hidePopover();
+      return;
+    }
+    // the press closed it on its way down: this click leaves it closed
+    if (pressed) return;
+    list.showPopover();
+    // the "+n" stands at the column's end: the list opens from there towards the days, never past the calendar's edge
+    const rect = button.getBoundingClientRect();
+    const width = list.offsetWidth;
+    const end = getComputedStyle(button).direction === "rtl" ? rect.left : rect.right - width;
+    placeCalendarPopover(new DOMRect(end, rect.top, width, rect.height), list);
+    list.querySelector<HTMLElement>("a,button,[tabindex]:not([tabindex='-1'])")?.focus();
+  };
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        class="k2b-calendar-more"
+        style={{ top: `calc(${termsCss(top())} + 1px)` }}
+        // its name starts with what it shows (WCAG 2.5.3); the list it opens is named without the "+"
+        aria-label={`+${label()}`}
+        aria-haspopup="dialog"
+        aria-expanded={open() ? "true" : "false"}
+        tabIndex={props.tabIndex}
+        data-stop={props.stop?.id}
+        data-col={props.stop?.column}
+        data-minute={props.stop?.minute}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          pressedOpen = list?.matches(":popover-open") ?? false;
+        }}
+        // a press that a gesture took over never becomes a click: the next click starts afresh
+        onPointerCancel={() => {
+          pressedOpen = false;
+        }}
+        onClick={toggle}
+      >
+        {/* "+2" also in a right-to-left page, never "2+" */}
+        <bdi dir="ltr">+{props.more.bands.length}</bdi>
+      </button>
+      <div
+        ref={(element) => {
+          list = element;
+        }}
+        class="k2b-calendar-popover"
+        popover="auto"
+        role="dialog"
+        aria-label={label()}
+        data-kind="more"
+        onToggle={(event) => {
+          const opened = event.newState === "open";
+          setOpen(opened);
+          if (!opened && list?.contains(document.activeElement)) button?.focus({ preventScroll: true });
+        }}
+      >
+        {/* the month view's list of a day, for the entries the "+n" stands for */}
+        <div class="k2b-calendar-day-list">
+          <div class="k2b-calendar-day-list__title">{label()}</div>
+          <ul class="k2b-calendar-day-list__events">
+            <For each={props.more.bands}>
+              {(band) => (
+                <li>
+                  <EventChip
+                    event={view.normalized(band.item, props.dayKey)}
+                    owner={view.props.owner}
+                    href={eventHref(view.props.owner, band.item)}
+                    compact
+                    leadingTime={view.clock(band.start)}
+                    faces={1}
+                    linkCount
+                  />
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </div>
+    </>
   );
 };
 
@@ -1185,11 +1330,34 @@ const startDraftResize = (view: TimeView, pointerEvent: PointerEvent, edge: "sta
 /** Free time of a day with the gap of now trimmed, as both views draw it. */
 export const dayGaps = (view: TimeView, key: string) => freeGaps(view.dayOf(key).bands, view.wake(), view.nowIn(key));
 
-/** The bands of a day with their lanes, cut to what its timeline draws. */
-export const dayBands = (view: TimeView, key: string, expanded: boolean) => {
+/** How many entries stand side by side in a day's timeline; from the third overlapping one on, they collapse into "+n". */
+export const MAX_LANES = 2;
+
+/** The height of an hour in the week and in the day view: on a wide screen, and the smallest, on a phone (see their CSS). */
+export const WEEK_HOUR_PX = 48;
+export const DAY_HOUR_PX = 56;
+export const WEEK_PHONE_HOUR_PX = 44;
+export const DAY_PHONE_HOUR_PX = 48;
+
+/**
+ * The bands of a day with their lanes, cut to what its timeline draws; what finds no place among the first two gives a
+ * "+n". The same on every screen, so the server's first picture stays; a narrow column only draws the lanes otherwise.
+ * A "+n" is 22 px tall with 2 px to the next one; a band's first title line takes 20 px with its padding, and 22 px
+ * from the band's top to the top of a band below it: the minutes they cover where an hour is smallest
+ * (`phoneHourPx`), in the drawn height of the open night.
+ */
+export const dayBands = (view: TimeView, key: string, expanded: boolean, phoneHourPx: number) => {
   const limit = expanded ? DAY_MINUTES : view.wake();
   const visible = view.dayOf(key).bands.filter((band) => Math.min(limit, band.end) > Math.max(0, band.start));
-  return dayLanes(visible, LANE_MINUTES);
+  const minutes = (pixels: number) => Math.ceil((pixels / phoneHourPx) * 60);
+  const wake = view.wake();
+  return capBands(visible, {
+    minimum: LANE_MINUTES,
+    max: MAX_LANES,
+    chip: minutes(24),
+    title: minutes(22),
+    drawn: (minute) => drawnMinute(minute, wake, expanded),
+  });
 };
 
 /** Entries the folded night hides, as chips with their time. */
