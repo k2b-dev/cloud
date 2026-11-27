@@ -18,7 +18,8 @@ The workspace decides from its own width, on the server's page too, so nothing j
 
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
 - **Phone (below 768 px):** the sidebar leaves, and every head action stays (`keep` is deprecated and changes nothing). The main action floats at the bottom right from `Workspace primary`; its twin in the head carries `floats` and leaves the head there. A head gives way only when it holds nothing but where the page stands: its path, its search and that twin. Any other control, such as a menu "…", keeps the head at its height. The list is the page; an open entry is a page of its own.
-- **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
+- **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. Mark the close × of its head `Button closes`: it gives way there, so there are never two.
+- **Narrow head:** below 600 px a head control with a symbol keeps only the symbol; its words stay its name. A menu keeps its chevron.
 
 ## Tabs or path?
 

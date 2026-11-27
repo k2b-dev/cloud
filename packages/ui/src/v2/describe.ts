@@ -550,7 +550,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
   // On the phone an open detail is a page of its own, and the list's main action does not float over it on purpose.
-  const detailIsPage = [...root.querySelectorAll(".k2-pane[data-detail]")].some((pane) => !hidden(pane));
+  // (its way back shows only then: beside the list on a wide screen the detail is no page, and the check stays)
+  const detailIsPage = [...root.querySelectorAll('.k2-pane[data-detail] > [data-k2-part="Back"]')].some((back) => !hidden(back));
   if (
     options.layout &&
     !detailIsPage &&

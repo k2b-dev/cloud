@@ -59,9 +59,9 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 <Props of="Popover" />
 
-## Not in v2 yet
+## On the phone
 
-Every control of a head stays on the phone, a `Popover` and a `Menu` alike; only the twin of `Workspace primary` (`floats`) leaves the head there.
+Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
 
 ## Do and don't
 
