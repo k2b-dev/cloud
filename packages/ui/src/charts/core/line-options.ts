@@ -34,4 +34,18 @@ export const lineDetailsEnabled = (opts: {
   threshold?: unknown;
   marker?: unknown;
   legendValues?: boolean;
-}) => !!(opts.forecast || opts.zero || opts.threshold || opts.marker || opts.legendValues);
+  bands?: unknown[];
+  track?: unknown;
+  // any series: a portable description's has no colour scale, a drawing's may
+  series?: readonly object[];
+}) =>
+  !!(
+    opts.forecast ||
+    opts.zero ||
+    opts.threshold ||
+    opts.marker ||
+    opts.legendValues ||
+    opts.bands?.length ||
+    opts.track ||
+    opts.series?.some((series) => "colorScale" in series && series.colorScale)
+  );

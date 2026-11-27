@@ -98,7 +98,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
-| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
+| a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side`; what its `kinds` say also stands in `Facts` (on the phone kinds give way to the name) | `record.tsx` |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
 | a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
@@ -204,14 +204,9 @@ follows v2), a code block with highlighting, an image or video viewer, and an as
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with
-`defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
-lives in the address through that declaration; the server reads it with
-`parse`, and the app filters itself, on its server, with its own access
-checks (`@k2b/ui` filters nothing and stores nothing). In the island,
-keep one signal that mirrors that state: start it with what the server parsed
-and set it in `onChange`, as the recipe does. Never parse search parameters
-yourself, keep filter state the address does not hold, or build filter chips
-by hand. Read [list queries](references/list-queries.md).
+`defineListQuery`, show them with `FilterBar` and `ListOrder`; the app
+filters on its server. The rules (one signal, no own parsing, no filter chips
+by hand): [list queries](references/list-queries.md).
 
 ## See what you built
 

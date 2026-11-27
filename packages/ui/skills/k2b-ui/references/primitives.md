@@ -217,6 +217,10 @@ words on their text edge, never at the right: "All deliveries ›"; its
 the head or between entries, one line at the end. A long title (a
 question, a name) wraps onto more lines and the head grows with it; no word
 is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
+A section of a list that people fold (Chat's sections) takes `open` and
+`onOpenChange`: a chevron at the end of its head folds it, the app keeps the
+state, and the section keeps its head, rhythm and line, without a frame (a
+`Group` is a framed thing, not a part of a list).
 
 ### Group
 
@@ -234,7 +238,11 @@ inside it.
 
 ### List and Row
 
-`List` holds `Row`s (`label` names it). A `Row`:
+`List` holds `Row`s (`label` names it; `color` is the colour of the app the
+rows belong to, for the tint of the open row, the page's app
+by default). Rows part with the quiet line (`--k2-hairline-subtle`); the
+clear line (`--k2-hairline`) only separates two things: a head and its
+content, a list and its detail, one section and the next. A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
@@ -264,6 +272,11 @@ inside it.
   text of a row with a symbol or person moves (intended).
 - `href` (+ `onNavigate` to open in place) makes the whole row open its
   entry; `onOpen` only for what has no address.
+- `level` (1–6): the depth of the entry in a flat list, such as the
+  headings of a note's outline. Each level stands 20 px further in (the
+  step of `Table tree`), the sixth five steps; in a `List` it is heard as
+  `aria-level`. Nothing folds: places that open and close are a `Nav`
+  group's `tree` or a `Table tree`.
 
 Rows may also stand directly in a `Section` or `Band`.
 
@@ -273,7 +286,9 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 
 ### Table
 
-`columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
+`columns: Column<T>[]`, `rows: T[]`, `label`, `color` (as on `List`: the
+open row in the tint of the app it belongs to, a chosen row blue; rows part
+with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
@@ -357,13 +372,17 @@ inline. Emphasis is a weight, never a size.
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
 safe links only) or children. A Markdown table reads like a small table
 (cells 12 px apart, the head as a Table head); align a column of numbers
-right (`--:`) and its figures line up.
+right (`--:`) and its figures line up. `compact` for short text a person
+wrote (a comment): tables become lines of text, headings stay at the
+text's size.
 
 ### Inline
 
 One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
-lines instead of cutting a thing.
+lines instead of cutting a thing. In a table cell its `Text` gives way to
+the marks beside it (a symbol, an `Avatar`, a `Chip` keep their size): the
+name wraps in a small table and ends with "…" in one with column widths.
 
 ### Icon, Avatar, Chip, Progress, Ticks, Heat
 
@@ -554,8 +573,9 @@ lines instead of cutting a thing.
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
   A group with `tree` in place of `items` holds places in levels (the
-  folders of Files, the pages of a notebook): `tree: { label, items,
-  current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
+  folders of Files, the pages of a notebook): `tree: navTree({ label, items,
+  current?, expanded?, onExpandedChange?, load?, more?, loadMore? })`
+  (`navTree` brings the tree's code along, so a `Nav` without a tree loads none of it), each
   place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
   `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
   load on the first open through `load(key, { signal })`), `more` (`true`
@@ -601,9 +621,14 @@ lines instead of cutting a thing.
   they keep only their symbols, the words stay their names; leave on the
   phone),
   `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  becomes the bar of what can be done with them; the count is never cut, and
+  actions without room go whole into a "…" menu from the end, right after the
+  last one in sight; the way out stays at the end of the bar).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
-  head `Bar start` instead of `Tabs`. The last item is the page itself. On
+  head `Bar start` instead of `Tabs`. The last item is the page itself;
+  without room the places before it shorten to their own width or 12
+  characters first, and the page last. Places without room even then go
+  into a "…" menu ("Weitere Orte"): the middle ones first, then all. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
@@ -666,10 +691,13 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
-  beside the entry such as a `DatePicker`: a dialog of its own over the
-  menu, with its own keys and focus, that calls `close` once it picked;
-  Escape closes it first), and `current` (the value set through that
+  `items` (a submenu to the side), or `panel` (`menuPanel((close) => …)`,
+  which brings the panel's code along, so a menu without a panel loads none
+  of it; a panel such as a `DatePicker` as the next step: a dialog of its own that takes
+  the place of the menu the entry stands in, under a head that leads
+  back; its own keys and focus, so the arrows stay with the calendar;
+  Escape and the back button lead back; it calls `close` once it
+  picked), and `current` (the value set through that
   submenu or panel, such as a reminder's time: at the end in the app's
   colour and part of the entry's name; it takes the place of `meta`); or
   `"separator"` between groups; or a section `{ title, items }` under a
@@ -701,6 +729,14 @@ lines instead of cutting a thing.
   (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
+- `announce(text, { assertive? })`: news for assistive technology that no
+  element shows as it happens, such as a run that changed its state or new
+  mail. It goes to the live region that `Workspace` brings in its server
+  markup (also from another island; with several, the first one shown);
+  the same news twice is said twice, a burst within 250 ms as its last
+  news and at least once a second, and said news leaves after five
+  seconds; `assertive` only for news that cannot wait, such as a run that
+  failed.
 
 ## States
 

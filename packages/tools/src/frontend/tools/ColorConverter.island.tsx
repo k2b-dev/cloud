@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, ColorInput, Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { Button, Canvas, ColorInput, Facts, Field, Input, Section } from "@k2b/ui/v2";
 import { batch, createSignal } from "solid-js";
-import ToolsScreen, { ToolPanes } from "../ToolsScreen";
+import ToolsScreen, { ToolPane } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -221,87 +221,82 @@ export default function ColorConverter() {
   const copyButton = (value: () => string) => <Button variant="ghost" icon="copy" label={w().copy} onClick={() => void copy(value())} />;
   return (
     <ToolsScreen tool="color">
-      <ToolPanes
-        kind="generator"
+      <ToolPane
+        lead="result"
         scrollKey="tools-color"
-        result={{
-          label: w().result,
-          children: (
-            <Section icon="palette" title={t().colorPicker} summary={t().hint}>
-              {/* the colour itself, large: the page's hero; it is picked with the colour field beside it */}
-              <Canvas label={t().colorPicker} height={240}>
-                <span
-                  style={{
-                    display: "block",
-                    height: "100%",
-                    margin: "0 20px",
-                    "border-radius": "8px",
-                    border: "1px solid rgb(0 0 0 / 0.1)",
-                    "background-color": pickerColor(),
-                  }}
-                />
-              </Canvas>
-              {/* what the colour is good for: its contrast to white and black text grounds, as WCAG counts it */}
-              <Facts
-                items={[
-                  { label: t().onWhite, value: ratioText(1) },
-                  { label: t().onBlack, value: ratioText(0) },
-                ]}
+        label={w().result}
+        result={
+          <Section icon="palette" title={t().colorPicker} summary={t().hint} measure>
+            {/* the colour itself, large: the page's hero; it is picked with the colour field beside it */}
+            <Canvas label={t().colorPicker} height={240}>
+              <span
+                style={{
+                  display: "block",
+                  height: "100%",
+                  margin: "0 20px",
+                  "border-radius": "8px",
+                  border: "1px solid rgb(0 0 0 / 0.1)",
+                  "background-color": pickerColor(),
+                }}
               />
-            </Section>
-          ),
-        }}
-        input={{
-          label: w().input,
-          children: (
-            // k2b-ui gap: a v2 Input for technical values in monospace (HEX, RGB, HSL); the fields stay proportional
-            <Band label={w().input}>
-              <Field label={t().colorPicker}>
-                <ColorInput
-                  value={pickerColor()}
-                  onChange={(value) => {
-                    setPickerColor(value);
-                    syncFrom("picker");
-                  }}
-                />
-              </Field>
-              <Field label="HEX" hint={t().hexDescription} error={hexError()}>
-                <Input
-                  icon="hash"
-                  placeholder="#000000"
-                  value={hex()}
-                  end={copyButton(hex)}
-                  onInput={(value) => {
-                    setHex(value);
-                    syncFrom("hex");
-                  }}
-                />
-              </Field>
-              <Field label="RGB" hint={t().rgbDescription} error={rgbError()}>
-                <Input
-                  placeholder="255, 255, 255"
-                  value={rgb()}
-                  end={copyButton(() => `rgb(${rgb()})`)}
-                  onInput={(value) => {
-                    setRgb(value);
-                    syncFrom("rgb");
-                  }}
-                />
-              </Field>
-              <Field label="HSL" hint={t().hslDescription} error={hslError()}>
-                <Input
-                  placeholder="360, 100%, 100%"
-                  value={hsl()}
-                  end={copyButton(() => `hsl(${hsl()})`)}
-                  onInput={(value) => {
-                    setHsl(value);
-                    syncFrom("hsl");
-                  }}
-                />
-              </Field>
-            </Band>
-          ),
-        }}
+            </Canvas>
+            {/* what the colour is good for: its contrast to white and black text grounds, as WCAG counts it */}
+            <Facts
+              items={[
+                { label: t().onWhite, value: ratioText(1) },
+                { label: t().onBlack, value: ratioText(0) },
+              ]}
+            />
+          </Section>
+        }
+        input={
+          // k2b-ui gap: a v2 Input for technical values in monospace (HEX, RGB, HSL); the fields stay proportional
+          <Section icon="adjustments-horizontal" title={w().input} measure>
+            <Field label={t().colorPicker}>
+              <ColorInput
+                value={pickerColor()}
+                onChange={(value) => {
+                  setPickerColor(value);
+                  syncFrom("picker");
+                }}
+              />
+            </Field>
+            <Field label="HEX" hint={t().hexDescription} error={hexError()}>
+              <Input
+                icon="hash"
+                placeholder="#000000"
+                value={hex()}
+                end={copyButton(hex)}
+                onInput={(value) => {
+                  setHex(value);
+                  syncFrom("hex");
+                }}
+              />
+            </Field>
+            <Field label="RGB" hint={t().rgbDescription} error={rgbError()}>
+              <Input
+                placeholder="255, 255, 255"
+                value={rgb()}
+                end={copyButton(() => `rgb(${rgb()})`)}
+                onInput={(value) => {
+                  setRgb(value);
+                  syncFrom("rgb");
+                }}
+              />
+            </Field>
+            <Field label="HSL" hint={t().hslDescription} error={hslError()}>
+              <Input
+                placeholder="360, 100%, 100%"
+                value={hsl()}
+                end={copyButton(() => `hsl(${hsl()})`)}
+                onInput={(value) => {
+                  setHsl(value);
+                  syncFrom("hsl");
+                }}
+              />
+            </Field>
+          </Section>
+        }
       />
     </ToolsScreen>
   );
