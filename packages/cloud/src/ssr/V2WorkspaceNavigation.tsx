@@ -1,5 +1,5 @@
-import { createNavigation, type NavigationItem } from "@k2b/ui";
-import type { MenuEntry, NavGroup, NavItem, NavTree, NavTreeNode, OnNavigate } from "@k2b/ui/v2";
+import { type AppWorkspaceSidebarSwitcherProps, createNavigation, type NavigationItem } from "@k2b/ui";
+import type { MenuEntry, NavGroup, NavItem, NavSwitcher, NavTree, NavTreeNode, OnNavigate } from "@k2b/ui/v2";
 import { type Accessor, createMemo, getOwner, runWithOwner } from "solid-js";
 import WorkspaceNavigationProvider from "./WorkspaceNavigationProvider";
 import { holdsCurrent } from "./workspace-navigation";
@@ -121,6 +121,29 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
   return { items: [...items, ...rows(foot, "foot")], navigate, click };
 };
 
+/** A v2 `Nav`'s switcher as the shell menu's switcher: the same things in the same order, and the same deeds. */
+const toSwitcher = (switcher: NavSwitcher): AppWorkspaceSidebarSwitcherProps => {
+  const current = switcher.options.find((option) => option.current);
+  return {
+    currentId: current?.href ?? "",
+    label: switcher.current?.label ?? switcher.label,
+    icon: `ti ti-${switcher.current?.icon ?? current?.icon ?? "selector"}`,
+    ...(switcher.current?.color ? { color: switcher.current.color } : {}),
+    switchLabel: switcher.label,
+    options: switcher.options.map((option) => ({
+      id: option.href,
+      label: option.label,
+      icon: `ti ti-${option.icon}`,
+      ...(option.color ? { color: option.color } : {}),
+      href: option.href,
+    })),
+    actions: (switcher.actions ?? []).map((action, index) => {
+      const common = { id: `switcher:${index}`, label: action.label, icon: `ti ti-${action.icon ?? "plus"}`, disabled: action.disabled };
+      return action.href !== undefined ? { ...common, href: action.href } : { ...common, action: () => action.onClick?.() };
+    }),
+  };
+};
+
 /**
  * The entries the page carries for a menu opened before the island runs: as many as a long v2 list renders on the
  * server before it windows the rest (#4211), so the page's weight does not grow with the navigation.
@@ -134,6 +157,8 @@ export type V2WorkspaceNavigationProps = {
   groups: readonly NavGroup[];
   /** The same entries the `Nav` shows at its foot. */
   foot?: readonly NavItem[];
+  /** The same switcher the `Nav` shows; the menu shows it above its entries. */
+  switcher?: NavSwitcher;
 };
 
 /**
@@ -156,6 +181,7 @@ export default function V2WorkspaceNavigation(props: V2WorkspaceNavigationProps)
       (() => fromNav(props.groups, props.foot ?? []));
     return made();
   };
+  const first = props.switcher;
   const navigation = createNavigation({
     items: () => tree().items,
     onNavigate: (event) => {
@@ -163,6 +189,8 @@ export default function V2WorkspaceNavigation(props: V2WorkspaceNavigationProps)
       return open ? open(event) : event.fallback();
     },
     onAction: (action) => tree().click.get(action)?.(),
+    // a page has its switcher from the start or never; it keeps the one it began with should it go away
+    ...(first ? { switcher: () => toSwitcher(props.switcher ?? first) } : {}),
   });
   return <WorkspaceNavigationProvider navigation={navigation} label={props.label} entries={SNAPSHOT_ENTRIES} />;
 }

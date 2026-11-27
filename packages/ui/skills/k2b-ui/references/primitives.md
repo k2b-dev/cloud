@@ -512,7 +512,15 @@ lines instead of cutting a thing.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+- `Nav`: `title`, `icon`, `switcher?`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+  `switcher` (`{ label, current?, options, search, noMatch, actions? }`) is the
+  open thing of an app that holds several (a notebook, a base) as a button
+  under the name; its panel lists `options` (`{ label, href, icon, color?,
+  meta?, group?, current? }`) in the order the app gives, consecutive options
+  of one `group` under its quiet heading ("Zuletzt geöffnet", "Alle Basen"),
+  a search from 8 options, and the `actions` ("Neue Base", "Aus Vorlage")
+  after a line. On the phone pass the same `switcher` to
+  `V2WorkspaceNavigation`; the shell's menu shows it there.
   `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
   `Action`, such as "Neuer Chat") stand under the name, each across the
   column; pass the same action as `Workspace` `primary`, which floats on the

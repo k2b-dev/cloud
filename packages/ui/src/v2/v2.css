@@ -2611,12 +2611,12 @@
   letter-spacing: 0.02em;
 }
 /* sidebar entry and sentence: 20 */
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh) .k2-mk {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switch .k2-mi) .k2-mk {
   width: 20px;
   height: 20px;
   border-radius: 5px;
 }
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh) .k2-mk > .k2-icon {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switch .k2-mi) .k2-mk > .k2-icon {
   font-size: 13px;
 }
 /* in the words of a sentence the mark sits on their middle, with a little room on each side */
@@ -3810,6 +3810,72 @@
 }
 .k2-ui .k2-nav-primary {
   margin-bottom: 8px;
+}
+/* The switcher: the open thing (its mark, its name, ↕) as a button across the column under the app's name, as a nav
+   entry stands; behind it a panel of the others in their groups, the search from 8, and the deeds. */
+.k2-ui .k2-nav-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-width: 0;
+  height: var(--k2-h-control);
+  padding: 0 8px;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  font: var(--k2-t-row);
+  font-weight: 500;
+  text-align: start;
+  margin-bottom: 8px;
+}
+.k2-ui .k2-nav-switch:hover {
+  background: var(--k2-n50);
+}
+.k2-ui .k2-nav-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-nav-switch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-nav-switch > .k2-icon {
+  flex: none;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-menu.k2-switch {
+  width: 280px;
+}
+.k2-ui .k2-switch-search {
+  display: flex;
+  padding: 0 0 4px;
+}
+.k2-ui .k2-switch-search > .k2-input {
+  flex: 1;
+  min-width: 0;
+}
+.k2-ui .k2-switch-none {
+  padding: 8px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-switch .k2-mi {
+  cursor: pointer;
+}
+.k2-ui .k2-switch .k2-mi:is(:hover, :focus-visible) {
+  background: var(--k2-n100);
+}
+.k2-ui .k2-switch .k2-mi[aria-current] {
+  color: var(--k2-text);
+  font-weight: 500;
+}
+.k2-ui .k2-switch .k2-mi-lead {
+  width: 20px;
 }
 /* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their
    own between the groups and the foot, as a tree does; the foot keeps its place at the bottom */

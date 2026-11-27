@@ -26,6 +26,8 @@ export {
   type NavItem,
   type NavProps,
   type NavSearch,
+  type NavSwitcher,
+  type NavSwitcherOption,
   Notice,
   type NoticeProps,
   Path,

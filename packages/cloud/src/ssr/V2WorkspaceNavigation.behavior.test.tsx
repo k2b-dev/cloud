@@ -82,6 +82,60 @@ const mount = async () => {
   };
 };
 
+test("the sidebar's switcher stands in the menu: the same things in the same order, the open one and the same deeds", async () => {
+  const dom = createDomTestHarness();
+  const { default: V2WorkspaceNavigation } = await import("./V2WorkspaceNavigation");
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const made: string[] = [];
+  const page = render(
+    () => (
+      <V2WorkspaceNavigation
+        label="Werkstatt"
+        groups={[]}
+        switcher={{
+          label: "Base wechseln",
+          current: { label: "Werkstatt", icon: "database", color: "#0369a1" },
+          options: [
+            { label: "Werkstatt", href: "/app/grids/B1", icon: "database", color: "#0369a1", group: "Zuletzt geöffnet", current: true },
+            { label: "Lager", href: "/app/grids/B2", icon: "database", group: "Alle Basen" },
+          ],
+          search: "Base suchen",
+          noMatch: "Keine Base passt",
+          actions: [
+            { label: "Neue Base", icon: "plus", href: "/app/grids/B1?new=blank" },
+            { label: "Aus Vorlage", icon: "template", onClick: () => void made.push("template") },
+          ],
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const switcher = readWorkspaceNavigation()?.navigation.switcher?.();
+    expect(switcher).toMatchObject({
+      currentId: "/app/grids/B1",
+      label: "Werkstatt",
+      icon: "ti ti-database",
+      color: "#0369a1",
+      switchLabel: "Base wechseln",
+      options: [
+        { id: "/app/grids/B1", label: "Werkstatt", icon: "ti ti-database", color: "#0369a1", href: "/app/grids/B1" },
+        { id: "/app/grids/B2", label: "Lager", icon: "ti ti-database", href: "/app/grids/B2" },
+      ],
+    });
+    expect(switcher?.actions?.map((action) => [action.label, action.icon, action.href])).toEqual([
+      ["Neue Base", "ti ti-plus", "/app/grids/B1?new=blank"],
+      ["Aus Vorlage", "ti ti-template", undefined],
+    ]);
+    const fromTemplate = switcher?.actions?.[1];
+    if (fromTemplate && "action" in fromTemplate) fromTemplate.action?.();
+    expect(made).toEqual(["template"]);
+  } finally {
+    page();
+    dom.cleanup();
+  }
+});
+
 test("the menu's tree: named groups are sections, nested entries stand under the entry before, the foot follows", async () => {
   const view = await mount();
   try {
