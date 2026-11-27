@@ -22,6 +22,8 @@ const buildHarness = async (): Promise<string> => {
     entrypoints: [resolve(import.meta.dir, "frame.browser-harness.tsx")],
     target: "browser",
     format: "iife",
+    // the page parses and runs the whole harness before it shows anything: minified, as an app's islands ship
+    minify: true,
     conditions: ["browser"],
     plugins: [
       {
@@ -173,6 +175,28 @@ const expectClean = async (tab: Page) => {
 };
 
 const elements = (tab: Page) => tab.evaluate(() => document.querySelectorAll("#root *").length);
+/**
+ * Where a page's time goes, for the huge cases: the document's bytes (the harness inlines all CSS), the harness script,
+ * its run (render; the harness renders in the browser, it has no hydration) and the fonts' load after it.
+ */
+const timing = (tab: Page, variant: FixtureVariant) =>
+  tab.evaluate(
+    (bytes) => {
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      const script = performance.getEntriesByType("resource").find((entry) => entry.name.endsWith("/harness.js")) as
+        | PerformanceResourceTiming
+        | undefined;
+      const ms = (value: number | undefined) => (value === undefined ? "?" : `${Math.round(value)} ms`);
+      return [
+        `HTML ${Math.round(bytes / 1024)} KiB`,
+        `harness.js ${Math.round((script?.decodedBodySize ?? 0) / 1024)} KiB loaded at ${ms(script?.responseEnd)}`,
+        `parsed ${ms(nav?.domInteractive)}`,
+        `script run until DOMContentLoaded ${ms(nav ? nav.domContentLoadedEventStart - nav.domInteractive : undefined)}`,
+        `load ${ms(nav?.loadEventEnd)}`,
+      ].join(", ");
+    },
+    page(variant).length,
+  );
 
 describe("the bases overview on v2", () => {
   for (const variant of ["plain", "worst"] as const)
@@ -253,7 +277,7 @@ describe("the bases overview on v2", () => {
       expect(await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count()).toBeLessThanOrEqual(60);
       expect(await tab.getByText("Seite 1 von 10").count()).toBe(1);
       const count = await elements(tab);
-      console.info(`grids bases huge: ${count} elements, ready ${readyMs} ms`);
+      console.info(`grids bases huge: ${count} elements, ready ${readyMs} ms; ${await timing(tab, "huge")}`);
       expect(count).toBeLessThan(6000);
       expect(readyMs).toBeLessThan(5000);
       expect(errors).toEqual([]);
@@ -433,7 +457,7 @@ describe("the records page on v2", () => {
       const count = await elements(tab);
       const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
       console.info(
-        `grids records huge: ${count} elements, ${rows} rows in the page, ready ${readyMs} ms (+${readyMs - smallMs} ms over ten rows)`,
+        `grids records huge: ${count} elements, ${rows} rows in the page, ready ${readyMs} ms (+${readyMs - smallMs} ms over ten rows); ${await timing(tab, "huge")}`,
       );
       expect(rows).toBeLessThanOrEqual(60);
       expect(errors).toEqual([]);
@@ -492,7 +516,9 @@ describe("all documents on v2", () => {
     const { context, tab, errors, readyMs } = await open(wide, `${documents}?mode=list`, "huge");
     try {
       const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
-      console.info(`grids documents huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms`);
+      console.info(
+        `grids documents huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms; ${await timing(tab, "huge")}`,
+      );
       expect(rows).toBeLessThanOrEqual(60);
       expect(errors).toEqual([]);
     } finally {
