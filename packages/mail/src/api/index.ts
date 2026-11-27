@@ -3279,9 +3279,9 @@ const mailOperationsApi = new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/drafts/:draftId/document/rest",
     describeRoute({
       tags: ["Mail"],
-      summary: "Recover a device document after sending or discard",
+      summary: "Recover a device document after sending, discard or a refused edit",
       description:
-        "Preserves the full device text including deletions. Repeat with the same generation, clientId and state after a lost answer.",
+        "Preserves the full device text including deletions. An open draft keeps refused device input as its recovery copy (replies) or a new draft. Repeat with the same generation, clientId and state after a lost answer.",
       parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: {

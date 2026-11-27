@@ -3063,9 +3063,10 @@ export const recoverDraftDocumentRest = async (params: {
           state: string;
           edit_mode: string;
           doc_generation: string | number;
+          doc_state: Uint8Array | null;
         }[]
       >`
-        SELECT conversation_id, intent, source_message_id, state, edit_mode, doc_generation FROM mail.drafts
+        SELECT conversation_id, intent, source_message_id, state, edit_mode, doc_generation, doc_state FROM mail.drafts
         WHERE id = ${params.draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid AND origin = 'user' FOR UPDATE
       `;
       if (!source) return fail(err.notFound("Draft"));
@@ -3104,8 +3105,19 @@ export const recoverDraftDocumentRest = async (params: {
       // ever existed; an equal discarded body still deserves a new draft.
       const discarded =
         source.state === "discarded" && source.edit_mode === "shared" && String(source.doc_generation) === params.generation;
-      if (!boundary && !discarded) return conflict("The send boundary is unavailable. Keep the device's text for recovery.");
+      // The room refused the device's input on its still-open generation, for
+      // example a base behind the pruned log prefix. Every reload sends the same
+      // stored input again, so it leaves only as a copy; it never enters the
+      // generation unvalidated. A reply keeps it as a recovery copy of itself.
+      const open =
+        !boundary &&
+        source.state === "draft" &&
+        source.edit_mode === "shared" &&
+        String(source.doc_generation) === params.generation &&
+        source.doc_state !== null;
+      if (!boundary && !discarded && !open) return conflict("The send boundary is unavailable. Keep the device's text for recovery.");
       if (boundary) Y.applyUpdate(frozen, boundary.state);
+      else if (open && source.doc_state) Y.applyUpdate(frozen, source.doc_state);
       if (!discarded && JSON.stringify(content) === JSON.stringify(draftDocumentContent(frozen))) {
         // Equal visible content can still contain newer item identities and
         // deletions (type then undo). Commit that exact source before allowing

@@ -2315,9 +2315,15 @@ export default function MailComposer(props: {
             />
           )}
         </Show>
-        <Show when={sharedState()?.recoveryDraft || (sharedState()?.restUnchanged && !ownSendCloses())}>
+        <Show when={sharedState()?.recoveryDraft || sharedState()?.restCopied || (sharedState()?.restUnchanged && !ownSendCloses())}>
           <div class="mail-inline-draft-notice" data-tone="neutral" role="status">
-            <span class="min-w-0 flex-1">{sharedState()?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged}</span>
+            <span class="min-w-0 flex-1">
+              {sharedState()?.recoveryDraft
+                ? sharedT().restSaved
+                : sharedState()?.restCopied
+                  ? sharedT().restCopied
+                  : sharedT().restUnchanged}
+            </span>
             <Button
               size="sm"
               variant="secondary"
@@ -4261,12 +4267,18 @@ export default function MailComposer(props: {
         />
       </div>
 
-      <Show when={sharedState()?.recoveryDraft || (sharedState()?.restUnchanged && !ownSendCloses())}>
+      <Show when={sharedState()?.recoveryDraft || sharedState()?.restCopied || (sharedState()?.restUnchanged && !ownSendCloses())}>
         <div
           class="absolute inset-x-3 bottom-14 z-30 flex max-h-[45%] flex-wrap items-center gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-sm shadow-[var(--k2b-shadow-toolbar)]"
           role="status"
         >
-          <span class="min-w-0 flex-1">{sharedState()?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged}</span>
+          <span class="min-w-0 flex-1">
+            {sharedState()?.recoveryDraft
+              ? sharedT().restSaved
+              : sharedState()?.restCopied
+                ? sharedT().restCopied
+                : sharedT().restUnchanged}
+          </span>
           <Button
             size="sm"
             variant="secondary"

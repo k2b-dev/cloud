@@ -62,7 +62,8 @@ export const mailSharedDraftMessages = i18n.define({
       tableUnknown: "The table action may have been applied. Waiting for confirmation; do not repeat it.",
       stopWaiting: "Stop waiting",
       restSaved: "Unsent changes were saved in a recovery draft.",
-      restUnchanged: "This device has no changes beyond the sent draft.",
+      restUnchanged: "This device has no changes beyond the saved draft.",
+      restCopied: "This device's unsent changes were kept as a recovery copy of this draft. Reopen the draft to restore them.",
       openRest: "Open recovery draft",
       reopen: "Reopen current draft",
       restLabel: "Recovery draft",
@@ -102,7 +103,9 @@ export const mailSharedDraftMessages = i18n.define({
       tableUnknown: "Die Tabellenaktion wurde möglicherweise übernommen. Die Bestätigung steht noch aus; bitte nicht wiederholen.",
       stopWaiting: "Warten beenden",
       restSaved: "Ungesendete Änderungen wurden in einem Rest-Entwurf gespeichert.",
-      restUnchanged: "Dieses Gerät hat keine Änderungen gegenüber dem gesendeten Entwurf.",
+      restUnchanged: "Dieses Gerät hat keine Änderungen gegenüber dem gespeicherten Entwurf.",
+      restCopied:
+        "Die ungesendeten Änderungen dieses Geräts wurden als Wiederherstellungskopie dieses Entwurfs gesichert. Öffne den Entwurf erneut, um sie wiederherzustellen.",
       openRest: "Rest-Entwurf öffnen",
       reopen: "Aktuellen Entwurf öffnen",
       restLabel: "Rest-Entwurf",
@@ -183,6 +186,8 @@ export type MailSharedDraftState = {
   recipientsChanged: boolean;
   recoveryDraft: MailDraft | null;
   restUnchanged: boolean;
+  /** Refused input became a recovery copy of this same draft; reopening offers to restore it. */
+  restCopied: boolean;
   /** The comparison with the closed draft failed: the device's input is not known to be safe yet. */
   restFailed: boolean;
   /** A refused external proposal, independent of incoming document projections. */
@@ -372,6 +377,7 @@ export async function openMailDraftDocumentClient(options: {
       recipientsChanged: draftRecipientConfirmation(projection) !== draftRecipientConfirmation(recipientBaseline),
       recoveryDraft: null,
       restUnchanged: false,
+      restCopied: false,
       restFailed: false,
       rejectedEdit: null,
     };
@@ -523,6 +529,8 @@ export async function openMailDraftDocumentClient(options: {
       });
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
+    /** The room refused this device's input on the live generation; only a Rest draft can keep it. */
+    let refused = false;
     const fatal = (error: SharedTextProviderError) => {
       const expired = error.code === "SESSION_EXPIRED";
       if (expired) options.onAuthenticationRequired();
@@ -533,6 +541,7 @@ export async function openMailDraftDocumentClient(options: {
       state.error = true;
       emit();
       if (error.reopen) {
+        refused = true;
         options.onFrozen();
         void recover().catch(fail);
       }
@@ -780,11 +789,20 @@ export async function openMailDraftDocumentClient(options: {
         if (state.rejectedEdit) throw new Error(t().bodyEditFailed);
         // Re-authorize before requesting recovery; permission failure leaves local bytes untouched.
         const current = await authorize(options.signal);
-        if (current.lifecycle === "draft" && !current.frozen && current.generation === generation) throw new Error(t().generation);
+        // An open draft at this generation either still accepts this device's input,
+        // or its room refused it (for example a base behind the pruned log prefix).
+        // Reloading resends the same stored input, so only a recovery copy ends the refusal.
+        if (!refused && current.lifecycle === "draft" && !current.frozen && current.generation === generation)
+          throw new Error(t().generation);
         const sourceState = encoding.toBase64(Y.encodeStateAsUpdate(doc));
         const requestId = await draftRecoveryRequestId(identity, sourceState);
         const result = restSchema.parse(await request("/rest", { generation, clientId: requestId, state: sourceState }));
-        if (result.status === "recovered") {
+        if (result.status === "recovered" && result.draft.id === options.draft.id) {
+          // An open reply keeps its conversation slot: the input waits as its own recovery copy.
+          state.restCopied = true;
+          state.message = t().restCopied;
+          acknowledge(encoding.fromBase64(result.durableSourceState));
+        } else if (result.status === "recovered") {
           state.recoveryDraft = result.draft;
           state.message = t().restSaved;
           // Parent returns exact source_state committed alongside the recovery draft.
@@ -896,6 +914,10 @@ export async function openMailDraftDocumentClient(options: {
           if (providerClosed) throw new Error(t().generation);
           if (state.terminal) {
             const result = provider.resume();
+            if (result === "reopen") {
+              refused = true;
+              return recover();
+            }
             if (result !== "resumed") {
               state.message = t().generation;
               state.error = true;
