@@ -19,8 +19,8 @@ import { type ServiceAccountKind, get as settingsGet, toPgUuidArray } from "@k2b
 import { BaseAppearanceSchema, BaseTimezoneSchema } from "../base-settings";
 import type { PulseBase } from "../contracts";
 import { withShortId } from "../lib/short-id";
-import type { BaseRetention } from "../store/admin-contracts";
-import { baseStoreStatus, insertBaseStore } from "../store/base-status";
+import type { BaseRetention, BaseStoreStatus } from "../store/admin-contracts";
+import { baseStoreStatuses, insertBaseStore } from "../store/base-status";
 import type { baseStore } from "../store/base-store";
 import { RetentionStoreUnavailable, retentionPreview } from "../store/retention";
 import {
@@ -92,17 +92,31 @@ type BaseUpdateValues = {
   sensitiveRetentionHours: number;
 };
 
-const mapBase = async (row: BaseRow): Promise<PulseBase> => {
-  // Count configured members, not the people inside a group or a general access rule.
-  const [membership] = await sql<{ count: number }[]>`
-    SELECT count(*)::int AS count FROM pulse.base_access b
-    JOIN auth.access a ON a.id=b.access_id
-    WHERE b.base_id=${row.id}::uuid AND a.permission<>'none'
-      AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)
-  `;
+/** Several bases with their member counts and stores: two statements for the whole list, never one per base. */
+const mapBases = async (rows: readonly BaseRow[]): Promise<PulseBase[]> => {
+  if (rows.length === 0) return [];
+  const ids = rows.map((row) => row.id);
+  const [memberships, stores] = await Promise.all([
+    // Count configured members, not the people inside a group or a general access rule.
+    sql<{ base_id: string; count: number }[]>`
+      SELECT b.base_id::text AS base_id, count(*)::int AS count FROM pulse.base_access b
+      JOIN auth.access a ON a.id=b.access_id
+      WHERE b.base_id = ANY(${sql.array(ids, "UUID")}) AND a.permission<>'none'
+        AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)
+      GROUP BY b.base_id
+    `,
+    baseStoreStatuses(ids),
+  ]);
+  const counts = new Map(memberships.map((row) => [row.base_id, row.count]));
+  return rows.map((row) => toBase(row, counts.get(row.id) ?? 0, stores.get(row.id)!));
+};
+
+const mapBase = async (row: BaseRow): Promise<PulseBase> => (await mapBases([row]))[0]!;
+
+const toBase = (row: BaseRow, memberCount: number, store: BaseStoreStatus): PulseBase => {
   return {
-    memberCount: membership!.count,
-    store: await baseStoreStatus(row.id),
+    memberCount,
+    store,
     id: row.id,
     shortId: row.short_id,
     icon: row.icon,
@@ -176,7 +190,7 @@ export const listBases = async (
       AND b.id = ANY(${toPgUuidArray(baseIds)}::uuid[])
     ORDER BY b.updated_at DESC, b.name ASC, b.id ASC
   `;
-  return ok(await Promise.all(rows.map(mapBase)));
+  return ok(await mapBases(rows));
 };
 
 /** Bases the scope administers whose deletion still runs or failed; the overview keeps them until the deletion finishes. */
@@ -190,7 +204,7 @@ export const listDeletingBases = async (user: AccessScope): Promise<Result<Pulse
       AND b.id = ANY(${toPgUuidArray(baseIds)}::uuid[])
     ORDER BY b.updated_at DESC, b.name ASC, b.id ASC
   `;
-  return ok(await Promise.all(rows.map(mapBase)));
+  return ok(await mapBases(rows));
 };
 
 export const checkBaseCreation = async (params: { user: AccessScope; isCloudAdmin?: boolean; agent: boolean }) => {
