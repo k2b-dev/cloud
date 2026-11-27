@@ -374,7 +374,8 @@ export const Chip = (props: ChipProps) => {
       </Show>
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
-      {props.children}
+      {/* the words in a box of their own, so a chip longer than its line ends them with "…" */}
+      <span class="k2-chip-text">{props.children}</span>
     </Dynamic>
   );
 };

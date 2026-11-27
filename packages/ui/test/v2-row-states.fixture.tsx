@@ -1,16 +1,20 @@
 import { createSignal } from "solid-js";
 import {
+  Band,
   Bar,
   Button,
   Canvas,
   Chip,
+  Dialog,
   Empty,
   Failed,
+  Field,
   FilterBar,
   Inline,
   Input,
   List,
   Menu,
+  Notice,
   Pane,
   Path,
   Row,
@@ -67,7 +71,9 @@ export const RowStatesScreen = () => (
 
 // `split`: the drawing's pane stands in a `Pane.Split` (a board or a calendar beside the place of its detail, W3 #4197).
 // `list`: a long list stands in the split too, one under the other on the phone; it must not squeeze the drawing.
-export const CanvasFillScreen = (props: { split?: boolean; list?: boolean }) => {
+// `tall`: the drawing's content is taller than the split (the days of a calendar on the phone): its pane keeps the
+// split's height and scrolls inside, never growing past it (W3, Spaces' phone calendar).
+export const CanvasFillScreen = (props: { split?: boolean; list?: boolean; tall?: boolean }) => {
   const pane = () => (
     <Pane
       label="Vorlage"
@@ -83,9 +89,17 @@ export const CanvasFillScreen = (props: { split?: boolean; list?: boolean }) => 
       status={<StatusRow lead="Entwurf" facts={[{ value: 3, after: "Seiten" }]} />}
     >
       <Canvas label="Editor der Vorlage" height="fill">
-        <div class="editor" style={{ height: "100%", overflow: "auto", background: "#fafafa" }}>
-          <p>Sehr geehrte Frau Lindqvist,</p>
-        </div>
+        {props.tall ? (
+          <div class="calendar" style={{ height: "100%", overflow: "auto" }}>
+            <div class="days" style={{ height: "1260px", background: "#fafafa" }}>
+              <p>Montag</p>
+            </div>
+          </div>
+        ) : (
+          <div class="editor" style={{ height: "100%", overflow: "auto", background: "#fafafa" }}>
+            <p>Sehr geehrte Frau Lindqvist,</p>
+          </div>
+        )}
       </Canvas>
     </Pane>
   );
@@ -305,3 +319,36 @@ export const EmptyWaysScreen = () => {
     </Workspace>
   );
 };
+
+// The worst case of an invitation dialog on the phone (Spaces, W3): a notice of many lines above a field, and a list of
+// addresses as chips in a band, one of them longer than the dialog.
+export const InvitationScreen = () => (
+  <Workspace>
+    <Pane label="Termin">
+      <Text>Jahresinventur</Text>
+    </Pane>
+    <Dialog title="Einladung vorbereiten" open onOpenChange={() => {}} foot={<Button variant="primary">Weiter in Mail</Button>}>
+      <Notice tone="note" title="Vor dem Senden prüfen">
+        Jährliche Sicherheitsunterweisung für alle Lagermitarbeitenden einschließlich der Aushilfen und der Nachtschicht · Noch wird nichts
+        gesendet. Wer diese Einladung schon bekommen hat, bekommt eine Änderung statt einer neuen.
+      </Notice>
+      <Field label="Postfach">
+        <Input value="Lagerlogistik Nord – Disposition, Wareneingang und Versand" />
+      </Field>
+      <Band label="Teilnehmende">
+        <Inline>
+          {[
+            "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+            "a@b.test",
+            "first.last+billing@example.com",
+            ...Array.from({ length: 12 }, (_, index) => `mitglied${index}@example.com`),
+          ].map((address) => (
+            <Chip icon="x" onClick={() => {}}>
+              {address}
+            </Chip>
+          ))}
+        </Inline>
+      </Band>
+    </Dialog>
+  </Workspace>
+);

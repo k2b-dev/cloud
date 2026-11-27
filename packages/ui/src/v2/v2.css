@@ -2068,6 +2068,15 @@
 .k2-ui .k2-chip > .k2-icon {
   font-size: 13px;
 }
+/* a chip is never wider than its line: a long address or name ends with "…" inside it (its words stay its name) */
+.k2-ui .k2-chip {
+  max-width: 100%;
+}
+.k2-ui .k2-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .k2-ui .k2-chip[data-status="ok"] {
   background: var(--k2-ok-tint);
   color: var(--k2-ok);
@@ -4285,6 +4294,11 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
+/* what stands in a dialog keeps its height and the body scrolls: a notice of many lines is never squeezed to its
+   minimum, which let its words run over the field below it */
+.k2-ui .k2-dialog-body > * {
+  flex-shrink: 0;
+}
 .k2-ui .k2-dialog:is([data-more="above"], [data-more="both"]) > [data-slot="head"] > .k2-bar {
   box-shadow: 0 1px 0 var(--k2-line);
 }
@@ -4812,8 +4826,12 @@
     min-height: min-content;
     overflow: hidden;
   }
+  /* ... but never more than the split: the room inside counts only its 240 px, not the drawing's content (a calendar
+     of many days), so the pane keeps the split's height and its drawing scrolls inside it (W3) */
   .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) > .k2-scroll {
     overflow-y: auto;
+    contain: size;
+    min-height: 240px;
   }
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;

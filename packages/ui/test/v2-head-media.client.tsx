@@ -7,6 +7,7 @@ import {
   CanvasFillScreen,
   DeepPathScreen,
   EmptyWaysScreen,
+  InvitationScreen,
   LongAddressScreen,
   RowStatesScreen,
   SelectionScreen,
@@ -29,6 +30,8 @@ declare global {
       | "path-chip"
       | "split-canvas"
       | "split-list-canvas"
+      | "split-tall-canvas"
+      | "invitation"
       | "selection"
       | "long"
       | "areas"
@@ -59,8 +62,10 @@ render(
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (
         <DeepPathScreen chip={which === "path-chip"} />
-      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
-        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
+      ) : which === "invitation" ? (
+        <InvitationScreen />
+      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" || which === "split-tall-canvas" ? (
+        <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} tall={which === "split-tall-canvas"} />
       ) : (
         <Folder grid={which !== "list"} selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined} />
       )}

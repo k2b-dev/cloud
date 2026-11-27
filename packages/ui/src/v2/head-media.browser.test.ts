@@ -28,6 +28,8 @@ type Case =
   | "path-chip"
   | "split-canvas"
   | "split-list-canvas"
+  | "split-tall-canvas"
+  | "invitation"
   | "selection"
   | "long"
   | "areas"
@@ -666,6 +668,27 @@ test("on the phone a long list beside a drawing in a split does not squeeze the 
   );
 });
 
+test("on the phone a drawing taller than its split keeps its pane at the split's height and scrolls inside it (W3)", async () => {
+  await withPage(
+    "split-tall-canvas",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const pane = document.querySelector(".k2-canvas[data-fill]")!.closest(".k2-pane")!;
+        const split = pane.closest(".k2-split")!.getBoundingClientRect();
+        // the drawing's own scroller (a calendar's days)
+        const scroll = pane.querySelector<HTMLElement>(".calendar")!;
+        const box = pane.getBoundingClientRect();
+        return {
+          inside: Math.round(box.bottom) <= Math.round(split.bottom) && box.height <= split.height + 0.5,
+          scrolls: scroll.scrollHeight > scroll.clientHeight + 1,
+        };
+      });
+      expect(found).toEqual({ inside: true, scrolls: true });
+    },
+    390,
+  );
+});
+
 for (const width of [1440, 1024])
   test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {
     await withPage(
@@ -944,3 +967,31 @@ for (const width of [1440, 1024, 800, 390])
       width,
     );
   });
+
+test("in a dialog on the phone a notice of many lines keeps its height above the next field, and a chip longer than its line ends with '…' inside the dialog", async () => {
+  await withPage(
+    "invitation",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const notice = document.querySelector(".k2-dialog .k2-notice")!.getBoundingClientRect();
+        const text = document.querySelector(".k2-dialog .k2-notice-text")!.getBoundingClientRect();
+        const label = document.querySelector(".k2-dialog .k2-field-label")!.getBoundingClientRect();
+        const body = document.querySelector(".k2-dialog-body")!.getBoundingClientRect();
+        const chip = document.querySelector<HTMLElement>(".k2-dialog .k2-chip")!;
+        const words = chip.querySelector<HTMLElement>(".k2-chip-text")!;
+        return {
+          // the notice holds all its words, and the field's label stands below it
+          whole: text.bottom <= notice.bottom + 0.5 && label.top >= notice.bottom,
+          chipInside: chip.getBoundingClientRect().right <= body.right + 0.5,
+          ellipsis: words.scrollWidth > words.clientWidth && getComputedStyle(words).textOverflow === "ellipsis",
+          name: chip.textContent?.trim().startsWith("bartholomew"),
+        };
+      });
+      expect(found).toEqual({ whole: true, chipInside: true, ellipsis: true, name: true });
+      // the "…" of the chip is on purpose (its words stay its name); nothing else is cut or out of place
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
+  );
+});
