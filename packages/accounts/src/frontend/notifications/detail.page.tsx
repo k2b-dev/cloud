@@ -111,7 +111,7 @@ export default ssr<AuthContext>(async (c) => {
     guest: { label: t.guests, icon: "ti ti-user-question" },
     user: { label: t.fullUsers, icon: "ti ti-user" },
   };
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const batchId = c.req.param("id");
   if (!batchId || !z.uuid().safeParse(batchId).success) return ssr.error(c, 404);
   const page = parsePage(c.req.query("page"));

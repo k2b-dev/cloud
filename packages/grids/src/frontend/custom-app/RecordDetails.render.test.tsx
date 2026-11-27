@@ -218,7 +218,7 @@ test("record detail dates and number fields respect the user's locale and config
   input.fields[1]!.type = "number";
   input.fields[1]!.config = { decimalPlaces: 2, unit: "EUR" };
   input.record.data.FIELD2 = "22.6";
-  expect(render()).toContain("22,60 EUR");
+  expect(render()).toContain("22,60\u00a0€");
 });
 
 test("record compact facts retain semantic labels and separate object-list tables", () => {
@@ -291,10 +291,10 @@ test("summary records retain semantic labels, configured order and the final tot
   expect(html).toMatch(/<dl[^>]*class="[^"]*custom-app-record-summary[^"]*"[^>]*data-layout="rows"/);
   expect(html.indexOf("<dt>Net</dt>")).toBeLessThan(html.indexOf("<dt>Tax</dt>"));
   expect(html.indexOf("<dt>Tax</dt>")).toBeLessThan(html.indexOf("<dt>Total</dt>"));
-  expect(html.replace(/<!--.*?-->/g, "")).toMatch(/<dt>Total<\/dt><dd>119\.00 EUR<\/dd><\/div><\/dl>/);
+  expect(html.replace(/<!--.*?-->/g, "")).toMatch(/<dt>Total<\/dt><dd>€119\.00<\/dd><\/div><\/dl>/);
   input.record.fieldErrors = { TOTAL1: "Total unavailable" };
   const failed = renderToString(() => createComponent(RecordDetails, input));
   expect(failed).toContain("<dt>Total</dt>");
   expect(failed).toContain("Total unavailable");
-  expect(failed).not.toContain("119.00 EUR");
+  expect(failed).not.toContain("€119.00");
 });

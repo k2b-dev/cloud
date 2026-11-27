@@ -126,7 +126,8 @@ domTest("activates only the chosen row, updates the parent immediately, and supp
     f.change(input, "9007199254740993.25");
     expect(f.value()).toEqual([{ Amount: "9007199254740993.25" }, { Amount: "2" }]);
     expect(f.dom.document.activeElement).toBe(input);
-    expect(f.dom.root.textContent).toContain("18014398509481986.5");
+    // exact, grouped in the reader's language
+    expect(f.dom.root.textContent).toContain("18,014,398,509,481,986.5");
     await f.key(input, "Escape");
     expect(f.value()).toEqual([{ Amount: "1" }, { Amount: "2" }]);
     expect(f.dom.root.querySelector("input")).toBeNull();
