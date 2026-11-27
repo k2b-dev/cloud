@@ -3920,7 +3920,9 @@ export function createMailboxSessions(props: MailWorkspaceProps) {
           query: {
             href: `${url.pathname}${url.search}`,
             listMode: shown.handle.listMode(),
-            receivedPerDay: props.loadsReceivedPerDay ? "load" : "keep",
+            // the v2 reader shows the new mailbox's year of mail when the switch opens no mail
+            receivedPerDay:
+              props.loadsReceivedPerDay && !url.searchParams.has("conversation") && !url.searchParams.has("message") ? "load" : "keep",
           },
         },
         { init: { signal: request.signal } },

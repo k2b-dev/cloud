@@ -164,7 +164,7 @@ const savedViewNames: Record<string, string> = { "Priority view": "Wichtig", "Te
  * Mondays, a few days off and one day of a newsletter flood, fixed by the day (no randomness). `?received=none` is a
  * new mailbox without mail, `?received=huge` one with thousands a day.
  */
-const receivedPerDay = (url: URL, now: number): NonNullable<MailboxPageData["receivedPerDay"]> => {
+export const mailV2ReceivedPerDay = (url: URL, now: number): NonNullable<MailboxPageData["receivedPerDay"]> => {
   const today = new Date(now).toISOString().slice(0, 10);
   const shape = url.searchParams.get("received");
   if (shape === "none") return { today, days: [] };
@@ -182,9 +182,12 @@ const receivedPerDay = (url: URL, now: number): NonNullable<MailboxPageData["rec
           : index % 97 === 0
             ? 160
             : ((index * 37) % 11) + (weekday === 0 ? 6 : 1);
-    return { date: date.toISOString().slice(0, 10), count: shape === "huge" ? count * 1234 : count };
+    const all = shape === "huge" ? count * 1234 : count;
+    // about six in ten came in, the rest went out
+    const incoming = Math.ceil(all * 0.6);
+    return { date: date.toISOString().slice(0, 10), incoming, sent: all - incoming };
   });
-  return { today, days: days.filter((day) => day.count > 0) };
+  return { today, days: days.filter((day) => day.incoming + day.sent > 0) };
 };
 
 /** The fixture's mailbox as the v2 mockup shows it: "Kontakt" with its folders, ten conversations, the first one open. */
@@ -241,7 +244,8 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
     nextListCursor: null,
     listError: null,
     doneTodayCounts: { doneToday: 12, doneByAutomation: 5 },
-    receivedPerDay: receivedPerDay(url, now),
+    // as Mail's page: only a page that opens no mail brings the year of mail
+    receivedPerDay: url.searchParams.has("conversation") ? null : mailV2ReceivedPerDay(url, now),
     assignableUsers: people,
     localTags: Object.values(tags),
     selectedSubject: open ? rows[0]![1] : data.selectedSubject,

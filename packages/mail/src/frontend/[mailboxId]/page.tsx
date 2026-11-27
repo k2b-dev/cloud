@@ -52,6 +52,8 @@ export default ssr<AuthContext>(async (c) => {
     // Provisional: the pilot of @k2b/ui v2 shows the same mailbox, data and permissions in the new interface.
     const ui = showsMailV2(readMailV2Pilot(c), user.mail) ? "v2" : undefined;
     const dateConfig = getDateConfig(c);
+    const opened = new URL(c.req.raw.url).searchParams;
+    const opensMail = opened.has("conversation") || opened.has("message");
     const [internalData, spacesIntegration, sidebar, appUrl, liveDictation] = await Promise.all([
       loadMailboxPageData({
         context,
@@ -59,8 +61,8 @@ export default ssr<AuthContext>(async (c) => {
         ...request,
         listMode: workspacePreferences.listMode,
         locale,
-        // only the v2 reader shows the year of mail while none is open
-        ...(ui === "v2" ? { receivedPerDay: "load" as const, timeZone: dateConfig.timeZone } : {}),
+        // only the v2 reader shows the year of mail, and only while none is open: a deep link to a mail loads it later
+        ...(ui === "v2" && !opensMail ? { receivedPerDay: "load" as const, timeZone: dateConfig.timeZone } : {}),
       }),
       getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
       loadMailSidebarData(context),

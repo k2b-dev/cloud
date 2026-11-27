@@ -17,11 +17,12 @@ import {
   StatusRow,
   type Tab,
   Tabs,
-  Text,
   Workspace,
 } from "@k2b/ui/v2";
-import { type Accessor, createComputed, createMemo, createSignal, on, Show } from "solid-js";
+import { type Accessor, createComputed, createEffect, createMemo, createSignal, on, Show } from "solid-js";
+import { apiClient } from "../../../api/client";
 import { mailFolderNames } from "../../../folder-names";
+import type { MailReceivedPerDay } from "../../../service/received-per-day";
 import type { MailListItem } from "../../../service/workspace";
 import { mailOverviewMessages } from "../../mail-overview-messages";
 import type { MailboxController, MailWorkspaceDom } from "../../mail-workspace";
@@ -379,34 +380,64 @@ export default function MailWorkspaceV2(props: {
     const folder = folders.find((entry) => entry.id === data.folderId) ?? folders.find((entry) => entry.role === "inbox");
     return folder?.unread ?? 0;
   };
-  // While no mail is open, the reader shows the mails this mailbox received per day over the last 53 weeks.
+  // While no mail is open, the reader shows the mails of this mailbox per day over the last 53 weeks: the page or the
+  // mailbox switch brings them when it opens no mail; after a deep link the reader loads them once it is empty.
   const number = createMemo(() => new Intl.NumberFormat(locale()));
-  // the same days draw once: a navigation inside the mailbox keeps the picture (and the focus in it)
-  const receivedPerDay = createMemo(() => c().data.receivedPerDay ?? null, null, {
-    equals: (before, after) =>
-      before === after ||
-      (!!before &&
-        !!after &&
-        before.today === after.today &&
-        before.days.length === after.days.length &&
-        before.days.every((day, index) => day.date === after.days[index]!.date && day.count === after.days[index]!.count)),
+  const [loaded, setLoaded] = createSignal<{ mailboxId: string; received: MailReceivedPerDay } | null>(null);
+  const loading = new Set<string>();
+  createEffect(() => {
+    const mailboxId = c().data.mailbox.id;
+    if (c().readerOpen() || c().data.receivedPerDay || loaded()?.mailboxId === mailboxId || loading.has(mailboxId)) return;
+    loading.add(mailboxId);
+    void apiClient.mailboxes[":mailboxId"]["received-per-day"]
+      .$get({ param: { mailboxId } })
+      .then(async (response) => {
+        // without it the reader shows its sentence alone, as before
+        if (response.ok) setLoaded({ mailboxId, received: await response.json() });
+      })
+      .catch(() => undefined)
+      .finally(() => loading.delete(mailboxId));
   });
-  const receivedHero = () => {
+  // the same days draw once: a navigation inside the mailbox keeps the picture (and the focus in it)
+  const receivedPerDay = createMemo(
+    () => c().data.receivedPerDay ?? (loaded()?.mailboxId === c().data.mailbox.id ? loaded()!.received : null),
+    null,
+    {
+      equals: (before, after) =>
+        before === after ||
+        (!!before &&
+          !!after &&
+          before.today === after.today &&
+          before.days.length === after.days.length &&
+          before.days.every(
+            (day, index) =>
+              day.date === after.days[index]!.date && day.incoming === after.days[index]!.incoming && day.sent === after.days[index]!.sent,
+          )),
+    },
+  );
+  // made once per year of mail and handed to the workspace, which reads its detailEmpty more than once
+  const receivedHero = createMemo(() => {
     const received = receivedPerDay();
     if (!received) return undefined;
-    const total = received.days.reduce((sum, day) => sum + day.count, 0);
+    const byDate = new Map(received.days.map((day) => [day.date, day]));
     return (
-      <>
-        <Text type="body">{total ? text().receivedYear({ count: number().format(total) }) : text().receivedNone}</Text>
-        <Heat
-          days={received.days}
-          today={received.today}
-          label={text().receivedPerDay}
-          unit={(count) => text().receivedCount({ count, number: number().format(count) })}
-        />
-      </>
+      <Heat
+        days={received.days.map((day) => ({ date: day.date, count: day.incoming + day.sent }))}
+        today={received.today}
+        label={text().receivedPerDay}
+        unit={(count) => text().receivedCount({ count, number: number().format(count) })}
+        detail={(date) => {
+          const day = byDate.get(date);
+          return day ? text().receivedSplit({ incoming: number().format(day.incoming), sent: number().format(day.sent) }) : undefined;
+        }}
+        summary={({ total, days }) =>
+          total
+            ? text().receivedYear({ count: number().format(total), perDay: number().format(Math.round(total / days)) })
+            : text().receivedNone
+        }
+      />
     );
-  };
+  });
   const selectionCount = () => c().selectedConversationIds().size;
   const selecting = () => c().canWrite() && c().selectionMode() && selectionCount() > 0;
   const runOnSelection = (actionId: "archive" | "trash") => void c().runAction(actionId);
