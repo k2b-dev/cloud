@@ -74,6 +74,174 @@ test("field action: in the 20 px label line, the field keeps its height, a press
   });
 });
 
+test("select: a long sender address keeps its start and its domain readable, the whole address as a hint, also in the list", async () => {
+  const full = "Annabelle Wohlgemuth-Lindqvist <annabelle.wohlgemuth-lindqvist@tischlerei-wohlgemuth-lindqvist.example>";
+  await withPage(async (page) => {
+    // what a box shows of a value: its words, whether its start and its domain stand whole in it, and its hint
+    const shown = (selector: string) =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((box) => {
+          const inner = box.getBoundingClientRect();
+          const clipped = (element: Element | null) => !element || element.scrollWidth > element.clientWidth + 1;
+          const domain = box.querySelector("[data-end]");
+          const end = domain?.getBoundingClientRect();
+          return {
+            text: box.querySelector(".k2-hidden-text")?.textContent ?? box.textContent,
+            title: box.querySelector("[title]")?.getAttribute("title") ?? box.getAttribute("title"),
+            start: (box.querySelector("[data-start]")?.textContent ?? "").slice(0, 9),
+            domain: domain?.textContent ?? "",
+            domainWhole: !clipped(domain) && !!end && end.right <= inner.right + 1,
+          };
+        });
+    const trigger = field(page, "Absender").locator(".k2-input-value");
+    expect(await shown(".k2-field:has(.k2-field-label:text-is('Absender')) .k2-input-value")).toEqual({
+      text: full,
+      title: full,
+      start: "Annabelle",
+      domain: "@tischlerei-wohlgemuth-lindqvist.example>",
+      domainWhole: true,
+    });
+    await trigger.click();
+    await page.locator('[role="option"]').first().waitFor();
+    // assistive technology hears each address whole, as written
+    expect(await page.getByRole("listbox", { name: "Absender" }).ariaSnapshot()).toContain(`- option "${full}" [selected]`);
+    expect(await shown('[role="option"]')).toMatchObject({ title: full, start: "Annabelle", domainWhole: true });
+  }, 390);
+});
+
+for (const width of [1440, 390])
+  test(`choice with faces at ${width} px: each option leads with its person, named by its words alone; one or several, by keys, sent with the form`, async () => {
+    await withPage(async (page) => {
+      const owner = field(page, "Zuständig");
+      const team = field(page, "Beteiligt");
+      // the names stay the words of the options; the face says nothing a second time
+      expect(await owner.ariaSnapshot()).toContain('- radio "Jonas Wolf"');
+      expect(await team.ariaSnapshot()).toContain('- checkbox "Jonas Wolf" [checked]');
+      expect(await team.getByRole("group").count()).toBeGreaterThan(0);
+      // the face stands before the words, 20 px on the line of the words, and the mark stays first
+      const line = await owner
+        .locator(".k2-choice")
+        .first()
+        .evaluate((choice) => {
+          const mark = choice.querySelector(".k2-mark")!.getBoundingClientRect();
+          const face = choice.querySelector(".k2-av")!.getBoundingClientRect();
+          const text = choice.querySelector(".k2-choice-text")!.getBoundingClientRect();
+          return {
+            size: [Math.round(face.width), Math.round(face.height)],
+            order: mark.right <= face.left && face.right <= text.left,
+            middle: Math.abs(face.top + face.height / 2 - (text.top + 10)) <= 1,
+          };
+        });
+      expect(line).toEqual({ size: [20, 20], order: true, middle: true });
+      // keys: an arrow moves the one choice, Space adds another person
+      await owner.getByRole("radio", { name: "Anna Berg" }).focus();
+      await page.keyboard.press("ArrowDown");
+      expect(await owner.getByRole("radio", { name: "Jonas Wolf" }).isChecked()).toBe(true);
+      await team.getByRole("checkbox", { name: "Mia Lindqvist-Oswald" }).focus();
+      await page.keyboard.press("Space");
+      expect(entriesOf((await sent(page)).entries, "owner")).toEqual(["jonas"]);
+      expect(entriesOf((await sent(page)).entries, "team")).toEqual(["jonas", "mia"]);
+      // the form's reset puts both back
+      await reset(page);
+      await page.waitForFunction(() => document.querySelectorAll('#sent input[name="team"]:checked').length === 1);
+      expect(entriesOf((await sent(page)).entries, "owner")).toEqual(["anna"]);
+      expect(entriesOf((await sent(page)).entries, "team")).toEqual(["jonas"]);
+    }, width);
+  });
+
+for (const width of [1440, 390])
+  test(`slider at ${width} px: a unit reads after the number and is heard with it; on the phone the thumb takes a finger (44 px)`, async () => {
+    await withPage(async (page) => {
+      const corners = field(page, "Ecken");
+      const thumb = corners.getByRole("slider", { name: "Ecken" });
+      expect(await corners.locator(".k2-slider-value").textContent()).toBe("12 px");
+      expect(await thumb.getAttribute("aria-valuetext")).toBe("12 px");
+      await thumb.focus();
+      await page.keyboard.press("ArrowRight");
+      await page.waitForFunction(() => document.querySelectorAll(".k2-slider-value")[0]?.textContent === "13 px");
+      expect(await thumb.getAttribute("aria-valuetext")).toBe("13 px");
+      // the press area is the control (a press anywhere on it sets the thumb there): 36 px high, 44 px on the phone,
+      // where a finger takes it; points around the thumb reach the control
+      const out = width < 768 ? 21 : 17;
+      const area = await corners.locator(".k2-slider-control").evaluate((control, reach) => {
+        const thumb = control.querySelector(".k2-slider-thumb")!.getBoundingClientRect();
+        const x = thumb.left + thumb.width / 2;
+        const y = thumb.top + thumb.height / 2;
+        return {
+          height: Math.round(control.getBoundingClientRect().height),
+          reached: [
+            [x, y - reach],
+            [x, y + reach],
+          ].every(([px, py]) => control.contains(document.elementFromPoint(px!, py!))),
+        };
+      }, out);
+      expect(area).toEqual({ height: width < 768 ? 44 : 36, reached: true });
+      // a press near the start of the control, away from the thumb, sets the thumb there
+      const control = await corners.locator(".k2-slider-control").boundingBox();
+      await page.mouse.click((control?.x ?? 0) + 2, (control?.y ?? 0) + (control?.height ?? 0) / 2);
+      await page.waitForFunction(() => {
+        const range = [...document.querySelectorAll<HTMLInputElement>('input[type="range"]')].find((input) =>
+          input.getAttribute("aria-valuetext")?.endsWith("px"),
+        );
+        return Number(range?.getAttribute("aria-valuenow")) <= 1;
+      });
+    }, width);
+  });
+
+test("choice held by the page: after a form's reset the boxes and the entries sent are what the page holds", async () => {
+  await withPage(async (page) => {
+    const notify = field(page, "Benachrichtigen");
+    await notify.getByRole("checkbox", { name: "Auf dem Telefon" }).click();
+    expect(entriesOf((await sent(page)).entries, "notify")).toEqual(["mail", "push"]);
+    await reset(page);
+    // one task later the boxes show the page's choice again
+    await page.waitForFunction(() => document.querySelectorAll('#sent input[name="notify"]:checked').length === 2);
+    expect(entriesOf((await sent(page)).entries, "notify")).toEqual(["mail", "push"]);
+  });
+});
+
+test("choice of several that is required: the form cannot be sent until one is chosen", async () => {
+  await withPage(async (page) => {
+    const crew = field(page, "Mannschaft");
+    const valid = () => page.evaluate(() => document.querySelector<HTMLInputElement>('input[name="crew"]')?.validity.valid);
+    expect(await valid()).toBe(false);
+    // the reason asks for one of them, and no box is marked as mandatory on its own
+    expect(await page.evaluate(() => document.querySelector<HTMLInputElement>('input[name="crew"]')?.validationMessage)).toBe(
+      "Wähle mindestens eine Option.",
+    );
+    expect(await page.evaluate(() => document.querySelectorAll('input[name="crew"][required]').length)).toBe(0);
+    await crew.getByRole("checkbox", { name: "Jonas Wolf" }).click();
+    expect(await valid()).toBe(true);
+    // one box is enough: the second is never asked for
+    expect(
+      await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>('input[name="crew"]')].every((box) => box.validity.valid)),
+    ).toBe(true);
+    // with none chosen again the field asks again, in the language of the page
+    await page.evaluate(() => {
+      document.documentElement.lang = "en";
+    });
+    await crew.getByRole("checkbox", { name: "Jonas Wolf" }).click();
+    await page.waitForFunction(
+      () => document.querySelector<HTMLInputElement>('input[name="crew"]')?.validationMessage === "Choose at least one option.",
+    );
+  });
+});
+
+test("select in a right-to-left page: an address keeps its own order, name first and domain last", async () => {
+  await withPage(async (page) => {
+    const order = await page.locator('[dir="rtl"] .k2-ends').evaluate((ends) => {
+      const start = ends.querySelector("[data-start]")!.getBoundingClientRect();
+      const end = ends.querySelector("[data-end]")!.getBoundingClientRect();
+      return start.left < end.left;
+    });
+    expect(order).toBe(true);
+    // a value that is no address carries no hint of its own
+    expect(await field(page, "Tarif").locator(".k2-input-value [title]").count()).toBe(0);
+  });
+});
+
 test("select: a locked select takes no focus and opens nothing; a dimmed option is skipped", async () => {
   await withPage(async (page) => {
     const locked = field(page, "Verfahren").locator("[data-select]");
@@ -108,7 +276,7 @@ test("tags: Enter adds the typed text as a chip, Backspace in the empty field ta
         .locator('input[type="hidden"][name="domains"]')
         .evaluateAll((inputs) => inputs.map((input) => (input instanceof HTMLInputElement ? input.value : ""))),
     ).toEqual(["werkstatt.example"]);
-    await page.getByRole("button", { name: "werkstatt.example entfernen" }).click();
+    await page.getByRole("button", { name: "werkstatt.example entfernen", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 0);
     expect((await deeds(page)).at(-1)).toBe("tags:");
   });
@@ -247,6 +415,204 @@ test("a form sends the tags one entry each, nothing of a locked list, the image'
   });
 });
 
+/** Pastes text into a field's input, where its selection stands, as a person's paste does. */
+const paste = (input: ReturnType<Page["locator"]>, text: string) =>
+  input.evaluate((element, pasted) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", pasted);
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+
+test("addresses: Enter, a comma or a paste turn addresses into chips, with quoted names too; a wrong one stays, with its reason", async () => {
+  await withPage(async (page) => {
+    const to = field(page, "An");
+    const input = to.getByRole("combobox");
+    const chips = () => to.locator(".k2-chip").evaluateAll((list) => list.map((chip) => chip.firstChild?.textContent ?? ""));
+    expect(await input.getAttribute("inputmode")).toBe("email");
+    // a comma ends an address
+    await input.fill("");
+    await input.pressSequentially("jonas@werkstatt.example,");
+    await to.locator(".k2-chip").nth(1).waitFor();
+    expect(await chips()).toEqual(["anna.berg@werkstatt.example", "jonas@werkstatt.example"]);
+    expect(await input.inputValue()).toBe("");
+    // a name being typed is no address yet: its comma stays as typed
+    await input.pressSequentially("Mia Lindqvist,");
+    expect(await input.inputValue()).toBe("Mia Lindqvist,");
+    await input.fill("");
+    // a paste: quoted names with a comma, a name with a comma before its <…>, the same address in other letters, and a
+    // wrong one, which stays with its own separators and a sentence that keeps the form from being sent
+    await paste(
+      input,
+      '"Lindqvist, Mia" <mia@lindqvist.example>; Berg, Paul <paul@werkstatt.example>\nANNA.BERG@werkstatt.example, kein-at-zeichen',
+    );
+    await to.locator(".k2-chip").nth(3).waitFor();
+    expect(await chips()).toEqual([
+      "anna.berg@werkstatt.example",
+      "jonas@werkstatt.example",
+      '"Lindqvist, Mia" <mia@lindqvist.example>',
+      "Berg, Paul <paul@werkstatt.example>",
+    ]);
+    expect(await input.inputValue()).toBe("kein-at-zeichen");
+    expect(await input.getAttribute("aria-invalid")).toBe("true");
+    const reason = "„kein-at-zeichen“ ist keine E-Mail-Adresse.";
+    expect(await to.locator(".k2-field-message[data-error]").textContent()).toBe(reason);
+    expect(await input.evaluate((element) => (element as HTMLInputElement).validationMessage)).toBe(reason);
+    expect((await sent(page)).valid).toBe(false);
+    expect(await to.getByRole("status").textContent()).toBe("2 Adressen hinzugefügt.");
+    // fixing it: the sentence goes while the text is edited
+    await input.press("End");
+    await input.press("Backspace");
+    expect(await to.locator(".k2-field-message").count()).toBe(0);
+    expect(await input.getAttribute("aria-invalid")).toBeNull();
+    // a paste over a selection replaces it
+    await input.fill("Hallo");
+    await input.evaluate((element) => (element as HTMLInputElement).setSelectionRange(0, 5));
+    await paste(input, "kai@werkstatt.example, lea@werkstatt.example");
+    await to.locator(".k2-chip").nth(5).waitFor();
+    expect(await input.inputValue()).toBe("");
+    // each chip is sent, and taken away with its named button or with Backspace in the empty field
+    expect(entriesOf((await sent(page)).entries, "to")).toHaveLength(6);
+    await to.getByRole("button", { name: "jonas@werkstatt.example entfernen" }).click();
+    await input.press("Backspace");
+    await page.waitForFunction(() => !document.querySelector('.k2-chip-x[aria-label="lea@werkstatt.example entfernen"]'));
+    expect(entriesOf((await sent(page)).entries, "to")).toHaveLength(4);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[role="status"]')].some((status) => status.textContent === "1 Adresse entfernt."),
+    );
+    // the form's reset puts the first address back
+    await reset(page);
+    await page.waitForFunction(() => document.querySelectorAll('input[type="hidden"][name="to"]').length === 1);
+  });
+});
+
+test("addresses: a field takes no more than it may, and says so beside a refused text; values of every kind", async () => {
+  await withPage(async (page) => {
+    const cc = field(page, "Kopie");
+    const input = cc.getByRole("combobox");
+    // five addresses and a wrong text: three are taken, and both sentences stand under the chips
+    await paste(input, "a@werkstatt.example, b@werkstatt.example, c@werkstatt.example, d@werkstatt.example, e@werkstatt.example, kaputt");
+    await cc.locator(".k2-chip").nth(2).waitFor();
+    expect(await cc.locator(".k2-chip").count()).toBe(3);
+    expect(await cc.locator(".k2-field-message").textContent()).toBe(
+      "„kaputt“ ist keine E-Mail-Adresse. Dieses Feld nimmt höchstens 3 Adressen; 2 wurden nicht übernommen.",
+    );
+    // a long wrong text is named in short in the sentence
+    await input.fill("");
+    await paste(input, `${"x".repeat(100)}, f@werkstatt.example`);
+    const said = (await cc.locator(".k2-field-message[data-error]").textContent()) ?? "";
+    const quoted = said.slice(said.indexOf("„") + 1, said.indexOf("“"));
+    expect(quoted.endsWith("…")).toBe(true);
+    expect(quoted.length).toBe(60);
+    // removing the last chip there is: the focus goes to the field
+    await input.fill("");
+    for (const name of ["c", "b"]) await cc.getByRole("button", { name: `${name}@werkstatt.example entfernen` }).click();
+    await cc.getByRole("button", { name: "a@werkstatt.example entfernen" }).click();
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "combobox");
+    // a field of other values keeps its own limit too
+    const hosts = page.getByRole("combobox", { name: "Server", exact: true });
+    await hosts.click();
+    await page.keyboard.type("mx2.example");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("mx3.example");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".k2-field-message")].some((message) => message.textContent?.includes("höchstens 2 Werte")),
+    );
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example", "mx2.example"]);
+    // what is left out is not held anywhere: Backspace in the empty field takes back the last chip that shows
+    await page.keyboard.press("Backspace");
+    await page.waitForFunction(() => document.querySelectorAll('input[type="hidden"][name="hosts"]').length === 1);
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example"]);
+  });
+});
+
+test("addresses: a press beside the open suggestions takes the typed address", async () => {
+  await withPage(async (page) => {
+    const bcc = field(page, "Weitere Empfänger");
+    const input = bcc.getByRole("combobox");
+    await input.click();
+    await input.pressSequentially("tom@werkstatt.examp");
+    await page.getByRole("option", { name: "tom@werkstatt.example" }).waitFor();
+    // a press somewhere else on the page: the typed address becomes a chip, it is not lost
+    await page.mouse.click(4, 4);
+    await bcc.locator(".k2-chip").first().waitFor();
+    expect(await bcc.locator(".k2-chip").evaluateAll((list) => list.map((chip) => chip.firstChild?.textContent))).toEqual([
+      "tom@werkstatt.examp",
+    ]);
+    expect(await input.inputValue()).toBe("");
+  });
+});
+
+test("addresses: sending with the focus in the field sends the typed address, and keeps a text that is no address", async () => {
+  await withPage(async (page) => {
+    await field(page, "Banner")
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    const to = field(page, "An").getByRole("combobox");
+    await to.click();
+    await to.pressSequentially("kai@werkstatt.example");
+    const submitted = () =>
+      page.evaluate(() => {
+        const form = document.getElementById("sent");
+        if (!(form instanceof HTMLFormElement)) return null;
+        const seen: { to?: string[] } = {};
+        const hear = () => {
+          seen.to = [...new FormData(form)].filter(([name]) => name === "to").map(([, value]) => String(value));
+        };
+        form.addEventListener("submit", hear);
+        form.requestSubmit();
+        form.removeEventListener("submit", hear);
+        return seen.to ?? null;
+      });
+    expect(await submitted()).toEqual(["anna.berg@werkstatt.example", "kai@werkstatt.example"]);
+    expect(await to.inputValue()).toBe("");
+    // a text that is no address is not sent: it stays with its reason
+    await to.focus();
+    await to.pressSequentially("kaputt");
+    expect(await submitted()).toBeNull();
+    expect(await to.inputValue()).toBe("kaputt");
+    expect(await field(page, "An").locator(".k2-field-message[data-error]").textContent()).toBe("„kaputt“ ist keine E-Mail-Adresse.");
+  });
+});
+
+test("addresses: while typing, an address is taken once a separator, Enter or leaving the field closes it; the same news is said again", async () => {
+  await withPage(async (page) => {
+    const to = field(page, "An");
+    const input = to.getByRole("combobox");
+    await input.fill("");
+    // a name with a comma and an address still being typed: nothing is taken yet
+    await input.pressSequentially("Mia Lindqvist, mia@lindqvist.e");
+    expect(await to.locator(".k2-chip").count()).toBe(1);
+    expect(await input.inputValue()).toBe("Mia Lindqvist, mia@lindqvist.e");
+    await input.fill("kai@werkstatt.example");
+    // leaving the field takes it
+    await page.keyboard.press("Tab");
+    await to.locator(".k2-chip").nth(1).waitFor();
+    // the status is emptied before each news, so \"1 Adresse hinzugefügt.\" twice is heard twice
+    await to.locator('.k2-hidden-text[role="status"]').evaluate((status) => {
+      Reflect.set(window, "__k2Said", 0);
+      new MutationObserver(() => {
+        if (status.textContent) Reflect.set(window, "__k2Said", Number(Reflect.get(window, "__k2Said")) + 1);
+      }).observe(status, { childList: true, characterData: true, subtree: true });
+    });
+    for (const address of ["lea@werkstatt.example, ", "tom@werkstatt.example, "]) await paste(input, address);
+    await page.waitForFunction(() => Number(Reflect.get(window, "__k2Said")) >= 2);
+  });
+});
+
+test("chip: its remove button is named for what it removes and takes it away, also from the keyboard, and the focus goes on", async () => {
+  await withPage(async (page) => {
+    const remove = page.getByRole("button", { name: "Anna Berg entfernen" });
+    expect(await remove.count()).toBe(1);
+    await remove.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window.__deeds ?? []).includes("unassign:Anna Berg"));
+    expect(await page.getByRole("button", { name: "Anna Berg entfernen" }).count()).toBe(0);
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Jonas Wolf entfernen");
+  });
+});
+
 test("tags: named by their field's label; a form's reset puts the uncontrolled list back", async () => {
   await withPage(async (page) => {
     const input = page.getByRole("combobox", { name: "Server", exact: true });
@@ -254,10 +620,14 @@ test("tags: named by their field's label; a form's reset puts the uncontrolled l
     await input.click();
     await page.keyboard.type("mx2.example");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 3);
+    await page.waitForFunction(
+      () => document.querySelectorAll('#sent [data-tags]:has(.k2-chip-x[aria-label^="mx"]) > .k2-chip').length === 3,
+    );
     expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example", "mx2.example"]);
     await reset(page);
-    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 2);
+    await page.waitForFunction(
+      () => document.querySelectorAll('#sent [data-tags]:has(.k2-chip-x[aria-label^="mx"]) > .k2-chip').length === 2,
+    );
     expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example"]);
   });
 });

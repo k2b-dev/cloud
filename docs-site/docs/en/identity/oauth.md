@@ -451,6 +451,34 @@ service account. Clients with a service-account binding must be confidential.
 `GET /api/oauth/admin/clients?serviceAccountId=<id>` lists the clients of one
 account.
 
+## Disconnect people from a client
+
+An administrator can end a client's connections without deleting the client:
+
+- `DELETE /api/oauth/admin/clients/<id>/connections/<userId>` disconnects one
+  person;
+- `DELETE /api/oauth/admin/clients/<id>/connections` disconnects everyone.
+
+Both revoke the live refresh-token families of the client and answer with the
+number revoked, such as `{ "revoked": 3 }`. Disconnecting a person with no
+live connection answers `{ "revoked": 0 }`. The next refresh returns
+`invalid_grant`; access tokens already issued remain valid until they expire,
+at most one hour. Sign-ins that have not issued tokens yet end too.
+
+A disconnect ends the current connections; it does not block anyone. A person
+whom the client's access rules still allow can connect again:
+
+- with a managed client, at the next sign-in, without a consent step;
+- with a dynamic or first-party client, after confirming its consent again.
+
+To keep a person out, change the client's access rules (`allowedProfiles`,
+`accessMode`, `allowedUserIds`, `allowedGroupIds`), then disconnect.
+
+Only administrators can disconnect, with a browser session or an OAuth token
+with the `write` or `admin` scope. Each call writes one
+`oauth.client.connections_revoke` audit entry with the administrator, the
+client, the person or `all`, and the number revoked.
+
 ## Register a dynamic public client
 
 OAuth clients that do not have a prior relationship with the Cloud instance
