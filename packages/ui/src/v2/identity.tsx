@@ -171,7 +171,8 @@ export const Hero = (props: HeroProps) => (
       )}
     </Show>
     <Show when={props.exceptions?.length}>
-      <ul class="k2-hero-ex">
+      {/* its quiet line on the text edges is part of the hero's drawing, no divider: the layout rules leave it be */}
+      <ul class="k2-hero-ex" data-k2-figure="">
         <For each={props.exceptions}>
           {(exception) => (
             <li>

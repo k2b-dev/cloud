@@ -1843,29 +1843,21 @@ test("a bar that ends a section draws no line of its own: one line parts it from
     );
 });
 
-test("on the phone a fact is one line, its label left and a short value at the end; a long value goes whole under its label", async () => {
+// identity B (study, review r2): on the phone the labels stand in a column of 100 px beside their values, 16 px apart;
+// a long value wraps beside its label
+test("on the phone the labels of facts stand in a column of 100 px, each value beside its label", async () => {
   await withPage(
     "facts",
     async (page) => {
-      const found = await page.evaluate(() => {
-        const pane = document.querySelector(".k2-pane")!.getBoundingClientRect();
-        return [...document.querySelectorAll(".k2-fact-pair")].map((pair) => {
+      const found = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-fact-pair")].map((pair) => {
           const label = pair.querySelector("dt")!.getBoundingClientRect();
-          const value = pair.querySelector(".k2-fact-value")!.getBoundingClientRect();
-          return {
-            name: pair.querySelector("dt")!.textContent,
-            beside: Math.abs(label.top - value.top) < 1,
-            // beside its label a value ends on the text edge (or before its copy button); under it, it starts there
-            end: Math.round(pane.right - value.right),
-            start: Math.round(value.left - pane.left),
-          };
-        });
-      });
-      const by = Object.fromEntries(found.map((fact) => [fact.name, fact]));
-      for (const name of ["Mitglieder", "Erstellt"])
-        expect({ name, beside: by[name]!.beside, end: by[name]!.end }).toEqual({ name, beside: true, end: 16 });
-      for (const name of ["Ablage", "Kennung"])
-        expect({ name, beside: by[name]!.beside, start: by[name]!.start }).toEqual({ name, beside: false, start: 16 });
+          const value = pair.querySelector("dd")!.getBoundingClientRect();
+          return { label: Math.round(label.width), gap: Math.round(value.left - label.right), beside: Math.abs(label.top - value.top) < 1 };
+        }),
+      );
+      expect(found.length).toBeGreaterThan(3);
+      for (const fact of found) expect(fact).toEqual({ label: 100, gap: 16, beside: true });
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect(layout.problems).toEqual([]);
     },
