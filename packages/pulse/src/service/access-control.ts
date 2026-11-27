@@ -77,14 +77,24 @@ export const readableScopeFilter = (scope: AccessScope): { subject: AccessSubjec
   return { subject: subjectForScope(scope), boundBaseShortId: bound };
 };
 
-const pageAccess = new AsyncLocalStorage<Map<string, Promise<PermissionLevel>>>();
+/** The grants one page load read; `open` ends with the load, so work it left running reads fresh afterwards. */
+type PageGrants = { grants: Map<string, Promise<PermissionLevel>>; open: boolean };
+const pageAccess = new AsyncLocalStorage<PageGrants>();
 
 /**
  * Runs one page load with its grants read once: every service it calls checks access itself, and inside this load
  * the same person's grant on the same base is the same answer, so it is read from the database a single time. Only
  * page loaders use it; an API request, a job and a transaction read the grant every time.
  */
-export const withPageAccess = <T>(load: () => Promise<T>): Promise<T> => pageAccess.run(new Map(), load);
+export const withPageAccess = async <T>(load: () => Promise<T>): Promise<T> => {
+  const page: PageGrants = { grants: new Map(), open: true };
+  try {
+    return await pageAccess.run(page, load);
+  } finally {
+    // a timer, a stream or a promise the load started still carries this store; once the page is answered it reads fresh
+    page.open = false;
+  }
+};
 
 /** Pass the transaction that locked the base to authorize a change against the state it writes. */
 export const requireBaseAccess = async (
@@ -120,7 +130,8 @@ export const requireBaseAccess = async (
     return row?.permission ?? "none";
   };
   // inside one page load the grant is read once; a transaction always reads it against the state it locked
-  const memo = db === sql ? pageAccess.getStore() : undefined;
+  const page = db === sql ? pageAccess.getStore() : undefined;
+  const memo = page?.open ? page.grants : undefined;
   const key = `${baseId}|${bound ?? ""}|${JSON.stringify(subject)}`;
   let pending = memo?.get(key);
   if (!pending) {
