@@ -1,9 +1,12 @@
-import { AutocompleteEditor, Button, MarkdownEditor, NoticeCard, Select, TextInput, useLocale } from "@k2b/ui";
+import { AutocompleteEditor, MarkdownEditor, useLocale } from "@k2b/ui";
+import { Band, Button, Canvas, Empty, Field, Input, Loading, Notice, Pane, Section, Select, StatusRow, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type MarkdownPdfMessages, markdownPdfMessages } from "@/api/markdown-pdf-messages";
+import ToolsScreen from "../ToolsScreen";
 
-export type MarkdownPdfTemplateId = "document" | "report" | "compact" | "custom";
+const TEMPLATE_IDS = ["document", "report", "compact", "custom"] as const;
+export type MarkdownPdfTemplateId = (typeof TEMPLATE_IDS)[number];
 
 type MarkdownPdfViewProps = {
   initialMarkdown?: string;
@@ -170,135 +173,154 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
   };
 
   const selectTemplate = (value: string | null) => {
-    if (!value) return;
-    const next = value as MarkdownPdfTemplateId;
+    const next = TEMPLATE_IDS.find((id) => id === value);
+    if (!next) return;
     setTemplateId(next);
     if (next === "custom" && !customCss().trim()) setCustomCss(MINIMAL_CUSTOM_CSS);
   };
 
+  const lead = () =>
+    busy()
+      ? t().generatingPdf
+      : error()
+        ? t().generationFailedTitle
+        : stale()
+          ? t().staleTitle
+          : previewUrl()
+            ? t().generationComplete
+            : t().emptyTitle;
+  const template = () => templateOptions(t()).find((option) => option.id === templateId());
+  // The preview is a column of its own from the start: a quiet state before the first PDF, then the PDF.
+
   return (
-    <section class="flex min-h-0 flex-1 flex-col gap-4" aria-labelledby="markdown-pdf-heading">
-      <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(20rem,0.92fr)_minmax(0,1.08fr)]">
-        <div class="flex min-h-0 flex-col gap-4">
-          <div class="grid gap-3 sm:grid-cols-2">
-            <Select
-              label={t().templateLabel}
-              icon="ti ti-template"
-              value={templateId}
-              onValueChange={selectTemplate}
-              options={templateOptions(t())}
-            />
-            <TextInput
-              label={t().filenameLabel}
-              icon="ti ti-file-type-pdf"
-              value={filename}
-              onValueChange={setFilename}
-              maxLength={255}
-              spellcheck={false}
-            />
-          </div>
-
-          <div class="h-[28rem] min-h-0 shrink-0 lg:h-auto lg:flex-1 lg:shrink">
-            <MarkdownEditor
-              label={t().markdownLabel}
-              value={markdown}
-              onValueChange={setMarkdown}
-              placeholder={t().markdownPlaceholder}
-              lines={18}
-              fill
-              showStats
-            />
-          </div>
-
-          <Show when={templateId() === "custom"}>
-            <div>
-              <AutocompleteEditor
-                label={t().customCssLabel}
-                description={t().customCssDescription}
-                value={customCss}
-                onValueChange={setCustomCss}
-                placeholder={MINIMAL_CUSTOM_CSS}
-                lines={8}
-                spellcheck={false}
+    <ToolsScreen
+      tool="markdown-pdf"
+      primary={{ label: t().generatePdf, icon: "file-type-pdf", onClick: () => void generate() }}
+      end={
+        <Button variant="primary" icon="file-type-pdf" busy={busy()} onClick={() => void generate()}>
+          {t().generatePdf}
+        </Button>
+      }
+    >
+      <Pane.Split>
+        <Pane label={t().markdownLabel} width={{ min: 360, default: 600 }} scrollKey="tools-markdown-pdf">
+          <Show when={error()}>
+            {(message) => (
+              <Notice tone="bad" title={t().generationFailedTitle}>
+                {message()}
+              </Notice>
+            )}
+          </Show>
+          <Band>
+            <Field.Row>
+              <Field label={t().templateLabel} hint={template()?.description}>
+                <Select
+                  options={templateOptions(t()).map((option) => ({ value: option.id, label: option.label }))}
+                  value={templateId()}
+                  onChange={selectTemplate}
+                />
+              </Field>
+              <Field label={t().filenameLabel}>
+                <Input value={filename()} onInput={setFilename} maxLength={255} spellcheck={false} />
+              </Field>
+            </Field.Row>
+            <Text type="meta" muted>
+              {t().serverNotice}
+            </Text>
+          </Band>
+          {/* The Markdown editor keeps its own behaviour (toolbar, shortcuts, counts); v2 has none of its own yet. */}
+          <Canvas label={t().markdownLabel} height={520}>
+            {/* the editor keeps the pane's 20 px edge, as the fields above do */}
+            <div style={{ height: "100%", padding: "0 20px", "box-sizing": "border-box" }}>
+              <MarkdownEditor
+                label={t().markdownLabel}
+                value={markdown}
+                onValueChange={setMarkdown}
+                placeholder={t().markdownPlaceholder}
+                lines={18}
+                variant="embedded"
+                fill
+                showStats
               />
             </div>
+          </Canvas>
+          <Show when={templateId() === "custom"}>
+            <Section icon="brand-css3" title={t().customCssLabel} summary={t().customCssDescription}>
+              <Canvas label={t().customCssLabel} height={220}>
+                <AutocompleteEditor
+                  label={t().customCssLabel}
+                  value={customCss}
+                  onValueChange={setCustomCss}
+                  placeholder={MINIMAL_CUSTOM_CSS}
+                  lines={8}
+                  variant="embedded"
+                  spellcheck={false}
+                />
+              </Canvas>
+            </Section>
           </Show>
-
-          <div class="flex items-start gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2 text-xs leading-relaxed text-dimmed">
-            <i class="ti ti-server mt-0.5 shrink-0" aria-hidden="true" />
-            <p>{t().serverNotice}</p>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <Button variant="primary" onClick={() => void generate()} loading={busy()} loadingLabel={t().generatingPdf}>
-              <i class="ti ti-file-type-pdf" aria-hidden="true" /> {t().generatePdf}
-            </Button>
-            <Show when={busy()}>
-              <Button variant="secondary" onClick={cancel}>
-                {t().cancel}
-              </Button>
-            </Show>
-          </div>
-
-          <Show when={error()}>
-            <div role="alert">
-              <NoticeCard tone="danger" title={t().generationFailedTitle}>
-                {error()}
-              </NoticeCard>
-            </div>
-          </Show>
-        </div>
-
-        <div class="flex min-h-[28rem] min-w-0 flex-col overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ui-border)] px-4 py-3">
-            <div class="min-w-0">
-              <h2 id="markdown-pdf-heading" class="font-medium text-primary">
-                {t().previewTitle}
-              </h2>
-              <p class="text-xs text-dimmed">{t().previewDescription}</p>
-            </div>
-            <Show when={previewUrl()}>
-              <div class="flex items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={openPreview}>
-                  <i class="ti ti-external-link" aria-hidden="true" /> {t().open}
-                </Button>
-                <Button variant="primary" size="sm" onClick={download} disabled={!pdf()}>
-                  <i class="ti ti-download" aria-hidden="true" /> {t().downloadPdf}
-                </Button>
-              </div>
-            </Show>
-          </div>
-
+        </Pane>
+        {/* the preview column stands from the start, so the page has its second column before the first PDF */}
+        <Pane
+          label={t().previewTitle}
+          status={
+            <StatusRow
+              lead={lead()}
+              loading={busy()}
+              facts={[{ after: t().previewDescription }]}
+              filters={
+                <Show
+                  when={busy()}
+                  fallback={
+                    <Show when={previewUrl()}>
+                      <Button variant="ghost" icon="external-link" onClick={openPreview}>
+                        {t().open}
+                      </Button>
+                      <Button variant="ghost" icon="download" disabled={!pdf()} onClick={download}>
+                        {t().downloadPdf}
+                      </Button>
+                    </Show>
+                  }
+                >
+                  <Button variant="ghost" icon="x" onClick={cancel}>
+                    {t().cancel}
+                  </Button>
+                </Show>
+              }
+            />
+          }
+        >
           <Show when={stale()}>
-            <div class="border-b border-[var(--ui-border)] px-4 py-3">
-              <NoticeCard tone="warning" title={t().staleTitle}>
-                {t().staleBody}
-              </NoticeCard>
-            </div>
+            <Notice tone="warn" title={t().staleTitle} actions={[{ label: t().generatePdf, onClick: () => void generate() }]}>
+              {t().staleBody}
+            </Notice>
           </Show>
-
           <Show
             when={previewUrl()}
             fallback={
-              <div class="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-dimmed">
-                <i class="ti ti-file-type-pdf text-4xl" aria-hidden="true" />
-                <p class="font-medium text-primary">{t().emptyTitle}</p>
-                <p class="max-w-sm text-sm">{t().emptyDescription}</p>
-              </div>
+              <Canvas label={t().previewTitle} height={760}>
+                <Show
+                  when={busy()}
+                  fallback={
+                    // the head's "PDF erstellen" makes it; the empty column only says where it will stand
+                    <Empty icon="file-type-pdf" text={t().previewEmpty} />
+                  }
+                >
+                  <Loading />
+                </Show>
+              </Canvas>
             }
           >
             {(url) => (
-              <>
-                <p class="k2b-sr-only" role="status">
-                  {t().generationComplete}
-                </p>
-                <iframe class="min-h-[28rem] flex-1 bg-white" src={url()} title={t().iframeTitle} />
-              </>
+              // k2b-ui gap: no document viewer in v2; the browser's own PDF view stands in a Canvas.
+              <Canvas label={t().iframeTitle} height={760}>
+                <iframe src={url()} title={t().iframeTitle} style={{ border: 0, width: "100%", height: "100%", background: "#fff" }} />
+              </Canvas>
             )}
           </Show>
-        </div>
-      </div>
-    </section>
+        </Pane>
+      </Pane.Split>
+    </ToolsScreen>
   );
 }
 

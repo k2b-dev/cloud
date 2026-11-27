@@ -29,6 +29,8 @@ export const toolIcon = (icon: string) => icon.replace(/^ti ti-/, "");
 export default function ToolsScreen(props: {
   /** The open tool; none on the overview. */
   tool?: ToolId;
+  /** What the tool has open, such as a photo: the last step of the path, so it needs no row of its own. */
+  item?: string;
   /** The head's end: the tool's own deeds, or the overview's search. */
   end?: JSX.Element;
   /** The page's main deed, mirrored for the phone. */
@@ -75,7 +77,16 @@ export default function ToolsScreen(props: {
           <Bar
             start={
               // the overview is named by the sidebar's current entry; a tool says where it stands
-              open() ? <Path label={t().appName} items={[{ label: t().appName, href: "/tools" }, { label: open()!.name }]} /> : undefined
+              open() ? (
+                <Path
+                  label={t().appName}
+                  items={[
+                    { label: t().appName, href: "/tools" },
+                    // the tool's own step is the current address: a link there would reload and drop what is open
+                    ...(props.item ? [{ label: open()!.name }, { label: props.item }] : [{ label: open()!.name }]),
+                  ]}
+                />
+              ) : undefined
             }
             end={props.end}
           />

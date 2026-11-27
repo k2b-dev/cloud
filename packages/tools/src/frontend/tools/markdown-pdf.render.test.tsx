@@ -17,29 +17,29 @@ const en = markdownPdfMessages.resolve(["en"]).t;
 const renderView = (props: Parameters<typeof MarkdownPdfView>[0] = {}) => renderToString(() => createComponent(MarkdownPdfView, props));
 
 describe("Markdown to PDF tool", () => {
-  test("renders accessible Markdown, template, filename, and generation controls", () => {
+  test("renders the Markdown editor, template, filename and the one way to generate", () => {
     const html = renderView();
 
-    expect(html).toContain("Markdown");
+    expect(html).toContain('aria-label="Markdown"');
     expect(html).toContain("Template");
     expect(html).toContain("Filename");
-    expect(html).toContain("Custom");
+    expect(html).toContain("Neutral typography");
     expect(html).not.toContain("This replaces the print template");
-    expect(html).toContain("Generate PDF");
-    expect(html).toContain("No PDF generated yet");
+    expect(html.match(/Generate PDF/g)?.length).toBeGreaterThanOrEqual(1);
     expect(html).toContain("processed in memory and are not stored");
-    expect(html).toContain('class="ti ti-file-type-pdf');
-    expect(html).toContain("h-[28rem] min-h-0 shrink-0 lg:h-auto lg:flex-1 lg:shrink");
-    expect(html.indexOf("processed in memory and are not stored")).toBeLessThan(html.indexOf("Generate PDF"));
+    // the preview column stands from the start (parity report, item 25): it says where the PDF will stand, and the
+    // way to make it stays the head's one action
+    expect(html).toContain('aria-label="PDF preview"');
+    expect(html).toContain(en.previewEmpty);
   });
 
-  test("shows prefilled CSS directly below Markdown for the Custom template", () => {
+  test("shows prefilled CSS below the Markdown for the Custom template", () => {
     const html = renderView({ initialTemplateId: "custom" });
 
     expect(html).toContain("Custom CSS");
     expect(html).toContain("This replaces the print template");
     expect(MINIMAL_CUSTOM_CSS).toContain("@page { size: A4; margin: 20mm; }");
-    expect(html.indexOf("Custom CSS")).toBeLessThan(html.indexOf("processed in memory and are not stored"));
+    expect(html.indexOf('aria-label="Markdown"')).toBeLessThan(html.indexOf("Custom CSS"));
   });
 
   test("renders loading, error, and completed preview states", () => {
@@ -48,14 +48,15 @@ describe("Markdown to PDF tool", () => {
     const ready = renderView({ initialMarkdown: "# Cloud", initialPreviewUrl: "https://example.test/preview.pdf" });
 
     expect(loading).toContain("Generating PDF…");
+    expect(loading).toContain('aria-label="PDF preview"');
     expect(loading).toContain("Cancel");
     expect(error).toContain("PDF generation failed");
-    expect(error).toContain('role="alert"');
+    expect(error).toContain("PDF rendering is not configured.");
     expect(ready).toContain('title="Generated PDF preview"');
     expect(ready).toContain('src="https://example.test/preview.pdf"');
     expect(ready).toContain("Open");
     expect(ready).toContain("Download PDF");
-    expect(ready).toContain('role="status">PDF generation complete.');
+    expect(ready).toContain("PDF generation complete.");
   });
 
   test("normalizes PDF filenames and validates UTF-8 byte budgets", () => {
