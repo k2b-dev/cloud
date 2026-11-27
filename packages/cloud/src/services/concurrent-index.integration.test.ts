@@ -10,11 +10,12 @@ databaseSuite()("index builds next to live writes", () => {
   beforeAll(async () => {
     database = await useMigratedDatabase("concurrent_index");
   }, 120_000);
+  // Dropping a migrated database outlasts the 5 s default on a fresh server, as in the other migrated suites.
   afterAll(async () => {
     await settleBackgroundIndexBuilds();
     await sql.close();
     await database?.drop();
-  });
+  }, 60_000);
   const turnIndex = async () => {
     const [index] = await sql<{ valid: boolean }[]>`SELECT indisvalid AS valid FROM pg_catalog.pg_index
       WHERE indexrelid = to_regclass('ai.inference_calls_all_turn')`;
