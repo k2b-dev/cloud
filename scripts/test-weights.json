@@ -569,6 +569,7 @@
     "@k2b/ui src/v2/ticks.browser.test.ts": 6.2,
     "@k2b/ui src/v2/tree.browser.test.ts": 32.6,
     "@k2b/ui src/v2/workspace-drawer.browser.test.ts": 14.3,
+    "@k2b/ui src/v2/worst-case.browser.test.ts": 10.4,
     "@k2b/ui src/widgets/dashboard-frame-parity.browser.test.ts": 3.3,
     "@k2b/ui src/widgets/dashboard-frame.browser.test.ts": 4.4,
     "@k2b/ui src/widgets/dashboard-grid.browser.test.ts": 5.3,
