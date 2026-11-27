@@ -19,6 +19,8 @@ declare global {
     };
     /** Texts the tested copy actions wrote, recorded by the browser test in place of the system clipboard. */
     copiedTexts?: string[];
+    /** While on, every clock read stalls the thread for more than one 60 Hz frame, as a loaded machine would. */
+    stallClockReads?: (on: boolean) => void;
   }
 }
 
