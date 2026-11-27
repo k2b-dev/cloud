@@ -4154,6 +4154,20 @@
   width: 16px;
   color: var(--k2-subtle);
 }
+/* the data colour of an entry: a dot of 8 px in the middle of the lead, neutral where the colour is none */
+.k2-ui .k2-mi-dot {
+  width: 8px;
+  height: 8px;
+  margin: auto;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-c, var(--k2-n300));
+}
+@media (forced-colors: active) {
+  .k2-ui .k2-mi-dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
 .k2-ui .k2-mi-label {
   flex: 1;
   min-width: 0;

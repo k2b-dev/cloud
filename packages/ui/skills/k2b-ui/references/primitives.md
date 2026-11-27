@@ -588,7 +588,9 @@ lines instead of cutting a thing.
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the
   quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
+  head it stays on the phone. An entry: `label`, `icon` or `color` (a data
+  colour as a dot before the words, such as an area; it goes through the
+  colour guard and adds nothing to the name), `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
