@@ -428,8 +428,10 @@ const open = async (
     if (url.pathname.endsWith("/viewed")) return route.fulfill({ status: 204 });
     if (url.pathname.endsWith("/queue")) return route.fulfill({ json: [] });
     if (url.pathname.endsWith("/dictations")) return route.fulfill({ json: { items: [], nextCursor: null } });
-    // No reading view here, and every chat starts without tabs.
+    // No reading view here, and every chat starts without tabs; a stored web page that asks for its text gets none.
     if (url.pathname === "/api/assistant/workspace/web-reader") return route.fulfill({ json: { available: false } });
+    if (/^\/api\/assistant\/workspace\/conversations\/\w+\/web-reader$/.test(url.pathname))
+      return route.fulfill({ status: 503, json: { message: "unavailable" } });
     if (/^\/api\/assistant\/workspace\/conversations\/\w+\/tabs$/.test(url.pathname))
       return route.fulfill({
         json:

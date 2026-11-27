@@ -50,8 +50,9 @@ for (const theme of ["light", "dark"] as const)
         expect(result.edge).toBe("16px");
         // a group stands on the same edge
         expect(result.group).toEqual(["16px", "16px"]);
-        // a group inside a dialog of the panel keeps v2's own margin: the rule reaches only a pane's groups
-        expect(result.nested).toBe("20px");
+        // a group inside a dialog of the panel keeps v2's own margin (16 px below 768, 20 px from it): the rule
+        // reaches only a pane's groups
+        expect(result.nested).toBe(width < 768 ? "16px" : "20px");
         // a v2 page outside the panel keeps its own edge, so the rule is the panel's alone
         expect(result.elsewhere).toBe(width < 768 ? "16px" : "20px");
         expect(result.fill).toBe(result.surface);
