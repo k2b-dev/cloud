@@ -206,7 +206,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
             const none = current().instances === 0;
             // The queue grows when nothing is free and runs wait.
             const behind = !none && current().freeSlots === 0 && current().queued > 0;
-            const short = (id: string) => id.replace(/-/g, "").slice(0, 8);
+            const short = (id: string) => id.replace(/-/g, "").slice(0, 4);
             return (
               <>
                 <Show when={none}>

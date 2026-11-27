@@ -16,6 +16,7 @@ import {
   StatusRow,
   Table,
   Text,
+  useLocale,
 } from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal, For, type JSX, Show } from "solid-js";
@@ -110,6 +111,8 @@ function PolicyValue(props: { value: CodePolicyValue }) {
  */
 export default function PolicyScreen(props: PolicyScreenProps) {
   const t = useCodeText();
+  const locale = useLocale();
+  const num = (n: number) => new Intl.NumberFormat(locale()).format(n);
   const policy = ok(props.policy) ? props.policy : null;
   const pausedHref = codeAreaHref({ sec: "code", status: "paused" });
   const when = (iso: string) => formatDateTime(iso, props.dateConfig);
@@ -172,7 +175,7 @@ export default function PolicyScreen(props: PolicyScreenProps) {
                     avatar: (entry) => ({ name: entry.name }),
                     cell: (entry) => entry.name,
                   },
-                  { title: t().rules, width: { min: 80, default: 100 }, align: "end", drop: true, cell: (entry) => String(entry.rules) },
+                  { title: t().rules, width: { min: 80, default: 100 }, align: "end", drop: true, cell: (entry) => num(entry.rules) },
                   ...(open
                     ? []
                     : [
@@ -181,7 +184,7 @@ export default function PolicyScreen(props: PolicyScreenProps) {
                           width: { min: 80, default: 100 },
                           align: "end" as const,
                           drop: true,
-                          cell: (entry: CodeAdminPolicy["groups"][number]) => String(entry.members),
+                          cell: (entry: CodeAdminPolicy["groups"][number]) => num(entry.members),
                         },
                       ]),
                   {

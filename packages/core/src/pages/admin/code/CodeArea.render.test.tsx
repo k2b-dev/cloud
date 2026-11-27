@@ -211,7 +211,7 @@ test("all automations: filters in the address, owner, state and last run per row
     ownerLabel(codeAdminMessages.resolve(["de"]).t, { kind: "resource", ref: { type: "mail.mailbox", id: "m_x" } }, null, { mail: { name: "Mail" } }),
   ).toBe("ein Ort in Mail, den du nicht öffnen darfst");
   const detail = text(render({ sec: "code", id: "c_rechn" }));
-  for (const value of ["In „Freigaben“ öffnen", "selbst freigegeben (einziger Admin)", "Letzte Läufe", "Pausieren", "Fehlgeschlagen", "c_rechn"])
+  for (const value of ["In „Freigaben“ öffnen", "selbst freigegeben (einziger Admin)", "Letzte Läufe", "Pausieren", "Fehlgeschlagen"])
     expect(detail).toContain(value);
   expect(text(render({ sec: "code", id: "c_woche" }))).toContain("Fortsetzen");
   expect(text(render({ sec: "code" }, "empty"))).toContain("Sobald jemand eine Automation einreicht");
@@ -347,7 +347,7 @@ test("limits are settings with their value beside them, grouped; runners show pl
     expect(limits).toContain(label);
   expect(render({ sec: "limits" }, "normal", "en")).toContain("AI reference budget per attempt (USD)");
   const runners = text(render({ sec: "runners" }));
-  for (const label of ["Runner 1", "8a3c1e20", "5 von 12", "Verbunden", "4 s"]) expect(runners).toContain(label);
+  for (const label of ["Runner 1", "8a3c", "5 von 12", "Verbunden", "4 s"]) expect(runners).toContain(label);
   const none = text(render({ sec: "runners" }, "empty"));
   expect(none).toContain("Kein Runner ist verbunden. Keine Automation läuft.");
   expect(none).toContain("2 Min.");

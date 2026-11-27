@@ -198,7 +198,6 @@ export const codeReviewMessages = i18n.define({
       // Common
       unknownAuthor: "unknown",
       rowReason: ({ row }: { row: CodePolicyRow }) => ROW_REASON_EN[row],
-      atLine: ({ path, n }: { path: string; n: number }) => `line ${n} of ${path}`,
       chooseApproval: "Choose an approval to review it.",
       explaining: "Explaining …",
       moreApprovals: "Other approvals",
@@ -344,7 +343,6 @@ export const codeReviewMessages = i18n.define({
       dialogFailed: "Nicht entschieden. Dein Text bleibt hier. Versuch es noch einmal.",
       unknownAuthor: "unbekannt",
       rowReason: ({ row }) => ROW_REASON_DE[row],
-      atLine: ({ path, n }) => `Zeile ${n} von ${path}`,
       chooseApproval: "Wähle eine Freigabe, um sie zu prüfen.",
       explaining: "Wird erklärt …",
       moreApprovals: "Weitere Freigaben",

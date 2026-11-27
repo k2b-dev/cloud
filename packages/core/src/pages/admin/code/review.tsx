@@ -1,6 +1,7 @@
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { formatRelative } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { CodeDiffLocation } from "@k2b/ui/code-diff";
 import {
   Band,
@@ -377,7 +378,7 @@ export function createCodeReview(props: CodeReviewProps) {
       current: tab() === "overview",
       onNavigate: (event) => {
         setTab("overview");
-        event.replaceWith();
+        event.replaceWith(undefined, { scroll: "preserve" });
       },
     },
     {
@@ -387,7 +388,7 @@ export function createCodeReview(props: CodeReviewProps) {
       current: tab() === "code",
       onNavigate: (event) => {
         setTab("code");
-        event.replaceWith();
+        event.replaceWith(undefined, { scroll: "preserve" });
       },
     },
     ...(first()
@@ -398,9 +399,9 @@ export function createCodeReview(props: CodeReviewProps) {
             count: `+${stat().add} −${stat().del}`,
             href: tabHref("diff"),
             current: tab() === "diff",
-            onNavigate: (event: { replaceWith: () => void }) => {
+            onNavigate: (event: LinkNavigateEvent) => {
               setTab("diff");
-              event.replaceWith();
+              event.replaceWith(undefined, { scroll: "preserve" });
             },
           },
         ]),
@@ -821,7 +822,7 @@ function ReviewOverview(props: { review: CodeReview }) {
                 avatar={{ name: item.comment.author.name ?? t().unknownAuthor }}
                 lines={[
                   item.comment.body,
-                  `${item.comment.author.id === p.viewerId ? t().youCap : (item.comment.author.name ?? t().unknownAuthor)} · ${t().atLine({ path: item.thread.path, n: item.thread.line })}`,
+                  item.comment.author.id === p.viewerId ? t().youCap : (item.comment.author.name ?? t().unknownAuthor),
                 ]}
                 time={when(item.comment.createdAt)}
               />
@@ -838,12 +839,12 @@ export function ReviewBody(props: { review: CodeReview }) {
   const review = props.review;
   const t = review.t;
   const p = review.props;
-  const code = (view: "code" | "diff") => (
+  const code = () => (
     <Section icon="file-code" title={t().codeLabel} summary={review.closed() ? t().footDecided : t().footOpen}>
       {/* k2b-ui gap: no v2 code view with line threads yet; the @k2b/ui code field stands inside a Canvas */}
       <Canvas label={t().codeLabel}>
         <ReviewCode
-          view={view}
+          view={review.tab() === "diff" ? "diff" : "code"}
           files={p.files}
           closed={review.closed}
           threads={review.threads}
@@ -868,8 +869,8 @@ export function ReviewBody(props: { review: CodeReview }) {
       <Show when={review.tab() === "overview"}>
         <ReviewOverview review={review} />
       </Show>
-      <Show when={review.tab() === "code"}>{code("code")}</Show>
-      <Show when={review.tab() === "diff"}>{code("diff")}</Show>
+      {/* one code field for Code and Changes: switching between them changes its rows and keeps the field in place */}
+      <Show when={review.tab() !== "overview"}>{code()}</Show>
     </>
   );
 }

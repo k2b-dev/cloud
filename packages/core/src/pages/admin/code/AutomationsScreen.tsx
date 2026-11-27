@@ -371,7 +371,6 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
         <Section icon="info-circle" title={t().facts}>
           <Facts
             items={[
-              { label: t().codeId, value: code.id, mono: true, copy: code.id },
               { label: t().owner, value: owner(code) },
               { label: t().status, value: <CodeStatus code={code} /> },
               { label: t().activeVersion, value: code.activeVersionNumber ? t().versionRow({ n: code.activeVersionNumber }) : t().none },
@@ -430,15 +429,18 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
               {(run) => (
                 <Row
                   icon={run.state === "failed" ? "circle-x" : run.state === "succeeded" ? "circle-check" : "clock"}
-                  lines={[codeRunName(run, run.automation ? [run.automation] : null, ownerTitle, locale()), t().trigger({ t: run.trigger })]}
-                  time={when(run.createdAt)}
-                  end={
+                  // the state in words beside how it started, as the Code page reads a run; a failure in its colour
+                  lines={[
+                    codeRunName(run, run.automation ? [run.automation] : null, ownerTitle, locale()),
                     run.state === "failed" ? (
-                      <Text tone="bad">{t().runState({ s: run.state })}</Text>
+                      <>
+                        <Text tone="bad">{t().runState({ s: run.state })}</Text> · {t().trigger({ t: run.trigger })}
+                      </>
                     ) : (
-                      <StateWord muted={run.state !== "succeeded"}>{t().runState({ s: run.state })}</StateWord>
-                    )
-                  }
+                      `${t().runState({ s: run.state })} · ${t().trigger({ t: run.trigger })}`
+                    ),
+                  ]}
+                  time={when(run.createdAt)}
                 />
               )}
             </For>

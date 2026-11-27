@@ -102,7 +102,7 @@ test("the sections stand nested under Code in the admin bar, with the waiting ap
   await goto(`sec=approvals&id=${FIXTURE_VERSIONS.rueckruf3}`);
   await main().getByText("Version 3 von Rückruf bestätigen freigeben?").waitFor();
   await goto("sec=code&id=c_rechn");
-  await main().getByText("c_rechn", { exact: true }).waitFor();
+  await main().getByText("Eine Version wartet auf die Freigabe.", { exact: false }).waitFor();
 });
 
 test("switching the review's views keeps the head in place, writes ?tab= without loading, and survives a reload", async () => {
@@ -113,8 +113,10 @@ test("switching the review's views keeps the head in place, writes ?tab= without
   await page.locator(".k2b-code-diff").first().waitFor();
   expect(await page.locator(".k2b-code-diff").first().innerText()).toContain("@sdk");
   expect(new URL(page.url()).searchParams.get("tab")).toBe("code");
-  await tab("Änderungen").click();
+  // A plain click as a person makes it; Playwright would first scroll the tab into view, which moves the frame itself.
+  await tab("Änderungen").dispatchEvent("click", { button: 0 });
   await page.waitForURL(/tab=diff/);
+  await settled(page);
   expect(new URL(page.url()).searchParams.get("tab")).toBe("diff");
   expect(await main().getByRole("button", { name: "Version 3 freigeben" }).boundingBox()).toEqual(head);
   expect(fixture.requests).toEqual([]);
