@@ -125,7 +125,7 @@ for (const width of [1440, 390])
         for (let index = 1; index < inputs; index += 1) {
           await page.keyboard.press("Tab");
           // an engine may scroll the focused field into view with the next frame
-          await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+          await settled(page);
           const seen = await page.evaluate(() => {
             const field = document.activeElement as HTMLElement;
             const bar = document.querySelector('[data-slot="foot"] > .k2-bar')!.getBoundingClientRect();
