@@ -2,10 +2,12 @@ import type { SQL } from "bun";
 import { getProcessSync, lazySync } from "../_internal/process-sync";
 import { sql } from "../runtime/clients";
 import type { logger } from "./logging";
+import { backgroundWork } from "./runtime-quiesce";
 
 /**
  * An index built next to live writes. Queries must work without it; it only makes them faster. A UNIQUE index that a
- * transaction relies on is never one of these: it is built before its first use, with a `lock_timeout` and a retry.
+ * transaction relies on is never one of these: the migration creates it before its first use, in its transaction
+ * (`createIndexIfMissing` with `unique`).
  */
 export type ConcurrentIndex = {
   /** Index name without schema; Postgres creates it in the table's schema. */
@@ -193,20 +195,34 @@ const pause = (ms: number) =>
     setTimeout(resolve, ms).unref();
   });
 
+/** Resolves at once, or once maintenance stage „Ruhe“ ends: a background build starts nothing while the Cloud is quiet. */
+const untilResumed = (): Promise<void> =>
+  backgroundWork.paused()
+    ? new Promise((resolve) => {
+        const stop = backgroundWork.onChange((paused) => {
+          if (paused) return;
+          stop();
+          resolve();
+        });
+      })
+    : Promise.resolve();
+
 /**
  * Starts `ensureConcurrentIndexes` without waiting for it: the caller (a migration, an app's setup) returns at once and
- * queries run without the indexes until they are valid. A busy build is retried (`BUSY_RETRY_MS`). Startup never awaits
- * the returned promise.
+ * queries run without the indexes until they are valid. A busy build is retried (`BUSY_RETRY_MS`), and no attempt starts
+ * while the Cloud is in maintenance stage „Ruhe“. Startup never awaits the returned promise.
  */
 export const buildConcurrentIndexesInBackground = (
   indexes: readonly ConcurrentIndex[],
   options: ConcurrentIndexOptions,
 ): Promise<ConcurrentIndexOutcome> => {
   const build = (async () => {
+    await untilResumed();
     let outcome = await ensureConcurrentIndexes(indexes, options);
     for (const wait of BUSY_RETRY_MS) {
       if (outcome !== "busy") return outcome;
       await pause(wait);
+      await untilResumed();
       outcome = await ensureConcurrentIndexes(indexes, options);
     }
     if (outcome === "busy") options.log.info(`The ${options.purpose} indexes are still being built elsewhere; the next start continues`);
