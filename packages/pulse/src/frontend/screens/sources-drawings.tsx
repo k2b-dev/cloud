@@ -259,6 +259,7 @@ const HERO_CSS = `
 .pulse-hero-exr b{font-weight:600}
 .pulse-hero-exr .pulse-hero-m{margin-left:2px;max-width:32ch}
 @container pulse-hero (min-width:600px){.pulse-hero-ex{flex-wrap:nowrap}.pulse-hero-exr{flex:0 1 auto}.pulse-hero-exr .pulse-hero-m{flex:0 1 auto;min-width:3ch}}
+@container pulse-hero (min-width:600px) and (max-width:899px){.pulse-hero-exr .pulse-hero-m{display:none}}
 .pulse-hero-dot{width:7px;height:7px;border-radius:50%;background:var(--k2-ok-dot);flex:none}
 .pulse-hero-dot[data-tone=bad]{background:var(--k2-bad-dot)}
 .pulse-hero-dot[data-tone=off]{background:var(--k2-n400)}

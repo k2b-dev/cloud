@@ -750,7 +750,7 @@ function SourceDetail(props: {
     keys().filter((key) => !key.revokedAt && (!key.expiresAt || Date.parse(key.expiresAt) > Date.parse(props.now))).length;
   const facts = () => [
     { label: words().kindColumn, value: source().kind === "metrics" ? t().metricsEndpoint : t().httpIngest },
-    ...(source().kind === "http_ingest" ? [{ label: t().apiKeys, value: words().activeKeys({ count: activeKeys() }) }] : []),
+    ...(source().kind === "http_ingest" ? [{ label: words().keysLabel, value: words().activeKeys({ count: activeKeys() }) }] : []),
     {
       label: t().target,
       // an address breaks at its slashes like words, not sign by sign as a token would
