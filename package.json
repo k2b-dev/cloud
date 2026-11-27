@@ -19,7 +19,6 @@
       "packages/editor",
       "packages/cloud-cli",
       "packages/dashboard",
-      "packages/faq",
       "packages/filesv2",
       "packages/gateway",
       "packages/gateway-ops",
