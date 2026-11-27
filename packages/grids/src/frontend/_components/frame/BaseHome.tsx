@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
+import { Band, Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { navigationReferenceKey } from "../../../navigation-contracts";
 import { workspaceMessages } from "../workspace/messages";
@@ -246,9 +246,9 @@ function HomeList(props: HomeProps) {
         <Show when={emptyRouteNote()}>{(note) => <Notice tone="note">{note()}</Notice>}</Show>
         <Show when={props.state.base.description}>
           {(description) => (
-            <Text type="body" muted>
-              {description()}
-            </Text>
+            <Band>
+              <Text muted>{description()}</Text>
+            </Band>
           )}
         </Show>
         <Show

@@ -8,7 +8,7 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../..
 import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
-// rules of v2 hold at 1440, 1024 and 390 px, the worst-case data breaks nothing, and 1,000 bases or tables stay
+// rules of v2 hold at 1920, 1440, 1024 and 390 px, the worst-case data breaks nothing, and 1,000 bases or tables stay
 // bounded. The test stands in for the server: pages and APIs answer from invented fixtures.
 const ui = resolve(import.meta.dir, "../../../../../ui");
 const origin = "https://cloud.example.test";
@@ -86,6 +86,8 @@ type View = { width: number; height: number; touch: boolean; name: string };
 const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
+// the widest screen B is drawn for: lists keep their measure and the rest is room, not stretched rows
+const xl: View = { width: 1920, height: 1080, touch: false, name: "1920" };
 
 const page = (variant: FixtureVariant) =>
   `<!doctype html><html lang="de" class="light" data-variant="${variant}"><head><meta charset="utf-8">` +
@@ -169,8 +171,8 @@ const elements = (tab: Page) => tab.evaluate(() => document.querySelectorAll("#r
 
 describe("the bases overview on v2", () => {
   for (const variant of ["plain", "worst"] as const)
-    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
-      for (const view of [wide, narrow, phone]) {
+    test(`keeps the v2 rules at 1920, 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const view of [xl, wide, narrow, phone]) {
         const { context, tab, errors } = await open(view, "/app/grids", variant);
         try {
           await expectClean(tab);
@@ -256,8 +258,8 @@ describe("the bases overview on v2", () => {
 
 describe("a base home on v2", () => {
   for (const variant of ["plain", "worst"] as const)
-    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
-      for (const view of [wide, narrow, phone]) {
+    test(`keeps the v2 rules at 1920, 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const view of [xl, wide, narrow, phone]) {
         const { context, tab, errors } = await open(view, "/app/grids/Bas001?groups=1&edit=true", variant);
         try {
           await expectClean(tab);

@@ -1,12 +1,12 @@
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Input, List, Pane, Row, Section, Table, Tabs, Text, Tiles, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Empty, Inline, Input, List, Mark, Pane, Row, Section, Table, Tabs, Text, Tiles, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { PublicBase } from "../../../api/public-dto";
-import { APPS_PER_PAGE, BASES_PAGE_PATH, BASES_PER_PAGE, type BasesState, basesHref, basesQuery, withParam } from "./bases-query";
 import { kindMark } from "../frame/kind-marks";
+import { APPS_PER_PAGE, BASES_PAGE_PATH, BASES_PER_PAGE, type BasesState, basesHref, basesQuery, withParam } from "./bases-query";
 import CreateBaseDialog, { type BaseTemplate, BLANK } from "./CreateBaseDialog";
 import { overviewMessages } from "./messages";
 
@@ -147,8 +147,12 @@ export default function BasesOverview(props: BasesOverviewProps) {
           {
             title: t().name,
             width: { min: 200, default: 360 },
-            mark: () => kindMark("base"),
-            cell: (base) => base.name,
+            cell: (base) => (
+              <Inline>
+                <Mark {...kindMark("base")} />
+                <Text>{base.name}</Text>
+              </Inline>
+            ),
           },
           {
             title: t().tables,

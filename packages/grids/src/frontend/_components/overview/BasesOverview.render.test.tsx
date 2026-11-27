@@ -126,20 +126,19 @@ describe("Grids bases overview on v2", () => {
     expect(html).not.toContain("New base");
   });
 
-  test("shows usable apps as tiles with a bounded link to all apps", () => {
+  test("shows usable apps as rows with their mark and a bounded link to all apps", () => {
     const html = renderOverview({ apps: { count: 8, total: 11 } });
     expect(html).toContain('data-k2-part="Tabs"');
-    expect(html.match(/class="k2-tile"/g)).toHaveLength(8);
+    expect(html.match(/href="\/apps\//g)).toHaveLength(8);
     expect(html).toContain('href="/apps/App001"');
-    expect(html).toContain("ti-scan");
-    expect(html).toContain("ti-app-window");
+    expect(html).toContain('data-k2-part="Mark"');
     expect(html).toContain('href="/app/grids?apps=1"');
     expect(html).toContain("All apps (11)");
   });
 
   test("omits the all-apps link when every usable app fits", () => {
     const html = renderOverview({ apps: { count: 2, total: 2 } });
-    expect(html.match(/class="k2-tile"/g)).toHaveLength(2);
+    expect(html.match(/href="\/apps\//g)).toHaveLength(2);
     expect(html).not.toContain("All apps (");
   });
 
@@ -149,6 +148,6 @@ describe("Grids bases overview on v2", () => {
     expect(html).toContain("Page 2 of 2");
     expect(html).toContain('href="/app/grids?apps=1"');
     expect(html).not.toContain("Recently changed");
-    expect(html.match(/class="k2-tile"/g)).toHaveLength(3);
+    expect(html.match(/href="\/apps\//g)).toHaveLength(3);
   });
 });

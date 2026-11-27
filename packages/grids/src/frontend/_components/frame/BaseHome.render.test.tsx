@@ -107,7 +107,9 @@ describe("Grids base home on v2", () => {
     expect(html).toContain('data-k2-part="Section"');
     expect(html).toContain('href="/app/grids/BASE01/table/TABLE2"');
     expect(html).toContain("Open loans");
-    expect(html).toContain("3 entries");
+    // each row carries the mark of its kind; the count stands once, in the filter bar, not as a status row of its own
+    expect(html).toContain('data-k2-part="Mark"');
+    expect(html).not.toContain('data-k2-part="StatusRow"');
     expect(html).toContain("Team workspace");
     // outside edit mode nothing is created from here; nothing loads on the first picture
     expect(html).not.toContain(">New<");
@@ -117,7 +119,6 @@ describe("Grids base home on v2", () => {
 
   test("narrows the entries by kind and search from the address", () => {
     const html = renderHome({ address: "type=view&q=open" });
-    expect(html).toContain("1 of 3 entries");
     expect(html).toContain("Open loans");
     expect(html).not.toContain('href="/app/grids/BASE01/table/TABLE2"><');
     const none = renderHome({ address: "q=zzz" });
@@ -148,6 +149,6 @@ describe("Grids base home on v2", () => {
     const html = renderHome({ locale: "de" });
     expect(html).toContain("Übersicht");
     expect(html).toContain("Tabellen");
-    expect(html).toContain("3 Einträge");
+    expect(html).toContain("Übersicht");
   });
 });
