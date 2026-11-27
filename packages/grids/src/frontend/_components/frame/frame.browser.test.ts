@@ -320,8 +320,8 @@ describe("a base home on v2", () => {
 
   // #4196, k2b-ui gap (Row, lane MW): a two-line Row wraps its quiet second line, so a long table name under a recent
   // change grows the row past 52 px; a three-line Row already cuts each line with an ellipsis.
-  test.todo("#4196: a recent change keeps one quiet line for a long table name");
+  test.todo("#4196: a recent change keeps one quiet line for a long table name", () => {});
   // #4196, k2b-ui gap (Spark, from #4208): a Spark scales to its own highest bar, so a table with 2 new records a day
   // looks as busy as one with 11; the rows of one list need one shared top to be told apart at a glance.
-  test.todo("#4196: the tables' sparks of one base home share one scale");
+  test.todo("#4196: the tables' sparks of one base home share one scale", () => {});
 });

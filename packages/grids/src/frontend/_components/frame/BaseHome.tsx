@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Spark, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Empty, Input, List, Menu, Notice, Pane, Row, Section, Spark, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { navigationReferenceKey } from "../../../navigation-contracts";
 import { workspaceMessages } from "../workspace/messages";
@@ -253,11 +253,6 @@ function HomeList(props: HomeProps) {
       .filter((group) => group.entries.length > 0);
   };
 
-  const lead = () =>
-    shown().length < all.length
-      ? t().resourcesOf({ count: number(shown().length), total: number(all.length) })
-      : t().resourcesCount({ count: number(all.length) });
-
   /** The hero: new records today with the trend of the last days, and what waits or went wrong, from real data. */
   const hero = (activity: HomeActivity) => {
     const today = activity.points.at(-1) ?? 0;
@@ -315,12 +310,7 @@ function HomeList(props: HomeProps) {
   );
 
   const main = () => (
-    <Pane
-      label={props.state.base.name}
-      scrollKey={`grids-home-${props.state.base.id}`}
-      // one block of two rows with the head: the filters with the count once at their end
-      status={<FilterBar query={query()} state={state()} onChange={props.setQuery} icons={{ type: "category" }} results={lead()} />}
-    >
+    <Pane label={props.state.base.name} scrollKey={`grids-home-${props.state.base.id}`}>
       <LiveNotice />
       <Show when={!frame.revoked()}>
         {/* a base without a readable table has no records to tell of: no hero that says 0 of 0 */}
