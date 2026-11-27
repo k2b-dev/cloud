@@ -239,6 +239,10 @@ body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
   --stdlib-dnd-ghost-shadow: var(--k2b-shadow-float);
 }
 .k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); }
+/* A title without a break opportunity, such as a long URL, breaks inside its card. "anywhere" also lowers the
+   title's min-content width, which "break-word" leaves at the whole word, so the flex row beside a priority icon
+   shrinks it instead of pushing it past the card's edge. */
+.spaces-kanban-card-title { min-width: 0; overflow-wrap: anywhere; }
 .k2b-ui .spaces-kanban-card-status { background: color-mix(in srgb, var(--k2b-text) 6%, transparent); }
 @media (prefers-reduced-motion: reduce) { .k2b-ui .spaces-kanban-card { transition: none; } }
 /* Phone: one column at a time with a look at the next, so it is clear the board goes on. */

@@ -1749,7 +1749,7 @@ export default function KanbanBoard(props: Props) {
                                           <i class={`ti ${priority()!.icon} ${priority()!.color} mt-[0.1875rem] shrink-0 text-sm`} />
                                         </Show>
                                         <p
-                                          class={`spaces-kanban-card-title break-words text-sm font-medium leading-5 ${item().completedAt ? "line-through text-dimmed" : ""}`}
+                                          class={`spaces-kanban-card-title text-sm font-medium leading-5 ${item().completedAt ? "line-through text-dimmed" : ""}`}
                                         >
                                           {item().title}
                                         </p>

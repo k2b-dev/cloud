@@ -2077,6 +2077,38 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
       }
     }
   }, 30_000);
+
+  test("a title without a break opportunity, such as a long URL, breaks inside its card, with and without a priority", async () => {
+    const url = "https://example.com/a/very/long/unbreakable/path/that/keeps/going/without/any/space/at/all";
+    const titled = [item("Item11", "Col003", url), item("Item12", "Col003", url, { priority: "urgent" })];
+    const buckets = unfiltered().map((entry) =>
+      entry.key === "column:Col003" ? { ...entry, items: [...titled, ...entry.items], total: entry.total + titled.length } : entry,
+    );
+    for (const javaScript of [false, true]) {
+      const page = await open(desktop, { locale: "en", buckets, served: true }, { javaScript });
+      try {
+        await settled(page);
+        const overflow = await page.evaluate(() =>
+          ["Item11", "Item12"].map((id) => {
+            const link = window.document.querySelector(`[data-spaces-kanban-card][data-item-id="${id}"]`)!;
+            const card = link.closest("article")!.getBoundingClientRect();
+            const title = link.querySelector(".spaces-kanban-card-title")!;
+            return {
+              id,
+              past: Math.max(0, Math.round(title.getBoundingClientRect().right - card.right)),
+              wide: title.scrollWidth > title.clientWidth,
+            };
+          }),
+        );
+        expect(overflow).toEqual([
+          { id: "Item11", past: 0, wide: false },
+          { id: "Item12", past: 0, wide: false },
+        ]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
 });
 
 describePart("columns", "Spaces Kanban board in a browser", () => {
