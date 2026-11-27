@@ -578,8 +578,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   stands at the end and its `count` counts its own entries. A tab is never
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
-  holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
+  holds them. A tab that holds the focus and hides hands it to the menu tab,
+  and a "Mehr" that goes hands it to the last tab. Known: while tabs hide, a
+  gap of less than one tab may stand before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
   first where it does not fit, its whole words as a hint on hover),
   `loading` (results
