@@ -3985,6 +3985,13 @@
   flex: none;
   color: var(--k2-subtle);
 }
+/* the value set now through an entry's submenu or panel: at the end, in the app's colour (as a filter's set bound) */
+.k2-ui .k2-mi-meta[data-set] {
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+  color: var(--k2-app-text);
+  font-weight: 600;
+}
 /* the pointer, the keys and an open submenu mark the same entry with the same fill */
 .k2-ui .k2-mi:is([data-highlighted], [data-open]) {
   background: var(--k2-n100);
@@ -4028,6 +4035,61 @@
   height: 1px;
   background: var(--k2-line);
   margin: 4px -4px;
+}
+/* On the phone a menu behind a button is a sheet (as the dialog is): the whole width at the bottom, its top corners
+   round, entries of 44 px for a finger. Core places the sheet; a context menu stays at the pointer. */
+.k2-ui .k2-menu[data-presentation="sheet"]:not([data-nested]) {
+  min-width: 0;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi {
+  height: 44px;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-msep {
+  margin: 4px -8px;
+}
+/* A submenu is the sheet's next step: core shows it in its parent's place, under its entry, which turns into the way
+   back ("‹ Später anzeigen"); the step itself is no second surface. */
+.k2-ui .k2-menu[data-presentation="sheet"][data-nested] {
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi[data-open] {
+  background: none;
+  font-weight: 600;
+  color: var(--k2-text);
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi[data-open] > .k2-mi-lead {
+  display: none;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi[data-open] > .k2-icon:last-child {
+  order: -1;
+  transform: rotate(180deg);
+}
+/* On the phone a menu entry's panel (a calendar) is a popover's sheet (below); its calendar stands in the middle */
+.k2-ui .k2-pop.k2-dpop[data-presentation="sheet"] {
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  align-items: center;
+}
+/* the head of a panel's sheet: its name, which leads back to the entries ("‹ Datum und Uhrzeit …") */
+.k2-ui .k2-pop[data-presentation="sheet"] > .k2-panel-back {
+  align-self: stretch;
+  width: auto;
+  height: 44px;
+  margin: 0 8px;
+  font-weight: 600;
+  color: var(--k2-text);
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
@@ -4091,6 +4153,10 @@
   width: auto;
   padding: 8px;
   gap: 0;
+}
+/* as a sheet on the phone it reaches the edges: its head stands on the text edge of the menu sheet beside it */
+.k2-ui .k2-pop.k2-dpop[data-presentation="sheet"] {
+  padding-inline: 0;
 }
 .k2-ui .k2-dpick {
   display: flex;
@@ -5467,22 +5533,23 @@
   padding: 0 var(--k2-edge);
   border-radius: 0;
 }
-.k2-ui .k2-fsheet-pick {
+/* a calendar in a sheet, the filter sheet's or a menu entry's: centred, days of 44 px for a finger */
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) {
   display: flex;
   justify-content: center;
   padding: 0 var(--k2-edge) 8px;
 }
-.k2-ui .k2-fsheet-pick .k2-dpick {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) .k2-dpick {
   width: 308px;
 }
-.k2-ui .k2-fsheet-pick .k2-cal-row {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) .k2-cal-row {
   grid-template-columns: repeat(7, 44px);
 }
-.k2-ui .k2-fsheet-pick :is(.k2-cal-day, .k2-cal-h > .k2-btn) {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) :is(.k2-cal-day, .k2-cal-h > .k2-btn) {
   width: 44px;
   height: 44px;
 }
-.k2-ui .k2-fsheet-pick .k2-cal-h {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) .k2-cal-h {
   height: 44px;
 }
 

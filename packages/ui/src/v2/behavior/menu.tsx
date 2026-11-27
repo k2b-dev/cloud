@@ -48,6 +48,8 @@ export type MenuLevelParts = {
   bindContext: (element: HTMLElement) => () => void;
   /** A submenu of this level. Call it in a component under this level's popup. */
   useSubmenu: () => MenuLevelParts;
+  /** Closes the whole menu, as choosing an entry does; for a panel that picks something. */
+  close: () => void;
 };
 
 type MenuHandle = Handle<typeof menuPrimitive>;
@@ -97,11 +99,17 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
       return bindSlot(handle, "context-trigger", { id: `k2-context-${contextAreas}` }, element);
     },
     useSubmenu: () => levelParts(usePrimitive(menuPrimitive, () => ({ parent: handle.api }))),
+    close: () => handle.api.action(undefined),
   };
 };
 
 /** A menu with submenus, check items and an optional context area. */
-export function useMenuLevels(options: () => OverlayOptions = () => ({})): MenuLevelParts {
+export function useMenuLevels(
+  options: () => OverlayOptions & {
+    /** `sheet`: from the bottom of the screen, a submenu shows in its parent's place; `popover` by default. */
+    presentation?: "popover" | "sheet";
+  } = () => ({}),
+): MenuLevelParts {
   // A pending item announces that it is waiting; core's own text is English only.
   const t = useBehaviorMessages();
   return levelParts(usePrimitive(menuPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading })));

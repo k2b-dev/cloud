@@ -10,7 +10,8 @@ import { drawer as drawerPrimitive } from "@ui-sdk/core/drawer";
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { popover as popoverPrimitive } from "@ui-sdk/core/popover";
 import { type JSX, onCleanup } from "solid-js";
-import { type PartProps, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { type PartProps, partId, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { bindSlot } from "./bind";
 import { useBehaviorMessages } from "./messages";
 
 export type OverlayOptions = {
@@ -273,6 +274,12 @@ export function useMenu(options: () => OverlayOptions & { onAction?: (value: str
 
 export type PopoverParts = {
   Trigger: SlotComponent;
+  /**
+   * Makes an element someone else rendered the popover's trigger (a menu's entry): core writes its attributes
+   * (`aria-haspopup`, `aria-expanded`, `aria-controls`) and its listeners onto it, the popover opens beside it and
+   * belongs to the layer it stands in. `disabled` keeps it shut. Returns the function that lets go of it.
+   */
+  bindTrigger: (element: HTMLElement, props?: { disabled?: boolean }) => () => void;
   /** The popover; renders only while open. Takes `Placement` props. */
   Popup: SlotComponent;
   Title: SlotComponent;
@@ -283,11 +290,19 @@ export type PopoverParts = {
  * A non-modal popover next to its trigger; Escape and an outside press close it. `presentation: "sheet"` slides it up
  * from the bottom of the screen instead, modal, and a swipe down closes it too.
  */
-export function usePopover(options: () => OverlayOptions & { presentation?: "popover" | "sheet" } = () => ({})): PopoverParts {
+export function usePopover(
+  options: () => OverlayOptions & {
+    /** Keeps the focus inside, as a dialog does; the page around it stays as it is. */
+    modal?: boolean;
+    /** `sheet`: from the bottom of the screen; `popover` by default. */
+    presentation?: "popover" | "sheet";
+  } = () => ({}),
+): PopoverParts {
   const handle = usePrimitive(popoverPrimitive, options);
   const Content = popupComponent(handle, "content");
   return {
     Trigger: slotComponent(handle, "trigger", "button"),
+    bindTrigger: (element, props = {}) => bindSlot(handle, "trigger", { id: partId(), disabled: !!props.disabled }, element),
     // as a sheet on the phone it holds its bottom when its content changes height, as a dialog's sheet does
     Popup: (props) => (
       <Content

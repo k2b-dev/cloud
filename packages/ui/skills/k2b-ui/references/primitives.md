@@ -527,13 +527,23 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
+  `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
+  beside the entry such as a `DatePicker`: a dialog of its own over the
+  menu, with its own keys and focus, that calls `close` once it picked;
+  Escape closes it first), and `current` (the value set through that
+  submenu or panel, such as a reminder's time: at the end in the app's
+  colour and part of the entry's name; it takes the place of `meta`); or
+  `"separator"` between groups; or a section `{ title, items }` under a
+  quiet heading. A section with `choice` and `onChoose` is one choice
+  (reply kind, sender, order): its entries are options (`value`, else
+  `label`), the chosen one carries the tick, choosing another closes the
+  menu and calls `onChoose`, choosing the ticked one only closes it. A
+  choice whose options say enough by themselves may have the `title` ""
+  (no heading). Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
+  its button; there is no `align`. On the phone it is a sheet from the
+  bottom with entries of 44 px; a submenu is the sheet's next step under
+  its entry, which leads back, and a panel is a sheet of its own.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
   the element. It adds no wrapper, so a `Row` stays a child of its `List`.
