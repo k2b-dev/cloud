@@ -5,8 +5,12 @@ import type { Status } from "./types";
 
 // ── Hero ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** At most this many values of a history are drawn: the newest. An app with a longer history sums it up first (per hour, per day). */
-const TREND_VALUES = 120;
+/**
+ * How many values a history can show, the newest: 470. A drawing is at most 1880 px wide (one pane on a screen of
+ * 1920 px, less its text edges of 20 px), and a value needs 4 px to stay a slot of its own (a tick of 2 px and its gap
+ * of 2 px). More would not be seen, only sent; an app with a longer history sums it up first (per hour, per day).
+ */
+const TREND_VALUES = Math.floor((1920 - 2 * 20) / 4);
 
 type TrendWords = {
   /** What the drawing says, in one sentence a person who cannot see it gets the same from. */
@@ -25,7 +29,7 @@ type TrendWords = {
  * - `area`: a line with its area, such as values per minute; `failedFrom` tints the time from that index on as failed;
  *   `ticks` under it stand one per value, such as the fetch of each minute, each value above its tick;
  * - `ticks`: one tick per fetch or check, such as the fetches of today; a failed one stands red and full height.
- * At most 120 values are drawn, the newest. Where no real history exists yet (a new app, nothing counted so far), pass
+ * At most 470 values are drawn, the newest: what the widest drawing (1880 px) shows at 4 px a value. Where no real history exists yet (a new app, nothing counted so far), pass
  * the kind with no values and `empty`: the place of the drawing keeps its height and says so, so a history that comes
  * later moves nothing. Never draw an invented series. An area needs two values; with fewer it stands as empty.
  */

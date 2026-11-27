@@ -228,8 +228,8 @@ test("the head of an open thing and the ticks come whole from the server", () =>
   expect([...ticks.matchAll(/data-s="(\w+)"/g)].map((match) => match[1])).toEqual(["ok", "bad", "none"]);
 });
 
-// a drawing is bounded (review r3 of #4360): a spark draws its newest 60 values, a history its newest 120, so a long
-// series neither grows the page nor the time to draw it
+// a drawing is bounded by what its widest place can show (review r3 of #4360): a spark 23 bars or 40 points of a line,
+// a history 470 values, the newest; so a long series neither grows the page nor the time to draw it
 test("a spark and a history draw only their newest values, fast, however long the series", () => {
   const long = Array.from({ length: 20_000 }, (_, index) => index % 97);
   const started = performance.now();
@@ -244,11 +244,11 @@ test("a spark and a history draw only their newest values, fast, however long th
     ticks: { slots: long.map((_, index) => (index >= long.length - 3 ? "bad" : "ok")), label: "Abrufe" },
   });
   const took = performance.now() - started;
-  expect(bars.match(/<i /g)?.length).toBe(60);
-  expect(line.match(/[ML]/g)?.length).toBe(60);
-  expect(trend.match(/<rect /g)?.length).toBe(120);
-  // the area's newest 120 values over the newest 120 ticks, the last three failed
-  expect(/class="k2-hero-line" d="([^"]*)"/.exec(area)?.[1]?.match(/[ML]/g)?.length).toBe(120);
+  expect(bars.match(/<i /g)?.length).toBe(23);
+  expect(line.match(/[ML]/g)?.length).toBe(40);
+  expect(trend.match(/<rect /g)?.length).toBe(470);
+  // the area's newest 470 values over the newest 470 ticks, the last three failed
+  expect(/class="k2-hero-line" d="([^"]*)"/.exec(area)?.[1]?.match(/[ML]/g)?.length).toBe(470);
   expect(area.match(/data-s="bad"/g)?.length).toBe(3);
   expect(area).toContain('class="k2-hero-cut"');
   // linear: four drawings of 20.000 values in well under a second (quadratic took seconds each)

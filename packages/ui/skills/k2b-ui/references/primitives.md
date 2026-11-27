@@ -114,7 +114,9 @@ status | icon, count, word, who }`, one line of "● number word who").
 `kind`, `values`, `label`, `start`, `caption`, `end`, and under an area
 `ticks` of `{ slots, label }`): a history alone in a section of a detail,
 from text edge to text edge; under an area each value stands over its tick.
-A history draws at most 120 values, a `Spark` 60: the newest. `Dot` (`status`): a good state is a neutral dot and word. Rows of
+A history draws at most 470 values (1880 px at its widest, 4 px a value),
+a `Spark` 23 bars (a cell of 140 px, 6 px a bar) or 40 points of a line (80 px,
+2 px a point): the newest; more would not be seen. `Dot` (`status`): a good state is a neutral dot and word. Rows of
 a table or list part by a very quiet line; the strong hairline parts two
 things (head from content, list from detail, groups).
 

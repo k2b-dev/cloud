@@ -302,7 +302,10 @@ export const Preview = (props: PreviewProps) => {
 };
 
 export type SparkProps = {
-  /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. At most 60, the newest. */
+  /**
+   * The values in their order, oldest first; the last one (today, this hour) stands in full colour. As bars at most 23,
+   * as a line at most 40: the newest (see `Spark`).
+   */
   values: readonly number[];
   /**
    * What the bars say, in one sentence a person who cannot see them gets the same from: the thing, the direction and
@@ -321,16 +324,25 @@ export type SparkProps = {
 
 const LINE_WIDTH = 80;
 const LINE_HEIGHT = 20;
-/** At most this many values of a spark are drawn: the newest. A longer history is summed up first (per day, per week). */
-const SPARK_VALUES = 60;
+/**
+ * How many values a spark can show, the newest: as bars 23, as a line 40. A bar is 4 px with 2 px after it, and the
+ * widest place a spark stands is a table cell of 140 px, the cell `Ticks` are made for: (140 + 2) / 6 = 23. A line is
+ * 80 px wide and needs 2 px per value to keep one apart from the next: 40. More would not be seen, only sent.
+ */
+const SPARK_BARS = Math.floor((140 + 2) / 6);
+const SPARK_LINE = LINE_WIDTH / 2;
 
 /**
  * A few small bars of a short history, such as changes per day: in the colour of the thing it stands beside (its
- * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number. At most
- * 60 values, the newest; a value that is no number (NaN, Infinity) is a gap in a line and a quiet stub as a bar.
+ * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number. As bars
+ * at most 23 values, as a line 40: the newest (what its place can show); a value that is no number (NaN, Infinity) is a
+ * gap in a line and a quiet stub as a bar. A longer history is summed up first (per day, per week).
  */
 export const Spark = (props: SparkProps) => {
-  const shown = createMemo(() => (props.values.length > SPARK_VALUES ? props.values.slice(-SPARK_VALUES) : props.values));
+  const shown = createMemo(() => {
+    const most = props.kind === "line" ? SPARK_LINE : SPARK_BARS;
+    return props.values.length > most ? props.values.slice(-most) : props.values;
+  });
   // the lowest and highest value once per drawing, of the values that are numbers
   const range = createMemo(() => {
     const finite = shown().filter((value) => Number.isFinite(value));
