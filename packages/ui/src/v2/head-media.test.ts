@@ -43,7 +43,8 @@ test("a setting names its control and says what an unsaved change was", () => {
   expect(markup).toContain("data-setting");
   // the label names the control as in a field
   expect(markup).toMatch(/<label class="k2-field-label" id="([^"]+)" for="([^"]+)"/);
-  expect(markup).toContain("geändert · vorher 12 Std.");
+  // the word "geändert" stands in a part of its own (it gives way on a narrow phone); read as text it is one sentence
+  expect(markup.replace(/<[^>]+>/g, "")).toContain("geändert · vorher 12 Std.");
   expect(markup).toContain("Danach muss man sich neu anmelden.");
   // a setting without a change says nothing about it
   expect(html(Setting, { label: "Adresse", children: createComponent(Input, { value: "x" }) })).not.toContain("k2-field-was");
