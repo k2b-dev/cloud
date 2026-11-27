@@ -1,7 +1,7 @@
 import { i18n, password as pwdGen } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Canvas, Check, Chip, Choice, Facts, Field, Inline, Progress, Section, Slider } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 
@@ -36,6 +36,8 @@ export const passwordMessages = i18n.define({
       refreshPassword: "Refresh password",
       strength: "Strength",
       lengthChip: ({ count }: { count: number }) => `${count} characters`,
+      wordsChip: ({ count }: { count: number }) => `${count} words`,
+      digitsChip: ({ count }: { count: number }) => `${count} digits`,
       lowercase: "Lowercase",
       recent: "Generated before",
       recentHint: "Only in this tab; nothing is stored.",
@@ -68,6 +70,8 @@ export const passwordMessages = i18n.define({
       refreshPassword: "Passwort neu generieren",
       strength: "Stärke",
       lengthChip: ({ count }) => `${count} Zeichen`,
+      wordsChip: ({ count }) => `${count} Wörter`,
+      digitsChip: ({ count }) => `${count} Ziffern`,
       lowercase: "Kleinbuchstaben",
       recent: "Zuvor erzeugt",
       recentHint: "Nur in diesem Tab, nichts wird gespeichert.",
@@ -128,32 +132,53 @@ export default function PasswordGenerator() {
     }
   });
   const strength = createMemo(() => pwdGen.strength(password()));
+  // What the password holds, from its settings, not from the password itself: the server renders the same chips the
+  // island shows after it made the password, so nothing moves on mount. (stdlib puts each chosen kind in.)
   const contents = createMemo(() => {
-    const value = password();
-    return [
-      /[A-Z]/.test(value) ? t().uppercase : undefined,
-      /[a-z]/.test(value) ? t().lowercase : undefined,
-      /[0-9]/.test(value) ? t().digits : undefined,
-      /[^A-Za-z0-9]/.test(value) ? t().symbols : undefined,
-    ].filter((kind): kind is string => kind !== undefined);
+    const kinds = (list: (string | false)[]) => list.filter((kind): kind is string => kind !== false);
+    switch (mode()) {
+      case "memorable":
+        return [
+          t().wordsChip({ count: memorableWords() }),
+          ...kinds([
+            memorableCapitalize() && t().uppercase,
+            t().lowercase,
+            memorableNumber() && t().digits,
+            memorableSymbol() && t().symbols,
+          ]),
+        ];
+      case "pin":
+        return [t().digitsChip({ count: pinLength() })];
+      default:
+        return [
+          t().lengthChip({ count: randomLength() }),
+          ...kinds([randomUppercase() && t().uppercase, t().lowercase, randomNumbers() && t().digits, randomSymbols() && t().symbols]),
+        ];
+    }
   });
-  // the last five passwords before this one, in this tab's memory only: never stored, gone on reload
+  // The passwords left behind, in this tab's memory only (never stored, gone on reload). One enters when it is left
+  // with "Neu" or copied, never on a step of a setting: six presses on the length are no six passwords anyone chose.
   const [recent, setRecent] = createSignal<{ value: string; time: string }[]>([]);
-  createEffect(
-    on(password, (_next, previous) => {
-      if (!previous) return;
-      const time = new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
-      setRecent((list) => [{ value: previous, time }, ...list].slice(0, 5));
-    }),
-  );
-  const refresh = () => setNonce((value) => value + 1);
-  const copyAction = { label: t().copyPassword, icon: "copy", onClick: () => void copy(password()) };
+  const remember = (value: string) => {
+    if (!value || recent()[0]?.value === value) return;
+    const time = new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+    setRecent((list) => [{ value, time }, ...list.filter((entry) => entry.value !== value)].slice(0, 5));
+  };
+  const refresh = () => {
+    remember(password());
+    setNonce((value) => value + 1);
+  };
+  const copyPassword = () => {
+    remember(password());
+    void copy(password());
+  };
+  const copyAction = { label: t().copyPassword, icon: "copy", onClick: copyPassword };
   return (
     <ToolsScreen
       tool="password"
       primary={copyAction}
       end={
-        <Button variant="primary" icon="copy" onClick={() => void copy(password())}>
+        <Button variant="primary" icon="copy" onClick={copyPassword}>
           {t().copyPassword}
         </Button>
       }
@@ -193,7 +218,7 @@ export default function PasswordGenerator() {
                         one line on a phone instead of leaving signs alone; anything longer scrolls inside */}
                     <span
                       style={{
-                        "font-family": '"IBM Plex Mono", var(--k2-font-mono)',
+                        "font-family": "var(--k2-font-mono)",
                         "font-weight": 600,
                         "line-height": 1.3,
                         "font-size": `min(${password().length <= 20 ? 30 : password().length <= 40 ? 22 : 16}px, max(16px, calc(100cqw / ${Math.max(1, Math.min(password().length, 20)) * 0.8})))`,
@@ -217,7 +242,6 @@ export default function PasswordGenerator() {
                 </Inline>
                 {/* what the password holds, as quiet chips: its length and its kinds of signs */}
                 <Inline>
-                  <Chip>{t().lengthChip({ count: password().length })}</Chip>
                   <For each={contents()}>{(kind) => <Chip>{kind}</Chip>}</For>
                 </Inline>
               </Section>

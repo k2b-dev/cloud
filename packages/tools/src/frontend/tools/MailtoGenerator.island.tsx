@@ -52,7 +52,6 @@ export const mailtoMessages = i18n.define({
   },
 });
 
-/** Addresses typed into one field, separated by commas, semicolons or spaces. */
 /**
  * Email links on v2: the recipients, subject and text as fields, the link with its Markdown and HTML forms below as
  * values to copy, and "Im Mailprogramm öffnen" as the page's main deed. The Reply-To limit of `mailto:` is a note
@@ -72,6 +71,9 @@ export default function MailtoGenerator() {
     const toAddr = to().trim();
     if (!toAddr) return "";
     const params: string[] = [];
+    // k2b-ui gap: `addressOf` (packages/ui/src/v2/addresses.ts) is not exported from @k2b/ui/v2; a tag in display
+    // form ("Berg, Anna" <anna@example.org>) should go into the link as its bare address. Until the export, the tags
+    // are joined as typed; no local copy of the rule.
     if (cc().length > 0) params.push(`cc=${encodeURIComponent(cc().join(","))}`);
     if (bcc().length > 0) params.push(`bcc=${encodeURIComponent(bcc().join(","))}`);
     if (subject().trim()) params.push(`subject=${encodeURIComponent(subject().trim())}`);

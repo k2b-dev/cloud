@@ -3,7 +3,24 @@
 // app declares lean-qr as a direct dep so it's installed in the container.
 import { qr } from "@k2b/stdlib/qr";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Check, ColorInput, Empty, Facts, Field, Input, Pane, Section, Select, Slider, Text } from "@k2b/ui/v2";
+import {
+  Band,
+  Button,
+  Canvas,
+  Check,
+  ColorInput,
+  DatePicker,
+  Empty,
+  Facts,
+  Field,
+  Input,
+  Pane,
+  Popover,
+  Section,
+  Select,
+  Slider,
+  Text,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import ToolsScreen from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
@@ -244,6 +261,29 @@ export default function QrCodeGenerator() {
       />
     </Field>
   );
+  // A moment as the person reads it: "15.06.2026 14:30" in German, the key order with a space otherwise.
+  const shownMoment = (moment: string) => {
+    const [date = "", time = ""] = moment.split("T");
+    const [year, month, day] = date.split("-");
+    return locale().startsWith("de") ? `${day}.${month}.${year} ${time}` : `${date} ${time}`;
+  };
+  const momentField = (label: string, value: () => string, set: (value: string) => void, error: string | undefined) => (
+    <Field label={label} error={error} optional={w().optional}>
+      <Input
+        placeholder="15.06.2026 14:30"
+        value={value()}
+        onInput={set}
+        end={
+          <Popover
+            icon="calendar"
+            label={t().pickMoment}
+            title={label}
+            content={<DatePicker time label={label} value={parseEventMoment(value())} onPick={(moment) => set(shownMoment(moment))} />}
+          />
+        }
+      />
+    </Field>
+  );
   const download = { label: t().downloadSvg, icon: "download", onClick: downloadSvg, disabled: !qrSvg() };
   return (
     <ToolsScreen
@@ -362,19 +402,11 @@ export default function QrCodeGenerator() {
                     placeholder: t().evLocationPlaceholder,
                     optional: true,
                   })}
-                  {/* k2b-ui gap: v2 has no date-and-time field (DateInput takes days only); start and end are typed, read by
-                      parseEventMoment, and a field that holds no real moment says so. */}
+                  {/* start and end are typed ("15.06.2026 14:30") or picked: the calendar at the field's end is the v2
+                      DatePicker with its time, as v1 had one; parseEventMoment reads what was typed */}
                   <Field.Row>
-                    {field(t().evStartLabel, evStart, setEvStart, {
-                      placeholder: "15.06.2026 14:30",
-                      optional: true,
-                      error: startError(),
-                    })}
-                    {field(t().evEndLabel, evEnd, setEvEnd, {
-                      placeholder: "15.06.2026 16:00",
-                      optional: true,
-                      error: endError(),
-                    })}
+                    {momentField(t().evStartLabel, evStart, setEvStart, startError())}
+                    {momentField(t().evEndLabel, evEnd, setEvEnd, endError())}
                   </Field.Row>
                   {field(t().evDescriptionLabel, evDescription, setEvDescription, {
                     placeholder: t().evDescriptionPlaceholder,

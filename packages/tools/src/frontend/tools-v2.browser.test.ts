@@ -23,18 +23,28 @@ beforeAll(async () => {
   const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
   if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
   const icons = { css: iconCss.replace(fontAsset, "/tabler-icons.woff2"), font: fileURLToPath(new URL(fontAsset, iconCssUrl)) };
+  // the page's fonts as Cloud serves them (fonts.css: IBM Plex), the Latin faces inlined so the page needs no more files
+  const plexUrl = import.meta.resolve("@k2b/ui/fonts/plex.css");
+  let fontsCss = (await Bun.file(fileURLToPath(plexUrl)).text()).replace(/@font-face\{[^}]*\}/g, (face) =>
+    face.includes("plex") && !face.includes("-latin-") ? "" : face,
+  );
+  for (const match of new Set(fontsCss.match(/\.\/[^)"'?]+\.woff2(?:\?[^)"']*)?/g) ?? [])) {
+    const file = fileURLToPath(new URL(match.replace(/\?.*$/, ""), plexUrl));
+    fontsCss = fontsCss.replaceAll(match, `data:font/woff2;base64,${Buffer.from(await Bun.file(file).arrayBuffer()).toString("base64")}`);
+  }
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/styles.css") return new Response(styles, { headers: { "Content-Type": "text/css" } });
+      if (url.pathname === "/fonts.css") return new Response(fontsCss, { headers: { "Content-Type": "text/css" } });
       if (url.pathname === "/tabler-icons.css") return new Response(icons.css, { headers: { "Content-Type": "text/css" } });
       if (url.pathname === "/tabler-icons.woff2") return new Response(Bun.file(icons.font));
       if (url.pathname === "/entry.js")
         return new Response(harness, { headers: { "Content-Type": "application/javascript; charset=utf-8" } });
       return new Response(
-        `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/tabler-icons.css"></head><body class="k2b-ui" style="margin:0;height:100vh"><div id="app" class="k2-ui" style="display:flex;height:100%"></div><script src="/entry.js"></script></body></html>`,
+        `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/tabler-icons.css"></head><body class="k2b-ui" style="margin:0;height:100vh"><div id="app" class="k2-ui" style="display:flex;height:100%"></div><script src="/entry.js"></script></body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     },
@@ -232,12 +242,15 @@ test("a 20-sign password stays on one line on a phone", async () => {
       .first()
       .evaluate((span) => [...new Set([...span.children].map((sign) => Math.round(sign.getBoundingClientRect().top)))]);
     expect(tops).toHaveLength(1);
-    expect(
-      await page
-        .locator('[data-k2-part="Canvas"] > div > span')
-        .first()
-        .evaluate((span) => getComputedStyle(span).fontFamily),
-    ).toContain("mono");
+    // the drawing sets exactly the v2 mono family (a shorthand that fails falls back to the inherited family)
+    const family = await page
+      .locator('[data-k2-part="Canvas"] > div > span')
+      .first()
+      .evaluate((span) => ({
+        used: getComputedStyle(span).fontFamily,
+        token: getComputedStyle(span).getPropertyValue("--k2-font-mono").trim(),
+      }));
+    expect(family.used).toBe(family.token);
   } finally {
     await page.close();
   }
@@ -294,6 +307,72 @@ test("a QR code downloads as SVG, and an event with an unreadable start says so 
     await page.getByLabel(/^Beginn/).fill("15.06.2026 14:30");
     await page.waitForFunction(() => !document.body.textContent?.includes("Datum und Uhrzeit, z. B."));
     expect(await page.getByRole("button", { name: "SVG herunterladen" }).first().isDisabled()).toBe(false);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("six presses on the length leave the history as it was, and Neu keeps the password it leaves", async () => {
+  const page = await tool("password");
+  try {
+    await page.waitForFunction(() => (document.querySelector('[data-k2-part="Canvas"] span')?.textContent?.length ?? 0) === 20);
+    const length = page.getByRole("slider", { name: /Zeichen/ });
+    for (let press = 0; press < 6; press++) await length.press("ArrowRight");
+    await page.waitForFunction(() => (document.querySelector('[data-k2-part="Canvas"] span')?.textContent?.length ?? 0) === 26);
+    expect(await page.getByRole("region", { name: "Zuvor erzeugt" }).count()).toBe(0);
+    const left = (await page.locator('[data-k2-part="Canvas"] > div > span').first().textContent()) ?? "";
+    await page.getByRole("button", { name: "Passwort neu generieren" }).click();
+    const history = page.getByRole("region", { name: "Zuvor erzeugt" });
+    await history.waitFor();
+    expect(await history.locator('[data-k2-part="Facts"]').textContent()).toContain(left);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("a Wi-Fi password stands masked in the QR content", async () => {
+  const page = await tool("qr");
+  try {
+    await page.getByRole("combobox", { name: "Inhaltstyp" }).click();
+    await page.getByRole("option", { name: "WLAN-Netzwerk" }).click();
+    await page.getByRole("textbox", { name: /^Netzwerkname/ }).fill("Werkstatt");
+    await page
+      .getByLabel(/^Passwort/)
+      .first()
+      .fill("geheim-4711");
+    await page.waitForFunction(() => document.querySelector('[data-k2-part="Facts"]')?.textContent?.includes("Werkstatt"));
+    const shown = (await page.locator('[data-k2-part="Facts"]').first().textContent()) ?? "";
+    expect(shown).toContain("••••••••");
+    expect(shown).not.toContain("geheim-4711");
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("an event whose end lies before its start says so and makes no code", async () => {
+  const page = await tool("qr");
+  try {
+    await page.getByRole("combobox", { name: "Inhaltstyp" }).click();
+    await page.getByRole("option", { name: "Kalendertermin" }).click();
+    await page.getByLabel("Termintitel").fill("Wartung");
+    await page.getByLabel(/^Beginn/).fill("15.06.2026 14:30");
+    await page.getByLabel(/^Ende/).fill("15.06.2026 10:00");
+    await page.getByText("Das Ende liegt vor dem Beginn").first().waitFor();
+    expect(await page.getByRole("button", { name: "SVG herunterladen" }).first().isDisabled()).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("the event's start opens a calendar with its time", async () => {
+  const page = await tool("qr");
+  try {
+    await page.getByRole("combobox", { name: "Inhaltstyp" }).click();
+    await page.getByRole("option", { name: "Kalendertermin" }).click();
+    await page.getByRole("button", { name: "Im Kalender wählen" }).first().click();
+    await page.getByRole("grid").first().waitFor();
+    // the time of the moment is part of the picker (hour and minute as spinbuttons)
+    expect(await page.getByRole("spinbutton").count()).toBeGreaterThanOrEqual(2);
   } finally {
     await page.close();
   }
