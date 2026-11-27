@@ -6,7 +6,8 @@ import AttachmentsScreen from "./AttachmentsScreen";
 
 /**
  * The attachments page for a browser test, rendered as the server would for its address: `?search=` filters the
- * invented sample by name. `data-sample="worst"` adds long names and many files, `empty` shows none.
+ * invented sample by name. `data-sample="worst"` adds long names and many files, `intl` non-Latin names, `huge` 1,200
+ * files (the first page of 200), `empty` shows none.
  */
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
@@ -45,8 +46,32 @@ const worst: Attachment[] = [
   file("Att904", "bartholomew.fitzgerald@northwind-industries-holdings.example.com.vcf", "text/vcard", 512, 24 * 400),
   ...ATTACHMENTS,
 ];
+// non-Latin names: Japanese, Chinese, Arabic (right to left), Vietnamese, emoji alone
+const intl: Attachment[] = [
+  file("Att800", "倉庫の棚卸し手順書_二〇二六年度版_東京第三物流センター.pdf", "application/pdf", 734_002, 1),
+  file("Att801", "华东区域冷链运输服务商综合比较报告.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 61_440, 2),
+  file(
+    "Att802",
+    "خطة توزيع المستودع للربع الأول من العام القادم.docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    98_304,
+    5,
+  ),
+  file("Att803", "Kế hoạch kiểm kê kho hàng quý bốn năm hai nghìn không trăm hai mươi sáu.pdf", "application/pdf", 412_000, 30),
+  file("Att804", "🚚📦.png", "image/png", 20_480, 60),
+];
+// 1,200 files: the server sends one page of 200, newest first
+const PER_PAGE = 200;
+const huge = Array.from({ length: 1200 }, (_, index) => {
+  const base = ATTACHMENTS[index % ATTACHMENTS.length]!;
+  return {
+    ...base,
+    id: `Att${String(index + 2000).padStart(5, "0")}`,
+    filename: `${Math.floor(index / ATTACHMENTS.length) + 1}_${base.filename}`,
+  };
+});
 const sample = document.documentElement.dataset.sample;
-const all = sample === "empty" ? [] : sample === "worst" ? worst : ATTACHMENTS;
+const all = sample === "empty" ? [] : sample === "worst" ? worst : sample === "intl" ? intl : sample === "huge" ? huge : ATTACHMENTS;
 const search = new URLSearchParams(location.search).get("search") ?? "";
 // uploads per day in the 30 days up to now, from the sample's own dates (the server counts them the same way)
 const DAY = 86_400_000;
@@ -57,7 +82,8 @@ const uploads = Array.from({ length: 30 }, (_, index) => {
     return at <= end && at > end - DAY;
   }).length;
 });
-const shown = all.filter((attachment) => attachment.filename.toLowerCase().includes(search.toLowerCase()));
+const found = all.filter((attachment) => attachment.filename.toLowerCase().includes(search.toLowerCase()));
+const shown = found.slice(0, PER_PAGE);
 
 render(
   () => (
@@ -65,7 +91,7 @@ render(
       <AttachmentsScreen
         ctx={{ ...notesContext(sampleNotes()), attachmentCount: all.length }}
         attachments={shown}
-        total={shown.length}
+        total={found.length}
         figures={{
           days: uploads,
           count: all.length,
@@ -74,7 +100,7 @@ render(
         }}
         search={search}
         page={1}
-        pages={1}
+        pages={Math.max(1, Math.ceil(found.length / PER_PAGE))}
         baseHref="/app/notebooks/Lager1/attachments"
         graphBack={`${location.pathname}${location.search}`}
         now={NOTES_NOW}

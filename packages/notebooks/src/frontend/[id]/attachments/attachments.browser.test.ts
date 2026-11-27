@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describeV2Page } from "@k2b/ui/v2/testing";
+import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
 import { notesContext, sampleNotes } from "../notes/notes-list.fixture";
@@ -211,4 +211,25 @@ describe("the attachments page on v2", () => {
       await context.close();
     }
   }, 60_000);
+});
+
+// break-ui: every sample at the phone's and a wide width keeps the v2 rules (lines, type, cuts with "…"), the page never
+// scrolls sideways, and nothing throws: worst-case names, non-Latin names (Japanese, Chinese, Arabic, Vietnamese), no
+// attachments and 1,200 of them (one page of 200).
+describe("the attachments page under worst-case data", () => {
+  for (const sample of ["normal", "worst", "intl", "empty", "huge"])
+    for (const view of [phone, wide])
+      test(`${sample} at ${view.width}: the v2 rules hold and the page fits its width`, async () => {
+        const { context, tab, errors } = await open(view, PATH, { sample });
+        try {
+          // k2b-ui gap: Nav tree – the v1 sidebar body (its fade without "…", v1 type sizes) stands in the slot, so the
+          // sidebar's inside is measured once v2 has the tree; the line it draws itself still counts.
+          const { problems } = await measureV2Layout(tab, { root: "[data-k2-workspace]", skip: "[data-k2-canvas], .k2-ws-side" });
+          expect(problems).toEqual([]);
+          expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      }, 60_000);
 });
