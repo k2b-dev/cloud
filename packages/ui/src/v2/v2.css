@@ -678,8 +678,15 @@
    label beside it ("Versionsverlauf") and a button ("1.000 Kommentare") keep their width until then, and the start as
    a whole never goes below its least. By what the words are, not by their place, so an island around a part changes
    nothing; and only a weight: where everything fits, nothing changes. */
+/* The title keeps a few letters ("Ang…"), or all of it where it is shorter: `width` gives that floor to the flex
+   minimum (the smaller of it and the content; a percentage, so it adds nothing to the start's own width), and `clip`
+   instead of `hidden` keeps the minimum content-based (a scroll container's would be 0). Below that, the label beside
+   it shortens too. */
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-text:is(.k2-t-lead, .k2-strong) {
-  flex-shrink: 1000;
+  flex: 0 1000 content;
+  width: min(4ch, 100%);
+  min-width: auto;
+  overflow: clip;
 }
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-btn > .k2-btn-label {
   min-width: 0;
@@ -697,7 +704,9 @@
   padding-inline: 4px;
   overflow: clip;
 }
-.k2-ui .k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end {
+/* always from its start: an end that fits has no room to spare, and one that cuts (nothing left to fold) keeps the
+   parts at its end, a closing × among them, the same before and after the page is alive */
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-end {
   justify-content: flex-end;
 }
 .k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end > [data-k2-folded] {
