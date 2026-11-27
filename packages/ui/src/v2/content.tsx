@@ -85,11 +85,18 @@ export type ProseProps =
        */
       markdown: string;
       children?: never;
+      /**
+       * Short text a person wrote, such as a comment: an image shows its words, a table its rows as lines of text, a
+       * heading is no larger than the text. Links and inline code stay.
+       */
+      compact?: boolean;
     }
   | {
       markdown?: never;
       /** Reading text as elements, when it is not Markdown. */
       children: JSX.Element;
+      /** Headings no larger than the text. */
+      compact?: boolean;
     };
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
@@ -99,7 +106,7 @@ export const Prose = (props: ProseProps) => {
     <Show
       when={props.markdown !== undefined}
       fallback={
-        <div class="k2-prose" data-k2-part="Prose" data-k2-prose="">
+        <div class="k2-prose" data-k2-part="Prose" data-k2-prose="" data-compact={props.compact ? "" : undefined}>
           {props.children}
         </div>
       }
@@ -108,7 +115,13 @@ export const Prose = (props: ProseProps) => {
         class="k2-prose"
         data-k2-part="Prose"
         data-k2-prose=""
-        innerHTML={renderSafeMarkdown(props.markdown ?? "", { locale: locale(), allowImages: false, linkProtocols: proseLinks })}
+        data-compact={props.compact ? "" : undefined}
+        innerHTML={renderSafeMarkdown(props.markdown ?? "", {
+          locale: locale(),
+          allowImages: false,
+          allowTables: !props.compact,
+          linkProtocols: proseLinks,
+        })}
       />
     </Show>
   );

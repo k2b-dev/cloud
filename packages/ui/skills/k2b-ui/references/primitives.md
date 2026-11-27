@@ -253,7 +253,8 @@ inline. Emphasis is a weight, never a size.
 ### Prose
 
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
-safe links only) or children.
+safe links only) or children. `compact` for short text a person wrote (a
+comment): tables become lines of text, headings stay at the text's size.
 
 ### Inline
 

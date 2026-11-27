@@ -38,7 +38,7 @@ Words in one of the four type roles (meta, row, body, lead); emphasis is a weigh
 
 ### Prose
 
-Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images.
+Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images. With `compact`, for short text a person wrote such as a comment, a table shows its rows as lines of text and a heading is no larger than the text; links and inline code stay.
 
 <Props of="Prose" />
 
