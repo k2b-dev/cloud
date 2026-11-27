@@ -87,6 +87,15 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
   from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
   and in reading order below that.
+- `center`: the content stands in the middle of the column, across at its
+  own measure (at most four cards of 240 px with their gaps) and in the
+  middle of the height where it fits; taller content starts at the top and
+  scrolls, and on the phone it always starts at the top. Only for a page
+  with little on it and nothing beside it, such as the first start of an
+  app without data: one `Text type="lead"` line and `Tiles perRow={4}` with
+  the ways to start, without a sidebar. The line stands centred over the
+  cards, on the phone at the start. No line or box of its own; CSS
+  alone, so the server's first render already stands there.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -152,6 +161,10 @@ key statements of a record or the home of a place.
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
+`perRow={n}`: at most n tiles share a row and grow with its width; a tile
+never gets narrower than 240 px for it. Where n do not fit, a row holds
+half of them (four as 2 × 2, never 3 + 1), and below that one under the
+other. On the phone a row always holds half of them, even below 240 px.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card
@@ -274,7 +287,7 @@ open row in the tint of the app it belongs to, a chosen row blue; rows part
 with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer or holds the focus, and while dragged; on touch screens it stays, and after a touch on the head it takes a 44 px target), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -578,8 +591,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   stands at the end and its `count` counts its own entries. A tab is never
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
-  holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
+  holds them. A tab that holds the focus and hides hands it to the menu tab,
+  and a "Mehr" that goes hands it to the last tab. Known: while tabs hide, a
+  gap of less than one tab may stand before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
   first where it does not fit, its whole words as a hint on hover),
   `loading` (results
@@ -601,8 +615,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
-  they keep only their symbols, the words stay their names; leave on the
-  phone),
+  they keep only their symbols, the words stay their names; on the phone
+  they stay in the row, and what has no room folds into one "+n" menu),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count is never cut, and
   actions without room go whole into a "…" menu from the end, right after the
@@ -728,7 +742,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the one way out), `tone` (`bad` or `warn` for a place empty because
+  something went wrong or waits and cannot be retried there, such as an error
+  page; data to load again is `Failed`).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.
