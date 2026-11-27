@@ -2,6 +2,7 @@ import type { CalendarDescriptor } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { ButtonLink, IconButton } from "@k2b/ui";
 import { For, Show } from "solid-js";
+import { hexColor } from "@/frontend/lib/color";
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { type CalendarSourceView, itemColor, itemTitle, nextDateKey, type SourcedCalendarItem, shiftDateKey } from "./calendar-model";
 import { useCalendarViewMessages } from "./messages";
@@ -113,7 +114,7 @@ export default function EventDetail(props: Props) {
       <IconButton class="spaces-calendar-detail__close" label={t.close} size="sm" variant="ghost" onClick={() => props.onClose()}>
         <i class="ti ti-x" aria-hidden="true" />
       </IconButton>
-      <h2 class="spaces-calendar-detail__title" style={{ "--spaces-calendar-color": itemColor(props.item, props.calendar) }}>
+      <h2 class="spaces-calendar-detail__title" style={{ "--spaces-calendar-color": hexColor(itemColor(props.item, props.calendar)) }}>
         <span class="spaces-calendar-detail__dot" aria-hidden="true" />
         <span>
           <Show when={props.item.type === "busy"}>
