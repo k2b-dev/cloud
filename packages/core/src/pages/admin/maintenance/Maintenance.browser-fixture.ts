@@ -10,6 +10,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import { adminNavFixture } from "../admin-v2.fixture";
+import { adminShellRuntime } from "../admin-v2.shell-fixture";
 import { defaultEnd } from "./time";
 
 const PATH = "/admin/settings/maintenance";
@@ -189,7 +190,7 @@ export async function maintenanceBrowserFixture() {
     const locale = c.req.query("locale") === "en" ? "en" : "de";
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", adminShellRuntime());
     c.set("user", user);
     c.set("settings", { app: { name: "Musterverein Cloud", locale } });
     const title = maintenanceAdminMessages.resolve([locale]).t.title;

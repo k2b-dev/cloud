@@ -3,23 +3,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import {
-  Bar,
-  Button,
-  Failed,
-  Icon,
-  Inline,
-  Input,
-  Mark,
-  type NavProps,
-  Notice,
-  Pane,
-  StatusRow,
-  Table,
-  Tabs,
-  Text,
-  useToast,
-} from "@k2b/ui/v2";
+import { Bar, Button, Failed, Inline, Input, Mark, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { adminToasts } from "../_area/toasts";
 import AddApp from "./AddApp";
@@ -222,9 +206,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       entry.name,
                       <>
                         <Show when={entry.status === "warn" || entry.status === "error"} fallback={statusLabel(t(), entry.status)}>
-                          <Text tone={entry.status === "error" ? "bad" : "warn"}>
-                            <Icon name="point-filled" /> {statusLabel(t(), entry.status)}
-                          </Text>
+                          <Text tone={entry.status === "error" ? "bad" : "warn"}>● {statusLabel(t(), entry.status)}</Text>
                         </Show>
                         {` · ${entry.hints[0] ? problemLine(entry) : routesLine(entry)}`}
                       </>,
