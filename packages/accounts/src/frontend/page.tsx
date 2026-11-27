@@ -44,7 +44,8 @@ export default ssr<AuthContext>(async (c) => {
     isAdmin ? audit.latest({ limit: ACTIVITY_SIZE }).catch(() => null) : Promise.resolve(null),
     accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "managed" } }),
     accountsService.group.list({ pagination: { page: 1, perPage: MY_GROUPS }, scope: { userId: user.id, mode: "member" } }),
-    accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { mode: "all" } }),
+    // how many groups there are in all: administrators have it from the dashboard; only the others' cell needs this read
+    isAdmin ? Promise.resolve(null) : accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { mode: "all" } }),
   ]);
 
   const now = new Date();
@@ -113,7 +114,7 @@ export default ssr<AuthContext>(async (c) => {
         groups={{
           managed: { count: managedGroups.total, href: groupsHref("managed") },
           member: { count: memberGroups.total, href: groupsHref("member") },
-          all: { count: allGroups.total, href: groupsHref("all") },
+          all: { count: summary?.groupsTotal ?? allGroups?.total ?? 0, href: groupsHref("all") },
         }}
         myGroups={myGroups}
         isAdmin={isAdmin}

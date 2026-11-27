@@ -88,14 +88,15 @@ const render = async (user: User, freeIpa = true) => {
       metadata: {},
     },
   ]);
+  const groups = spyOn(services.accountsAppService.group, "list").mockImplementation(
+    async ({ scope }) => ({ items: [], page: 1, perPage: 1, total: scope?.mode === "all" ? 23 : 3, hasNext: false }) as never,
+  );
   const spies = [
     stubRailSnapshot(),
     dashboard,
     activity,
     spyOn(services.coreSettings, "get").mockResolvedValue(freeIpa),
-    spyOn(services.accountsAppService.group, "list").mockImplementation(
-      async ({ scope }) => ({ items: [], page: 1, perPage: 1, total: scope?.mode === "all" ? 17 : 3, hasNext: false }) as never,
-    ),
+    groups,
   ];
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
@@ -114,6 +115,7 @@ const render = async (user: User, freeIpa = true) => {
       dashboardCalls: dashboard.mock.calls.length,
       activityCalls: activity.mock.calls.length,
       activityLimits: activity.mock.calls.map(([config]) => config.limit),
+      groupScopes: groups.mock.calls.map(([config]) => config.scope?.mode),
     };
   } finally {
     for (const spy of spies) spy.mockRestore();
@@ -121,7 +123,9 @@ const render = async (user: User, freeIpa = true) => {
 };
 
 test("an administrator sees their account, the groups and the administration, linked to the new places", async () => {
-  const { html, activityLimits } = await render(person(["user", "admin"]));
+  const { html, activityLimits, groupScopes } = await render(person(["user", "admin"]));
+  // the number of all groups comes from the dashboard (17), so the groups are read only for the person's own
+  expect(groupScopes.sort()).toEqual(["managed", "member"]);
   expect(html).toContain('data-k2-part="Workspace"');
   expect(html).toContain("Jana Berger");
   expect(html).toContain("Your account");
@@ -149,11 +153,19 @@ test("an administrator sees their account, the groups and the administration, li
   expect(html).toContain("All activity");
   expect(html).toContain('href="/me"');
   expect(html).not.toContain('data-k2-part="Loading"');
+  // the island gets only what the view shows: its serialized props, as the page sends them
+  const props = html.match(/data-props="([^"]*)"[^>]*data-file="OverviewScreen\.island\.tsx"/)?.[1] ?? "";
+  console.info(`overview island props (admin): ${props.length} characters in the page, ${props.replaceAll("&quot;", "\"").length} decoded`);
+  expect(props.length).toBeGreaterThan(0);
+  expect(props.length).toBeLessThan(16_000);
   console.info(`overview v2 DOM elements (admin): ${html.match(/<[a-z][a-z0-9-]*/gi)?.length}`);
 });
 
 test("everyone else sees only their account and their groups; the administration's data is not even read", async () => {
-  const { html, dashboardCalls, activityCalls } = await render(person(["user"]));
+  const { html, dashboardCalls, activityCalls, groupScopes } = await render(person(["user"]));
+  // without the dashboard, the cell "All groups" needs its own count
+  expect(groupScopes.sort()).toEqual(["all", "managed", "member"]);
+  expect(html).toContain(">23<");
   expect(html).toContain("Your account");
   expect(html).toContain("My groups");
   expect(html).toContain('href="/app/accounts/groups?scope=managed"');
