@@ -2645,12 +2645,12 @@
   letter-spacing: 0.02em;
 }
 /* sidebar entry and sentence: 20 */
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switch .k2-mi) .k2-mk {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switcher .k2-mi) .k2-mk {
   width: 20px;
   height: 20px;
   border-radius: 5px;
 }
-.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switch .k2-mi) .k2-mk > .k2-icon {
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh, .k2-nav-switch, .k2-switcher .k2-mi) .k2-mk > .k2-icon {
   font-size: 13px;
 }
 /* in the words of a sentence the mark sits on their middle, with a little room on each side */
@@ -3882,33 +3882,33 @@
   flex: none;
   color: var(--k2-subtle);
 }
-.k2-ui .k2-menu.k2-switch {
+.k2-ui .k2-menu.k2-switcher {
   width: 280px;
 }
-.k2-ui .k2-switch-search {
+.k2-ui .k2-switcher-search {
   display: flex;
   padding: 0 0 4px;
 }
-.k2-ui .k2-switch-search > .k2-input {
+.k2-ui .k2-switcher-search > .k2-input {
   flex: 1;
   min-width: 0;
 }
-.k2-ui .k2-switch-none {
+.k2-ui .k2-switcher-none {
   padding: 8px;
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
-.k2-ui .k2-switch .k2-mi {
+.k2-ui .k2-switcher .k2-mi {
   cursor: pointer;
 }
-.k2-ui .k2-switch .k2-mi:is(:hover, :focus-visible) {
+.k2-ui .k2-switcher .k2-mi:is(:hover, :focus-visible) {
   background: var(--k2-n100);
 }
-.k2-ui .k2-switch .k2-mi[aria-current] {
+.k2-ui .k2-switcher .k2-mi[aria-current] {
   color: var(--k2-text);
   font-weight: 500;
 }
-.k2-ui .k2-switch .k2-mi-lead {
+.k2-ui .k2-switcher .k2-mi-lead {
   width: 20px;
 }
 /* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their

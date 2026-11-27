@@ -48,7 +48,7 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
 /** The words of the open panel's entries, its headings and whether its search shows. */
 const panel = (page: Page) =>
   page.evaluate(() => {
-    const element = document.querySelector<HTMLElement>(".k2-switch");
+    const element = document.querySelector<HTMLElement>(".k2-switcher");
     return {
       open: !!element,
       presentation: element?.dataset.presentation,
@@ -64,22 +64,26 @@ test("server markup: the open base stands on the switcher's button before the is
   expect(markup).toContain('data-k2-part="NavSwitcher"');
   expect(markup).toContain('aria-label="Base wechseln"');
   expect(markup).toContain("Werkstatt");
-  expect(markup).not.toContain("k2-switch");
+  expect(markup).not.toContain("k2-switcher");
 });
 
 test("the panel holds the bases in their groups, the search from 8, and the deeds after a line", async () => {
   await withPage(1440, async (page) => {
+    // the closed switcher keeps the v2 rules (an open panel lies over the sidebar's grip on purpose)
+    expect((await measureV2Layout(page)).problems).toEqual([]);
     await button(page).click();
-    await page.locator(".k2-switch").waitFor();
+    await page.locator(".k2-switcher").waitFor();
     const shown = await panel(page);
     expect(shown.search).toBe(true);
     expect(shown.headings).toEqual(["Zuletzt geöffnet", "Alle Basen"]);
     expect(shown.entries.slice(0, 5)).toEqual(["Werkstatt", "Lager Nord", "Kunden", "Personal", "Fuhrpark"]);
     expect(shown.entries.slice(-2)).toEqual(["Neue Base", "Aus Vorlage"]);
     expect(shown.entries).toHaveLength(14);
+    // the panel is as high as what it holds: a class of another part (the toggle's `.k2-switch`) once pressed it to 20 px
+    const size = await page.locator(".k2-switcher").evaluate((element) => ({ box: element.clientHeight, content: element.scrollHeight }));
+    expect(size.box).toBe(size.content);
     // the open base carries its tick and says it is the page
-    expect(await page.locator('.k2-switch .k2-mi[aria-current="page"] .k2-mi-label').textContent()).toBe("Werkstatt");
-    expect((await measureV2Layout(page)).problems).toEqual([]);
+    expect(await page.locator('.k2-switcher .k2-mi[aria-current="page"] .k2-mi-label').textContent()).toBe("Werkstatt");
   });
 });
 
@@ -97,7 +101,7 @@ test("the search narrows both groups; nothing found says so; arrows go from the 
     expect(await page.evaluate(() => document.activeElement?.getAttribute("type"))).toBe("search");
     await search.fill("zzz");
     shown = await panel(page);
-    expect(await page.locator(".k2-switch-none").textContent()).toBe("Keine Base passt");
+    expect(await page.locator(".k2-switcher-none").textContent()).toBe("Keine Base passt");
     expect(shown.entries).toEqual(["Neue Base", "Aus Vorlage"]);
   });
 });
@@ -105,13 +109,13 @@ test("the search narrows both groups; nothing found says so; arrows go from the 
 test("Escape closes the panel and gives the focus back; a deed runs and closes it", async () => {
   await withPage(1440, async (page) => {
     await button(page).click();
-    await page.locator(".k2-switch").waitFor();
+    await page.locator(".k2-switcher").waitFor();
     await page.keyboard.press("Escape");
-    await page.locator(".k2-switch").waitFor({ state: "detached" });
+    await page.locator(".k2-switcher").waitFor({ state: "detached" });
     expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Base wechseln");
     await button(page).click();
-    await page.locator(".k2-switch").getByText("Aus Vorlage").click();
-    await page.locator(".k2-switch").waitFor({ state: "detached" });
+    await page.locator(".k2-switcher").getByText("Aus Vorlage").click();
+    await page.locator(".k2-switcher").waitFor({ state: "detached" });
     expect(await page.evaluate(() => window.__switcherDid)).toBe("template");
   });
 });
@@ -120,14 +124,14 @@ test("500 bases: the panel lists 20 and says how many the search reaches; a sear
   await withPage(1440, async (page) => {
     await page.evaluate(() => window.__switcherMany?.());
     await button(page).click();
-    await page.locator(".k2-switch").waitFor();
+    await page.locator(".k2-switcher").waitFor();
     // 20 bases and the two deeds
     expect((await panel(page)).entries).toHaveLength(22);
-    expect(await page.locator(".k2-switch-none").textContent()).toBe("+480 weitere über die Suche");
+    expect(await page.locator(".k2-switcher-none").textContent()).toBe("+480 weitere über die Suche");
     await page.getByRole("searchbox", { name: "Base suchen" }).fill("base 4");
     // "Base 4", "Base 40" … "Base 49" and "Base 400" … "Base 495": 107 matches, 50 listed
     expect((await panel(page)).entries).toHaveLength(52);
-    expect(await page.locator(".k2-switch-none").textContent()).toBe("+57 weitere über die Suche");
+    expect(await page.locator(".k2-switcher-none").textContent()).toBe("+57 weitere über die Suche");
   });
 });
 
@@ -135,7 +139,7 @@ test("with fewer than 8 bases there is no search", async () => {
   await withPage(1440, async (page) => {
     await page.evaluate(() => window.__switcherFew?.());
     await button(page).click();
-    await page.locator(".k2-switch").waitFor();
+    await page.locator(".k2-switcher").waitFor();
     const shown = await panel(page);
     expect(shown.search).toBe(false);
     expect(shown.entries).toEqual(["Werkstatt", "Lager Nord", "Kunden", "Neue Base", "Aus Vorlage"]);

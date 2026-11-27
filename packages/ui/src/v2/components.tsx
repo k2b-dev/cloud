@@ -383,7 +383,7 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
         ref={(element: HTMLElement) => {
           panel = element;
         }}
-        class="k2-menu k2-switch"
+        class="k2-menu k2-switcher"
         side="bottom"
         align="start"
         sideOffset={4}
@@ -391,7 +391,7 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
         onKeyDown={move}
       >
         <Show when={searchable()}>
-          <div class="k2-switch-search">
+          <div class="k2-switcher-search">
             <Input
               type="search"
               icon="search"
@@ -402,7 +402,7 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
             />
           </div>
         </Show>
-        <Show when={shown().length} fallback={<div class="k2-switch-none">{props.switcher.noMatch}</div>}>
+        <Show when={shown().length} fallback={<div class="k2-switcher-none">{props.switcher.noMatch}</div>}>
           <For each={sections()}>
             {(section) => (
               <div class="k2-mgroup" role="group" aria-label={section.group}>
@@ -431,7 +431,7 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
             )}
           </For>
           <Show when={found().length > shown().length}>
-            <div class="k2-switch-none">{props.switcher.more(found().length - shown().length)}</div>
+            <div class="k2-switcher-none">{props.switcher.more(found().length - shown().length)}</div>
           </Show>
         </Show>
         <Show when={props.switcher.actions?.length}>
