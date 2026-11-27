@@ -391,14 +391,22 @@ export const dropOrphanedFieldIndexes = async (db?: SQL): Promise<number> => {
 /**
  * Record indexes that came after an installation had records: built here, in the background and `CONCURRENTLY`, never
  * in the migration's transaction, so an update never pauses record writes while one builds. A read that wants one
- * answers correctly without it (only slower), and a failed build is dropped and tried again by the next batch.
+ * answers correctly without it (only slower). A failed build (such as one that outlasts the statement timeout on a
+ * large table) is dropped and tried again at most once per `RECORD_INDEX_RETRY_MS` in this process, so it neither
+ * rescans the records in every batch nor holds up the field indexes. Should the maintenance lease be lost during a build,
+ * a second instance may drop the index that is still building; the next batch builds it again.
  */
 export const RECORD_BACKGROUND_INDEXES = {
   // the new records per day of a table (its head's series) read a range, not every live record of the table
   idx_grids_records_table_created_live: "ON grids.records USING btree (table_id, created_at) WHERE (deleted_at IS NULL)",
 } as const;
 
-const ensureRecordBackgroundIndexesOnConnection = async (db: SQL): Promise<IndexMaintenanceProgress> => {
+/** How long a failed record index waits before this process builds it again: the maintenance's idle interval. */
+export const RECORD_INDEX_RETRY_MS = 5 * 60_000;
+/** When each record index last failed to build in this process. */
+const recordIndexFailures = new Map<string, number>();
+
+const ensureRecordBackgroundIndexesOnConnection = async (db: SQL, now = Date.now()): Promise<IndexMaintenanceProgress> => {
   const valid = new Set(
     (
       await db<Array<{ name: string }>>`
@@ -415,25 +423,36 @@ const ensureRecordBackgroundIndexesOnConnection = async (db: SQL): Promise<Index
   let changed = 0;
   for (const [name, definition] of Object.entries(RECORD_BACKGROUND_INDEXES)) {
     if (valid.has(name)) continue;
+    const failedAt = recordIndexFailures.get(name);
+    if (failedAt !== undefined && now - failedAt < RECORD_INDEX_RETRY_MS) continue;
     // an interrupted build leaves an invalid index behind; it is dropped and built again
     await db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS grids.${name}`).catch(() => undefined);
     try {
       await db.unsafe(`CREATE INDEX CONCURRENTLY ${name} ${definition}`);
       log.info("Created record index in the background", { idx: name });
+      recordIndexFailures.delete(name);
       changed += 1;
     } catch (error) {
-      log.error("Failed to create record index; the next maintenance batch tries again", { idx: name, error: String(error) });
+      log.error("Failed to create record index; tried again after the retry interval", {
+        idx: name,
+        retryMs: RECORD_INDEX_RETRY_MS,
+        error: String(error),
+      });
+      recordIndexFailures.set(name, now);
       await db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS grids.${name}`).catch(() => undefined);
     }
   }
   return { changed, hasMore: false };
 };
 
-/** Builds the missing record indexes now, without the maintenance lease (for a test or a one-off). */
-export const ensureRecordBackgroundIndexes = async (db?: SQL): Promise<number> =>
+/**
+ * Builds the missing record indexes now, without the maintenance lease (for a test or a one-off); `now` is the moment a
+ * test pins for the retry interval.
+ */
+export const ensureRecordBackgroundIndexes = async (db?: SQL, now = Date.now()): Promise<number> =>
   (db
-    ? await ensureRecordBackgroundIndexesOnConnection(db)
-    : await withIndexMaintenanceConnection(sql, ensureRecordBackgroundIndexesOnConnection)
+    ? await ensureRecordBackgroundIndexesOnConnection(db, now)
+    : await withIndexMaintenanceConnection(sql, (connection) => ensureRecordBackgroundIndexesOnConnection(connection, now))
   ).changed;
 
 export const FIELD_INDEX_MAINTENANCE_LOCK = "grids:field-index-maintenance:v2";
@@ -457,9 +476,10 @@ export const runFieldIndexMaintenanceBatch = async (
 ): Promise<FieldIndexMaintenanceBatchResult> => {
   const result = await withMaintenanceLease(maintenanceLocks(), FIELD_INDEX_MAINTENANCE_LOCK, FIELD_INDEX_MAINTENANCE_LEASE_MS, () =>
     withIndexMaintenanceConnection(sql, async (connection) => {
-      const records = await ensureRecordBackgroundIndexesOnConnection(connection);
       const orphaned = await dropOrphanedFieldIndexesOnConnection(connection, Math.max(1, options.maxOrphans ?? 16));
       const missing = await ensureMissingFieldSortIndexesOnConnection(connection, Math.max(1, options.maxFields ?? 4));
+      // after the field indexes, so a slow or failing record index never holds them up
+      const records = await ensureRecordBackgroundIndexesOnConnection(connection);
       return {
         changed: records.changed + orphaned.changed + missing.changed,
         hasMore: orphaned.hasMore || missing.hasMore,

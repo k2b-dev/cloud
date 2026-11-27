@@ -7,7 +7,7 @@ import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { ensureRecordBackgroundIndexes } from "../service/field-indexes";
+import { ensureRecordBackgroundIndexes, RECORD_INDEX_RETRY_MS } from "../service/field-indexes";
 import { getRecordCreatedSeries, RECORD_SERIES_DAYS } from "../service/record-created-series";
 import { PublicRecordCreatedSeriesSchema, recordsRoutes } from "./records";
 
@@ -29,6 +29,13 @@ const fixture = {
   combinedTableId: uuid(),
   combinedTablePublicId: testShortId(),
 };
+
+const indexValid = async () =>
+  (
+    await sql<Array<{ valid: boolean }>>`
+      SELECT i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+      WHERE c.relname = 'idx_grids_records_table_created_live'`
+  )[0]?.valid === true;
 
 const record = (tableId: string, createdAt: string, deletedAt: string | null = null) =>
   sql`INSERT INTO grids.records (id, short_id, table_id, data, created_at, deleted_at)
@@ -84,6 +91,10 @@ beforeAll(async () => {
   // 25 Oct 23:30 UTC is 26 Oct 00:30 in Berlin: a different day for the two calendars
   await record(fixture.tableId, "2026-10-25T23:30:00Z");
   await record(fixture.tableId, "2026-10-26T09:00:00Z");
+  // 25 Oct 22:30 UTC is 23:30 on the 25th under CET (Berlin after the switch); under CEST it would be the 26th
+  await record(fixture.tableId, "2026-10-25T22:30:00Z");
+  // 19 Oct 22:30 UTC is 00:30 on the 20th in Berlin (CEST): the window's first day there, the day before it in UTC
+  await record(fixture.tableId, "2026-10-19T22:30:00Z");
   // in the bin, and of another table: counted nowhere
   await record(fixture.tableId, "2026-10-26T09:30:00Z", "2026-10-26T09:45:00Z");
   await record(fixture.otherTableId, "2026-10-26T09:00:00Z");
@@ -115,19 +126,21 @@ describe("a table's new records per day", () => {
     } finally {
       await meter.close();
     }
-    expect(berlin?.total).toBe(4);
+    expect(berlin?.total).toBe(6);
     expect(berlin?.points).toEqual([
-      { day: "2026-10-20", created: 1 },
+      { day: "2026-10-20", created: 2 },
       { day: "2026-10-21", created: 0 },
       { day: "2026-10-22", created: 0 },
       { day: "2026-10-23", created: 0 },
       { day: "2026-10-24", created: 0 },
-      { day: "2026-10-25", created: 0 },
+      { day: "2026-10-25", created: 1 },
       { day: "2026-10-26", created: 2 },
     ]);
     const utc = await getRecordCreatedSeries(fixture.tableId, { days: 7, timeZone: "UTC", now: NOW });
+    // in UTC the 19th 22:30 is before the window, and both late records of the 25th stay on the 25th
+    expect(utc.points[0]).toEqual({ day: "2026-10-20", created: 1 });
     expect(utc.points.slice(-2)).toEqual([
-      { day: "2026-10-25", created: 1 },
+      { day: "2026-10-25", created: 2 },
       { day: "2026-10-26", created: 1 },
     ]);
   });
@@ -135,7 +148,7 @@ describe("a table's new records per day", () => {
   postgresTest("are bounded to 90 days and answer for a zone only Intl knows", async () => {
     const long = await getRecordCreatedSeries(fixture.tableId, { days: 500, timeZone: "Europe/Berlin", now: NOW });
     expect(long.points).toHaveLength(RECORD_SERIES_DAYS.max);
-    expect(long.points.reduce((sum, point) => sum + point.created, 0)).toBe(4);
+    expect(long.points.reduce((sum, point) => sum + point.created, 0)).toBe(6);
     const meter = await meterSql();
     try {
       // Postgres refuses this old link; the series falls back to UTC days with a second statement
@@ -150,12 +163,6 @@ describe("a table's new records per day", () => {
   });
 
   postgresTest("answer the same before and after their index, which builds without pausing record writes", async () => {
-    const indexValid = async () =>
-      (
-        await sql<Array<{ valid: boolean }>>`
-          SELECT i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-          WHERE c.relname = 'idx_grids_records_table_created_live'`
-      )[0]?.valid === true;
     await sql`DROP INDEX CONCURRENTLY IF EXISTS grids.idx_grids_records_table_created_live`;
     expect(await indexValid()).toBe(false);
     const before = await getRecordCreatedSeries(fixture.tableId, { days: 7, timeZone: "Europe/Berlin", now: NOW });
@@ -199,12 +206,36 @@ describe("a table's new records per day", () => {
     await sql`DELETE FROM grids.records WHERE id = ANY(${sql.array(extra, "UUID")})`;
   });
 
+  postgresTest("a failed index build waits out its retry interval before it builds again", async () => {
+    await sql`DROP INDEX CONCURRENTLY IF EXISTS grids.idx_grids_records_table_created_live`;
+    const holder = await sql.reserve();
+    const builder = await sql.reserve();
+    const failedAt = Date.parse("2026-10-26T10:00:00.000Z");
+    try {
+      // another session holds the lock an index build needs; this build gives up after 200 ms
+      await holder`BEGIN`;
+      await holder`LOCK TABLE grids.records IN SHARE UPDATE EXCLUSIVE MODE`;
+      await builder`SET lock_timeout = '200ms'`;
+      expect(await ensureRecordBackgroundIndexes(builder, failedAt)).toBe(0);
+      await holder`COMMIT`;
+      // the lock is free again, but within the interval the process does not build it again
+      expect(await ensureRecordBackgroundIndexes(builder, failedAt + RECORD_INDEX_RETRY_MS - 1)).toBe(0);
+      expect(await indexValid()).toBe(false);
+      expect(await ensureRecordBackgroundIndexes(builder, failedAt + RECORD_INDEX_RETRY_MS)).toBe(1);
+      expect(await indexValid()).toBe(true);
+    } finally {
+      await builder`RESET lock_timeout`;
+      holder.release();
+      builder.release();
+    }
+  });
+
   postgresTest("answer a reader of the base, not a stranger, and only for a stored table", async () => {
     const path = (tablePublicId: string) => `/by-table/${tablePublicId}/created-series?days=7`;
     const ok = await api(fixture.readerId).request(path(fixture.tablePublicId));
     expect(ok.status).toBe(200);
     const series = PublicRecordCreatedSeriesSchema.parse(await ok.json());
-    expect(series.total).toBe(4);
+    expect(series.total).toBe(6);
     expect(series.points).toHaveLength(7);
 
     const stranger = await api(fixture.strangerId).request(path(fixture.tablePublicId));
