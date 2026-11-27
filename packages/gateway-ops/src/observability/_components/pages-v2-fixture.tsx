@@ -96,7 +96,7 @@ const executions = (worst: boolean): ExecutionRow[] =>
 
 const cells = (worst: boolean) => [
   { icon: "plug", label: "Aufrufe", value: worst ? "12.345.678" : "1.284", meta: "Ø 820 ms" },
-  { icon: "alert-circle", label: "Fehlgeschlagen", value: "7", meta: "Fehler, ungültig, Zeitüberschreitung", tone: "bad" as const },
+  { icon: "alert-circle", label: "Fehlgeschlagen", value: "7", meta: "inkl. Zeitlimits", tone: "bad" as const },
   { icon: "ban", label: "Abgelehnt", value: "2", meta: "Destruktiv: 1", tone: "warn" as const },
   { icon: "hourglass", label: "95. Perzentil", value: "6,4 Sek.", meta: "Im gewählten Zeitraum", tone: "warn" as const },
 ];

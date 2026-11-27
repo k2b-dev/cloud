@@ -41,7 +41,9 @@ test("Browser SSR distinguishes retained, empty and failed reads and localizes t
       expect(response.status).toBe(200);
       expect(html).toContain(label!);
       // the page's announcer always holds an empty alert region; a failed read would show its own words
-      expect(html).not.toContain(locale === "de" ? "Browser-Messungen konnten nicht geladen werden." : "Could not load browser measurements.");
+      expect(html).not.toContain(
+        locale === "de" ? "Browser-Messungen konnten nicht geladen werden." : "Could not load browser measurements.",
+      );
     }
     read.mockRejectedValueOnce(new Error("query unavailable"));
     const failed = await (await server.request("/?view=browser")).text();

@@ -135,8 +135,12 @@ describe("the operations overview on v2", () => {
     const { context, tab, errors } = await open(desktop, "/admin/observability", "worst");
     try {
       const services = tab.getByRole("list", { name: "Infrastruktur" });
-      expect(await services.innerText()).toMatch(/Postgres\s+Prüfung erforderlich[\s\S]*Valkey\s+Eingriff erforderlich[\s\S]*NATS\s+nicht verfügbar/);
-      expect(await services.getByRole("link", { name: /^Postgres/ }).getAttribute("href")).toBe("/admin/observability/infrastructure/postgres");
+      expect(await services.innerText()).toMatch(
+        /Postgres\s+Prüfung erforderlich[\s\S]*Valkey\s+Eingriff erforderlich[\s\S]*NATS\s+nicht verfügbar/,
+      );
+      expect(await services.getByRole("link", { name: /^Postgres/ }).getAttribute("href")).toBe(
+        "/admin/observability/infrastructure/postgres",
+      );
       expect(await services.getByRole("link", { name: /^NATS/ }).getAttribute("href")).toBe("/admin/observability/infrastructure/nats");
       expect(errors).toEqual([]);
     } finally {
