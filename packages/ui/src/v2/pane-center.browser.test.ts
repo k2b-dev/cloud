@@ -71,8 +71,9 @@ for (const width of [1440, 1920])
       // in the middle across: as much room on the left as on the right, at the measure of four cards
       expect(Math.round(found.tiles.width)).toBe(measure(edge));
       expect(Math.abs(found.tiles.left - found.scroll.left - (found.scroll.right - found.tiles.right))).toBeLessThanOrEqual(1);
-      // the line stands over the cards, on the same text edge
+      // the line stands over the cards, on the same text edge, with room between them
       expect(Math.round(found.lead.left)).toBe(Math.round(found.tiles.left));
+      expect(found.tiles.top - found.lead.bottom).toBeGreaterThanOrEqual(12);
       // four cards in one row, each at least 240 px, sharing the row evenly
       expect(new Set(found.tile.map((tile) => Math.round(tile.top))).size).toBe(1);
       for (const tile of found.tile) expect(tile.width).toBeGreaterThanOrEqual(240);
@@ -90,8 +91,7 @@ test("a centred pane whose content is taller than the page starts at the top and
     const found = await read(page);
     expect(found.overflows).toBe(true);
     // the line is the first thing under the top of the pane, as in any pane
-    expect(found.lead.top).toBeGreaterThanOrEqual(found.scroll.top);
-    expect(found.lead.top - found.scroll.top).toBeLessThan(40);
+    expect(Math.round(found.lead.top - found.scroll.top)).toBe(textEdge.wide);
     expect(new Set(found.tile.map((tile) => Math.round(tile.top))).size).toBe(10);
   });
 });
@@ -100,7 +100,9 @@ test("on the phone a centred pane starts at the top with the normal edge and the
   await withPage({ width: 390, height: 844 }, 4, async (page) => {
     const found = await read(page);
     expect(Math.round(found.tiles.width)).toBe(390);
-    expect(found.lead.top - found.scroll.top).toBeLessThan(40);
+    // the text edge above it, so it never touches the head of the page; the cards a gap below
+    expect(Math.round(found.lead.top - found.scroll.top)).toBe(textEdge.phone);
+    expect(found.tiles.top - found.lead.bottom).toBeGreaterThanOrEqual(12);
     const lefts = new Set(found.tile.map((tile) => Math.round(tile.left)));
     expect(lefts).toEqual(new Set([textEdge.phone]));
     expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
