@@ -377,20 +377,28 @@ test("a list that cannot be read says so in place and offers to try again", asyn
   }
 }, 30_000);
 
-test("1,000 received requests are ready quickly and never scroll the page sideways", async () => {
+// The service returns the newest WEBHOOK_LOG_LIMIT (100) requests of a view, so the longest list holds 100 rows: the
+// huge fixture stores 1,000 and the list says it shows the newest 100.
+test("the longest request list is ready quickly, says it is full, and never scrolls the page sideways", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     const started = performance.now();
     await webhooks(page, "/tools/webhooks?fixture=huge");
     await page.locator('[data-k2-part="Table"]').waitFor();
     const ready = performance.now() - started;
-    expect(await status(page)).toContain("1.000 Anfragen");
+    expect(await status(page)).toContain("neuesten 100 Anfragen");
     const nodes = await page.locator("#app *").count();
     const rows = await page.locator('[data-k2-part="Table"] tbody tr').count();
-    if (shots) await Bun.write(resolve(shots, "webhooks-huge.txt"), `ready ${Math.round(ready)} ms\nnodes ${nodes}\nrows ${rows}\n`);
+    if (shots)
+      await Bun.write(
+        resolve(shots, "webhooks-huge.txt"),
+        `ready ${Math.round(ready)} ms
+nodes ${nodes}
+rows ${rows}
+`,
+      );
     expect(ready).toBeLessThan(1_500);
-    // only the rows in view (and a margin) are in the page, however long the log is
-    expect(rows).toBeLessThanOrEqual(60);
+    expect(rows).toBe(100);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   } finally {
     await page.close();

@@ -1,5 +1,6 @@
 // Invented webhook tester data for the render and browser tests: dense, realistic requests from made-up services, a
-// huge state (1,000 requests) and a worst case (long names, unbreakable addresses, big bodies, other scripts).
+// huge state (1,000 requests, the newest 100 in view) and a worst case (long names, unbreakable addresses, big bodies, other scripts).
+import { WEBHOOK_LOG_LIMIT } from "../../api/webhook-limit";
 import { webhookMessages } from "./webhook-messages";
 import type { WebhookTesterData } from "./webhook-page-data";
 import type { Endpoint, WebhookLog } from "./webhook-queries";
@@ -194,12 +195,15 @@ export const selectLogs = (
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .slice(0, limit);
 
-/** The data of one fixture: the endpoints and every request; `huge` has 1,000 received requests. */
+/**
+ * The data of one fixture: the endpoints and every request. `huge` has 1,000 received requests, of which a view gets
+ * the newest `WEBHOOK_LOG_LIMIT`, as from the service, so the list says it is full.
+ */
 export const fixtureStore = (fixture: WebhookFixture): { endpoints: Endpoint[]; logs: WebhookLog[]; limit: number } => {
   if (fixture === "empty") return { endpoints: [], logs: [], limit: 100 };
   if (fixture === "worst") return { ...worst(), limit: 100 };
   const endpoints = fixtureEndpoints();
-  if (fixture === "huge") return { endpoints, logs: fixtureLogs(endpoints, 1_000), limit: 1_000 };
+  if (fixture === "huge") return { endpoints, logs: fixtureLogs(endpoints, 1_000), limit: WEBHOOK_LOG_LIMIT };
   return { endpoints, logs: fixtureLogs(endpoints), limit: 100 };
 };
 
