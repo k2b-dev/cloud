@@ -737,9 +737,11 @@ export const Table = <T,>(props: TableProps<T>) => {
   // The widths the grips gave columns, by index; a column keeps its default until then.
   const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
   const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
-  // In a small table with widths the last column takes the rest of the row, but never less than the floor the table
-  // names: its own `min`, else the narrowest `min` of the others. Where the columns before it take more, the table grows
-  // and scrolls sideways, so the last column never stands at 0 px with its words gone (break-ui of #4291 with #4210).
+  // In a small table with widths one column takes the rest of the row: here the last one. With the decided grow default
+  // (#4391) it is the growing column: one named `grow`, else one without a `width`, else the widest that is neither a
+  // number nor a column that may drop. That column never takes less than its floor: its own `min`, else the narrowest
+  // `min` of the others. Where the other columns take more, the table grows and scrolls sideways, so the growing column
+  // never stands at 0 px with its words gone (break-ui of #4291 with #4210).
   const restFloor = () => {
     if (!sized() || grid()) return undefined;
     const last = props.columns.at(-1);
