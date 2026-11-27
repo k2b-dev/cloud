@@ -17,7 +17,8 @@ export const eraseRetiredDraftInTransaction = async (db: typeof sql, draftId: st
   await db`DELETE FROM mail.draft_recovery_copies WHERE draft_id = ${draftId}::uuid`;
   await db`DELETE FROM mail.draft_document_revisions WHERE draft_id = ${draftId}::uuid`;
   await db`DELETE FROM mail.draft_document_freezes WHERE draft_id = ${draftId}::uuid`;
-  await db`DELETE FROM mail.draft_document_rests WHERE source_draft_id = ${draftId}::uuid OR rest_draft_id = ${draftId}::uuid`;
+  await db`DELETE FROM mail.draft_document_rests WHERE source_draft_id = ${draftId}::uuid OR rest_draft_id = ${draftId}::uuid
+    OR kept_draft_id = ${draftId}::uuid`;
   await db`DELETE FROM mail.draft_suggestion_requests WHERE draft_id = ${draftId}::uuid`;
   await db`UPDATE mail.drafts SET body_markdown = '', subject = '', to_addresses = '[]', cc_addresses = '[]', bcc_addresses = '[]',
     doc_state = NULL, doc_cursor = NULL, doc_seq = NULL, doc_idle_through = NULL,

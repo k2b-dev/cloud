@@ -545,6 +545,53 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A control that sticks out of its bar or pane: the actions of a head squeezed by a long subject ran over the card's
+  // edge (break-ui of Mail's admin), and neither the cut rule nor any other saw it.
+  const outPage = (bar: string, extra = "") =>
+    columns(
+      `<div class="k2-bar" style="${bar}"><div class="k2-bar-start"><span class="k2-text k2-t-body">Rückfrage</span></div>` +
+        `<div class="k2-bar-end"><button type="button" class="k2-btn" data-probe="done" style="width:240px">Erledigt</button></div></div>${extra}`,
+    );
+
+  test(
+    "red: a control that sticks out of its bar",
+    async () => {
+      const page = await open(outPage("width:200px"));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.out).toEqual([
+          expect.stringMatching(
+            /^control \[data-probe="done"\] "Erledigt" sticks \d+(\.\d+)? px out of div\.k2-bar; the bar gives it its room$/,
+          ),
+        ]);
+        expect(result.problems).toContain(result.out[0] ?? "");
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: a control with room in its bar, one in a scroller of the bar, one in a layer of its own",
+    async () => {
+      const page = await open(
+        outPage(
+          "width:400px",
+          `<div class="k2-bar" style="width:200px"><div style="overflow-x:auto;min-width:0;flex:1"><button type="button" class="k2-btn" style="width:320px">Weiterleiten</button></div></div>` +
+            `<div class="k2-bar" style="width:200px"><div popover="manual" data-probe="layer" style="margin:0;inset:auto;position:fixed;left:0;top:0;width:300px"><button type="button" class="k2-btn" style="width:280px">Löschen</button></div></div>`,
+        ),
+      );
+      try {
+        await page.evaluate(() => document.querySelector<HTMLElement>('[data-probe="layer"]')?.showPopover());
+        expect((await measureV2Layout(page)).out).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "green: v2's own Band with a Canvas in it; the band's line closes both",
     async () => {
