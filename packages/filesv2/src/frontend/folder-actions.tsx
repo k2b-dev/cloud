@@ -632,6 +632,21 @@ export function createFolderActions(ctx: FolderContext) {
     if (!chosen) return;
     startOperation(chosen.request, b().opExtracting, b().opExtractSummary(chosen.pages));
   };
+  /** The reading of a dropped folder tree, as work in progress in its folder. */
+  const readingDropRow = (): FolderOperation[] => {
+    const reading = readingDrop();
+    if (!reading || reading.location !== ctx.location()) return [];
+    return [
+      {
+        id: "drop-reading",
+        name: b().droppedFolders,
+        afterPath: "",
+        state: "running",
+        text: b().readingDrop,
+        actions: [{ label: b().opCancel, onClick: reading.cancel }],
+      },
+    ];
+  };
   /** The files in the making of this folder, worded for their row. */
   const folderOperations = createMemo((): FolderOperation[] =>
     operations()
@@ -675,21 +690,6 @@ export function createFolderActions(ctx: FolderContext) {
       })
       .concat(readingDropRow()),
   );
-  /** The reading of a dropped folder tree, as work in progress in its folder. */
-  const readingDropRow = (): FolderOperation[] => {
-    const reading = readingDrop();
-    if (!reading || reading.location !== ctx.location()) return [];
-    return [
-      {
-        id: "drop-reading",
-        name: b().droppedFolders,
-        afterPath: "",
-        state: "running",
-        text: b().readingDrop,
-        actions: [{ label: b().opCancel, onClick: reading.cancel }],
-      },
-    ];
-  };
 
   /*
    * A file opens large in the Lightbox, with the folder's other files to step through. A file an editor opens offers
