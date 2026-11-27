@@ -847,35 +847,59 @@ export type RecordHeadProps = {
   /** Kinds of the record, such as "Private". */
   kinds?: readonly string[];
   /**
-   * Identifiers and contact at a glance. They give way when the head has no room (cut, then out of sight; always on
-   * the phone), before the name is cut with "…"; the head's actions keep their place.
+   * Identifiers and contact at a glance. They give way whole when the head has no room (out of sight, the last first;
+   * always on the phone), before the name is cut with "…"; the name then says them on hover, and the head's actions
+   * keep their place.
    */
   ids?: readonly RecordId[];
 };
+
+/**
+ * The signs a record's name holds in its head without being cut in the narrowest one (beside the head's deeds at 320
+ * px, in the lead type): up to this it needs no hint on hover, so a screen reader does not read it twice.
+ */
+const NAME_FITS = 20;
+
+/**
+ * The hint of a record's name: its identifiers in words when they may give way, else the whole name where it may be
+ * cut (one line on a wide screen, two on the phone, W8 27.11.).
+ */
+const nameHint = (name: string, ids: readonly RecordId[] | undefined) =>
+  ids?.length
+    ? [name, ...ids.map((id) => [id.label, id.value].filter(Boolean).join(" "))].join(" · ")
+    : Array.from(name).length > NAME_FITS
+      ? name
+      : undefined;
 
 /** The identity of a record in its head: avatar, name, kinds, identifiers. Put it in the start of the head `Bar`. */
 export const RecordHead = (props: RecordHeadProps) => (
   <>
     <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
-    <h1 class="k2-record-name" data-k2-part="RecordHead">
+    {/* identifiers that give way are out of sight, not gone: the name says them on hover; a name runs in its own
+        direction (an Arabic name in a German page) */}
+    <h1 class="k2-record-name" data-k2-part="RecordHead" title={nameHint(props.name, props.ids)} dir="auto">
       {props.name}
     </h1>
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
-    <For each={props.ids}>
-      {(id) => (
-        <span class="k2-record-id">
-          <Show when={id.icon && !id.label}>
-            <Icon name={id.icon!} />
-          </Show>
-          <Show when={id.label}>{id.label} </Show>
-          <Show when={id.label} fallback={id.value}>
-            <b>{id.value}</b>
-          </Show>
-          <Show when={id.copy}>
-            <Icon name="copy" />
-          </Show>
-        </span>
-      )}
-    </For>
+    <Show when={props.ids?.length}>
+      <span class="k2-record-ids">
+        <For each={props.ids}>
+          {(id) => (
+            <span class="k2-record-id">
+              <Show when={id.icon && !id.label}>
+                <Icon name={id.icon!} />
+              </Show>
+              <Show when={id.label}>{id.label} </Show>
+              <Show when={id.label} fallback={id.value}>
+                <b>{id.value}</b>
+              </Show>
+              <Show when={id.copy}>
+                <Icon name="copy" />
+              </Show>
+            </span>
+          )}
+        </For>
+      </span>
+    </Show>
   </>
 );

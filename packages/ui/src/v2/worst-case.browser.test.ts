@@ -337,3 +337,46 @@ test("a link in a cut second line shows its whole focus ring", async () => {
     "rows",
   );
 });
+
+// W7 (Assistant #4280): the second line of a cell in a table with column widths was always one line, so a schedule
+// lost its end ("bis 19:5…"). It wraps to two lines, then "…", and a long one says all of it on hover.
+for (const width of [1024, 390])
+  test(`the second line of a cell shows a schedule whole and stops after two lines at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const seconds = await page.evaluate(() =>
+          Array.from(
+            document.querySelectorAll<HTMLElement>(".k2-table td > .k2-cell-line[data-second], .k2-table-phone .k2-row > .k2-row-l2"),
+          )
+            .filter((line) => line.getBoundingClientRect().width > 0)
+            .map((line) => {
+              const height = Number.parseFloat(getComputedStyle(line).lineHeight);
+              const cut = line.scrollHeight > line.clientHeight + 1 || line.scrollWidth > line.clientWidth + 1;
+              return {
+                lines: Math.round(line.getBoundingClientRect().height / height),
+                cut,
+                whole: !cut || line.getAttribute("title") === line.textContent,
+              };
+            }),
+        );
+        expect(seconds).toHaveLength(4);
+        // every schedule can be read whole: shown, or on hover
+        expect(seconds.every((line) => line.whole)).toBe(true);
+        if (width >= 768) {
+          // the schedule of W7 shows whole on two lines; the very long one stops after two
+          expect(seconds.map((line) => [line.lines, line.cut])).toEqual([
+            [2, false],
+            [2, true],
+            [1, false],
+            [1, false],
+          ]);
+          // an Arabic name runs right to left in its cell (W9 break-ui)
+          const arabic = page.locator(".k2-table td > .k2-cell-line", { hasText: "تقرير" });
+          expect(await arabic.evaluate((line) => getComputedStyle(line).direction)).toBe("rtl");
+        }
+        expect((await measureV2Layout(page, { root: "#root" })).squeezed).toEqual([]);
+      },
+      "schedule",
+    );
+  });

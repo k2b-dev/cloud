@@ -60,8 +60,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   default again. The sidebar's grip works the same.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
-  the detail is the page, and the title in its head is never cut: beside the
-  actions the head keeps it takes a second line.
+  the detail is the page, and the title in its head takes two lines at most
+  beside the actions the head keeps, then "…", the full name as its hint.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
   the detail (the part `Back`). With `back`, the head's close × needs no
@@ -213,7 +213,11 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+lines), `drop` (leaves on the phone). In a table with widths a cell's
+quiet line takes two lines before it is cut with "…", and words longer
+than two lines of the column's `min` hold say all of it on hover (a
+schedule stays readable). A cell's text runs in its own direction
+(`dir="auto"`). `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
@@ -470,8 +474,12 @@ lines instead of cutting a thing.
   filter (the bar opens it) or in a form.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
-  ids give way first (always on the phone), then the name is cut with "…";
-  the head's actions keep their place.
+  ids give way first, each whole and the last first (always on the phone),
+  then the name is cut with "…"; the name says the ids on hover, and the
+  head's actions keep their place. On the phone the name takes two lines at
+  most, then "…", and a word without a break breaks at the line's end. A
+  name longer than its line can hold (more than 20 signs) says all of it on
+  hover, and it runs in its own direction (`dir="auto"`).
 
 ## Overlays: Dialog, Menu, Popover, Toast
 
