@@ -68,10 +68,14 @@ export default function WeatherScreen(props: WeatherScreenProps) {
 
   const groups = (): NavGroup[] => [
     {
+      // "Ort hinzufügen" stands once, in the head (the FAB on the phone), not also as the group's "+"
       label: t().locations,
-      action: { label: t().addLocation, icon: "plus", onClick: () => setAdding(true) },
       items: props.places.map((place) => ({
-        label: place.name,
+        // two places of the same name ("Neustadt") read apart by their state
+        label:
+          place.state && props.places.some((other) => other !== place && other.name === place.name)
+            ? `${place.name}, ${place.state}`
+            : place.name,
         icon: place.icon,
         href: `/app/weather/${place.id}`,
         current: place.id === props.open?.id,
@@ -91,7 +95,7 @@ export default function WeatherScreen(props: WeatherScreenProps) {
     toast(t().locationRemoved, { status: "ok" });
     navigateTo("/app/weather");
   };
-  // the display also stands in the menu: the head's button gives way on the phone, the menu stays
+  // the place's deeds: the wall display, the Cloud ID, and removing it
   const menu = (open: WeatherOpen): MenuEntry[] => [
     { label: t().displaySettings, icon: "device-tv", onClick: () => setDisplaying(true) },
     ...(cloudId.available()
@@ -125,12 +129,8 @@ export default function WeatherScreen(props: WeatherScreenProps) {
               <>
                 <Show when={props.open}>
                   {(open) => (
-                    <>
-                      <Button icon="device-tv" onClick={() => setDisplaying(true)}>
-                        {t().display}
-                      </Button>
-                      <Menu label={t().locationOptions} items={menu(open())} />
-                    </>
+                    // the display stands once, in the place's menu, which stays on the phone too
+                    <Menu label={t().locationOptions} items={menu(open())} />
                   )}
                 </Show>
                 <Button variant="primary" icon="map-pin-plus" onClick={() => setAdding(true)}>
@@ -348,6 +348,9 @@ function AddLocationDialog(props: { open: boolean; onOpenChange: (open: boolean)
       toast(t().locationAdded, { status: "ok" });
       close(false);
       navigateTo(`/app/weather/${id}`);
+    } catch {
+      // offline or the request broke off: the dialog stays open and says the city was not added
+      setSearchError(t().addLocationFailed);
     } finally {
       setSaving(false);
     }
@@ -375,6 +378,8 @@ function AddLocationDialog(props: { open: boolean; onOpenChange: (open: boolean)
           </Notice>
         )}
       </Show>
+      {/* k2b-ui gap: Lookup picks several values and has no single-select form; the place keeps the last one chosen. It
+          also has no hint of its own, so the minimum of three letters stands as a quiet line under it. */}
       <Lookup
         label={t().locationSearch}
         value={chosen() ? [chosen()!] : []}
@@ -399,6 +404,7 @@ function AddLocationDialog(props: { open: boolean; onOpenChange: (open: boolean)
           };
         }}
       />
+      <Text type="meta">{t().citySearchMinimum}</Text>
       <Text type="meta" href="https://www.geoapify.com/">
         Geoapify
       </Text>

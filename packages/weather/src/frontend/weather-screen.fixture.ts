@@ -76,6 +76,9 @@ export const weatherScreenFixtures: Record<string, WeatherScreenProps> = {
       { id: "fr0005", name: "Freiburg im Breisgau", state: "Baden-Württemberg", icon: "cloud-fog", temperature: "9,8°" },
       { id: "sy0006", name: "Sylt", state: "Schleswig-Holstein", icon: "wind", temperature: "6,2°" },
       { id: "zug007", name: "Garmisch-Partenkirchen", state: "Bayern", icon: "snowflake", temperature: "-1,4°" },
+      // two places of the same name: the sidebar tells them apart by their state
+      { id: "nst008", name: "Neustadt", state: "Hessen", icon: "cloud", temperature: "6,0°" },
+      { id: "nst009", name: "Neustadt", state: "Sachsen", icon: "cloud-snow", temperature: "0,8°" },
     ],
     open,
     weather,

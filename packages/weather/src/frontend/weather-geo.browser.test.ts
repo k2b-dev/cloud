@@ -4,7 +4,7 @@ import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { weatherScreenFixtures } from "./weather-screen.fixture";
 
@@ -18,6 +18,9 @@ const screenshots = resolve(import.meta.dir, "../../../../.local/maps-weather/sc
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 let posted: unknown;
+let deleted: string | undefined;
+// read through a call: after `deleted = undefined` in a test, TypeScript would narrow the variable itself
+const removed = () => deleted;
 let searches = 0;
 let searchFailure = false;
 beforeAll(async () => {
@@ -75,6 +78,10 @@ beforeAll(async () => {
           ? Response.json({ code: "GEO_BUDGET_EXHAUSTED", message: "Heute aufgebraucht, ab 23.10.2026 wieder." }, { status: 429 })
           : Response.json([place]);
       }
+      if (url.pathname.startsWith("/api/weather/locations/") && request.method === "DELETE") {
+        deleted = url.pathname.split("/").at(-1);
+        return new Response(null, { status: 204 });
+      }
       if (url.pathname === "/api/weather/locations" && request.method === "POST") {
         posted = await request.json();
         return Response.json({ id: "abc123" }, { status: 201 });
@@ -82,7 +89,7 @@ beforeAll(async () => {
       const asset = assets.get(url.pathname.slice(1));
       if (asset) return new Response(asset, { headers: { "Content-Type": "application/javascript" } });
       return new Response(
-        `<!doctype html><html lang="de" class="${url.searchParams.has("dark") ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/tabler-icons.css"></head><body class="k2b-ui" style="margin:0;height:100vh"><div id="app" class="k2-ui" style="display:flex;height:100%"></div><script type="module" src="/entry.js"></script></body></html>`,
+        `<!doctype html><html lang="de" class="${url.searchParams.has("dark") ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/tabler-icons.css"></head><body class="k2b-ui" style="margin:0;height:100vh"><script id="cloud-shell-data" type="application/json">{"cloudOrigin":"https://cloud.example.org"}</script><div id="app" class="k2-ui" style="display:flex;height:100%"></div><script type="module" src="/entry.js"></script></body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     },
@@ -200,3 +207,125 @@ for (const name of Object.keys(weatherScreenFixtures))
       }
     }
   }, 60_000);
+
+// The deeds of an open place, through its menu: the wall display up to the new window, the Cloud ID to the clipboard,
+// and removing it after the question. Both clipboard and window are recorded in the page, the same in every engine.
+const recordDeeds = (page: Page) =>
+  page.addInitScript(() => {
+    const record = window as unknown as { opened: string[]; copied: unknown[] };
+    record.opened = [];
+    record.copied = [];
+    window.open = ((url?: string | URL) => {
+      record.opened.push(String(url));
+      return null;
+    }) as typeof window.open;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => void record.copied.push(text),
+        write: async (items: ClipboardItem[]) => {
+          for (const item of items) for (const type of item.types) record.copied.push(await (await item.getType(type)).text());
+        },
+      },
+    });
+  });
+const recorded = (page: Page) =>
+  page.evaluate(() => {
+    const record = window as unknown as { opened: string[]; copied: string[] };
+    return { opened: record.opened, copied: record.copied };
+  });
+
+test("the display dialog opens the wall display with the chosen size, theme and view", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await recordDeeds(page);
+    await page.goto(`${server.url.href}?screen=record`);
+    await page.getByRole("button", { name: "Weitere Optionen für den Ort" }).click();
+    await page.getByRole("menuitem", { name: "Anzeige einrichten" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByText("Groß", { exact: true }).click();
+    await dialog.getByText("Hell", { exact: true }).click();
+    await dialog.getByText("Detailliert", { exact: true }).click();
+    await dialog.getByRole("button", { name: "Anzeige öffnen" }).click();
+    await dialog.waitFor({ state: "hidden" });
+    const opened = (await recorded(page)).opened;
+    expect(opened).toHaveLength(1);
+    const url = new URL(opened[0]!, "https://cloud.example.org");
+    expect({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon") }).toEqual({ lat: "48.4", lon: "10" });
+    expect({ zoom: url.searchParams.get("zoom"), theme: url.searchParams.get("theme"), detail: url.searchParams.get("detail") }).toEqual({
+      zoom: "3",
+      theme: "light",
+      detail: "true",
+    });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("the Cloud ID of a place goes to the clipboard", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await recordDeeds(page);
+    await page.goto(`${server.url.href}?screen=record`);
+    await page.getByRole("button", { name: "Weitere Optionen für den Ort" }).click();
+    await page.getByRole("menuitem", { name: "Cloud-ID kopieren" }).click();
+    await page.waitForFunction(() => (window as unknown as { copied: unknown[] }).copied.length > 0);
+    expect((await recorded(page)).copied.join("\n")).toContain("ulm001");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a place is removed only after the question, and the page goes back to the overview", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    deleted = undefined;
+    await page.goto(`${server.url.href}?screen=record`);
+    await page.getByRole("button", { name: "Weitere Optionen für den Ort" }).click();
+    await page.getByRole("menuitem", { name: "Ort entfernen" }).click();
+    const question = page.getByRole("alertdialog").or(page.getByRole("dialog")).first();
+    await question.getByText("Diesen Ort entfernen?").waitFor();
+    expect(removed()).toBeUndefined();
+    await question.getByRole("button", { name: "Ort entfernen" }).click();
+    await page.waitForURL("**/app/weather");
+    expect(removed()).toBe("ulm001");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a save that fails offline keeps the dialog open and says the place was not added", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    posted = undefined;
+    searchFailure = false;
+    await page.route("**/api/weather/locations", (route) =>
+      route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
+    );
+    await page.goto(server.url.href);
+    await page.getByRole("button", { name: "Ort hinzufügen", exact: true }).filter({ visible: true }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("searchbox").or(dialog.getByRole("combobox")).first().fill("Ulm");
+    await dialog.getByRole("option", { name: /Ulm/ }).click();
+    await dialog.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+    await dialog.getByText("Der Ort konnte nicht hinzugefügt werden").waitFor();
+    expect(await dialog.isVisible()).toBe(true);
+    expect(posted).toBeUndefined();
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("two places of the same name read apart by their state in the sidebar", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`${server.url.href}?screen=record`);
+    const nav = page.locator('[data-k2-part="Nav"]').first();
+    await nav.getByRole("link", { name: /Neustadt, Hessen/ }).waitFor();
+    await nav.getByRole("link", { name: /Neustadt, Sachsen/ }).waitFor();
+    // a name that stands alone keeps its plain words
+    expect(await nav.getByRole("link", { name: /^Ulm/ }).textContent()).not.toContain("Ulm,");
+  } finally {
+    await page.close();
+  }
+}, 30_000);

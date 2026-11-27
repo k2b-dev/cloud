@@ -4,6 +4,7 @@ import { weatherService } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { weatherMessages } from "../../messages";
+import { placeForecasts } from "../place-forecasts";
 import WeatherScreen from "../WeatherScreen.island";
 import { weatherFormat } from "../weather-view";
 
@@ -15,9 +16,8 @@ export default ssr<AuthContext>(async (c) => {
   const id = c.req.param("id") ?? "";
   const locations = (await weatherService.location.saved.list({ userId: user.id })).items;
   const active = locations.find((location) => location.id === id);
-  // Every location's forecast (the sidebar shows its current weather); the provider cache answers repeated ones.
-  const forecasts = await Promise.all(
-    locations.map((location) => weatherService.forecast.get({ lat: String(location.lat), lon: String(location.lon) })),
+  const forecasts = await placeForecasts(locations, active !== undefined, (location) =>
+    weatherService.forecast.get({ lat: String(location.lat), lon: String(location.lon) }),
   );
   const format = weatherFormat(locale, t, new Date());
   const places = locations.map((location, index) => format.place(location, forecasts[index]));

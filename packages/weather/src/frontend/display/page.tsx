@@ -11,6 +11,9 @@ import { parseDisplayCoordinate, parseDisplayRefreshSeconds } from "./runtime";
 /**
  * The v2 scope of a page without Cloud's layout: the wall display fills the window, light or dark as its address says.
  * (Within Cloud's layout, `Layout ui="v2"` sets this scope on the page's main area.)
+ *
+ * k2b-ui gap: there is no public standalone v2 scope for a page outside `Layout`; this element sets the scope class
+ * and the window's height until @k2b/cloud offers one.
  */
 const Scope = (props: { children: JSX.Element }) => (
   <div class="k2-ui" style={{ display: "flex", height: "100dvh" }}>
