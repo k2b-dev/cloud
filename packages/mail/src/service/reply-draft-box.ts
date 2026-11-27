@@ -14,11 +14,14 @@ export const lockConversationReplyDraft = async (db: typeof sql, conversationId:
   return existing ?? null;
 };
 
-export const replyDraftOccupied = (draftId: string) => ({
+/** Names the occupying draft with its current revision and intent, so a client can update it or switch its mode. */
+export const replyDraftOccupied = (draft: { short_id: string; revision: number | string; intent: string }) => ({
   code: "DRAFT_REPLY_BOX_OCCUPIED",
   status: 409 as const,
-  draftId,
-  message: draftAdoptionMessages.resolve(["en"]).t.replyOccupied({ draftId }),
+  draftId: draft.short_id,
+  revision: Number(draft.revision),
+  intent: draft.intent,
+  message: draftAdoptionMessages.resolve(["en"]).t.replyOccupied({ draftId: draft.short_id }),
 });
 
 export const hasDraftCreationContent = (input: {

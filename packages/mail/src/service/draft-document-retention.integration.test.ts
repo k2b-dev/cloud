@@ -922,6 +922,41 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     await retire(target);
   });
 
+  test("an idle draft takes a write at the revision it shows after background coverage and pruning", async () => {
+    const target = await draft("Idle shared reply");
+    const other = await draft();
+    try {
+      const base = await read(target);
+      await read(other);
+      await marker(other.draftId);
+      const topic = mailDraftDocumentLog.topic();
+      // The snapshot reconcile covers an idle draft up to the head without recording a new revision.
+      expect(await draftDocumentSnapshotStore.advance(target.draftId, { from: base.durable.cursor!, to: await topic.head(), latest: null })).toBe(
+        true,
+      );
+      await retire(other);
+      await drainDraftDocumentPruning();
+      await pruneDraftDocumentLog();
+      expect(await mailDraftDocumentLog.firstSequence()).toBeGreaterThan(topic.cursorSequence(base.durable.cursor!) + 1);
+      const shown = value(await getDraft(context, mailboxId, target.draftId));
+      expect(shown.revision).toBe(base.revision);
+      const updated = value(
+        await updateDraft({
+          ...target,
+          expectedRevision: shown.revision,
+          input: { ...base.durable.content, senderIdentityId: senderId, body: "Written by the CLI" },
+        }),
+      );
+      expect(updated.revision).toBe(shown.revision + 1);
+      expect(updated.body).toBe("Written by the CLI");
+      expect(value(await getDraft(context, mailboxId, target.draftId))).toMatchObject({ revision: updated.revision, body: "Written by the CLI" });
+      const [copies] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM mail.draft_recovery_copies WHERE draft_id=${target.draftId}::uuid`;
+      expect(copies?.count).toBe(0);
+    } finally {
+      await retire(target, other);
+    }
+  });
+
   test("a synchronous uncovered replay gap releases its freeze and never quarantines or revises the draft", async () => {
     const target = await draft("Keep unchanged");
     const base = await read(target);

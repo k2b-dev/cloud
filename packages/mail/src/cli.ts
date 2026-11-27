@@ -825,23 +825,47 @@ const createDraftFromContent = async (
 ): Promise<MailDraft> => {
   const response = await ctx.fetch(apiPath(`/mailboxes/${mailboxId}/drafts`), jsonRequest("POST", content));
   if (response.status === 409) {
-    const failure = z.object({ code: z.literal("DRAFT_REPLY_BOX_OCCUPIED"), draftId: z.string(), message: z.string() }).safeParse(
-      await response
-        .clone()
-        .json()
-        .catch(() => null),
-    );
-    if (failure.success) {
-      const hint = `cld mail draft intent ${failure.data.draftId} --intent ${content.intent ?? "reply"} --revision <current-revision>`;
-      throw new Error(
-        `${response.status} ${failure.data.message} ${localizeCloudCliText(ctx.options.locale, {
-          en: `Switch its mode with ${hint}.`,
-          de: `Modus wechseln: ${hint}.`,
-        })}`,
+    const failure = z
+      .object({
+        code: z.literal("DRAFT_REPLY_BOX_OCCUPIED"),
+        draftId: z.string(),
+        message: z.string(),
+        revision: z.number().int().optional(),
+        intent: z.string().optional(),
+      })
+      .safeParse(
+        await response
+          .clone()
+          .json()
+          .catch(() => null),
       );
+    if (failure.success) {
+      const intent = content.intent ?? "reply";
+      const revision = failure.data.revision ?? "<current-revision>";
+      // The same mode takes the content as an update; another mode is switched first.
+      const advice =
+        failure.data.intent === intent
+          ? localizeCloudCliText(ctx.options.locale, {
+              en: `Write your content into it with cld mail draft update ${failure.data.draftId} --revision ${revision}.`,
+              de: `Inhalt eintragen: cld mail draft update ${failure.data.draftId} --revision ${revision}.`,
+            })
+          : localizeCloudCliText(ctx.options.locale, {
+              en: `Switch its mode with cld mail draft intent ${failure.data.draftId} --intent ${intent} --revision ${revision}.`,
+              de: `Modus wechseln: cld mail draft intent ${failure.data.draftId} --intent ${intent} --revision ${revision}.`,
+            });
+      throw new Error(`${response.status} ${failure.data.message} ${advice}`);
     }
   }
-  return ctx.readJson<MailDraft>(response);
+  const draft = await ctx.readJson<MailDraft | null>(response);
+  // Never report success for an answer that names no draft.
+  if (!draft || typeof draft.id !== "string" || draft.id.length === 0)
+    throw new Error(
+      `${response.status} ${localizeCloudCliText(ctx.options.locale, {
+        en: "Mail answered without a draft ID; no draft can be confirmed. Check cld mail draft list.",
+        de: "Mail hat ohne Entwurfs-ID geantwortet; kein Entwurf ist bestätigt. Prüfe cld mail draft list.",
+      })}`,
+    );
+  return draft;
 };
 
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
@@ -6893,14 +6917,33 @@ const specialistCommands = {
       run: async ({ ctx, args, flags }) => {
         if (flags.revision === undefined) throw new Error("Missing expected draft revision.");
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const draft = await readApi<MailDraft>(
-          ctx,
-          `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}`,
+        const draftId = requireMailResourceId(args.draftId, "Draft id");
+        const response = await ctx.fetch(
+          apiPath(`/mailboxes/${mailbox.id}/drafts/${draftId}`),
           jsonRequest("PUT", {
             expectedRevision: flags.revision,
             draft: await readDraftEditableContent(flags, ctx.options.locale),
           }),
         );
+        if (response.status === 409) {
+          // Every refused update keeps the submitted content as a recovery copy and names the current revision.
+          const refused = z
+            .object({ message: z.string(), revision: z.number().int() })
+            .safeParse(
+              await response
+                .clone()
+                .json()
+                .catch(() => null),
+            );
+          if (refused.success)
+            throw new Error(
+              `409 ${refused.data.message} ${localizeCloudCliText(ctx.options.locale, {
+                en: `Current revision: ${refused.data.revision}. Your content is kept as a recovery copy (cld mail draft recovery list ${draftId}).`,
+                de: `Aktuelle Revision: ${refused.data.revision}. Dein Inhalt liegt als Wiederherstellungskopie vor (cld mail draft recovery list ${draftId}).`,
+              })}`,
+            );
+        }
+        const draft = await ctx.readJson<MailDraft>(response);
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         ctx.print(`Updated draft ${draft.id} to revision ${draft.revision}.`);
         printFormattingWarnings(ctx, draft.formattingWarnings);
