@@ -1765,7 +1765,9 @@ export default function KanbanBoard(props: Props) {
                                       class={`block rounded-[var(--ui-radius-control)] outline-none after:absolute after:-inset-px after:rounded-[var(--ui-radius-control)] focus-visible:after:shadow-[var(--ui-focus)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       {/* Two lines at most, so a long title does not make a tall card; the detail shows it whole. */}
-                                      <p class={`spaces-kanban-card-title line-clamp-2 ${item().completedAt ? "line-through text-dimmed" : ""}`}>
+                                      <p
+                                        class={`spaces-kanban-card-title line-clamp-2 ${item().completedAt ? "line-through text-dimmed" : ""}`}
+                                      >
                                         {item().title}
                                       </p>
 
@@ -1794,7 +1796,10 @@ export default function KanbanBoard(props: Props) {
                                             >
                                               {/* k2b-ui gap: the v2 `Dot` cannot stand in this v1 board (one v2 value import puts the whole
                                                   file under v2-app-layout-css); owner DP, with the card surface. */}
-                                              <span class="spaces-kanban-card-urgency-dot h-2 w-2 shrink-0 rounded-full" aria-hidden="true" />
+                                              <span
+                                                class="spaces-kanban-card-urgency-dot h-2 w-2 shrink-0 rounded-full"
+                                                aria-hidden="true"
+                                              />
                                               {word()}
                                             </span>
                                           )}
@@ -1829,7 +1834,10 @@ export default function KanbanBoard(props: Props) {
                                           </span>
                                         </Show>
                                         <Show when={item().createdByWorkload}>
-                                          <span class="spaces-kanban-card-fact spaces-kanban-card-meta inline-flex shrink-0" title={t.createdByWorkload}>
+                                          <span
+                                            class="spaces-kanban-card-fact spaces-kanban-card-meta inline-flex shrink-0"
+                                            title={t.createdByWorkload}
+                                          >
                                             <i class="ti ti-code text-xs" role="img" aria-label={t.createdByWorkload} />
                                           </span>
                                         </Show>
@@ -1853,7 +1861,10 @@ export default function KanbanBoard(props: Props) {
                                           {(tag) => (
                                             // The dot carries the colour; the name stays in neutral text, so it reads at AA contrast for
                                             // every tag colour in both themes. A long name gives way before the people do.
-                                            <span data-spaces-kanban-card-tag class="spaces-kanban-card-fact inline-flex min-w-0 items-center gap-1.5">
+                                            <span
+                                              data-spaces-kanban-card-tag
+                                              class="spaces-kanban-card-fact inline-flex min-w-0 items-center gap-1.5"
+                                            >
                                               <span
                                                 class="h-2 w-2 shrink-0 rounded-full"
                                                 style={{ "background-color": tag().color }}

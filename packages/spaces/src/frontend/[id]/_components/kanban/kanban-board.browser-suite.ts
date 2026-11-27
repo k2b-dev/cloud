@@ -2147,7 +2147,9 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
           const body = done.querySelector(":scope > header ~ div")! as HTMLElement;
           return {
             cards: cards.length,
-            heights: cards.map((card) => `${card.querySelector("[data-item-id]")!.getAttribute("data-item-id")} ${card.getBoundingClientRect().height}`),
+            heights: cards.map(
+              (card) => `${card.querySelector("[data-item-id]")!.getAttribute("data-item-id")} ${card.getBoundingClientRect().height}`,
+            ),
             urgentTinted: getComputedStyle(urgent).backgroundColor !== plain,
             urgentSays: urgent.querySelector('[id^="spaces-kanban-card-meta-"]')?.textContent?.includes("Urgent"),
             emptyColumn: { text: body.innerText.trim(), controls: body.querySelectorAll("button, a, [role='button']").length },

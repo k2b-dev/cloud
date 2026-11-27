@@ -71,7 +71,7 @@ describe("a Space on v2", () => {
       if (view === phone && address.includes("item=") && state === "usual")
         // An open item on the phone is its own page without the list's floating action (coordinator, 26.11.); the v2
         // outline still asks for a primary there. Waits for #4373, which teaches describe.ts that case; then a test again.
-        test.todo(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules (waits for #4373)`);
+        test.todo(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules (waits for #4373)`, () => {});
       else if (view !== phone || state !== "worst" || !address.includes("item="))
         test(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules and shows no loading on the first picture`, async () => {
           const { context, tab, errors } = await open(view, address, state);

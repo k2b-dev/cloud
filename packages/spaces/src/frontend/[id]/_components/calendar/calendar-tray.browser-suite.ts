@@ -354,7 +354,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
   ] as const) {
     const title = `keeps the tray below the day at ${name}, and the day in place whether the tray is full, empty, or loading`;
     if (view === phone) {
-      test.todo(`${title} (waits for #4223: v2.css:4806 lets a phone pane with a fill drawing outgrow its split)`);
+      test.todo(`${title} (waits for #4223: v2.css:4806 lets a phone pane with a fill drawing outgrow its split)`, () => {});
       continue;
     }
     test(title, async () => {
