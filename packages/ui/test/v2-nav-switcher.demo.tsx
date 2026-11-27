@@ -4,11 +4,13 @@ import { Nav, type NavSwitcherOption, Pane, Text, Workspace } from "../src/v2";
 // A sidebar with a switcher between an app's bases: the open base on the button; behind it the five opened last, then
 // all the others by name, a search (12 bases, from 8 on), and "Neue Base" and "Aus Vorlage". Hooks on `window`:
 // - `__switcherFew()` leaves 3 bases, so the search does not show;
+// - `__switcherMany()` makes 500 bases: the panel lists 20 and says how many the search reaches;
 // - `__switcherDid` names the last deed that was chosen.
 
 declare global {
   interface Window {
     __switcherFew?: () => void;
+    __switcherMany?: () => void;
     __switcherDid?: string;
   }
 }
@@ -30,7 +32,15 @@ const all = [
 
 export function Demo() {
   const [options, setOptions] = createSignal<readonly NavSwitcherOption[]>(all);
-  if (typeof window !== "undefined") window.__switcherFew = () => setOptions(all.slice(0, 3));
+  if (typeof window !== "undefined") {
+    window.__switcherFew = () => setOptions(all.slice(0, 3));
+    // a large Grids: the five opened last and 495 others
+    window.__switcherMany = () =>
+      setOptions([
+        ...all.slice(0, 5),
+        ...Array.from({ length: 495 }, (_, index) => option(`Base ${index + 1}`, index + 100, "Alle Basen")),
+      ]);
+  }
   const did = (what: string) => () => {
     if (typeof window !== "undefined") window.__switcherDid = what;
   };
@@ -46,6 +56,7 @@ export function Demo() {
             options: options(),
             search: "Base suchen",
             noMatch: "Keine Base passt",
+            more: (hidden) => `+${hidden} weitere über die Suche`,
             actions: [
               { label: "Neue Base", icon: "plus", onClick: did("new") },
               { label: "Aus Vorlage", icon: "template", onClick: did("template") },

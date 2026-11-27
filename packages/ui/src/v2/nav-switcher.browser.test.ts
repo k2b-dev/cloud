@@ -116,6 +116,21 @@ test("Escape closes the panel and gives the focus back; a deed runs and closes i
   });
 });
 
+test("500 bases: the panel lists 20 and says how many the search reaches; a search lists at most 50 matches", async () => {
+  await withPage(1440, async (page) => {
+    await page.evaluate(() => window.__switcherMany?.());
+    await button(page).click();
+    await page.locator(".k2-switch").waitFor();
+    // 20 bases and the two deeds
+    expect((await panel(page)).entries).toHaveLength(22);
+    expect(await page.locator(".k2-switch-none").textContent()).toBe("+480 weitere über die Suche");
+    await page.getByRole("searchbox", { name: "Base suchen" }).fill("base 4");
+    // "Base 4", "Base 40" … "Base 49" and "Base 400" … "Base 495": 107 matches, 50 listed
+    expect((await panel(page)).entries).toHaveLength(52);
+    expect(await page.locator(".k2-switch-none").textContent()).toBe("+57 weitere über die Suche");
+  });
+});
+
 test("with fewer than 8 bases there is no search", async () => {
   await withPage(1440, async (page) => {
     await page.evaluate(() => window.__switcherFew?.());

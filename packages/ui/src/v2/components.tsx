@@ -151,6 +151,8 @@ export type NavSwitcher = {
   search: string;
   /** What the list says when the search finds nothing. */
   noMatch: string;
+  /** The quiet line under a list cut short, such as "+480 weitere – über die Suche". */
+  more: (hidden: number) => string;
   /** Deeds after the options, such as "Neue Base" and "Aus Vorlage". */
   actions?: readonly Action[];
 };
@@ -309,6 +311,12 @@ const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action
  */
 /** From this many options the switcher shows its search. */
 const SWITCHER_SEARCH_FROM = 8;
+/**
+ * The most options the panel lists before a search (the ones opened last and the first of the rest), and the most
+ * matches of a search: the panel stays a short list however many things an app holds; the search reaches the others.
+ */
+const SWITCHER_SHOWN = 20;
+const SWITCHER_MATCHES = 50;
 
 /**
  * The open thing as a button across the column (its mark, its name, ↕); behind it a panel of the others in their
@@ -328,12 +336,13 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
     },
   }));
   const searchable = () => props.switcher.options.length >= SWITCHER_SEARCH_FROM;
-  const shown = createMemo(() => {
+  const found = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase(locale());
     return needle
       ? props.switcher.options.filter((option) => option.label.toLocaleLowerCase(locale()).includes(needle))
       : props.switcher.options;
   });
+  const shown = createMemo(() => found().slice(0, query().trim() ? SWITCHER_MATCHES : SWITCHER_SHOWN));
   // options one after another with the same group form one section under its heading
   const sections = createMemo(() => {
     const out: { group?: string; options: NavSwitcherOption[] }[] = [];
@@ -421,6 +430,9 @@ const NavSwitch = (props: { switcher: NavSwitcher }) => {
               </div>
             )}
           </For>
+          <Show when={found().length > shown().length}>
+            <div class="k2-switch-none">{props.switcher.more(found().length - shown().length)}</div>
+          </Show>
         </Show>
         <Show when={props.switcher.actions?.length}>
           <div class="k2-msep" />
