@@ -82,25 +82,48 @@ const rect = (page: Page, selector: string) =>
       return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, width: box.width, height: box.height };
     });
 
-test("on the phone how the list shows stays in reach: sort, grouping and display in one menu 'Ansicht'", async () => {
+// On the phone how the list shows stays in reach: sort, grouping and display in one menu "Ansicht". One state per test,
+// each on its own page, so a slow page never takes the budget of another.
+const ansicht = (page: Page) => page.locator(".k2-fbar-view").getByRole("button", { name: "Ansicht" });
+
+test("on the phone 'Ansicht' stands at the end of the bar, inside the window and whole: the strip fades before it", async () => {
   await withPage(
     "closed",
     async (page) => {
-      const button = page.locator(".k2-fbar-view").getByRole("button", { name: "Ansicht" });
+      const button = ansicht(page);
       expect(await button.isVisible()).toBe(true);
-      // at the end of the bar, inside the window, and whole: the strip fades before it, not under it
       const box = (await button.boundingBox())!;
       expect(box.x + box.width).toBeLessThanOrEqual(390);
       expect(
         await page.locator(".k2-fbar").evaluate((bar) => getComputedStyle(bar).webkitMaskImage || getComputedStyle(bar).maskImage),
       ).toBe("none");
-      await button.click();
+    },
+    390,
+  );
+});
+
+test("on the phone 'Ansicht' holds sort, grouping and display in one menu", async () => {
+  await withPage(
+    "closed",
+    async (page) => {
+      await ansicht(page).click();
       await settled(page);
       const menu = page.getByRole("menu");
       for (const title of ["Sortierung", "Darstellung"]) expect(await menu.getByText(title, { exact: true }).count()).toBe(1);
       expect(await menu.getByRole("menuitemradio", { name: "Raster" }).count()).toBe(1);
-      // a sort chosen here writes the list's address, as the sort of the desktop does
-      await menu
+    },
+    390,
+  );
+});
+
+test("on the phone a sort chosen in 'Ansicht' writes the list's address, as the sort of the desktop does", async () => {
+  await withPage(
+    "closed",
+    async (page) => {
+      await ansicht(page).click();
+      await settled(page);
+      await page
+        .getByRole("menu")
         .getByRole("menuitemradio", { name: /Geändert/ })
         .first()
         .click();
