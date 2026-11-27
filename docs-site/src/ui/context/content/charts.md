@@ -193,6 +193,83 @@ keyboard inspection and linked cursors follow the actual plot below the legend.
   series={[{ label: "Orders", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }] }]} />
 ```
 
+## A line with a track of bars
+
+A day of weather reads as one chart: the temperature as a line whose colour
+follows its value, the chance of rain as bars in a track under it, and the night
+hours as quiet bands behind both. All of it shares the X axis. A chart never puts
+a second Y axis over the lines; a second measure gets a track of its own.
+
+- `bands` shades ranges of X, clipped to the plot, behind the grid and the data.
+  A band's `label` names it to assistive technology.
+- A series with `colorScale` takes the colour of its value: give stops in rising
+  order, each a value and a tone. Between two stops the colour blends; below the
+  first and above the last it stays theirs. The legend swatch shows the scale.
+- `track` draws bars in a strip of their own under the plot: its `label` stands
+  above it and names its scale, which shows its lowest and highest value at the
+  strip's start, written with the track's `format`. The scale starts at 0 unless
+  `domain` says otherwise, and a track of zeros (a dry day) keeps 0 to 1;
+  `height` sets the strip (default 48 px). Each bar stands under its X and
+  carries its value as a title. The X axis's labels stand under the track. The
+  line's plot stays at least as tall as the track: a chart too low for both,
+  such as a small widget, draws the line alone and marks the drawing with
+  `data-track="omitted"`, so show the track's values elsewhere too, such as in
+  a table.
+
+```tsx
+<Chart kind="line" timeAxis={{ timeZone: "Europe/Berlin" }}
+  series={[
+    { label: "Temperatur", data: temperature, colorScale: [
+      { value: 0, tone: "blue" }, { value: 10, tone: "amber" }, { value: 20, tone: "red" },
+    ] },
+  ]}
+  bands={[{ from: dusk, to: dawn, label: "Nacht" }]}
+  track={{ label: "Regen", data: rain, format: (value) => `${value} %` }}
+  yAxis={{ format: (value) => `${value}°` }} />
+```
+
+## A state timeline
+
+A state with its own `color` fills its intervals and its swatch with that
+colour. The series palette applies only to states without a colour. Give each
+state a `label` as well: the colour and the word name the state together.
+
+The legend stands below the timeline and wraps at any width. It takes at most
+40% of the height that you give the chart. Each lane keeps at least 18 px; a
+legend that needs more room keeps one line and scrolls, and takes the focus for
+that. A height of your own needs room for both: at least three quarters of the
+drawing (about 50 px and 18 px a lane) and 28 px for the legend. In a lower box the
+lanes get less. Each lane
+name starts at the left edge. The label column cuts off a long name with a
+short fade before the plot. The full name stays in the tooltip and in the
+lane's accessible name.
+
+Pass `now` to mark the present moment: a thin line in the accent over the
+lanes, with "Jetzt" on the time axis at that time (axis labels close to it
+give way; the band above the lanes belongs to the zoom controls). The chart reads no clock of its own, so give it
+the time the server answered with; the server and the first picture in the
+browser then draw the same line. Without `now` there is no line. Give `now` in
+the unit and base of your `domain` and `from`/`to` (Unix milliseconds for
+instants); a day that a clock change shortens or lengthens is yours to lay
+out in `domain`.
+
+An interval of a few seconds on a day is still drawn 3 units wide, centred on
+its start, and keeps its link and tooltip. Mark a start still to come with
+`planned: true`: it is an outline in its state's colour over a faint fill,
+not a filled region, its accessible name ends with "geplant" (unless the
+state's own label says so), and the legend adds "Geplant". Give a planned
+state a dark or neutral colour, such as slate: its thin outline must stand
+out from the surface.
+
+```tsx
+<Chart kind="stateTimeline" legend interactive style={{ height: "100%" }} now={requestTime}
+  states={[{ state: "error", label: "Failed", color: "#ef4444" }, { state: "scheduled", label: "Scheduled" }]}
+  rows={[{ label: "worker:files:thumbnails", intervals: [
+    { from: 0, to: 60_000, state: "error" },
+    { from: 7_200_000, to: 7_201_000, state: "scheduled", planned: true },
+  ] }]} />
+```
+
 ## Bar charts
 
 A bar chart labels every category; it never thins or drops category labels.
@@ -329,7 +406,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 
 | Kind | Required payload | Additional options and defaults |
 | --- | --- | --- |
-| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `points=false` (a hollow ring in the series colour on every value, above the line), `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`, `legendValues=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`. |
+| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `points=false` (a hollow ring in the series colour on every value, above the line), `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`, `legendValues=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`; `bands?: {from, to, label?}[]` (quiet X ranges behind the data, such as night hours). A series accepts `colorScale?: {value, tone}[]` (rising stops; the line's colour follows its value; tones `blue`, `cyan`, `green`, `amber`, `orange`, `red`, `violet`, each at least 3:1 against light and dark surfaces). `track?: {label, data, format?, domain?, height?}` draws bars in a strip of their own under the plot, on the same X axis, never as a second Y axis. In forced colors a scaled line takes the text colour and bars and bands the muted one. See [A line with a track of bars](#a-line-with-a-track-of-bars). |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
 | `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. Aligned `x` and `series` support `layout="grouped"` or `"stacked"`; `normalize` shows 100% shares. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |

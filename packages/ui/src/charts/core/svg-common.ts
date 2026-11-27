@@ -937,7 +937,15 @@ export const formatNumberValue = (value: number, format: ((value: number) => str
   return `${format ? format(value) : fmt(value)}${unit}`;
 };
 
-export const thresholdFillAttr = (color: string | undefined): string => (color ? ` fill="${escapeXml(color)}"` : "");
+/**
+ * The paint of a mark that may have its own colour (a state, a threshold): that colour, or the series colour of its
+ * place. A series class sets `fill` in CSS, and a CSS rule beats a `fill` attribute, so a mark with its own colour does
+ * not get the class (as a gauge with a threshold colour).
+ */
+export const seriesPaint = (color: string | undefined, index: number, className?: string): string => {
+  const classes = [className, color ? undefined : `stdlib-chart-series-${index % 8}`].filter(Boolean).join(" ");
+  return [classes ? `class="${classes}"` : "", color ? `fill="${escapeXml(color)}"` : ""].filter(Boolean).join(" ");
+};
 
 export const thresholdStrokeAttr = (color: string | undefined): string => (color ? ` stroke="${escapeXml(color)}"` : "");
 
@@ -1146,7 +1154,45 @@ export type ScatterOptions = SeriesChartOptions & {
   trendline?: boolean;
 };
 
-export type LineOptions = SeriesChartOptions & {
+/**
+ * A tone of a line's colour scale. Each stands at least 3:1 apart from a light surface (#ffffff) and a dark one
+ * (#18181b), so a line in any of them stays visible in both themes.
+ */
+export type LineScaleTone = "blue" | "cyan" | "green" | "amber" | "orange" | "red" | "violet";
+
+/** A series of a line chart. */
+export type LineSeries = Series & {
+  /**
+   * The line takes its colour from its value: stops in rising order, such as cold to warm temperatures. Between two
+   * stops the colour blends; below the first and above the last it stays theirs.
+   */
+  colorScale?: { value: number; tone: LineScaleTone }[];
+};
+
+/**
+ * Bars in a strip of their own under the plot, on the same X axis and with their own scale, such as the chance of
+ * rain under a day's temperature. Never a second Y axis over the lines: the strip names its scale with its label.
+ */
+export type LineTrack = {
+  /** What the bars count, such as "Regen": it names the strip and its scale. */
+  label: string;
+  data: Point[];
+  /** Writes the strip's scale and the bars' values, such as `(value) => `${value} %``. */
+  format?: (value: number) => string;
+  /** The strip's scale; it starts at 0 unless given. */
+  domain?: [number, number];
+  /** The strip's height in px, its label above it not counted. Default 48. */
+  height?: number;
+};
+
+export type LineOptions = Omit<SeriesChartOptions, "series"> & {
+  series: LineSeries[];
+  /** Shaded ranges of X behind the data, such as the night hours: quiet, behind the grid, the lines and the track. */
+  bands?: { from: number; to: number; label?: string }[];
+  /** The start of the ids the drawing defines (a colour scale's gradients); `<Chart>` passes one per chart on the page. */
+  idPrefix?: string;
+  /** Bars in a strip of their own under the plot, on the same X axis. */
+  track?: LineTrack;
   /** Render smooth Catmull-Rom curves. Default `true`. Pass `false` for
    *  straight segments between points. */
   smooth?: boolean;

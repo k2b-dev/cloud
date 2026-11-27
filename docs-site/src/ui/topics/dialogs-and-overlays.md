@@ -40,7 +40,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Dialog
 
-The one dialog: 480 px in the middle of the window, a sheet from the bottom below 768 px. Head, content and foot are parts of one thing; the content scrolls, and a hairline shows where more of it lies.
+The one dialog: 480 px in the middle of the window, a sheet from the bottom below 768 px, with a grip on its top edge (a swipe down closes it) and its close button in the head. Head, content and foot are parts of one thing; the content scrolls, and a hairline shows where more of it lies.
 
 <Props of="Dialog" />
 
@@ -53,6 +53,8 @@ The one dialog: 480 px in the middle of the window, a sheet from the bottom belo
 ### Toast
 
 `const toast = useToast()` in the component, then `toast("„Regal Archiv“ gelöscht", { undo })`. One sentence for five seconds; `undo` adds "Rückgängig", `status` adds a sign, and `bad` is announced at once.
+
+News that no element shows as it happens, such as a run that changed its state, is only said: `announce("Lauf 3 ist fertig.")` puts it in the live region that every `Workspace` brings; with several Workspaces the first one shown takes it. The same news twice is said twice, a burst is said as its last news and at least once a second, and said news leaves the region after five seconds. `{ assertive: true }` is for news that cannot wait, such as a run that failed.
 
 <Props of="ToastOptions" />
 

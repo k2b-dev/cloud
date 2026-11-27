@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-19
+updated: 2026-11-25
 ---
 
 # Islands
@@ -50,6 +50,18 @@ This has two consequences:
   browser's clock during the first render. Pass the server's value as a prop,
   for example the server's render time, or read the value in `onMount` and
   reserve its space in the server markup.
+
+Each island renders inside a `<solid-island>` element, and each client
+component inside a `<solid-client>` element, with `display: contents`. Boxes
+ignore the wrapper, but CSS selectors do not: `.list > .row`, `:last-child`,
+and `+` see the wrapper as the child or the sibling. `@k2b/ui/v2.css` ships
+each such rule also through one wrapper, so a v2 primitive in an island keeps
+the layout of its place, and `describeV2` outlines it as if there were no
+island. An island that renders nothing changes no layout either:
+`:first-child`, `:last-child` and `:only-child` skip any number of empty
+wrappers, and a `+` between two primitives steps over up to three in a row.
+Your own CSS must allow for the wrapper in the same way, or select by
+descendant.
 
 Text a person typed into a text field (`<textarea>`, or `<input>` of type
 text, search, email, url, or tel) before the island mounted moves to the same
@@ -207,6 +219,16 @@ imports statically. The build still succeeds, so a dependency you cannot
 change does not stop it. An entry that re-exports a single module, such as
 `@k2b/ui/hover-card`, may load on demand. Inside the Cloud repository, the
 `no-barrel-dynamic-import` rule makes this an error.
+
+A static import narrows only when the entry holds nothing but re-exports and
+its package names, in `sideEffects`, the modules whose import does something.
+Otherwise the bundler keeps every module behind the entry for its possible
+effects. Code splitting then puts what other islands use into chunks this
+island loads too. `@k2b/cloud` lists its few such modules, so an island that
+takes `V2WorkspaceNavigation` from `@k2b/cloud/ssr/islands` weighs what the
+direct import weighs. Bundlers outside Cloud read the same field. A package of
+yours that offers a barrel needs both conditions too. Inside the Cloud
+repository, the `cloud-side-effects` rule keeps the list exact.
 
 ## Preserve the server result
 

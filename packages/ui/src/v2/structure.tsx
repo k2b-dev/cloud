@@ -1,5 +1,6 @@
-import { For, type JSX, children as resolveChildren, Show } from "solid-js";
+import { createSignal, For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useDisclosure } from "./behavior/files";
 import { Button } from "./button";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
@@ -11,6 +12,8 @@ const HeadActions = (props: { actions?: TwoActions }) => (
       <Button
         variant="text"
         icon={action.icon}
+        // on the phone the head keeps only the symbol: the words stay the button's name and hint
+        title={action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}
@@ -36,22 +39,64 @@ export type SectionProps = {
   actions?: TwoActions;
   /** One sentence under the head that sums the section up. */
   summary?: JSX.Element;
-  /** The way to all of it, at the end ("All deliveries ›"); an `icon` replaces the chevron, such as `chevron-up` for "Show fewer". */
+  /**
+   * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
+   * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
+   * line still reaches the edges of its column. Below the measure it changes nothing.
+   */
+  measure?: boolean;
+  /**
+   * The way to all of it ("All deliveries ›"): under the rows, its words on their text edge (after the symbol where the
+   * section has one), never at the right. In a side column it is a row of its own. An `icon` replaces the chevron,
+   * such as `chevron-up` for "Show fewer".
+   */
   more?: Action;
   /** An anchor for a link to this section, such as `screen` for `/me#screen`; unique on the page. */
   id?: string;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
   children?: JSX.Element;
+  /**
+   * Whether the section is open. With `onOpenChange` the section can fold: a chevron at the end of its head opens and
+   * closes it (a button that says whether it is open), and the caller holds the state, so it can keep it (without
+   * `open` the section starts open and keeps its own state, told by `onOpenChange`). Folded, only the head stands,
+   * with the section's line below it.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /**
  * A section: a head with symbol, title, count and at most two text buttons. Rule 9: no line under the head, none
- * between the entries, one line at the end.
+ * between the entries, one line at the end. A section that can fold keeps the same head, rhythm and lines; the
+ * server and the first render show it as `open` says.
  */
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
+  // a section folds only where the caller holds its state; the others stay as they were, without a toggle or a body
+  const fold = props.onOpenChange
+    ? useDisclosure(() => ({
+        // with `open` the caller holds the state; without, the section starts open and keeps its own
+        ...(props.open === undefined ? { defaultOpen: true } : { open: props.open }),
+        onOpenChange: (open: boolean) => props.onOpenChange?.(open),
+      }))
+    : undefined;
+  const body = () => (
+    <>
+      <Show when={summary() !== undefined}>
+        <p class="k2-sec-summary">{summary()}</p>
+      </Show>
+      {props.children}
+      <SectionMore more={props.more} />
+    </>
+  );
   return (
-    <section class="k2-sec" data-k2-part="Section" id={props.id} aria-label={props.title}>
+    <section
+      class="k2-sec"
+      data-k2-part="Section"
+      id={props.id}
+      aria-label={props.title}
+      data-measure={props.measure ? "" : undefined}
+    >
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (
@@ -66,43 +111,57 @@ export const Section = (props: SectionProps) => {
         <Show when={props.count !== undefined}>
           <span class="k2-sh-count">{props.count}</span>
         </Show>
-        <Show when={props.actions?.length}>
+        <Show when={props.actions?.length || fold}>
           <span class="k2-sh-end">
             <HeadActions actions={props.actions} />
+            {fold && (
+              <fold.Trigger
+                class="k2-btn"
+                data-k2-part="Button"
+                data-variant="ghost"
+                data-icon-only=""
+                data-fold=""
+                aria-label={props.title}
+                title={props.title}
+              >
+                <Icon name="chevron-down" />
+              </fold.Trigger>
+            )}
           </span>
         </Show>
       </div>
-      <Show when={summary() !== undefined}>
-        <p class="k2-sec-summary">{summary()}</p>
-      </Show>
-      {props.children}
-      <Show when={props.more}>
-        {(more) => (
-          // One link: a quiet text button at the end of a section; a row with its summary in a side column. A disabled
-          // link is an anchor without an address, as in `Button`.
-          <Dynamic
-            component={more().disabled && more().href !== undefined ? "a" : linkOr(more().href, "button")}
-            type={more().href !== undefined ? undefined : "button"}
-            class="k2-sec-link"
-            href={more().disabled ? undefined : more().href}
-            onNavigate={more().href !== undefined && !more().disabled ? more().onNavigate : undefined}
-            disabled={more().href === undefined ? more().disabled : undefined}
-            aria-disabled={more().href !== undefined && more().disabled ? "true" : undefined}
-            onClick={() => {
-              if (!more().disabled) more().onClick?.();
-            }}
-          >
-            <b>{more().label}</b>
-            <Show when={more().meta}>
-              <span class="k2-sec-link-meta">{more().meta}</span>
-            </Show>
-            <Icon name={more().icon ?? "chevron-right"} />
-          </Dynamic>
-        )}
-      </Show>
+      {fold ? <fold.Panel class="k2-sec-body">{body()}</fold.Panel> : body()}
     </section>
   );
 };
+
+/** The way to all of a section, at its end: one quiet link. */
+const SectionMore = (props: { more?: Action }) => (
+  <Show when={props.more}>
+    {(more) => (
+      // One link: a quiet text button at the end of a section; a row with its summary in a side column. A disabled
+      // link is an anchor without an address, as in `Button`.
+      <Dynamic
+        component={more().disabled && more().href !== undefined ? "a" : linkOr(more().href, "button")}
+        type={more().href !== undefined ? undefined : "button"}
+        class="k2-sec-link"
+        href={more().disabled ? undefined : more().href}
+        onNavigate={more().href !== undefined && !more().disabled ? more().onNavigate : undefined}
+        disabled={more().href === undefined ? more().disabled : undefined}
+        aria-disabled={more().href !== undefined && more().disabled ? "true" : undefined}
+        onClick={() => {
+          if (!more().disabled) more().onClick?.();
+        }}
+      >
+        <b>{more().label}</b>
+        <Show when={more().meta}>
+          <span class="k2-sec-link-meta">{more().meta}</span>
+        </Show>
+        <Icon name={more().icon ?? "chevron-right"} />
+      </Dynamic>
+    )}
+  </Show>
+);
 
 export type GroupProps = {
   /** A Tabler icon before the title. */
@@ -122,8 +181,8 @@ export type GroupProps = {
   /** At most two text buttons at the end of the head; more deeds go into `menu`. */
   actions?: TwoActions;
   /**
-   * Only the head with its result; the content is hidden, and a chevron at the end opens it. (Opening comes with the
-   * behaviour layer.)
+   * Starts as only the head with its result; the content is hidden, and the chevron at the end opens and closes it
+   * (a button that says whether the group is open).
    */
   folded?: boolean;
   /** What belongs together: text, `Steps`, a small `Table`, `Facts`, rows; never another group. */
@@ -138,8 +197,11 @@ export const Group = (props: GroupProps) => {
   // parts passed as JSX are made once and read from here
   const meta = resolveChildren(() => props.meta);
   const state = resolveChildren(() => props.state);
+  // a folded group opens and closes in place; one that is not folded has no toggle
+  const [open, setOpen] = createSignal(!props.folded);
+  const fold = useDisclosure(() => ({ defaultOpen: !props.folded, onOpenChange: setOpen }));
   return (
-    <section class="k2-group" data-k2-part="Group" aria-label={props.title} data-folded={props.folded ? "" : undefined}>
+    <section class="k2-group" data-k2-part="Group" aria-label={props.title} data-folded={props.folded && !open() ? "" : undefined}>
       <div class="k2-gh" data-meta={meta() !== undefined ? "" : undefined}>
         <Show when={props.icon} fallback={<span />}>
           {(name) => (
@@ -177,12 +239,55 @@ export const Group = (props: GroupProps) => {
             </Show>
             <HeadActions actions={props.actions} />
             <Show when={props.folded}>
-              <Button variant="ghost" icon="chevron-down" label={props.title} />
+              <fold.Trigger
+                class="k2-btn"
+                data-k2-part="Button"
+                data-variant="ghost"
+                data-icon-only=""
+                data-fold=""
+                aria-label={props.title}
+                title={props.title}
+              >
+                <Icon name="chevron-down" />
+              </fold.Trigger>
             </Show>
           </span>
         </Show>
       </div>
-      <Show when={!props.folded}>{props.children}</Show>
+      <Show when={props.folded} fallback={props.children}>
+        <fold.Panel class="k2-group-body">{props.children}</fold.Panel>
+      </Show>
     </section>
+  );
+};
+
+export type DisclosureProps = {
+  /** The question or the name of what is hidden; it is the button that opens and closes it. */
+  title: string;
+  /** Whether it is open. With `onOpenChange` the caller holds it; without, it starts so and keeps its own state. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** What opens: `Text`, `Prose`, `Facts`, a few rows. */
+  children: JSX.Element;
+};
+
+/**
+ * Something that opens in place, such as the answer to a question: a row of 44 px with the title and a chevron at the
+ * end, the content under it on the text edge, made only while it is open (as a folded `Group`), so the server and
+ * the first render show the same. Several stand one under the other in a `Section`, without lines.
+ */
+export const Disclosure = (props: DisclosureProps) => {
+  const parts = useDisclosure(() => ({
+    ...(props.onOpenChange ? { open: props.open === true } : { defaultOpen: props.open === true }),
+    onOpenChange: (open: boolean) => props.onOpenChange?.(open),
+  }));
+  return (
+    <parts.Root class="k2-disc" data-k2-part="Disclosure">
+      <parts.Trigger class="k2-disc-head">
+        <span class="k2-disc-title">{props.title}</span>
+        <Icon name="chevron-down" />
+      </parts.Trigger>
+      <parts.Panel class="k2-disc-body">{props.children}</parts.Panel>
+    </parts.Root>
   );
 };

@@ -69,7 +69,7 @@ import {
 } from "./draft-document-log";
 import { withDraftDocumentReplacement } from "./draft-document-replacement";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
-import { lockDraftDocumentInTransaction } from "./draft-documents";
+import { lockDraftDocumentInTransaction, readDraftDocument as readSharedDraftDocument } from "./draft-documents";
 import { newDraftEditMode } from "./draft-edit-mode";
 import { proveQuarantinedDraftHistory } from "./draft-quarantine-proof";
 import { retireDraftInTransaction } from "./draft-retirement";
@@ -2285,6 +2285,9 @@ const readDraft = async (context: MailRequestContext, mailboxId: string, draftId
     return ok({ ...mapDraft(row), ...(moved ?? {}) });
   });
 
+/** The recovery list shows this many copies; a copy beyond it would be unreachable. */
+export const MAX_DRAFT_RECOVERY_COPIES = 100;
+
 export const listDraftRecoveryCopies = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -2300,7 +2303,7 @@ export const listDraftRecoveryCopies = async (params: {
       AND draft.mailbox_id = ${params.mailboxId}::uuid
       AND draft.origin = 'user'
     ORDER BY recovery.created_at DESC, recovery.id DESC
-    LIMIT 100
+    LIMIT ${MAX_DRAFT_RECOVERY_COPIES}
   `;
   return ok(rows.map(mapRecoveryCopy));
 };
@@ -3032,7 +3035,16 @@ export const recoverQuarantinedDraft = async (params: {
   }
 };
 
-/** Preserve the device's whole document, including deletions, after its generation was sent. */
+type RestOutcome =
+  | { status: "unchanged"; durableSourceState: Uint8Array }
+  | { status: "kept" | "recovered"; draft: MailDraft; durableSourceState: Uint8Array };
+
+/**
+ * Preserve the device's whole document, including deletions, after its generation was sent or discarded,
+ * or when the room refused it on the open generation. The outcome says where the text went:
+ * `unchanged` (nothing beyond the stored draft), `kept` (a recovery copy of the existing `draft`),
+ * or `recovered` (a separate new `draft`).
+ */
 export const recoverDraftDocumentRest = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -3040,11 +3052,7 @@ export const recoverDraftDocumentRest = async (params: {
   generation: string;
   clientId: string;
   state: Uint8Array;
-}): Promise<
-  Result<
-    { status: "unchanged"; durableSourceState: Uint8Array } | { status: "recovered"; draft: MailDraft; durableSourceState: Uint8Array }
-  >
-> => {
+}): Promise<Result<RestOutcome>> => {
   const local = new Y.Doc();
   const frozen = new Y.Doc();
   try {
@@ -3052,7 +3060,12 @@ export const recoverDraftDocumentRest = async (params: {
     const content = draftDocumentContent(local);
     const actor = mutableActor(params.context);
     if (!actor) return fail(err.forbidden("Draft editor is invalid"));
-    return await sql.begin(async (db) => {
+    // An open draft's current text is its SQL snapshot plus the retained log, as every editor reads it.
+    // Read it before the row lock: the document read takes that lock in its own transaction.
+    const live = await readSharedDraftDocument({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId }).catch(
+      () => null,
+    );
+    const result = await sql.begin(async (db) => {
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", db);
       if (!allowed.ok) return allowed;
       const [source] = await db<
@@ -3063,19 +3076,35 @@ export const recoverDraftDocumentRest = async (params: {
           state: string;
           edit_mode: string;
           doc_generation: string | number;
+          doc_history_complete: boolean;
+          revision: string | number;
         }[]
       >`
-        SELECT conversation_id, intent, source_message_id, state, edit_mode, doc_generation FROM mail.drafts
+        SELECT conversation_id, intent, source_message_id, state, edit_mode, doc_generation, doc_history_complete, revision
+        FROM mail.drafts
         WHERE id = ${params.draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid AND origin = 'user' FOR UPDATE
       `;
       if (!source) return fail(err.notFound("Draft"));
       const currentAccess = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", db);
       if (!currentAccess.ok) return currentAccess;
-      const [existing] = await db<{ rest_draft_id: string | null; source_state: Uint8Array }[]>`
-        SELECT rest_draft_id, source_state FROM mail.draft_document_rests
+      const [existing] = await db<{ rest_draft_id: string | null; kept_draft_id: string | null; source_state: Uint8Array }[]>`
+        SELECT rest_draft_id, kept_draft_id, source_state FROM mail.draft_document_rests
         WHERE source_draft_id = ${params.draftId}::uuid AND generation = ${params.generation}::bigint
           AND actor_kind = ${actor.kind} AND actor_id = ${actorId(actor)}::uuid AND client_id = ${params.clientId}::uuid
       `;
+      const remember = async (target: { rest?: string; kept?: string }) => {
+        await db`
+          INSERT INTO mail.draft_document_rests
+            (source_draft_id, generation, actor_kind, actor_id, client_id, rest_draft_id, kept_draft_id, source_state)
+          VALUES (${params.draftId}::uuid, ${params.generation}::bigint, ${actor.kind}, ${actorId(actor)}::uuid,
+            ${params.clientId}::uuid, ${target.rest ?? null}::uuid, ${target.kept ?? null}::uuid, ${Buffer.from(params.state)})
+        `;
+      };
+      const answer = async (status: "kept" | "recovered", draftId: string): Promise<Result<RestOutcome>> => {
+        const [draft] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
+        if (!draft) throw new Error("Recovery draft was not retained");
+        return ok({ status, draft: mapDraft(draft), durableSourceState: params.state });
+      };
       if (existing) {
         const old = new Y.Doc();
         try {
@@ -3088,12 +3117,17 @@ export const recoverDraftDocumentRest = async (params: {
         } finally {
           old.destroy();
         }
-        if (!existing.rest_draft_id) return ok({ status: "unchanged" as const, durableSourceState: existing.source_state });
-        const access = await requireDraftAccess(params.context, params.mailboxId, existing.rest_draft_id, "read", db);
+        const target = existing.rest_draft_id ?? existing.kept_draft_id;
+        if (!target) return ok({ status: "unchanged" as const, durableSourceState: existing.source_state });
+        const access = await requireDraftAccess(params.context, params.mailboxId, target, "read", db);
         if (!access.ok) return access;
-        const [draft] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${existing.rest_draft_id}::uuid`;
+        const [draft] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${target}::uuid`;
         return draft
-          ? ok({ status: "recovered" as const, draft: mapDraft(draft), durableSourceState: existing.source_state })
+          ? ok({
+              status: existing.rest_draft_id ? ("recovered" as const) : ("kept" as const),
+              draft: mapDraft(draft),
+              durableSourceState: existing.source_state,
+            })
           : fail(err.notFound("Rest draft"));
       }
       const [boundary] = await db<{ state: Uint8Array }[]>`
@@ -3104,19 +3138,42 @@ export const recoverDraftDocumentRest = async (params: {
       // ever existed; an equal discarded body still deserves a new draft.
       const discarded =
         source.state === "discarded" && source.edit_mode === "shared" && String(source.doc_generation) === params.generation;
-      if (!boundary && !discarded) return conflict("The send boundary is unavailable. Keep the device's text for recovery.");
+      // The room refused the device's input on its still-open generation, for
+      // example a base behind the pruned log prefix. Every reload sends the same
+      // stored input again, so it leaves only as a copy; it never enters the
+      // generation unvalidated. A reply keeps it as a recovery copy of itself.
+      // Incomplete history keeps its explicit recovery; only a person's device refuses input.
+      const open =
+        !boundary &&
+        source.state === "draft" &&
+        source.edit_mode === "shared" &&
+        source.doc_history_complete &&
+        String(source.doc_generation) === params.generation &&
+        live?.ok === true &&
+        live.data.lifecycle === "draft" &&
+        live.data.historyComplete &&
+        live.data.generation === params.generation;
+      if (!boundary && !discarded && !open) return conflict("The send boundary is unavailable. Keep the device's text for recovery.");
+      if (open && !humanDraftEditor(params.context)) return fail(err.forbidden("Only a person's device can keep refused draft input"));
       if (boundary) Y.applyUpdate(frozen, boundary.state);
+      else if (open && live?.ok) Y.applyUpdate(frozen, live.data.fresh.state);
       if (!discarded && JSON.stringify(content) === JSON.stringify(draftDocumentContent(frozen))) {
         // Equal visible content can still contain newer item identities and
         // deletions (type then undo). Commit that exact source before allowing
         // the device to clear it; the send snapshot cannot cover those bytes.
-        await db`
-          INSERT INTO mail.draft_document_rests (source_draft_id, generation, actor_kind, actor_id, client_id, rest_draft_id, source_state)
-          VALUES (${params.draftId}::uuid, ${params.generation}::bigint, ${actor.kind}, ${actorId(actor)}::uuid,
-            ${params.clientId}::uuid, NULL, ${Buffer.from(params.state)})
-        `;
+        await remember({});
         return ok({ status: "unchanged" as const, durableSourceState: params.state });
       }
+      // The recovery list shows the newest MAX_DRAFT_RECOVERY_COPIES copies of a draft, restored or not.
+      // Count exactly those rows before adding one: a copy beyond them would be unreachable.
+      const copiesFull = async (draftId: string) => {
+        const [held] = await db<{ copies: number }[]>`SELECT count(*)::int AS copies
+          FROM mail.draft_recovery_copies WHERE draft_id = ${draftId}::uuid`;
+        return (held?.copies ?? 0) >= MAX_DRAFT_RECOVERY_COPIES;
+      };
+      const tooManyCopies = () =>
+        conflict("This draft holds too many recovery copies. Restore or discard some, then retry; keep the device's text");
+      if (open && (await copiesFull(params.draftId))) return tooManyCopies();
       const [sender] = await db<{ id: string }[]>`
         SELECT id FROM mail.sender_identities WHERE short_id = ${content.senderIdentityId} AND mailbox_id = ${params.mailboxId}::uuid
       `;
@@ -3141,31 +3198,56 @@ export const recoverDraftDocumentRest = async (params: {
       // Recovery keeps the exact source, never signature-strips or appends defaults.
       if (signature.data.body !== content.body) return conflict("The recovery text requires review; keep the device's text");
       const restored = { ...content, senderIdentityId: sender.id, signatureTemplateId };
+      if (open) {
+        // Refused input on the open draft stays with it, whatever its intent, as one recovery copy.
+        // This path takes only the draft's row lock, never its conversation's.
+        await storeRecoveryCopy({ db, draftId: params.draftId, baseRevision: Number(source.revision), content: restored, actor });
+        await enqueueMailInvalidation(db, { mailboxId: params.mailboxId, conversationId: source.conversation_id });
+        await remember({ kept: params.draftId });
+        return answer("kept", params.draftId);
+      }
+      // A reply lands in its conversation's reply slot. When a draft holds that slot (this one or another),
+      // the input becomes a recovery copy of the holder. A scheduled or sending holder cannot restore it:
+      // a mailbox-wide writer then gets a separate new message, as quarantine recovery does, while an
+      // assigned-only writer may not start one and keeps the copy on the holder.
+      // Same lock order as before this path existed: the source row, then the conversation's slot.
+      const holder =
+        source.intent !== "new" && source.conversation_id !== null ? await lockConversationReplyDraft(db, source.conversation_id) : null;
+      const [holderState] = holder ? await db<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${holder.id}::uuid` : [];
+      const closedHolder = holderState !== undefined && holderState.state !== "draft";
+      const access = closedHolder ? await requireMailboxAccess(params.context, params.mailboxId, "write", db) : null;
+      if (access && !access.ok) return access;
+      const detached = access?.ok === true && access.data.scope !== "assigned";
+      if (holder && !detached && (await copiesFull(holder.id))) return tooManyCopies();
+      const placed = detached ? { ...restored, quoteSource: null } : restored;
       const created = await insertComposeDraftInTransaction({
         db,
         context: params.context,
         adopted: true,
         mailboxId: params.mailboxId,
         actor,
-        content: restored,
-        prepared: {
-          conversationId: source.conversation_id,
-          intent: source.intent,
-          sourceMessageId: source.source_message_id,
-          content: restored,
-          attachments: [],
-        },
+        content: placed,
+        prepared: detached
+          ? { conversationId: null, intent: "new", sourceMessageId: null, content: placed, attachments: [] }
+          : {
+              conversationId: source.conversation_id,
+              intent: source.intent,
+              sourceMessageId: source.source_message_id,
+              content: placed,
+              attachments: [],
+            },
       });
       if (!created.ok) return created;
-      await db`
-        INSERT INTO mail.draft_document_rests (source_draft_id, generation, actor_kind, actor_id, client_id, rest_draft_id, source_state)
-        VALUES (${params.draftId}::uuid, ${params.generation}::bigint, ${actor.kind}, ${actorId(actor)}::uuid,
-          ${params.clientId}::uuid, ${created.data.id}::uuid, ${Buffer.from(params.state)})
-      `;
-      const [rest] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${created.data.id}::uuid`;
-      if (!rest) throw new Error("Rest draft was not retained");
-      return ok({ status: "recovered" as const, draft: mapDraft(rest), durableSourceState: params.state });
+      // An occupied reply slot stores the input as a copy of the draft holding it, not as a new draft.
+      if (created.data.creationOutcome === "existing") {
+        await remember({ kept: created.data.id });
+        return answer("kept", created.data.id);
+      }
+      await remember({ rest: created.data.id });
+      return answer("recovered", created.data.id);
     });
+    if (result.ok) mailLive.wake();
+    return result;
   } catch {
     return conflict("Recovery could not be confirmed. Keep the device's text and retry the same request.");
   } finally {

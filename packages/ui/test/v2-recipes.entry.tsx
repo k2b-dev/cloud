@@ -2,6 +2,7 @@ import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import * as actions from "../skills/k2b-ui/recipes/actions";
 import * as content from "../skills/k2b-ui/recipes/content";
+import * as conversations from "../skills/k2b-ui/recipes/conversations";
 import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
 import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
 import * as form from "../skills/k2b-ui/recipes/form";
@@ -13,8 +14,10 @@ import * as mail from "../skills/k2b-ui/recipes/mail";
 import * as overview from "../skills/k2b-ui/recipes/overview";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
+import * as settings from "../skills/k2b-ui/recipes/settings";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
+import * as tree from "../skills/k2b-ui/recipes/tree";
 
 // The recipes of the k2b-ui skill in the browser, as Fibel's Example shows them: the page names a recipe and one of its
 // states before this bundle runs; the bundle mounts it in #root. The test then presses what a `press` state names.
@@ -25,6 +28,7 @@ type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?:
 const recipes: Record<string, Recipe> = {
   "actions.tsx": actions,
   "content.tsx": content,
+  "conversations.tsx": conversations,
   "dialogs.tsx": dialogs,
   "filtered-table.tsx": filteredTable,
   "form-detail.tsx": formDetail,
@@ -35,9 +39,11 @@ const recipes: Record<string, Recipe> = {
   "mail.tsx": mail,
   "overview.tsx": overview,
   "record-groups.tsx": recordGroups,
+  "settings.tsx": settings,
   "record.tsx": record,
   "states.tsx": states,
   "table.tsx": table,
+  "tree.tsx": tree,
 };
 
 declare global {

@@ -183,6 +183,48 @@ export const revokeFamily = async (familyId: string, reason: string): Promise<vo
   `;
 };
 
+/**
+ * Revoke a client's connections the way `revokeFamily` revokes one: every live family of one person, or of everyone
+ * when no person is given, and the tokens in them. Returns how many families were live. Runs in the caller's
+ * transaction, so the revocation and its audit entry commit together.
+ */
+export const revokeClientFamilies = async (params: {
+  db: SqlRunner;
+  clientId: string;
+  userId: string | null;
+  reason: string;
+}): Promise<number> => {
+  // one statement per case: the families and their tokens together, without sending the family ids back and forth
+  const [row] = params.userId
+    ? await params.db<{ revoked: number }[]>`
+        WITH revoked AS (
+          UPDATE oauth.refresh_token_families
+          SET status = 'revoked', revoked_at = COALESCE(revoked_at, now()), revoked_reason = ${params.reason}
+          WHERE client_id = ${params.clientId} AND user_id = ${params.userId}::uuid AND status IN ('active', 'reserved')
+          RETURNING id
+        ), tokens AS (
+          UPDATE oauth.refresh_tokens token
+          SET status = 'revoked', revoked_at = COALESCE(token.revoked_at, now())
+          FROM revoked WHERE token.family_id = revoked.id AND token.status IN ('active', 'issuing')
+        )
+        SELECT count(*)::int AS revoked FROM revoked
+      `
+    : await params.db<{ revoked: number }[]>`
+        WITH revoked AS (
+          UPDATE oauth.refresh_token_families
+          SET status = 'revoked', revoked_at = COALESCE(revoked_at, now()), revoked_reason = ${params.reason}
+          WHERE client_id = ${params.clientId} AND status IN ('active', 'reserved')
+          RETURNING id
+        ), tokens AS (
+          UPDATE oauth.refresh_tokens token
+          SET status = 'revoked', revoked_at = COALESCE(token.revoked_at, now())
+          FROM revoked WHERE token.family_id = revoked.id AND token.status IN ('active', 'issuing')
+        )
+        SELECT count(*)::int AS revoked FROM revoked
+      `;
+  return row?.revoked ?? 0;
+};
+
 export const rotate = async (
   refreshToken: string,
   client: OAuthClient,
@@ -255,6 +297,7 @@ export const rotate = async (
             revoked_at = COALESCE(revoked_at, now()),
             revoked_reason = 'refresh_token_reuse'
           WHERE id = ${row.family_id}::uuid
+            AND status <> 'revoked'
         `;
         await tx`
           UPDATE oauth.refresh_tokens

@@ -17,13 +17,13 @@
   min-width: 0;
 }
 
-/* Top legends share the caller's height with the plot. Geometry remains SVG-owned:
- * inspection uses real SVG transforms and axis bounds, including this vertical offset. */
-:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="top-start"] {
+/* HTML legends (above a line or area chart, below a state timeline) share the caller's height with the plot.
+ * Geometry remains SVG-owned: inspection uses real SVG transforms and axis bounds, including this vertical offset. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement] {
   display: flex;
   flex-direction: column;
 }
-:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="top-start"] > .k2b-chart__svg {
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement] > .k2b-chart__svg {
   flex: 1 1 auto;
   min-height: 0;
   height: auto;
@@ -43,6 +43,19 @@
   font-size: 12px;
   line-height: 18px;
 }
+/* The states of a timeline wrap below it and take at most 40% of the height. The lanes keep three quarters of their
+ * drawn height (18 px a lane) and the legend gives way first: it keeps one line and scrolls (it takes the focus). */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="bottom-start"] > .k2b-chart__legend {
+  flex: 0 1 auto;
+  min-height: 28px;
+  max-height: 40%;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="bottom-start"] > .k2b-chart__svg {
+  /* the drawing takes what the legend leaves (a basis of 0), and the legend gives way only below this least height;
+     never so high that a box lower than the drawing loses the legend's first line */
+  flex-basis: 0;
+  min-height: min(calc(var(--k2b-chart-height) * 0.75), calc(100% - 28px));
+}
 :is(.k2b-ui, .k2-ui) .k2b-chart__legend-item {
   display: inline-flex;
   min-height: 22px;
@@ -52,6 +65,18 @@
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+/* a state timeline's now: a thin line in the accent over the lanes, its word on the time axis in the accent's ink,
+   which reads on the surface in both themes */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-state-now {
+  stroke: var(--k2-blue, var(--k2b-color-primary, #2563eb));
+}
+/* above the v2 rule for axis labels (0,4,0), which would paint the word grey */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-heatmap-label.stdlib-chart-state-now-label {
+  fill: var(--k2-blue-ink, var(--k2b-color-primary, #1d4ed8));
+  opacity: 1;
+  font-weight: 600;
+}
+
 :is(.k2b-ui, .k2-ui) .k2b-chart__legend-swatch {
   flex: none;
   width: 10px;
@@ -95,6 +120,31 @@
   :is(.k2b-ui, .k2-ui) .k2b-chart[data-interactive="true"]:focus-visible {
     outline: var(--k2b-focus-width) solid CanvasText;
     outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-state-now {
+    stroke: CanvasText;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-heatmap-label.stdlib-chart-state-now-label {
+    fill: CanvasText;
+  }
+  /* A line's colour scale becomes the text colour, bars and quiet ranges the muted one: each stays apart from the
+     page, and a band stays behind the data. The scale's gradient is the line's own style, so this outranks it. */
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-scaled {
+    forced-color-adjust: none;
+    stroke: CanvasText !important;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart [data-scaled-fill] {
+    forced-color-adjust: none;
+    fill: GrayText !important;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-bar {
+    forced-color-adjust: none;
+    fill: GrayText;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-band {
+    forced-color-adjust: none;
+    fill: GrayText;
+    fill-opacity: 0.2;
   }
 }
 
