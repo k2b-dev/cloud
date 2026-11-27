@@ -12,7 +12,7 @@ import { transform } from "../../../ssr/src/transform";
 const ENTRY_BUDGET = 500 * 1024;
 const STATIC_BUDGET = 1280 * 1024;
 // The full page's v2 island: v1's closure without v1's frame, plus @k2b/ui v2 and its behaviour layer (measured
-// 1,605,900 bytes on 26.11.2026, Bun 1.4.2; a small margin as above).
+// 1,621,741 bytes on 27.11.2026 with Info, Shared and the discussions on demand; a small margin as above).
 const V2_STATIC_BUDGET = 1600 * 1024;
 
 for (const island of ["ChatWorkspace.island.tsx", "ChatWorkspaceV2.island.tsx"])

@@ -256,5 +256,5 @@ test.todo("every chat row keeps one height with the worst names: Row cuts its ti
 test.todo("right-to-left previews and names read right to left inside a row: Row text dir=auto (MW)", () => {});
 test.todo("initials skip punctuation, so 東京オフィス · 物流チーム reads 東物 (G, #4376)", () => {});
 test.todo("the list sections fold and keep their folded state from the preference (R, Section open/onOpenChange)", () => {});
-test.todo("the phone head with only a search takes no room (#4255)", () => {});
-test.todo("the list stays bounded in the DOM at 1,000 chats (#4211)", () => {});
+test.todo("the phone head with only a search takes no room (Z2, #4255)", () => {});
+test.todo("the list stays bounded in the DOM at 1,000 chats (MW, #4211)", () => {});

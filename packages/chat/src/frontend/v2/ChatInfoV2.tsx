@@ -1,4 +1,5 @@
 import { isManagerEntry } from "@k2b/cloud/access/ui";
+import { cloudAvatarImage } from "@k2b/cloud/account/ui";
 import {
   Band,
   Bar,
@@ -28,6 +29,8 @@ type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
 /** `groupSize` stops counting here; the server answers 501 for "more than 500". */
 const GROUP_COUNT_LIMIT = 500;
+/** The longest member search the server takes. */
+const SEARCH_MAX = 100;
 
 /**
  * The chat's level of notifications on v2: three levels as one choice, what the chosen one means under it, the
@@ -136,7 +139,7 @@ function SharedV2(props: ChatSharedSectionProps): JSX.Element {
           : undefined
       }
     >
-      {/* k2b-ui gap: a v2 `Select` used only in this lazy page still moves its listbox behaviour through the `@k2b/ui/v2` barrel into the chunk every Chat page loads (+47 KB over Chat's v2 budget). The choice is a menu with a tick (menu behaviour is loaded already) until the barrel splits. */}
+      {/* k2b-ui gap (owner Z2): a v2 `Select` used only in this lazy page still moves its listbox behaviour through the `@k2b/ui/v2` barrel into the chunk every Chat page loads (+47 KB over Chat's v2 budget). The choice is a menu with a tick (menu behaviour is loaded already) until the barrel splits. */}
       <Bar
         start={
           <Inline>
@@ -229,6 +232,8 @@ export default function ChatInfoV2(props: ChatInfoPanelProps): JSX.Element {
               ? t().codeAccount
               : t().delegatedAccount
         : null,
+      // A code account acts with the authority of the code that runs it, as v1 says under its name.
+      member.serviceAccountKind === "code" ? t().codeAuthority : null,
       permissionLabel(member.permission),
     ].filter((marker) => marker !== null);
   const memberMenu = (member: Member): readonly MenuEntry[] => {
@@ -308,6 +313,7 @@ export default function ChatInfoV2(props: ChatInfoPanelProps): JSX.Element {
         >
           <Input
             type="search"
+            maxLength={SEARCH_MAX}
             icon="search"
             label={t().searchMembers}
             placeholder={t().searchMembers}
@@ -327,7 +333,20 @@ export default function ChatInfoV2(props: ChatInfoPanelProps): JSX.Element {
             <For each={members.rows}>
               {(member) => (
                 <Row
-                  avatar={{ name: member.displayName }}
+                  // A group shows its sign; a person or an account its picture (initials while it loads or has none).
+                  icon={member.principal.type === "group" ? "users-group" : undefined}
+                  avatar={
+                    member.principal.type === "group"
+                      ? undefined
+                      : {
+                          name: member.displayName,
+                          image: cloudAvatarImage({
+                            kind: member.principal.type === "service_account" ? "service_account" : "user",
+                            userId: member.principal.type === "user" ? member.principal.userId : undefined,
+                            avatarHash: member.avatarHash,
+                          }),
+                        }
+                  }
                   lines={[member.displayName, markers(member).join(" · ")]}
                   end={
                     <Show when={memberMenu(member).length > 0}>

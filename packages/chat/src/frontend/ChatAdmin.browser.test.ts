@@ -58,7 +58,6 @@ const admin = {
 const view = (nav: ChatAdminView["nav"]): ChatAdminView => ({
   nav,
   title: "Chat",
-  ok: true,
   state: "Bereit",
   observed: "geprüft 22:41",
   labels: {
@@ -77,7 +76,6 @@ const view = (nav: ChatAdminView["nav"]): ChatAdminView => ({
 /** break-ui: everything down, the database silent, and many places with the longest reasons Chat knows. */
 const worst = (nav: ChatAdminView["nav"]): ChatAdminView => ({
   ...view(nav),
-  ok: false,
   state: "Nicht verfügbar",
   database: { ready: false, value: "Nicht erreichbar" },
   notifications: {

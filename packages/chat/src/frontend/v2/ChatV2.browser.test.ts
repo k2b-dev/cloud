@@ -357,6 +357,44 @@ test("a chat the reader may not see says so without naming it, and leads back to
   }
 }, 60_000);
 
+// Read state on v2 (the old suites mount v1): opening reports the read and clears the row, the marker stands before the
+// first unread message, and "Mark unread" from the row's menu makes the row unread again.
+test("opening an unread chat reports the read and clears its row, and Mark unread brings it back", async () => {
+  const chat = harness.addChat({ members: [nora], name: "Lesestand Lager", count: 12, unread: 4, end: harness.now() });
+  const start = harness.props({ chat }).open!.conversation.read!.lastReadSeq!;
+  const { page, errors, close } = await load("/app/chat", 1440, 900);
+  try {
+    const row = page.locator('[data-k2-part="Row"]', { hasText: "Lesestand Lager" }).first();
+    await row.waitFor();
+    expect(await row.getAttribute("data-unread")).toBe("");
+    expect(await row.locator(".k2-row-meta").innerText()).toBe("4");
+    await row.locator("a").first().click();
+    await page.waitForURL(new RegExp(`/app/chat/c/${chat}`));
+    const marker = page.locator(".k2b-virtual-feed__marker");
+    await marker.waitFor();
+    expect(await marker.evaluate((element) => element.closest("[data-key]")?.getAttribute("data-key"))).toBe(
+      `${chat}${String(start + 1).padStart(4, "0")}`,
+    );
+    for (let tries = 0; tries < 100 && !harness.reads.some((read) => read.chat === chat); tries++) await page.waitForTimeout(100);
+    expect(harness.reads.some((read) => read.chat === chat && read.seq > start)).toBe(true);
+    await page.waitForFunction((title) => {
+      const found = [...document.querySelectorAll<HTMLElement>('[data-k2-part="Row"]')].find((entry) => entry.textContent?.includes(title));
+      return found !== undefined && !found.hasAttribute("data-unread");
+    }, "Lesestand Lager");
+    // The row's menu: "Mark unread" makes it unread again, as v1's does.
+    await row.hover();
+    await row.locator('button[aria-haspopup="menu"]').click();
+    await page.getByRole("menuitem", { name: "Mark unread" }).click();
+    await page.waitForFunction((title) => {
+      const found = [...document.querySelectorAll<HTMLElement>('[data-k2-part="Row"]')].find((entry) => entry.textContent?.includes(title));
+      return found?.hasAttribute("data-unread") === true;
+    }, "Lesestand Lager");
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 60_000);
+
 // break-ui: the worst names and counts a list meets. Rows keep their sign and time, names are cut with "…", nothing
 // leaves its column, and the v2 rules hold at both widths. Last in the file: these chats join the list from here on.
 test("the list keeps its shape with the worst names and counts", async () => {

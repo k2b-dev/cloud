@@ -29,8 +29,8 @@ import { chatV2Messages } from "./chat-v2-messages";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 
-/** The colour of Chat, the app that owns channels and the chats' own symbols. */
-export const CHAT_COLOR = "#7c3aed";
+/** The colour of Chat, the app that owns channels and the chats' own symbols: the page's app colour token. */
+export const CHAT_COLOR = "var(--k2-app)";
 
 /** A Tabler class of v1 ("ti ti-speakerphone") as the name v2 takes ("speakerphone"). */
 export const iconName = (icon: string) => icon.replace(/^ti ti-/, "");

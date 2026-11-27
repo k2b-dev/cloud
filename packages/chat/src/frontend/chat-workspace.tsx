@@ -3582,6 +3582,8 @@ export function ChatWorkspaceView(
         avatar: current.channel || system() ? undefined : { name: current.title },
         kinds: status ? [status] : undefined,
         ids: [
+          // A discussion about an element says where it stands (its context), else what kind of element it is, as v1.
+          ...(resource ? [{ value: resource.context ?? resource.typeTitle }] : []),
           { value: subtitle },
           ...(current.notifications?.level === "none" ? [{ icon: "bell-off", value: t().notificationsOffMark }] : []),
         ],

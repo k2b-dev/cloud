@@ -16,6 +16,8 @@ import { createDirectoryPages } from "../SystemThreadDirectory";
 import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref, threadIcon } from "../threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
+/** The longest search the server takes (channels, members, discussions). */
+const SEARCH_MAX = 100;
 
 import { CHAT_COLOR, iconName } from "./ChatListV2";
 import { chatV2Messages } from "./chat-v2-messages";
@@ -188,7 +190,11 @@ export function SystemThreadDirectoryV2(props: {
     }),
   );
   // The page code loads in the browser, so the address is there to read; the bar writes it, the search below too.
-  const [state, setState] = createSignal(query().parse(location.search).state);
+  // The server takes a search of at most 100 characters; a longer one in the address is cut to it, as the field is.
+  const parsed = query().parse(location.search).state;
+  const [state, setState] = createSignal(
+    parsed.search && parsed.search.length > SEARCH_MAX ? (query().set(parsed, "q", parsed.search.slice(0, SEARCH_MAX)) ?? parsed) : parsed,
+  );
   /** One change of the search or the state: the declaration derives the state and writes the address. */
   const change = (next: ReturnType<typeof state> | undefined) => {
     if (!next) return;
@@ -209,14 +215,15 @@ export function SystemThreadDirectoryV2(props: {
       .join(" · ");
   return (
     <>
-      {/* k2b-ui gap: `FilterBar` is reached only through the `@k2b/ui/v2` barrel, and the bundler then hoists it (with
+      {/* k2b-ui gap (owner Z2): `FilterBar` is reached only through the `@k2b/ui/v2` barrel, and the bundler then hoists it (with
           Lookup and DatePicker) into the chunk every page of Chat loads (+57 KB over Chat's v2 budget). Until it has a
           path of its own, the search and the one state stand as one row; the address is the declaration's.
-          k2b-ui gap: a v2 `Select` used only in this lazy page still moves its listbox behaviour through the `@k2b/ui/v2` barrel into the chunk every Chat page loads (+47 KB over Chat's v2 budget). The choice is a menu with a tick (menu behaviour is loaded already) until the barrel splits. */}
+          k2b-ui gap (owner Z2): a v2 `Select` used only in this lazy page still moves its listbox behaviour through the `@k2b/ui/v2` barrel into the chunk every Chat page loads (+47 KB over Chat's v2 budget). The choice is a menu with a tick (menu behaviour is loaded already) until the barrel splits. */}
       <Bar
         start={
           <Input
             type="search"
+            maxLength={SEARCH_MAX}
             icon="search"
             label={t().searchThreads}
             placeholder={t().searchThreads}
@@ -330,6 +337,7 @@ export function DiscoverChannelsV2(props: DiscoverChannelsProps): JSX.Element {
       <Band label={t().searchChannels}>
         <Input
           type="search"
+          maxLength={SEARCH_MAX}
           icon="search"
           label={t().searchChannels}
           placeholder={t().searchChannels}

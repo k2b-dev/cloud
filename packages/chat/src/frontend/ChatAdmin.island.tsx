@@ -6,7 +6,6 @@ import type { JSX } from "solid-js";
 export type ChatAdminView = {
   nav: NavProps;
   title: string;
-  ok: boolean;
   /** "Healthy" or "Unavailable", the page's one statement. */
   state: string;
   observed: string;

@@ -3,7 +3,9 @@ import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
+import { chatRequestContext } from "../request-context";
 import { chatService } from "../service";
+import { providerFor, typePresentation } from "../service/discussion-read";
 import ChatAdmin, { type ChatAdminView } from "./ChatAdmin.island";
 import { chatV2Messages } from "./v2/chat-v2-messages";
 
@@ -38,10 +40,17 @@ export default ssr<AuthContext>(async (c) => {
   const ok = health.status === "ok";
   const time = dates.formatTime(health.observedAt, getDateConfig(c));
   const notifications = health.systemNotifications.status;
+  // A place is named by its type's title ("Space"), as Chat's discussions name it; the raw type when it is unknown.
+  const failing = check.providers.filter((provider) => provider.status !== "ok");
+  const typeTitles = await Promise.all(
+    failing.map(async (provider) => {
+      const found = await providerFor(chatRequestContext(c), provider.resourceType).catch(() => undefined);
+      return found ? typePresentation(found, provider.resourceType).typeTitle : provider.resourceType;
+    }),
+  );
   const view: ChatAdminView = {
     nav: adminNavigation(c),
     title: t.appName,
-    ok,
     state: ok ? t.healthy : t.unavailable,
     observed: t.observed({ time }),
     labels: { database: t.database, notifications: t.systemNotifications, providers: v2.adminProviders, logs: t.logs },
@@ -65,14 +74,12 @@ export default ssr<AuthContext>(async (c) => {
           ? checkDetail || undefined
           : undefined,
     },
-    providers: check.providers
-      .filter((provider) => provider.status !== "ok")
-      .map((provider) => ({
-        type: provider.resourceType,
-        line: [reasons.get(provider.reason ?? ""), t.observed({ time: dates.formatTime(provider.checkedAt, getDateConfig(c)) })]
-          .filter(Boolean)
-          .join(" · "),
-      })),
+    providers: failing.map((provider, index) => ({
+      type: typeTitles[index] ?? provider.resourceType,
+      line: [reasons.get(provider.reason ?? ""), t.observed({ time: dates.formatTime(provider.checkedAt, getDateConfig(c)) })]
+        .filter(Boolean)
+        .join(" · "),
+    })),
   };
 
   return () => (
