@@ -8,6 +8,7 @@ import {
   AreasMenuScreen,
   CanvasFillScreen,
   CellsScreen,
+  CurrentTilesScreen,
   DeepPathScreen,
   DialogInlineScreen,
   EmptyWaysScreen,
@@ -69,7 +70,8 @@ declare global {
       | "hero-empty"
       | "head-worst"
       | "head-bare"
-      | `owner-${string}`;
+      | `owner-${string}`
+      | "tiles-current";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -112,6 +114,8 @@ render(
         <PulseScreen list={which === "pulse-b-list"} />
       ) : which === "agenda" ? (
         <AgendaTilesScreen />
+      ) : which === "tiles-current" ? (
+        <CurrentTilesScreen />
       ) : which === "dialog-inline" ? (
         <DialogInlineScreen />
       ) : which === "facts" ? (

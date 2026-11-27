@@ -1348,8 +1348,7 @@
   max-width: 100%;
 }
 /* the tile of what is open now takes the tint of the app it belongs to, as an open row; only its ground changes */
-.k2-ui .k2-tile[data-current],
-.k2-ui .k2-tiles > .k2-tile[data-current][data-open]:hover {
+.k2-ui .k2-tile[data-current] {
   background: var(--k2-app-tint);
 }
 .k2-ui .k2-tile > span {
@@ -1513,6 +1512,11 @@
 }
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-open]:hover {
   background: var(--k2-n100);
+}
+/* a tile of what is open keeps its tint under the pointer, after the hover grounds of card and media tiles; a selection
+   (below) still wins */
+.k2-ui .k2-tiles > .k2-tile[data-current][data-open]:hover {
+  background: var(--k2-app-tint);
 }
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-selected],
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-selected]:hover {
@@ -5981,9 +5985,10 @@
     white-space: nowrap;
   }
   /* On the phone the labels stand in a column of 100 px beside their values, as the study draws them (identity B); a
-     long value wraps beside its label. */
+     long label wraps in its column, a long value beside its label. */
   .k2-ui .k2-facts {
     grid-template-columns: 100px minmax(0, 1fr);
+    column-gap: 16px;
   }
   /* a value not there yet holds a short place of its own at the end, as in an inline line */
   .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd > .k2-fact-value > .k2-skel:not([data-over]) {
