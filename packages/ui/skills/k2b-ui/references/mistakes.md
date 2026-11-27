@@ -80,9 +80,9 @@ One filled action per surface: the page, and each open dialog or sheet
 
 ### `the primary action is hidden at this width` (outline at 390 px)
 
-Head actions hide on the phone. Give `Workspace` the same action as
-`primary`; it floats there, and mark the head's button `floats`. A head
-button that must stay gets `keep`. An open detail on the phone is a page of its own: the
+Give `Workspace` the head's main action as `primary`; it floats on the
+phone, and mark the head's button `floats` so it leaves the head there.
+Every other head control stays on the phone (`keep` is deprecated). An open detail on the phone is a page of its own: the
 list's main action does not float over it, and the check says nothing there.
 
 ### `2 primary buttons ("Neu", "Neu")` (outline at 390 px)

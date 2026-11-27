@@ -155,7 +155,7 @@ export default function TableScreen() {
           end={
             <>
               <Input type="search" icon="search" placeholder="Suchen" label="Suchen" />
-              <Button variant="primary" icon="plus">
+              <Button variant="primary" floats icon="plus">
                 Auftrag
               </Button>
             </>

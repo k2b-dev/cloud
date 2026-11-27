@@ -131,7 +131,7 @@ render(
                   window.__k2Escapes = (window.__k2Escapes ?? 0) + 1;
                 }}
               />
-              {window.__k2BareHead ? null : <Button keep variant="ghost" icon="dots" label="Weitere Aktionen" />}
+              {window.__k2BareHead ? null : <Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
             </>
           }
         />

@@ -3909,6 +3909,10 @@
   .k2-ui .k2-pane-back {
     display: flex;
   }
+  /* a detail with its way back has one way back: its head's close x (`Button closes`) leaves the head here */
+  .k2-ui .k2-pane[data-detail]:has(> [data-k2-part="Back"]) > [data-slot="head"] > .k2-bar > .k2-bar-end > [data-closes] {
+    display: none;
+  }
   /* while a detail with its way back is the page, the head of the workspace (its views) gives way: the way back is
      the one thing above the detail, and the platform may show it in its own bar ([data-k2-part="Back"]) */
   .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {

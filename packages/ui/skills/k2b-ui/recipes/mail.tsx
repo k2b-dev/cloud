@@ -96,7 +96,7 @@ export default function MailScreen() {
             />
           }
           end={
-            <Button variant="primary" icon="pencil">
+            <Button variant="primary" floats icon="pencil">
               Neue Nachricht
             </Button>
           }

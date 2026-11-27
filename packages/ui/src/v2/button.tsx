@@ -53,6 +53,11 @@ type ButtonBase = {
    */
   floats?: boolean;
   /**
+   * The close x of a detail's head. On the phone the detail is a page with its way back (`Pane back`) above it, which
+   * stands for the x there, so the head lets it go: the detail has one way back.
+   */
+  closes?: boolean;
+  /**
    * A hint under the pointer, for a button whose words give way to its symbol in a narrow place (the bar of a
    * selection). An icon button shows its label as the hint by itself.
    */
@@ -119,6 +124,7 @@ export const Button = (props: ButtonProps) => {
       data-menu={props.menu ? "" : undefined}
       data-keep={props.keep ? "" : undefined}
       data-floats={props.floats ? "" : undefined}
+      data-closes={props.closes ? "" : undefined}
     >
       <>
         <Show when={props.avatar} fallback={<Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>}>

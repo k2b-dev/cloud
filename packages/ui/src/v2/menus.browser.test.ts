@@ -80,7 +80,6 @@ const closed = (page: Page, selector: string) => page.waitForFunction((s) => !do
 test("server markup: the menu's button is named and says it opens a menu; no popup is sent", () => {
   expect(markup).toContain('aria-label="Weitere Aktionen"');
   expect(markup).toContain('aria-haspopup="menu"');
-  expect(markup).toContain("data-keep");
   expect(markup).not.toContain("k2-menu");
   expect(markup).not.toContain("k2-pop");
 });

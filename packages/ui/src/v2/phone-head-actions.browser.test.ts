@@ -101,12 +101,21 @@ test("390: an open detail is the page, the list's main action does not float ove
   await withPage("detail", 390, async (page) => {
     expect(await page.locator(".k2-fab").count()).toBe(0);
     expect(await describeV2Page(page)).not.toContain("the primary action is hidden at this width");
+    // one way back: the bar above the detail; the head's close x (`closes`) leaves the head here
+    expect(await page.locator('[data-k2-part="Back"]').isVisible()).toBe(true);
+    expect(await page.getByRole("link", { name: "Schließen" }).isVisible()).toBe(false);
   });
 }, 30_000);
 
-test("390: a list whose main action has no floating twin still gets the check's finding", async () => {
+test("390: a head's main action marked floats without a floating button still gets the check's finding", async () => {
   await withPage("nofab", 390, async (page) => {
     expect(await describeV2Page(page)).toContain("the primary action is hidden at this width");
+  });
+}, 30_000);
+
+test("1440: an open detail keeps its close x beside the list", async () => {
+  await withPage("detail", 1440, async (page) => {
+    expect(await page.getByRole("link", { name: "Schließen" }).isVisible()).toBe(true);
   });
 }, 30_000);
 

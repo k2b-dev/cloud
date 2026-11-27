@@ -5,7 +5,7 @@ import { Bar, Button, Input, Menu, Pane, Path, Text, Workspace } from "../src/v2
 // head holds where it stands, the search, its menu "…" and "Neuer Chat"; a list, whose head holds where it stands, the
 // search and the main action that the workspace repeats as the floating button on the phone; a bare head without a
 // start, only the search and the menu "…"; a list with an open detail (on the phone the detail is the page, and no
-// main action floats over it); and a list whose head has a main action but the workspace none ("nofab").
+// main action floats over it); and a list whose head marks its main action `floats` but whose workspace has no `primary` ("nofab").
 
 declare global {
   interface Window {
@@ -49,7 +49,7 @@ render(
                 />
               ) : null}
               {kind !== "bare" ? (
-                <Button variant="primary" icon="plus" keep={kind === "chat"} floats={kind === "list"}>
+                <Button variant="primary" icon="plus" floats={kind === "list" || kind === "nofab"}>
                   Neuer Chat
                 </Button>
               ) : null}
@@ -64,7 +64,12 @@ render(
           <Pane label="Liste" width={{ min: 280, default: 360 }}>
             <Text>Die Liste.</Text>
           </Pane>
-          <Pane label="Angebot Küche Lindqvist" detail back={{ label: "Liste", href: "#liste" }}>
+          <Pane
+            label="Angebot Küche Lindqvist"
+            detail
+            back={{ label: "Liste", href: "#liste" }}
+            head={<Bar start={<Text>Angebot Küche Lindqvist</Text>} end={<Button variant="ghost" icon="x" label="Schließen" href="#liste" closes />} />}
+          >
             <Text>Das offene Angebot.</Text>
           </Pane>
         </Pane.Split>
