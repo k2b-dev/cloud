@@ -25,7 +25,7 @@ test("a list of items sends only its first rows, each saying where it stands, an
       label: "Gespräche",
       items,
       rowKey: (item) => item.id,
-      row: (item) => createComponent(Row, { lines: [item.title] }),
+      row: (item) => createComponent(Row, { lines: [item().title] }),
     }),
   );
   expect(markup.match(/data-k2-part="Row"/g)?.length).toBe(SERVER_ROWS);
