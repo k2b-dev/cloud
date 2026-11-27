@@ -266,7 +266,8 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
               </Show>
               {/* the source and how it reads, side by side; one under the other on the phone */}
               <Pane.Split>
-                <Pane label={t().sourceTitle}>
+                {/* two unsized columns ask 400 px each, more than 1024 px leave beside the sidebar: the source keeps 360 */}
+                <Pane label={t().sourceTitle} width={{ min: 320, default: 360 }}>
                   <Section
                     icon="markdown"
                     title={t().sourceTitle}
@@ -276,10 +277,10 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
                       input: formatBytes(resolved().inputBytes),
                       output: formatBytes(resolved().outputBytes),
                     })}
-                    actions={[
-                      { label: t().copyMarkdown, icon: "copy", onClick: () => copy(resolved().markdown) },
-                      { label: t().downloadMd, icon: "download", onClick: () => downloadMarkdown(resolved()) },
-                    ]}
+                    // one deed in the head, so the title and it keep their words in a half-wide column; the download
+                    // is the section's way out at its end
+                    actions={[{ label: t().copyMarkdown, icon: "copy", onClick: () => copy(resolved().markdown) }]}
+                    more={{ label: t().downloadMd, icon: "download", onClick: () => downloadMarkdown(resolved()) }}
                   >
                     {/* The Markdown is drawn text: a fixed height, so a long document scrolls inside it. */}
                     {/* k2b-ui gap: no v2 code block yet (#4244); the Markdown stands in a Canvas until it lands. */}

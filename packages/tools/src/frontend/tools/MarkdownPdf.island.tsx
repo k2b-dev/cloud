@@ -302,11 +302,8 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
                 <Show
                   when={busy()}
                   fallback={
-                    <Empty
-                      icon="file-type-pdf"
-                      text={t().previewEmpty}
-                      action={{ label: t().generatePdf, icon: "file-type-pdf", onClick: () => void generate() }}
-                    />
+                    // the head's "PDF erstellen" makes it; the empty column only says where it will stand
+                    <Empty icon="file-type-pdf" text={t().previewEmpty} />
                   }
                 >
                   <Loading />

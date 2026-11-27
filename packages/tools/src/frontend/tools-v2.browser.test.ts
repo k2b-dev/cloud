@@ -20,6 +20,7 @@ const SCREENS = [
   "encryption",
   "qr",
   "document-markdown",
+  "document-result",
   "markdown-pdf",
 ];
 const shots = process.env.CLOUD_TOOLS_SHOTS;
@@ -70,7 +71,13 @@ const check = async (page: Page, name: string, width: number) => {
     const elements = await page.locator("#app *").count();
     await Bun.write(resolve(shots, `${name}-${width}.txt`), `${outline}\nelements ${elements}\n${JSON.stringify(layout.problems)}`);
   }
-  return { loaders, problems: outline.includes("Problems") ? outline : null, layout: layout.problems };
+  // a part that runs past the window's right edge is cut there: measureV2Layout let a reading column at 1024 px pass
+  const beyond = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-k2-part]")]
+      .filter((element) => element.getBoundingClientRect().right > window.innerWidth + 1)
+      .map((element) => `${element.dataset.k2Part} runs past the window's edge`),
+  );
+  return { loaders, problems: outline.includes("Problems") ? outline : null, layout: [...layout.problems, ...new Set(beyond)] };
 };
 
 for (const name of SCREENS)
