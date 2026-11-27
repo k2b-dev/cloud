@@ -219,7 +219,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `ColorInput ${quote(code?.value ?? code?.getAttribute("value") ?? "", 20)}${swatches ? ` · ${swatches} swatches` : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
     if (name === "ImageInput") {
-      const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");
+      // its button may stand in an island of its own, which the outline looks through
+      const button = kid(kid(element, ".k2-image-end"), ".k2-btn")?.querySelector(".k2-btn-label");
       return `ImageInput ${element.querySelector(".k2-image-preview > img") ? "picture" : "empty"} [${clip(button?.textContent ?? "", 30)}]`;
     }
     if (name === "Progress")
