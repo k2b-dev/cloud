@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Avatar, Band, Bar, Button, Facts, type FactsProps, Icon, Inline, Row, Section, Text } from "@k2b/ui/v2";
+import { Avatar, Band, Bar, Button, Facts, type FactsProps, Icon, Inline, Notice, Row, Section, Text } from "@k2b/ui/v2";
 import { For } from "solid-js";
 import { oauthMessages } from "../messages";
 import { consentScopeLabel } from "../scope-labels";
@@ -26,7 +26,16 @@ export function RequestedAccess(props: { scopes: readonly string[]; limitNote?: 
   const t = useMessages();
   return (
     <Section title={t().requestedAccess} summary={props.limitNote ? t().permissionLimit : undefined}>
-      <For each={props.scopes}>{(scope) => <Row icon={scopeIcons[scope] ?? "check"} lines={[consentScopeLabel(scope, t())]} />}</For>
+      {/* k2b-ui gap (#4328): a Row keeps the phone's two-line height for a single line, so a short statement list stands
+          as text lines, in the same rhythm on the phone and on a large screen */}
+      <For each={props.scopes}>
+        {(scope) => (
+          <Inline>
+            <Icon name={scopeIcons[scope] ?? "check"} />
+            <Text>{consentScopeLabel(scope, t())}</Text>
+          </Inline>
+        )}
+      </For>
     </Section>
   );
 }
@@ -70,48 +79,48 @@ export function DecisionForm(props: {
   reauthenticateHref?: string | null;
   /** The one caution read right before deciding; a too old sign-in adds why the person signs in again. */
   caution: string;
-  /** The signed-in person the decision is for, named right above the caution. */
+  /** The signed-in person the decision is for, named right above the buttons. */
   person?: string;
 }) {
   const t = useMessages();
   return (
-    <Band>
-      <form id={DECISION_FORM} method="post" action={props.action} hidden>
-        <input type="hidden" name="request" value={props.request} />
-        {props.userCode ? <input type="hidden" name="user_code" value={props.userCode} /> : null}
-      </form>
-      {props.person ? (
-        <Inline>
-          <Avatar name={props.person} decorative />
-          <Text weight="strong">{props.person}</Text>
-          <Text type="meta" muted>
-            {t().signedInHere}
-          </Text>
-        </Inline>
-      ) : null}
-      <Text>
-        <Icon name="alert-triangle" tone="warn" />{" "}
-        {props.reauthenticateHref ? `${props.caution} ${t().confirmIdentityHint}` : props.caution}
-      </Text>
-      <Bar
-        end={
-          <>
-            <Button type="submit" form={DECISION_FORM} name="decision" value="deny">
-              {t().deny}
-            </Button>
-            {props.reauthenticateHref ? (
-              <Button variant="primary" icon="shield-lock" href={props.reauthenticateHref}>
-                {t().confirmIdentity}
+    <>
+      {/* the one caution, with its sign in a column of its own so the sentence keeps one text edge */}
+      <Notice tone="warn">{props.reauthenticateHref ? `${props.caution} ${t().confirmIdentityHint}` : props.caution}</Notice>
+      <Band>
+        <form id={DECISION_FORM} method="post" action={props.action} hidden>
+          <input type="hidden" name="request" value={props.request} />
+          {props.userCode ? <input type="hidden" name="user_code" value={props.userCode} /> : null}
+        </form>
+        {props.person ? (
+          <Inline>
+            <Avatar name={props.person} decorative />
+            <Text weight="strong">{props.person}</Text>
+            <Text type="meta" muted>
+              {t().signedInHere}
+            </Text>
+          </Inline>
+        ) : null}
+        <Bar
+          end={
+            <>
+              <Button type="submit" form={DECISION_FORM} name="decision" value="deny">
+                {t().deny}
               </Button>
-            ) : (
-              <Button variant="primary" icon="check" type="submit" form={DECISION_FORM} name="decision" value="approve">
-                {t().allowAccess}
-              </Button>
-            )}
-          </>
-        }
-      />
-    </Band>
+              {props.reauthenticateHref ? (
+                <Button variant="primary" icon="shield-lock" href={props.reauthenticateHref}>
+                  {t().confirmIdentity}
+                </Button>
+              ) : (
+                <Button variant="primary" icon="check" type="submit" form={DECISION_FORM} name="decision" value="approve">
+                  {t().allowAccess}
+                </Button>
+              )}
+            </>
+          }
+        />
+      </Band>
+    </>
   );
 }
 
