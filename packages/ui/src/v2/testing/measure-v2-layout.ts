@@ -586,7 +586,7 @@ function measureInPage(options: InPage): DomResult {
       // A button the end of a bar cuts before the page is alive folds into its "…" once the bar measures (`Bar`): on the
       // server's page the end cuts what it has no room for, from its start, so the parts at its end stay whole.
       const folds =
-        control.closest('.k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end') !== null && control.matches(options.folds);
+        control.closest('.k2-bar:is([data-k2-part="Bar"], [data-status-row]):not([data-k2-fitted]) > .k2-bar-end') !== null && control.matches(options.folds);
       if (clipped && !folds)
         cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
     }

@@ -16,12 +16,13 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { type Fold, watchFold } from "./bar-fold";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
@@ -580,10 +581,10 @@ export type StatusRowProps = {
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
-   * Filters or a segment at the end; on the phone they stay, beside the lead or in a second line below it. They keep
-   * their words while the lead gives way; in a row narrower than 600 px a button with a symbol keeps only the symbol,
-   * and its words stay its name. Give each one a symbol, so it can fold; a toggle is a `Button pressed` with an
-   * `icon`, which folds, not a switch.
+   * Filters or a segment at the end; on the phone they stay in the row: what has no room folds into one "+n" menu.
+   * They keep their words while the lead gives way; in a row narrower than 600 px a button with a symbol keeps only
+   * the symbol, and its words stay its name. Give each one a symbol, so it can fold; a toggle is a `Button pressed`
+   * with an `icon`, which folds, not a switch.
    */
   filters?: JSX.Element;
   /**
@@ -605,8 +606,29 @@ export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
+  // On the phone the end that has no room beside the shortened lead folds into one "+n" (the bar's fold, the last
+  // first), which opens what it holds as a menu: a pressed chip is an entry with a check. Wider, nothing folds.
+  let bar: HTMLDivElement | undefined;
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  onMount(() => {
+    const element = bar;
+    if (!element) return;
+    const phone = matchMedia("not all and (min-width: 768px)");
+    let fold: Fold | undefined;
+    const follow = () => {
+      fold?.stop();
+      fold = phone.matches ? watchFold(element, (entries) => setFolded(entries)) : undefined;
+      if (!fold) setFolded([]);
+    };
+    follow();
+    phone.addEventListener("change", follow);
+    onCleanup(() => {
+      phone.removeEventListener("change", follow);
+      fold?.stop();
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined} ref={bar}>
       <Show
         when={props.selection}
         fallback={
@@ -649,7 +671,17 @@ export const StatusRow = (props: StatusRowProps) => {
               </Show>
             </div>
             <Show when={holdsContent(filters)}>
-              <div class="k2-bar-end">{filters()}</div>
+              <div class="k2-bar-end">
+                {filters()}
+                <Show when={folded().length > 0}>
+                  <span class="k2-bar-fold">
+                    <Menu items={folded()}>
+                      <span aria-hidden="true">+{folded().length}</span>
+                      <span class="k2-hidden-text">{t().moreFilters({ count: folded().length })}</span>
+                    </Menu>
+                  </span>
+                </Show>
+              </div>
             </Show>
           </>
         }

@@ -119,14 +119,12 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,181 176x40"],
     },
     // The mockup has no head here (its path gives way to the phone bar). The head keeps its bar for the table's own
-    // search as a symbol (#4139), so everything under it starts 56 px lower than in the mockup. The status row keeps
-    // its three filter chips on the phone (#4426: never hidden); they have no room beside the statement, so they take
-    // a second line of 36 px, and the rows below start 36 px lower than in the mockup.
+    // search as a symbol (#4139), so everything under it starts 56 px lower than in the mockup.
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x56"],
-      status: ['[data-k2-part="StatusRow"]', "0,56 390x88"],
-      phoneGroup: [".k2-table-phone .k2-bar", "0,144 390x36"],
-      phoneRow: [".k2-table-phone .k2-row", "0,180 390x53"],
+      status: ['[data-k2-part="StatusRow"]', "0,56 390x52"],
+      phoneGroup: [".k2-table-phone .k2-bar", "0,108 390x36"],
+      phoneRow: [".k2-table-phone .k2-row", "0,144 390x53"],
     },
   },
 };
