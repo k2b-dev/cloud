@@ -43,6 +43,11 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /**
+   * The full words as a tooltip, for text its place may cut (a long title in a head): the same words, never a hint
+   * of something else.
+   */
+  title?: string;
   /** The words. */
   children: JSX.Element;
 };
@@ -66,8 +71,9 @@ export const Text = (props: TextProps) => {
       data-k2-part="Text"
       data-type={props.type}
       data-tone={props.tone}
-      // a title (the lead of a head) may be cut where it has no room: it says all of its words on hover
-      title={props.type === "lead" && typeof words() === "string" ? String(words()) : undefined}
+      // the full words the app gives; a title (the lead of a head) may be cut where it has no room, so it says all of
+      // its words on hover without them
+      title={props.title ?? (props.type === "lead" && typeof words() === "string" ? String(words()) : undefined)}
     >
       {words()}
     </Dynamic>
@@ -521,7 +527,8 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={end() !== undefined || props.action}>
         <span class="k2-row-end">
-          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          {/* the deed is named by its words and then the row's title, so rows with the same deed are told apart */}
+          <Show when={props.action}>{(action) => <ActionButton action={action()} about={title} />}</Show>
           {end()}
         </span>
       </Show>
