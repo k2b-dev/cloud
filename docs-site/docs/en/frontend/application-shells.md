@@ -235,6 +235,12 @@ group's single icon button and a submenu stay in the sidebar. A tap opens an
 entry the way the sidebar does: in place through its `onNavigate`, otherwise
 as a page; an entry without a link runs its `onClick`.
 
+A long navigation stays light. The page carries the first 40 entries and the
+way to the open one, for a menu opened before the island runs; the island
+gives the menu every entry once it runs, and builds them only when the menu
+first opens. Outside an island the menu keeps those 40 entries, so render
+`V2WorkspaceNavigation` inside the application island.
+
 Keep permission filtering, labels, counts, URLs, and actions application-owned.
 The provider emits an SSR snapshot, binds handlers on mount, and unregisters on
 cleanup. When navigation has a `switcher`, the snapshot also carries its

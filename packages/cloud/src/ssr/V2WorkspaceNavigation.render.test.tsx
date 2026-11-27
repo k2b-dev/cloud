@@ -32,6 +32,19 @@ afterAll(() => {
 });
 
 const groups = [{ label: "Ordner", items: [{ label: "Eingang", icon: "inbox", href: "/app/folders?folder=in", current: true }] }];
+/** A base with `count` tables, as W4 measured Grids: one group, the table at `open` (from 0) open. */
+const tables = (count: number, open = 0) => [
+  {
+    label: "Tabellen",
+    items: Array.from({ length: count }, (_, index) => ({
+      label: `Tabelle ${index + 1}`,
+      icon: "table",
+      href: `/app/folders/tables/t${String(index + 1).padStart(5, "0")}`,
+      count: index % 7,
+      ...(index === open ? { current: true } : {}),
+    })),
+  },
+];
 
 const app = defineApp({
   id: "folders",
@@ -59,11 +72,13 @@ const server = new Hono<Env>()
           title: "Ordner",
           get children() {
             const registered = c.req.query("menu") !== "0";
+            const entries = Number(c.req.query("entries") ?? 0);
+            const shown = entries ? tables(entries, Number(c.req.query("open") ?? 1) - 1) : groups;
             return [
-              registered && createComponent(V2WorkspaceNavigation, { label: "Ordner", groups }),
+              registered && createComponent(V2WorkspaceNavigation, { label: "Ordner", groups: shown }),
               createComponent(Workspace, {
                 get sidebar() {
-                  return createComponent(Nav, { title: "Ordner", icon: "folder", groups });
+                  return createComponent(Nav, { title: "Ordner", icon: "folder", groups: shown });
                 },
                 get children() {
                   return createComponent(Pane, {
@@ -103,4 +118,28 @@ test("without it the shell stays unmarked and the phone title stays the app's na
   const html = await (await server.request("/app/folders?menu=0")).text();
   expect(shellOf(html)).not.toContain("data-workspace-navigation");
   expect(html).not.toContain("data-cloud-workspace-navigation");
+});
+
+// W4: a Grids base with 1000 tables. What the menu adds to the page is bounded, however many entries its Nav has; the
+// Nav itself shows them, and the menu reads the rest once its island is alive. Measured 27.11.2026: 125,090 bytes
+// before (a snapshot of every entry), 5,024 after (40 entries); the budget leaves room for longer labels and links.
+const MENU_BYTES = 6 * 1024;
+const snapshotOf = (html: string) =>
+  JSON.parse(/<script type="application\/json" data-cloud-workspace-navigation[^>]*>([^<]*)<\/script>/.exec(html)?.[1] ?? "null") as {
+    items: { label: string; children?: { label: string; active?: boolean }[] }[];
+  };
+
+test("with 1000 entries the page carries the first 40 and the way to the open one, for a menu before the island runs", async () => {
+  const snapshot = snapshotOf(await (await server.request("/app/folders?entries=1000&open=500")).text());
+  const labels = snapshot.items[0]?.children?.map((entry) => entry.label) ?? [];
+  // the group's row counts as one of the 40
+  expect(labels.slice(0, 39)).toEqual(Array.from({ length: 39 }, (_, index) => `Tabelle ${index + 1}`));
+  expect(labels.slice(39)).toEqual(["Tabelle 500"]);
+  expect(snapshot.items[0]?.children?.at(-1)?.active).toBe(true);
+});
+test("with 1000 entries the menu adds a bounded payload to the page, not one copy of every entry", async () => {
+  const page = async (query: string) => (await (await server.request(`/app/folders?${query}`)).text()).length;
+  const added = (await page("entries=1000")) - (await page("entries=1000&menu=0"));
+  console.log(`V2WorkspaceNavigation with 1000 entries adds ${added} bytes`);
+  expect(added).toBeLessThanOrEqual(MENU_BYTES);
 });

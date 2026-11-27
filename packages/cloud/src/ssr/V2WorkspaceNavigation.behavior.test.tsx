@@ -127,9 +127,9 @@ test("the menu's tree: named groups are sections, nested entries stand under the
       { id: "1:0", label: "Planen", icon: "ti ti-calendar", action: "1:0" },
       { id: "foot:0", label: "Ausgeblendet (2)", icon: "ti ti-eye-off", action: "foot:0", disabled: true },
     ]);
-    // the page sends the same tree with its first render, for the menu before the island loads
-    const snapshot = view.dom.root.querySelector("script[data-cloud-workspace-navigation]")?.textContent ?? "";
-    expect(JSON.parse(snapshot).items).toEqual(JSON.parse(JSON.stringify(view.registered.navigation.items())));
+    // the server's page carries the tree for the menu before the island loads (V2WorkspaceNavigation.render.test);
+    // the live island answers the menu itself and makes no snapshot of every entry in the browser
+    expect(view.dom.root.querySelector("script[data-cloud-workspace-navigation]")?.textContent ?? "").toBe("");
   } finally {
     view.cleanup();
   }
