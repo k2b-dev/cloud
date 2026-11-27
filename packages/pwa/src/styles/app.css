@@ -36,16 +36,7 @@
   }
 }
 
-/* From 48rem the sidebar leads to Settings, so Start's own button goes. */
-@media (min-width: 48rem) {
-  .pwa-phone-only {
-    display: none;
-  }
-}
-
-.pwa-welcome,
-.pwa-start,
-.pwa-settings {
+.pwa-welcome {
   max-width: 32rem;
   margin: 0 auto;
 }
@@ -120,64 +111,4 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
   text-align: center;
-}
-
-.pwa-settings {
-  padding-top: 0.5rem;
-}
-
-/* Every group ends 2.75rem before the next one starts: a settings section's
-   2rem plus the 0.75rem its last control keeps below itself. */
-.pwa-settings__account {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 2.75rem;
-}
-
-.pwa-settings__account p {
-  margin: 0;
-}
-
-.pwa-settings__name-line {
-  font-weight: 500;
-}
-
-.pwa-settings__meta {
-  color: var(--k2b-text-muted);
-  font-size: 0.875rem;
-  overflow-wrap: anywhere;
-}
-
-.pwa-settings__name {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.pwa-settings__name > .k2b-button {
-  align-self: flex-start;
-}
-
-/* Signing out ends the app on this phone, so it stands apart at the end, with
-   the version as the last line. */
-.pwa-settings__end {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.75rem;
-  margin-top: 2rem;
-}
-
-.pwa-settings__version {
-  margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.875rem;
-}
-
-/* Live summaries replace this reserved line without moving the following part. */
-.pwa-start a[data-pwa-summary] .k2b-navigation__copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

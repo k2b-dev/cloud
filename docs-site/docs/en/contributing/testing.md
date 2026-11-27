@@ -889,6 +889,25 @@ loaded by later files, even with `--isolate`. Compilers for a fixture bundle
 belong in that build's `Bun.build({ plugins: [...] })`; plugins in a script
 executed in a separate process stay in that process.
 
+### Draw an app page in the Cloud shell
+
+`@k2b/cloud/testing` draws an app's page the way Cloud serves it, for browser
+tests and design pictures without a running Cloud:
+
+- `loadShellAssets({ id, css })` builds Cloud's `global.css` and the app's
+  sheet, and serves them with the Plex fonts and the icons. A page that links
+  Core's `v2.css` alone, such as a visitor page on `MinimalLayout ui="v2"` or
+  an app page on `PwaLayout ui="v2"`, passes `v2Page: true`.
+- `openShellPage(browser, assets, { path, html, width, errors })` opens the
+  page's first HTML at one width, light. It refuses every request to another
+  origin. `errors` is the test's own collector, such as `pageErrors`.
+- `serveCoreV2Sheet()` lets the registered Core declare its `/public/v2.css`,
+  so the page draws the frame of a current installation. It restores the spy
+  after the test file.
+
+The entry needs Playwright in the consumer. `@k2b/ui` builds none of Cloud's
+styles.
+
 ## Run integration tests
 
 Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the local

@@ -1,16 +1,15 @@
-import { PWA_AUTH_PATH, PWA_COOKIES, PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_AUTH_PATH, PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "@k2b/cloud/contracts";
 import { rememberedPwaAddress } from "@k2b/cloud/contracts/pwa-location";
 import { type AuthContext, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { getDisplayRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
-import { IconButtonLink, installationPlatform, Placeholder } from "@k2b/ui";
+import { installationPlatform } from "@k2b/ui";
 import { deleteCookie, getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
-import PairingNotice from "./_components/PairingNotice.island";
-import SignOut from "./_components/SignOut.island";
-import StartParts from "./_components/StartParts.island";
+import BlockedScreen from "./_components/BlockedScreen.island";
+import StartScreen from "./_components/StartScreen.island";
 import Unavailable from "./_components/Unavailable.island";
 import Welcome from "./_components/Welcome.island";
 
@@ -41,31 +40,13 @@ export default ssr<AuthContext>(async (c) => {
       href: part.pwa.href,
       description: part.description,
       summary: part.pwa.summary,
+      color: part.appearance?.accent,
     }));
     const endpoints = [...new Set(parts.flatMap((part) => [part.pwa.badge, part.pwa.summary].filter((path) => path !== undefined)))];
+    // Start on v2 in the app's frame, which brings the head and the way to Settings; the island renders the parts.
     return () => (
-      <PwaLayout
-        c={c}
-        title={cloud}
-        sidebarTitle={t.start}
-        // On the phone Settings sits in the header, as in a phone's own apps, so Start stays one list of parts. The
-        // sidebar of a wide screen lists it itself.
-        actions={
-          <span class="pwa-phone-only">
-            <IconButtonLink href={`${PWA_SCOPE}settings`} label={t.settings} tooltip={false}>
-              <i class="ti ti-settings" aria-hidden="true" />
-            </IconButtonLink>
-          </span>
-        }
-      >
-        <div class="pwa-start">
-          {parts.length > 0 ? (
-            <StartParts parts={starts} label={t.apps} endpoints={endpoints} />
-          ) : (
-            <Placeholder icon="ti ti-apps" title={t.noApps} description={t.noAppsDescription} />
-          )}
-        </div>
-        <PairingNotice name={user.displayName || user.uid} />
+      <PwaLayout c={c} ui="v2" title={cloud} sidebarTitle={t.start}>
+        <StartScreen parts={starts} endpoints={endpoints} name={user.displayName || user.uid} />
       </PwaLayout>
     );
   }
@@ -73,18 +54,16 @@ export default ssr<AuthContext>(async (c) => {
   const state = c.req.query("pwa");
   if (state === "blocked") {
     return () => (
-      <PwaLayout c={c} title={cloud}>
-        <Placeholder icon="ti ti-lock" title={t.blocked} description={t.blockedDetail} action={<SignOut cloud={cloud} />} />
-        <PairingNotice />
+      <PwaLayout c={c} ui="v2" title={cloud}>
+        <BlockedScreen cloud={cloud} />
       </PwaLayout>
     );
   }
   // The launch marker without a session means the bounce could not renew: stop instead of bouncing again.
   if (state === "unavailable" || (!isWelcomeState(state) && c.req.query("pwa_launch") !== undefined)) {
     return () => (
-      <PwaLayout c={c} title={cloud}>
-        <Placeholder icon="ti ti-cloud-off" title={t.unreachable({ cloud })} action={<Unavailable />} />
-        <PairingNotice />
+      <PwaLayout c={c} ui="v2" title={cloud}>
+        <Unavailable cloud={cloud} rotationGraceSeconds={PWA_LIMITS.rotationGraceSeconds} />
       </PwaLayout>
     );
   }
@@ -98,6 +77,8 @@ export default ssr<AuthContext>(async (c) => {
   // The launch marks a pairing it found ended; the address alone never deletes drafts.
   const ended = state === "ended" && getCookie(c, PWA_COOKIES.ended) === "1";
   if (ended) deleteCookie(c, PWA_COOKIES.ended, { path: PWA_SCOPE, secure: true, httpOnly: true, sameSite: "Lax" });
+  // k2b-ui gap: the welcome chooses its installed and its browser variant, and touch or pointer, by CSS in its first
+  // picture; v2 has no part for that and no installation guide, so the welcome stays on the v1 frame for now.
   return () => (
     <PwaLayout c={c} title={cloud}>
       <Welcome state={state} cloud={cloud} icon={icon} platform={platform} url={url} clearDrafts={ended} />

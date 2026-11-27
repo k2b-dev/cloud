@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { PWA_LIMITS } from "@k2b/cloud/contracts/pwa";
 import { createComponent, type JSX } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
@@ -35,10 +36,12 @@ const load = async () => {
   try {
     return {
       ui: await import("@k2b/ui"),
-      PhoneSettings: (await import("./PhoneSettings.island")).default,
+      SettingsScreen: (await import("./SettingsScreen.island")).default,
       Unavailable: (await import("./Unavailable.island")).default,
-      PairingNotice: (await import("./PairingNotice.island")).default,
-      StartParts: (await import("./StartParts.island")).default,
+      BlockedScreen: (await import("./BlockedScreen.island")).default,
+      StartScreen: (await import("./StartScreen.island")).default,
+      StartParts: (await import("./StartParts")).default,
+      signOut: await import("./sign-out"),
     };
   } finally {
     dom.cleanup();
@@ -78,12 +81,23 @@ const mount = (view: () => JSX.Element, options: { url?: string; before?: (dom: 
   return mounted;
 };
 const button = (dom: DomTestHarness, label: string) =>
-  [...dom.document.querySelectorAll("button")].find((element) => element.textContent?.trim() === label) as HTMLButtonElement | undefined;
+  [...dom.document.querySelectorAll("button")].find(
+    (element) => element.textContent?.trim() === label || element.getAttribute("aria-label") === label,
+  ) as HTMLButtonElement | undefined;
+/** Chooses an option in the menu at the end of a setting row: its button by the value it shows now, then the option. */
+const choose = async (dom: DomTestHarness, current: string, option: string) => {
+  [...dom.document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"]')]
+    .find((button) => button.textContent?.trim() === current)!
+    .click();
+  await waitFor(() => [...dom.document.querySelectorAll('[role^="menuitem"]')].some((item) => item.textContent?.includes(option)), option);
+  [...dom.document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((item) => item.textContent?.includes(option))!.click();
+};
 const settings = () =>
-  createComponent(modules!.PhoneSettings, {
-    account: { id: "mia", name: "Mia Muster" },
+  createComponent(modules!.SettingsScreen, {
+    account: { id: "mia" },
     theme: "light",
     name: "iPhone",
+    nameMaxLength: 80,
     cloud: "Example Cloud",
     version: "Cloud 1.0.0",
   });
@@ -129,7 +143,8 @@ else {
       input.value = "First name";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       button(page.dom, "Save")!.click();
-      await waitFor(() => fetch.calls.length === 1 && !button(page.dom, "Save")!.disabled, "failed save");
+      // a busy v2 button keeps its focus and says so with aria-busy; the failed save is over once that is gone
+      await waitFor(() => fetch.calls.length === 1 && !button(page.dom, "Save")!.hasAttribute("aria-busy"), "failed save");
       expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:pwa.settings.device-name")).toBe("First name");
       fail = false;
       button(page.dom, "Save")!.click();
@@ -195,18 +210,16 @@ else {
       { url: "/pwa/" },
     );
     try {
-      const row = (href: string) => page.dom.root.querySelector(`a[href="${href}"]`)?.textContent ?? "";
+      const row = (href: string) => page.dom.root.querySelector(`a[href="${href}"]`)?.closest('[data-k2-part="Row"]')?.textContent ?? "";
       expect(row("/pwa/inventory")).not.toContain("Count what is on the shelf");
-      expect(page.dom.root.querySelector('a[href="/pwa/inventory"] small')?.textContent).toBe("\u00a0");
+      expect(row("/pwa/inventory")).toContain("\u00a0");
       await waitFor(() => row("/pwa/inventory").includes("3 to count"), "summary");
       expect(row("/pwa/inventory")).not.toContain("Count what is on the shelf");
       expect(row("/pwa/notes")).toContain("Your notes");
-      expect(page.dom.root.querySelector('a[href="/pwa/inventory"]')?.hasAttribute("data-pwa-summary")).toBe(true);
-      expect(page.dom.root.querySelector('a[href="/pwa/notes"]')?.hasAttribute("data-pwa-summary")).toBe(false);
       // A failed refresh clears the stale summary and keeps the reserved line.
       answer = new Response(null, { status: 503 });
       page.dom.window.dispatchEvent(new page.dom.window.Event("cloud:app-badges-refresh"));
-      await waitFor(() => page.dom.root.querySelector('a[href="/pwa/inventory"] small')?.textContent === "\u00a0", "reserved line again");
+      await waitFor(() => !row("/pwa/inventory").includes("3 to count") && row("/pwa/inventory").includes("\u00a0"), "reserved line again");
     } finally {
       page.dispose();
       fetch.restore();
@@ -282,21 +295,17 @@ else {
       repaints += 1;
     });
     try {
-      const appearance = page.dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Appearance:"]')!;
-      appearance.click();
+      await choose(page.dom, "Light", "Dark");
       await waitFor(() => repaints === 1, "repaint");
       expect(page.dom.document.documentElement.classList.contains("dark")).toBe(true);
       expect(page.dom.document.cookie).toContain("theme=dark");
-      appearance.click();
+      await choose(page.dom, "Dark", "Automatic");
       await waitFor(() => repaints === 2, "Automatic repaint");
       expect(page.dom.document.cookie).toContain("theme=system");
       expect(page.dom.document.documentElement.classList.contains("dark")).toBe(
         page.dom.window.matchMedia("(prefers-color-scheme: dark)").matches,
       );
-      const german = [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((radio) =>
-        radio.textContent?.includes("Deutsch"),
-      )!;
-      german.click();
+      await choose(page.dom, "English", "Deutsch");
       await waitFor(() => page.reloads === 1, "reload in German");
       expect(page.dom.document.cookie).toContain("cloud.locale=de");
     } finally {
@@ -315,11 +324,11 @@ else {
       page.dom.window.localStorage.setItem("unrelated", "keep");
       const start = page.dom.window.history.length;
       button(page.dom, "Sign out of the app")!.click();
-      await waitFor(() => !!page.dom.document.querySelector("dialog"), "confirmation");
+      await waitFor(() => !!page.dom.document.querySelector('[role="alertdialog"]'), "confirmation");
       // Back closes the confirmation instead of leaving Settings.
       expect(page.dom.window.history.length).toBe(start + 1);
-      expect(page.dom.document.querySelector("dialog")?.textContent).toContain("pair it with Example Cloud on the web");
-      const confirm = [...page.dom.document.querySelectorAll<HTMLButtonElement>("dialog button")].find(
+      expect(page.dom.document.querySelector('[role="alertdialog"]')?.textContent).toContain("pair it with Example Cloud on the web");
+      const confirm = [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(
         (element) => element.textContent?.trim() === "Sign out of the app",
       )!;
       confirm.click();
@@ -334,20 +343,84 @@ else {
     }
   });
 
+  test("a double tap asks once and signs out once; Enter during a save sends nothing more", async () => {
+    let release!: (response: Response) => void;
+    const fetch = mockFetch((method) =>
+      method === "PATCH"
+        ? new Promise<Response>((resolve) => {
+            release = resolve;
+          })
+        : new Response(null, { status: 204 }),
+    );
+    const page = mount(settings);
+    try {
+      const input = page.dom.document.querySelector<HTMLInputElement>('input[maxlength="80"]')!;
+      await waitFor(() => !input.disabled, "ready");
+      input.value = "Neuer Name";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      const enter = () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      enter();
+      await waitFor(() => fetch.calls.length === 1, "save in flight");
+      enter();
+      button(page.dom, "Save")!.click();
+      await Bun.sleep(20);
+      expect(fetch.calls.map((call) => call.method)).toEqual(["PATCH"]);
+      release(new Response(null, { status: 204 }));
+      await waitFor(() => page.dom.document.body.textContent?.includes("Name saved") ?? false, "saved");
+
+      button(page.dom, "Sign out of the app")!.click();
+      button(page.dom, "Sign out of the app")!.click();
+      await waitFor(() => !!page.dom.document.querySelector('[role="alertdialog"]'), "confirmation");
+      expect(page.dom.document.querySelectorAll('[role="alertdialog"]').length).toBe(1);
+      [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')]
+        .find((element) => element.textContent?.trim() === "Sign out of the app")!
+        .click();
+      await waitFor(() => page.replaced.length === 1, "pairing view");
+      expect(fetch.calls.filter((call) => call.method === "DELETE")).toHaveLength(1);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("Back answers the sign-out question no: it closes and nothing is sent", async () => {
+    const fetch = mockFetch(() => new Response(null, { status: 204 }));
+    const page = mount(settings);
+    try {
+      button(page.dom, "Sign out of the app")!.click();
+      await waitFor(() => !!page.dom.document.querySelector('[role="alertdialog"]'), "confirmation");
+      // what a phone's Back does to the page: the entry of the question leaves the history
+      page.dom.window.dispatchEvent(new page.dom.window.PopStateEvent("popstate"));
+      await waitFor(() => !page.dom.document.querySelector('[role="alertdialog"]'), "closed by Back");
+      await Bun.sleep(20);
+      expect(fetch.calls).toEqual([]);
+      expect(page.replaced).toEqual([]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("the unavailable state renews once on its own and returns through the launch to the remembered place, but never loops", async () => {
     const fetch = mockFetch((_method, path) =>
       path === "/pwa/_auth/session/renew" ? Response.json({ renewed: true, builds: {} }) : undefined,
     );
-    let page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
+    let page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: "/pwa/?pwa=unavailable" },
+    );
     try {
       await waitFor(() => page.replaced.length === 1, "the launch");
       expect(page.replaced).toEqual(["/pwa/?launch"]);
       const marker = page.dom.window.sessionStorage.getItem("cloud.pwa.unavailable-retry")!;
       page.dispose();
-      page = mount(() => createComponent(modules!.Unavailable, {}), {
-        url: "/pwa/?pwa=unavailable",
-        before: (dom) => dom.window.sessionStorage.setItem("cloud.pwa.unavailable-retry", marker),
-      });
+      page = mount(
+        () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+        {
+          url: "/pwa/?pwa=unavailable",
+          before: (dom) => dom.window.sessionStorage.setItem("cloud.pwa.unavailable-retry", marker),
+        },
+      );
       await waitFor(() => fetch.calls.length === 2, "second renewal");
       await Bun.sleep(20);
       expect(page.replaced).toEqual([]);
@@ -367,7 +440,10 @@ else {
       delays.push(delay);
       return window.setTimeout(callback, delay === 60_000 ? 5 : delay);
     }) as never);
-    const page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
+    const page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: "/pwa/?pwa=unavailable" },
+    );
     try {
       await waitFor(() => page.replaced.length === 1, "the launch");
       expect(fetch.calls.map((call) => call.path)).toEqual(["/pwa/_auth/session/renew", "/pwa/_auth/session/renew"]);
@@ -386,7 +462,10 @@ else {
     );
     const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) =>
       window.setTimeout(callback, delay === 60_000 ? 5 : delay)) as never);
-    const page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
+    const page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: "/pwa/?pwa=unavailable" },
+    );
     try {
       await waitFor(() => fetch.calls.length === 2, "second renewal");
       await Bun.sleep(20);
@@ -399,20 +478,61 @@ else {
   });
 
   test("a connected app explains why a pairing link does not pair again; other pages just drop it", async () => {
-    let page = mount(() => createComponent(modules!.PairingNotice, { name: "Mia Muster" }), { url: `/pwa/#pair=${SECRET}` });
+    let page = mount(() => createComponent(modules!.StartScreen, { parts: [], endpoints: [], name: "Mia Muster" }), {
+      url: `/pwa/#pair=${SECRET}`,
+    });
     try {
       expect(page.dom.window.location.href).toBe("http://localhost/pwa/");
       await waitFor(() => page.dom.document.body.textContent?.includes("already connected as Mia Muster") ?? false, "notice");
     } finally {
       page.dispose();
     }
-    page = mount(() => createComponent(modules!.PairingNotice, {}), { url: `/pwa/?pwa=blocked#pair=${SECRET}` });
+    page = mount(() => createComponent(modules!.BlockedScreen, { cloud: "Example Cloud" }), {
+      url: `/pwa/?pwa=blocked#pair=${SECRET}`,
+    });
     try {
       expect(page.dom.window.location.href).toBe("http://localhost/pwa/?pwa=blocked");
       await Bun.sleep(20);
-      expect(page.dom.document.querySelector("[data-k2b-toast]")).toBeNull();
+      expect(page.dom.document.body.textContent).not.toContain("already connected");
     } finally {
       page.dispose();
+    }
+    const fetch = mockFetch(() => new Response(null, { status: 503 }));
+    page = mount(
+      () => createComponent(modules!.Unavailable, { cloud: "Example Cloud", rotationGraceSeconds: PWA_LIMITS.rotationGraceSeconds }),
+      { url: `/pwa/?pwa=unavailable#pair=${SECRET}` },
+    );
+    try {
+      expect(page.dom.window.location.href).toBe("http://localhost/pwa/?pwa=unavailable");
+      await Bun.sleep(20);
+      expect(page.dom.document.body.textContent).not.toContain("already connected");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a sign-out question that cannot load says so, and the button works again", async () => {
+    const load = spyOn(modules!.signOut.signOutQuestion, "load").mockRejectedValue(
+      new TypeError("Failed to fetch dynamically imported module"),
+    );
+    const fetch = mockFetch(() => new Response(null, { status: 204 }));
+    const page = mount(() => createComponent(modules!.BlockedScreen, { cloud: "Example Cloud" }), { url: "/pwa/?pwa=blocked" });
+    try {
+      const signOut = () => button(page.dom, "Sign out of the app")!;
+      signOut().click();
+      await waitFor(() => page.dom.document.body.textContent?.includes("That didn't work. Try again.") ?? false, "problem");
+      expect(signOut().disabled).toBe(false);
+      expect(signOut().hasAttribute("aria-busy")).toBe(false);
+      expect(fetch.calls).toEqual([]);
+      // once the question loads again, the same button asks it
+      load.mockRestore();
+      signOut().click();
+      await waitFor(() => page.dom.document.querySelector('[role="alertdialog"]') !== null, "question");
+    } finally {
+      load.mockRestore();
+      page.dispose();
+      fetch.restore();
     }
   });
 }

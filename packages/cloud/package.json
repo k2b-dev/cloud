@@ -75,6 +75,7 @@
     "./browser/search": "./src/browser/search.ts",
     "./browser/widgets": "./src/browser/widgets.ts",
     "./browser/testing": "./src/browser/testing.ts",
+    "./testing": "./src/testing.ts",
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
     "./browser/storage-bucket-select": "./src/browser/storage-bucket-select.tsx",
     "./browser/composer-insert": "./src/browser/composer-insert.ts",
@@ -236,7 +237,13 @@
   },
   "peerDependencies": {
     "hono": "^4.12.25",
+    "playwright": "^1.50.0",
     "solid-js": "^1.9.10",
     "zod": "^4.3.4"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
   }
 }

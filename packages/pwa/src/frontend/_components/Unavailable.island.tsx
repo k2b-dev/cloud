@@ -1,8 +1,9 @@
-import { PWA_LIMITS, PWA_SCOPE, PwaRenewResultSchema } from "@k2b/cloud/contracts";
-import { Button, useLocale } from "@k2b/ui";
+import { PWA_SCOPE } from "@k2b/cloud/contracts/pwa-paths";
+import { useLocale } from "@k2b/ui";
+import { Empty } from "@k2b/ui/v2";
 import { onCleanup, onMount } from "solid-js";
 import { shellMessages } from "../../messages";
-import { phoneAuth } from "../phone";
+import { phoneAuth, watchPairingLink } from "../phone";
 
 /** One automatic return to Start per this window, so a phone that cannot keep cookies never loops. */
 const RETRY_MARKER = "cloud.pwa.unavailable-retry";
@@ -25,26 +26,33 @@ const mayRetry = (): boolean => {
 const renew = async (): Promise<boolean | undefined> => {
   const answer = await phoneAuth.renew();
   if (answer.status !== 200) return undefined;
-  const parsed = PwaRenewResultSchema.safeParse(answer.body);
-  return parsed.success ? parsed.data.renewed : undefined;
+  // one boolean of `PwaRenewResult`, read without the contract's schema library: this island loads on a phone
+  const body = answer.body;
+  return typeof body === "object" && body !== null && "renewed" in body && typeof body.renewed === "boolean" ? body.renewed : undefined;
 };
 
 /**
- * "Try again" for the unavailable state. On load it renews with a request of its own: some platforms drop cookies
+ * The unavailable state with "Try again". On load it renews with a request of its own: some platforms drop cookies
  * set on a redirect, and the launch bounce is one. Such a phone still presents the key the bounce has just replaced,
  * which only renews once the rotation grace has passed, so a renewal that sets no cookies is tried once more after it.
  */
-export default function Unavailable() {
+export default function Unavailable(props: {
+  cloud: string;
+  /** How long a replaced app key still renews (`PWA_LIMITS.rotationGraceSeconds`), from the page. */
+  rotationGraceSeconds: number;
+}) {
   const locale = useLocale();
   const t = () => shellMessages.resolve([locale()]).t;
   onMount(() => {
+    // a pairing link is dropped here: an app that cannot reach its Cloud pairs nothing
+    onCleanup(watchPairingLink(() => undefined));
     let timer: ReturnType<typeof setTimeout> | undefined;
     onCleanup(() => clearTimeout(timer));
     void (async () => {
       let renewed = await renew();
       if (renewed === false) {
         await new Promise((resolve) => {
-          timer = setTimeout(resolve, PWA_LIMITS.rotationGraceSeconds * 1000);
+          timer = setTimeout(resolve, props.rotationGraceSeconds * 1000);
         });
         renewed = await renew();
       }
@@ -52,9 +60,11 @@ export default function Unavailable() {
     })();
   });
   return (
-    <Button onClick={() => location.replace(LAUNCH)}>
-      <i class="ti ti-refresh" aria-hidden="true" />
-      {t().tryAgain}
-    </Button>
+    <Empty
+      icon="cloud-off"
+      tone="warn"
+      text={t().unreachable({ cloud: props.cloud })}
+      action={{ label: t().tryAgain, icon: "refresh", onClick: () => location.replace(LAUNCH) }}
+    />
   );
 }

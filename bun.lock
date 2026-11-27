@@ -207,9 +207,13 @@
       },
       "peerDependencies": {
         "hono": "^4.12.25",
+        "playwright": "^1.50.0",
         "solid-js": "^1.9.10",
         "zod": "^4.3.4",
       },
+      "optionalPeers": [
+        "playwright",
+      ],
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
@@ -651,6 +655,8 @@
       "devDependencies": {
         "@k2b/ssr": "workspace:*",
         "@types/bun": "catalog:",
+        "bun-plugin-tailwind": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },
