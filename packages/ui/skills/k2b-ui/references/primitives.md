@@ -281,7 +281,8 @@ lines instead of cutting a thing.
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
-  such as the one a thread is assigned to), `href` (+ `onNavigate`),
+  such as the one a thread is assigned to), `href` (+ `onNavigate`, or
+  `download`: `true` or a file name, the browser saves the file),
   `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
   is about, such as a row's title: its name is its own words, then those;
   `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
