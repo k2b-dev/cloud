@@ -43,6 +43,11 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /**
+   * The full words as a tooltip, for text its place may cut (a long title in a head): the same words, never a hint
+   * of something else.
+   */
+  title?: string;
   /** The words. */
   children: JSX.Element;
 };
@@ -59,6 +64,7 @@ export const Text = (props: TextProps) => (
   <Dynamic
     component={props.href ? "a" : "span"}
     href={props.href}
+    title={props.title}
     class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
     data-k2-part="Text"
     data-type={props.type}
@@ -442,7 +448,8 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={end() !== undefined || props.action}>
         <span class="k2-row-end">
-          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          {/* the deed is named by its words and then the row's title, so rows with the same deed are told apart */}
+          <Show when={props.action}>{(action) => <ActionButton action={action()} about={title} />}</Show>
           {end()}
         </span>
       </Show>
@@ -636,7 +643,12 @@ export const Table = <T,>(props: TableProps<T>) => {
   const selected = (row: T, index: number) => props.select?.selected.includes(key(row, index)) ?? false;
   // A click anywhere on a row that opens something opens it, unless it was meant for a control in the row.
   const openRow = (event: MouseEvent & { currentTarget: HTMLTableRowElement }) => {
-    if (!(event.target instanceof Element) || event.target.closest("a, button, input, label, select, textarea")) return;
+    // A control in the row, and a menu or popover that opened from one, keeps its click: choosing an entry in a row's
+    // menu must not also open the row (the menu may stand elsewhere in the page, but its click still reaches the row
+    // through the component tree). A dialog or popover the whole table stands in is no such control: its rows open.
+    if (!(event.target instanceof Element)) return;
+    const control = event.target.closest("a, button, input, label, select, textarea, [role=menu], [popover]");
+    if (control && !control.contains(event.currentTarget)) return;
     const open = event.currentTarget.querySelector<HTMLElement>(".k2-row-open");
     if (!open || event.altKey) return;
     // With Ctrl, Cmd or Shift a link opens elsewhere, as on the link itself. A click handed on loses that in WebKit,

@@ -1,6 +1,7 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
+import { useControlMessages } from "./control-messages";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
@@ -99,56 +100,74 @@ export type ChipProps = {
   children: JSX.Element;
   /** A symbol before the word. */
   icon?: string;
-  /**
-   * A plain chip you can press, such as "1 linked" or "+ Tag": then it is a control with a frame (rule 8).
-   */
-  onClick?: () => void;
-  href?: string;
-  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
-  onNavigate?: OnNavigate;
-  /** A pressable chip that is on, such as an active filter: in the tint of the app. */
-  pressed?: boolean;
 } & (
   | {
-      /** A state with a dot and a word: ok, waiting or wrong. */
-      status: Status;
-      yours?: never;
-      tag?: never;
-      amount?: never;
-      ai?: never;
+      /**
+       * A plain chip you can press, such as "1 linked" or "+ Tag": then it is a control with a frame (rule 8).
+       */
+      onClick?: () => void;
+      href?: string;
+      /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+      onNavigate?: OnNavigate;
+      /** A pressable chip that is on, such as an active filter: in the tint of the app. */
+      pressed?: boolean;
+      remove?: never;
     }
   | {
-      status?: never;
-      /** "You are next" in the blue of selection; with `dot` a state that is being worked on ("in Arbeit"). */
-      yours: true;
-      dot?: boolean;
-      tag?: never;
-      amount?: never;
-      ai?: never;
+      /**
+       * A remove button after the words, named for what it removes ("Anna Berg entfernen"), for a chip that stands
+       * for something that can be taken away, such as a person or a filter. A chip that is pressed itself has none
+       * (no button in a button). After a press the focus goes to the next chip's remove button, else the one before.
+       */
+      remove: { name: string; onClick: () => void };
+      onClick?: never;
+      href?: never;
+      onNavigate?: never;
+      pressed?: never;
     }
-  | {
-      status?: never;
-      yours?: never;
-      /** A tag in its data colour. */
-      tag: true;
-      color?: string;
-      amount?: never;
-      ai?: never;
-    }
-  | {
-      status?: never;
-      yours?: never;
-      tag?: never;
-      /** An amount of money that goes out (we pay) or comes in. */
-      amount: "out" | "in";
-      ai?: never;
-    }
-  | { status?: never; yours?: never; tag?: never; amount?: never /** Something Gustav proposes, in plum. */; ai: true }
-  | { status?: never; yours?: never; tag?: never; amount?: never; ai?: never }
-);
+) &
+  (
+    | {
+        /** A state with a dot and a word: ok, waiting or wrong. */
+        status: Status;
+        yours?: never;
+        tag?: never;
+        amount?: never;
+        ai?: never;
+      }
+    | {
+        status?: never;
+        /** "You are next" in the blue of selection; with `dot` a state that is being worked on ("in Arbeit"). */
+        yours: true;
+        dot?: boolean;
+        tag?: never;
+        amount?: never;
+        ai?: never;
+      }
+    | {
+        status?: never;
+        yours?: never;
+        /** A tag in its data colour. */
+        tag: true;
+        color?: string;
+        amount?: never;
+        ai?: never;
+      }
+    | {
+        status?: never;
+        yours?: never;
+        tag?: never;
+        /** An amount of money that goes out (we pay) or comes in. */
+        amount: "out" | "in";
+        ai?: never;
+      }
+    | { status?: never; yours?: never; tag?: never; amount?: never /** Something Gustav proposes, in plum. */; ai: true }
+    | { status?: never; yours?: never; tag?: never; amount?: never; ai?: never }
+  );
 
 /** A round mark that shows a state, a tag, an amount or a count. Never a colour without a word. */
 export const Chip = (props: ChipProps) => {
+  const t = useControlMessages();
   const pressable = () => props.href !== undefined || props.onClick !== undefined;
   const kind = () =>
     props.yours
@@ -186,6 +205,31 @@ export const Chip = (props: ChipProps) => {
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       {props.children}
+      <Show when={props.remove}>
+        {(remove) => (
+          <button
+            type="button"
+            class="k2-chip-x"
+            aria-label={t().removeValue({ label: remove().name })}
+            title={t().removeValue({ label: remove().name })}
+            onClick={(event) => {
+              // the focus goes on to the next remove button of the chips around, else the one before, once this one left
+              const own = event.currentTarget;
+              const all = [
+                ...(own.closest(".k2-chip")?.parentElement?.querySelectorAll<HTMLElement>(":scope > .k2-chip > .k2-chip-x") ?? []),
+              ];
+              const at = all.indexOf(own);
+              const next = all[at + 1] ?? all[at - 1];
+              remove().onClick();
+              queueMicrotask(() => {
+                if (!own.isConnected && next?.isConnected) next.focus();
+              });
+            }}
+          >
+            <Icon name="x" />
+          </button>
+        )}
+      </Show>
     </Dynamic>
   );
 };

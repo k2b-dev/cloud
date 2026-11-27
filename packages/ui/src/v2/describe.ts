@@ -43,6 +43,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Canvas",
     "Field.Row",
     "Field",
+    "Disclosure",
     "Toast",
     "Empty",
     "Loading",
@@ -58,6 +59,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "k2-split": "Pane.Split",
     "k2-list": "List",
     "k2-group": "Group",
+    "k2-group-body": "Group",
+    "k2-disc-body": "Disclosure",
     "k2-sec": "Section",
     "k2-band": "Band",
   };
@@ -102,6 +105,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const parent = parentOf(element);
     if (!parent) return false;
     if (parent.classList.contains("k2-scroll") || parent.classList.contains("k2-ws-main") || parent.hasAttribute("data-slot")) return true;
+    // the content of an open folded group, and of an open disclosure, stands in their flow
+    if (parent.classList.contains("k2-group-body") || parent.classList.contains("k2-disc-body")) return true;
     return flow.has(part(parent));
   };
   const isLine = (element: Element) => {
@@ -176,6 +181,31 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       const placeholder = name === "Select" ? shownValue?.textContent : control?.getAttribute("placeholder");
       return `${name}${value ? ` ${quote(value, 40)}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
+    if (name === "CodeInput") {
+      const control = element.querySelector("input") as HTMLInputElement | null;
+      const value = control?.value ?? control?.getAttribute("value") ?? "";
+      return `CodeInput ${value.length}/${control?.getAttribute("maxlength") ?? "?"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "TagsInput") {
+      const tags = [...element.querySelectorAll(":scope > .k2-chip")].map((chip) => clip(chip.textContent ?? "", 24));
+      const placeholder = element.querySelector("input")?.getAttribute("placeholder");
+      return `TagsInput${tags.length ? `: ${tags.join(", ")}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "Slider") {
+      const value =
+        element.querySelector(".k2-slider-value")?.textContent ||
+        (element.querySelector("input[type=range]") as HTMLInputElement | null)?.value;
+      return `Slider ${quote(value ?? "", 20)}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "ColorInput") {
+      const code = element.querySelector(".k2-color-head input") as HTMLInputElement | null;
+      const swatches = element.querySelectorAll(".k2-color-preset").length;
+      return `ColorInput ${quote(code?.value ?? code?.getAttribute("value") ?? "", 20)}${swatches ? ` · ${swatches} swatches` : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "ImageInput") {
+      const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");
+      return `ImageInput ${element.querySelector(".k2-image-preview > img") ? "picture" : "empty"} [${clip(button?.textContent ?? "", 30)}]`;
+    }
     if (name === "Progress")
       return `Progress ${element.getAttribute("aria-valuenow")}/${element.getAttribute("aria-valuemax")}${element.getAttribute("aria-label") ? ` ${quote(element.getAttribute("aria-label"))}` : ""}`;
     if (name === "Check") {
@@ -246,7 +276,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       case "Back": {
         // the way back of a detail on the phone: its words, and whether it leads by its address
         const button = element.querySelector("[data-k2-part='Button']");
-        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}`;
+        const name = element.querySelector(":scope > .k2-pane-back-name")?.textContent;
+        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}${
+          name ? ` · names ${quote(name)}` : ""
+        }`;
       }
       case "FilterBar": {
         // the statements as they read, whether the state differs from its view, and whether views can be saved
@@ -378,6 +411,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Field.Row":
         return "Field.Row";
+      case "Disclosure": {
+        const head = element.querySelector(":scope > .k2-disc-head");
+        return `Disclosure ${quote(head?.textContent)} ${head?.getAttribute("aria-expanded") === "true" ? "open" : "closed"}`;
+      }
       // The three states of a place that shows data, where the data will stand.
       case "Empty":
       case "Failed": {
@@ -523,7 +560,20 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
-      if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
+      // the way back beside the name of what is open gives it the room and is cut on purpose; its whole name is its hint
+      if (control.parentElement?.querySelector(":scope > .k2-pane-back-name") && control.getAttribute("title")) continue;
+      // words kept only as the name of a control that gave way to its symbol are not cut: they are not in sight at all.
+      // Only a label hidden that way counts (at most 1 px, taken out of the flow and clipped away, as sr-only text);
+      // a label squeezed to 1 px in a broken layout is still cut.
+      const shown = label.getBoundingClientRect();
+      const labelStyle = getComputedStyle(label);
+      const visuallyHidden =
+        label !== control &&
+        (shown.width <= 1 || shown.height <= 1) &&
+        labelStyle.position === "absolute" &&
+        (labelStyle.clipPath !== "none" || labelStyle.clip !== "auto");
+      if (visuallyHidden) continue;
+      if (label.scrollWidth > label.clientWidth + 1 || shown.right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
         );
@@ -553,6 +603,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         `the floating main action ${quote(fab.textContent, 24)} covers ${covered.map((control) => quote(control.getAttribute("aria-label") ?? control.textContent, 24) || `<${control.tagName.toLowerCase()}>`).join(", ")} at this width: a form or dialog belongs on its own page (route) on the phone`,
       );
   }
+  // Forms never nest: markup drops an inner form, and the search in it with it. A search sends itself (`Input send`)
+  // and stands in no form of the page.
+  for (const inner of root.querySelectorAll("form form"))
+    problems.push(
+      `a <form> ${quote(inner.getAttribute("aria-label"), 24)} stands inside another <form>: forms never nest, and the browser drops the inner one`,
+    );
+  for (const search of root.querySelectorAll("form .k2-input[data-search]:not(form)"))
+    problems.push(
+      `a search ${quote(search.querySelector("input")?.getAttribute("aria-label"), 24)} stands inside a <form>: give its Input \`send\` instead of a form around it`,
+    );
   if (!lines.length) problems.push("no v2 part found: render the screen inside an element with the class k2-ui");
   if (problems.length) lines.push("", `Problems (${problems.length}):`, ...problems.map((problem) => `- ${problem}`));
   return lines.join("\n");
