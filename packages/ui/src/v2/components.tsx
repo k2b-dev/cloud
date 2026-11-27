@@ -1,4 +1,5 @@
 import {
+  type ChildrenReturn,
   createComputed,
   createMemo,
   createSignal,
@@ -17,10 +18,11 @@ import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
-import { MarkCheck } from "./controls";
+import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
@@ -86,8 +88,48 @@ export type NavGroup = {
    * Postfach" and "Gelöschte Postfächer"; `label` names the button.
    */
   action?: Action | { label: string; items: readonly MenuEntry[] };
-  /** The entries of the group. */
-  items: readonly NavItem[];
+} & (
+  | {
+      /** The entries of the group. */
+      items: readonly NavItem[];
+      tree?: undefined;
+      list?: undefined;
+      phone?: undefined;
+    }
+  | {
+      /** Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`. */
+      tree: NavTree;
+      items?: undefined;
+      list?: undefined;
+      phone?: undefined;
+    }
+  | {
+      /**
+       * The app's own rows in the place of `items`, such as Chat's conversations as a `List` of `Row`s: they reach the
+       * column's edges and scroll on their own between the groups and the foot, as a tree does. Made once, when the
+       * group first shows; its rows follow their own data, so a group array built again (a new count) keeps the list
+       * and its scroll. A long list is virtualized by the app.
+       */
+      list: () => JSX.Element;
+      /**
+       * `"page"`: on the phone this list, under the nav's search, is the page while no detail is open; an open detail
+       * is the page in its place. The title, the other groups and the foot are in the platform's menu there, and the
+       * main action floats (`Workspace` `primary`). Without it the list stays in the sidebar, away on the phone.
+       */
+      phone?: "page";
+      items?: undefined;
+      tree?: undefined;
+    }
+);
+
+/** The search of the sidebar under the app's name, such as Chat's search of its conversations. */
+export type NavSearch = {
+  /** The field's name, and its placeholder. */
+  label: string;
+  value: string;
+  onInput: (value: string) => void;
+  /** Keys in the field, such as arrows into the results. */
+  onKeyDown?: (event: KeyboardEvent) => void;
 };
 
 export type NavProps = {
@@ -95,6 +137,13 @@ export type NavProps = {
   title: string;
   /** A Tabler icon beside the app's name. */
   icon: string;
+  /** The search under the name. */
+  search?: NavSearch;
+  /**
+   * The main action under the name (and the search), across the column, such as "Neuer Chat". The sidebar is away on
+   * the phone; there the `Workspace`'s `primary` floats, so pass the same action to both.
+   */
+  primary?: Action;
   /** The app's places in groups, each with an optional heading and deed. */
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
@@ -216,12 +265,44 @@ const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ?
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
 /** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
+/** A group's own rows: made once, when the group first shows, however often the app builds its groups again. */
+const NavList = (props: { make: () => JSX.Element; phone?: "page" }) => {
+  const rows = untrack(() => props.make());
+  return (
+    <div class="k2-nav-list" data-phone={props.phone}>
+      {rows}
+    </div>
+  );
+};
+
 export const Nav = (props: NavProps) => (
   <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
     <div class="k2-nav-title">
       <Icon name={props.icon} />
       {props.title}
     </div>
+    <Show when={props.search}>
+      {(search) => (
+        <div class="k2-nav-search">
+          <Input
+            type="search"
+            icon="search"
+            label={search().label}
+            placeholder={search().label}
+            value={search().value}
+            onInput={(value) => search().onInput(value)}
+            onKeyDown={(event) => search().onKeyDown?.(event)}
+          />
+        </div>
+      )}
+    </Show>
+    <Show when={props.primary}>
+      {(primary) => (
+        <div class="k2-nav-primary">
+          <ActionButton action={primary()} variant="primary" />
+        </div>
+      )}
+    </Show>
     <Index each={props.groups}>
       {(group) => (
         <>
@@ -232,7 +313,16 @@ export const Nav = (props: NavProps) => (
               <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
             </div>
           </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
+          <Show
+            when={group().list}
+            fallback={
+              <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+                {(tree) => <NavTreeView {...tree()} />}
+              </Show>
+            }
+          >
+            {(list) => <NavList make={list()} phone={group().phone} />}
+          </Show>
         </>
       )}
     </Index>
@@ -460,6 +550,8 @@ export type StatusRowProps = {
   /**
    * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
    * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   * The whole statement stays as a hint on hover, always, also where it is not cut: one plain `title`, the same in the
+   * server's markup, with nothing measured in the browser.
    */
   lead: string;
   /**
@@ -470,11 +562,22 @@ export type StatusRowProps = {
    */
   loading?: boolean;
   /**
-   * Key figures after the lead. They give way only where they do not fit before the filters, the later ones first and
-   * whole, so the filters keep their words and no figure runs under them; without filters they keep the row's room.
-   * On the phone they go. Put what must stay in `lead`.
+   * Key figures after the lead. They share the room before the filters with the lead, each up to its own width:
+   * beside a short lead they take all the rest (without filters, the row's room); beside a long lead they keep their
+   * width and the lead is cut with "…"; where both are long the lead keeps 40 % (60 % in a row below 600 px) and the
+   * later figures give way, whole, so the filters keep their words and no figure runs under them. On the phone they
+   * go. Put what must stay in `lead`.
    */
   facts?: readonly StatusFact[];
+  /**
+   * Tinted chips that belong to the statement, such as an exception: `<Chip status="bad">1 ohne Zugriff</Chip>`
+   * (rule 2). They stand after the lead, keep their width while the lead is cut with "…", stay on the phone, and give
+   * way whole, the later ones first, only where about a word of the lead would no longer fit beside them. A chip that
+   * must never leave belongs in `lead` itself. Chips only, no buttons or links: a chip that gave way is out of sight
+   * but still in the page, so a control there would still take the focus. `cond && <Chip …/>` is fine: a place that
+   * holds only `false`, `null` or `undefined` draws nothing.
+   */
+  marks?: JSX.Element;
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
@@ -490,10 +593,18 @@ export type StatusRowProps = {
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
 
+/**
+ * Whether resolved children hold anything to draw: `cond && <Chip/>` passes `false` while the condition is off, and a
+ * place holding only `false`, `null` or `undefined` must draw no group, so nothing moves when it comes or goes.
+ */
+const holdsContent = (resolved: ChildrenReturn) =>
+  resolved.toArray().some((child) => child != null && typeof child !== "boolean" && child !== "");
+
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
+  const marks = resolveChildren(() => props.marks);
   return (
     <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
       <Show
@@ -504,7 +615,10 @@ export const StatusRow = (props: StatusRowProps) => {
               <Show when={props.select}>
                 {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
               </Show>
-              <span class="k2-status-lead">{props.lead}</span>
+              {/* where the lead is cut with "…", its whole statement stays as a hint on hover */}
+              <span class="k2-status-lead" title={props.lead}>
+                {props.lead}
+              </span>
               {/* the place of the loading mark is there while the row can refresh, so the mark moves nothing */}
               <Show when={props.loading !== undefined}>
                 <span class="k2-status-busy" role="status">
@@ -513,6 +627,9 @@ export const StatusRow = (props: StatusRowProps) => {
                     <span class="k2-hidden-text">{t().loading}</span>
                   </Show>
                 </span>
+              </Show>
+              <Show when={holdsContent(marks)}>
+                <span class="k2-status-marks">{marks()}</span>
               </Show>
               <Show when={props.facts?.length}>
                 <span class="k2-status-facts">
@@ -531,7 +648,7 @@ export const StatusRow = (props: StatusRowProps) => {
                 </span>
               </Show>
             </div>
-            <Show when={filters() !== undefined}>
+            <Show when={holdsContent(filters)}>
               <div class="k2-bar-end">{filters()}</div>
             </Show>
           </>

@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { downloadWorkflowDocuments, listDocumentsForWorkflow } from "../service/documents";
@@ -115,7 +115,19 @@ export const createWorkflowRunRoutes = () =>
         const gate = await gateAt(c, { baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const visibleIds = await visibleWorkflowIdsForBase(c, baseId, { includeDeleted: true });
-        return c.json(await toPublicWorkflowStats(await getWorkflowRunStats(baseId, visibleIds, { window: c.req.valid("query").window })));
+        const query = c.req.valid("query");
+        const workflowId = await resolveWorkflowFilterId(query.workflowId);
+        if (workflowId === null || (workflowId && !visibleIds.includes(workflowId))) {
+          return c.json({ message: apiMessages(c).workflowNotFound }, 404);
+        }
+        return c.json(
+          await toPublicWorkflowStats(
+            await getWorkflowRunStats(baseId, workflowId ? [workflowId] : visibleIds, {
+              window: query.window,
+              timeZone: getDateConfig(c).timeZone,
+            }),
+          ),
+        );
       },
     )
     .get(

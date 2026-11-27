@@ -46,6 +46,14 @@ const fixture = (opened: string[], clicked: string[]) => {
       // no name, and its first entry is nested: it has no entry to stand under, so it stands on its own
       items: [{ label: "Planen", icon: "calendar", nested: true, onClick: () => void clicked.push("planen") }],
     },
+    // the app's own rows (conversations) are no places of the menu: the menu leaves them out and never makes them
+    {
+      label: "Chats",
+      phone: "page",
+      list: () => {
+        throw new Error("the menu made a list's rows");
+      },
+    },
   ];
   const foot: NavItem[] = [{ label: "Ausgeblendet (2)", icon: "eye-off" }];
   return { groups, foot };
@@ -180,5 +188,57 @@ test("in the sheet the mailbox row keeps its whole link, a fold opens and closes
     expect(rowOf("Kontakt").querySelector(".k2b-dropdown__trigger, [aria-haspopup='menu']")).not.toBeNull();
   } finally {
     view.cleanup();
+  }
+});
+
+test("a tree group keeps its loaded places: a place with children folds them behind its own link, open on the way to the open one", async () => {
+  const dom = createDomTestHarness();
+  const { default: V2WorkspaceNavigation } = await import("./V2WorkspaceNavigation");
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const groups: NavGroup[] = [
+    {
+      label: "Ordner",
+      tree: {
+        label: "Ordner",
+        current: "texte",
+        items: [
+          {
+            key: "projekte",
+            label: "Projekte",
+            icon: "folder",
+            href: "/files/projekte",
+            children: [{ key: "texte", label: "Texte", icon: "folder", href: "/files/texte", count: 4 }],
+          },
+          // children not loaded yet: a plain link, the folder opens as a page
+          { key: "archiv", label: "Archiv", icon: "archive", href: "/files/archiv", branch: true },
+        ],
+      },
+    },
+  ];
+  const page = render(() => <V2WorkspaceNavigation label="Dateien" groups={groups} />, dom.root);
+  try {
+    expect(readWorkspaceNavigation()?.navigation.items()).toEqual([
+      {
+        id: "group:0",
+        label: "Ordner",
+        section: true,
+        children: [
+          {
+            id: "/files/projekte",
+            label: "Projekte",
+            icon: "ti ti-folder",
+            defaultExpanded: true,
+            children: [
+              { id: "/files/projekte:self", label: "Projekte", icon: "ti ti-folder", href: "/files/projekte" },
+              { id: "/files/texte", label: "Texte", icon: "ti ti-folder", badge: 4, active: true, href: "/files/texte" },
+            ],
+          },
+          { id: "/files/archiv", label: "Archiv", icon: "ti ti-archive", href: "/files/archiv" },
+        ],
+      },
+    ]);
+  } finally {
+    page();
+    dom.cleanup();
   }
 });
