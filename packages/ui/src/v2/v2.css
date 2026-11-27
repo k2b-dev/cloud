@@ -1844,20 +1844,21 @@
   height: 32px;
   font-size: 12px;
 }
-.k2-ui .k2-cell-lines {
+/* only a person's lines: the lines beside a mark (`.k2-cell-lead`) wrap in a small table and cut in a sized one */
+.k2-ui .k2-cell-person > .k2-cell-lines {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
 }
-.k2-ui .k2-cell-lines > .k2-cell-line {
+.k2-ui .k2-cell-person > .k2-cell-lines > .k2-cell-line {
   display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.k2-ui .k2-cell-lines > .k2-cell-line[data-second] {
+.k2-ui .k2-cell-person > .k2-cell-lines > .k2-cell-line[data-second] {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
