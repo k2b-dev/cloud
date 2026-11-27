@@ -286,12 +286,9 @@ test("on the phone a kept icon button beside a folded deed leaves the bar's … 
   );
 });
 
-// Review r3 of #4210: with two "…" of its own the head lists a folded deed once, in the plain one, and shows no third
-// "…" (a "…" with a symbol or a name of its own takes no folded deeds, see `Menu`).
-// Open gap of the bar's fold (#4392), reported 27.11.: a plain "…" takes the folded buttons only where nothing but the
-// primary, a floating twin or a × follows it (`neverFolds`, bar-fold.ts:37); here a menu with a symbol of its own follows,
-// so the bar adds a second plain "…". To do until the fold takes this "…" too; then this test runs again as it is.
-test.todo("on the phone a head with two … of its own folds its kept deed into the first only", async () => {
+// Review r3 of #4210: with two "…" of its own the head lists a folded deed once, in the "…" without a symbol (whatever
+// its name, #4472), and shows no third "…"; the menu with a symbol of its own keeps only its own entries.
+test("on the phone a head with two … of its own folds its kept deed into the first only", async () => {
   await withPage(
     390,
     async (page) => {

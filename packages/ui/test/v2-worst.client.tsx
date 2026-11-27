@@ -104,7 +104,7 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
                   <Button keep pressed={marked()} onClick={() => setMarked(!marked())}>
                     Markiert
                   </Button>
-                  <Menu items={[{ label: "Einstellungen", onClick: () => undefined }]} />
+                  <Menu label="Weitere Aktionen" items={[{ label: "Einstellungen", onClick: () => undefined }]} />
                 </>
               ) : scenario === "headicon" ? (
                 // a kept deed with words beside a kept icon button, and no "…" of the app's own
@@ -116,7 +116,7 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
                 // two "…" of the app's own beside a kept deed: the first takes the deed, the second keeps its own
                 <>
                   <Button keep>Freigeben</Button>
-                  <Menu items={[{ label: "Einstellungen", onClick: () => undefined }]} />
+                  <Menu label="Weitere Aktionen" items={[{ label: "Einstellungen", onClick: () => undefined }]} />
                   <Menu icon="eye" label="Ansicht" items={[{ label: "Kompakt", onClick: () => undefined }]} />
                 </>
               ) : undefined
