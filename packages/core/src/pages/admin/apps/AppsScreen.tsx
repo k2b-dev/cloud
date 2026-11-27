@@ -210,6 +210,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       .join(" · ")}. ${t().rejectedHint}`}
                   </Notice>
                 </Show>
+                {/* consumer of the list window #4211 (lane MW): up to 40 rows stay whole, more are windowed once it lands */}
                 <Table
                   label={t().apps}
                   rows={shown()}
