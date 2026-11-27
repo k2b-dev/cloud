@@ -62,7 +62,7 @@ export type SectionProps = {
 /**
  * A section: a calm head (title, a quiet count, the summary under it, at most two framed buttons at the end) and its
  * content. In a pane of 960 px and more its head takes a column of its own and the section keeps the measure of
- * 1040 px; a section of a table, tiles or a drawing keeps its full width. Rule 9: no line under the head, a hair
+ * 1040 px; a section of a large table, tiles, groups or a drawing keeps its full width. Rule 9: no line under the head, a hair
  * between the entries, one line at the end and none under the last section. A section that can fold keeps the same
  * head, rhythm and lines; the server and the first render show it as `open` says.
  */
@@ -83,12 +83,7 @@ export const Section = (props: SectionProps) => {
     </>
   );
   return (
-    <section
-      class="k2-sec"
-      data-k2-part="Section"
-      aria-label={props.title}
-      data-measure={props.measure ? "" : undefined}
-    >
+    <section class="k2-sec" data-k2-part="Section" aria-label={props.title} data-measure={props.measure ? "" : undefined}>
       <div class="k2-sh" data-actions={props.actions?.length || undefined}>
         <div class="k2-sh-title">
           <h3>{props.title}</h3>
