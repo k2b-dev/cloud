@@ -1,7 +1,7 @@
-import type { DateContext } from "@k2b/stdlib";
+import { type DateContext, dates } from "@k2b/stdlib";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { AggregationSpec, GroupBySpec } from "../../../contracts";
-import { formatFieldValueText } from "./field-value-format";
+import { fieldDisplayFormat, formatFieldValueText } from "./field-value-format";
 import { formatCell } from "./format-cell";
 import { tableMessages } from "./messages";
 
@@ -19,6 +19,15 @@ export const formatGroupValue = (options: {
   const locale = options.locale ?? options.dateConfig?.locale ?? "en";
   if (!options.field) return options.value == null ? tableMessages.resolve([locale]).t.unknown : String(options.value);
   if (options.value === null || options.value === undefined) return "—";
+  // a month or year bucket names the month or the year ("Juli 2026", "2026"), not its first day, unless a date
+  // format was chosen for the group or the field (an ISO format stays ISO)
+  const bucket = options.spec.granularity;
+  const chosen = fieldDisplayFormat(options.field, options.spec.format);
+  if ((bucket === "month" || bucket === "year") && chosen?.kind !== "date" && typeof options.value === "string") {
+    const start = new Date(options.value);
+    if (!Number.isNaN(start.getTime()))
+      return bucket === "year" ? String(start.getUTCFullYear()) : dates.formatMonthYear(start, { locale, timeZone: "UTC" });
+  }
   return (
     formatFieldValueText({
       field: groupFieldForDisplay(options.field, options.spec),
