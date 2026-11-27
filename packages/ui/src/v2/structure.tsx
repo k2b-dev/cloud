@@ -85,7 +85,7 @@ export const Section = (props: SectionProps) => {
       aria-label={props.title}
       data-measure={props.measure ? "" : undefined}
     >
-      <div class="k2-sh">
+      <div class="k2-sh" data-actions={props.actions?.length || undefined}>
         <div class="k2-sh-title">
           <h3>{props.title}</h3>
           <Show when={props.count !== undefined}>

@@ -2,10 +2,10 @@ import { render } from "solid-js/web";
 import { List, Pane, Row, Section, Table, Text, Workspace } from "../src/v2";
 
 // The section head (Valentin 27.11., settings-headings-study v2, A and B). `window.__k2Case` picks:
-// - `form`: a settings screen whose sections are `form` (B where the pane is wide, A where it is narrow), then a list
+// - `form`: a settings screen whose sections are B where the pane is wide and A where it is narrow, then a list
 //   and a table of their own, whose rows draw the subtle lines;
 // - `narrow`: the same form section in a pane of 420 px beside another, at a wide window (A: the container decides);
-// - `detail`: a detail page with an ordinary section (A at every width).
+// - `detail`: a detail page whose one section holds a table (A at every width, its full width, no line under it).
 
 declare global {
   interface Window {
@@ -83,6 +83,14 @@ render(
             summary="Was diese Woche erledigt werden muss."
             actions={[{ label: "Aufgabe", icon: "plus" }]}
           >
+            <Table
+              label="Aufgaben"
+              rows={[{ name: "Quittung", due: "18. Nov." }]}
+              columns={[
+                { title: "Aufgabe", cell: (row) => row.name },
+                { title: "Fällig", cell: (row) => row.due },
+              ]}
+            />
             <Row lines={["Quittung wartet auf Unterschrift", "seit 18. Nov."]} />
             <Row lines={["3 Artikel sind abholbereit", "bis 12. Dez."]} />
           </Section>

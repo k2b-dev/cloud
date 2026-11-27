@@ -89,7 +89,7 @@
   --k2-h-status: 52px;
   --k2-h-tabs: 44px;
   --k2-h-bar: 40px;
-  --k2-h-columns: 36px;
+  --k2-h-columns: 34px;
   --k2-h-row: 46px;
   --k2-h-cell: 44px;
   --k2-h-row2: 52px;
@@ -1248,11 +1248,11 @@
 /* on the phone two buttons with their words leave the title's line and stand under the summary, so the title keeps
    its line whole; one button stays beside the title */
 @media not all and (min-width: 768px) {
-  .k2-ui .k2-sh:has(> .k2-sh-end > .k2-btn:not([data-fold]) + .k2-btn:not([data-fold])) {
+  .k2-ui .k2-sh[data-actions="2"] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "title" "summary" "end";
   }
-  .k2-ui .k2-sh:has(> .k2-sh-end > .k2-btn:not([data-fold]) + .k2-btn:not([data-fold])) > .k2-sh-end {
+  .k2-ui .k2-sh[data-actions="2"] > .k2-sh-end {
     justify-self: start;
     flex-wrap: wrap;
     height: auto;
@@ -1816,18 +1816,24 @@
   border-spacing: 0;
   table-layout: fixed;
 }
+/* The table's head (taste parts 1): a quiet band of 34 px in n50, its words 12/500 in n500, the clear line under it;
+   the rows below stand apart by the hair, and the columns by a line quieter still. */
 .k2-ui .k2-table th {
   position: relative;
   height: var(--k2-h-columns);
   text-align: left;
   font: var(--k2-t-meta);
   font-weight: 500;
-  color: var(--k2-subtle);
+  color: var(--k2-n500);
+  background: var(--k2-n50);
   padding: 0 12px;
   border-bottom: var(--k2-hairline);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.k2-ui .k2-table :is(td + td, th + th) {
+  box-shadow: inset 1px 0 0 var(--k2-line-column);
 }
 .k2-ui .k2-table td {
   height: var(--k2-h-cell);
@@ -1933,7 +1939,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--k2-surface);
+  background: var(--k2-n50);
   overflow: visible;
 }
 /* the cells keep the side padding of every table, so the first and the last start and end on the text edge of the
@@ -2048,9 +2054,10 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+/* a group's head is a quiet line of text over its rows, never a grey band */
 .k2-ui .k2-table[data-grid] tr[data-group] > td {
   height: var(--k2-h-columns);
-  background: var(--k2-n50);
+  background: var(--k2-surface);
   padding: 0;
 }
 .k2-ui .k2-table[data-grid] tr[data-group] > td > .k2-group-row {
@@ -2163,7 +2170,7 @@
   display: none;
 }
 .k2-ui .k2-table-phone .k2-bar {
-  background: var(--k2-n50);
+  background: var(--k2-surface);
   height: var(--k2-h-columns);
 }
 /* a person leads a row of the phone form as a small mark, like in the cell */

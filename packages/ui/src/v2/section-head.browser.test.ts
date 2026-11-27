@@ -7,11 +7,12 @@ import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-section-head.client";
 import { typeRoles } from "./tokens";
 
-// The section head as Valentin chose it on 27.11. (settings-headings-study v2): A everywhere (no symbol, a calm title
-// of 15 px, the count quiet beside it, the summary as the muted line right under it, the deeds at the end) and B for
-// the sections of a settings or form screen (`form`) in a wide pane (title, summary and deeds in a column of 240 px at
-// the left, the content at the right). The pane's width decides, not the window's. Lines: the line between sections is
-// clearly stronger than the very subtle lines between rows. The fixture is test/v2-section-head.client.tsx.
+// The section head as Valentin chose it on 27.11. (settings-headings-study v2, taste study v2 rules 1, 4, 5 and 8): A
+// in a narrow pane (no symbol, a calm title of 15 px, the count quiet beside it, the summary as the muted line right
+// under it, framed deeds at the end) and B in a pane of 960 px and more, by default (title, summary and deeds in a
+// column of 232 px, the content 48 px beside it, the whole section at most 1040 px). The pane's width decides, not the
+// window's; a section that holds a table keeps A and its full width. Lines: the clear line between sections, the hair
+// between rows. The fixture is test/v2-section-head.client.tsx.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss = "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; }";
@@ -90,18 +91,33 @@ test("every head: no symbol, a calm title of 15 px at 600, the count quiet besid
     });
 });
 
-test("1440 px, a settings screen (`form`) in a wide pane: B, the head a column of 240 px at the left, the content beside it", async () => {
+test("1440 px, a wide pane: B by default, the head a column of 232 px, the content 48 px beside it, the section 1040 px", async () => {
   await withPage("form", 1440, async (page) => {
     const found = await shape(page);
     // the head column: title, summary under it, the deeds under the summary
-    expect(found.head!.right - found.section!.left).toBeLessThanOrEqual(240 + 1);
+    expect(found.head!.right - found.section!.left).toBe(232);
     expect(found.summary!.top).toBeGreaterThanOrEqual(found.title!.bottom);
     expect(found.actions!.top).toBeGreaterThanOrEqual(found.summary!.bottom);
-    expect(found.actions!.right).toBeLessThanOrEqual(found.section!.left + 240);
-    // the content starts 40 px after the column, on the head's top
-    expect(found.firstRow!.left).toBeGreaterThanOrEqual(found.section!.left + 240 + 40 - 20);
+    expect(found.actions!.right).toBeLessThanOrEqual(found.section!.left + 232);
+    // the content column starts 48 px after the head column, on the head's top, and ends with the section
+    expect(found.firstRow!.left).toBe(found.section!.left + 232 + 48);
+    expect(found.firstRow!.right).toBe(found.section!.right);
     expect(found.firstRow!.top).toBeLessThan(found.summary!.bottom);
+    // the measure: the section and its line end at 1040 px, from the text edge
+    expect(found.section!.right - found.section!.left).toBe(1040);
   });
+});
+
+test("1440 px, the deeds of a section head are framed buttons of 30 px with their verb", async () => {
+  for (const width of [1440, 390])
+    await withPage("form", width, async (page) => {
+      const button = await page.evaluate(() => {
+        const element = document.querySelector<HTMLElement>(".k2-sh-end > .k2-btn")!;
+        const style = getComputedStyle(element);
+        return { height: element.getBoundingClientRect().height, border: style.borderTopWidth, words: element.innerText.trim() };
+      });
+      expect(button).toEqual({ height: 30, border: "1px", words: "Zeiten" });
+    });
 });
 
 test("390 px, the same settings screen: A, as the pane is narrow", async () => {
@@ -116,23 +132,34 @@ test("1440 px, a settings section in a pane of 420 px: A, the pane decides and n
   });
 });
 
-test("1440 px, a detail page: A, an ordinary section never takes B", async () => {
+test("1440 px, a section that holds a table keeps A and its full width", async () => {
   await withPage("detail", 1440, async (page) => {
-    expectA(await shape(page));
+    const found = await shape(page);
+    expectA(found);
+    // from the pane's edge (the workspace's frame is 1 px), not inset to a measure
+    expect(found.section!.left).toBeLessThanOrEqual(1);
+    // the only (so the last) section of the page draws no line under itself
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-k2-part="Section"]')!).borderBottomStyle)).toBe("none");
   });
 });
 
-test("the line between sections is clearly stronger than the very subtle lines between rows and table rows", async () => {
+test("the clear line stands between sections, the hair between rows and table rows", async () => {
   await withPage("form", 1440, async (page) => {
     const lines = await page.evaluate(() => {
       const color = (element: Element | null) => (element ? getComputedStyle(element).borderBottomColor : null);
       return {
         section: color(document.querySelector('[data-k2-part="Section"]')),
+        between: getComputedStyle(document.querySelector('[data-k2-part="Section"] > [data-k2-part="Row"] + [data-k2-part="Row"]')!).borderTopColor,
         row: color(document.querySelector('.k2-list > [data-k2-part="Row"]')),
         cell: color(document.querySelector(".k2-table tbody tr:first-child td")),
       };
     });
-    // all 1 px: between sections n300, between rows n100 (structure keeps n200)
-    expect(lines).toEqual({ section: "rgb(212, 212, 216)", row: "rgb(244, 244, 245)", cell: "rgb(244, 244, 245)" });
+    // all 1 px: between sections #e4e4e7, between rows #f0f0f2, nothing under the last
+    expect(lines).toEqual({
+      section: "rgb(228, 228, 231)",
+      between: "rgb(240, 240, 242)",
+      row: "rgb(240, 240, 242)",
+      cell: "rgb(240, 240, 242)",
+    });
   });
 });
