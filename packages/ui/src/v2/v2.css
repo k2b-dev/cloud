@@ -989,6 +989,13 @@
   );
   align-items: stretch;
 }
+/* On the phone a row holds half of them, also below 240 px a tile (the approved first start: four as 2 × 2); a tile's
+   name is cut with "…" there like anywhere. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tiles[data-k2-part][data-per-row] {
+    grid-template-columns: repeat(var(--k2-per-row-half), minmax(0, 1fr));
+  }
+}
 .k2-ui .k2-tile {
   display: flex;
   align-items: center;

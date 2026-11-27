@@ -969,7 +969,8 @@ export type TilesProps = {
   /**
    * At most this many tiles share a row and grow with its width, such as the four ways to start a notebook across
    * the page. A tile never gets narrower than 240 px for it: where n do not fit, they stand in rows of half of them
-   * (four as 2 × 2, never 3 + 1), and below that one under the other.
+   * (four as 2 × 2, never 3 + 1), and below that one under the other. On the phone a row always holds half of them,
+   * even below 240 px a tile.
    */
   perRow?: number;
   /** One deed after the tiles, such as "Alle herunterladen". */

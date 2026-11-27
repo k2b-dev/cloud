@@ -118,15 +118,18 @@ test("a centred pane whose content is taller than the page starts at the top and
 });
 
 for (const variant of ["plain", "card"] as const)
-  test(`on the phone a centred pane starts at the top with the normal edge and the ${variant} tiles under each other`, async () => {
+  test(`on the phone a centred pane starts at the top with the normal edge and the ${variant} tiles 2 × 2`, async () => {
     await withPage({ width: 390, height: 844 }, 4, variant, async (page) => {
       const found = await read(page);
       expect(Math.round(found.tiles.width)).toBe(390);
       // the text edge above it, so it never touches the head of the page; the cards a gap below
       expect(Math.round(found.lead.top - found.scroll.top)).toBe(textEdge.phone);
       expect(found.tiles.top - found.lead.bottom).toBeGreaterThanOrEqual(12);
-      const lefts = new Set(found.tile.map((tile) => Math.round(tile.left)));
-      expect(lefts).toEqual(new Set([textEdge.phone]));
+      // two cards a row, as the approved first start draws it (2 × 2), the first on the phone's text edge
+      const rows = new Map<number, number>();
+      for (const tile of found.tile) rows.set(Math.round(tile.top), (rows.get(Math.round(tile.top)) ?? 0) + 1);
+      expect([...rows.values()]).toEqual([2, 2]);
+      expect(Math.round(Math.min(...found.tile.map((tile) => tile.left)))).toBe(textEdge.phone);
       expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
     });
   });
