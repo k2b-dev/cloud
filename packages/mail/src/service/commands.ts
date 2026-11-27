@@ -27,6 +27,7 @@ import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversa
 import { withDraftDocumentCommit } from "./draft-document-log";
 import { type FrozenDraftSends, saveDraftSendBoundary, withFrozenDraftSends } from "./draft-document-send";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
+import { restRecoveryCopiesInTransaction } from "./drafts";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
 import { loadInlineLogoContent } from "./mailbox-logos";
@@ -36,7 +37,6 @@ import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
 import { materializeOutboundMessage, type OutboundMessageProjection } from "./outbound-message-projection";
 import { measureMimeStream } from "./outbound-mime";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
-import { restRecoveryCopiesInTransaction } from "./drafts";
 import { loadSendContent, sendContentChanged } from "./send-content";
 import {
   queuedSenderVerificationPayloadSchema,
