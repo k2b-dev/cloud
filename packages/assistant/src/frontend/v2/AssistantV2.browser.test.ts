@@ -390,7 +390,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
           `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8">` +
           `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head>` +
           `<body class="k2b-ui app-accent-scope" data-k2b-primary="ai" style="margin:0;${colors}"><div id="root"></div>` +
-          `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script>` +
+          `<script>window.assistantV2Harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script>` +
           `<script type="module" src="/harness.js"></script></body></html>`,
       });
     }
@@ -875,7 +875,9 @@ describe("Assistant on v2", () => {
       // A symbol in the head (SEARCH + CREATE), so the path keeps the head's room.
       await page.locator('[data-slot="head"]').getByRole("button", { name: "Alle Chats durchsuchen" }).click();
       const searches = await page.waitForFunction(
-        () => (window as unknown as { searches: unknown[] }).searches.length > 0 && (window as unknown as { searches: unknown[] }).searches,
+        () =>
+          (window as unknown as { assistantV2Searches: unknown[] }).assistantV2Searches.length > 0 &&
+          (window as unknown as { assistantV2Searches: unknown[] }).assistantV2Searches,
       );
       expect(JSON.stringify(await searches.jsonValue())).toContain('"appId":"assistant"');
       expect(errors).toEqual([]);
