@@ -148,8 +148,10 @@
   flex: 0 1 auto;
   min-width: calc(3ch + 2rem);
 }
+/* The tag chip takes the shortage first (its label is the one that grows), so choosing a long tag moves neither
+   Favoriten nor Zuletzt; they shorten only once the tag chip stands at its least. */
 .notebook-sidebar-chip-host {
-  flex: 0 1 auto;
+  flex: 0 1000 auto;
   min-width: calc(3ch + 3rem);
 }
 .k2b-ui .notebook-sidebar-chip-host > .notebook-sidebar-chip.k2b-button {
