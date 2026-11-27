@@ -9,7 +9,6 @@ import {
   Bar,
   Button,
   Cells,
-  Chip,
   Digest,
   Icon,
   Inline,
@@ -239,17 +238,24 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
                   })}
                 />
               </Inline>
-              {/* each exception on its own line, with the first names; nothing when all is well (neutral) */}
-              <Show when={props.summary.orphaned > 0}>
+              {/* the exceptions on one line under the figure, each as "● n word · who"; nothing when
+                  all is well. k2b-ui gap: a state dot outside a Chip (the v2 Dot is not public, DP); until then the dot
+                  is a coloured sign in the text, without the Chip's tint */}
+              <Show when={props.summary.orphaned > 0 || quiet() > 0}>
                 <Inline>
-                  <Chip status="bad">{t().noAccessCount({ count: props.summary.orphaned })}</Chip>
-                  <Text type="meta">{named(props.summary.orphanedNames, props.summary.orphaned)}</Text>
-                </Inline>
-              </Show>
-              <Show when={quiet() > 0}>
-                <Inline>
-                  <Chip status="warn">{t().quietCount({ count: quiet() })}</Chip>
-                  <Text type="meta">{named(props.summary.quietNames, quiet())}</Text>
+                  {/* the dot stays with its figure and word; the names may move to the next line on a phone */}
+                  <Show when={props.summary.orphaned > 0}>
+                    <Text>
+                      <Text tone="bad">●</Text> <Text weight="strong">{count(props.summary.orphaned)}</Text> {t().noAccessWord}
+                    </Text>
+                    <Text type="meta">{`· ${named(props.summary.orphanedNames, props.summary.orphaned)}`}</Text>
+                  </Show>
+                  <Show when={quiet() > 0}>
+                    <Text>
+                      <Text tone="warn">●</Text> <Text weight="strong">{count(quiet())}</Text> {t().quietWord}
+                    </Text>
+                    <Text type="meta">{`· ${named(props.summary.quietNames, quiet())}`}</Text>
+                  </Show>
                 </Inline>
               </Show>
             </Band>
@@ -273,7 +279,11 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
                 width: { min: 120, default: 148 },
                 cell: (row) =>
                   row.permissionCount === 0 ? (
-                    <Chip status="bad">{t().nobody}</Chip>
+                    // nobody can reach it: the exception as a red dot and its word, without a tint (see the exceptions)
+                    <Inline>
+                      <Text tone="bad">●</Text>
+                      <Text>{t().nobody}</Text>
+                    </Inline>
                   ) : (
                     // k2b-ui gap: Avatar.Stack takes no total (DP); the server sends the first three, so the rest
                     // stand as a quiet "+n" after them

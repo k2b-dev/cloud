@@ -129,10 +129,14 @@ for (const width of [1440, 1024, 390]) {
         "18aktiv in 30 Tagenvon 24 Notizbüchern",
       );
       expect(await hero.locator('[data-k2-part="Spark"]').getAttribute("aria-label")).toMatch(/^Notizbücher mit Änderungen je Tag/);
-      // the exceptions, each on its own line with the first names: nobody can reach (red), quiet for 30 days (waiting)
-      expect(await hero.locator('[data-k2-part="Chip"][data-status="bad"]').textContent()).toBe("1 ohne Zugriff");
-      expect(await hero.getByText("⁨Altes Wiki⁩", { exact: true }).isVisible()).toBe(true);
-      expect(await hero.locator('[data-k2-part="Chip"][data-status="warn"]').textContent()).toBe("6 seit 30 Tagen ohne Änderung");
+      // the exceptions on one line under the figure, "● n word · who": only the dot carries the colour, no pill
+      const exceptions = hero.locator('[data-k2-part="Inline"]').nth(1);
+      expect((await exceptions.textContent())?.replace(/[⁨⁩]/g, "")).toBe(
+        "● 1 ohne Zugriff· Altes Wiki● 6 ohne Änderung seit 30 Tagen· Altes Wiki, Archiv 2025 +4",
+      );
+      expect(await exceptions.locator('[data-tone="bad"]').textContent()).toBe("●");
+      expect(await exceptions.locator('[data-tone="warn"]').textContent()).toBe("●");
+      expect(await hero.locator('[data-k2-part="Chip"]').count()).toBe(0);
       // every notebook carries its mark, also in the phone's rows
       expect(await page.locator('[data-k2-part="Pane"] [data-k2-part="Mark"]').filter({ visible: true }).count()).toBeGreaterThanOrEqual(8);
       if (width > 600) {
@@ -143,7 +147,10 @@ for (const width of [1440, 1024, 390]) {
         // the one picture of a row: who has access; nobody is the exception, in red with its word
         expect(await row(page, "Handbuch Lager").locator('[data-k2-part="Avatar.Stack"]').getAttribute("aria-label")).toBe("6 mit Zugriff");
         expect((await row(page, "Handbuch Lager").locator("td").nth(2).textContent())?.trim()).toBe("148");
-        expect(await row(page, "Altes Wiki").locator('[data-k2-part="Chip"][data-status="bad"]').textContent()).toBe("niemand");
+        const nobody = row(page, "Altes Wiki").locator("td").nth(1);
+        expect((await nobody.textContent())?.trim()).toBe("●niemand");
+        expect(await nobody.locator('[data-tone="bad"]').textContent()).toBe("●");
+        expect(await nobody.locator('[data-k2-part="Chip"]').count()).toBe(0);
         // a long standstill waits; an unknown last change says so
         expect(await row(page, "Altes Wiki").locator("td").nth(3).locator('[data-tone="warn"]').count()).toBe(1);
         expect((await row(page, "Recht").locator("td").nth(3).textContent())?.trim()).toBe("unbekannt");
@@ -402,6 +409,9 @@ for (const width of [1440, 390]) {
 test("390: the worst rows keep two lines in the language's digits", async () => {
   const page = await open("/admin/notebooks?data=worst", 390);
   try {
+    // the exception line keeps inside its band: the names move to the next line, never past the edge
+    const band = page.getByRole("region", { name: "aktiv in 30 Tagen" });
+    expect(await band.evaluate((element) => element.scrollWidth <= element.clientWidth && element.clientWidth > 0)).toBe(true);
     expect(await page.getByText("12.480 mit Zugriff · 48.213 Notizen").isVisible()).toBe(true);
     expect(await page.getByText("1 mit Zugriff · 1 Notiz").first().isVisible()).toBe(true);
   } finally {
