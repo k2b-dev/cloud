@@ -99,13 +99,13 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   const part = (element: Element | null) => element?.getAttribute("data-k2-part") ?? "";
   const partOf = (element: Element): Element | null => element.parentElement?.closest("[data-k2-part]") ?? null;
   /** Inside a box of no height that clips what overflows it (a head that gave way): drawn, but nobody can see it. */
+  // A control in a head that gave way (its bar folded to no height under the shell's search) is gone, though it keeps
+  // its own box. Only the head: elsewhere a box of no height that clips is a dialog or a sheet on its way in.
   const clippedAway = (element: Element) => {
-    for (let box = element.parentElement; box; box = box.parentElement) {
-      const style = getComputedStyle(box);
-      const clips = /hidden|clip/.test(`${style.overflowX} ${style.overflowY}`);
-      if (clips && box.getBoundingClientRect().height === 0) return true;
-    }
-    return false;
+    const head = element.closest('[data-slot="head"] > .k2-bar');
+    if (!head) return false;
+    const style = getComputedStyle(head);
+    return /hidden|clip/.test(`${style.overflowX} ${style.overflowY}`) && head.getBoundingClientRect().height === 0;
   };
   const hidden = (element: Element) => options.layout === true && (element.getClientRects().length === 0 || clippedAway(element));
   const textOf = (element: Element | null | undefined) => clip(element?.textContent ?? "");

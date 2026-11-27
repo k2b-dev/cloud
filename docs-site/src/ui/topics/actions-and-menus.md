@@ -31,6 +31,10 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 - A panel of primitives (`Facts`, `Text`, `Check`) under a title. A filter is not one: a Popover in the head leaves on the phone, so a few filters are a `Menu` with ticked entries, and a list people really filter has a `FilterBar` ([Filter, sort, group](/en/ui/v2/filter-sort-group)).
 - With `tip` it is a short hint on one button instead.
 
+## On the phone
+
+Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
+
 ## Parts
 
 Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so this list cannot fall behind the code.
@@ -61,9 +65,9 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 <Props of="Popover" />
 
-## On the phone
+## Not in v2 yet
 
-Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
+A head whose controls do not fit beside its title folds the last ones into "…" with #4392. Until then, a phone head keeps few controls: the deeds of a record stand in its "…", not as a row of symbols. Write `// k2b-ui gap: #4392 (bar fold)` at that place.
 
 ## Do and don't
 

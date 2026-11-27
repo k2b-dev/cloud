@@ -178,7 +178,7 @@ export default function PasswordGenerator() {
       tool="password"
       primary={copyAction}
       end={
-        <Button variant="primary" icon="copy" onClick={copyPassword}>
+        <Button variant="primary" icon="copy" floats onClick={copyPassword}>
           {t().copyPassword}
         </Button>
       }
