@@ -164,15 +164,18 @@ inside it.
   72 px (mail: sender, subject, preview).
   The second line of two or three is one line, cut with "…" before what
   stands beside it (an address or JSON without a break never runs under the
-  marks or a deed); a cut line of words says all of it on hover. The title
-  of a row of one or two lines wraps, but stops after two lines with "…";
-  one longer than two lines can hold (more than 60 signs) says all of it on
-  hover. A row of three cuts each line.
+  marks or a deed); a cut line of words says all of it on hover. In a
+  `List` the title is one line too (that of a row of one on the desktop; on
+  the phone it may take two), so every row of the list keeps one height; it
+  says all of it on hover when it is longer than its line holds beside a
+  time (more than 20 signs). A row of three cuts each line. Any other title
+  wraps, but stops after two lines with "…"; one longer than two lines can
+  hold (more than 60 signs) says all of it on hover.
 - lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
-  and the title breaks only when it is longer than its part.
+  and a title that may wrap breaks only when it is longer than its part.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.

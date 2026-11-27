@@ -406,6 +406,11 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
  * to this it is never cut, so it needs no hint on hover.
  */
 const TITLE_FITS_TWO_LINES = 60;
+/**
+ * The signs one line of title in a list holds beside its time in the narrowest column (about 170 px of title at 320
+ * px): up to this it is never cut, so it needs no hint on hover.
+ */
+const TITLE_FITS_ONE_LINE = 20;
 
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
@@ -413,14 +418,16 @@ export const Row = (props: RowProps) => {
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
-  // a row of three lines cuts each line with "…", a row of two its second line: a cut line of words says all on hover.
-  // The title of a row of one or two stops after two lines (W7 26.11.) and says all on hover only where two lines can
-  // be too few, so a short title has no hint that a screen reader would read twice (review of #4259).
+  // A row of three lines cuts each line with "…" and a row of two its second line. In a list a title is one line too (a
+  // row of one: on the desktop), so every row of the list keeps one height (B rule 4, W7 and W9 26.11.); any other title
+  // stops after two lines. A cut line of words says all on hover; a title only where its lines can be too few, so a
+  // short title has no hint that a screen reader would read twice (review of #4259).
   const cut = (index: number) => {
     const line = text()[index];
     if (typeof line !== "string" || !line.trim()) return undefined;
-    if (lines() === 3 || (lines() === 2 && index === 1)) return line;
-    return index === 0 && Array.from(line).length > TITLE_FITS_TWO_LINES ? line : undefined;
+    if (lines() === 3 || index > 0) return line;
+    const fits = inList ? TITLE_FITS_ONE_LINE : TITLE_FITS_TWO_LINES;
+    return Array.from(line).length > fits ? line : undefined;
   };
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);

@@ -26,7 +26,14 @@ if (!root) throw new Error("worst: #root is missing");
 // `<body data-case="table">`: a folder as a large table (Files), in groups, whose phone rows carry a date
 const files = [
   { id: "f1", name: "Angebote", kind: "Ordner", detail: "Ordner · Link", changed: "25.11.2026, 14:32" },
-  { id: "f2", name: "Zuschnitt Küchenfront.dxf", kind: "Dateien", detail: "1.000 KB · Team", changed: "1.11.2026, 09:05" },
+  {
+    id: "f2",
+    // a name longer than a phone row: its first line stays one line (M, #4324)
+    name: "Zuschnitt Küchenfront Eiche geölt für Familie Brandt, zweite Fassung nach dem Aufmaß vom 12. November, mit den Maßen der Werkstatt Nord, Kanten in Eiche massiv und Griffleisten aus Messing.dxf",
+    kind: "Dateien",
+    detail: "1.000 KB · Team",
+    changed: "1.11.2026, 09:05",
+  },
   {
     id: "f3",
     name: "Stripe Zahlungen",
@@ -43,9 +50,46 @@ const scenario = document.body.dataset.case;
 const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
 const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
 // `<body data-case="notes">`: what the Assistant remembers (W7), as rows of one and of two lines whose text runs to
-// 600 signs; each row stays two lines of title at most, its text whole on hover
+// 600 signs; each title is one line (two for a row of one on the phone), its text whole on hover
 const memory = `Valentin möchte Angebote immer zuerst als Entwurf sehen, mit den Maßen der Werkstatt, ${"dem Holz, der Oberfläche und dem Liefertermin, ".repeat(10)}bevor etwas an Kundinnen geht.`;
-if (scenario === "notes")
+// `<body data-case="chats">`: a list of chats (W9) whose names and last messages run long, each with a time and a deed;
+// every row keeps one height: one line of name, one line of message
+const chats = [
+  { name: "Nora Weber", text: "One more thing: the invoice lists 12 chairs, we ordered 10. I will ask them to correct it before we pay anything, and then we can talk about the delivery date and the second table." },
+  {
+    name: "Lieferung KW 49 · Werkstatt Nord, Abholung Montag früh mit dem großen Transporter, danach Küchenfront, Zuschnitt und Montage beim Kunden in Leipzig, Abnahme mit dem Bauleiter und Rechnung an die Hausverwaltung am Freitag",
+    text: "Abholung Montag",
+  },
+  { name: "Ada", text: `Log: ${"payment_intent.succeeded".repeat(8)}` },
+  { name: "Jonas Keller", text: "Ok" },
+  // as long as a title of a row of two may be without a hint: it fits beside the time in the narrowest column
+  { name: "Mira Solberg-Hoffman", text: "Bis morgen", time: "Gestern" },
+  // a long name with a count beside it, and an address as a name (W9 break-ui): one line each, the count beside the name
+  { name: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach", text: "You: Already done.", meta: "86" },
+  { name: "projektabstimmung.lieferanten.werkstatt-nord@example.org", text: "Can you send photos to the supplier?" },
+];
+if (scenario === "chats")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Chats">
+            {chats.map((chat) => (
+              <Row
+                avatar={{ name: chat.name }}
+                lines={[chat.name, chat.text]}
+                meta={chat.meta}
+                time={chat.time ?? "11:45"}
+                end={<Button variant="ghost" icon="dots" label={`Mehr zu ${chat.name}`} />}
+              />
+            ))}
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "notes")
   render(
     () => (
       <Workspace>

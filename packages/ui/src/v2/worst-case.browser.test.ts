@@ -241,6 +241,34 @@ test("a phone row of a large table cuts its second line before its marks", async
   );
 });
 
+// M (#4324, Mail administration): a phone row of a table wrapped its first line, so a long name grew its row. Each
+// phone row is one line of name and one of detail, cut with "…" and whole on hover, so a long name keeps the row's height.
+test("a phone row of a large table keeps its long name on one line", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const rows = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".k2-table-phone .k2-row")).map((row) => {
+          const title = row.querySelector<HTMLElement>(".k2-row-title")!;
+          return {
+            height: Math.round(row.getBoundingClientRect().height),
+            lines: Math.round(title.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(title).lineHeight)),
+            cut: title.scrollWidth > title.clientWidth + 1,
+            hint: title.getAttribute("title") === title.textContent,
+          };
+        }),
+      );
+      // the long name keeps the height of a short one (the third row also has marks, which stand in a line of their own)
+      expect(rows[1]!.height).toBe(rows[0]!.height);
+      expect(rows.map((row) => row.lines)).toEqual([1, 1, 1]);
+      expect(rows.map((row) => row.cut)).toEqual([false, true, false]);
+      expect(rows[1]!.hint).toBe(true);
+      expect((await measureV2Layout(page, { root: "#root" })).squeezed).toEqual([]);
+    },
+    "table",
+  );
+});
+
 // Review r2 of #4210: a head with views, a kept deed with words and the app's own "…": one "…" only, which holds both
 // the app's deeds and the folded one; a pressed deed says so in the menu.
 test("on the phone a head with its own … folds its kept deeds into that one menu, a pressed deed checked", async () => {
@@ -338,10 +366,11 @@ test("a link in a cut second line shows its whole focus ring", async () => {
   );
 });
 
-// W7 (Assistant): a row of one or two lines let its title wrap without bound, so a long memory grew its row to any
-// height. Its title now stops after two lines with "…", says its whole text on hover, and the row stays bounded.
+// W7 (Assistant, Chat): a row of one or two lines let its title wrap without bound, so a long memory or chat name grew
+// its row to any height. In a list each title is one line with "…" (a row of one: on the desktop; on the phone it stops
+// after two lines), so every row keeps one height (B rule 4, W9), and each says its whole text on hover.
 for (const width of [1440, 390])
-  test(`a long title of a row of one or two lines stops after two lines at ${width} px`, async () => {
+  test(`a long title of a row in a list is one line, on the phone two for a row of one, at ${width} px`, async () => {
     await withPage(
       width,
       async (page) => {
@@ -351,16 +380,17 @@ for (const width of [1440, 390])
             const line = Number.parseFloat(getComputedStyle(title).lineHeight);
             return {
               lines: Math.round(title.getBoundingClientRect().height / line),
-              cut: title.scrollHeight > title.clientHeight + 1,
+              cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
               // the whole text on hover where the title can be cut; no hint a screen reader would read twice where not
               hint: title.getAttribute("title") === null ? "none" : title.getAttribute("title") === title.textContent ? "whole" : "other",
             };
           }),
         );
-        // the two long ones: two lines, cut, the whole text on hover; the short one: one line, whole, no hint
+        // the long ones: cut after one line (two for a row of one on the phone), the whole text on hover; the short
+        // ones: one line, whole, no hint
         expect(rows).toEqual([
-          { lines: 2, cut: true, hint: "whole" },
-          { lines: 2, cut: true, hint: "whole" },
+          { lines: width < 768 ? 2 : 1, cut: true, hint: "whole" },
+          { lines: 1, cut: true, hint: "whole" },
           { lines: 1, cut: false, hint: "none" },
           { lines: 1, cut: false, hint: "none" },
         ]);
@@ -369,6 +399,51 @@ for (const width of [1440, 390])
         expect(layout.squeezed).toEqual([]);
       },
       "notes",
+    );
+  });
+
+// W9 (Chat): rows of two lines grew to 52, 68 and 84 px: a last message wrapped, a long name took two lines, an address
+// as a name broke at its hyphen, and the count slid beside the second line of the name. A row of two lines in a list is
+// one line of name and one of text, each cut with "…" and whole on hover, the count beside the name, so every row of the
+// list keeps one height (B rule 4).
+for (const width of [1440, 1024, 390, 320])
+  test(`rows of two lines keep one height with long names and messages at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const rows = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row")).map((row) => {
+            const line = (part: HTMLElement) => Math.round(part.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(part).lineHeight));
+            const title = row.querySelector<HTMLElement>(".k2-row-title")!;
+            const text = row.querySelector<HTMLElement>(":scope > .k2-row-l2")!;
+            const meta = row.querySelector<HTMLElement>(".k2-row-meta");
+            const hint = (part: HTMLElement) => (part.getAttribute("title") === null ? "none" : part.getAttribute("title") === part.textContent ? "whole" : "other");
+            const name = title.getBoundingClientRect();
+            const count = meta?.getBoundingClientRect();
+            return {
+              height: Math.round(row.getBoundingClientRect().height),
+              lines: [line(title), line(text)],
+              cut: [title.scrollWidth > title.clientWidth + 1, text.scrollWidth > text.clientWidth + 1],
+              hints: [hint(title), hint(text)],
+              // the count stands after the name, on its line
+              beside: !count || (count.left >= name.right - 0.5 && count.top < name.bottom && count.bottom > name.top),
+            };
+          }),
+        );
+        expect(new Set(rows.map((row) => row.height)).size).toBe(1);
+        expect(rows.map((row) => row.lines)).toEqual(rows.map(() => [1, 1]));
+        expect(rows.every((row) => row.beside)).toBe(true);
+        // what is cut says all of it on hover; a short name has no hint that a screen reader would read twice
+        for (const row of rows) for (const [index, cut] of row.cut.entries()) if (cut) expect(row.hints[index]).toBe("whole");
+        expect(rows.map((row) => row.hints[0])).toEqual(["none", "whole", "none", "none", "none", "whole", "whole"]);
+        // the long ones are cut where the column is narrow; a name of 20 signs fits beside its time even at 320 px
+        if (width <= 1024) expect(rows.slice(0, 5).map((row) => row.cut)).toEqual([[false, true], [true, false], [false, true], [false, false], [false, false]]);
+        if (width <= 390) expect(rows.slice(5).map((row) => row.cut[0])).toEqual([true, true]);
+        const layout = await measureV2Layout(page, { root: "#root" });
+        expect(layout.past).toEqual([]);
+        expect(layout.squeezed).toEqual([]);
+      },
+      "chats",
     );
   });
 

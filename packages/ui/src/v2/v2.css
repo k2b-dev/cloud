@@ -1080,14 +1080,14 @@
   align-items: baseline;
   column-gap: 8px;
 }
-/* in a row of one or two lines the title wraps (it is what the row is about), but two lines at most, then "…", whole
-   on hover (W7 26.11.: a long memory grew its row to any height); the quiet note after it is cut */
+/* the title wraps (it is what the row is about), but two lines at most, then "…", whole on hover (W7 26.11.: a long
+   memory grew its row to any height); the quiet note after it is cut. Rows that cut their title are below. */
 .k2-ui .k2-row-title {
   font-weight: 400;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.k2-ui .k2-row:not([data-lines="3"]) > .k2-row-l1 > .k2-row-title {
+.k2-ui .k2-row:where(:not([data-lines="3"]):not(.k2-list > [data-lines="2"])) > .k2-row-l1 > .k2-row-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1138,13 +1138,26 @@
   box-shadow: inset 0 0 0 2px var(--k2-blue);
   border-radius: 2px;
 }
-/* a row of three lines cuts each line with "…", its title too: the row keeps its 72 px */
+/* a row of three lines cuts each line with "…", its title too, and keeps its 72 px; in a list, a row of two cuts its
+   title as well, so every row of the list keeps one height (B rule 4; W9 26.11.: long names and messages grew a chat
+   list to 52, 68 and 84 px). A row of two on its own, such as a step in a group, keeps two lines of title. */
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l1 > .k2-row-title,
+.k2-ui .k2-list > .k2-row[data-lines="2"] > .k2-row-l1 > .k2-row-title,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l2,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l3 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* on the desktop a row of one line in a list cuts its title too (W7 26.11.: a long chat name took three lines in
+   "Alle Chats"); on the phone it keeps two lines of title */
+@media (min-width: 768px) {
+  .k2-ui .k2-list > .k2-row[data-lines="1"] > .k2-row-l1 > .k2-row-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 .k2-ui .k2-row-time,
 .k2-ui .k2-row-end,
