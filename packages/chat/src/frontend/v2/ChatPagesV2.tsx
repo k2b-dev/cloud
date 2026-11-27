@@ -109,8 +109,7 @@ export function ThreadsPageV2(props: {
   };
   const row = (view: ThreadView, name: string, unread: number, last: Thread["lastMessage"], fallback: string) => (
     <Row
-      icon={iconName(viewIcon(view, props.threads))}
-      color={CHAT_COLOR}
+      mark={{ icon: iconName(viewIcon(view, props.threads)), color: CHAT_COLOR }}
       lines={[name, preview(last, fallback)]}
       meta={unread > 0 ? unread.toLocaleString(locale()) : undefined}
       unread={unread > 0}
@@ -265,8 +264,7 @@ export function SystemThreadDirectoryV2(props: {
       />
       <List label={t().threadsIn({ title: props.conversation.title })}>
         <Row
-          icon="messages"
-          color={CHAT_COLOR}
+          mark={{ icon: "messages", color: CHAT_COLOR }}
           lines={[t().allThreads]}
           href={threadHref(props.conversation.id, "all", null, props.basePath)}
           onNavigate={(navigation) => props.onOpen("all", navigation)}
@@ -295,8 +293,7 @@ export function SystemThreadDirectoryV2(props: {
               <For each={pages.page()?.items ?? []}>
                 {(thread) => (
                   <Row
-                    icon={iconName(threadIcon(thread))}
-                    color={CHAT_COLOR}
+                    mark={{ icon: iconName(threadIcon(thread)), color: CHAT_COLOR }}
                     lines={[thread.name, preview(thread)]}
                     meta={thread.unread > 0 ? thread.unread.toLocaleString(locale()) : undefined}
                     unread={thread.unread > 0}
@@ -374,8 +371,7 @@ export function DiscoverChannelsV2(props: DiscoverChannelsProps): JSX.Element {
               <For each={catalog.rows}>
                 {(row) => (
                   <Row
-                    icon={iconName(row.icon ?? "ti ti-speakerphone")}
-                    color={CHAT_COLOR}
+                    mark={{ icon: iconName(row.icon ?? "ti ti-speakerphone"), color: CHAT_COLOR }}
                     lines={[row.title, channelLine(row, t())]}
                     action={
                       row.member
