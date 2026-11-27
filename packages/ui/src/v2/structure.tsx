@@ -33,7 +33,10 @@ export type SectionProps = {
   title: string;
   /** A quiet count after the title. */
   count?: number | string;
-  /** At most two text buttons in the head; on the phone they keep only their symbol. */
+  /**
+   * At most two text buttons in the head; they keep their words, and the title shortens before them. On the phone they
+   * keep only their symbol.
+   */
   actions?: TwoActions;
   /** One sentence under the head that sums the section up. */
   summary?: JSX.Element;
