@@ -75,9 +75,10 @@ test("390 px, after the page came alive: the actions that do not fit are in '…
     const names = shown.map((control) => control.name);
     // every control a person sees lies inside the window
     for (const control of shown) expect([control.name, control.right <= 390, control.left >= 0]).toEqual([control.name, true, true]);
-    expect(names.slice(0, 3)).toEqual(["Übersicht", "Aktivität", "Dateien"]);
+    // the tabs give way first, to the open one and their own "Mehr"; then the end folds from its last action
+    expect(names[0]).toBe("Übersicht");
     expect(names.slice(-2)).toEqual(["Neuer Auftrag", "Weitere Aktionen"]);
-    const kept = names.slice(3, -2);
+    const kept = names.filter((name) => actions.includes(name));
     expect(kept).toEqual(actions.slice(0, kept.length));
     expect(kept.length).toBeLessThan(actions.length);
     // the folded actions are in the menu, in their order, and an entry does the action's deed
@@ -91,12 +92,15 @@ test("390 px, after the page came alive: the actions that do not fit are in '…
 
 test("390 px: the keyboard reads the head as the eye does, and '…' comes after the primary action", async () => {
   await withPage(390, true, async (page) => {
-    const names = (await seen(page, head("record"))).map((control) => control.name).slice(3);
-    await page.locator(head("record")).getByRole("button", { name: names[0] }).focus();
+    const all = (await seen(page, head("record"))).map((control) => control.name);
+    const names = all.slice(all.indexOf(actions[0]!));
+    await page.locator(head("record")).getByRole("button", { name: actions[0], exact: true }).focus();
     const order = [names[0]];
     for (let step = 1; step < names.length; step++) {
       await page.keyboard.press("Tab");
-      order.push(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? ""));
+      order.push(
+        await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim() ?? ""),
+      );
     }
     expect(order).toEqual(names);
   });

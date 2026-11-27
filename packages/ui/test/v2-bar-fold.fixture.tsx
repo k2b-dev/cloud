@@ -2,10 +2,11 @@ import { LocaleProvider } from "../src/intl/locale";
 import { Bar, Button, Pane, Tabs, Text, Workspace } from "../src/v2";
 
 // Two heads that do not fit on the phone, each in a box of its own (`.case`):
-// - "record": three tabs and six actions that stay on the phone (`keep`), then the primary action. What does not fit
-//   folds into "…"; every action writes its name to `window.__deeds`.
-// - "book": the head of a notebook page, a title and a button "1.000 Kommentare" in the start, two actions at its end.
-//   The start gives way: its words shorten with "…".
+// - "record": three tabs and six actions that stay on the phone (`keep`), then the primary action with its words. The
+//   tabs give way to the open one and "Mehr"; what still does not fit folds into "…". Every action writes its name
+//   to `window.__deeds`.
+// - "book": the head of a notebook page, a title and a button "1.000 Kommentare" in the start, five actions at its
+//   end, which fit. The start gives way to its last pixel: its words shorten with "…".
 
 declare global {
   interface Window {
@@ -48,7 +49,9 @@ export function Fixture() {
                   {actions.map((action) => (
                     <Button keep icon={action.icon} label={action.label} onClick={deed(action.label)} />
                   ))}
-                  <Button keep variant="primary" icon="plus" label="Neuer Auftrag" onClick={deed("Neuer Auftrag")} />
+                  <Button keep variant="primary" icon="plus" onClick={deed("Neuer Auftrag")}>
+                    Neuer Auftrag
+                  </Button>
                 </>
               }
             />
@@ -77,6 +80,9 @@ export function Fixture() {
                 <>
                   <Button keep icon="share" label="Teilen" onClick={deed("Teilen")} />
                   <Button keep icon="star" label="Merken" onClick={deed("Merken")} />
+                  <Button keep icon="printer" label="Drucken" onClick={deed("Drucken")} />
+                  <Button keep icon="history" label="Verlauf" onClick={deed("Verlauf")} />
+                  <Button keep icon="archive" label="Archivieren" onClick={deed("Archivieren")} />
                 </>
               }
             />
