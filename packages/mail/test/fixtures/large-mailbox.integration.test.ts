@@ -10,9 +10,11 @@ import { createMailbox } from "../../src/service/mailboxes";
 import { hydrateMessageFromSource } from "../../src/service/message-hydration";
 import { getConversationViewCounts, listConversations, listFolders } from "../../src/service/messages";
 import { ingestEnvelope } from "../../src/service/sync-runtime";
-import { loadMailboxListView, resolveWorkspaceRequest } from "../../src/service/workspace";
+import { loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../../src/service/workspace";
 import { anchor, planLargeMailbox, seedLargeMailbox } from "./large-mailbox";
 
+/** The statements of one warm mailbox page load (see the test below); a new one needs a reason in its PR. */
+const PAGE_LOAD_STATEMENTS = 40;
 const suite = suiteFor("database", "nats", "valkey");
 const mailboxIds: string[] = [],
   accessIds: string[] = [],
@@ -184,6 +186,34 @@ suite("large mailbox fixture persistence", () => {
         // Pin the service path independently of the browser fixture and transport middleware.
         expect(statements).toHaveLength(20);
       }
+    } finally {
+      await meter.close();
+    }
+  }, 30000);
+  test("a mailbox page load has a bounded SQL budget once its counts are warm", async () => {
+    const id = await mailbox("Page load SQL");
+    const plan = planLargeMailbox({ seed: 20261127, anchor, messages: 1800, conversations: 600, folders: 12 });
+    await seedLargeMailbox(sql, plan, { mailboxId: id, userIds: [userId] });
+    const page = async () => {
+      const resolved = await resolveWorkspaceRequest(new URL(`/app/mail/${id}`, "https://cloud.test"), id);
+      if (!resolved) throw new Error("Fixture mailbox did not resolve");
+      const result = await loadMailboxPageData({ context, mailboxId: id, ...resolved, listMode: "conversations", locale: "de" });
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data;
+    };
+    // warm counts, as a person meets them after the first visit
+    expect((await getConversationViewCounts({ context, mailboxId: id, cached: true })).ok).toBe(true);
+    const meter = await meterSql();
+    try {
+      let shown: Awaited<ReturnType<typeof page>> | undefined;
+      const statements = await meter.during(async () => {
+        shown = await page();
+      });
+      expect(shown!.listItems).toHaveLength(50);
+      expect(shown!.viewCountsPending).toBeUndefined();
+      // access, the frame (mailbox, folders, identities, saved views, tags, scheduled, receiving address, preferences,
+      // done today, the people a drag offers), the cached counts' version and the 50-row list
+      expect(statements).toHaveLength(PAGE_LOAD_STATEMENTS);
     } finally {
       await meter.close();
     }

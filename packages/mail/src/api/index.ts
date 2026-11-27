@@ -1987,14 +1987,27 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     ),
   )
-  .get("/mailboxes/:mailboxId/conversation-view-counts", v("param", mailboxParamSchema), async (c) =>
-    respondPublic(
-      c,
-      messages.getConversationViewCounts({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-      }),
-    ),
+  .get(
+    "/mailboxes/:mailboxId/conversation-view-counts",
+    v("param", mailboxParamSchema),
+    // "cached": the counts a workspace snapshot left pending, from the cache its count fills
+    v("query", z.object({ cached: z.enum(["true"]).optional() })),
+    async (c) => {
+      try {
+        return await respondPublic(
+          c,
+          await messages.getConversationViewCounts({
+            context: requestContext(c),
+            mailboxId: internalMailboxId(c),
+            cached: c.req.valid("query").cached === "true",
+          }),
+        );
+      } catch (error) {
+        if (error instanceof CountRefreshBusy)
+          return respond(c, { ok: false, error: error.message, status: 503, code: "MAIL_COUNTS_REFRESHING" });
+        throw error;
+      }
+    },
   )
   .get("/mailboxes/:mailboxId/activity", v("param", mailboxParamSchema), v("query", activityQuerySchema), async (c) => {
     const { kind, actor, ...query } = c.req.valid("query");

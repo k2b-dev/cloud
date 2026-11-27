@@ -75,4 +75,10 @@ describe("mailbox head tabs", () => {
       "saved:Saved1",
     ]);
   });
+  test("pending counts show no number rather than a zero", () => {
+    const tabs = mailboxViewTabs({ ...input, viewCounts: null });
+    expect(tabs.filter((tab) => expectedViews.includes(tab.id as (typeof expectedViews)[number])).map((tab) => tab.count)).toEqual(
+      expectedViews.map(() => undefined),
+    );
+  });
 });

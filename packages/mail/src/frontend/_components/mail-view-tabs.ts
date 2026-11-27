@@ -29,7 +29,8 @@ export const mailboxCurrentTab = (state: {
 
 export const mailboxViewTabs = (input: {
   mailboxId: string;
-  viewCounts: ConversationViewCounts;
+  /** Null while the counts are pending: the tabs then show no number rather than a zero. */
+  viewCounts: ConversationViewCounts | null;
   savedViews: readonly SavedConversationView[];
   /** A person who sees only assigned conversations has no Unassigned view and no Events tab: the feed spans the mailbox. */
   assignedOnly: boolean;
@@ -43,7 +44,7 @@ export const mailboxViewTabs = (input: {
     id: view,
     label: input.labels[view],
     href: `/app/mail/${input.mailboxId}?view=${view}`,
-    count: input.formatCount(input.viewCounts[view]),
+    count: input.viewCounts ? input.formatCount(input.viewCounts[view]) : undefined,
   })),
   ...input.savedViews.map((view) => ({
     id: `saved:${view.id}`,

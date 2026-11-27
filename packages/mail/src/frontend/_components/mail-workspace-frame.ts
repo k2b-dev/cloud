@@ -18,6 +18,7 @@ export type MailWorkspaceFrame = Pick<
   | "identities"
   | "scheduledCount"
   | "viewCounts"
+  | "viewCountsPending"
   | "localTags"
   | "dropAssignees"
 >;
@@ -34,6 +35,7 @@ export const pickMailWorkspaceFrame = (data: MailboxPageData): MailWorkspaceFram
   identities: data.identities,
   scheduledCount: data.scheduledCount,
   viewCounts: data.viewCounts,
+  ...(data.viewCountsPending ? { viewCountsPending: data.viewCountsPending } : {}),
   localTags: data.localTags,
   dropAssignees: data.dropAssignees,
 });

@@ -296,6 +296,25 @@ export function createMailboxController(props: MailboxControllerProps) {
   const [selectionMode, setSelectionMode] = createSignal(false);
   const [conversationOpenIntent, setConversationOpenIntent] = createSignal(0);
   const mailboxId = props.data.mailbox.id;
+  // Counts that were still cold when the snapshot's wait ran out: the server goes on counting into its cache, so the
+  // browser asks it once per pending snapshot and shows the numbers when they come; until then no number shows.
+  createEffect(() => {
+    if (!data.viewCountsPending) return;
+    const request = new AbortController();
+    onCleanup(() => request.abort());
+    void apiClient.mailboxes[":mailboxId"]["conversation-view-counts"]
+      .$get({ param: { mailboxId }, query: { cached: "true" } }, { init: { signal: request.signal } })
+      .then(async (response) => {
+        if (!response.ok || request.signal.aborted) return;
+        const counts = await response.json();
+        if (request.signal.aborted) return;
+        batch(() => {
+          setData("viewCounts", counts);
+          setData("viewCountsPending", undefined);
+        });
+      })
+      .catch(() => undefined);
+  });
   const userPreferences = createMemo(() => observeMailUserPreferences(mailboxId, props.initialUserPreferences));
   // The views that mix folders name the first folder set to "Only in the folder" until this person dismisses it.
   // The dismissals live in the preferences cookie, so the server renders the same hint and nothing moves on load.
@@ -3070,7 +3089,7 @@ export function createMailboxController(props: MailboxControllerProps) {
   const viewTabs = createMemo(() =>
     mailboxViewTabs({
       mailboxId: data.mailbox.id,
-      viewCounts: listCounts().viewCounts,
+      viewCounts: data.viewCountsPending ? null : listCounts().viewCounts,
       savedViews: data.savedViews,
       assignedOnly: assignedOnly(),
       labels: {
@@ -3467,7 +3486,8 @@ export function MailboxWorkspace(props: MailboxWorkspaceProps) {
         };
       })()}
       doneToday={
-        controller().data.listMode === "conversations"
+        // its share of open work needs the counts: it waits while they are pending
+        controller().data.listMode === "conversations" && !controller().data.viewCountsPending
           ? {
               done: controller().data.doneTodayCounts.doneToday,
               automated: controller().data.doneTodayCounts.doneByAutomation,

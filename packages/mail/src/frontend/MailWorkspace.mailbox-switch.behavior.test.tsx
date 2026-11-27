@@ -417,6 +417,39 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(scope()).toEqual([{ type: "mail.mailbox", id: "Box002" }]);
   });
 
+  test("pending counts show no number, then load once from the cache and show", async () => {
+    const asked: string[] = [];
+    const inner = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname.endsWith("/conversation-view-counts")) {
+          asked.push(url.search);
+          return Response.json({ ...data.viewCounts, needs_action: 7 });
+        }
+        return inner(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const zero = {
+      needs_action: 0,
+      mine: 0,
+      unassigned: 0,
+      waiting: 0,
+      done: 0,
+      snoozed: 0,
+      send_problems: 0,
+      recently_active: 0,
+      kept: 0,
+    };
+    const tab = () => dom.root.querySelector(`a[href="/app/mail/${MAILBOX_ID}?view=needs_action"]`)?.textContent ?? "";
+    mount(path, { ...snapshotFor(path), viewCounts: zero, viewCountsPending: true });
+    expect(tab()).not.toMatch(/\d/);
+    await settle();
+    expect(asked).toEqual(["?cached=true"]);
+    expect(tab()).toContain("7");
+  });
+
   test("the retained list clears A's bulk selection before B can act", async () => {
     mount();
     const list = dom.root.querySelector("[data-mail-conversation-list]");
