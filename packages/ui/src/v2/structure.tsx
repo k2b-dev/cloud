@@ -1,10 +1,9 @@
-import { createSignal, For, type JSX, onCleanup, onMount, children as resolveChildren, Show } from "solid-js";
+import { createSignal, For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useDisclosure } from "./behavior/files";
 import { Button } from "./button";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
-import { Menu } from "./menu";
 import type { Action, TwoActions } from "./types";
 
 const HeadActions = (props: { actions?: TwoActions }) => (
@@ -35,8 +34,8 @@ export type SectionProps = {
   /** A quiet count after the title. */
   count?: number | string;
   /**
-   * At most two text buttons in the head; on the phone they keep only their symbol. Without room for the title and
-   * every button whole they fold into "⋯".
+   * At most two text buttons in the head; they keep their words, and the title shortens before them. On the phone they
+   * keep only their symbol.
    */
   actions?: TwoActions;
   /** One sentence under the head that sums the section up. */
@@ -49,52 +48,13 @@ export type SectionProps = {
 
 /**
  * A section: a head with symbol, title, count and at most two text buttons. Rule 9: no line under the head, none
- * between the entries, one line at the end. The buttons keep their words: a head without room for the title and every
- * button whole folds them into "⋯", which holds them as a menu; only a title that alone fills the head is shortened.
+ * between the entries, one line at the end.
  */
 export const Section = (props: SectionProps) => {
-  // Measured in the browser from what the head would need with its title and every button whole; the server sends the
-  // buttons, and the stylesheet keeps them whole until then.
-  const [folded, setFolded] = createSignal(false);
-  let head: HTMLDivElement | undefined;
-  onMount(() => {
-    if (!head) return;
-    const measure = () => {
-      if (!head || !props.actions?.length) return setFolded(false);
-      const style = getComputedStyle(head);
-      // each part's own width (scrollWidth), also while the title is shortened or the buttons are folded away
-      const parts = [...head.children].filter(
-        (part): part is HTMLElement => part instanceof HTMLElement && !part.hasAttribute("data-fold"),
-      );
-      const ends = parts.reduce((sum, part) => sum + (Number.parseFloat(getComputedStyle(part).marginRight) || 0), 0);
-      const need =
-        parts.reduce((sum, part) => sum + Math.max(part.scrollWidth, part.offsetWidth), 0) +
-        (Number.parseFloat(style.columnGap) || 0) * (parts.length - 1) +
-        ends;
-      const room = head.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
-      setFolded(need > room + 0.5);
-    };
-    let frame = 0;
-    const later = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        measure();
-      });
-    };
-    measure();
-    const sizes = new ResizeObserver(later);
-    sizes.observe(head);
-    void document.fonts?.ready.then(later);
-    onCleanup(() => {
-      cancelAnimationFrame(frame);
-      sizes.disconnect();
-    });
-  });
   const summary = resolveChildren(() => props.summary);
   return (
     <section class="k2-sec" data-k2-part="Section" aria-label={props.title}>
-      <div ref={head} class="k2-sh">
+      <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (
             <Show when={props.color} fallback={<Icon name={name()} />}>
@@ -109,23 +69,9 @@ export const Section = (props: SectionProps) => {
           <span class="k2-sh-count">{props.count}</span>
         </Show>
         <Show when={props.actions?.length}>
-          <span class="k2-sh-end" data-folded={folded() ? "" : undefined}>
+          <span class="k2-sh-end">
             <HeadActions actions={props.actions} />
           </span>
-          <Show when={folded()}>
-            <span class="k2-sh-fold" data-fold="">
-              <Menu
-                items={(props.actions ?? []).map((action) => ({
-                  label: action.label,
-                  icon: action.icon,
-                  href: action.href,
-                  onNavigate: action.onNavigate,
-                  onClick: action.onClick,
-                  disabled: action.disabled,
-                }))}
-              />
-            </span>
-          </Show>
         </Show>
       </div>
       <Show when={summary() !== undefined}>

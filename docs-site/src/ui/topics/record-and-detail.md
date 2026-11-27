@@ -50,7 +50,7 @@ Two to four key statements side by side, with the area's colour; one under the o
 
 ### Section
 
-A titled part with a count, at most two text buttons, a summary and one link to all of it at the end. The buttons keep their words: a head without room for its title and every button whole folds them into "⋯", which holds them as a menu; only a title that alone fills the head is shortened.
+A titled part with a count, at most two text buttons, a summary and one link to all of it at the end. The buttons keep their words; without room the title shortens before them.
 
 <Props of="Section" />
 

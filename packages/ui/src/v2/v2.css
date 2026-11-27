@@ -835,7 +835,6 @@
   flex: none;
 }
 .k2-ui .k2-sh {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -855,27 +854,13 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
+/* the buttons never shrink, so their words are never cut; the title shortens before them */
 .k2-ui .k2-sh > .k2-sh-end {
   margin-left: auto;
   display: flex;
   flex: none;
   gap: 4px;
   align-items: center;
-  margin-right: -8px;
-}
-/* The buttons never shrink: without room for the title and every button whole they fold into "⋯" (structure.tsx).
-   Folded, they stay in the page out of the flow and out of sight, so the head can measure what they would need. */
-.k2-ui .k2-sh > .k2-sh-end[data-folded] {
-  position: absolute;
-  width: 0;
-  overflow: hidden;
-  visibility: hidden;
-  pointer-events: none;
-}
-.k2-ui .k2-sh > .k2-sh-fold {
-  display: flex;
-  flex: none;
-  margin-left: auto;
   margin-right: -8px;
 }
 .k2-ui .k2-stile {

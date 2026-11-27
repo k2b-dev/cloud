@@ -6,8 +6,9 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/bro
 import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-section-actions.demo";
 
-// The buttons of a section head keep their words or fold into "⋯"; they are never cut (Files, DP: "Verwalten" was cut
-// at 800 px). test/v2-section-actions.demo.tsx at 800 and 1440 px, in Chromium and WebKit.
+// The buttons of a section head keep their words and are never cut; the title shortens before them (Files, DP:
+// "Verwalten" was cut at 800 px). test/v2-section-actions.demo.tsx at 800 and 1440 px, in Chromium and WebKit.
+// Folding the buttons into "⋯" comes with the shared fold of a bar's end (#4392).
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -64,11 +65,11 @@ const heads = (page: Page) =>
     }),
   );
 
-test("800 px: a head without room folds its buttons into '⋯'; one with room keeps the words; nothing is cut", async () => {
+test("800 px: every head keeps its buttons whole with their words; the title shortens before them", async () => {
   await withPage(800, async (page) => {
     const found = await heads(page);
     for (const head of found) expect([head.title, head.whole, head.titleInside]).toEqual([head.title, true, true]);
-    expect(found.map((head) => head.buttons)).toEqual([["Weitere Aktionen"], ["Verwalten"], ["Weitere Aktionen"]]);
+    expect(found.map((head) => head.buttons)).toEqual([["Hinzufügen", "Verwalten"], ["Verwalten"], ["Verwalten"]]);
   });
 });
 
@@ -77,22 +78,5 @@ test("1440 px: every head has room and keeps its buttons with their words", asyn
     const found = await heads(page);
     for (const head of found) expect([head.title, head.whole, head.titleInside]).toEqual([head.title, true, true]);
     expect(found.slice(0, 2).map((head) => head.buttons)).toEqual([["Hinzufügen", "Verwalten"], ["Verwalten"]]);
-  });
-});
-
-test("the '⋯' of a head holds its buttons as entries that do the same; with room again the buttons come back", async () => {
-  await withPage(800, async (page) => {
-    const section = page.getByRole("region", { name: "Freigaben für Mitarbeitende" });
-    await section.getByRole("button", { name: "Weitere Aktionen" }).click();
-    await page.locator(".k2-menu").waitFor();
-    await settled(page);
-    expect(await page.getByRole("menuitem").allTextContents()).toEqual(["Hinzufügen", "Verwalten"]);
-    expect(await page.getByRole("menuitem", { name: "Verwalten" }).getAttribute("href")).toBe("#verwalten");
-    await page.getByRole("menuitem", { name: "Hinzufügen" }).click();
-    await page.locator(".k2-menu").waitFor({ state: "detached" });
-    expect(await page.evaluate(() => window.__sectionDeeds ?? [])).toEqual(["add"]);
-    await page.setViewportSize({ width: 1440, height: 800 });
-    await settled(page);
-    expect((await heads(page))[0]?.buttons).toEqual(["Hinzufügen", "Verwalten"]);
   });
 });
