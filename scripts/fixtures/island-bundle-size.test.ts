@@ -79,3 +79,15 @@ test("a real change of N compressed bytes stays visible as about N bytes", async
   expect(delta).toBeGreaterThanOrEqual(1000);
   expect(delta).toBeLessThanOrEqual(1060);
 }, 300_000);
+
+test("an island whose dead modules link modules the bundler dropped whole is measured (#4332)", async () => {
+  // V2WorkspaceNavigation reaches preference-controller and locale-preference, which the bundler drops whole and leaves
+  // out of the metafile; it still links their imports of shared/theme and shared/locale, two dead modules that the
+  // measured build replaces by stubs with only the imported names.
+  // an island of the same folder, drawn as a screen with that navigation (the build takes no entry that is not a file)
+  const entry = resolve(import.meta.dir, "../../packages/cloud/src/ssr/PwaPartCount.island.tsx");
+  const code =
+    'import { V2WorkspaceNavigation } from "./islands";\nexport default () => <V2WorkspaceNavigation label="Probe" groups={[]} />;\n';
+  const size = await islandBundleSize([entry], { [entry]: code });
+  expect(size.eagerBrotliBytes).toBeGreaterThan(0);
+}, 300_000);
