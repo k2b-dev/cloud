@@ -179,7 +179,8 @@ const crowded = (page: Page) =>
     probe.style.cssText = "position:absolute;visibility:hidden;width:var(--k2-start-least)";
     const current = nav.querySelector<HTMLElement>("b")!;
     current.append(probe);
-    const least = probe.offsetWidth;
+    // the page's least: the start's least, or its own width where its name is shorter
+    const least = Math.min(probe.offsetWidth, current.scrollWidth);
     probe.remove();
     // the end's own buttons, not the "…" the fold adds
     const foldable = [...bar.querySelectorAll<HTMLElement>(":scope > .k2-bar-end > .k2-btn[data-variant='ghost']")];
