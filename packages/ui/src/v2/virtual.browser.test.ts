@@ -458,3 +458,51 @@ test(
   },
   TEST_TIMEOUT,
 );
+
+// Review of #4211 (DP, W1b): a row that stays in the window keeps its element, so its focus, its state and the work of
+// making it stay. A scroll by one row and a page more (new rows after the others) make none of them anew.
+for (const change of ["scroll", "more"] as const)
+  test(
+    `the rows that stay in the window keep their element after ${change === "scroll" ? "a scroll by one row" : "a page more"}`,
+    async () => {
+      await withPage(async (page) => {
+        await scrollTo(page, '.k2-pane[aria-label="Liste"] > .k2-scroll', 4000);
+        await scrollTo(page, '.k2-pane[aria-label="Tabelle"] .k2-table-scroll', 2000);
+        await settled(page);
+        await page.evaluate(() => {
+          const found = new Map<string, Element>();
+          for (const link of document.querySelectorAll<HTMLAnchorElement>(
+            '.k2-pane[aria-label="Liste"] [data-k2-part="Row"] a[href^="#e"]',
+          ))
+            found.set(link.getAttribute("href")!, link.closest('[data-k2-part="Row"]')!);
+          for (const cell of document.querySelectorAll<HTMLElement>(".k2-table [data-cell]"))
+            found.set(cell.dataset.cell!, cell.closest("tr")!);
+          window.__k2Saved = found;
+        });
+        if (change === "scroll") {
+          await scrollTo(page, '.k2-pane[aria-label="Liste"] > .k2-scroll', 4040);
+          await scrollTo(page, '.k2-pane[aria-label="Tabelle"] .k2-table-scroll', 2040);
+        } else await page.evaluate(() => window.__k2More?.());
+        await settled(page);
+        const kept = await page.evaluate(() => {
+          const saved = window.__k2Saved!;
+          let same = 0;
+          let made = 0;
+          for (const link of document.querySelectorAll<HTMLAnchorElement>(
+            '.k2-pane[aria-label="Liste"] [data-k2-part="Row"] a[href^="#e"]',
+          )) {
+            const before = saved.get(link.getAttribute("href")!);
+            if (before) before === link.closest('[data-k2-part="Row"]') ? same++ : made++;
+          }
+          for (const cell of document.querySelectorAll<HTMLElement>(".k2-table [data-cell]")) {
+            const before = saved.get(cell.dataset.cell!);
+            if (before) before === cell.closest("tr") ? same++ : made++;
+          }
+          return { same, made };
+        });
+        expect(kept.made).toBe(0);
+        expect(kept.same).toBeGreaterThan(20);
+      });
+    },
+    TEST_TIMEOUT,
+  );

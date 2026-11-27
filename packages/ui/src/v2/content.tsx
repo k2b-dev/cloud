@@ -837,14 +837,28 @@ export const Table = <T,>(props: TableProps<T>) => {
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
+  // What stands in the table: the rows, each group's head before its first row. An entry keeps its object while its row
+  // (at its place) or its group stays, so new rows (a page more) make no row of the window anew (review of #4211).
+  let made = new Map<string, TableItem<T>>();
   const items = createMemo((): TableItem<T>[] => {
+    const kept = made;
+    made = new Map();
     const out: TableItem<T>[] = [];
     let last: string | undefined;
     props.rows.forEach((row, index) => {
       const group = props.group?.(row);
-      if (group && group.key !== last) out.push({ group });
+      if (group && group.key !== last) {
+        const before = kept.get(`group:${group.key}`);
+        const head =
+          before && "group" in before && before.group.meta === group.meta && before.group.count === group.count ? before : { group };
+        made.set(`group:${group.key}`, head);
+        out.push(head);
+      }
       last = group?.key;
-      out.push({ row, index });
+      const before = kept.get(`row:${key(row, index)}`);
+      const entry = before && "row" in before && before.row === row && before.index === index ? before : { row, index };
+      made.set(`row:${key(row, index)}`, entry);
+      out.push(entry);
     });
     return out;
   });

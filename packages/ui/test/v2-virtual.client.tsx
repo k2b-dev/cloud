@@ -12,6 +12,10 @@ declare global {
     __k2Tick?: () => void;
     /** Brings the entry with this key into view and gives back its row. */
     __k2Reveal?: (key: string) => HTMLElement | null;
+    /** Appends ten entries to the list and ten rows to the table, as "Weitere laden" does; the others stay the same. */
+    __k2More?: () => void;
+    /** The rows of the window by key, kept by the test to compare elements after a change. */
+    __k2Saved?: Map<string, Element>;
   }
 }
 
@@ -23,6 +27,12 @@ const entries = Array.from({ length: 1000 }, (_, index) => ({
 const rows = Array.from({ length: 200 }, (_, index) => ({ id: `r${index + 1}` }));
 const [tick, setTick] = createSignal(0);
 window.__k2Tick = () => setTick((value) => value + 1);
+const [listed, setListed] = createSignal(entries);
+const [tabled, setTabled] = createSignal(rows);
+window.__k2More = () => {
+  setListed((now) => [...now, ...Array.from({ length: 10 }, (_, index) => ({ key: `n${index + 1}`, title: `Neu ${index + 1}` }))]);
+  setTabled((now) => [...now, ...Array.from({ length: 10 }, (_, index) => ({ id: `m${index + 1}` }))]);
+};
 let list: ListController | undefined;
 window.__k2Reveal = (key) => list?.reveal(key) ?? null;
 
@@ -145,7 +155,7 @@ else
           <Pane label="Liste">
             <List
               label="Einträge"
-              items={entries}
+              items={listed()}
               rowKey={(entry) => entry.key}
               controller={(handle) => {
                 list = handle;
@@ -156,7 +166,7 @@ else
           <Pane label="Tabelle" width={{ min: 240, default: 320 }}>
             <Table
               label="Zeilen"
-              rows={rows}
+              rows={tabled()}
               rowKey={(row) => row.id}
               sticky
               columns={[
