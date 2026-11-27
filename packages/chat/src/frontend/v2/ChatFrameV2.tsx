@@ -40,6 +40,8 @@ export type ChatDetailV2 = {
   head: { name: string; avatar?: Person; kinds?: readonly string[]; ids?: readonly RecordId[] };
   /** The way back to the list on the phone. */
   back: Action;
+  /** The way back shows on a wide screen too: a discussion stands in the place of its room's stream. */
+  wideBack?: boolean;
   /** The part of the chat that shows, as a choice with words (the threads). */
   picker?: { label: string; name: string; items: readonly MenuEntry[] };
   buttons?: readonly ChatHeadButton[];
@@ -170,6 +172,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                   width={props.info() ? { min: 440, default: 560 } : undefined}
                   label={detail().label}
                   back={detail().back}
+                  wideBack={detail().wideBack}
                   head={
                     <Bar
                       start={

@@ -319,7 +319,7 @@ const placeWithDiscussions = (name: string) => {
       ref: { type: "spaces.item", id: `${name}-Item0${index}` },
       title,
       permission: "read",
-      typeTitle: "Item",
+      typeTitle: "Spaces",
       icon: "ti ti-package",
       status: index === 0 ? "Erledigt" : "Offen",
       done: index === 0,
@@ -332,9 +332,10 @@ const placeWithDiscussions = (name: string) => {
 
 // B (study v2-chat-threads-study, Valentin's v8 comment on the discussions column): a place has no column of its own.
 // Its "General" stream holds its discussions as cards at their last activity; a card opens the discussion as a page
-// of its own, whose way back leads to the place.
+// of its own in the stream's place, on every screen, whose way back leads to the place.
 for (const [width, height] of [
   [1440, 900],
+  [1920, 1080],
   [390, 844],
 ] as const)
   test(`a place's discussions stand as cards in its General stream and open as pages that lead back, at ${width} px`, async () => {
@@ -349,6 +350,24 @@ for (const [width, height] of [
       expect(await cards.nth(1).getAttribute("data-unread")).toBe("");
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", skip: '[data-k2-part="Canvas"]' });
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
+      if (width >= 768) {
+        // The stream keeps a reading measure in the middle of its pane: the cards and the bubbles
+        // neither stretch with a wide window nor stand lost at its left edge.
+        const measure = await page.evaluate(() => {
+          const pane = document.querySelector('[data-k2-part="Pane"][data-detail]')!.getBoundingClientRect();
+          const parts = [...document.querySelectorAll(".chat-discussion, .k2b-message-row__text")];
+          const boxes = parts.map((part) => part.getBoundingClientRect());
+          return {
+            middle: pane.left + pane.width / 2,
+            left: Math.min(...boxes.map((box) => box.left)),
+            right: Math.max(...boxes.map((box) => box.right)),
+            card: Math.max(...[...document.querySelectorAll(".chat-discussion")].map((card) => card.getBoundingClientRect().width)),
+          };
+        });
+        expect(measure.left).toBeGreaterThanOrEqual(measure.middle - 380 - 1);
+        expect(measure.right).toBeLessThanOrEqual(measure.middle + 380 + 1);
+        expect(measure.card).toBeLessThanOrEqual(640);
+      }
       await shoot(page, `09-discussions-light-${width}`);
       // a card opens its discussion as a page, named after the item, with the place as its way back
       await cards.nth(1).click();
@@ -356,13 +375,20 @@ for (const [width, height] of [
       await page.locator(".chat-conversation__composer").waitFor();
       const detail = page.locator('[data-k2-part="Pane"][data-detail]');
       await detail.locator('[data-k2-part="RecordHead"]', { hasText: "Besichtigung" }).waitFor();
+      // it stands in the stream's place: no menu of the place's discussions in its head, the place only in its way back
+      expect(await detail.locator('[data-slot="head"] button[aria-haspopup="menu"]', { hasText: "Besichtigung" }).count()).toBe(0);
       await shoot(page, `09-discussion-open-light-${width}`);
-      const back = page.locator('[data-k2-part="Back"] a', { hasText: `Ausstellung ${width}` }).first();
-      if (width < 768) {
-        await back.click();
-        await page.waitForURL(new RegExp(`/c/${place}/t/general`));
-        await cards.first().waitFor();
-      } else expect(await back.getAttribute("href")).toContain(`/c/${place}/t/general`);
+      // the way back to the place stands above it on every screen and leads back to its stream
+      const back = detail.locator('[data-k2-part="Back"] a', { hasText: `Ausstellung ${width}` });
+      expect(await back.isVisible()).toBe(true);
+      await back.click();
+      await page.waitForURL(new RegExp(`/c/${place}/t/general`));
+      await cards.first().waitFor();
+      // reload keeps the discussion that the address names
+      await page.goBack();
+      await page.waitForURL(new RegExp(`/c/${place}/t/${threads[1]}`));
+      await page.reload();
+      await detail.locator('[data-k2-part="RecordHead"]', { hasText: "Besichtigung" }).waitFor();
       expect(errors).toEqual([]);
     } finally {
       await close();

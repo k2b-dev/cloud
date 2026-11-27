@@ -579,6 +579,9 @@
   padding: 0 var(--k2-edge);
   border-bottom: var(--k2-hairline);
 }
+.k2-ui .k2-pane[data-wide-back] > .k2-pane-back {
+  display: flex;
+}
 /* a long name of the list (a search, a folder deep down) is cut at its end with "…": the button never leaves its bar
    and never runs under what stands beside it; the whole name stays its accessible name and its hint */
 .k2-ui .k2-pane-back > .k2-btn[data-variant="text"] {
@@ -3163,20 +3166,22 @@
   outline: none;
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
-/* The nav's search and main action stand under the app's name, each across the column, before the groups */
-.k2-ui .k2-nav-search,
-.k2-ui .k2-nav-primary {
+/* The nav's search stands under the app's name, across the column, before the groups */
+.k2-ui .k2-nav-search {
   display: flex;
   flex: none;
   min-width: 0;
 }
-.k2-ui .k2-nav-search > .k2-input,
-.k2-ui .k2-nav-primary > .k2-btn {
+/* the main action at the end of the name's row, as an icon button (its label is its name and tooltip) */
+.k2-ui .k2-nav-primary {
+  display: flex;
+  flex: none;
+  margin-inline-start: auto;
+  font-weight: normal;
+}
+.k2-ui .k2-nav-search > .k2-input {
   flex: 1;
   min-width: 0;
-}
-.k2-ui .k2-nav-primary {
-  margin-bottom: 8px;
 }
 /* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their
    own between the groups and the foot, as a tree does; the foot keeps its place at the bottom */
@@ -4523,7 +4528,7 @@
   .k2-ui
     .k2-ws-side
     > .k2-nav:has(> .k2-nav-list[data-phone="page"])
-    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-label, .k2-ni, .k2-ni-row, .k2-nav-fold, .k2-nt, .k2-nav-foot) {
+    > :is(.k2-nav-title, .k2-nav-label, .k2-ni, .k2-ni-row, .k2-nav-fold, .k2-nt, .k2-nav-foot) {
     display: none;
   }
   .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) > .k2-nav-search {

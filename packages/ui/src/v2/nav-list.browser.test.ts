@@ -95,17 +95,16 @@ for (const width of [1440, 1024])
     await withPage(width, async (page) => {
       const side = await box(page, ".k2-ws-side");
       expect(side.visible).toBe(true);
-      // the search and "Neuer Chat" under the name, then the filters, the list and the foot
-      expect((await shown(page)).parts).toEqual([
-        "k2-nav-title",
-        "k2-nav-search",
-        "k2-nav-primary",
-        "k2-ni",
-        "k2-ni",
-        "k2-ni",
-        "k2-nav-list",
-        "k2-nav-foot",
-      ]);
+      // "Neuer Chat" as an icon button at the end of the name's row, named and with its tooltip; the search under it,
+      // then the filters, the list and the foot
+      expect((await shown(page)).parts).toEqual(["k2-nav-title", "k2-nav-search", "k2-ni", "k2-ni", "k2-ni", "k2-nav-list", "k2-nav-foot"]);
+      const button = page.locator(".k2-ws-side .k2-nav-title .k2-nav-primary button");
+      expect(await button.getAttribute("aria-label")).toBe("Neuer Chat");
+      expect(await button.getAttribute("title")).toBe("Neuer Chat");
+      expect(await button.innerText()).toBe("");
+      const [title, plus] = [await box(page, ".k2-ws-side .k2-nav-title"), await box(page, ".k2-ws-side .k2-nav-primary")];
+      expect(plus.top >= title.top && plus.bottom <= title.bottom).toBe(true);
+      expect(title.right - plus.right).toBeLessThanOrEqual(12);
       const list = await box(page, ".k2-ws-side .k2-nav-list");
       expect(list.left).toBe(side.left);
       expect(Math.abs(list.right - side.right)).toBeLessThanOrEqual(1);

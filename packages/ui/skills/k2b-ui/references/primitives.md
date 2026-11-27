@@ -65,6 +65,9 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   `keep`: it gives way on the phone like the other head actions. A long name (a search) is cut with "…" on
   one line; the whole name stays its accessible name and its hint. A detail
   that closes in place returns the focus to the row that opened it.
+- `wideBack`: the way back shows on a wide screen too, for a page that
+  stands in the place of another one, not beside a list (a discussion in
+  the place of its room's stream: "‹ Frühlingsausstellung").
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
 - `side`: the context column (the info column of a record, what a form
@@ -436,9 +439,10 @@ lines instead of cutting a thing.
 ## Components
 
 - `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
-  `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
-  `Action`, such as "Neuer Chat") stand under the name, each across the
-  column; pass the same action as `Workspace` `primary`, which floats on the
+  `search` (`{ label, value, onInput, onKeyDown? }`) stands under the name,
+  across the column; `primary` (an `Action`, such as "Neuer Chat") is an
+  icon button at the end of the name's row, its label its name and tooltip;
+  pass the same action as `Workspace` `primary`, which floats on the
   phone. `list` holds the app's own rows after the groups (a `List` of
   `Row`s, such as conversations): made once, like the other parts of a
   frame, they reach the column's edges and scroll on their own above the

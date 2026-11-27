@@ -84,7 +84,8 @@ describe("Chat v2 server render", () => {
       // Two columns (Valentin, v8): the chats are the nav's own rows under its search and "New chat", the phone's page;
       // there is no list pane, no head bar and no "Chats" entry of their own.
       expect(html).toContain('class="k2-nav-search"');
-      expect(html).toContain('class="k2-nav-primary"');
+      // "New chat" is an icon button at the end of the nav's name row, named by its label
+      expect(html).toMatch(new RegExp(`class="k2-nav-title">(?:(?!</div>).)*class="k2-nav-primary"><[^>]*aria-label="${t.newChat}"`, "s"));
       expect(html).toMatch(/class="k2-nav-list" data-phone="page">(?:(?!<\/nav>).)*Werkstatt Nord/s);
       expect(html).not.toContain('data-slot="head"><button');
       expect(html).not.toContain(`<span class="k2-ni-name">${t.chats}</span>`);

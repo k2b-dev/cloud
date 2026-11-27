@@ -3654,14 +3654,11 @@ export function ChatWorkspaceView(
     const thread = openThread();
     const resource = system() ? (thread?.resource ?? undefined) : undefined;
     const status = resource ? (resource.status ?? (resource.done ? t().threadsDone : null)) : null;
-    const subtitle =
-      system() && thread
-        ? current.title
-        : system()
-          ? t().systemMembers
-          : current.channel
-            ? t().subscribers({ count: current.memberCount })
-            : t().members({ count: current.memberCount });
+    const subtitle = system()
+      ? t().systemMembers
+      : current.channel
+        ? t().subscribers({ count: current.memberCount })
+        : t().members({ count: current.memberCount });
     const buttons: ChatHeadButton[] = [];
     const away = newAway();
     if (away)
@@ -3714,13 +3711,18 @@ export function ChatWorkspaceView(
         ids: [
           // A discussion about an element says where it stands (its context), else what kind of element it is, as v1.
           ...(resource ? [{ value: resource.context ?? resource.typeTitle }] : []),
-          { value: subtitle },
+          // a place's discussion names its place in its way back, which stands above it on every screen
+          ...(system() && thread ? [] : [{ value: subtitle }]),
           ...(current.notifications?.level === "none" ? [{ icon: "bell-off", value: t().notificationsOffMark }] : []),
         ],
       },
       back: backAction(),
+      wideBack: system() && !!thread,
+      // a place's General stream holds the menu of its discussions and their state; a discussion leads back to it
       picker: system()
-        ? { label: t().switchThread({ name: viewTitle() }), name: viewTitle(), items: placeMenu(current) }
+        ? thread
+          ? undefined
+          : { label: t().switchThread({ name: viewTitle() }), name: viewTitle(), items: placeMenu(current) }
         : threaded()
           ? {
               label: t().switchThread({ name: viewTitle() }),
