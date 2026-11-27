@@ -465,6 +465,72 @@
   margin-left: auto;
 }
 
+/* The document's name at the start of the toolbar, in the size of its tools: the editor needs no head row above it. */
+.k2b-ui .k2b-markdown-editor__leading {
+  min-width: 0;
+  max-width: 40%;
+  margin-right: 0.5rem;
+  padding-inline: 0.375rem;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* On the phone the page's bar names the document already; the toolbar stays one row: its tools scroll sideways, and
+   its end (the state, saving) keeps its place at the right. */
+@media not all and (min-width: 768px) {
+  .k2b-ui .k2b-markdown-editor__leading {
+    display: none;
+  }
+  .k2b-ui .k2b-markdown-editor__toolbar:has(> .k2b-markdown-editor__trailing) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .k2b-ui .k2b-markdown-editor__toolbar > :is(.k2b-markdown-editor__tool, .k2b-markdown-editor__separator, .k2b-markdown-editor__trailing) {
+    flex: none;
+  }
+  .k2b-ui .k2b-markdown-editor__toolbar > .k2b-markdown-editor__trailing {
+    position: sticky;
+    right: 0;
+    padding-left: 0.5rem;
+    background: var(--k2b-surface);
+  }
+}
+
+/* The state in words where saving stands while there is nothing to save, such as "Alles gespeichert". */
+.k2b-ui .k2b-markdown-editor__state {
+  padding-inline: 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.75rem;
+  white-space: nowrap;
+}
+
+/* The same place as a button while there is something to save: its words and its symbol. */
+.k2b-ui .k2b-markdown-editor__save {
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding-inline: 0.625rem;
+  border: 1px solid var(--k2b-edge);
+  border-radius: 0.375rem;
+  color: var(--k2b-text);
+  background: var(--k2b-surface);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-markdown-editor__save:hover:not(:disabled) {
+  background: var(--k2b-hover);
+}
+
 .k2b-ui .k2b-markdown-editor__surface {
   position: relative;
   height: calc(var(--k2b-editor-lines, 6) * 1.5rem);
