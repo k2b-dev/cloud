@@ -338,7 +338,7 @@ const portableSections = [
         "ti ti-bell",
         "Scoped transient feedback with updates, actions, and dismissal, plus screen-reader announcements.",
       ),
-      page("moved-hint", "MovedHint", "ti ti-arrow-move-right", "A one-time anchored hint to a familiar path’s new place."),
+      page("moved-hint", "MovedHint", "ti ti-arrow-move-right", "A one-time anchored hint, kept for existing apps; new screens redirect a moved path instead."),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),
       page(
         "hover-card",

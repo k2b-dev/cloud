@@ -1203,7 +1203,8 @@ with `PATCH` on that route and `{ "listShare": 0.4 }`; values must be 0–1.
 `null` restores the default 40%. Preferences belong to the current person and
 mailbox and require read access, including assigned-only access.
 
-Mark a hint seen with
+Mail no longer shows these hints. The seen-hints route stays for existing
+clients: mark a hint seen with
 `PUT /api/mail/mailboxes/{mailboxId}/workspace-preference/seen-hints` and
 `{ "hintId": "filters-moved" }`. Known IDs are `reader-head-moved`,
 `filters-moved`, `toolbar-moved`, `density-by-width`, and `drafts-consolidated`.

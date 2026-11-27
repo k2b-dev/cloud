@@ -2,7 +2,6 @@ import { type DndCollisionContext, type DndController, type DndDroppableSnapshot
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Dropdown, type DropdownAnchor, type DropdownItem, type DropdownReturnFocus } from "../actions/Dropdown";
 import { announce } from "../feedback/announce";
-import { MovedHint } from "../feedback/MovedHint";
 import { Tooltip } from "../feedback/Tooltip";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
@@ -67,8 +66,8 @@ export type PanesProps = {
    */
   defaultLayout?: PanesLayout;
   /**
-   * The one-time hint at the first tab grip that panes can be arranged. The application decides on the server
-   * whether it was seen and stores the dismissal, so a dismissed hint never renders again.
+   * @deprecated Ignored. Panes no longer shows a hint that panes can be arranged; the Arrange button and the tab grips
+   * are the way in.
    */
   arrangeHint?: { open: boolean; onDismiss: () => void };
   ariaLabel?: string;
@@ -473,8 +472,6 @@ export default function Panes(props: PanesProps): JSX.Element {
     setContextItemId(itemId);
     openContextMenu?.(anchor, returnFocus);
   };
-  let firstGrip: HTMLElement | undefined;
-  let arrangeButton: HTMLElement | undefined;
 
   return (
     <div
@@ -536,9 +533,6 @@ export default function Panes(props: PanesProps): JSX.Element {
                 lazy
               >
                 <Dropdown.Trigger
-                  ref={(element: HTMLButtonElement) => {
-                    arrangeButton = element;
-                  }}
                   class="k2b-panes__arrange"
                   variant="ghost"
                   size="sm"
@@ -549,9 +543,6 @@ export default function Panes(props: PanesProps): JSX.Element {
                 </Dropdown.Trigger>
               </Dropdown>
             )}
-            registerFirstGrip={(element) => {
-              firstGrip = element;
-            }}
           />
         )}
       </Show>
@@ -564,23 +555,6 @@ export default function Panes(props: PanesProps): JSX.Element {
           openContextMenu = open;
         }}
       />
-      <Show when={props.arrangeHint && canArrange()}>
-        <MovedHint
-          // Hidden while a tab is dragged, so it never covers a drop target; it comes back afterwards.
-          open={(props.arrangeHint?.open ?? false) && draggedItemId() === null}
-          onDismiss={() => props.arrangeHint?.onDismiss()}
-          target={() => firstGrip}
-          action={{
-            label: panesMessages().arrange,
-            onClick: () => {
-              const button = arrangeButton;
-              if (button) openMenu(menuItemFor(), button, button);
-            },
-          }}
-        >
-          <strong>{panesMessages().arrangeHint}</strong> {panesMessages().arrangeHintDetail}
-        </MovedHint>
-      </Show>
     </div>
   );
 }
@@ -606,7 +580,6 @@ type RendererProps = {
   /** The first item of the group that shows the Arrange button, or `null` when there is none. */
   hostGroupKey: () => string | null;
   arrange: () => JSX.Element;
-  registerFirstGrip: (element: HTMLElement) => void;
 };
 
 function PanesNodeRenderer(props: RendererProps): JSX.Element {
@@ -926,7 +899,6 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     queueMicrotask(syncScrollbar);
   });
   const isHost = () => props.hostGroupKey() !== null && props.hostGroupKey() === itemIds()[0];
-  const isFirstGroup = () => props.path.every((segment) => segment === "first");
   const tabId = (itemId: string) => `${props.instanceId}-${itemId}-tab`;
   const panelId = (itemId: string) => `${props.instanceId}-${itemId}-panel`;
   const focusTab = (index: number) => {
@@ -1056,13 +1028,7 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
                     onKeyDown={(event) => onTabKeyDown(event, index(), itemId)}
                   >
                     <Show when={props.canMove()}>
-                      <i
-                        ref={(element) => {
-                          if (index() === 0 && isFirstGroup()) props.registerFirstGrip(element);
-                        }}
-                        class="ti ti-grip-vertical k2b-panes__grip"
-                        aria-hidden="true"
-                      />
+                      <i class="ti ti-grip-vertical k2b-panes__grip" aria-hidden="true" />
                     </Show>
                     <span class="k2b-ui k2b-panes__drag-surface k2b-panes__drag-preview" data-dnd-preview>
                       <i class={`${iconClass(item().icon)} k2b-panes__icon`} aria-hidden="true" />

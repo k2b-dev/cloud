@@ -12,7 +12,6 @@ import {
   createNewSpace,
   createPinnedSpaces,
   createSpacesNavigationItems,
-  listenSpacesNavigationHints,
   type SpacesSidebarData,
 } from "./spaces-navigation";
 import type { SpaceContext } from "./types";
@@ -36,7 +35,6 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: Spa
       );
   });
   onMount(() => {
-    onCleanup(listenSpacesNavigationHints(document, props.sidebar.spaces));
     if (!props.ctx.canWrite) return;
     onCleanup(syncSpacePrimaryHref(document, props.ctx));
   });

@@ -8,7 +8,6 @@ import {
   type DropdownItem,
   IconButton,
   IconButtonLink,
-  MovedHint,
   Tooltip,
   useLocale,
 } from "@k2b/ui";
@@ -55,8 +54,6 @@ export const fittingChipCount = (input: { widths: readonly number[]; available: 
   return input.widths.length;
 };
 
-export type MailReaderHint = "toolbar-moved" | "reader-head-moved";
-
 /**
  * The head of an open conversation (Mail v5): close, the subject on one line, the five fixed actions and "…", and a
  * row of chips with the conversation's state, tags, and links. Every action also stays in "…", so a narrow head
@@ -101,13 +98,9 @@ export default function MailReaderHead(props: {
   laterItems: () => DropdownItem[];
   menuItems: () => DropdownItem[];
   menuLabel: string;
-  /** The one-time hint this head shows, if any; the owner decides it from what the person has seen. */
-  hint: MailReaderHint | null;
-  onHintSeen: (hint: MailReaderHint) => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailReaderMessages.resolve([locale()]).t);
-  const [moreTrigger, setMoreTrigger] = createSignal<HTMLElement>();
   const [chipRow, setChipRow] = createSignal<HTMLElement>();
 
   const formatWhen = (iso: string) => dates.formatDateTimeRelative(iso, props.dateConfig);
@@ -358,7 +351,7 @@ export default function MailReaderHead(props: {
             )}
           </Show>
           <Dropdown.Root position="bottom-left" width="16rem" items={props.menuItems()}>
-            <Dropdown.Trigger iconOnly type="button" variant="ghost" label={props.menuLabel} ref={setMoreTrigger} data-mail-reader-more>
+            <Dropdown.Trigger iconOnly type="button" variant="ghost" label={props.menuLabel} data-mail-reader-more>
               <i class="ti ti-dots" aria-hidden="true" />
             </Dropdown.Trigger>
           </Dropdown.Root>
@@ -409,24 +402,6 @@ export default function MailReaderHead(props: {
           )}
         </Show>
       </div>
-      <MovedHint
-        open={props.hint === "toolbar-moved"}
-        target={moreTrigger}
-        placement="bottom"
-        action={{ label: t().openMenu, onClick: () => moreTrigger()?.click() }}
-        onDismiss={() => props.onHintSeen("toolbar-moved")}
-      >
-        {t().toolbarMoved}
-      </MovedHint>
-      <MovedHint
-        open={props.hint === "reader-head-moved"}
-        target={chipRow}
-        placement="bottom"
-        action={{ label: t().learnMore, href: "/app/mail/help/mail-collaboration" }}
-        onDismiss={() => props.onHintSeen("reader-head-moved")}
-      >
-        {t().readerHeadMoved}
-      </MovedHint>
     </div>
   );
 }

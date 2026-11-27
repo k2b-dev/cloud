@@ -1,42 +1,40 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
 if (isServer) {
-  test.skip("sidebar hints use browser conditions", () => {});
+  test.skip("sidebar tests use browser conditions", () => {});
 } else {
   const dom = createDomTestHarness();
   afterAll(() => dom.cleanup());
   const { default: SpacesSidebarList } = await import("./SpacesSidebarList");
   const { default: SpaceNavigation } = await import("./SpaceNavigation.island");
-  const { createPinnedSpaces, createSpacesNavigationItems, listenSpacesNavigationHints } = await import("./spaces-navigation");
+  const { createPinnedSpaces, createSpacesNavigationItems } = await import("./spaces-navigation");
   const { LocaleProvider } = await import("@k2b/ui");
   let dispose: (() => void) | undefined;
   afterEach(() => {
     dispose?.();
     dispose = undefined;
     dom.root.replaceChildren();
-    dom.document.cookie = "cloud_seen_hints=; Path=/; Max-Age=0";
     dom.document.cookie = "settings-app-spaces=; Path=/; Max-Age=0";
   });
   const spaces = [
     { id: "Space1", name: "Launch", color: "#3b82f6", description: null, openItemCount: 2 },
     { id: "Space2", name: "Ideas", color: "#6366f1", description: null, openItemCount: 1 },
   ];
-  const mount = (id: "spaces.sidebar-switch" | "spaces.overview-sidebar", open = true, locale = "en") => {
+  const mount = () => {
     dispose = render(
       () =>
         createComponent(LocaleProvider, {
-          locale,
+          locale: "en",
           get children() {
             return createComponent(SpacesSidebarList, {
               spaces,
               pinnedSpaceIds: [],
               myWorkCount: 3,
               canCreate: true,
-              current: id === "spaces.sidebar-switch" ? { kind: "space", id: "Space1" } : { kind: "overview" },
-              hint: { id, open },
+              current: { kind: "space", id: "Space1" },
             });
           },
         }),
@@ -79,46 +77,6 @@ if (isServer) {
     expect(pin).not.toBeNull();
     pin!.click();
     expect(menu()).toEqual(["My work", "Calendar", "Ideas (pinned)", "Launch"]);
-  });
-
-  describe("sidebar moved hints", () => {
-    for (const id of ["spaces.sidebar-switch", "spaces.overview-sidebar"] as const) {
-      test(`${id} renders only when open; dismissal persists and hides it`, () => {
-        mount(id, false);
-        expect(dom.root.querySelector(".k2b-moved-hint")).toBeNull();
-        dispose?.();
-        mount(id);
-        expect(dom.root.querySelector(".k2b-moved-hint")).not.toBeNull();
-        const dismiss = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Got it");
-        expect(dismiss).toBeDefined();
-        dismiss?.click();
-        expect(dom.document.cookie).toContain(id);
-        expect(dom.root.querySelector(".k2b-moved-hint")).toBeNull();
-      });
-    }
-    test("German dismissal says Verstanden and using a Space row marks both sidebar paths seen", () => {
-      mount("spaces.sidebar-switch", true, "de");
-      expect(Array.from(dom.root.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Verstanden")).toBe(true);
-      const link = dom.root.querySelector<HTMLAnchorElement>('a[href="/app/spaces/Space2"]');
-      link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-      expect(dom.document.cookie).toContain("spaces.sidebar-switch");
-      expect(dom.document.cookie).toContain("spaces.overview-sidebar");
-      expect(dom.root.querySelector(".k2b-moved-hint")).toBeNull();
-    });
-  });
-
-  test("a phone title-menu Space link outside the sidebar also marks the new path; cleanup removes the listener", () => {
-    const stop = listenSpacesNavigationHints(dom.document, spaces);
-    const anchor = dom.document.createElement("a");
-    anchor.href = "/app/spaces/Space2";
-    dom.root.append(anchor);
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    expect(dom.document.cookie).toContain("spaces.sidebar-switch");
-    expect(dom.document.cookie).toContain("spaces.overview-sidebar");
-    stop();
-    dom.document.cookie = "cloud_seen_hints=; Path=/; Max-Age=0";
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    expect(dom.document.cookie).not.toContain("spaces.sidebar-switch");
   });
 
   test("the registered phone menu has the Space name, object destinations, current Space, and creation action", () => {
@@ -168,7 +126,7 @@ if (isServer) {
   });
 
   test("pinning changes the order, persists it, and announces the change", () => {
-    mount("spaces.sidebar-switch", false);
+    mount();
     const button = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Pin Ideas"]');
     expect(button).not.toBeNull();
     button?.click();
