@@ -68,7 +68,7 @@ export default function AssistantProjectV2(p: ProjectParts) {
               when={p.chatItems().length > 0}
               fallback={
                 <Show when={!p.chats.error() && !p.chats.loading()}>
-                  <Empty icon="messages" text={p.text("No Project p.chats yet.")} />
+                  <Empty icon="messages" text={p.text("No Project chats yet.")} />
                 </Show>
               }
             >

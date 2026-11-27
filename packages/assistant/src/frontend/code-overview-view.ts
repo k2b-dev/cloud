@@ -169,7 +169,11 @@ export type CodeOverviewProps = {
  * server's first page; without it, the list loads when the view opens. Items without card extras get them in the
  * browser, bounded by the page.
  */
-export const createCodeOverview = (props: CodeOverviewProps) => {
+/**
+ * `filterFrom`: from how many entries the chosen filter applies. v1 shows its chips only from `FILTER_FROM`; v2 always
+ * shows its exceptions as chips, so every chip filters (`0`).
+ */
+export const createCodeOverview = (props: CodeOverviewProps, filterFrom = FILTER_FROM) => {
   const [page, setPage] = createSignal<CodeOverviewPage | null | undefined>(props.initial);
   const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
   const [filter, setFilter] = createSignal<Filter>(readFilter());
@@ -267,7 +271,7 @@ export const createCodeOverview = (props: CodeOverviewProps) => {
       running: statuses.filter((status) => status === "running").length,
     };
   });
-  const showsFilters = () => counts().all >= FILTER_FROM;
+  const showsFilters = () => counts().all >= filterFrom;
   const visible = createMemo(() => {
     const chosen = showsFilters() ? filter() : "all";
     if (chosen === "all") return items();

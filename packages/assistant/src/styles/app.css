@@ -579,7 +579,7 @@
 .k2b-ui .artifact-pane__body > .assistant-context-tab { margin: 0 -1rem -1rem; }
 .k2b-ui .artifact-pane[data-kind="web"] > .artifact-pane__body { padding: 0; }
 /* The v2 page's context tab holds v2 sections, which keep their own text edge: the v1 pane adds none of its own. */
-.k2b-ui .artifact-pane[data-kind="context"] > .artifact-pane__body:has(> [data-k2-part="Section"], > [data-k2-part="List"]) { padding: 0; }
+.k2b-ui .artifact-pane[data-kind="context"] > .artifact-pane__body[data-flush] { padding: 0; }
 
 /* A web page in the reading view (concept 3l, stage 1): the address bar is the pane's head. */
 .web-reader { display: flex; flex: 1; flex-direction: column; min-height: 0; }
@@ -1164,8 +1164,6 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-prefs-v2 { padding: 16px 20px 24px; }
 .k2b-ui .assistant-prefs-v2__foot { margin-top: 16px; }
 /* v2: All chats leads with its search, the one filter beside it. */
-.assistant-all-chats-v2__filters { display: flex; align-items: center; gap: 8px; padding: 0 20px 12px; }
-.assistant-all-chats-v2__filters > :first-child { flex: 1; min-width: 0; }
 /* v2: a Project's composer and its context column keep the pane's text edge of 20 px. */
 .k2b-ui .assistant-project-composer-v2 { padding: 16px 20px 20px; }
 .k2b-ui .assistant-project-context-v2 { padding: 16px 20px 20px; }

@@ -48,8 +48,8 @@ test("a list of every chat that cannot open says so in a toast with Try again", 
       dom.root,
     );
     openAll?.();
-    for (let attempt = 0; attempt < 50 && !dom.document.body.textContent?.includes("ließ sich nicht öffnen"); attempt++)
-      await Bun.sleep(10);
+    // The test's own timeout bounds the wait for the failure line.
+    while (!dom.document.body.textContent?.includes("ließ sich nicht öffnen")) await Bun.sleep(10);
     expect(dom.document.body.textContent).toContain("Die Liste aller Chats ließ sich nicht öffnen.");
     expect(opens).toBe(1);
     const retry = [...dom.document.querySelectorAll("button")].find((button) => button.textContent?.includes("Erneut versuchen"));

@@ -1,6 +1,6 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { Format } from "@k2b/ui";
-import { Button, Dialog, Empty, Failed, Input, List, Loading, Menu, Row, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Dialog, Empty, Failed, Input, List, Loading, Menu, Row, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import { assistantApi } from "../../api/client";
 import { type ChatView, createAllChats, emptyViewText } from "../all-chats-state";
@@ -62,24 +62,38 @@ export default function AssistantAllChatsDialogV2(props: {
         </>
       }
     >
-      <div class="assistant-all-chats-v2__filters">
-        <Input
-          type="search"
-          icon="search"
-          label={text("Search chats")}
-          placeholder={text("Search chats…")}
-          value={all.query()}
-          onInput={all.search}
-        />
-        {/* A single choice: the button names the chosen filter, the menu closes on a choice. */}
-        <Menu
-          label={text("Chat filters")}
-          icon="filter"
-          items={all.chatViews().map((entry) => ({ label: entry.label, onClick: () => all.selectView(entry.value) }))}
-        >
-          {viewLabel()}
-        </Menu>
-      </div>
+      <Bar
+        start={
+          <Input
+            type="search"
+            icon="search"
+            label={text("Search chats")}
+            placeholder={text("Search chats…")}
+            value={all.query()}
+            onInput={all.search}
+          />
+        }
+        end={
+          // A single choice: the button names the chosen filter, the menu marks it and closes on a choice.
+          <Menu
+            label={text("Chat filters")}
+            icon="filter"
+            items={[
+              {
+                title: text("Show"),
+                choice: all.view(),
+                onChoose: (value) => {
+                  const chosen = all.chatViews().find((entry) => entry.value === value);
+                  if (chosen) all.selectView(chosen.value);
+                },
+                items: all.chatViews().map((entry) => ({ label: entry.label, value: entry.value })),
+              },
+            ]}
+          >
+            {viewLabel()}
+          </Menu>
+        }
+      />
       <Show
         when={all.result.data()}
         fallback={

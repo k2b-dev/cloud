@@ -38,7 +38,8 @@ const markOf = (item: CodeOverviewItem) => {
 export default function AssistantAppsV2(props: CodeOverviewProps) {
   const locale = useLocale();
   const t = () => viewText(locale());
-  const o = createCodeOverview(props);
+  // The exception chips always stand, so they always filter, also with fewer than FILTER_FROM apps.
+  const o = createCodeOverview(props, 0);
   const runsToday = () => {
     const line = o.line();
     return line ? line.succeeded + line.failed + line.running + line.planned + line.grouped : null;

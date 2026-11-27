@@ -30,6 +30,7 @@ const germanText: Record<string, string> = {
   "Loading…": "Wird geladen…",
   New: "Neu",
   "Show more": "Mehr anzeigen",
+  Show: "Anzeigen",
   "Active schedule": "Aktiver Zeitplan",
   "Open chat": "Chat öffnen",
   "Open run": "Lauf öffnen",

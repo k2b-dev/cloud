@@ -584,9 +584,9 @@ const layoutProblems = async (page: Page): Promise<string[]> => {
   return [...(outline.includes("Problems (") ? [outline] : []), ...layout.problems];
 };
 
-/** Waits for something the test's routes saw, at most five seconds. */
+/** Waits for something the test's routes saw; the test's own timeout bounds it. */
 const until = async (seen: () => boolean) => {
-  for (let tries = 0; tries < 50 && !seen(); tries++) await Bun.sleep(100);
+  while (!seen()) await Bun.sleep(100);
 };
 
 const shoot = async (page: Page, name: string) => {
@@ -595,9 +595,9 @@ const shoot = async (page: Page, name: string) => {
 };
 
 describe("Assistant on v2", () => {
+  // At 1024 a chat's path and the head's actions share the head: on main's Bar the path does not give way first, so
+  // "Neuer Chat" is cut; #4223 lets the path give way before a button.
   for (const view of [wide, narrow, phone])
-    // At 1024 a chat's path and the head's actions share the head: on main's Bar the path does not give way first, so
-    // "Neuer Chat" is cut; #4223 lets the path give way before a button.
     for (const state of ["usual", "worst", "empty"] as const)
       (view === narrow && state !== "empty" ? test.todo : test)(
         `${view.name} ${state}: the page keeps the v2 rules and shows no loading on its first picture${view === narrow && state !== "empty" ? " (#4223)" : ""}`,
