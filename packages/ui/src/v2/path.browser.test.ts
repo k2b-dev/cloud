@@ -8,8 +8,9 @@ import type {} from "../../test/v2-path.demo";
 
 // A path keeps the page it names (Spaces, W3: "Space settin…" was cut before the long Space name). The places before
 // it shorten first, each down to its own width or 12 characters; the page shortens last, with "…", and never runs past
-// the path. From four places on, the middle ones stand in "…" with a menu, folded already on the server, until there is
-// room for every place at that least. test/v2-path.demo.tsx at 390, 1024 and 1440 px, in Chromium and WebKit.
+// the path. When not even that least has room, the places go into "…" with a menu (the middle ones first). The server
+// sends every place, so a path with room never moves when the page comes alive. test/v2-path.demo.tsx at 390, 1024 and
+// 1440 px, in Chromium and WebKit.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -126,17 +127,39 @@ for (const width of [390, 1024, 1440])
     });
   });
 
-test("390 px: the server sends a path of four places folded, and coming alive moves no page that stays folded", async () => {
+for (const width of [1024, 1440])
+  test(`${width} px: the server sends every place, and coming alive moves neither the page nor any place`, async () => {
+    const page = await open(width, true);
+    const errors = pageErrors(page);
+    try {
+      await settled(page);
+      const at = () =>
+        page.evaluate(() =>
+          ["Ort im Kopf", "Ort tief", "Ort mittel", "Seite lang 5"].map((name) =>
+            [...document.querySelectorAll<HTMLElement>(`nav[aria-label="${name}"] > :is(.k2-path-step, b)`)].map((part) => {
+              const box = part.getBoundingClientRect();
+              return `${name} ${part.textContent?.slice(0, 12)} ${Math.round(box.x)} ${Math.round(box.width)}`;
+            }),
+          ),
+        );
+      const sent = await at();
+      expect(await page.evaluate(() => document.querySelectorAll("nav.k2-path [data-folded]").length)).toBe(0);
+      await live(page);
+      expect(await at()).toEqual(sent);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+test("390 px: the one change coming alive may make is a path without room that folds, once", async () => {
   const page = await open(390, true);
   const errors = pageErrors(page);
   try {
     await settled(page);
-    const at = () =>
-      page.evaluate(() => document.querySelector('nav[aria-label="Ort mittel"] [aria-current="page"]')?.getBoundingClientRect().x ?? -1);
-    const sent = await at();
-    expect(await page.evaluate(() => document.querySelectorAll('nav[aria-label="Ort mittel"] .k2-path-step[data-folded]').length)).toBe(2);
+    expect(await page.evaluate(() => document.querySelectorAll('nav[aria-label="Ort mittel"] [data-folded]').length)).toBe(0);
     await live(page);
-    expect(await at()).toBe(sent);
+    expect((await named(page))["Ort mittel"]).toMatchObject({ places: ["Spaces", "Küche"], more: ["Weitere Orte"] });
     expect(errors).toEqual([]);
   } finally {
     await page.close();

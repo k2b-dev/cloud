@@ -419,8 +419,9 @@ export const Tabs = (props: TabsProps) => {
  * Without room the places before the page shorten first, each down to its own width or 12 characters, whichever is
  * less; the page itself shortens last, with "…". When the places do not fit even so, they go into a "…" that opens them
  * as a menu: first the ones between the first place and the parent (from four places on), then all of them. The
- * server sends a path of four places with its middle ones folded; the browser unfolds them where they have room. On
- * the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
+ * server sends every place, shortened to its least, so a path with room never moves when the page comes alive; only a
+ * path that has no room even so folds once, in the browser. On the phone the path gives way to the phone bar of the
+ * shell, which names the page; its head stays only for a search.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
@@ -429,7 +430,8 @@ type PathFold = 0 | 1 | 2;
 
 export const Path = (props: PathProps) => {
   const t = useUiMessages();
-  const [level, setLevel] = createSignal<PathFold>(untrack(() => props.items.length) >= 4 ? 1 : 0);
+  // the server sends every place, shortened by the stylesheet; the browser folds only where even their least has no room
+  const [level, setLevel] = createSignal<PathFold>(0);
   const last = () => props.items.length - 1;
   const folds = (index: number, at: PathFold = level()) => index < last() && (at === 2 || (at === 1 && index > 0 && index < last() - 1));
   let nav: HTMLElement | undefined;

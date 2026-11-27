@@ -8,5 +8,5 @@
   - A cut page ends in "…".
   - Every place that shows keeps its own width or 12 characters.
   - The middle places fold into "…" only when they have no room at that least.
-  - The server sends a path of four places folded, so coming alive moves nothing.
+  - The server sends every place, and on a wide screen coming alive moves neither the page nor any place; only at 390 px does a path without room fold, once.
   - A folded place is no stop of the Tab key and hands its focus to "…".
