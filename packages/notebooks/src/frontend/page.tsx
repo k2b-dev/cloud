@@ -44,13 +44,18 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const templates = notebooksService.template
     .list(locale)
-    .map((template) => ({ ...template, pages: notebooksService.template.outline(template.id, locale) ?? [] }))
+    .map((template) => ({
+      ...template,
+      pages: notebooksService.template.outline(template.id, locale) ?? [],
+      preview: notebooksService.template.preview(template.id, locale) ?? undefined,
+    }))
     .sort((a, b) => rank(a.id) - rank(b.id));
   const blankPages = notebooksService.template.welcomeOutline();
+  const blankPreview = notebooksService.template.welcomePreview();
   const open = c.req.query("new") ?? null;
   return () => (
     <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
-      <NotebooksStart templates={templates} blankPages={blankPages} open={open} />
+      <NotebooksStart templates={templates} blankPages={blankPages} blankPreview={blankPreview} open={open} />
     </Layout>
   );
 });

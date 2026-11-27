@@ -158,10 +158,10 @@ for (const width of [1440, 1920, 1024, 390]) {
         expect.stringContaining("Leseliste"),
       ]);
       expect(await cards.nth(1).innerText()).toContain("6 Seiten");
-      expect(await cards.nth(1).innerText()).toContain("Tagebuch · Eingang · 2026");
+      expect(await cards.nth(2).locator(".k2-tile-preview").innerText()).toContain("Camembert");
       expect(await cards.nth(0).innerText()).toContain("1 Seite");
       // the fourth template waits in the dialog
-      expect(await cards.filter({ hasText: "Gartentagebuch" }).count()).toBe(0);
+      expect(await page.locator(".k2-tile-title").filter({ hasText: /^Gartentagebuch$/ }).count()).toBe(0);
       const pane = await box(page, '[data-k2-part="Pane"] > .k2-scroll');
       const tiles = await box(page, '[data-k2-part="Tiles"]');
       const tops = await cards.evaluateAll((all) => all.map((element) => Math.round(element.getBoundingClientRect().top)));

@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Pane, Text, Tiles, Workspace } from "@k2b/ui/v2";
+import { Pane, Text, type TilePreview, Tiles, Workspace } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { notebooksPageMessages } from "../../messages";
 import { createNoteCommands } from "../../note-commands";
@@ -7,8 +7,8 @@ import NewNotebookDialog, { type NewNotebookSource, type TemplateSummary } from 
 
 /** One page a way to start makes: its title and the page it stands under. */
 export type StartPage = { title: string; parent: string | null };
-/** A template on the start page, with the pages it makes. */
-export type StartTemplate = TemplateSummary & { pages: readonly StartPage[] };
+/** A template on the start page, with the pages it makes and what its card previews of them. */
+export type StartTemplate = TemplateSummary & { pages: readonly StartPage[]; preview?: TilePreview };
 
 /** The blank notebook's place in the address. */
 export const BLANK = "blank";
@@ -33,18 +33,19 @@ const startUrl = (id: string | null) => {
  *
  * Screen brief: a person opens Notebooks for the first time. They need, in this order: (1) the invitation to make their
  * first notebook, (2) the ways to start, a blank notebook or one of three templates, (3) what each makes
- * before they choose it: how many pages and the first of them. Nothing else is on the page: no sidebar, no switcher
+ * before they choose it: a glance of it and how many pages. Nothing else is on the page: no sidebar, no switcher
  * (Valentin: no nav, a few nice tiles in the middle). Eye path: the line, then the four cards from the blank one
  * on. A card opens the new-notebook dialog with its way to start; the dialog is in the address (`?new=`), so a reload
  * shows it again and back closes it. The fourth template and any later one stay in the dialog's choice of template.
  * On the phone the cards stand under each other from the top.
  *
- * k2b-ui gap: a card's preview area at its top (the page or table it makes, mockup empty-start-tiles), owner DP;
- * until then the card's foot names its first pages.
+ * Each card previews what its way makes across its top (mockup empty-start-tiles v4): the template's first table, or
+ * the blank notebook's welcome page, from the templates themselves.
  */
 export default function NotebooksStart(props: {
   templates: readonly StartTemplate[];
   blankPages: readonly StartPage[];
+  blankPreview?: TilePreview;
   open?: string | null;
 }) {
   createNoteCommands();
@@ -80,10 +81,14 @@ export default function NotebooksStart(props: {
     onCleanup(() => window.removeEventListener("popstate", follow));
   });
   const ways = () => [
-    { id: BLANK, name: t().blankNotebook, icon: "notebook", pages: props.blankPages },
-    ...props.templates
-      .slice(0, START_TEMPLATES)
-      .map((template) => ({ id: template.id, name: template.name, icon: sign(template.icon), pages: template.pages })),
+    { id: BLANK, name: t().blankNotebook, icon: "notebook", pages: props.blankPages, preview: props.blankPreview },
+    ...props.templates.slice(0, START_TEMPLATES).map((template) => ({
+      id: template.id,
+      name: template.name,
+      icon: sign(template.icon),
+      pages: template.pages,
+      preview: template.preview,
+    })),
   ];
   return (
     <>
@@ -100,13 +105,8 @@ export default function NotebooksStart(props: {
               icon: way.icon,
               color: "var(--k2-app)",
               title: way.name,
-              stats: [{ icon: "files", label: t().pageCount({ count: way.pages.length }) }],
-              foot:
-                way.pages
-                  .filter((page) => page.parent === null)
-                  .slice(0, 3)
-                  .map((page) => page.title)
-                  .join(" · ") || undefined,
+              meta: t().pageCount({ count: way.pages.length }),
+              preview: way.preview,
               href: `/app/notebooks?new=${encodeURIComponent(way.id)}`,
               onNavigate: () => open(way.id),
             }))}

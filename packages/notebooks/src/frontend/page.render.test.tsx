@@ -148,13 +148,18 @@ test("without a notebook, Notebooks is one line and four cards in a centred page
   expect(html).toContain("Leg dein erstes Notizbuch an");
   // the blank notebook, then the diary, the recipes and the reading list, each with its page count, sharing one row;
   // each card is a real link to its dialog, so it works before the page is live
-  const ways = await selectHtml(html, '[data-k2-part="Tiles"][data-per-row] .k2-tile');
-  expect(ways.map((card) => card.text.trim().split(/\d+ Seiten?/)[0])).toEqual([
-    "Leeres Notizbuch",
-    "Tagebuch",
-    "Rezepte und Vorräte",
-    "Leseliste",
+  const ways = await selectHtml(html, '[data-k2-part="Tiles"][data-per-row] .k2-tile .k2-tile-name');
+  expect(ways.map((name) => name.text.trim())).toEqual([
+    "Leeres Notizbuch1 Seite",
+    "Tagebuch6 Seiten",
+    "Rezepte und Vorräte6 Seiten",
+    "Leseliste4 Seiten",
   ]);
+  // each previews what it makes from the template itself: the welcome page, then the first tables
+  const previews = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile-preview');
+  expect(previews.map((preview) => preview.attributes["aria-hidden"])).toEqual(["true", "true", "true", "true"]);
+  expect(previews[2]?.text).toContain("Camembert");
+  expect(previews[3]?.text).toContain("Rick Rubin");
   const links = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile a[href^="/app/notebooks?new="]');
   expect(links.map((link) => link.attributes.href)).toEqual([
     "/app/notebooks?new=blank",

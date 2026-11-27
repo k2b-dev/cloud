@@ -1,4 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
+import type { TilePreview } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
 import { openNewNotebookDialog } from "../../create-notebook-dialog";
 import NotebooksStart, { type StartPage, type StartTemplate } from "./NotebooksStart";
@@ -50,6 +51,55 @@ const demo: StartTemplate[] = [
     pages: pages("Gartenübersicht", "Pflanzen", "Beete und heimische Hecke", "Ernte"),
   },
 ];
+// what each card previews: the templates' first tables, as the server reads them; the worst set's longest words
+const previews: Record<string, TilePreview> = {
+  "daily-notes": {
+    table: {
+      columns: ["Eintrag", "Nächster Schritt", "Status"],
+      rows: [
+        ["Heimische Hecke", "In das Gartentagebuch verschieben", "nächste Durchsicht"],
+        ["Kaffee mit Anna", "Kalender", "geplant"],
+        ["Buch über bewusstes Üben", "Recherchieren", "ausstehend"],
+      ],
+    },
+  },
+  "recipe-collector": {
+    table: {
+      columns: ["Zutat", "Menge", "Einheit"],
+      rows: [
+        ["Camembert", "250", "g"],
+        ["Frischkäse", "200", "g"],
+        ["Zwiebel", "1.2", "kg"],
+      ],
+    },
+  },
+  "reading-list": {
+    table: {
+      columns: ["Titel", "Autor", "Status"],
+      rows: [
+        ["The Creative Act", "Rick Rubin", "Reading"],
+        ["Braiding Sweetgrass", "Robin Wall Kimmerer", "Want"],
+        ["Four Thousand Weeks", "Oliver Burkeman", "Done"],
+      ],
+    },
+  },
+  daily: {
+    table: {
+      columns: ["Übergabe-und-Störungsprotokoll", "引き継ぎ記録", "Biên bản bàn giao ca sáng"],
+      rows: [["Frühschicht-Halle-7-Nordwerk-Instandhaltung", "سجل التسليم", "x"]],
+    },
+  },
+  handover: {
+    page: {
+      title: "Projektdokumentation und Übergabeprotokolle für Schichtwechsel 🛠️",
+      text: "https://intranet.nordwerk-instandhaltung.example.com/wiki/uebergabe/halle-7/fruehschicht – 引き継ぎ記録 سجل التسليم",
+    },
+  },
+};
+const withPreview = (all: StartTemplate[]) => all.map((template) => ({ ...template, preview: previews[template.id] }));
+const blankPreview: TilePreview = {
+  page: { title: "Welcome!", text: "This is your first note. You can use Markdown to format your text." },
+};
 const blankPages = pages("Welcome!");
 const worst: StartTemplate[] = [
   {
@@ -92,7 +142,7 @@ const worst: StartTemplate[] = [
 ];
 const url = new URL(window.location.href);
 const data = url.searchParams.get("data");
-const templates = data === "worst" ? worst : data === "empty" ? [] : data === "one" ? demo.slice(0, 1) : demo;
+const templates = withPreview(data === "worst" ? worst : data === "empty" ? [] : data === "one" ? demo.slice(0, 1) : demo);
 const lang = url.searchParams.get("lang") === "en" ? "en" : "de";
 
 const root = document.getElementById("root");
@@ -112,7 +162,7 @@ if (root) {
     render(
       () => (
         <LocaleProvider locale={lang}>
-          <NotebooksStart templates={templates} blankPages={blankPages} open={url.searchParams.get("new")} />
+          <NotebooksStart templates={templates} blankPages={blankPages} blankPreview={blankPreview} open={url.searchParams.get("new")} />
         </LocaleProvider>
       ),
       root,
