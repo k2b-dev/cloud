@@ -712,6 +712,67 @@
   height: var(--k2-h-head);
   gap: 12px;
 }
+/* The top left of a page is never empty: a workspace head with only actions (a `Bar` without a start) joins the first
+   row of the first pane. Beside the pane's own head (tabs, a bar) its actions end that row, on its one line. */
+.k2-ui .k2-pane > [data-slot="head"][data-k2-lent] {
+  display: flex;
+  position: relative;
+  flex: none;
+  min-width: 0;
+}
+.k2-ui .k2-pane > [data-slot="head"][data-k2-lent] > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* static, so the search that opens on the phone covers the whole row, the tabs too. Where the row is short, the
+   actions give way first (their search narrows to 10em), then the tabs (into "Mehr"): the views of the pane come
+   before what one does in it. */
+.k2-ui .k2-pane > [data-slot="head"][data-k2-lent] > .k2-bar:not(:first-child) {
+  flex: 0 1000 auto;
+  height: auto;
+  align-self: stretch;
+  padding-left: 0;
+  position: static;
+}
+@media (min-width: 768px) {
+  .k2-ui .k2-pane > [data-slot="head"][data-k2-lent] > .k2-bar:not(:first-child) > .k2-bar-end > .k2-input[data-search] {
+    flex: 0 1 auto;
+    min-width: 10em;
+  }
+}
+/* Without a head the actions stand beside the pane's first part (its hero), centred on its first line; the part
+   gives them their room, and what follows has the whole width again. They draw the part's line where it draws one. */
+.k2-ui .k2-pane > .k2-scroll[data-k2-lent] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
+  position: relative;
+}
+.k2-ui .k2-pane > .k2-scroll[data-k2-lent] > * {
+  grid-column: 1 / -1;
+}
+.k2-ui .k2-pane > .k2-scroll > [data-k2-lent] + * {
+  grid-column: 1;
+  grid-row: 1;
+}
+.k2-ui .k2-pane > .k2-scroll > [data-k2-lent] > .k2-bar {
+  grid-column: 2;
+  grid-row: 1;
+  height: auto;
+  align-self: stretch;
+  align-items: flex-start;
+  /* a band's 12 px above a first line of 24 px, the actions' 36 px on its middle */
+  padding-top: calc(12px + (24px - var(--k2-h-control)) / 2);
+  padding-left: 0;
+  position: static;
+  border-bottom-color: transparent;
+}
+.k2-ui .k2-pane > .k2-scroll > [data-k2-lent] > .k2-bar > .k2-bar-end {
+  align-self: flex-start;
+}
+.k2-ui .k2-pane > .k2-scroll > [data-k2-lent]:has(+ :is(.k2-band, .k2-sec, .k2-row)) > .k2-bar {
+  border-bottom-color: var(--k2-line);
+}
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
 }
@@ -783,6 +844,16 @@
 }
 .k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
   border-block: 0;
+}
+/* The last part of a pane draws no line under itself: below it ends the column, there is nothing to separate. The
+   line keeps its pixel (transparent), so nothing moves. */
+.k2-ui .k2-pane > .k2-scroll > :is(.k2-sec, .k2-row, .k2-band, .k2-bar):last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
+.k2-ui .k2-pane > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
+  border-bottom-color: transparent;
+}
+.k2-ui .k2-pane > .k2-scroll > .k2-table-scroll:nth-last-child(1 of :not(.k2-table-phone)) {
+  --k2-table-end: 1px solid transparent;
 }
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
@@ -4645,6 +4716,14 @@
     justify-content: flex-start;
     border-color: var(--k2-blue);
     background: var(--k2-surface);
+  }
+  /* beside a hero (a head's actions in the pane's first row) the field opens over the hero's first line, not over the
+     whole column */
+  .k2-ui .k2-pane > .k2-scroll > [data-k2-lent] > .k2-bar > .k2-bar-end > .k2-input[data-search]:focus-within {
+    top: calc(12px + (24px - var(--k2-h-control)) / 2);
+  }
+  .k2-ui .k2-pane > .k2-scroll > [data-k2-lent] > .k2-bar::after {
+    content: none;
   }
   /* A host that offers the page's search in a bar of its own (the Cloud shell's phone bar) marks the v2 scope with
      `data-k2-host-search` and focuses the field from there. The folded search then leaves the head, so its tabs keep

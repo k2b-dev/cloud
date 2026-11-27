@@ -12,6 +12,7 @@ import {
   children as resolveChildren,
   Show,
   splitProps,
+  untrack,
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
@@ -149,7 +150,10 @@ export type WorkspaceProps = {
   sidebarWidth?: Width;
   /** The name of the sidebar's grip, such as "Width of the sidebar". */
   sidebarLabel?: string;
-  /** The head across the main column: a `Bar` (56 px here) with tabs or a path and the actions. */
+  /**
+   * The head across the main column: a `Bar` (56 px here) with tabs or a path and the actions. A `Bar` with only
+   * actions (no `start`) takes no row: its actions join the first pane's first row (see `Bar`).
+   */
   head?: JSX.Element;
   /** The main action; on the phone it floats at the bottom right. */
   primary?: Action;
@@ -186,8 +190,15 @@ type Column = { readonly need: number; readonly detail: boolean; readonly away?:
  * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
  * at the top also learns what stands in the place of a declared detail while none is open.
  */
-type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+type Columns = {
+  register: (column: Column) => void;
+  empty: () => { icon: string; text: string } | undefined;
+  /** The first pane takes the actions of a head with an empty start, once (see `Bar`). */
+  lend: () => Accessor<readonly BarProps[]> | undefined;
+};
 const ColumnsContext = createContext<Columns | undefined>();
+/** Inside the head of a workspace: a `Bar` without a start hands itself over here instead of standing as a row. */
+const HeadContext = createContext<(bar: BarProps) => void>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
@@ -207,7 +218,21 @@ export const Workspace = (props: WorkspaceProps) => {
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
-  const head = resolveChildren(() => props.head);
+  // A head that is a `Bar` with only an end stands in no row of its own: the first pane shows it in its first row
+  // (`Pane`), so the top left is never empty. Without a pane it stays here.
+  const [lent, setLent] = createSignal<readonly BarProps[]>([]);
+  const [taken, setTaken] = createSignal(false);
+  const lendHead = (bar: BarProps) => {
+    setLent((list) => [...list, bar]);
+    onCleanup(() => setLent((list) => list.filter((other) => other !== bar)));
+  };
+  const head = resolveChildren(() => <HeadContext.Provider value={lendHead}>{props.head}</HeadContext.Provider>);
+  const lend = () => {
+    if (untrack(taken) || untrack(lent).length === 0) return undefined;
+    setTaken(true);
+    onCleanup(() => setTaken(false));
+    return lent;
+  };
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -281,6 +306,11 @@ export const Workspace = (props: WorkspaceProps) => {
     if (event.target instanceof Element && event.target.closest("a[href], button:not([aria-expanded]):not([aria-haspopup])"))
       setDrawerOpen(false);
   };
+  // The columns are made before the head's place, so it knows whether a pane took the head's actions.
+  const content = resolveChildren(() => (
+    <ColumnsContext.Provider value={{ register, empty, lend }}>{props.children}</ColumnsContext.Provider>
+  ));
+  const own = () => Boolean(head()) || (lent().length > 0 && !taken());
   const toggleButton = () => (
     <drawer.Trigger
       ref={(button: HTMLElement) => {
@@ -315,13 +345,16 @@ export const Workspace = (props: WorkspaceProps) => {
         <Seam grip={sideGrip()} />
       </Show>
       <div class="k2-ws-main" data-k2-column="">
-        <Show when={head() || sidebar()}>
-          <div class="k2-slot" data-slot="head" data-toggle-only={head() ? undefined : ""}>
+        <Show when={own() || sidebar()}>
+          <div class="k2-slot" data-slot="head" data-toggle-only={own() ? undefined : ""}>
             <Show when={sidebar()}>{toggleButton()}</Show>
             {head()}
+            <Show when={!taken()}>
+              <For each={lent()}>{(bar) => <Bar {...bar} />}</For>
+            </Show>
           </div>
         </Show>
-        <ColumnsContext.Provider value={{ register, empty }}>{props.children}</ColumnsContext.Provider>
+        {content()}
       </div>
       <Show when={sidebar()}>
         <style>{drawerRule()}</style>
@@ -473,6 +506,8 @@ export const Pane = (props: PaneProps) => {
       return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
+  // the actions of a workspace head with an empty start, when this is the workspace's first pane
+  const lent = useContext(ColumnsContext)?.lend();
   const head = resolveChildren(() => props.head);
   const status = resolveChildren(() => props.status);
   let section: HTMLElement | undefined;
@@ -526,9 +561,11 @@ export const Pane = (props: PaneProps) => {
           </div>
         )}
       </Show>
+      {/* the workspace head's actions end the row of this pane's own head … */}
       <Show when={head()}>
-        <div class="k2-slot" data-slot="head">
+        <div class="k2-slot" data-slot="head" data-k2-lent={lent ? "" : undefined}>
           {head()}
+          <Show when={lent}>{(bars) => <For each={bars()()}>{(bar) => <Bar {...bar} />}</For>}</Show>
         </div>
       </Show>
       <Show when={status()}>
@@ -536,7 +573,15 @@ export const Pane = (props: PaneProps) => {
           {status()}
         </div>
       </Show>
-      <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
+      <div class="k2-scroll" data-scroll-preserve={props.scrollKey} data-k2-lent={lent && !head() ? "" : undefined}>
+        {/* … or, without one, stand beside its first row, such as the hero */}
+        <Show when={lent && !head() ? lent : undefined}>
+          {(bars) => (
+            <div class="k2-slot" data-slot="head" data-k2-lent="">
+              <For each={bars()()}>{(bar) => <Bar {...bar} />}</For>
+            </div>
+          )}
+        </Show>
         <ColumnsContext.Provider value={undefined}>{props.children}</ColumnsContext.Provider>
       </div>
     </section>
@@ -711,10 +756,21 @@ export type BarProps = {
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
+ *
+ * As the head of a `Workspace`, a bar with no `start` stands in no row of its own, since the top left of a page is
+ * never empty: its actions join the first row of the workspace's first pane, at the end of the pane's own head, or
+ * beside the pane's first part (its hero) where the pane has no head. Without a pane it stays the head. Whether it has
+ * a start is decided when it is made.
  */
 export const Bar = (props: BarProps) => {
-  const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => props.end);
+  const lend = useContext(HeadContext);
+  // a bar inside this bar (in a menu's panel) is no head of the workspace
+  const start = resolveChildren(() => <HeadContext.Provider value={undefined}>{props.start}</HeadContext.Provider>);
+  if (lend && start() === undefined) {
+    lend(props);
+    return undefined;
+  }
+  const end = resolveChildren(() => <HeadContext.Provider value={undefined}>{props.end}</HeadContext.Provider>);
   return (
     <div class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined}>
