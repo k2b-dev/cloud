@@ -127,9 +127,9 @@ test("the menu's tree: named groups are sections, nested entries stand under the
       { id: "1:0", label: "Planen", icon: "ti ti-calendar", action: "1:0" },
       { id: "foot:0", label: "Ausgeblendet (2)", icon: "ti ti-eye-off", action: "foot:0", disabled: true },
     ]);
-    // the page sends the same tree with its first render, for the menu before the island loads
-    const snapshot = view.dom.root.querySelector("script[data-cloud-workspace-navigation]")?.textContent ?? "";
-    expect(JSON.parse(snapshot).items).toEqual(JSON.parse(JSON.stringify(view.registered.navigation.items())));
+    // the server's page carries the tree for the menu before the island loads (V2WorkspaceNavigation.render.test);
+    // the live island answers the menu itself and makes no snapshot of every entry in the browser
+    expect(view.dom.root.querySelector("script[data-cloud-workspace-navigation]")?.textContent ?? "").toBe("");
   } finally {
     view.cleanup();
   }
@@ -180,6 +180,58 @@ test("in the sheet the mailbox row keeps its whole link, a fold opens and closes
     expect(rowOf("Kontakt").querySelector(".k2b-dropdown__trigger, [aria-haspopup='menu']")).not.toBeNull();
   } finally {
     view.cleanup();
+  }
+});
+
+test("the phone sheet shows the page's 40 entries before the island runs, and every entry once it runs", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
+  const { default: V2WorkspaceNavigation } = await import("./V2WorkspaceNavigation");
+  const { openCloudMobileMenu } = await import("./MobileNavigation");
+  const items = Array.from({ length: 100 }, (_, index) => ({
+    label: `Tabelle ${index + 1}`,
+    icon: "table",
+    href: `/app/demo/t${index + 1}`,
+    ...(index === 0 ? { current: true } : {}),
+  }));
+  // the server's page: the section and its first 39 entries, 40 rows (V2WorkspaceNavigation.render.test checks them)
+  const script = dom.document.createElement("script");
+  script.type = "application/json";
+  script.setAttribute("data-cloud-workspace-navigation", "");
+  script.textContent = JSON.stringify({
+    label: "Tabellen",
+    items: [
+      {
+        id: "group:0",
+        label: "Tabellen",
+        section: true,
+        children: items.slice(0, 39).map((item) => ({
+          id: item.href,
+          label: item.label,
+          icon: "ti ti-table",
+          href: item.href,
+          ...(item.current ? { active: true } : {}),
+        })),
+      },
+    ],
+  });
+  dom.document.body.append(script);
+  const menu = openCloudMobileMenu({ apps: [{ id: "mail", label: "Mail", href: "/app/mail", iconClass: "ti ti-mail" }], legalLinks: [] });
+  let page: (() => void) | undefined;
+  try {
+    await Bun.sleep(20);
+    const shown = () => [...dom.document.querySelectorAll("dialog .k2b-navigation a[href]")].map((link) => link.textContent?.trim());
+    expect(shown()).toEqual(items.slice(0, 39).map((item) => item.label));
+    // the island runs while the sheet is open: the sheet reads the live navigation with every entry
+    page = render(() => <V2WorkspaceNavigation label="Tabellen" groups={[{ label: "Tabellen", items }]} />, dom.root);
+    await Bun.sleep(20);
+    expect(shown()).toEqual(items.map((item) => item.label));
+  } finally {
+    window.dispatchEvent(new Event("pagehide"));
+    await menu;
+    page?.();
+    script.remove();
+    dom.cleanup();
   }
 });
 

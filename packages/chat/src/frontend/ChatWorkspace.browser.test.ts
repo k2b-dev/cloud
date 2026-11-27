@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { hoverInPlace, launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled, viewTransitionEnded, waitInPage } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema, ReadAllOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
@@ -108,6 +108,13 @@ const load = async (
       expect(await page.locator("html").evaluate((element, theme) => element.classList.contains(theme), presentation.theme)).toBe(true);
     if (observe) await observeShifts(page);
     await prepare?.(page);
+    // The harness module defines mountChat as it runs. One that did not load names its request, not a TypeError (#4402).
+    await waitInPage(
+      page,
+      "the Chat harness module defines window.mountChat",
+      () => typeof window.mountChat === "function",
+      () => errors,
+    );
     await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
       props: { ...harness.props(address, { guest: presentation.guest }), embedded: address.embedded, app: address.app },
       locale: presentation.locale ?? "en",

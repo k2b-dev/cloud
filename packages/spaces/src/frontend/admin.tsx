@@ -4,6 +4,7 @@ import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { i18n } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { hexColor } from "@/frontend/lib/color";
 import { ssr } from "../config";
 import { spacesService } from "../service";
 import { spacesPublicResources } from "../service/public-resources";
@@ -140,7 +141,7 @@ export default ssr<AuthContext>(async (c) => {
                   <div class="flex min-w-52 items-center gap-2">
                     <span
                       class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] text-white"
-                      style={`background-color: ${space.color}`}
+                      style={`background-color: ${hexColor(space.color) ?? "transparent"}`}
                     >
                       <i class="ti ti-layout-kanban" />
                     </span>

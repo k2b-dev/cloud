@@ -2,6 +2,7 @@ import { dates as calendar } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import { createEffect, For, Show } from "solid-js";
 import { ButtonLink, IconButton } from "../actions/Button";
+import { cssColor } from "../internal/color";
 import { useUiMessages } from "../intl/messages";
 import { Avatar } from "../surfaces/Avatar";
 import type { CalendarEvent } from "./Calendar";
@@ -92,8 +93,8 @@ export const CalendarEventDetail = (props: {
             <div
               class="k2b-calendar-detail"
               tabIndex={-1}
-              data-color={event.colorHex ? undefined : (event.color ?? "blue")}
-              style={event.colorHex ? { "--k2b-calendar-accent": event.colorHex } : undefined}
+              data-color={cssColor(event.colorHex) ? undefined : (event.color ?? "blue")}
+              style={cssColor(event.colorHex) ? { "--k2b-calendar-accent": cssColor(event.colorHex) } : undefined}
             >
               <header class="k2b-calendar-detail__head">
                 <Show when={event.icon}>

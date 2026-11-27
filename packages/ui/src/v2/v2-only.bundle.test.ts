@@ -96,8 +96,9 @@ test("an island of v2 alone (every export, and useLocale) bundles no v1 module",
 // island with a `Nav` or a `Menu`, Chat's first chunk over its budget). The tree's and the panel's behaviour lives in
 // the behaviour layer, outside this measure; their modules here pull it in, so their absence is the guard.
 const lean = `import { Menu, Nav, Workspace } from ${v2Index};\nconsole.log(Menu, Nav, Workspace);\n`;
-// Measured 27.11.2026 (Bun 1.4.4, minified): 56 971 bytes of this package's own code, plus a tenth for growing.
-const leanBudget = Math.ceil(56_971 * 1.1);
+// Measured 27.11.2026 (Bun 1.4.4, minified): 64 453 bytes of this package's own code, plus a tenth for growing. It holds
+// `Input` (5.5 KB) for the nav's search (#4443), which nearly every page loads anyway; a tree or a panel never.
+const leanBudget = Math.ceil(64_453 * 1.1);
 
 test("an island with a Workspace, a Nav and a Menu loads no tree and no menu panel, and stays under its measure", async () => {
   const modules = await islandModules(lean);

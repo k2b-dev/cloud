@@ -27,7 +27,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Options = { width?: number; touch?: boolean; theme?: "light" | "dark"; slowSheet?: boolean };
+type Options = { width?: number; touch?: boolean; theme?: "light" | "dark"; slowSheet?: boolean; reducedMotion?: boolean };
 
 // Core loads its sheet module on its own time (a dynamic import, a chunk of its own in an app). The bundle of a slow
 // load waits for the page's `__k2LoadSheet()`, so a test can let it come after everything else of the popover.
@@ -47,9 +47,15 @@ const slowSheetBundle = () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, touch = false, theme = "light", slowSheet = false }: Options = {},
+  { width = 1440, touch = false, theme = "light", slowSheet = false, reducedMotion = false }: Options = {},
 ) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch, colorScheme: theme });
+  const page = await browser.newPage({
+    viewport: { width, height: 900 },
+    hasTouch: touch,
+    isMobile: touch,
+    colorScheme: theme,
+    reducedMotion: reducedMotion ? "reduce" : "no-preference",
+  });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -419,6 +425,42 @@ test("popover: a panel of 280 px under the start of its button with a title; Esc
     expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Filter");
   });
 });
+
+// A person who asks for less motion sees a sheet appear where it rests: from the first frame it shows in, its top stays
+// put (it may fade in, it never slides up). Every frame after the press is recorded, the menu's sheet and the popover's,
+// with a mouse and on a touch screen (core moves a touch screen's sheet another way).
+for (const [name, panel] of [
+  ["Weitere Aktionen", ".k2-menu"],
+  ["Vorschau", ".k2-pop"],
+] as const)
+  for (const touch of [false, true])
+    test(`reduced motion: the sheet of "${name}"${touch ? " on a touch screen" : ""} stands where it rests from its first frame`, async () => {
+      await withPage(
+        async (page) => {
+          await page.evaluate((selector) => {
+            const tops: number[] = [];
+            Object.assign(window, { __k2Tops: tops });
+            const take = () => {
+              const sheet = document.querySelector<HTMLElement>(selector);
+              const box = sheet?.getBoundingClientRect();
+              if (sheet && box && box.height > 0 && getComputedStyle(sheet).visibility !== "hidden") tops.push(Math.round(box.top));
+              if (tops.length < 90) requestAnimationFrame(take);
+            };
+            requestAnimationFrame(take);
+          }, panel);
+          const trigger = page.getByRole("button", { name, exact: true });
+          await (touch ? trigger.tap() : trigger.click());
+          await page.waitForFunction(() => (window as unknown as { __k2Tops: number[] }).__k2Tops.length >= 90, undefined, {
+            timeout: 5000,
+          });
+          const tops = await page.evaluate(() => (window as unknown as { __k2Tops: number[] }).__k2Tops);
+          expect(await page.locator(panel).first().getAttribute("data-presentation")).toBe("sheet");
+          // one top only: the place it rests at
+          expect([...new Set(tops)]).toEqual([tops.at(-1)!]);
+        },
+        { width: 390, touch, reducedMotion: true },
+      );
+    });
 
 // A panel behind a button without words in a head keeps the menu's phone contract: the button stays beside the "…",
 // and its panel is a sheet from the bottom, the whole width (#4151). On a wide screen it is the floating panel.
