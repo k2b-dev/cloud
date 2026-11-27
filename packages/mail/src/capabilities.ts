@@ -15,6 +15,8 @@ import {
   capabilityPage,
   cloudResourceHref,
   defineCapabilities,
+  FileProviderListDataSchema,
+  FileProviderListInputSchema,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
@@ -100,6 +102,7 @@ import {
   senderIdentities,
   triage,
 } from "./service";
+import { listAttachmentFiles } from "./service/attachment-files";
 import * as reviewReaders from "./service/capability-review-readers";
 import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
 import { keepError } from "./service/conversation-keep-rules";
@@ -2042,6 +2045,20 @@ const queryDefinitions = {
           { rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment },
         ],
       });
+    },
+  },
+  "attachment.files.list": {
+    title: "Browse mail attachments for a file chooser",
+    description:
+      "Read one page of the Mail file source: without parent, the mailboxes the caller may read and has not hidden, by address; below, year, month and sender folders, then that sender's attachments of the month, newest first. Inline images and signature logos are left out. Continue with next until null. Open files with attachment.content.read.",
+    input: FileProviderListInputSchema,
+    data: FileProviderListDataSchema,
+    openWorld: false,
+    async run(input: z.output<typeof FileProviderListInputSchema>, context: CapabilityExecutionContext) {
+      context.signal.throwIfAborted();
+      const listed = await listAttachmentFiles(requestContext(context), input, context.locale);
+      if (!listed.ok) return listed;
+      return ok({ data: listed.data, page: capabilityPage(listed.data.next) });
     },
   },
   "attachment.content.read": {
@@ -5884,5 +5901,7 @@ export const mailCapabilities = localizeCapabilityErrors(
     events: mailEvents,
     queries: queryDefinitions,
     actions: actionDefinitions,
+    // Read-only: attachments come from mail, so there is no save.
+    fileProvider: { list: "attachment.files.list", read: "attachment.content.read" },
   }),
 );

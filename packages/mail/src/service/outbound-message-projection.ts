@@ -3,6 +3,7 @@ import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
+import { indexMessageAttachments } from "./attachment-file-index";
 import { sha256Json } from "./canonical";
 import { isKeptConversation } from "./conversation-keep-rules";
 import { discardConversationSummaries } from "./conversation-summary-lifecycle";
@@ -193,6 +194,7 @@ const insertAttachments = async (params: {
     `,
     );
   }
+  if (attachments.length > 0) await indexMessageAttachments(params.db, params.messageId);
 };
 
 const insertSearchChunks = async (params: { db: SqlClient; mailboxId: string; messageId: string; plainText: string }): Promise<void> => {

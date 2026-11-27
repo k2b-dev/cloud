@@ -10,6 +10,7 @@ import { type AttachmentStream, MailParser, type MessageText } from "mailparser"
 import sanitizeHtml from "sanitize-html";
 import { withShortIdDb } from "../lib/short-id";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
+import { indexMessageAttachments } from "./attachment-file-index";
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { isMailReceivedSinceSend, isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
@@ -1071,6 +1072,7 @@ export const hydrateMessageFromSource = async (params: {
                 );
               }
             }
+            if (parts.some((part) => part.attachment)) await indexMessageAttachments(tx, params.messageId);
             const searchChunks = splitSearchText(plainText);
             for (let position = 0; position < searchChunks.length; position += 1) {
               await tx`

@@ -1122,6 +1122,7 @@ describe("mail capabilities", () => {
     ]);
     expect(Object.keys(mailCapabilities.queries).sort()).toEqual([
       "attachment.content.read",
+      "attachment.files.list",
       "attachment.read",
       "attachment.text.read",
       "comment.read",
