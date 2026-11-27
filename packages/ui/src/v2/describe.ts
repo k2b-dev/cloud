@@ -394,7 +394,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
         const tail = kidsMatching(element, ".k2-row-end, .k2-row-marks, .k2-row-states").flatMap(words);
-        return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
+        const level = element.getAttribute("data-level");
+        return `Row${level ? ` L${level}` : ""}${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
       }
       case "Table": {
         const table = element.querySelector("table");

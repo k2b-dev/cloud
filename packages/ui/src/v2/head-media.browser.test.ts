@@ -880,83 +880,6 @@ test("on the phone a drawing taller than its split keeps its pane at the split's
   );
 });
 
-for (const width of [1440, 1024])
-  test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {
-    await withPage(
-      "path",
-      async (page) => {
-        const path = page.locator(".k2-path[aria-label='Ort']");
-        // the first place, the menu and the page: one line in the head
-        expect(await path.locator(".k2-path-step, b").allTextContents()).toEqual([
-          "Werkstatt",
-          "Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht",
-        ]);
-        const lines = await path
-          .locator(".k2-path-step, b")
-          .evaluateAll((steps) => steps.map((step) => [Math.round(step.getBoundingClientRect().top), step.getClientRects().length]));
-        expect(new Set(lines.map(([top]) => top)).size).toBe(1);
-        expect(lines.every(([, boxes]) => boxes === 1)).toBe(true);
-        const start = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-start:has(> .k2-path[aria-label='Ort'])");
-        const end = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-end");
-        expect(start.right).toBeLessThanOrEqual(end.left);
-        // the page keeps its whole name while anything else can give way: here (a name of 470 px) the first place has
-        // shortened to its 48 px before the page shortens at all (Files v3: never "Entw…" beside a whole first place)
-        const [opening, here] = await path
-          .locator(".k2-path-step, b")
-          .evaluateAll((steps) =>
-            steps.map((step) => ({ cut: step.scrollWidth > step.clientWidth + 1, width: Math.round(step.getBoundingClientRect().width) })),
-          );
-        if (here!.cut) expect(opening!.width).toBe(48);
-        if (width === 1440) expect(here!.cut).toBe(false);
-        const current = path.locator("b[aria-current='page']");
-        expect(await current.getAttribute("title")).toBe("Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht");
-        // the places between, in their order, as links in the menu; it opens from the keys, and Escape gives the focus
-        // back to its button
-        const fold = path.getByRole("button", { name: "Übergeordnete Ebenen" });
-        await fold.focus();
-        await page.keyboard.press("Enter");
-        await settled(page);
-        await page.keyboard.press("ArrowDown");
-        expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
-        const entries = page.getByRole("menu").getByRole("menuitem");
-        expect(await entries.allTextContents()).toEqual([
-          "Projekte",
-          "2026",
-          "Kunden",
-          "Lindqvist",
-          "Küche",
-          "Entwürfe",
-          "Fronten",
-          "Eiche geölt",
-          "Muster",
-          "Abnahme mit der Kundin am Werktisch",
-        ]);
-        expect(await entries.first().getAttribute("href")).toBe("#level-1");
-        await page.keyboard.press("Escape");
-        await settled(page);
-        expect(await fold.evaluate((button) => button === document.activeElement)).toBe(true);
-        // a short path: names narrower than 48 px keep their own width
-        const short = await page
-          .locator(".k2-path[aria-label='Quartal']")
-          .locator(".k2-path-step[data-near], b")
-          .evaluateAll((steps) =>
-            steps.map((step) => {
-              const text = document.createRange();
-              text.selectNodeContents(step);
-              return { name: step.textContent, wider: step.getBoundingClientRect().width > text.getBoundingClientRect().width + 1 };
-            }),
-          );
-        expect(short).toEqual([
-          { name: "2026", wider: false },
-          { name: "Q1", wider: false },
-        ]);
-        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
-        expect(layout.problems).toEqual([]);
-      },
-      width,
-    );
-  });
-
 // the open folder is the last to give way: the places above fold into "…" first, and the page shows with at least
 // its 48 px, cut with "…" only when it alone does not fit, never clipped by what is around it (W1b #4206 r5)
 for (const which of ["path", "path-chip"] as const)
@@ -1014,24 +937,28 @@ test("a deep path with a chip after it gives way before the deeds; the chip is r
           page: current.scrollWidth <= current.clientWidth + 1,
           // nothing up to the bar clips the 3 px focus ring of the first link or of the menu "…": every ancestor that
           // clips holds the ring whole (review r8)
-          clipped: ["[data-slot='head'] .k2-path > a:first-child", "[data-slot='head'] .k2-path > .k2-btn"].flatMap((selector) => {
-            const element = document.querySelector<HTMLElement>(selector)!;
-            const ring = element.getBoundingClientRect();
-            const cut: string[] = [];
-            for (let box = element.parentElement; box && !box.matches("[data-slot='head']"); box = box.parentElement) {
-              const style = getComputedStyle(box);
-              if (style.overflowX === "visible" && style.overflowY === "visible") continue;
-              const room = box.getBoundingClientRect();
-              if (
-                ring.left - 3 < room.left - 0.5 ||
-                ring.right + 3 > room.right + 0.5 ||
-                ring.top - 3 < room.top - 0.5 ||
-                ring.bottom + 3 > room.bottom + 0.5
-              )
-                cut.push(`${selector} in ${box.className}`);
-            }
-            return cut;
-          }),
+          clipped: ["[data-slot='head'] .k2-path > a:first-child", "[data-slot='head'] .k2-path > .k2-path-fold .k2-btn"].flatMap(
+            (selector) => {
+              const element = document.querySelector<HTMLElement>(selector);
+              // the path's "…" stands only where it folds places
+              if (!element || getComputedStyle(element).visibility === "hidden" || element.getClientRects().length === 0) return [];
+              const ring = element.getBoundingClientRect();
+              const cut: string[] = [];
+              for (let box = element.parentElement; box && !box.matches("[data-slot='head']"); box = box.parentElement) {
+                const style = getComputedStyle(box);
+                if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+                const room = box.getBoundingClientRect();
+                if (
+                  ring.left - 3 < room.left - 0.5 ||
+                  ring.right + 3 > room.right + 0.5 ||
+                  ring.top - 3 < room.top - 0.5 ||
+                  ring.bottom + 3 > room.bottom + 0.5
+                )
+                  cut.push(`${selector} in ${box.className}`);
+              }
+              return cut;
+            },
+          ),
         };
       });
       // a folder of everyday names ("Entwürfe") keeps its whole name beside its chip

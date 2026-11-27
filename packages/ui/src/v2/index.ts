@@ -148,8 +148,18 @@ export {
   type TicksProps,
 } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
-export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
-export type { NavTree, NavTreeNode } from "./nav-tree";
+export {
+  Menu,
+  type MenuContextProps,
+  type MenuEntry,
+  type MenuItem,
+  type MenuPanel,
+  type MenuProps,
+  type MenuSection,
+  type TriggerProps,
+} from "./menu";
+export { menuPanel } from "./menu-panel";
+export { type NavTree, type NavTreeGroup, type NavTreeNode, navTree } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
