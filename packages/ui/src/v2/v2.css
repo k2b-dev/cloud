@@ -1391,7 +1391,8 @@
   width: 100%;
   /* the columns of a small table with widths and the floor of the last one (see `Table`): where they need more, the
      table scrolls sideways in its scroller instead of pressing the last column to 0 px */
-  min-width: var(--k2-table-min, 0);
+  --k2-table-min: 0px;
+  min-width: var(--k2-table-min);
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
