@@ -53,7 +53,8 @@ const withPage = async (width: number, live: boolean, run: (page: Page) => Promi
 };
 
 const head = (which: string) => `[data-case="${which}"] .k2-ws-main > [data-slot="head"] > .k2-bar`;
-const actions = ["Teilen", "Drucken", "Exportieren", "Verlauf", "Favorit", "Archivieren"];
+const actions = ["Teilen", "Drucken", "Exportieren", "Verlauf", "Duplizieren", "Favorit", "Archivieren"];
+const tabs = ["Übersicht", "Aktivität", "Dateien"];
 const more = "Weitere Aktionen";
 
 /** The controls of a head a person sees, by name, with their edges; cut ones count with the part in sight. */
@@ -96,8 +97,8 @@ test("390 px, alive: the start stays whole, the last actions are in '…' in the
     const shown = await seen(page, head("record"));
     const names = shown.map((control) => control.name);
     for (const control of shown) expect([control.name, control.right <= 390, control.left >= 0]).toEqual([control.name, true, true]);
-    // the end folds first: both tabs stay
-    expect(names.slice(0, 2)).toEqual(["Übersicht", "Dateien"]);
+    // the end folds first: every tab stays
+    expect(names.slice(0, 3)).toEqual(tabs);
     expect(names.slice(-2)).toEqual(["Neu", more]);
     const kept = names.filter((name) => actions.includes(name));
     expect(kept).toEqual(actions.slice(0, kept.length));
@@ -105,8 +106,8 @@ test("390 px, alive: the start stays whole, the last actions are in '…' in the
     await page.locator(head("record")).getByRole("button", { name: more }).click();
     const entries = await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents();
     expect(entries.map((entry) => entry.trim())).toEqual(actions.slice(kept.length));
-    await page.getByRole("menuitem", { name: "Verlauf" }).click();
-    expect(await page.evaluate(() => window.__deeds)).toEqual(["Verlauf"]);
+    await page.getByRole("menuitem", { name: "Duplizieren" }).click();
+    expect(await page.evaluate(() => window.__deeds)).toEqual(["Duplizieren"]);
   });
 });
 
@@ -115,7 +116,7 @@ test("390 px: the server's page already shows the whole start, and at load only 
   for (const live of [false, true])
     await withPage(390, live, async (page) => {
       const names = (await seen(page, head("record"))).map((control) => control.name);
-      expect([live, names.slice(0, 2)]).toEqual([live, ["Übersicht", "Dateien"]]);
+      expect([live, names.slice(0, 3)]).toEqual([live, tabs]);
       const book = (await seen(page, head("book"))).map((control) => control.name);
       expect([live, book.includes("1.000 Kommentare") || book.some((name) => name.startsWith("1.000"))]).toEqual([live, true]);
       starts.push([(await edges(page, head("record"))).start, (await edges(page, head("menu"))).start]);
@@ -150,9 +151,10 @@ test("390 px: the start gives way only after the end folded everything, down to 
 
 test("390 px: the keyboard reads the head as the eye does, and '…' comes last", async () => {
   await withPage(390, true, async (page) => {
-    const all = (await seen(page, head("record"))).map((control) => control.name);
-    const names = all.slice(all.indexOf("Teilen"));
-    await page.locator(head("record")).getByRole("button", { name: "Teilen", exact: true }).focus();
+    // the end of the head as the eye reads it, from its first button on
+    const names = (await seen(page, head("menu"))).map((control) => control.name).filter((name) => name !== "");
+    expect(names.at(-1)).toBe(more);
+    await page.locator(head("menu")).getByRole("button", { name: names[0], exact: true }).focus();
     const order = [names[0]];
     for (let step = 1; step < names.length; step++) {
       await page.keyboard.press("Tab");
@@ -173,27 +175,66 @@ test("an entry of '…' follows its button: pressed and disabled change in the o
       window.__k2Lock?.(true);
     });
     await page.waitForFunction(
-      () => document.querySelector('[role="menuitemcheckbox"][aria-checked="true"]')?.textContent?.includes("Favorit") ?? false,
+      () => document.querySelector('[role="menuitemcheckbox"][aria-checked="true"]')?.textContent?.includes("Favorit entfernen") ?? false,
     );
     expect(await page.getByRole("menuitem", { name: "Archivieren" }).getAttribute("aria-disabled")).toBe("true");
   });
 });
 
+test("the entry the keys stand on turns disabled and gets new words in the open menu: the focus stays in the menu", async () => {
+  await withPage(390, true, async (page) => {
+    await page.locator(head("record")).getByRole("button", { name: more }).focus();
+    await page.keyboard.press("Enter");
+    const focused = () => page.evaluate(() => document.activeElement?.textContent?.trim() ?? document.activeElement?.tagName);
+    // the keys go to the last entry, "Archivieren", and it turns disabled under them
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Archivieren");
+    await page.evaluate(() => window.__k2Lock?.(true));
+    await page.waitForFunction(() => document.querySelector('[role="menuitem"][aria-disabled="true"]') !== null);
+    expect(await page.evaluate(() => document.activeElement?.closest(".k2-menu") !== null)).toBe(true);
+    // one up is "Favorit", which gets new words under the keys
+    await page.keyboard.press("ArrowUp");
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Favorit");
+    await page.evaluate(() => window.__k2Press?.());
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Favorit entfernen");
+    await page.keyboard.press("ArrowUp");
+    expect(await focused()).toBe("Duplizieren");
+  });
+});
+
+test("Mail's reader: its own '…' takes the folded actions; a menu with a symbol of its own ('Später') takes none", async () => {
+  await withPage(390, true, async (page) => {
+    const names = (await seen(page, head("reader"))).map((control) => control.name);
+    expect(names.filter((name) => name === more)).toEqual([more]);
+    expect(await page.locator(`${head("reader")} .k2-bar-fold`).count()).toBe(0);
+    expect(names).toContain("Erledigt");
+    await page.locator(head("reader")).getByRole("button", { name: "Später" }).click();
+    expect((await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents()).map((entry) => entry.trim())).toEqual([
+      "Morgen früh",
+    ]);
+    await page.keyboard.press("Escape");
+    await page.locator(head("reader")).getByRole("button", { name: more }).click();
+    const entries = (await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents()).map((entry) => entry.trim());
+    expect(entries.at(-1)).toBe("Weiterleiten");
+    expect(entries.length).toBeGreaterThan(1);
+  });
+});
+
 test("a button that grows while the bar keeps its size (a late font, wider words) folds again: the start stays whole", async () => {
   await withPage(390, true, async (page) => {
-    const before = (await edges(page, head("record"))).start;
+    const before = (await edges(page, head("menu"))).start;
     // the first kept action grows, as words do when their font arrives: the bar keeps its size, its end does not
     await page
-      .locator(head("record"))
+      .locator(head("menu"))
       .getByRole("button", { name: "Teilen", exact: true })
       .evaluate((button) => {
         (button as HTMLElement).style.minWidth = "120px";
       });
     await frames(page);
     await frames(page);
-    const after = await edges(page, head("record"));
-    const names = (await seen(page, head("record"))).map((control) => control.name);
-    expect([after.start, names.slice(0, 2), names.slice(-2)]).toEqual([before, ["Übersicht", "Dateien"], ["Neu", more]]);
+    const after = await edges(page, head("menu"));
+    const names = (await seen(page, head("menu"))).map((control) => control.name);
+    expect([after.start, names.at(-1)]).toEqual([before, more]);
     expect(after.end!.right <= after.content + 0.5).toBe(true);
   });
 });
@@ -237,7 +278,7 @@ test("1440 px: a head that fits folds nothing and has no '…', on the server's 
   });
   await withPage(1440, true, async (page) => {
     const after = await seen(page, head("record"));
-    expect(after.map((control) => control.name)).toEqual(["Übersicht", "Dateien", ...actions, "Neu"]);
+    expect(after.map((control) => control.name)).toEqual([...tabs, ...actions, "Neu"]);
     expect(after).toEqual(before);
   });
 });
@@ -249,7 +290,7 @@ test("every 8 px from 320 to 1440: each end ends inside its bar's content edge, 
       await page.setViewportSize({ width, height: 1000 });
       await frames(page);
       await frames(page);
-      for (const which of ["record", "book", "menu"]) {
+      for (const which of ["record", "book", "menu", "reader", "tabs"]) {
         const { start, end, content } = await edges(page, head(which));
         if (!end) continue;
         if (end.right > content + 0.5) wrong.push(`${which} at ${width}: the end ends ${Math.round(end.right - content)} px beyond`);

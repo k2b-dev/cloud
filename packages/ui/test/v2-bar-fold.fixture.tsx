@@ -2,13 +2,16 @@ import { createSignal } from "solid-js";
 import { LocaleProvider } from "../src/intl/locale";
 import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 
-// Three heads that do not fit on the phone, each in a box of its own (`.case`):
-// - "record": two tabs and six actions that stay on the phone (`keep`), then the primary action. The start stays
+// Heads that do not fit on the phone, each in a box of its own (`.case`):
+// - "record": three tabs and seven actions that stay on the phone (`keep`), then the primary action. The start stays
 //   whole; what does not fit folds into "…". "Favorit" is a toggle (`window.__k2Press()` flips it), "Archivieren"
 //   can be locked (`window.__k2Lock(true)`). Every action writes its name to `window.__deeds`.
 // - "book": the head of a notebook page, a title and a button "1.000 Kommentare" in the start, five actions at its
 //   end. All of them fold, and then the start shortens down to its least.
 // - "menu": a title, four actions and the head's own menu "…" at the end: the folded actions are its first section.
+// - "reader": Mail's reader in small: a long subject, the primary "Erledigt", four actions, a menu with words
+//   ("Später") and the head's own "…".
+// - "tabs": four tabs, two actions and the primary.
 
 declare global {
   interface Window {
@@ -47,6 +50,7 @@ export function Fixture() {
                   label="Ansichten"
                   items={[
                     { label: "Übersicht", href: "#overview", current: true },
+                    { label: "Aktivität", href: "#activity" },
                     { label: "Dateien", href: "#files" },
                   ]}
                 />
@@ -56,7 +60,14 @@ export function Fixture() {
                   {actions.map((action) => (
                     <Button keep icon={action.icon} label={action.label} onClick={deed(action.label)} />
                   ))}
-                  <Button keep icon="star" label="Favorit" pressed={favourite()} onClick={deed("Favorit")} />
+                  <Button keep icon="copy" label="Duplizieren" onClick={deed("Duplizieren")} />
+                  <Button
+                    keep
+                    icon="star"
+                    label={favourite() ? "Favorit entfernen" : "Favorit"}
+                    pressed={favourite()}
+                    onClick={deed("Favorit")}
+                  />
                   <Button keep icon="archive" label="Archivieren" disabled={locked()} onClick={deed("Archivieren")} />
                   <Button keep variant="primary" icon="plus" onClick={deed("Neu")}>
                     Neu
@@ -129,6 +140,65 @@ export function Fixture() {
         >
           <Pane label="Angebot">
             <Text>Das Angebot.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="reader">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Text type="row" weight="strong">
+                  Rückfrage zur Lieferung der Fronten für die Küche Familie Oswald in Auental
+                </Text>
+              }
+              end={
+                <>
+                  <Button keep variant="primary" icon="check" label="Erledigt" onClick={deed("Erledigt")} />
+                  <Button keep icon="archive" label="Archiv" onClick={deed("Archiv")} />
+                  <Button keep icon="trash" label="Löschen" onClick={deed("Löschen")} />
+                  <Menu icon="clock" label="Später" items={[{ label: "Morgen früh", onClick: deed("Morgen früh") }]} />
+                  <Button keep icon="user-plus" label="Zuweisen" onClick={deed("Zuweisen")} />
+                  <Menu items={[{ label: "Weiterleiten", icon: "share-3", onClick: deed("Weiterleiten") }]} />
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Nachricht">
+            <Text>Die Nachricht.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="tabs">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Tabs
+                  label="Bereiche"
+                  items={[
+                    { label: "Eingang", href: "#in", current: true },
+                    { label: "Geplant", href: "#planned" },
+                    { label: "Gesendet", href: "#sent" },
+                    { label: "Archiv", href: "#archive" },
+                  ]}
+                />
+              }
+              end={
+                <>
+                  <Button keep icon="filter" label="Filtern" onClick={deed("Filtern")} />
+                  <Button keep icon="refresh" label="Aktualisieren" onClick={deed("Aktualisieren")} />
+                  <Button keep variant="primary" icon="plus" onClick={deed("Neu")}>
+                    Neu
+                  </Button>
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Liste">
+            <Text>Die Liste.</Text>
           </Pane>
         </Workspace>
       </div>
