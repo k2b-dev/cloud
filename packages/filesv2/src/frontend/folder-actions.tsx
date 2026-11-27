@@ -1,8 +1,8 @@
 import { downloadArchive } from "@k2b/filegate/utils";
 import { showFileDialog, showFolderDialog } from "@k2b/stdlib/browser";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, FileDropTarget, InlineGuidance, Lightbox, prompts, useLocale } from "@k2b/ui";
-import { useToast } from "@k2b/ui/v2";
+import { FileDropTarget, InlineGuidance, Lightbox, prompts, useLocale } from "@k2b/ui";
+import { Dialog, Notice, Text, useToast, Button as V2Button } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EditorInfo, FileEntry } from "../contracts";
@@ -165,7 +165,7 @@ export function createFolderActions(ctx: FolderContext) {
             type: "info",
             content: () => (
               <InlineGuidance icon="ti ti-folder">
-                <span class="break-all">{`${baseLabel(ctx.base(), b(), locale())} / ${ctx.folder()}`.replace(/ \/ $/, "")}</span>
+                {`${baseLabel(ctx.base(), b(), locale())} / ${ctx.folder()}`.replace(/ \/ $/, "")}
               </InlineGuidance>
             ),
           },
@@ -182,33 +182,30 @@ export function createFolderActions(ctx: FolderContext) {
       .then((values) => (values && source === ctx.location() ? String(values.name) : null));
   };
 
-  // One question per folder upload that carries system files; skipping is the main answer.
+  // One question per folder upload that carries system files; skipping is the main answer. A v2 dialog in the
+  // folder's layer asks it; the upload waits for the answer, and a cancelled upload answers nothing.
+  const [systemQuestion, setSystemQuestion] = createSignal<{
+    text: string;
+    answer: (choice: "skip" | "all" | undefined) => void;
+  } | null>(null);
   const askSystemFiles = (entries: readonly string[], signal: AbortSignal) =>
-    prompts.dialog<"skip" | "all">(
-      (close) => (
-        <>
-          <div class="flex flex-col gap-3 text-sm">
-            <p>
-              {b().systemFilesQuestion({
-                count: entries.length,
-                examples: [...new Set(entries.map(systemEntryLabel))].slice(0, 2).join(", "),
-              })}
-            </p>
-            <InlineGuidance icon="ti ti-info-circle">{b().systemFilesHint}</InlineGuidance>
-          </div>
-          <div class="filesv2-system-files__actions flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" onClick={() => close()}>
-              {b().cancel}
-            </Button>
-            <Button variant="secondary" onClick={() => close("all")}>
-              {b().uploadAll}
-            </Button>
-            <Button onClick={() => close("skip")}>{b().uploadWithoutSystemFiles}</Button>
-          </div>
-        </>
-      ),
-      { title: b().systemFilesTitle, icon: "ti ti-eye-off", signal },
-    );
+    new Promise<"skip" | "all" | undefined>((resolve) => {
+      const answer = (choice: "skip" | "all" | undefined) => {
+        signal.removeEventListener("abort", cancelled);
+        setSystemQuestion(null);
+        resolve(choice);
+      };
+      const cancelled = () => answer(undefined);
+      if (signal.aborted) return resolve(undefined);
+      signal.addEventListener("abort", cancelled, { once: true });
+      setSystemQuestion({
+        text: b().systemFilesQuestion({
+          count: entries.length,
+          examples: [...new Set(entries.map(systemEntryLabel))].slice(0, 2).join(", "),
+        }),
+        answer,
+      });
+    });
 
   /*
    * Uploads: the queue opens a Filegate session per file, after recreating dropped folders. This only decides what to
@@ -766,6 +763,31 @@ export function createFolderActions(ctx: FolderContext) {
           disabled={ctx.searching() || !ctx.canCreate()}
           onDrop={(files, { dataTransfer }) => dropFiles(files, dataTransfer, ctx.folder())}
         />
+        <Show when={systemQuestion()}>
+          {(question) => (
+            <Dialog
+              title={b().systemFilesTitle}
+              open
+              onOpenChange={(open) => {
+                if (!open) question().answer(undefined);
+              }}
+              foot={
+                <>
+                  <V2Button variant="ghost" onClick={() => question().answer(undefined)}>
+                    {b().cancel}
+                  </V2Button>
+                  <V2Button onClick={() => question().answer("all")}>{b().uploadAll}</V2Button>
+                  <V2Button variant="primary" onClick={() => question().answer("skip")}>
+                    {b().uploadWithoutSystemFiles}
+                  </V2Button>
+                </>
+              }
+            >
+              <Text>{question().text}</Text>
+              <Notice tone="note">{b().systemFilesHint}</Notice>
+            </Dialog>
+          )}
+        </Show>
         <Show when={viewing()}>
           {(shown) => (
             <Lightbox

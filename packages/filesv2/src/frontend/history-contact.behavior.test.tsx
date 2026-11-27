@@ -82,7 +82,8 @@ if (modules) {
         [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === "Message Lukas Pohl")!;
       await Bun.sleep(30);
       button().click();
-      for (let tries = 0; tries < 100 && failedToasts().length === 0; tries++) await Bun.sleep(10);
+      // until the failure shows; the test's own timeout bounds the wait
+      while (failedToasts().length === 0) await Bun.sleep(10);
       expect(failedToasts()).toEqual([expect.stringContaining("Chat is unavailable")]);
       expect(`${location.pathname}${location.search}`).toBe(source);
       const opened = Promise.withResolvers<unknown>();
