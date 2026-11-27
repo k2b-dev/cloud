@@ -38,6 +38,30 @@ export const publicIds = async (table: VenueResourceTable, ids: (string | null |
   return new Map(rows.map((row) => [row.id, row.short_id]));
 };
 
+export type PublicIdLookup = (table: VenueResourceTable, ids: (string | null | undefined)[]) => Promise<Map<string, string>>;
+
+/**
+ * A lookup for one projection of many parts: the ids asked for in the same turn read in one statement per table, not
+ * one per part. A request that comes after that statement went out reads on its own.
+ */
+export const batchedPublicIds = (): PublicIdLookup => {
+  const open = new Map<VenueResourceTable, { ids: Set<string>; result: Promise<Map<string, string>> }>();
+  return (table, ids) => {
+    let batch = open.get(table);
+    if (!batch) {
+      const collected = new Set<string>();
+      const result = Promise.resolve().then(() => {
+        open.delete(table);
+        return publicIds(table, [...collected]);
+      });
+      batch = { ids: collected, result };
+      open.set(table, batch);
+    }
+    for (const id of ids) if (id) batch.ids.add(id);
+    return batch.result;
+  };
+};
+
 export const resolvePublicIds = async (table: VenueResourceTable, ids: string[]): Promise<string[] | null> => {
   if (ids.length === 0) return [];
   const unique = [...new Set(ids)];

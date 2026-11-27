@@ -1900,15 +1900,26 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
   };
 };
 
+/**
+ * The person's calendar token in one statement: read when it exists, written only the first time. Every venue page
+ * shows the calendar link, so a page view never writes. Two first views at once: the second reads what the first wrote.
+ */
 const getOrCreateIcalToken = async (userId: string): Promise<string> => {
   const [row] = await sql<{ token: string }[]>`
-    INSERT INTO venue.user_ical_tokens (user_id)
-    VALUES (${userId}::uuid)
-    ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
-    RETURNING token
+    WITH existing AS (
+      SELECT token FROM venue.user_ical_tokens WHERE user_id = ${userId}::uuid
+    ), created AS (
+      INSERT INTO venue.user_ical_tokens (user_id)
+      SELECT ${userId}::uuid WHERE NOT EXISTS (SELECT 1 FROM existing)
+      ON CONFLICT (user_id) DO NOTHING
+      RETURNING token
+    )
+    SELECT token FROM existing UNION ALL SELECT token FROM created
   `;
-  if (!row) throw new Error("Failed to create iCal token");
-  return row.token;
+  if (row) return row.token;
+  const [raced] = await sql<{ token: string }[]>`SELECT token FROM venue.user_ical_tokens WHERE user_id = ${userId}::uuid`;
+  if (!raced) throw new Error("Failed to create iCal token");
+  return raced.token;
 };
 
 /** The subscription URL of a calendar token on the Cloud's public origin, so it works when copied into a calendar app. */
