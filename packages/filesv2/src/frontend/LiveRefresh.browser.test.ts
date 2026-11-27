@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import type { Browser } from "playwright";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { fixture, longDirectory } from "./Pagination.browser-fixture";
 
@@ -17,15 +17,28 @@ afterAll(async () => {
 // #3991: a folder poll that brings a change (one file renamed) updates that row only. The other rows keep their
 // elements, so the list keeps its scroll position and a focused control in a row keeps its focus.
 for (const width of [1440, 390])
-  test(`a changed folder poll keeps scroll and focus at ${width}px`, async () => {
-    const context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
-    const tab = await context.newPage();
-    const errors = pageErrors(tab);
-    try {
+  describe(`a folder of 60 files at ${width}px`, () => {
+    let context: BrowserContext;
+    let tab: Page;
+    let errors: string[];
+    // The page is the fixture: loading it and its first rendering belong to setup, not to the 5 s of the test.
+    // WebKit's first rendering of a new page took 3.7 s at 1440x700 in CI's image (0.7 s at 390), which left the test
+    // too little time for the behavior it checks (#4189).
+    beforeAll(async () => {
+      context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
+      tab = await context.newPage();
+      errors = pageErrors(tab);
       await tab.clock.install();
       await tab.goto(new URL("app/filesv2?base=demo&sort=name&order=asc&type=all&groupFolders=true&rows=60", server.url).href);
+      await tab.locator(".filesv2-list__row:not(.filesv2-list__row--virtual)").nth(59).waitFor();
+      await settled(tab);
+    }, 30000);
+    afterAll(async () => {
+      await context?.close();
+    });
+
+    test("a changed folder poll keeps scroll and focus", async () => {
       const rows = tab.locator(".filesv2-list__row:not(.filesv2-list__row--virtual)");
-      await rows.nth(59).waitFor();
       const row = rows.filter({ hasText: "Datei 40.txt" });
       const details = row.locator(".filesv2-list__info");
       await details.focus();
@@ -56,7 +69,5 @@ for (const width of [1440, 390])
       expect(await tab.evaluate(() => (document.activeElement as HTMLElement & { marked?: boolean }).marked === true)).toBe(true);
       expect(await details.evaluate((element) => element === document.activeElement)).toBe(true);
       expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
+    });
   });

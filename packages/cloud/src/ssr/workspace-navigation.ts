@@ -1,5 +1,5 @@
 import { type AppWorkspaceSidebarSwitcherProps, createNavigation, type NavigationController, type NavigationItem } from "@k2b/ui";
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 
 export type WorkspaceNavigationState = { navigation: NavigationController; label: string; owner: Element };
 const changedEvent = "cloud:workspace-navigation";
@@ -10,13 +10,20 @@ declare global {
   }
 }
 
+/** Whether the entry is the open one or holds it in its folds. */
+export const holdsCurrent = (item: NavigationItem): boolean => !!item.active || (item.children ?? []).some(holdsCurrent);
+
+/** How many listeners the navigation has: the phone menu while it is open. Only then are its entries made. */
+const [listeners, setListeners] = createSignal(0);
+
 /** Bind only the outer application's navigation. Nested workspaces do not register. */
 export function provideWorkspaceNavigation(navigation: NavigationController, options: { label: () => string; owner: () => Element }) {
   onMount(() => {
     const state = { navigation, label: options.label(), owner: options.owner() };
     window.__cloudWorkspaceNavigation = state;
     createEffect(() => {
-      navigation.items();
+      // a long navigation (a base with a thousand tables) is no work for a page whose menu never opens
+      if (listeners() > 0) navigation.items();
       state.label = options.label();
       window.dispatchEvent(new Event(changedEvent));
     });
@@ -102,5 +109,13 @@ export function readWorkspaceNavigation(): WorkspaceNavigationState | undefined 
 
 export function observeWorkspaceNavigation(listener: () => void) {
   window.addEventListener(changedEvent, listener);
-  return () => window.removeEventListener(changedEvent, listener);
+  setListeners((count) => count + 1);
+  let done = false;
+  // a second call (two cleanups of one owner) leaves the count as it is
+  return () => {
+    if (done) return;
+    done = true;
+    window.removeEventListener(changedEvent, listener);
+    setListeners((count) => count - 1);
+  };
 }

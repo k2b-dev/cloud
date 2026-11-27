@@ -176,6 +176,29 @@ const waitFor = async (check: () => boolean, deadline = 3_000) => {
   }
 };
 
+/**
+ * Runs `edit` as a loaded machine would: the thread stalls for more than one 60 Hz frame right after its first clock
+ * read. Shared drafts bound the body diff of an external edit by wall-clock time, so without a frozen clock the stall
+ * alone rejects the edit.
+ */
+const afterSchedulerStall = (edit: () => void) => {
+  const readClock = Date.now;
+  let stalled = false;
+  const clock = spyOn(Date, "now").mockImplementation(() => {
+    const read = readClock.call(Date);
+    if (!stalled) {
+      stalled = true;
+      for (const end = performance.now() + 20; performance.now() < end; );
+    }
+    return read;
+  });
+  try {
+    edit();
+  } finally {
+    clock.mockRestore();
+  }
+};
+
 describe("Mail draft session", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
@@ -220,6 +243,8 @@ describe("Mail draft session", () => {
   };
 
   beforeEach(() => {
+    // Shared drafts bound an external edit's body diff by wall-clock time; a frozen clock keeps CI load out of results.
+    setSystemTime(new Date(now));
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     sharedClosers = [];
@@ -525,7 +550,7 @@ describe("Mail draft session", () => {
     await Bun.sleep(0);
     const peer = new Y.Doc();
     Y.applyUpdate(peer, Y.encodeStateAsUpdate(f.session.shared()!.doc));
-    f.setCurrent({ ...f.current(), body: "Unpersisted shared input" });
+    afterSchedulerStall(() => f.setCurrent({ ...f.current(), body: "Unpersisted shared input" }));
     await Bun.sleep(0);
     const socket = FakeWebSocket.instances.find((socket) => socket.url.includes("/document/socket"))!;
     const payload = socket.sent.findLast((packet) => packet.type === "syncPublish")?.payload?.payload;
@@ -723,7 +748,7 @@ describe("Mail draft session", () => {
       try {
         const f = await sharedFixture();
         await f.session.ensureDraft();
-        f.setCurrent({ ...f.current(), body: "Typed before the sign-in expired" });
+        afterSchedulerStall(() => f.setCurrent({ ...f.current(), body: "Typed before the sign-in expired" }));
         await Bun.sleep(0);
         const socket = FakeWebSocket.instances.find((entry) => entry.url.includes("/document/socket"))!;
         socket.close(1008, "SESSION_EXPIRED");
@@ -788,7 +813,7 @@ describe("Mail draft session", () => {
     try {
       const f = await sharedFixture();
       await f.session.ensureDraft();
-      f.setCurrent({ ...f.current(), body: "Typed while the network was down" });
+      afterSchedulerStall(() => f.setCurrent({ ...f.current(), body: "Typed while the network was down" }));
       await Bun.sleep(0);
       // The network drops; meanwhile the sign-in ends or stays, and the next upgrade is refused.
       browserSignIn = signIn === "expired" ? "expired" : "active";
