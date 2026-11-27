@@ -1,55 +1,86 @@
 import { LocaleProvider } from "@k2b/ui";
+import { Bar, Pane, Tabs, Text } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
-import CodeApprovalReview from "../packages/core/src/pages/admin/code/CodeApprovalReview.island";
+import { createCodeReview, ReviewBody, ReviewDialog, reviewHeadActions } from "../packages/core/src/pages/admin/code/review";
+import { codeReviewMessages } from "../packages/core/src/pages/admin/code/review-messages";
 
-// The cross-package browser fixture belongs to the repository, never to the Cloud platform.
+// The cross-package browser fixture belongs to the repository, never to the Cloud platform. The review stands as
+// Administration › Code › Freigaben opens it on v2: its deeds in the detail head, its views under it, the overview below.
+function Review() {
+  const r = codeReviewMessages.resolve(["de"]).t;
+  const review = createCodeReview({
+    codeId: "c_review",
+    versionId: "11111111-1111-4111-8111-111111111111",
+    number: 5,
+    title: "Eingänge ordnen",
+    viewerId: "22222222-2222-4222-8222-222222222222",
+    dateConfig: { locale: "de", timeZone: "Europe/Berlin" },
+    tab: "overview",
+    authorUserId: "33333333-3333-4333-8333-333333333333",
+    recipient: "Lea Muster",
+    byline: r.headSubChat({ who: "Lea Muster", when: "vor 5 Minuten", owner: "Lea Muster, persönlich" }),
+    next: "chat",
+    binding: {
+      codeId: "c_review",
+      versionId: "11111111-1111-4111-8111-111111111111",
+      sourceHash: "a".repeat(64),
+      bundleHash: "b".repeat(64),
+      manifestHash: "c".repeat(64),
+      comparisonVersionId: null,
+      comparisonSourceHash: null,
+      comparisonBundleHash: null,
+    },
+    status: "pending",
+    canApprove: true,
+    own: false,
+    soleAdminNotice: null,
+    staleComparison: false,
+    newer: null,
+    reason: "Sie darf Aufgaben anlegen, die andere sehen.",
+    readModel: null,
+    explanation: "Sie ordnet neue Eingänge.",
+    activeVersion: 4,
+    comparison: null,
+    files: [],
+    decision: null,
+    previous: null,
+    comments: [],
+    commentsNext: null,
+    commentsTotal: 0,
+    listHref: "/admin/code?sec=approvals",
+    nextHref: null,
+  });
+  return (
+    <div class="k2-ui">
+      <Pane
+        detail
+        label={r.headTitle({ title: review.props.title, n: review.props.number })}
+        head={
+          <Bar
+            start={
+              <Text type="body" weight="strong">
+                {review.props.title}
+              </Text>
+            }
+            end={reviewHeadActions(review)}
+          />
+        }
+        status={<Bar start={<Tabs label={r.tabsLabel} items={review.tabs()} />} />}
+      >
+        <ReviewBody review={review} />
+      </Pane>
+      <ReviewDialog review={review} />
+    </div>
+  );
+}
+
 const root = document.createElement("main");
 root.className = "scene scene--review-admin";
 document.body.append(root);
 render(
   () => (
     <LocaleProvider locale="de">
-      <CodeApprovalReview
-        codeId="c_review"
-        versionId="11111111-1111-4111-8111-111111111111"
-        number={5}
-        title="Eingänge ordnen"
-        viewerId="22222222-2222-4222-8222-222222222222"
-        dateConfig={{ locale: "de", timeZone: "Europe/Berlin" }}
-        tab="overview"
-        authorUserId="33333333-3333-4333-8333-333333333333"
-        recipient="Lea Muster"
-        next="chat"
-        binding={{
-          codeId: "c_review",
-          versionId: "11111111-1111-4111-8111-111111111111",
-          sourceHash: "a".repeat(64),
-          bundleHash: "b".repeat(64),
-          manifestHash: "c".repeat(64),
-          comparisonVersionId: null,
-          comparisonSourceHash: null,
-          comparisonBundleHash: null,
-        }}
-        status="pending"
-        canApprove
-        own={false}
-        soleAdminNotice={null}
-        staleComparison={false}
-        newer={null}
-        reason="Sie darf Aufgaben anlegen, die andere sehen."
-        readModel={null}
-        explanation="Sie ordnet neue Eingänge."
-        activeVersion={4}
-        comparison={null}
-        files={[]}
-        decision={null}
-        previous={null}
-        comments={[]}
-        commentsNext={null}
-        commentsTotal={0}
-        listHref="/admin/code?sec=approvals"
-        nextHref={null}
-      />
+      <Review />
     </LocaleProvider>
   ),
   root,

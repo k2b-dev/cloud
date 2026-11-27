@@ -1,11 +1,39 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { type FixtureReviewVariant, fixtureApprovalDetail } from "../packages/core/src/pages/admin/code/CodeArea.fixture-data";
 import { launchBrowser, pageErrors, settled } from "../packages/ui/test/browser";
 
 const root = resolve(import.meta.dir, "..");
+const adminStates = ["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"] satisfies FixtureReviewVariant[];
+
+/**
+ * The v2 admin review of one state: the pane named after the version, the statement band in it, and at most two deeds
+ * in its head, to decide while it is open and one way on once it is closed. On the phone a deed without `keep` gives
+ * way in the head (the workspace floats the approval and the pane has its way back).
+ */
+const expectAdminReview = async (page: Page, variant: FixtureReviewVariant, width: number) => {
+  const detail = fixtureApprovalDetail(variant);
+  const n = detail.version.number;
+  const pane = page.getByRole("region", { name: `${detail.code.title} · Version ${n}`, exact: true });
+  expect(await pane.getByRole("region", { name: "Code", exact: true }).isVisible()).toBe(true);
+  const head = pane.locator('[data-slot="head"]').first();
+  // hidden deeds count too: on the phone they are there but give way
+  const approve = head.getByRole("button", { name: `Version ${n} freigeben`, exact: true, includeHidden: true });
+  if (detail.status === "pending") {
+    expect(await head.getByRole("button", { name: "Ablehnen / ändern", exact: true }).isVisible()).toBe(true);
+    expect(await approve.count()).toBe(1);
+    expect(await approve.isVisible()).toBe(width !== 390);
+    expect(await approve.isDisabled()).toBe(!detail.canApprove);
+  } else {
+    expect(await approve.count()).toBe(0);
+    const back = head.getByRole("link", { name: "Zurück zur Liste", exact: true, includeHidden: true });
+    expect(await back.count()).toBe(1);
+    expect(await back.isVisible()).toBe(width !== 390);
+  }
+  expect(await head.locator(".k2-btn").filter({ visible: true }).count()).toBeLessThanOrEqual(2);
+};
 const shots = process.env.CAPBLOCKS_SHOTS;
 let browser: Browser;
 let assets: ReturnType<typeof Bun.serve>;
@@ -27,7 +55,9 @@ beforeAll(async () => {
         name: "approval-parity-dom",
         setup(builder) {
           // The cross-app harness has no application package scope; resolve the public browser distribution explicitly.
-          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
+          builder.onResolve({ filter: /^@k2b\/ui(\/v2)?$/ }, ({ path }) => ({
+            path: resolve(ui, path === "@k2b/ui" ? "dist/browser/index.js" : "dist/browser/v2/index.js"),
+          }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -53,12 +83,7 @@ beforeAll(async () => {
   const fonts = ["plex.css", "tabler.css"]
     .map((file) => readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, "url($1/ui/"))
     .join("\n");
-  const adminFixtures = Object.fromEntries(
-    (["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"] satisfies FixtureReviewVariant[]).map((s) => [
-      s,
-      fixtureApprovalDetail(s),
-    ]),
-  );
+  const adminFixtures = Object.fromEntries(adminStates.map((s) => [s, fixtureApprovalDetail(s)]));
   const css = [fonts, "@layer properties, theme, base, components, utilities;", ...styles].join("\n");
   assets = Bun.serve({
     hostname: "127.0.0.1",
@@ -100,7 +125,7 @@ const families = {
     "replaced",
   ],
   page: ["new-version", "approval", "changes-requested", "versions-rejected"],
-  admin: ["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"],
+  admin: adminStates,
   mixed: ["open"],
 };
 for (const theme of ["light", "dark"])
@@ -125,7 +150,12 @@ for (const theme of ["light", "dark"])
             await settled(page);
             expect(errors).toEqual([]);
             const frames = page.locator(".cloud-approval-frame");
-            expect(await frames.count()).toBeGreaterThan(0);
+            if (family === "admin") {
+              // The v2 admin review states the approval in a band under the detail head and keeps its deeds in the head;
+              // it shows no card of the shared approval frame, so the card geometry below holds for the other families.
+              await expectAdminReview(page, adminStates.find((s) => s === state) ?? "normal", width);
+              expect(await frames.count()).toBe(0);
+            } else expect(await frames.count()).toBeGreaterThan(0);
             for (const frame of await frames.all()) {
               const geometry = await frame.evaluate((node) => {
                 const title = node.querySelector(".k2b-notice-card__title")!;

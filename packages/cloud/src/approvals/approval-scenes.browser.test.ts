@@ -26,7 +26,9 @@ const buildHarness = async (entrypoint = resolve(import.meta.dir, "approval-scen
         name: "solid-approval-scenes-test",
         setup(builder) {
           // Root fixtures have no application package scope; use the public browser distribution.
-          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
+          builder.onResolve({ filter: /^@k2b\/ui(\/v2)?$/ }, ({ path }) => ({
+            path: resolve(ui, path === "@k2b/ui" ? "dist/browser/index.js" : "dist/browser/v2/index.js"),
+          }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -188,25 +190,37 @@ describe("Approval scenes", () => {
           expect(await noOverflow(page)).toBe(0);
           await shot(page, `review-facts-${theme}-${width}`);
           await page.goto("https://cloud.example.test/?scene=review-admin");
-          const admin = page.locator(".cloud-approval-frame");
+          // The v2 review keeps its deeds in the detail head: the short words on the button, the whole ones as its hint.
+          const admin = page.locator(".scene--review-admin");
           const secondary = admin.getByRole("button", {
-            name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …",
+            name: "Ablehnen / ändern",
             exact: true,
           });
           await secondary.waitFor();
-          if (width === 390) {
-            const singleLine = await secondary.locator(".k2b-button__label").evaluate((label) => ({
-              height: label.getBoundingClientRect().height,
-              line: Number.parseFloat(getComputedStyle(label).lineHeight),
-            }));
-            expect(singleLine.height).toBeLessThanOrEqual(singleLine.line + 1);
-          }
+          expect(await secondary.getAttribute("title")).toBe("Ablehnen oder ändern …");
+          const singleLine = await secondary.locator(".k2-btn-label").evaluate((label) => ({
+            height: label.getBoundingClientRect().height,
+            line: Number.parseFloat(getComputedStyle(label).lineHeight),
+          }));
+          expect(singleLine.height).toBeLessThanOrEqual(singleLine.line + 1);
+          // On the phone the approval gives way in the head (the workspace floats it); on the desktop it stands beside.
+          const approve = admin.locator("button", { hasText: "Version 5 freigeben" });
+          expect(await approve.isVisible()).toBe(width !== 390);
           expect(await noOverflow(page)).toBe(0);
           await shot(page, `review-admin-${theme}-${width}`);
           await secondary.click();
           await page.getByRole("dialog").waitFor();
-          expect(await admin.locator("[data-approval-primary]").getAttribute("aria-busy")).toBeNull();
-          expect(await admin.locator("[data-approval-primary]").isDisabled()).toBe(true);
+          await settled(page);
+          // While the decision dialog is open the approval is neither busy nor reachable: the modal dialog covers it.
+          expect(await approve.getAttribute("aria-busy")).toBeNull();
+          expect(
+            await approve.evaluate((button) => {
+              const box = button.getBoundingClientRect();
+              if (!box.width || !box.height) return false;
+              const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+              return hit !== null && button.contains(hit);
+            }),
+          ).toBe(false);
           await shot(page, `review-admin-decision-${theme}-${width}`);
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "detached" });

@@ -1,5 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
-import { createMemo, createSignal, Show } from "solid-js";
+import { Bar, Pane, Tabs, Text } from "@k2b/ui/v2";
+import { createSignal, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { approvalModel, approvalStates } from "../packages/assistant/src/frontend/code-version-card.test-fixture";
 import { CodeVersionCardView } from "../packages/assistant/src/frontend/code-version-card-view";
@@ -9,8 +10,11 @@ import { legacyOutcomeWords } from "../packages/cloud/src/ai/chat/tool-action-wo
 import { ApprovalCard } from "../packages/cloud/src/approvals/ApprovalCard";
 import CodePage from "../packages/cloud/src/ssr/code-page/CodePage";
 import { type CodePageFixtureState, codePageFixture } from "../packages/cloud/src/ssr/code-page/code-page.fixture";
-import CodeApprovalReview from "../packages/core/src/pages/admin/code/CodeApprovalReview.island";
+import { reviewProps } from "../packages/core/src/pages/admin/code/ApprovalsScreen";
 import type { FixtureReviewVariant } from "../packages/core/src/pages/admin/code/CodeArea.fixture-data";
+import { codeAdminMessages } from "../packages/core/src/pages/admin/code/messages";
+import { createCodeReview, ReviewBody, ReviewDialog, reviewHeadActions } from "../packages/core/src/pages/admin/code/review";
+import { codeReviewMessages } from "../packages/core/src/pages/admin/code/review-messages";
 
 declare global {
   interface Window {
@@ -97,51 +101,42 @@ const code = () => (
   />
 );
 const adminStates: FixtureReviewVariant[] = ["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"];
+/**
+ * The admin review as Administration › Code › Freigaben opens it on v2: the version's props as the screen maps them,
+ * its deeds in the detail head, its views under it and the statement with the overview in the pane.
+ */
 function Admin() {
-  const detail = createMemo(() => window.approvalAdminFixtures[adminStates.find((s) => s === state()) ?? "normal"]);
+  const detail = window.approvalAdminFixtures[adminStates.find((s) => s === state()) ?? "normal"];
+  const t = codeAdminMessages.resolve([locale]).t;
+  const r = codeReviewMessages.resolve([locale]).t;
+  const base = {
+    apps: {},
+    viewerId: "11111111-1111-4111-8111-111111111111",
+    dateConfig: { locale, timeZone: "Europe/Berlin" },
+    query: { sec: "approvals" as const, id: detail.version.id },
+  };
+  const review = createCodeReview(reviewProps(base, r, detail, [], t.unknownAuthor, detail.ownerName ?? t.unknownAuthor));
   return (
-    <CodeApprovalReview
-      codeId={detail().code.id}
-      versionId={detail().version.id}
-      number={detail().version.number}
-      title={detail().code.title}
-      viewerId="11111111-1111-4111-8111-111111111111"
-      dateConfig={{ locale, timeZone: "Europe/Berlin" }}
-      tab="overview"
-      authorUserId={detail().version.author.id}
-      recipient={detail().version.author.name ?? "Lea Muster"}
-      next="chat"
-      binding={detail().binding}
-      status={detail().status}
-      canApprove={detail().canApprove}
-      own={detail().own}
-      soleAdminNotice={detail().soleAdminNotice}
-      staleComparison={detail().staleComparison}
-      newer={null}
-      reason="Sie darf Aufgaben anlegen, die andere sehen."
-      readModel={detail().readModel ?? null}
-      explanation={detail().explanation}
-      activeVersion={detail().activeVersion?.number ?? null}
-      comparison={detail().comparison?.number ?? null}
-      files={detail().files}
-      decision={
-        detail().decision
-          ? {
-              outcome: detail().decision!.outcome,
-              comment: detail().decision!.comment ?? null,
-              by: detail().decision!.decidedByName ?? "Jana Probe",
-              byId: detail().decision!.decidedBy ?? null,
-              at: detail().decision!.decidedAt,
+    <div class="k2-ui">
+      <Pane
+        detail
+        label={r.headTitle({ title: review.props.title, n: review.props.number })}
+        head={
+          <Bar
+            start={
+              <Text type="body" weight="strong">
+                {review.props.title}
+              </Text>
             }
-          : null
-      }
-      previous={null}
-      comments={detail().comments?.items ?? []}
-      commentsNext={null}
-      commentsTotal={detail().comments?.total ?? 0}
-      listHref="/admin/code?sec=approvals"
-      nextHref={null}
-    />
+            end={reviewHeadActions(review)}
+          />
+        }
+        status={<Bar start={<Tabs label={r.tabsLabel} items={review.tabs()} />} />}
+      >
+        <ReviewBody review={review} />
+      </Pane>
+      <ReviewDialog review={review} />
+    </div>
   );
 }
 const pageStates: CodePageFixtureState[] = ["new-version", "approval", "changes-requested", "versions-rejected"];
