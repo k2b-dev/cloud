@@ -119,12 +119,15 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         pagePrimary={() => w.projectSettings() && w.activeProject()?.permission === "admin"}
         // Only My apps floats New chat on the phone: a Project has its composer, which starts its new chat (look rules).
         fab={() => w.mainView() === "code"}
-        // My apps' own way to create, in the head at every width (the phone hides a status row's end).
+        // My apps' own way to create, in the head at every width (the phone hides a status row's end), as a symbol
+        // with its name: beside the path, the search field and "Neuer Chat", words would not fit the head at 1024.
         viewActions={() =>
           w.mainView() === "code" && !w.codeDetailShown() ? (
-            <Button icon="sparkles" onClick={() => void w.createFromCodeView()}>
-              {codeViewMessages.resolve([w.locale()]).t.codeCreateInChat}
-            </Button>
+            <Button
+              icon="sparkles"
+              label={codeViewMessages.resolve([w.locale()]).t.codeCreateInChat}
+              onClick={() => void w.createFromCodeView()}
+            />
           ) : undefined
         }
         newChat={() => ({
