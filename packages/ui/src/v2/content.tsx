@@ -392,6 +392,11 @@ export const Row = (props: RowProps) => {
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
   const title = createUniqueId();
+  // a level outside 1..6 (a heading level 0 or 7 from data) stands at the edge and says nothing
+  const level = () => {
+    const given = props.level;
+    return given !== undefined && Number.isInteger(given) && given >= 1 && given <= 6 ? given : undefined;
+  };
   return (
     // biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-level is set only with the listitem role, which supports it (ARIA 1.2).
     <div
@@ -400,8 +405,8 @@ export const Row = (props: RowProps) => {
       role={inList ? "listitem" : undefined}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
-      data-level={props.level}
-      aria-level={inList ? props.level : undefined}
+      data-level={level()}
+      aria-level={inList ? level() : undefined}
       data-unread={props.unread ? "" : undefined}
       data-strong={props.strong ? "" : undefined}
       data-current={props.current ? "" : undefined}

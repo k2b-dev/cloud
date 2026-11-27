@@ -157,6 +157,25 @@ describe("describeV2", () => {
     expect(text).toContain('Field "Land": Select placeholder "Bitte wählen"');
   });
 
+  test("names the level of a row at a depth", async () => {
+    const { List, Row } = await import("./content");
+    const text = outline(
+      renderToString(() =>
+        createComponent(List, {
+          label: "Inhalt",
+          get children() {
+            return [
+              createComponent(Row, { lines: ["Werkstattordnung"], level: 1 }),
+              createComponent(Row, { lines: ["Feiertage"], level: 3 }),
+            ];
+          },
+        }),
+      ),
+    );
+    expect(text).toContain('Row L1 "Werkstattordnung"');
+    expect(text).toContain('Row L3 "Feiertage"');
+  });
+
   test("names a place that loads, and a table that keeps its head while it loads", () => {
     const text = outline(renderToString(() => createComponent(StatesFixture, {})));
     expect(text).toContain("Loading 3 placeholder rows of 3 lines");

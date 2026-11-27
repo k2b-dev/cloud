@@ -90,6 +90,20 @@ test("a row at a level sends it in the server's markup: aria-level in a list, th
   const alone = renderToString(() => createComponent(Row, { lines: ["Feiertage"], level: 3 }));
   expect(alone).toContain('data-level="3"');
   expect(alone).not.toContain("aria-level");
+  // a level outside 1..6 stands at the edge and says nothing, so it never voids the row's padding
+  for (const level of [0, 7, 2.5]) {
+    const odd = renderToString(() =>
+      createComponent(List, {
+        label: "Inhalt",
+        get children() {
+          // data that breaks the type, as a heading level read from a note may
+          return createComponent(Row, { lines: ["Feiertage"], level: level as 1 });
+        },
+      }),
+    );
+    expect(odd).not.toContain("data-level");
+    expect(odd).not.toContain("aria-level");
+  }
 });
 
 test("Ticks are drawn by the server alone: a picture with its sentence and one tick per slot", async () => {

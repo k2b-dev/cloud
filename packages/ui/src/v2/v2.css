@@ -1073,7 +1073,7 @@
 /* a row at a level (Row level): one step further in per level, five steps at the sixth; its line stays edge to
    edge, and nothing folds */
 .k2-ui .k2-row[data-level] {
-  padding-left: calc(var(--k2-edge) + var(--k2-level-steps) * var(--k2-level-step));
+  padding-left: calc(var(--k2-edge) + var(--k2-level-steps, 0) * var(--k2-level-step));
 }
 .k2-ui .k2-row[data-level="1"] {
   --k2-level-steps: 0;

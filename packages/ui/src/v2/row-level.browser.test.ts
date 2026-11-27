@@ -63,7 +63,9 @@ for (const width of [1440, 390]) {
       const [one, two, three, four, five, six, again, plain] = found;
       // one step per level, the same step everywhere
       const step = two!.start - one!.start;
-      expect(step).toBeGreaterThan(0);
+      // the content step of the token, the same as a Table tree row's
+      expect(step).toBe(20);
+      expect(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--k2-level-step").trim())).toBe("20px");
       expect([three!.start, four!.start, five!.start, six!.start]).toEqual([
         one!.start + 2 * step,
         one!.start + 3 * step,
