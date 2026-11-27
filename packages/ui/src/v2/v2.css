@@ -1671,9 +1671,11 @@
   outline: none;
   opacity: 0;
 }
-/* a focus in the head (a sort, a box) shows the grips as a pointer on it does */
+/* a focus in the head (a sort, a box) shows the grips as a pointer on it does: `data-focused`, set by the head's own
+   focus events. Not `:focus-within`: WebKit then restyles the whole table on every move of the focus in its body
+   (10 000 rows: about 300 ms a key). */
 .k2-ui .k2-cgrip:is(:hover, :focus-visible, :active, [data-dragging]),
-.k2-ui .k2-table thead:is(:hover, :focus-within) .k2-cgrip {
+.k2-ui .k2-table thead:is(:hover, [data-focused]) .k2-cgrip {
   opacity: 1;
 }
 /* with touch it stays, as the seam's grip does; after a touch on the head (`data-touched`, until a touch lands

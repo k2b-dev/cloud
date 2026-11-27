@@ -691,6 +691,11 @@ export const Table = <T,>(props: TableProps<T>) => {
     };
   };
   onCleanup(() => stopAway?.());
+  // a focus in the head shows its grips; the head's own focus events say so, which a focus in the body never reaches
+  const [headFocused, setHeadFocused] = createSignal(false);
+  const leaveHead = (event: FocusEvent) => {
+    if (!(event.relatedTarget instanceof Node && head?.contains(event.relatedTarget))) setHeadFocused(false);
+  };
   const sized = () => grid() || props.columns.some((column) => column.width);
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
 
@@ -1080,7 +1085,14 @@ export const Table = <T,>(props: TableProps<T>) => {
               </For>
             </colgroup>
           </Show>
-          <thead ref={head} data-touched={touched() ? "" : undefined} onPointerDown={touchHead}>
+          <thead
+            ref={head}
+            data-touched={touched() ? "" : undefined}
+            data-focused={headFocused() ? "" : undefined}
+            onPointerDown={touchHead}
+            onFocusIn={() => setHeadFocused(true)}
+            onFocusOut={leaveHead}
+          >
             <tr>
               <Show when={props.select}>
                 {(select) => (
