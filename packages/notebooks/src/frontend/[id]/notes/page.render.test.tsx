@@ -99,11 +99,6 @@ function fixtures(permission: PermissionLevel = "read", total = 1) {
     people: 2,
     notes: 140,
     newNotes: 6,
-    latest: {
-      actor: { kind: "user", id: user.id, displayName: "Jana Berger", avatarHash: null },
-      at: timestamp,
-      note: { shortId: "note01", title: "Onboarding" },
-    },
   });
   return { list, figures };
 }

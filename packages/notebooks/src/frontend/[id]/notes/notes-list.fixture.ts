@@ -111,11 +111,6 @@ export const sampleFigures = (): NotesFigures => {
     people: 5,
     notes: 128,
     newNotes: 14,
-    latest: {
-      actor: { kind: "user", id: "u-ada", displayName: "Ada Renz", avatarHash: null },
-      at: at(0.2),
-      note: { shortId: "N00000", title: "Tourenplanung KW 48" },
-    },
   };
 };
 
@@ -126,11 +121,6 @@ export const worstFigures = (): NotesFigures => ({
   people: 0,
   notes: 1_234_567,
   newNotes: 0,
-  latest: {
-    actor: { kind: "user", id: "u-long", displayName: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach", avatarHash: null },
-    at: at(2000),
-    note: { shortId: "W00001", title: "Statikberechnungsnachweisprüfungsergebnisprotokollzusammenfassung_final_v12_wirklich_final" },
-  },
 });
 
 /** Filters and orders like `notebooksService.pages.list`; favorites are the notes with an even number. */

@@ -39,10 +39,6 @@ export const notesListMessages = i18n.define({
       byPeople: ({ count }: { count: string }) => (count === "1" ? "by 1 person" : `by ${count} people`),
       noChangesYet: "no changes yet",
       newNotes: ({ count, days }: { count: string; days: number }) => `${count} new in ${days} days`,
-      lastChange: "Last change",
-      nothingChanged: "Nothing yet",
-      deletedNote: "A deleted note",
-      byWhom: ({ name, when }: { name: string; when: string }) => `${name} · ${when}`,
     },
     de: {
       notes: "Notizen",
@@ -78,10 +74,6 @@ export const notesListMessages = i18n.define({
       byPeople: ({ count }) => (count === "1" ? "von 1 Person" : `von ${count} Personen`),
       noChangesYet: "noch keine Änderungen",
       newNotes: ({ count, days }) => `${count} neu in ${days} Tagen`,
-      lastChange: "Letzte Änderung",
-      nothingChanged: "Noch nichts",
-      deletedNote: "Eine gelöschte Notiz",
-      byWhom: ({ name, when }) => `${name} · ${when}`,
     },
   },
 });

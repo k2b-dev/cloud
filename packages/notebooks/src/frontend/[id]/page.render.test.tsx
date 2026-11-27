@@ -298,9 +298,7 @@ test.each([
   spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.pages, "list").mockResolvedValue({ items: [], total: 0 }));
   const quietDays = Array.from({ length: 30 }, () => 0);
-  spies.push(
-    spyOn(notebooksService.figures, "notes").mockResolvedValue({ days: quietDays, changes: 0, people: 0, notes: 0, newNotes: 0, latest: null }),
-  );
+  spies.push(spyOn(notebooksService.figures, "notes").mockResolvedValue({ days: quietDays, changes: 0, people: 0, notes: 0, newNotes: 0 }));
   spies.push(spyOn(notebooksService.figures, "attachments").mockResolvedValue({ days: quietDays, count: 0, bytes: 0, added: 0 }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
