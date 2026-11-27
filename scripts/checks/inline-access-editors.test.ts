@@ -23,7 +23,7 @@ test("the shared access package, tests, browser harnesses and the documented aud
     "packages/cloud/src/access/AccessDialog.tsx",
     "packages/notes/src/frontend/Share.behavior.test.tsx",
     "packages/notes/src/frontend/Share.browser-harness.tsx",
-    "packages/core/src/pages/admin/rail/RailAdmin.island.tsx",
+    "packages/core/src/pages/admin/rail/NavigationScreen.tsx",
   ])
     expect(checkSource(file, editor(""))).toEqual([]);
 });

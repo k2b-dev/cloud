@@ -104,7 +104,7 @@ To run one file directly:
 ```bash
 bun --no-env-file test --isolate --conditions=browser \
   --preload ./packages/ui/test/solid-dom-preload.ts \
-  ./packages/core/src/pages/admin/CacheNotice.behavior.test.ts
+  ./packages/core/test/consent.behavior.test.tsx
 ```
 
 Guard browser-only tests with `isServer` from `solid-js/web`, so a plain
