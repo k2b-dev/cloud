@@ -1146,27 +1146,31 @@ export const Table = <T,>(props: TableProps<T>) => {
                     (() => {
                       const form = phone()(item.row);
                       const target = props.open?.(item.row);
+                      // a row says its place among the rows of the table: the heads of its groups are no rows
+                      const place = { index: () => item.index, size: () => props.rows.length };
                       return (
-                        <Row
-                          lines={form.lines}
-                          avatar={form.avatar}
-                          time={form.time}
-                          marks={form.marks}
-                          end={form.end}
-                          strong
-                          href={target?.href}
-                          onNavigate={target?.onNavigate}
-                          onOpen={target?.onOpen}
-                          current={props.current !== undefined && props.current === key(item.row, item.index)}
-                          select={
-                            props.select
-                              ? {
-                                  selected: selected(item.row, item.index),
-                                  onChange: (on) => toggle(key(item.row, item.index), on),
-                                }
-                              : undefined
-                          }
-                        />
+                        <ListItemContext.Provider value={place}>
+                          <Row
+                            lines={form.lines}
+                            avatar={form.avatar}
+                            time={form.time}
+                            marks={form.marks}
+                            end={form.end}
+                            strong
+                            href={target?.href}
+                            onNavigate={target?.onNavigate}
+                            onOpen={target?.onOpen}
+                            current={props.current !== undefined && props.current === key(item.row, item.index)}
+                            select={
+                              props.select
+                                ? {
+                                    selected: selected(item.row, item.index),
+                                    onChange: (on) => toggle(key(item.row, item.index), on),
+                                  }
+                                : undefined
+                            }
+                          />
+                        </ListItemContext.Provider>
                       );
                     })()
                   )

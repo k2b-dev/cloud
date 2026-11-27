@@ -193,7 +193,8 @@ and do not count as one.
 
 What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
 finds only rows in the page, so a list people search in needs its own
-search; Shift+Tab from below the list (a foot) lands on the last row in the
+search; printing prints only the rows in the page, so a list people print
+needs its own export or print view; Shift+Tab from below the list (a foot) lands on the last row in the
 page, not the last item; Tab out of a row that scrolled away looks at most
 20 entries further for the next stop (past 20 heads or rows without a
 control the browser decides); a group head is no entry of the list for a screen

@@ -165,8 +165,14 @@ export const createVirtualWindow = <T>(options: {
     // What scrolls the list can change with the width (a context column that gives way under its main column): it is
     // found anew before the window or the place someone reads is taken from it.
     let scroller = scrollerOf(list);
+    // The height of what scrolls decides the window: a new width or height of it moves the window (`later` is set below).
+    const resized = new ResizeObserver(() => later());
     const findScroller = () => {
-      scroller = scrollerOf(list);
+      const found = scrollerOf(list);
+      if (found === scroller) return;
+      scroller = found;
+      // a scroller found anew is watched too; the old one is let go with the list
+      resized.observe(found ?? document.documentElement);
     };
     // The first row in view and the one after it (which takes its place when it goes), with their distance to the top.
     let held: { node: Element; top: number }[] = [];
@@ -312,7 +318,6 @@ export const createVirtualWindow = <T>(options: {
     };
     list.addEventListener("keydown", tabOut);
     // A new width may also hand the scrolling to another element: the list's own width changes with it.
-    const resized = new ResizeObserver(later);
     resized.observe(view);
     resized.observe(list);
     // Scrolling anything that holds the list moves the window, whichever element scrolls now (scroll events do not
@@ -330,6 +335,8 @@ export const createVirtualWindow = <T>(options: {
       if (key !== undefined) setFocused(key);
     };
     const focusOut = (event: FocusEvent) => {
+      // a switch to another window or tab takes the focus from the page, not from the row: it comes back to it
+      if (!document.hasFocus()) return;
       if (!(event.relatedTarget instanceof Node) || !list.contains(event.relatedTarget)) setFocused(undefined);
     };
     list.addEventListener("focusin", focusIn);

@@ -10,7 +10,11 @@ import { List, Nav, type NavItem, Pane, Row, Table, Workspace } from "../src/v2"
 export type Kind = "groups" | "forty" | "fortyone" | "table" | "phone" | "nav";
 
 const entries = (count: number) => Array.from({ length: count }, (_, index) => ({ key: `e${index + 1}`, title: `Eintrag ${index + 1}` }));
-const rows = Array.from({ length: 38 }, (_, index) => ({ id: `r${index + 1}`, name: `Zeile ${index + 1}`, state: index % 2 ? "offen" : "erledigt" }));
+const rows = Array.from({ length: 38 }, (_, index) => ({
+  id: `r${index + 1}`,
+  name: `Zeile ${index + 1}`,
+  state: index % 2 ? "offen" : "erledigt",
+}));
 const third = (index: number) => Math.floor(index / 13) + 1;
 
 const Rows = (props: { count: number; groups?: boolean }) => (
@@ -55,7 +59,9 @@ const tables: NavItem[] = Array.from({ length: 1000 }, (_, index) => ({
 }));
 
 export const Fixture = (props: { kind: Kind }) => (
-  <Workspace sidebar={props.kind === "nav" ? <Nav title="Grids" icon="table" groups={[{ label: "Tabellen", items: tables }]} /> : undefined}>
+  <Workspace
+    sidebar={props.kind === "nav" ? <Nav title="Grids" icon="table" groups={[{ label: "Tabellen", items: tables }]} /> : undefined}
+  >
     <Pane label="Inhalt">
       {props.kind === "groups" ? (
         <Rows count={60} groups />
