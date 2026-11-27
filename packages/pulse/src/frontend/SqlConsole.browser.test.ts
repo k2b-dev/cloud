@@ -326,8 +326,10 @@ test("SQL time axes remain readable on phone and desktop", async () => {
         });
         await tab.getByRole("button", { name: "Ausführen", exact: true }).click();
         await tab.locator('[data-sql-region="result"] .stdlib-chart-axis-label').filter({ hasText: "20.10.2026" }).waitFor();
+        // the time labels: every tick label but the value labels, which end at the value axis (the first time label
+        // begins at its tick, so it never meets the lowest value label)
         const ticks = await tab
-          .locator('[data-sql-region="result"] .stdlib-chart-tick-label[text-anchor="middle"]')
+          .locator('[data-sql-region="result"] .stdlib-chart-tick-label:not([text-anchor="end"])')
           .evaluateAll((elements) =>
             elements
               .map((element) => ({

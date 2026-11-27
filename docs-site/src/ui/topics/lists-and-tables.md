@@ -56,7 +56,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content). On a touch screen the grips of the head stay visible; after a touch on the head each takes a 44 px target until a touch lands elsewhere.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone; a column of states takes `Chip status quiet`, a dot and a word. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content). On a touch screen the grips of the head stay visible; after a touch on the head each takes a 44 px target until a touch lands elsewhere.
 
 <Props of="Table Column" />
 
