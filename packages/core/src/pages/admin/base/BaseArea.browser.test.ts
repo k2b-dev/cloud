@@ -54,6 +54,7 @@ test("the sections stand under their entry in the admin bar, and the page keeps 
 
 test("the purpose stands apart from the head and the first section; logo and favicon show their picture or the default", async () => {
   await goto("/admin/base");
+  await settled(page);
   const purpose = await page.evaluate(() => {
     const band = document.querySelector('main [data-k2-part="Pane"] [data-k2-part="Band"]');
     const text = band?.querySelector(".k2-text");

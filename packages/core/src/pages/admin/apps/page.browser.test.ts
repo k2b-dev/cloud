@@ -167,7 +167,16 @@ test("at 1440 every view of the open app is a whole tab in its head, none cut or
   await open("?app=lager", 1440);
   const detail = page.locator('main [data-k2-part="Pane"][data-detail]');
   const tabs = detail.getByRole("navigation", { name: "Lager" }).getByRole("link");
-  expect(await tabs.allInnerTexts()).toEqual(["Übersicht", "Zugriff", "Schlüssel", "Domains", "Ereignisse", "Routen", "Laufzeit", "Fehler"]);
+  expect(await tabs.allInnerTexts()).toEqual([
+    "Übersicht",
+    "Zugriff",
+    "Schlüssel",
+    "Domains",
+    "Ereignisse",
+    "Routen",
+    "Laufzeit",
+    "Fehler",
+  ]);
   const pane = (await detail.boundingBox())!;
   for (const tab of await tabs.all()) {
     expect(await tab.isVisible()).toBe(true);
