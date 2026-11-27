@@ -1137,6 +1137,8 @@ export const ColorInput = (props: ColorInputProps) => {
   field?.group();
   const t = useControlMessages();
   const picker = usePopover(() => ({}));
+  // the code beside the swatch describes it: the swatch is named for its deed and says which colour it holds
+  const code = field?.control ?? createUniqueId();
   const color = useColor(() => ({
     ...(props.onChange ? { value: props.value ?? "#000000" } : { defaultValue: props.value ?? "#000000" }),
     onValueChange: (next: string) => props.onChange?.(next),
@@ -1153,11 +1155,11 @@ export const ColorInput = (props: ColorInputProps) => {
     >
       <span class="k2-color-head">
         {/* the colour as a swatch that opens the picker (area and hue) on a panel: a settings row stays one line */}
-        <picker.Trigger class="k2-color-swatch" disabled={props.disabled} aria-label={t().pickColor}>
+        <picker.Trigger class="k2-color-swatch" disabled={props.disabled} aria-label={t().pickColor} aria-describedby={code}>
           <color.Swatch class="k2-color-fill" aria-hidden="true" />
         </picker.Trigger>
         <span class="k2-input" data-disabled={props.disabled ? "" : undefined}>
-          <color.Input id={field?.control} aria-label={t().colorCode} aria-describedby={field?.described} />
+          <color.Input id={code} aria-label={t().colorCode} aria-describedby={field?.described} />
         </span>
       </span>
       <picker.Popup class="k2-pop k2-color-pop" data-k2-part="Popover" side="bottom" align="start" sideOffset={4} collisionPadding={8}>

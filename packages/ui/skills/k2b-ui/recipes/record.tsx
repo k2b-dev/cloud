@@ -187,6 +187,8 @@ export default function CustomerOverview(props: Props) {
                   { label: "Telefon", value: "+49 30 5550 142", hint: "Standard", copy: "+49 30 5550 142" },
                   { label: "E-Mail", value: "o.brandner@example.de", copy: "o.brandner@example.de" },
                   { label: "Sprache", value: "Deutsch" },
+                  // the kind of the head stands here too: on the phone it gives way to the name
+                  { label: "Kundentyp", value: "Privat" },
                 ]}
               />
             </Section>
