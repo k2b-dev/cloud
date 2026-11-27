@@ -9,6 +9,8 @@ import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 // - "book": the head of a notebook page, a title and a button "1.000 Kommentare" in the start, five actions at its
 //   end. All of them fold, and then the start shortens down to its least.
 // - "menu": a title, four actions and the head's own menu "…" at the end: the folded actions are its first section.
+// - "before": a draft's head whose plain "…" stands before the primary "Senden": the "…" takes the folded actions,
+//   among them a link ("Vorschau") that `window.__k2Lock(true)` disables.
 // - "reader": Mail's reader in small: a long subject, the primary "Erledigt", four actions, a menu with words
 //   ("Später") and the head's own "…".
 // - "tabs": four tabs, two actions, the primary and a menu with a symbol of its own ("Filter") at the very end.
@@ -140,6 +142,34 @@ export function Fixture() {
         >
           <Pane label="Angebot">
             <Text>Das Angebot.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="before">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Text type="row" weight="strong">
+                  Entwurf an Lackfabrik Nordhaus
+                </Text>
+              }
+              end={
+                <>
+                  <Button keep icon="paperclip" label="Anhängen" onClick={deed("Anhängen")} />
+                  <Button keep icon="clock" label="Planen" onClick={deed("Planen")} />
+                  <Button keep icon="external-link" label="Vorschau" href="#preview" disabled={locked()} />
+                  <Menu items={[{ label: "Verwerfen", icon: "trash", danger: true, onClick: deed("Verwerfen") }]} />
+                  <Button keep variant="primary" icon="send" onClick={deed("Senden")}>
+                    Senden
+                  </Button>
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Entwurf">
+            <Text>Der Entwurf.</Text>
           </Pane>
         </Workspace>
       </div>

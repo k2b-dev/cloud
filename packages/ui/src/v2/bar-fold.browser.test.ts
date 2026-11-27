@@ -220,6 +220,59 @@ test("Mail's reader: its own '…' takes the folded actions; a menu with a symbo
   });
 });
 
+test("a plain '…' before the primary takes the folded actions: no second '…', nothing new after the primary", async () => {
+  await withPage(390, true, async (page) => {
+    const names = (await seen(page, head("before"))).map((control) => control.name);
+    expect(names.slice(-2)).toEqual([more, "Senden"]);
+    expect(names.filter((name) => name === more)).toEqual([more]);
+    expect(await page.locator(`${head("before")} .k2-bar-fold`).count()).toBe(0);
+    await page.locator(head("before")).getByRole("button", { name: more }).click();
+    const entries = (await page.locator(".k2-menu").last().locator("[role^='menuitem']").allTextContents()).map((entry) => entry.trim());
+    // the folded actions first, in their order, then the menu's own
+    expect(entries.slice(-2)).toEqual(["Vorschau", "Verwerfen"]);
+    expect(entries.length).toBeGreaterThan(2);
+  });
+});
+
+test("a folded link the keys stand on turns disabled in the open menu: it stays the entry with the focus", async () => {
+  await withPage(390, true, async (page) => {
+    await page.locator(head("before")).getByRole("button", { name: more }).focus();
+    await page.keyboard.press("Enter");
+    for (let step = 0; step < 4; step++) {
+      if (await page.evaluate(() => document.activeElement?.textContent?.trim() === "Vorschau")) break;
+      await page.keyboard.press("ArrowDown");
+    }
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Vorschau");
+    await page.evaluate(() => window.__k2Lock?.(true));
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-disabled") === "true");
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Vorschau");
+    await page.keyboard.press("ArrowDown");
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Verwerfen");
+  });
+});
+
+test("tabs that gave way to a button come back whole when it gives the room back; their 'Mehr' goes", async () => {
+  await withPage(390, true, async (page) => {
+    const names = async () => (await seen(page, head("record"))).map((control) => control.name);
+    expect((await names()).slice(0, 3)).toEqual(tabs);
+    const primary = page.locator(head("record")).getByRole("button", { name: "Neu" });
+    await primary.evaluate((button) => {
+      (button as HTMLElement).style.minWidth = "160px";
+    });
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[data-case="record"] .k2-tab')].some((tab) => tab.textContent?.startsWith("Mehr")),
+    );
+    await primary.evaluate((button) => {
+      (button as HTMLElement).style.minWidth = "";
+    });
+    await frames(page);
+    await frames(page);
+    await frames(page);
+    const after = await names();
+    expect([after.slice(0, 3), after.some((name) => name.startsWith("Mehr"))]).toEqual([tabs, false]);
+  });
+});
+
 test("a menu with a symbol and a name of its own at the end ('Filter') takes no folded actions", async () => {
   await withPage(390, true, async (page) => {
     await page.locator(head("tabs")).getByRole("button", { name: "Filter" }).click();
@@ -301,7 +354,7 @@ test("every 8 px from 320 to 1440: each end ends inside its bar's content edge, 
       await page.setViewportSize({ width, height: 1000 });
       await frames(page);
       await frames(page);
-      for (const which of ["record", "book", "menu", "reader", "tabs"]) {
+      for (const which of ["record", "book", "menu", "before", "reader", "tabs"]) {
         const { start, end, content } = await edges(page, head(which));
         if (!end) continue;
         if (end.right > content + 0.5) wrong.push(`${which} at ${width}: the end ends ${Math.round(end.right - content)} px beyond`);
