@@ -268,10 +268,9 @@ const reset = () => {
 const open = async (width = 1440) => {
   reset();
   const context = await browser.newContext({ viewport: { width, height: 900 } });
-  // Shared drafts bound an external edit's body diff by wall-clock time. Each document freezes its clock at load, so
-  // load on the runner cannot reject an edit. Tests that assert an edit stall every clock read meanwhile to prove it.
-  await context.addInitScript(() => {
-    const frozen = Date.now();
+  // Shared drafts bound an external edit's body diff by wall-clock time. Each document pins its clock to the fixtures'
+  // instant, so load on the runner cannot reject an edit. Tests that assert an edit stall every clock read meanwhile.
+  await context.addInitScript((frozen: number) => {
     let stall = false;
     Date.now = () => {
       if (stall) for (const end = performance.now() + 20; performance.now() < end; );
@@ -280,7 +279,7 @@ const open = async (width = 1440) => {
     window.stallClockReads = (on) => {
       stall = on;
     };
-  });
+  }, Date.parse(now));
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   const errors = pageErrors(page);
