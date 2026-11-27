@@ -786,9 +786,19 @@ export type Tile = {
 
 /** What a card's preview shows: the app gives the words, the card draws them. */
 export type TilePreview =
-  | { table: { columns: readonly string[]; rows: readonly (readonly string[])[] } }
+  | { table: { columns: readonly TilePreviewColumn[]; rows: readonly (readonly string[])[] } }
   | { page: { title: string; text?: string } }
   | { icon: string };
+
+/**
+ * A column of a preview's table: its head, or its head and its place. `align: "end"` sets the column at the end with
+ * figures of one width, for amounts and counts.
+ */
+export type TilePreviewColumn = string | { label: string; align?: "end" };
+
+const columnLabel = (column: TilePreviewColumn) => (typeof column === "string" ? column : column.label);
+const columnAlign = (column: TilePreviewColumn | undefined) =>
+  column !== undefined && typeof column !== "string" ? column.align : undefined;
 
 /** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
 const TILE_PREVIEW_PHONE_COLUMNS = 2;
@@ -802,7 +812,11 @@ const TilePreviewView = (props: { preview: TilePreview }) => (
             <thead>
               <tr>
                 <For each={table().columns}>
-                  {(column, index) => <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{column}</th>}
+                  {(column, index) => (
+                    <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined} data-align={columnAlign(column)}>
+                      {columnLabel(column)}
+                    </th>
+                  )}
                 </For>
               </tr>
             </thead>
@@ -811,7 +825,14 @@ const TilePreviewView = (props: { preview: TilePreview }) => (
                 {(row) => (
                   <tr>
                     <For each={row}>
-                      {(cell, index) => <td data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{cell}</td>}
+                      {(cell, index) => (
+                        <td
+                          data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}
+                          data-align={columnAlign(table().columns[index()])}
+                        >
+                          {cell}
+                        </td>
+                      )}
                     </For>
                   </tr>
                 )}

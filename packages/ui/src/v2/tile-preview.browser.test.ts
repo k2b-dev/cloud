@@ -99,3 +99,49 @@ test("a long word in the preview ends in … and leaves the cards as wide as eac
     expect(cut).toBe(true);
   });
 });
+
+// W5 (Pulse) and the coordinator: a start card is a button when it opens a dialog in place. The whole card presses it,
+// and its name is cut with "…" like a link's (a button cut hard before).
+for (const width of [1440, 390])
+  test(`at ${width} px a card with onOpen is one button the whole card presses, its long name cut with …`, async () => {
+    await withPage({ width, height: 900 }, true, async (page) => {
+      const card = page.locator(".k2-tiles > .k2-tile").last();
+      const button = card.locator(".k2-tile-title > button.k2-row-open");
+      expect(await button.count()).toBe(1);
+      expect(await card.locator("a").count()).toBe(0);
+      expect(await card.getAttribute("data-open")).toBe("");
+      // a press on the preview, far from the name, presses the card's button
+      const preview = await card.locator(".k2-tile-preview").boundingBox();
+      await page.mouse.click(preview!.x + preview!.width / 2, preview!.y + preview!.height / 2);
+      await settled(page);
+      expect(await page.evaluate(() => window.__k2TilePresses)).toBe(1);
+      await button.focus();
+      await page.keyboard.press("Enter");
+      await settled(page);
+      expect(await page.evaluate(() => window.__k2TilePresses)).toBe(2);
+      const cut = await button.evaluate((element) => ({
+        overflow: getComputedStyle(element).textOverflow,
+        fits: element.scrollWidth <= element.clientWidth,
+      }));
+      expect(cut.overflow).toBe("ellipsis");
+      if (width === 390) expect(cut.fits).toBe(false);
+    });
+  });
+
+// W4 (Grids): amounts in a preview stand at the end of their column with figures of one width; the other columns
+// stay at the start.
+test("a preview column with align end sets its head and cells at the end with figures of one width", async () => {
+  await withPage({ width: 1440, height: 900 }, false, async (page) => {
+    const found = await page.evaluate(() => {
+      const table = document.querySelectorAll(".k2-tile-pv-table")[0]!;
+      const style = (cell: Element) => ({ align: getComputedStyle(cell).textAlign, figures: getComputedStyle(cell).fontVariantNumeric });
+      return {
+        head: [...table.querySelectorAll("th")].map(style),
+        cell: [...table.querySelectorAll("tbody tr:first-child td")].map(style),
+      };
+    });
+    expect(found.head.map((cell) => cell.align)).toEqual(["start", "start", "end"]);
+    expect(found.cell.map((cell) => cell.align)).toEqual(["start", "start", "end"]);
+    expect(found.cell[2]?.figures).toBe("tabular-nums");
+  });
+});

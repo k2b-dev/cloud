@@ -145,7 +145,7 @@ in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
 at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
 the card's colour), `preview` (a glance of what it holds across its top,
 112 px, 84 px on the phone: `{ table: { columns, rows } }` as a small
-table of words, two columns on the phone, `{ page: { title, text? } }`, or
+table of words (a column `{ label, align: "end" }` for amounts), two columns on the phone, `{ page: { title, text? } }`, or
 `{ icon }` for a thing that holds nothing yet; it is a picture, the card
 keeps its name). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,

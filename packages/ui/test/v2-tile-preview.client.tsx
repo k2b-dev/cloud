@@ -8,6 +8,7 @@ import { Pane, Text, Tiles, Workspace } from "../src/v2";
 declare global {
   interface Window {
     __k2Mounted?: boolean;
+    __k2TilePresses?: number;
   }
 }
 
@@ -40,11 +41,12 @@ render(
               href: "?new=finance",
               preview: {
                 table: {
-                  columns: ["Datum", "Zahlungspartner", "Konto"],
+                  // the amount stands at the end of its column, its figures of one width
+                  columns: ["Datum", "Zahlungspartner", { label: "Betrag", align: "end" }],
                   rows: [
-                    ["01.04.", worst ? "Arbeitgeber-Gesellschaft-mit-beschränkter-Haftung-Nordhausen" : "Arbeitgeber GmbH", "Hauptkonto"],
-                    ["02.04.", "Vermieter", "Hauptkonto"],
-                    ["05.04.", "Markt vor Ort", "Visa"],
+                    ["01.04.", worst ? "Arbeitgeber-Gesellschaft-mit-beschränkter-Haftung-Nordhausen" : "Arbeitgeber GmbH", "2.640,00"],
+                    ["02.04.", "Vermieter", "−980,00"],
+                    ["05.04.", "Markt vor Ort", "−64,20"],
                   ],
                 },
               },
@@ -69,9 +71,12 @@ render(
             {
               icon: "notebook",
               color: "#0369a1",
-              title: "Tagebuch",
+              title: worst ? "Tagebuch mit Übergabeprotokollen der Frühschicht" : "Tagebuch",
               meta: "6 Seiten",
-              href: "?new=journal",
+              // a button, not a link: the whole card presses it
+              onOpen: () => {
+                window.__k2TilePresses = (window.__k2TilePresses ?? 0) + 1;
+              },
               preview: { page: { title: "Tagebuch", text: "Beginne hier. Schreibe täglich eine kurze Notiz." } },
             },
           ]}

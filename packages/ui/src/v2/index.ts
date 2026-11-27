@@ -110,6 +110,7 @@ export {
   type Tile,
   type TileCreate,
   type TilePreview,
+  type TilePreviewColumn,
   type TileStat,
   Tiles,
   type TilesProps,
