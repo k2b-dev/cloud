@@ -2083,14 +2083,15 @@
 }
 /* ── Ticks: one tick per time slot, ok soft in the colour of what it belongs to, a failure red and taller ──── */
 /* The slots read in the writing direction: the oldest at the start (left, or right in a page written right to left).
-   More slots than a cell holds (from about 60) never leave it: the strip clips at its 140 px. */
+   The strip is 140 px, or the width of its cell where that is narrower: its slots give way to 1 px. More slots than
+   that holds never leave it: the strip clips at its start, so the newest slots at its end always show. */
 .k2-ui .k2-ticks {
   --k2-ticks-mix: 45%;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1px;
-  width: 140px;
+  width: min(140px, 100%);
   height: 20px;
   flex: none;
   vertical-align: middle;
@@ -2120,6 +2121,16 @@
   min-width: 1px;
   height: 12px;
   border-radius: 1px;
+}
+/* the room left between the slots: spread evenly while they fit (as space-between), none once they do not, and then
+   the strip's end alignment clips its oldest slots, not its newest. No sibling combinator: with `i + i`, a node
+   inserted deep in a page restyled more than the shell's fixed share (shell-restyle.browser.test.ts) */
+/* one primitive: Ticks draws only its slots inside the strip */
+.k2-ui .k2-ticks:not([data-stretch]) > i {
+  margin-inline-start: auto;
+}
+.k2-ui .k2-ticks:not([data-stretch]) > i:first-child {
+  margin-inline-start: 0;
 }
 .k2-ui .k2-ticks > i[data-s="ok"] {
   background: color-mix(
