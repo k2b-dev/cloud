@@ -78,3 +78,8 @@ test("a blank notebook's preview is its welcome page: its title and first line a
   expect(shown).toEqual({ page: { title: welcomeOutline()[0]?.title ?? "-", text: expect.any(String) } });
   if ("page" in shown) expect(shown.page.text).not.toMatch(/[*#]/);
 });
+
+test("a blank notebook's welcome page previews in the language it is made in (#4460)", () => {
+  expect(welcomePreview("de")).toEqual({ page: { title: welcomeOutline("de")[0]?.title ?? "-", text: expect.any(String) } });
+  expect(welcomeOutline("de")[0]?.title).not.toBe(welcomeOutline("en")[0]?.title);
+});

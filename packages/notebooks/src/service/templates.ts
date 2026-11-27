@@ -9,11 +9,11 @@ import {
   type TemplateNoteContentContext,
   templates,
 } from "../templates";
-import helloMd from "./hello.md" with { type: "text" };
 import { notebookServiceMessages } from "./messages";
 import type { Notebook } from "./notebooks";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
+import { welcomeMarkdown } from "./welcome";
 import { invalidated, workspaceTransaction } from "./workspace-events";
 
 export type TemplateSummary = {
@@ -119,8 +119,8 @@ export const outline = (id: string, locale = "en"): TemplatePage[] | null => {
   return pages.map((page) => ({ title: page.title, parent: page.parentKey ? (titles.get(page.parentKey) ?? null) : null }));
 };
 
-/** The one page a blank notebook starts with. */
-export const welcomeOutline = (): TemplatePage[] => [{ title: deriveNoteTitle(helloMd), parent: null }];
+/** The one page a blank notebook starts with, in the language it is made in. */
+export const welcomeOutline = (locale = "en"): TemplatePage[] => [{ title: deriveNoteTitle(welcomeMarkdown(locale)), parent: null }];
 
 /** What a start card shows of a template: its first table, or its first page. */
 export type TemplatePreview = { table: { columns: string[]; rows: string[][] } } | { page: { title: string; text?: string } };
@@ -179,7 +179,10 @@ export const preview = (id: string, locale = "en"): TemplatePreview | null => {
 };
 
 /** What a blank notebook's start card shows: its welcome page. */
-export const welcomePreview = (): TemplatePreview => pagePreview(deriveNoteTitle(helloMd), helloMd);
+export const welcomePreview = (locale = "en"): TemplatePreview => {
+  const markdown = welcomeMarkdown(locale);
+  return pagePreview(deriveNoteTitle(markdown), markdown);
+};
 
 export const get = (id: string, locale = "en"): TemplateSummary | null => {
   const template = getTemplate(id);

@@ -38,8 +38,8 @@ export default ssr<AuthContext>(async (c) => {
       preview: notebooksService.template.preview(template.id, locale) ?? undefined,
     }))
     .sort((a, b) => rank(a.id) - rank(b.id));
-  const blankPageCount = notebooksService.template.welcomeOutline().length;
-  const blankPreview = notebooksService.template.welcomePreview();
+  const blankPageCount = notebooksService.template.welcomeOutline(locale).length;
+  const blankPreview = notebooksService.template.welcomePreview(locale);
   const open = c.req.query("new") ?? null;
   return () => (
     <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>

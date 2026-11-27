@@ -91,9 +91,9 @@ const previews: Record<string, TilePreview> = {
 };
 const withPreview = (all: StartTemplate[]) => all.map((template) => ({ ...template, preview: previews[template.id] }));
 const blankPreview: TilePreview = {
-  page: { title: "Welcome!", text: "This is your first note. You can use Markdown to format your text." },
+  page: { title: "Willkommen!", text: "Das ist deine erste Notiz. Mit Markdown formatierst du deinen Text." },
 };
-const blankPageCount = pages("Welcome!");
+const blankPageCount = pages("Willkommen!");
 const worst: StartTemplate[] = [
   {
     id: "recipes",
