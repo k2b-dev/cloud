@@ -482,7 +482,11 @@ export type Column<T> = {
   width?: { min: number; default: number };
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
-  /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
+  /**
+   * Drops away where the table has no room for it, in the order of the columns that may drop, and on the phone (rule
+   * 7: columns drop, they do not shrink). The table decides by its own width (a narrow pane beside an open detail), on
+   * the server already; a large table (`select`, `sticky`) scrolls sideways instead.
+   */
   drop?: boolean;
   /**
    * The rows can be sorted by this column: its head is pressed to sort. Give the address of the page sorted so
@@ -664,6 +668,35 @@ export const Table = <T,>(props: TableProps<T>) => {
   const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
   const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
   const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
+  // The columns that may drop give way by the table's own width, in their order (rule 7: columns drop, they do not
+  // shrink): each drops where the columns still standing need more room than the table has, the last one standing at
+  // least its `min`, the others their width. The stylesheet decides with a container query of this table, so the
+  // server and the first frame of a narrow pane already show the columns that fit, and nothing moves afterwards. A
+  // large table (`select`, `sticky`) scrolls sideways instead; on the phone every such column drops (the pane's query).
+  const dropOrder = createMemo(() => props.columns.flatMap((column, index) => (column.drop ? [index] : [])));
+  const dropMark = (index: number) => {
+    const order = dropOrder().indexOf(index);
+    return order < 0 ? undefined : `d${order}`;
+  };
+  const dropName = `k2-t${createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const dropRules = createMemo(() => {
+    if (grid() || dropOrder().length === 0 || !props.columns.every((column) => column.width)) return undefined;
+    const standing = new Set(props.columns.map((_, index) => index));
+    const need = () => {
+      const last = Math.max(...standing);
+      let px = 0;
+      for (const index of standing) px += index === last ? (props.columns[index]?.width?.min ?? 0) : (columnWidth(index) ?? 0);
+      return px;
+    };
+    return dropOrder()
+      .map((index, order) => {
+        // no "<" in the rule: the server writes the text of a style element as it is
+        const rule = `@container ${dropName} (max-width: ${(need() - 0.01).toFixed(2)}px){.k2-ui [data-drop=d${order}]{display:none}}`;
+        standing.delete(index);
+        return rule;
+      })
+      .join("");
+  });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
@@ -695,7 +728,9 @@ export const Table = <T,>(props: TableProps<T>) => {
         data-k2-part="Table"
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
+        style={dropRules() ? { container: `${dropName} / inline-size` } : undefined}
       >
+        <Show when={dropRules()}>{(rules) => <style>{rules()}</style>}</Show>
         {/* said outside the table, which is busy while its rows load */}
         <Show when={loading()}>
           <LoadingStatus />
@@ -715,7 +750,12 @@ export const Table = <T,>(props: TableProps<T>) => {
               </Show>
               {/* every column is its default wide; in a small table the last one takes the rest of the row */}
               <For each={props.columns}>
-                {(column, index) => <col style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined} />}
+                {(_, index) => (
+                  <col
+                    data-drop={dropMark(index())}
+                    style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined}
+                  />
+                )}
               </For>
             </colgroup>
           </Show>
@@ -733,7 +773,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                   <th
                     scope="col"
                     data-align={column.align}
-                    data-drop={column.drop ? "" : undefined}
+                    data-drop={dropMark(index())}
                     data-sticky={firstSticky(index())}
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
@@ -793,7 +833,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                         {(column, columnIndex) => (
                           <td
                             data-align={column.align}
-                            data-drop={column.drop ? "" : undefined}
+                            data-drop={dropMark(columnIndex())}
                             data-sticky={firstSticky(columnIndex())}
                             style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                           >
@@ -851,7 +891,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                           {(column, columnIndex) => (
                             <td
                               data-align={column.align}
-                              data-drop={column.drop ? "" : undefined}
+                              data-drop={dropMark(columnIndex())}
                               data-sticky={firstSticky(columnIndex())}
                               style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                             >
