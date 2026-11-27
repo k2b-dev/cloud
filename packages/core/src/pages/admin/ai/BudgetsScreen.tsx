@@ -83,10 +83,10 @@ export default function BudgetsScreen(props: { nav: NavProps; data: AiBudgetsDat
   const toggle = async (enabled: boolean) => {
     setToggling(true);
     try {
-      await assertAiAdmin(await api.$put({ json: plain({ ...config(), enabled }) }), t().saveFailed);
+      await assertAiAdmin(await api.$put({ json: plain({ ...config(), enabled }) }), t().budgetsToggleFailed);
       reloadAiArea();
     } catch (failure) {
-      toast(failure instanceof Error ? failure.message : t().saveFailed, { status: "bad" });
+      toast(failure instanceof Error ? failure.message : t().budgetsToggleFailed, { status: "bad" });
       setToggling(false);
     }
   };
