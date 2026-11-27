@@ -184,7 +184,7 @@ export type AppMeta = {
   /**
    * Legal/info pages this app owns. Aggregated app-wide and rendered in
    * login footer, app Footer, and the rail "more" dropdown. Each app
-   * contributes its own (e.g. settings → terms/privacy/imprint, faq → FAQ).
+   * contributes its own (e.g. Core → terms/privacy/imprint, an app → public information).
    */
   legalLinks?: LegalLink[];
   /** Static search destinations, visible when the app is in the user's navigation catalog. */
