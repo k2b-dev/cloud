@@ -25,6 +25,7 @@ Every state keeps these rules:
 
 - The data loaded, and there is nothing (yet), or nothing that matches the filter.
 - One sentence and one way out.
+- A place that holds nothing because something went wrong or waits, and that cannot be loaded again from there, such as an error page: `tone="bad"` or `tone="warn"` colours its sign. It shows no retry; that is `Failed`.
 
 ### Failed
 

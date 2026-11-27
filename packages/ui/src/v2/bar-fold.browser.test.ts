@@ -111,21 +111,22 @@ test("390 px, alive: the start stays whole, the last actions are in '…' in the
   });
 });
 
-test("a long start beside an end that folds nothing: the server's page is the live one (±1 px), also where the end cuts", async () => {
-  // "long": one button that fits; "closes": a primary with words and a closing button, which fold nothing and, at 240
-  // px, beside the start's least, have to be cut from the start of the end
-  const rects = (page: Page, bar: string) =>
-    page.evaluate((bar) => {
-      const element = document.querySelector(bar)!;
-      return [":scope > .k2-bar-start", ":scope > .k2-bar-start > *", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].flatMap(
-        (selector) =>
-          [...element.querySelectorAll(selector)].map((found) => {
-            const box = found.getBoundingClientRect();
-            return [box.left, box.top, box.width, box.height];
-          }),
-      );
-    }, bar);
-  for (const width of [240, 320, 390, 1024]) {
+/** The boxes of a bar's start, its children, its end and the end's buttons. */
+const rects = (page: Page, bar: string) =>
+  page.evaluate((bar) => {
+    const element = document.querySelector(bar)!;
+    return [":scope > .k2-bar-start", ":scope > .k2-bar-start > *", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].flatMap(
+      (selector) =>
+        [...element.querySelectorAll(selector)].map((found) => {
+          const box = found.getBoundingClientRect();
+          return [box.left, box.top, box.width, box.height];
+        }),
+    );
+  }, bar);
+// "long": one button that fits; "closes": a primary with words and a closing button, which fold nothing and, at 240
+// px, beside the start's least, have to be cut from the start of the end
+for (const width of [240, 320, 390, 1024])
+  test(`at ${width}: a long start beside an end that folds nothing: the server's page is the live one (±1 px), also where the end cuts`, async () => {
     const sent: Record<string, number[][]> = {};
     await withPage(width, false, async (page) => {
       for (const which of ["long", "closes"]) sent[which] = await rects(page, head(which));
@@ -144,8 +145,7 @@ test("a long start beside an end that folds nothing: the server's page is the li
       const end = await edges(page, head("closes"));
       expect([width, close !== null && close.x + close.width <= end.end!.right + 0.5]).toEqual([width, true]);
     });
-  }
-});
+  });
 
 test("a quiet label of 16ch and more beside the title: the title keeps a few letters, the label shortens too", async () => {
   for (const live of [false, true])
