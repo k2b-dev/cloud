@@ -32,7 +32,7 @@ export const aiQuotas = {
       return row ? { ...row, background: row.background ?? undefined } : { enabled: false, revision: 0, rules: [], unit: "EUR" };
     };
     // Read once per request through the shared client; a transaction reads its own state.
-    return db === sql ? { ...(await readAiConfigOnce("quotas:config", read)) } : read();
+    return db === sql ? readAiConfigOnce("quotas:config", read) : read();
   },
   async save(input: AiQuotaConfig, actorId: string) {
     const config = AiQuotaConfigSchema.parse(input);

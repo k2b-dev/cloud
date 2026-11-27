@@ -109,7 +109,7 @@ const requireRow = <T>(value: T | undefined): T => {
   if (!value) throw new AiConfigError("model_not_found", "Model or provider no longer exists.");
   return value;
 };
-const presentProvider = async (value: Record<string, unknown>, db = sql, credentialIds?: string[]): Promise<AiProvider> => {
+const presentProvider = async (value: Record<string, unknown>, db = sql, credentialIds?: readonly string[]): Promise<AiProvider> => {
   const id = z.string().parse(value.id);
   return AiProviderSchema.parse({
     ...value,

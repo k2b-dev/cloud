@@ -23,17 +23,27 @@ export const aiConfigRequestScope = createMiddleware(async (c, next) => {
   }
 });
 
+/** Freezes an answer and everything in it, so no caller can change what the next caller of the request gets. */
+const freeze = <T>(value: T): T => {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const entry of Object.values(value)) freeze(entry);
+  }
+  return value;
+};
+
 /**
- * Reads `key` once in the current request scope and hands the same answer to every later caller; outside a scope it
- * simply reads. Only reads through the shared client belong here, never one inside a transaction or with a lock. A
- * failed read is not kept, so the next caller tries again.
+ * Reads `key` once in the current request scope and hands the same frozen answer to every later caller; outside a
+ * scope it simply reads (and freezes too, so callers behave the same either way). Only reads through the shared client
+ * belong here, never one inside a transaction, with a lock or by id. A failed read is not kept, so the next caller
+ * tries again.
  */
-export const readAiConfigOnce = <T>(key: string, read: () => Promise<T>): Promise<T> => {
+export const readAiConfigOnce = <T>(key: string, read: () => Promise<T>): Promise<Readonly<T>> => {
   const reads = scope.getStore();
-  if (!reads?.open) return read();
+  if (!reads?.open) return read().then(freeze);
   const known = reads.entries.get(key);
-  if (known) return known as Promise<T>;
-  const pending = read();
+  if (known) return known as Promise<Readonly<T>>;
+  const pending = read().then(freeze);
   reads.entries.set(key, pending);
   pending.catch(() => {
     if (reads.entries.get(key) === pending) reads.entries.delete(key);

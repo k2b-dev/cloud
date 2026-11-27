@@ -65,3 +65,19 @@ test("requests at the same time keep their own reads", async () => {
   expect((await both).map((response) => response.status)).toEqual([204, 204]);
   expect(source.count()).toBe(2);
 });
+
+test("the answer is frozen all the way down, in a request and outside one", async () => {
+  const read = async () => ({ rules: [{ scope: "*", limits: { day: 1 } }] });
+  const outside = await readAiConfigOnce("key", read);
+  let inside: Awaited<ReturnType<typeof read>> | undefined;
+  const app = new Hono().use("*", aiConfigRequestScope).get("/", async (c) => {
+    inside = await readAiConfigOnce("key", read);
+    return c.body(null, 204);
+  });
+  expect((await app.request("/")).status).toBe(204);
+  for (const answer of [outside, inside!]) {
+    expect(Object.isFrozen(answer)).toBe(true);
+    expect(Object.isFrozen(answer.rules)).toBe(true);
+    expect(Object.isFrozen(answer.rules[0]!.limits)).toBe(true);
+  }
+});

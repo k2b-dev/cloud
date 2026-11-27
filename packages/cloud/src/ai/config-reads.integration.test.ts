@@ -2,6 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { meterSql, type SqlMeter } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { aiConfigRequestScope } from "./config-reads";
 import { listAiCredentialProviderIds } from "./credentials";
 import { aiModelCatalog } from "./model-catalog";
@@ -19,6 +20,17 @@ const app = new Hono().use("*", aiConfigRequestScope).all("/ai", async (c) => {
   await Promise.all([aiQuotas.config(), listAiCredentialProviderIds(), aiModelCatalog.providers(undefined, false)]);
   return c.body(null, 204);
 });
+// The same GET, also reading inside a transaction and by id: those never come from the memo.
+app.get("/bypass", async (c) => {
+  await aiModelCatalog.providers();
+  await sql.begin(async (tx) => {
+    await aiModelCatalog.providers(tx);
+    await aiQuotas.config(tx);
+  });
+  await aiQuotas.config();
+  await aiModelCatalog.provider("no-such-provider").catch(() => null);
+  return c.body(null, 204);
+});
 
 const readsPerTable = (statements: string[]) =>
   Object.fromEntries(
@@ -34,12 +46,12 @@ databaseSuite()("the AI configuration in one request", () => {
     await useMigratedDatabase("ai_config_reads");
   }, 60_000);
 
-  const measure = async (method: string) => {
+  const measure = async (method: string, path = "/ai") => {
     meter = await meterSql();
     try {
       return readsPerTable(
         await meter.during(async () => {
-          expect((await app.request("https://cloud.example.test/ai", { method })).status).toBe(204);
+          expect((await app.request(`https://cloud.example.test${path}`, { method })).status).toBe(204);
         }),
       );
     } finally {
@@ -61,5 +73,24 @@ databaseSuite()("the AI configuration in one request", () => {
   test("a request that writes reads the configuration every time it asks", async () => {
     const reads = await measure("POST");
     for (const table of TABLES) expect(reads[table]).toBeGreaterThan(1);
+  });
+  test("a transaction and a read by id read every time, also inside a GET", async () => {
+    const reads = await measure("GET", "/bypass");
+    // Once from the memo, once in the transaction, once by id.
+    expect(reads["ai.providers"]).toBe(3);
+    // Once from the memo, once in the transaction.
+    expect(reads["ai.provider_credentials"]).toBe(2);
+    expect(reads["ai.cost_config"]).toBe(2);
+  });
+
+  test("the request's answer is frozen, so no caller changes what the next one gets", async () => {
+    let frozen: boolean[] = [];
+    const check = new Hono().use("*", aiConfigRequestScope).get("/", async (c) => {
+      const [quotas, credentials] = await Promise.all([aiQuotas.config(), listAiCredentialProviderIds()]);
+      frozen = [Object.isFrozen(quotas), Object.isFrozen(quotas.rules), Object.isFrozen(credentials)];
+      return c.body(null, 204);
+    });
+    expect((await check.request("https://cloud.example.test/")).status).toBe(204);
+    expect(frozen).toEqual([true, true, true]);
   });
 });
