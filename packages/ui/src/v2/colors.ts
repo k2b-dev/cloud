@@ -101,9 +101,9 @@ export const colorStyle = (value: string | undefined): Record<string, string> | 
   };
 };
 
-/** The share of the owner's colour in its tint: 7 % light (identity B, the study's `--app-tint`), 28 % dark. */
+/** The share of the owner's colour in its tint: 7 % light (identity B, the study's `--app-tint`), 18 % dark (Y's rows, #4355). */
 const OWNER_TINT = 0.07;
-const OWNER_TINT_DARK = 0.28;
+const OWNER_TINT_DARK = 0.18;
 
 /**
  * The style values of the colour of the app a content belongs to (`Pane owner`): the colour as `--k2-app`, and for a

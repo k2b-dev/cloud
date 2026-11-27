@@ -786,7 +786,8 @@
 .k2-ui.dark [data-k2-owner],
 .k2-ui[data-theme="dark"] [data-k2-owner] {
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
-  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 28%, var(--k2-surface));
+  /* 18 % in dark, as Y's rows (#4355): the quiet text of a tinted row keeps 4.5:1 */
+  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 18%, var(--k2-surface));
   --k2-app-text: var(--k2-owner-ink-dark, var(--k2-app-ink-mix));
   --k2-app-soft: var(--k2-owner-soft-dark, var(--k2-app-text));
 }

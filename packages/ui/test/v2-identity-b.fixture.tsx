@@ -615,7 +615,11 @@ export const OwnerScreen = (props: { color: string }) => (
           current="Drucker Halle 2"
           columns={[
             { title: "Quelle", cell: (source) => source.name, mark: (source) => ({ icon: source.icon, color: source.color }) },
-            { title: "Abrufe", cell: (source) => <Ticks slots={source.ticks} label={`${source.name}: Abrufe`} /> },
+            // the soft data of a row in the owner's colour: a short history (the ticks of a source are G's, #4353)
+            {
+              title: "Werte",
+              cell: (source) => <Spark values={[3, 5, 4, 6, 5, 7, 8]} label={`${source.name}: von 3 auf 8 Werte je Minute gestiegen`} />,
+            },
           ]}
         />
       </Pane>

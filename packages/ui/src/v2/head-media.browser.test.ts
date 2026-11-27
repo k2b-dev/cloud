@@ -2154,8 +2154,18 @@ test("identity B: one picture of the data per row: ticks in the owner's soft col
         };
       });
       expect(found.pictures).toEqual([1]);
-      expect(found.heights).toEqual([12, 16]);
-      expect(found.bad).toBe("rgb(239, 68, 68)");
+      // ok 12, a failure taller (the ticks of G's #4353: 18) and red
+      expect(found.heights[1]! > found.heights[0]!).toBe(true);
+      expect(found.bad).toBe(
+        await page.evaluate(() => {
+          const probe = document.createElement("i");
+          probe.style.background = "var(--k2-bad)";
+          document.querySelector(".k2-ui")!.append(probe);
+          const color = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return color;
+        }),
+      );
     },
     1440,
   );
@@ -2274,7 +2284,7 @@ for (const color of ["eab308", "f59e0b", "06b6d4", "84cc16"])
           const [figure, name, ticks] = await contrastIn(page, [
             ["[data-k2-type='figure']", "surface"],
             [".k2-table tr[aria-current] > td:first-child", "td"],
-            [".k2-table tbody tr:not([aria-current]) .k2-ticks > i[data-s='ok']", "background"],
+            [".k2-table tbody tr:not([aria-current]) .k2-spark > i:first-child", "background"],
           ]);
           expect({ color, theme, figure: figure! >= 3, name: name! >= 4.5, ticks: ticks! >= 3 }).toEqual({
             color,
