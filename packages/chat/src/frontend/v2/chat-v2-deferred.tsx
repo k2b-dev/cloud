@@ -85,6 +85,11 @@ export const DiscoverChannelsPaneV2 = (props: DiscoverProps) => {
 
 type ThreadsProps = ComponentProps<typeof import("./ChatPagesV2").ThreadsPageV2>;
 const loadThreads = () => import("./ChatPagesV2").then((module) => module.ThreadsPageV2);
+type DirectoryProps = ComponentProps<typeof import("./ChatPagesV2").SystemThreadDirectoryV2>;
+const loadDirectory = () => import("./ChatPagesV2").then((module) => module.SystemThreadDirectoryV2);
+/** A place's discussions, loaded when the page opens, as v1's are. */
+export const SystemThreadsPaneV2 = (props: DirectoryProps) => <DeferredV2 load={loadDirectory} contentProps={props} />;
+
 /** A chat's threads as the phone's page, loaded when it opens, as v1's is. */
 export const ThreadsPaneV2 = (props: ThreadsProps) => <DeferredV2 load={loadThreads} contentProps={props} />;
 

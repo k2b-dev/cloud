@@ -35,6 +35,7 @@ const propsFor = (path: string) => {
     panel: url.searchParams.get("panel") === "info" ? "info" : undefined,
     forYouPage: url.pathname.endsWith("/for-you"),
     channelsPage: url.pathname.endsWith("/channels"),
+    threadsPage: url.pathname.endsWith("/threads"),
     query: url.searchParams.get("q") ?? "",
   });
 };
@@ -298,6 +299,43 @@ test("a mention that arrives live changes the head's words and moves no row", as
     await close();
   }
 }, 60_000);
+
+test("a place's discussions are a v2 page whose search and state filter live in the address", async () => {
+  const place = harness.addChat({ members: [nora, tobias], name: "Frühlingsausstellung", count: 3, end: harness.now() });
+  harness.setSystem(place, { type: "spaces.space", id: "Space1" });
+  for (const [index, name] of ["Einladung freigeben", "Besichtigung", "Aufbau"].entries()) {
+    const thread = harness.addThread(place, { name, count: 1, unread: index === 1 ? 1 : 0 });
+    harness.resourceThread(place, thread, {
+      ref: { type: "spaces.item", id: `Item0${index}` },
+      title: name,
+      permission: "read",
+      typeTitle: "Item",
+      icon: "ti ti-package",
+      status: index === 0 ? "Erledigt" : "Offen",
+      done: index === 0,
+      href: `/app/spaces/items/Item0${index}`,
+    });
+  }
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ] as const) {
+    const { page, errors, close } = await load(`/app/chat/c/${place}/threads`, width, height);
+    try {
+      const detail = page.locator('[data-k2-part="Pane"][data-detail]');
+      await detail.locator('[data-k2-part="Row"]', { hasText: "Besichtigung" }).waitFor();
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
+      await shoot(page, `09-discussions-light-${width}`);
+      // The search writes the address; reload and back show the same.
+      await detail.getByRole("searchbox").fill("Aufbau");
+      await page.waitForURL(/q=Aufbau/);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }
+}, 90_000);
 
 // break-ui: the worst names and counts a list meets. Rows keep their sign and time, names are cut with "…", nothing
 // leaves its column, and the v2 rules hold at both widths. Last in the file: these chats join the list from here on.

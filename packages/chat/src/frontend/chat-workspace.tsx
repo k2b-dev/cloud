@@ -3661,9 +3661,22 @@ export function ChatWorkspaceView(
         drawing: false,
       };
     const threads = threadsPageOpen();
-    // k2b-ui gap: the directory of a place's discussions (its filter and pages) still draws v1 inside the v2 pane.
     if (threads?.kind === "system")
-      return { ...pageDetail(`threads:${threads.id}`, t().threadsIn({ title: threads.title }), () => threadsPageView(threads)) };
+      return {
+        ...pageDetail(`threads:${threads.id}`, t().threadsIn({ title: threads.title }), () => (
+          <V2.SystemThreadsPaneV2
+            conversation={threads}
+            basePath={basePath}
+            viewerId={props.viewerId}
+            dateConfig={props.dateConfig}
+            now={now}
+            revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
+            onOpen={(view, navigation) => openView(threads.id, view, navigation)}
+          />
+        )),
+        head: { name: threads.title, ids: [{ value: t().systemMembers }] },
+        drawing: false,
+      };
     if (threads)
       return {
         key: `threads:${threads.id}`,

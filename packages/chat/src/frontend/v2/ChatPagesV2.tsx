@@ -1,7 +1,9 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
+import { navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { Band, Disclosure, Empty, Failed, Input, List, Loading, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
-import { For, type JSX, Match, Show, Switch } from "solid-js";
+import { Band, Disclosure, Empty, Failed, FilterBar, Input, List, Loading, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
+import { defineListQuery, field } from "@k2b/ui/v2/list-query";
+import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../../messages";
 import type { ConversationSchema } from "../../service/contracts";
@@ -10,7 +12,8 @@ import { viewIcon } from "../ChatThreads";
 import { listTime } from "../chat-format";
 import { createChannelCatalog, type DiscoverChannelsProps } from "../DiscoverChannels";
 import { createForYouList, type ForYouItem, forYouPlace, forYouTitle } from "../ForYou";
-import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref } from "../threads";
+import { createDirectoryPages } from "../SystemThreadDirectory";
+import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref, threadIcon } from "../threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 
@@ -141,6 +144,140 @@ export function ThreadsPageV2(props: {
         </Show>
       </Match>
     </Switch>
+  );
+}
+
+/**
+ * A place's discussions on v2 (the directory of a system chat): "All threads", then each discussion with its state, its
+ * last message and its unread count, newest first. The search and the state filter live in the address through one
+ * list-query declaration, so reload, back and forward show the same; the server filters and pages.
+ */
+export function SystemThreadDirectoryV2(props: {
+  conversation: Conversation;
+  basePath: string;
+  viewerId: string;
+  dateConfig: DateContext;
+  now: () => Date;
+  revision: number;
+  onOpen: (view: ThreadView, navigation: LinkNavigateEvent) => void | Promise<void>;
+}): JSX.Element {
+  const locale = useLocale();
+  const t = () => chatMessages.resolve([locale()]).t;
+  const config = () => ({ ...props.dateConfig, locale: locale() });
+  const query = createMemo(() =>
+    defineListQuery({
+      key: "discussions",
+      fields: {
+        filter: field.choice({
+          label: chatV2Messages.resolve([locale()]).t.discussionState,
+          multiple: false,
+          common: true,
+          options: [
+            { value: "open", label: t().threadsOpen },
+            { value: "done", label: t().threadsDone },
+            { value: "unread", label: t().threadsUnread },
+          ],
+        }),
+      },
+      search: { label: t().searchThreads },
+      // The server orders discussions by their last activity; there is no other order to choose.
+      sort: {
+        options: { activity: { label: chatV2Messages.resolve([locale()]).t.recentActivity } },
+        default: { field: "activity", direction: "desc" },
+      },
+    }),
+  );
+  // The page code loads in the browser, so the address is there to read; the bar writes it, the search below too.
+  const [state, setState] = createSignal(query().parse(location.search).state);
+  const search = (text: string) => {
+    const next = query().set(state(), "q", text);
+    if (!next) return;
+    setState(next);
+    const params = query().serialize(next, location.search).toString();
+    navigate(`${location.pathname}${params ? `?${params}` : ""}`, { replace: true, scroll: "preserve", viewTransition: false });
+  };
+  const [mounted] = createSignal(true);
+  const pages = createDirectoryPages(props, () => ({ q: state().search ?? "", filter: state().filters.filter }), mounted);
+  const preview = (thread: Thread) =>
+    [
+      thread.resource?.status,
+      thread.lastMessage
+        ? `${thread.lastMessage.author.id === props.viewerId ? t().you : thread.lastMessage.author.name.split(" ")[0]}: ${thread.lastMessage.preview}`
+        : t().noMessagesYet,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  return (
+    <>
+      <Band label={t().searchThreads}>
+        <Input
+          type="search"
+          icon="search"
+          label={t().searchThreads}
+          placeholder={t().searchThreads}
+          value={state().search ?? ""}
+          onInput={search}
+        />
+      </Band>
+      <FilterBar query={query()} state={state()} onChange={setState} />
+      <List label={t().threadsIn({ title: props.conversation.title })}>
+        <Row
+          icon="messages"
+          color={CHAT_COLOR}
+          lines={[t().allThreads]}
+          href={threadHref(props.conversation.id, "all", null, props.basePath)}
+          onNavigate={(navigation) => props.onOpen("all", navigation)}
+        />
+      </List>
+      <Switch>
+        <Match when={pages.status() === "failed" && !pages.page()}>
+          <Failed text={t().threadsLoadFailed} onRetry={() => void pages.load()} />
+        </Match>
+        <Match when={!pages.page()}>
+          <Loading rows={5} lines={2} />
+        </Match>
+        <Match when={pages.status() === "ready" && pages.page()?.items.length === 0 && pages.page()?.nextCursor == null}>
+          <Empty icon="messages" text={state().search || state().filters.filter ? t().noThreadMatches : t().noItemThreads} />
+        </Match>
+        <Match when={true}>
+          <Section
+            title={t().systemChats}
+            more={
+              pages.page()?.nextCursor != null
+                ? { label: t().moreThreads, icon: "dots", disabled: pages.status() === "loading", onClick: () => void pages.load(true) }
+                : undefined
+            }
+          >
+            <List label={t().systemChats}>
+              <For each={pages.page()?.items ?? []}>
+                {(thread) => (
+                  <Row
+                    icon={iconName(threadIcon(thread))}
+                    color={CHAT_COLOR}
+                    lines={[thread.name, preview(thread)]}
+                    meta={thread.unread > 0 ? thread.unread.toLocaleString(locale()) : undefined}
+                    unread={thread.unread > 0}
+                    time={listTime(thread.lastActivityAt, props.now(), config())}
+                    href={threadHref(props.conversation.id, thread.id, null, props.basePath)}
+                    onNavigate={(navigation) => props.onOpen(thread.id, navigation)}
+                  />
+                )}
+              </For>
+            </List>
+            <Show when={pages.page()?.incomplete && pages.status() === "ready"}>
+              <Notice tone="warn" actions={[{ label: t().retry, onClick: () => void pages.load() }]}>
+                {t().discussionsIncomplete}
+              </Notice>
+            </Show>
+            <Show when={pages.status() === "failed" && pages.page()}>
+              <Notice tone="bad" actions={[{ label: t().retry, onClick: () => void pages.load(pages.appending()) }]}>
+                {t().threadsLoadFailed}
+              </Notice>
+            </Show>
+          </Section>
+        </Match>
+      </Switch>
+    </>
   );
 }
 

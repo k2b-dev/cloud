@@ -21,6 +21,8 @@ export const chatV2Messages = i18n.define({
       closeInfo: "Close info",
       searchResults: "Search results",
       adminProviders: "Places that cannot notify",
+      discussionState: "State",
+      recentActivity: "Recent activity",
     },
     de: {
       sidebarWidth: "Breite der Seitenleiste",
@@ -40,6 +42,8 @@ export const chatV2Messages = i18n.define({
       closeInfo: "Info schließen",
       searchResults: "Suchergebnisse",
       adminProviders: "Orte ohne Benachrichtigung",
+      discussionState: "Stand",
+      recentActivity: "Zuletzt aktiv",
     },
   },
 });
