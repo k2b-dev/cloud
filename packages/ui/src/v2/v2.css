@@ -1281,13 +1281,13 @@
    section that holds a table, tiles or a drawing keeps A and its full width: lists and tables use the room. A narrower
    pane is A; the pane decides, not the window. The head floats, so the content keeps its own children as they are. */
 @container k2-pane (min-width: 960px) {
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) {
     display: flow-root;
     max-width: 1040px;
     margin-inline: var(--k2-edge) 0;
     padding-block: 28px 26px;
   }
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > .k2-sh {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sh {
     float: left;
     box-sizing: border-box;
     width: 232px;
@@ -1297,15 +1297,15 @@
     grid-template-areas: "title" "summary" "end";
     align-content: start;
   }
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > .k2-sh > .k2-sh-end {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sh > .k2-sh-end {
     justify-self: start;
     height: auto;
     margin-top: 14px;
   }
   /* the content is a column of its own 48 px after the head column, up to the section's end: its rows, fields and
      notices start and end on it, so their hair and their tint stay inside the measure */
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > :not(.k2-sh, .k2-sec-body),
-  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells))) > .k2-sec-body > * {
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > :not(.k2-sh, .k2-sec-body),
+  .k2-ui .k2-pane:not([data-side]) .k2-sec:not(:has(> :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group)), :has(> .k2-sec-body > :is(.k2-table-scroll, .k2-tiles, .k2-canvas, .k2-cells, .k2-group))) > .k2-sec-body > * {
     --k2-edge: 0px;
     --k2-edge-icon: 24px;
     margin-left: calc(232px + 48px);
@@ -1710,10 +1710,14 @@
   min-width: 124px;
   padding: 0 8px 0 10px;
 }
-/* people at a row's end keep their room beside its control on a wide screen; on the phone the stack gives way first */
-@media (min-width: 768px) {
-  .k2-ui .k2-row-end > .k2-avs {
-    flex-shrink: 0;
+/* people at a row's end keep their room beside its control on a wide screen; on the phone, where the name, its note
+   and the control need the row, the stack leaves (the note says how many they are) */
+.k2-ui .k2-row-end > .k2-avs {
+  flex-shrink: 0;
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-row-end:has(> .k2-input) > .k2-avs {
+    display: none;
   }
 }
 /* on the phone a row's quiet note leaves the name's line and stands under it: two lines of at least 52 px, the name
