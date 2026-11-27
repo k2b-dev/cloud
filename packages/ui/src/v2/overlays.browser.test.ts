@@ -32,10 +32,26 @@ afterAll(async () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false, toEnd = false } = {},
+  {
+    width = 1440,
+    scale = 1,
+    long = false,
+    touch = false,
+    two = false,
+    opened = false,
+    slowSheet = false,
+    toEnd = false,
+    reducedMotion = false,
+  } = {},
 ) => {
   // a phone: a touch screen with a coarse pointer
-  const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
+  const page = await browser.newPage({
+    viewport: { width, height: 900 },
+    deviceScaleFactor: scale,
+    hasTouch: touch,
+    isMobile: touch,
+    reducedMotion: reducedMotion ? "reduce" : "no-preference",
+  });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -658,6 +674,37 @@ test("select: its label focuses it", async () => {
     expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Wählen");
   });
 });
+
+// A person who asks for less motion sees the dialog's sheet where it rests: from the first frame it shows in, its top
+// stays put (it never slides up), with a mouse and on a touch screen (core moves a touch screen's sheet another way).
+for (const touch of [false, true])
+  test(`reduced motion: the dialog's sheet${touch ? " on a touch screen" : ""} stands where it rests from its first frame`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          const tops: number[] = [];
+          Object.assign(window, { __k2Tops: tops });
+          const take = () => {
+            const sheet = document.querySelector<HTMLElement>(".k2-dialog");
+            const box = sheet?.getBoundingClientRect();
+            if (sheet && box && box.height > 0 && getComputedStyle(sheet).visibility !== "hidden") tops.push(Math.round(box.top));
+            if (tops.length < 90) requestAnimationFrame(take);
+          };
+          requestAnimationFrame(take);
+        });
+        const trigger = page.getByRole("button", { name: "Abbrechen" });
+        await (touch ? trigger.tap() : trigger.click());
+        await page.waitForFunction(() => (window as unknown as { __k2Tops: number[] }).__k2Tops.length >= 90, undefined, {
+          timeout: 5000,
+        });
+        const tops = await page.evaluate(() => (window as unknown as { __k2Tops: number[] }).__k2Tops);
+        expect(await page.locator(".k2-dialog").getAttribute("data-presentation")).toBe("sheet");
+        // one top only: the place it rests at
+        expect([...new Set(tops)]).toEqual([tops.at(-1)!]);
+      },
+      { width: 390, touch, reducedMotion: true },
+    );
+  });
 
 // The mockup: "a dialog, on the phone a sheet". On a small touch screen core presents it as a sheet from the bottom:
 // the whole width, its top corners round, at the bottom of the window; Escape still closes it.

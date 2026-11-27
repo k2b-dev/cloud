@@ -32,6 +32,7 @@ const renderPanel = (overrides: Partial<Props> = {}) =>
           taskProgress: { done: 2, total: 4 },
           attachments: [],
           backlinks: [],
+          backlinksTotal: 0,
           relations: { outgoing: [], tags: [] },
           accessVisible: false,
           canManageAccess: false,

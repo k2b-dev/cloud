@@ -10,16 +10,22 @@ import type { Page } from "playwright";
  * pointer rests at the top left from the first page on, touch contexts included,
  * so content that arrives there later fades into hover; the error marks such
  * targets with `"hovered":true`.
+ * It waits for the browser's real frames, also under Playwright's clock (`page.clock.install`), whose fake
+ * requestAnimationFrame shows a frame only as fake time advances: a paused or slowly advancing clock would hold it (#4189).
  */
 export const settled = async (page: Page): Promise<void> => {
   const remaining = await page.evaluate(async () => {
+    // Playwright's clock keeps the browser's own functions; the frames here are the browser's, not the fake clock's
+    const builtins: unknown = Reflect.get(globalThis, "__pwClock")?.builtins;
+    const real: unknown = builtins && typeof builtins === "object" ? Reflect.get(builtins, "requestAnimationFrame") : undefined;
+    const frame = (callback: FrameRequestCallback) => (typeof real === "function" ? real(callback) : requestAnimationFrame(callback));
     await document.fonts.ready;
     // MutationObserver can schedule the next frame; ResizeObserver reports after layout and schedules the frame
     // after that. Include that first observation wave, once, before the snapshot. Later animation starts still fail.
     await new Promise<void>((resolve) => {
       const sizes = new ResizeObserver(() => {
         sizes.disconnect();
-        requestAnimationFrame(() => resolve());
+        frame(() => resolve());
       });
       sizes.observe(document.documentElement);
     });
@@ -32,7 +38,7 @@ export const settled = async (page: Page): Promise<void> => {
             animation.playState === "running" &&
             Number.isFinite(animation.effect?.getComputedTiming().endTime),
         );
-    const frames = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const frames = () => new Promise<void>((resolve) => frame(() => frame(() => resolve())));
     // A navigation the test triggered can start a document view transition a frame after it commits.
     // Its user-agent animations belong to that navigation, not to a page that keeps animating, so they
     // are awaited too, a bounded number of times. Any other animation that starts meanwhile still fails.

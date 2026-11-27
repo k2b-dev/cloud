@@ -88,6 +88,7 @@ const detail = (id: string) => ({
   taskProgress: { total: 0, done: 0 },
   attachments: [],
   backlinks: [],
+  backlinksTotal: 0,
   relations: { outgoing: [], tags: [] },
   namedBlocks: [],
 });
