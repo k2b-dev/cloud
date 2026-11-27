@@ -86,13 +86,13 @@ for (const width of [1440, 1920])
   });
 
 test("a centred pane whose content is taller than the page starts at the top and scrolls, nothing cut away above", async () => {
-  await withPage({ width: 1440, height: 400 }, 12, async (page) => {
+  await withPage({ width: 1440, height: 400 }, 40, async (page) => {
     const found = await read(page);
     expect(found.overflows).toBe(true);
     // the line is the first thing under the top of the pane, as in any pane
     expect(found.lead.top).toBeGreaterThanOrEqual(found.scroll.top);
     expect(found.lead.top - found.scroll.top).toBeLessThan(40);
-    expect(new Set(found.tile.map((tile) => Math.round(tile.top))).size).toBe(3);
+    expect(new Set(found.tile.map((tile) => Math.round(tile.top))).size).toBe(10);
   });
 });
 
