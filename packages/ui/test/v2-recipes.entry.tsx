@@ -46,7 +46,6 @@ const recipes: Record<string, Recipe> = {
   "settings.tsx": settings,
   "record.tsx": record,
   "settings-page.tsx": settingsPage,
-  "settings.tsx": settings,
   "states.tsx": states,
   "table.tsx": table,
   "tree.tsx": tree,
