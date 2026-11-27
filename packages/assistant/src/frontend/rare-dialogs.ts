@@ -1,5 +1,3 @@
-import type { AiConversation } from "@k2b/cloud/ai";
-
 import { lazyAction } from "./lazy-action";
 
 /**
@@ -18,7 +16,7 @@ type AllChatsModule = typeof import("./AssistantAllChatsDialog");
 type PrefsModule = typeof import("./AssistantPrefsModals");
 
 export const openAssistantConversationEditor = (
-  conversation: AiConversation,
+  conversation: Parameters<EditorModule["openAssistantConversationEditor"]>[0],
   options?: Parameters<EditorModule["openAssistantConversationEditor"]>[1],
 ) => editor(pageLocale(), (module) => module.openAssistantConversationEditor(conversation, options));
 

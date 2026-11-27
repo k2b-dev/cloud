@@ -2,11 +2,12 @@ import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { Button, DescriptionList, InlineGuidance, StatusBadge, toast } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
+import type { AssistantSidebarChat } from "../sidebar";
 import type { AssistantSidebarPreview } from "../sidebar-preview";
 import { useAssistantText } from "./ui-copy";
 
 export function ConversationSidebarPreview(props: {
-  conversation: AiConversation;
+  conversation: AssistantSidebarChat;
   project?: AiProject;
   open: boolean;
   edit: () => void;

@@ -22,10 +22,12 @@ import { assistantApi } from "../api/client";
 import { confirmAssistantArchive } from "./confirm-archive";
 import { useAssistantText } from "./ui-copy";
 
-type EditConversationResult = { action: "save"; conversation: AiConversation } | { action: "archive"; conversation: AiConversation };
+/** What the settings show and save: a row of the sidebar carries it, so a row's edit needs no read first. */
+type EditableChat = Pick<AiConversation, "id" | "title" | "description" | "pinnedAt">;
+type EditConversationResult = { action: "save"; conversation: AiConversation } | { action: "archive"; conversation: EditableChat };
 
 type EditConversationFormProps = {
-  conversation: AiConversation;
+  conversation: EditableChat;
   archiveDisabled?: boolean;
   archiveDisabledReason?: string;
   queuedMessageCount?: () => number | undefined;
@@ -340,7 +342,7 @@ function EditConversationForm(props: EditConversationFormProps) {
 }
 
 export const openAssistantConversationEditor = (
-  conversation: AiConversation,
+  conversation: EditableChat,
   options: EditConversationOptions = {},
 ): Promise<EditConversationResult | undefined> =>
   prompts.dialog<EditConversationResult | undefined>(

@@ -75,6 +75,7 @@ import { createCodeVersionCardStore } from "../frontend/code-version-card-store"
 import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import type { SecretTitles } from "../secret-titles";
+import type { AssistantSidebarChat } from "../sidebar";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
 import { pwaMessages } from "./messages";
 import { createOnline } from "./online";
@@ -117,7 +118,7 @@ export type AssistantPwaProps = {
   initialLiveCursor: string;
   initialAddress: PwaAddress;
   /** `null`: the list could not be read. */
-  initialSidebar: { conversations: AiConversation[]; questions: AiOpenQuestions } | null;
+  initialSidebar: { conversations: AssistantSidebarChat[]; questions: AiOpenQuestions } | null;
   initialTotal: number | null;
   /** Every chat or the archive, when the address names it; read by the server. */
   initialAll: AllChatsSnapshot | null;
@@ -125,7 +126,7 @@ export type AssistantPwaProps = {
   initialDetail: Detail | null;
 };
 
-type List = { conversations: AiConversation[]; questions: AiOpenQuestions };
+type List = { conversations: AssistantSidebarChat[]; questions: AiOpenQuestions };
 /** A message that did not reach its chat stays in the timeline with "Send again" instead of in the field. */
 type FailedSend = { id: string; conversationId: string; input: ChatSubmitInput };
 
@@ -656,7 +657,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   );
 
   // ---- the open chat
-  const open = (conversation: AiConversation, event: LinkNavigateEvent) => go({ level: "chat", id: conversation.id }, event);
+  const open = (conversation: Pick<AiConversation, "id">, event: LinkNavigateEvent) => go({ level: "chat", id: conversation.id }, event);
   const chatTitle = () => {
     const current = address();
     if (current.level !== "chat") return t().newChat;

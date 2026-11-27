@@ -97,7 +97,7 @@ import type { CodeVersionCardEntry } from "../code-version-cards";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { SecretTitles } from "../secret-titles";
-import type { AssistantSidebarSnapshot } from "../sidebar";
+import type { AssistantSidebarChat, AssistantSidebarSnapshot } from "../sidebar";
 import type { WaitingAutomation } from "../waiting-automations";
 import AssistantApprovalsView from "./AssistantApprovalsView";
 import AssistantAuthoringStop from "./AssistantAuthoringStop";
@@ -240,7 +240,7 @@ export type AssistantWorkspaceProps = {
   /** Reads a place on navigation; tests answer it themselves. */
   loadPlace?: PlaceLoader;
   /** The person's chats at places at render time, for the sidebar's "At places (n)"; null when they could not be listed. */
-  initialPlaceChats?: { total: number; items: AiConversation[] } | null;
+  initialPlaceChats?: { total: number; items: AssistantSidebarChat[] } | null;
   /** The page opened with the "At places" filter on (`?places=1`). */
   initialPlacesFilter?: boolean;
   initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
@@ -257,7 +257,7 @@ export type AssistantWorkspaceProps = {
   renderedAt: string;
   initialLiveCursor: string;
   initialCounts?: import("@k2b/cloud/ai").AiConversationCounts;
-  initialConversations: AiConversation[];
+  initialConversations: AssistantSidebarChat[];
   initialDoneCount: number;
   /** More open chats exist than the sidebar's first page lists. */
   initialMoreConversations?: boolean;
@@ -3022,7 +3022,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     );
   };
 
-  const updateConversation = (updated: AiConversation) => {
+  const updateConversation = (updated: Pick<AiConversation, "id">) => {
     void sidebar.invalidate({
       domains: new Set(["conversation-list"]),
       conversationIds: new Set([updated.id]),
@@ -3061,7 +3061,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
       );
   });
 
-  const archiveConversation = (archived: AiConversation) => {
+  const archiveConversation = (archived: Pick<AiConversation, "id">) => {
     void sidebar.invalidate({
       domains: new Set(["conversation-list"]),
       conversationIds: new Set([archived.id]),
@@ -3756,7 +3756,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     </Show>
   );
 
-  const archiveBlocker = (conversation: AiConversation) =>
+  const archiveBlocker = (conversation: Pick<AiConversation, "id" | "runStatus">) =>
     assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null);
   return {
     liveHub,

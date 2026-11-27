@@ -1,8 +1,8 @@
-import type { AiConversation } from "@k2b/cloud/ai";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import { type Action, Bar, Button, Canvas, Input, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createSignal, type JSX, lazy, Show, Suspense } from "solid-js";
+import type { AssistantSidebarChat } from "../../sidebar";
 import { assistantMessages } from "../messages";
 import { useAssistantCopy } from "../ui-copy";
 import { type AssistantNavOptions, createAssistantNav } from "./assistant-nav";
@@ -22,7 +22,7 @@ const ChatDetails = lazy(() => import("./AssistantChatDetailsDialog"));
 export type AssistantFrameV2Props = {
   nav: Omit<AssistantNavOptions, "showDetails">;
   /** The chat the page shows, whose deeds stand behind the head's "…"; null on a view or a Project. */
-  openChat: Accessor<AiConversation | null>;
+  openChat: Accessor<AssistantSidebarChat | null>;
   /** Opens what belongs to the open chat (files, results, sources) beside it, under the given title. */
   openContext: (title: string) => void;
   /** Where the page stands after "Gustav": the open chat, Project or view. */

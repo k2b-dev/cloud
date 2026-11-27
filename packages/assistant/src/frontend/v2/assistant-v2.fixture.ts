@@ -2,7 +2,7 @@ import type { AiConversation, AiProject, AiStoredMessage } from "@k2b/cloud/ai";
 
 /**
  * Invented data for the Assistant's v2 screens: one person's chats over a month, Projects, chats at places, done
- * chats and one open conversation. `worst` stretches every name and count, `huge` holds the 100 open chats the server lists at most, with more behind them, `empty` none.
+ * chats and one open conversation. `worst` stretches every name and count, `huge` holds the 40 open chats the server lists at most (`ASSISTANT_SIDEBAR_CHATS`), with more behind them, `empty` none.
  */
 export type AssistantV2FixtureState = "usual" | "worst" | "huge" | "empty";
 
@@ -139,7 +139,7 @@ const HUGE_FOR = [
   "Familie Yilmaz",
   "Büro Hartwig",
 ];
-const HUGE: AiConversation[] = Array.from({ length: 100 }, (_, index) =>
+const HUGE: AiConversation[] = Array.from({ length: 40 }, (_, index) =>
   chat(
     `Hug${String(index).padStart(4, "0")}`,
     `${HUGE_TOPICS[index % HUGE_TOPICS.length]} ${HUGE_FOR[(index * 3) % HUGE_FOR.length]}${index % 4 === 0 ? ` 2026-${100 + index}` : ""}`,

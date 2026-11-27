@@ -22,6 +22,7 @@ import {
 import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantCommandMessages } from "../commands";
+import type { AssistantSidebarChat } from "../sidebar";
 import type { AssistantArchiveBlocker } from "./archive-blocker";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
@@ -51,7 +52,7 @@ const navigationTone = {
 
 type AssistantSidebarProps = {
   basePath?: string;
-  conversations: Accessor<AiConversation[]>;
+  conversations: Accessor<AssistantSidebarChat[]>;
   /** The viewer's time zone from the request, so the server and the browser put chats in the same day sections. */
   timeZone: string;
   /** The server's render time: hydration starts from the same clock and so builds the same day sections. */
@@ -67,10 +68,11 @@ type AssistantSidebarProps = {
   onOpenProject?: (projectId: string) => Promise<boolean>;
   onOpenConversation?: (conversationId: string) => Promise<boolean>;
   /** What keeps a chat from being archived; the editor says it instead of offering a request that fails. */
-  archiveBlocker?: (conversation: AiConversation) => AssistantArchiveBlocker;
-  queuedMessageCount?: (conversation: AiConversation) => number | undefined;
+  archiveBlocker?: (conversation: AssistantSidebarChat) => AssistantArchiveBlocker;
+  queuedMessageCount?: (conversation: AssistantSidebarChat) => number | undefined;
+  /** The chat as the server saved it. */
   onConversationUpdated?: (conversation: AiConversation) => void;
-  onConversationArchived?: (conversation: AiConversation) => void;
+  onConversationArchived?: (conversation: Pick<AssistantSidebarChat, "id">) => void;
   /**
    * How many things wait for the person: the same count as the "Waiting for you" row above the field, from the same
    * list and corrected the same way, so the two never disagree. The row stays in place at 0.
@@ -87,7 +89,7 @@ type AssistantSidebarProps = {
    * The person's chats at places, which the normal list leaves out: their total for the "At places (n)" filter and
    * the newest page for its list. Null when the snapshot could not list them.
    */
-  placeChats?: Accessor<{ total: number; items: AiConversation[] } | null>;
+  placeChats?: Accessor<{ total: number; items: AssistantSidebarChat[] } | null>;
   /** The list opened on "At places" (`?places=1`), so a reload keeps the filter. */
   initialPlacesFilter?: boolean;
 };
@@ -133,14 +135,14 @@ type DonePhase = "saving" | "confirmed" | "leaving";
 
 function ConversationSidebarItem(props: {
   basePath?: string;
-  conversation: AiConversation;
+  conversation: AssistantSidebarChat;
   active: boolean;
-  open?: (conversation: AiConversation) => Promise<boolean>;
-  edit: (conversation: AiConversation) => void;
+  open?: (conversation: AssistantSidebarChat) => Promise<boolean>;
+  edit: (conversation: AssistantSidebarChat) => void;
   project?: AiProject;
   update: (conversation: AiConversation) => void;
   donePhase?: DonePhase;
-  toggleDone: (conversation: AiConversation) => Promise<void>;
+  toggleDone: (conversation: AssistantSidebarChat) => Promise<void>;
 }) {
   const text = useAssistantText();
   const locale = useLocale();
@@ -249,7 +251,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const t = () => assistantMessages.resolve([locale()]).t;
   const text = useAssistantText();
   const [doneFeedback, setDoneFeedback] = createSignal<
-    ReadonlyMap<string, { conversation: AiConversation; phase: DonePhase; index: number }>
+    ReadonlyMap<string, { conversation: AssistantSidebarChat; phase: DonePhase; index: number }>
   >(new Map());
   const timers = new Set<ReturnType<typeof setTimeout>>();
   let disposed = false;
@@ -275,7 +277,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     }, delay);
     timers.add(timer);
   };
-  const toggleDone = async (conversation: AiConversation) => {
+  const toggleDone = async (conversation: AssistantSidebarChat) => {
     if (doneFeedback().has(conversation.id)) return;
     setDoneFeedback((current) =>
       new Map(current).set(conversation.id, {
@@ -470,7 +472,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     </AppWorkspace.SidebarItem>
   );
 
-  const openConversationFromCommand = async (conversation: AiConversation) => {
+  const openConversationFromCommand = async (conversation: AssistantSidebarChat) => {
     if (conversation.id === activeConversationId()) return;
     const href = assistantConversationHref(props.basePath ?? "/app/assistant", conversation.id);
     if (props.onOpenConversation) {
@@ -480,7 +482,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     navigateTo(href);
   };
 
-  const openEditor = async (conversation: AiConversation) => {
+  const openEditor = async (conversation: AssistantSidebarChat) => {
     const blocker = props.archiveBlocker?.(conversation) ?? null;
     const result = await openAssistantConversationEditor(conversation, {
       archiveDisabled: blocker !== null,
@@ -554,7 +556,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     const project = searchProject();
     openGlobalSearch(project ? assistantProjectSearchOptions(project) : assistantSearchOptions(locale()));
   };
-  const chatItem = (conversation: AiConversation): NavigationItem => {
+  const chatItem = (conversation: AssistantSidebarChat): NavigationItem => {
     const busy = isConversationBusy(conversation);
     const active = activeConversationId() === conversation.id;
     // The same one marker as the desktop row, in a slot that stays reserved, so a status change keeps the row's size.

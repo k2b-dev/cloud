@@ -34,7 +34,7 @@ export function AllChats(props: {
   now: string;
   timeZone: string;
   online: boolean;
-  onOpen: (chat: AiConversation, event: LinkNavigateEvent) => void;
+  onOpen: (chat: Pick<AiConversation, "id">, event: LinkNavigateEvent) => void;
   onQueryChange: (query: string) => void;
   onArchive: (event: LinkNavigateEvent) => void;
   /** Bumped by the part when chats change, such as through live updates or an archived chat. */

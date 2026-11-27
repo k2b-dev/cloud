@@ -1,6 +1,7 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { confirm, useToast } from "@k2b/ui/v2";
 import { assistantApi } from "../../api/client";
+import type { AssistantSidebarChat } from "../../sidebar";
 import type { AssistantArchiveBlocker } from "../archive-blocker";
 import type { AssistantLiveHub } from "../assistant-live";
 import { assistantMessages } from "../messages";
@@ -13,13 +14,14 @@ export type AssistantChatDeedsOptions = {
   locale: () => string;
   live: AssistantLiveHub;
   projects: () => readonly AiProject[];
-  conversations: () => readonly AiConversation[];
+  conversations: () => readonly AssistantSidebarChat[];
   activeConversationId: () => string | null;
-  archiveBlocker: (conversation: AiConversation) => AssistantArchiveBlocker;
-  queuedMessageCount: (conversation: AiConversation) => number | undefined;
+  archiveBlocker: (conversation: AssistantSidebarChat) => AssistantArchiveBlocker;
+  queuedMessageCount: (conversation: AssistantSidebarChat) => number | undefined;
   openConversation: (conversationId: string) => Promise<boolean>;
+  /** The chat as the server saved it. */
   onUpdated: (conversation: AiConversation) => void;
-  onArchived: (conversation: AiConversation) => void;
+  onArchived: (conversation: Pick<AssistantSidebarChat, "id">) => void;
 };
 
 /**
@@ -31,9 +33,10 @@ export const createAssistantChatDeeds = (options: AssistantChatDeedsOptions) => 
   const t = () => assistantMessages.resolve([options.locale()]).t;
   const text = (value: string) => assistantCopyFor(options.locale()).text({ value });
   const v2 = () => assistantV2Messages.resolve([options.locale()]).t;
-  const latest = (conversation: AiConversation) => options.conversations().find((item) => item.id === conversation.id) ?? conversation;
+  const latest = (conversation: AssistantSidebarChat) =>
+    options.conversations().find((item) => item.id === conversation.id) ?? conversation;
 
-  const edit = async (conversation: AiConversation) => {
+  const edit = async (conversation: AssistantSidebarChat) => {
     const blocker = options.archiveBlocker(conversation);
     const result = await openAssistantConversationEditor(latest(conversation), {
       archiveDisabled: blocker !== null,
@@ -45,7 +48,7 @@ export const createAssistantChatDeeds = (options: AssistantChatDeedsOptions) => 
     else options.onArchived(result.conversation);
   };
 
-  const archive = async (conversation: AiConversation) => {
+  const archive = async (conversation: AssistantSidebarChat) => {
     const agreed = await confirm({
       title: v2().archiveTitle({ title: conversation.title }),
       description: text("Remove this chat from active lists. You can restore it later from All Chats."),

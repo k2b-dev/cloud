@@ -1,4 +1,5 @@
 import type { AiConversation } from "@k2b/cloud/ai";
+import type { AssistantSidebarChat } from "../sidebar";
 import { calendarDaysBefore } from "./chat-sidebar-model";
 import { assistantMessages } from "./messages";
 
@@ -6,7 +7,7 @@ export type ConversationStatusTone = "progress" | "attention" | "danger" | "acce
 
 /** One status per chat for lists: label for tooltips and screen readers, icon, and a semantic tone the CSS colors. */
 export const conversationStatusPresentation = (
-  conversation: AiConversation,
+  conversation: Pick<AssistantSidebarChat, "runStatus" | "unreadCompletion">,
   locale = "en",
   active = false,
 ): { label: string; icon: string; tone: ConversationStatusTone } | null => {
@@ -33,7 +34,7 @@ export const conversationStatusPresentation = (
 };
 
 /** Whether a chat's run still goes on: it cannot be marked done until it ends or is stopped. */
-export const isConversationBusy = (conversation: AiConversation): boolean =>
+export const isConversationBusy = (conversation: AssistantSidebarChat): boolean =>
   ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
 
 /**
@@ -41,7 +42,10 @@ export const isConversationBusy = (conversation: AiConversation): boolean =>
  * shaped yet. A Project, an app launch with its tool ceiling, a chosen title or description, a pin, and a done or
  * archived chat all make the next chat a different one, so New chat creates it.
  */
-export const isPlainChat = (conversation: AiConversation): boolean =>
+export const isPlainChat = (
+  conversation: AssistantSidebarChat &
+    Partial<Pick<AiConversation, "launchedByAppId" | "allowedTools" | "titleSource" | "descriptionSource">>,
+): boolean =>
   !conversation.projectId &&
   !conversation.launchedByAppId &&
   !conversation.allowedTools &&
@@ -59,12 +63,12 @@ export type ConversationAgeGroup = "pinned" | "today" | "yesterday" | "week" | "
  * left out.
  */
 export const groupConversationsByAge = (
-  conversations: readonly AiConversation[],
+  conversations: readonly AssistantSidebarChat[],
   now: string,
   timeZone: string,
-): { group: ConversationAgeGroup; conversations: AiConversation[] }[] => {
+): { group: ConversationAgeGroup; conversations: AssistantSidebarChat[] }[] => {
   const order: ConversationAgeGroup[] = ["pinned", "today", "yesterday", "week", "month", "older"];
-  const groups = new Map<ConversationAgeGroup, AiConversation[]>();
+  const groups = new Map<ConversationAgeGroup, AssistantSidebarChat[]>();
   for (const conversation of conversations) {
     const days = calendarDaysBefore(conversation.lastUsedAt, now, timeZone);
     const group: ConversationAgeGroup = conversation.pinnedAt

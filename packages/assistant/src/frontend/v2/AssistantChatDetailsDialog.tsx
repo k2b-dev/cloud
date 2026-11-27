@@ -2,6 +2,7 @@ import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { Button, Dialog, Facts, Failed, List, Loading, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createResource, createSignal, For, Show } from "solid-js";
 import { assistantApi } from "../../api/client";
+import type { AssistantSidebarChat } from "../../sidebar";
 import { useAssistantText } from "../ui-copy";
 
 /** How many files the details name before they count the rest. */
@@ -13,7 +14,7 @@ const FILES_SHOWN = 5;
  * stand at its foot.
  */
 export default function AssistantChatDetailsDialog(props: {
-  conversation: AiConversation;
+  conversation: AssistantSidebarChat;
   project?: AiProject;
   onClose: () => void;
   onEdit: () => void;

@@ -244,7 +244,7 @@ const propsOf = (scene: Scene, url: URL) => {
       hasArchived: Boolean(scene.archived),
     },
     initialDoneCount: conversations.filter((conversation) => conversation.isDone).length,
-    // The server lists at most 100 open chats and says when more exist (AI_SIDEBAR_CONVERSATIONS_MAX).
+    // The server lists at most 40 open chats and says when more exist (ASSISTANT_SIDEBAR_CHATS).
     initialMoreConversations: state === "huge",
     initialPlaceChats: scene.placesFailed
       ? null
@@ -961,7 +961,7 @@ describe("Assistant on v2", () => {
         expect(counts.loading).toBe(0);
         if (state === "huge") {
           expect(await page.getByRole("button", { name: "Weitere Chats …" }).count()).toBe(1);
-          // The sidebar's bound keeps the page small: 100 chats stay under 1,200 elements.
+          // The sidebar's bound keeps the page small: its 40 chats stay under 1,200 elements.
           expect(counts.all).toBeLessThan(1_200);
         }
         expect(errors).toEqual([]);

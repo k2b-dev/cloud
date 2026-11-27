@@ -1,9 +1,10 @@
-import type { AiConversation, AiOpenQuestion } from "@k2b/cloud/ai";
+import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { Skeleton, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { calendarDaysBefore } from "../frontend/chat-sidebar-model";
 import { ConversationStatusMeta } from "../frontend/conversation-status";
+import type { AssistantSidebarChat } from "../sidebar";
 import { pwaMessages } from "./messages";
 import { chatHref } from "./paths";
 
@@ -24,7 +25,7 @@ export const rowTime = (iso: string, now: string, timeZone: string, locale: stri
  * The second line of a chat: what it does now, what it waits for, why it failed, or what it is about. A finished
  * answer the person has not read shows as the dot at the end instead.
  */
-const preview = (chat: AiConversation, question: AiOpenQuestion | undefined, t: ReturnType<typeof pwaMessages.resolve>["t"]) => {
+const preview = (chat: AssistantSidebarChat, question: AiOpenQuestion | undefined, t: ReturnType<typeof pwaMessages.resolve>["t"]) => {
   if (chat.runStatus === "needs_attention" && question) return t.waitingForYes({ short: question.short });
   if ((chat.runStatus === "running" || chat.runStatus === "queued") && chat.activity?.step) return chat.activity.step;
   if (chat.runStatus === "failed" && chat.runError) return chat.runError;
@@ -32,12 +33,12 @@ const preview = (chat: AiConversation, question: AiOpenQuestion | undefined, t: 
 };
 
 export function ChatRows(props: {
-  chats: readonly AiConversation[];
+  chats: readonly AssistantSidebarChat[];
   questions: readonly AiOpenQuestion[];
   selected?: string | null;
   now: string;
   timeZone: string;
-  onOpen: (chat: AiConversation, event: LinkNavigateEvent) => void;
+  onOpen: (chat: AssistantSidebarChat, event: LinkNavigateEvent) => void;
 }) {
   const locale = useLocale();
   const t = () => pwaMessages.resolve([locale()]).t;

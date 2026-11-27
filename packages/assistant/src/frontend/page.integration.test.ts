@@ -125,10 +125,13 @@ suite("Gustav's page on the server", () => {
 });
 
 /**
- * Measured on the test VM (27.11.): 61 statements. About half are `@k2b/cloud/ai` reading its model configuration once
- * per function that needs it (no read per request), the rest the first view; none is read per chat. A new statement on
- * this path shows here first.
+ * Measured on the test VM (27.11.): 56 statements (61 before the open chat was handed to its views instead of being read
+ * again per view). About 30 are `@k2b/cloud/ai` reading its model configuration once per function that needs it (no
+ * read per request), the rest the first view; none is read per chat. A new statement on this path shows here first.
  */
-const STATEMENTS = 61;
-/** The island's props for that view, measured with it; the sidebar's bounded page is most of it. */
-const PROPS_BYTES = 248_000;
+const STATEMENTS = 56;
+/**
+ * The island's props for that view as the page writes them, measured with it: 45,181 B (247,042 B while the sidebar
+ * carried a hundred whole chats; it now carries forty rows of what a row shows).
+ */
+const PROPS_BYTES = 46_000;

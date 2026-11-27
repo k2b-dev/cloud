@@ -1,4 +1,4 @@
-import type { AiConversation, AiProject } from "@k2b/cloud/ai";
+import type { AiProject } from "@k2b/cloud/ai";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { useLocale } from "@k2b/ui";
@@ -6,6 +6,7 @@ import { type MenuEntry, type NavGroup, type NavItem, type OnNavigate, type Stat
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { assistantApi } from "../../api/client";
 import { assistantCommandMessages } from "../../commands";
+import type { AssistantSidebarChat } from "../../sidebar";
 import type { AssistantArchiveBlocker } from "../archive-blocker";
 import { assistantConversationHref, assistantProjectHref } from "../assistant-navigation";
 import { conversationPlace } from "../assistant-place";
@@ -31,7 +32,7 @@ export const chatListEntries = (state: { more: boolean; anyChats: boolean }) => 
 
 export type AssistantNavOptions = {
   basePath: string;
-  conversations: Accessor<AiConversation[]>;
+  conversations: Accessor<AssistantSidebarChat[]>;
   doneCount: Accessor<number>;
   timeZone: string;
   renderedAt: string;
@@ -42,7 +43,7 @@ export type AssistantNavOptions = {
   waitingCount: Accessor<number>;
   hasPersonalCode: Accessor<boolean>;
   /** The chats at places; null when they could not be listed, so the folder says so instead of vanishing. */
-  placeChats: Accessor<{ total: number; items: AiConversation[] } | null>;
+  placeChats: Accessor<{ total: number; items: AssistantSidebarChat[] } | null>;
   /** Reads the chats at places again after they could not be listed. */
   retryPlaceChats: () => void;
   /** More open chats exist than the list holds; the last entry leads to the list of every chat. */
@@ -55,14 +56,14 @@ export type AssistantNavOptions = {
   openApprovals: () => void;
   openCode: () => void;
   createProject: () => void | Promise<void>;
-  editConversation: (conversation: AiConversation) => void | Promise<void>;
-  showDetails: (conversation: AiConversation) => void | Promise<void>;
-  archiveConversation: (conversation: AiConversation) => void | Promise<void>;
-  archiveBlocker: (conversation: AiConversation) => AssistantArchiveBlocker;
+  editConversation: (conversation: AssistantSidebarChat) => void | Promise<void>;
+  showDetails: (conversation: AssistantSidebarChat) => void | Promise<void>;
+  archiveConversation: (conversation: AssistantSidebarChat) => void | Promise<void>;
+  archiveBlocker: (conversation: AssistantSidebarChat) => AssistantArchiveBlocker;
   /** Opens the list of every chat, on one of its views (all by default). */
   openAllChats: (view?: "all" | "done") => void;
   openPreferences: () => void | Promise<void>;
-  onConversationUpdated: (conversation: AiConversation) => void;
+  onConversationUpdated: (conversation: AssistantSidebarChat) => void;
 };
 
 /**
@@ -120,9 +121,9 @@ export function createAssistantNav(options: AssistantNavOptions) {
   });
 
   const currentChatId = () => (options.activeView() === "chat" && !options.activeProjectId() ? options.activeConversationId() : null);
-  const chatHref = (conversation: AiConversation) => assistantConversationHref(options.basePath, conversation.id);
+  const chatHref = (conversation: AssistantSidebarChat) => assistantConversationHref(options.basePath, conversation.id);
   const openChat =
-    (conversation: AiConversation): OnNavigate =>
+    (conversation: AssistantSidebarChat): OnNavigate =>
     async (nav) => {
       if (conversation.id === currentChatId()) return;
       try {
@@ -133,7 +134,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
       }
     };
 
-  const setDone = async (conversation: AiConversation, done: boolean) => {
+  const setDone = async (conversation: AssistantSidebarChat, done: boolean) => {
     try {
       options.onConversationUpdated(await assistantApi.setConversationDone(conversation.id, done));
       toast(done ? v2().markedDone : v2().reopened, {
@@ -144,7 +145,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
       toast(text("Could not update chat. Stop the response first or try again."), { status: "bad" });
     }
   };
-  const setPinned = async (conversation: AiConversation, pinned: boolean) => {
+  const setPinned = async (conversation: AssistantSidebarChat, pinned: boolean) => {
     try {
       options.onConversationUpdated(await assistantApi.setConversationPinned(conversation.id, pinned));
     } catch {
@@ -152,7 +153,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
     }
   };
 
-  const chatMenu = (conversation: AiConversation): MenuEntry[] => {
+  const chatMenu = (conversation: AssistantSidebarChat): MenuEntry[] => {
     const busy = isConversationBusy(conversation);
     const blocker = options.archiveBlocker(conversation);
     return [
@@ -190,7 +191,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
 
   // A chat's state is colour, sign and word: a new answer, a question that waits, a run that failed. A run that
   // goes on shows its sign in place of the chat's own.
-  const dotOf = (conversation: AiConversation): Status | undefined =>
+  const dotOf = (conversation: AssistantSidebarChat): Status | undefined =>
     conversation.runStatus === "needs_attention"
       ? "warn"
       : conversation.runStatus === "failed"
@@ -198,7 +199,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
         : conversation.unreadCompletion && conversation.id !== currentChatId()
           ? "ok"
           : undefined;
-  const iconOf = (conversation: AiConversation) => {
+  const iconOf = (conversation: AssistantSidebarChat) => {
     if (["running", "queued", "waiting_for_browser"].includes(conversation.runStatus)) return "loader-2";
     const place = conversationPlace(conversation);
     if (place) return iconName(place.app?.icon, "map-pin");
@@ -206,7 +207,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
     const project = conversation.projectId ? options.projects().find((entry) => entry.id === conversation.projectId) : undefined;
     return project ? iconName(project.icon, "folder") : "message";
   };
-  const chatEntry = (conversation: AiConversation): NavItem => ({
+  const chatEntry = (conversation: AssistantSidebarChat): NavItem => ({
     label: conversation.title,
     icon: iconOf(conversation),
     href: chatHref(conversation),

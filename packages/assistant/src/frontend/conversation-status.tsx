@@ -5,7 +5,7 @@ import { conversationStatusPresentation } from "./conversation-view";
 import { assistantMessages } from "./messages";
 
 export function ConversationStatusMeta(props: {
-  conversation: AiConversation;
+  conversation: Pick<AiConversation, "runStatus" | "unreadCompletion" | "pinnedAt" | "activity">;
   active?: boolean;
   labels?: boolean;
   hideStatus?: boolean;
