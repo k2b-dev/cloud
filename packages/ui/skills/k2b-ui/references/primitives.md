@@ -131,7 +131,9 @@ moves.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`measure` (its head, sentence and rows keep the reading measure of `Prose`,
+720 px of text, so a short list in a wide pane stays together; its line
+still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
@@ -387,7 +389,8 @@ lines instead of cutting a thing.
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there). An item with `items` instead of `icon` and a link folds
+  problem there, `"running"` for work that runs now: a small turning mark
+  in the dot's place that says "Läuft"). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
