@@ -821,11 +821,12 @@ for (const pane of [360, 375])
   });
 
 // A setting that never changes in place (no `was`, no `action`) keeps no room for a change: it is as tall as before the
-// room was kept (81b5b40), at each layout of the settings page (review r12: the page grew by 31 % at 1024 px).
+// room was kept (81b5b40, measured in IBM Plex in Chromium and WebKit), at each layout of the settings page (review r12:
+// the page grew by 31 % at 1024 px).
 const stillHeights: Record<number, Record<string, number>> = {
   1440: { Gemeinschaftsrechner: 72, "Neue Apps fragen": 64, Adresse: 72, "Admins koppeln direkt": 64 },
   1024: { Gemeinschaftsrechner: 76, "Neue Apps fragen": 76, Adresse: 100, "Admins koppeln direkt": 60 },
-  700: { Gemeinschaftsrechner: 72, "Neue Apps fragen": 80, Adresse: 72, "Admins koppeln direkt": 64 },
+  700: { Gemeinschaftsrechner: 72, "Neue Apps fragen": 64, Adresse: 72, "Admins koppeln direkt": 64 },
   390: { Gemeinschaftsrechner: 76, "Neue Apps fragen": 76, Adresse: 100, "Admins koppeln direkt": 60 },
 };
 for (const width of [1440, 1024, 700, 390])
@@ -847,6 +848,9 @@ for (const width of [1440, 1024, 700, 390])
         expect(found).toEqual(stillHeights[width]!);
       },
       width,
+      false,
+      // in IBM Plex, so a hint wraps as a person sees it and alike in both engines
+      true,
     );
   });
 
