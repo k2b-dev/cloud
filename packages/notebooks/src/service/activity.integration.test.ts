@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
@@ -119,7 +120,17 @@ databaseTest("edit days count a note's edits per local day, today last, and the 
   await edit("comment.created", editorId, "2026-10-16T09:30:00.000Z");
   await edit("note.edited", editorId, "2026-09-10T08:00:00.000Z");
 
-  const berlin = await noteEditDays({ noteId, days: 30, timeZone: "Europe/Berlin", now });
+  // the version history's hero reads its edits per day and the people in one statement
+  let berlin!: Awaited<ReturnType<typeof noteEditDays>>;
+  const meter = await meterSql();
+  try {
+    const statements = await meter.during(async () => {
+      berlin = await noteEditDays({ noteId, days: 30, timeZone: "Europe/Berlin", now });
+    });
+    expect(statements).toHaveLength(1);
+  } finally {
+    await meter.close();
+  }
   expect(berlin.perDay).toHaveLength(30);
   expect(berlin.perDay.slice(-3)).toEqual([1, 1, 2]);
   expect(berlin.perDay.reduce((sum, count) => sum + count, 0)).toBe(4);
