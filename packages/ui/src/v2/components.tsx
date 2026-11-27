@@ -361,8 +361,7 @@ export type TabsProps = {
 };
 
 /** The word of a state dot, for assistive technology and for a tab that hides in the menu of further views. */
-const stateWord = (status: Status, t: UiMessages) =>
-  status === "ok" ? t.stateOk : status === "warn" ? t.stateWarn : t.stateBad;
+const stateWord = (status: Status, t: UiMessages) => (status === "ok" ? t.stateOk : status === "warn" ? t.stateWarn : t.stateBad);
 
 /** The words of a tab: its symbol, its name, its state and its count. */
 const TabFace = (props: { tab: Tab }) => {
