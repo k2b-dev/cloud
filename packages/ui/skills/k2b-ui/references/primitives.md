@@ -205,7 +205,11 @@ inside it.
 
 ### List and Row
 
-`List` holds `Row`s (`label` names it). A `Row`:
+`List` holds `Row`s (`label` names it; `color` is the colour of the app the
+rows belong to, for the tint of the open row, the page's app
+by default). Rows part with the quiet line (`--k2-hairline-subtle`); the
+clear line (`--k2-hairline`) only separates two things: a head and its
+content, a list and its detail, one section and the next. A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
@@ -233,6 +237,11 @@ inside it.
   text of a row with a symbol or person moves (intended).
 - `href` (+ `onNavigate` to open in place) makes the whole row open its
   entry; `onOpen` only for what has no address.
+- `level` (1–6): the depth of the entry in a flat list, such as the
+  headings of a note's outline. Each level stands 20 px further in (the
+  step of `Table tree`), the sixth five steps; in a `List` it is heard as
+  `aria-level`. Nothing folds: places that open and close are a `Nav`
+  group's `tree` or a `Table tree`.
 
 Rows may also stand directly in a `Section` or `Band`.
 
@@ -242,7 +251,9 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 
 ### Table
 
-`columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
+`columns: Column<T>[]`, `rows: T[]`, `label`, `color` (as on `List`: the
+open row in the tint of the app it belongs to, a chosen row blue; rows part
+with the quiet line, the column head with the clear one). A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
@@ -326,7 +337,9 @@ inline. Emphasis is a weight, never a size.
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
 safe links only) or children. A Markdown table reads like a small table
 (cells 12 px apart, the head as a Table head); align a column of numbers
-right (`--:`) and its figures line up.
+right (`--:`) and its figures line up. `compact` for short text a person
+wrote (a comment): tables become lines of text, headings stay at the
+text's size.
 
 ### Inline
 
@@ -553,7 +566,10 @@ lines instead of cutting a thing.
   actions without room go whole into a "…" menu from the end, right after the
   last one in sight; the way out stays at the end of the bar).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
-  head `Bar start` instead of `Tabs`. The last item is the page itself. On
+  head `Bar start` instead of `Tabs`. The last item is the page itself;
+  without room the places before it shorten to their own width or 12
+  characters first, and the page last. Places without room even then go
+  into a "…" menu ("Weitere Orte"): the middle ones first, then all. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"

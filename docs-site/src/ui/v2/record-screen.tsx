@@ -267,6 +267,9 @@ export const RecordScreen = () => (
                 copy: "Am Beispielhang 12, 12345 Beispielstadt",
               },
               { label: "Sprache", value: "Deutsch" },
+              // the kinds of the head stand here too: on the phone they give way to the name
+              { label: "Kundentyp", value: "Privat" },
+              { label: "Art", value: "Einlieferung" },
             ]}
           />
         </Section>

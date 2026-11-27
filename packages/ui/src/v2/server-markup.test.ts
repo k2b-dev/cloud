@@ -13,7 +13,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
-const { Text } = await import("./content");
+const { List, Row, Text } = await import("./content");
 const { Heat } = await import("./heat");
 const { Tabs } = await import("./components");
 
@@ -111,6 +111,38 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+// A note's outline comes from the server already at its levels, heard as such before any script runs.
+test("a row at a level sends it in the server's markup: aria-level in a list, the level for its step outside one", () => {
+  const inList = renderToString(() =>
+    createComponent(List, {
+      label: "Inhalt",
+      get children() {
+        return [createComponent(Row, { lines: ["Werkstattordnung"], level: 1 }), createComponent(Row, { lines: ["Feiertage"], level: 3 })];
+      },
+    }),
+  );
+  expect(inList).toMatch(/role="listitem"[^>]*aria-level="3"|aria-level="3"[^>]*role="listitem"/);
+  expect(inList).toContain('data-level="1"');
+  // outside a list a row has no role, so no aria-level either; it still stands at its step
+  const alone = renderToString(() => createComponent(Row, { lines: ["Feiertage"], level: 3 }));
+  expect(alone).toContain('data-level="3"');
+  expect(alone).not.toContain("aria-level");
+  // a level outside 1..6 stands at the edge and says nothing, so it never voids the row's padding
+  for (const level of [0, 7, 2.5]) {
+    const odd = renderToString(() =>
+      createComponent(List, {
+        label: "Inhalt",
+        get children() {
+          // data that breaks the type, as a heading level read from a note may
+          return createComponent(Row, { lines: ["Feiertage"], level: level as 1 });
+        },
+      }),
+    );
+    expect(odd).not.toContain("data-level");
+    expect(odd).not.toContain("aria-level");
+  }
 });
 
 // The page's live region is in the server markup: a region that exists before its first news is heard.

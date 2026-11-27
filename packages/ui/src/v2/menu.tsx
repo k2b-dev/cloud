@@ -249,14 +249,11 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
     );
   }
   const valueOf = (item: MenuItem) => item.value ?? item.label;
+  // The choice arrives through the menu, never through the group alone: core does not call the group's handler when
+  // it does not hold the group at that moment, and the choice would end in its own memory (#4361).
+  onCleanup(props.level.onChoice(props.name, (value) => props.section.onChoose?.(value)));
   return (
-    <props.level.RadioGroup
-      name={props.name}
-      value={props.section.choice}
-      onValueChange={(value: string) => props.section.onChoose?.(value)}
-      aria-labelledby={headingId()}
-      class="k2-mgroup"
-    >
+    <props.level.RadioGroup name={props.name} value={props.section.choice} aria-labelledby={headingId()} class="k2-mgroup">
       {heading}
       <For each={props.section.items.map(valueOf)}>
         {(value) => {
