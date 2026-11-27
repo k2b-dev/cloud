@@ -7,15 +7,7 @@ import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
 import { approvalReason, type CodeScreenBase, type Loaded, ok, ownerLabel } from "./data";
 import { LoadFailed, Missing, useCodeText } from "./parts";
-import {
-  type CodeReviewProps,
-  type CodeReviewTab,
-  createCodeReview,
-  ReviewBody,
-  ReviewDialog,
-  reviewHeadActions,
-  reviewMenu,
-} from "./review";
+import { type CodeReviewProps, type CodeReviewTab, createCodeReview, ReviewBody, ReviewDialog, reviewMenu } from "./review";
 import { type CodeReviewMessages, codeReviewMessages } from "./review-messages";
 
 export type ApprovalsScreenProps = CodeScreenBase & {
@@ -345,8 +337,8 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
               </Text>
             }
             end={
+              // the decisions stand in the approval card of the pane; the head keeps the way to the other ones
               <>
-                {reviewHeadActions(review)}
                 <Show when={position()}>{(at) => <Menu label={rt().moreApprovals} items={reviewMenu(rt(), at())} />}</Show>
                 <Button variant="ghost" icon="x" label={rt().close} href={p.listHref} />
               </>
@@ -391,11 +383,6 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
       // a detail column only while a review is open: no empty half (identity rule 5); the code needs room
       detail={open ? 560 : undefined}
       detailEmpty={{ icon: "inbox", text: rt().chooseApproval }}
-      primary={
-        review && !review.closed() && review.mayDecide()
-          ? { label: rt().approve({ n: review.props.number }), icon: "check", onClick: () => void review.approve() }
-          : undefined
-      }
       head={
         <Bar
           start={

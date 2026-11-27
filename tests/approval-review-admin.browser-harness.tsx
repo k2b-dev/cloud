@@ -1,11 +1,11 @@
 import { LocaleProvider } from "@k2b/ui";
 import { Bar, Pane, Tabs, Text } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
-import { createCodeReview, ReviewBody, ReviewDialog, reviewHeadActions } from "../packages/core/src/pages/admin/code/review";
+import { createCodeReview, ReviewBody, ReviewDialog } from "../packages/core/src/pages/admin/code/review";
 import { codeReviewMessages } from "../packages/core/src/pages/admin/code/review-messages";
 
 // The cross-package browser fixture belongs to the repository, never to the Cloud platform. The review stands as
-// Administration › Code › Freigaben opens it on v2: its deeds in the detail head, its views under it, the overview below.
+// Administration › Code › Freigaben opens it on v2: its views under the head, Cloud's approval card and the overview below.
 function Review() {
   const r = codeReviewMessages.resolve(["de"]).t;
   const review = createCodeReview({
@@ -62,7 +62,6 @@ function Review() {
                 {review.props.title}
               </Text>
             }
-            end={reviewHeadActions(review)}
           />
         }
         status={<Bar start={<Tabs label={r.tabsLabel} items={review.tabs()} />} />}

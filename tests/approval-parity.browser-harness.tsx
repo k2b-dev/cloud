@@ -13,7 +13,7 @@ import { type CodePageFixtureState, codePageFixture } from "../packages/cloud/sr
 import { reviewProps } from "../packages/core/src/pages/admin/code/ApprovalsScreen";
 import type { FixtureReviewVariant } from "../packages/core/src/pages/admin/code/CodeArea.fixture-data";
 import { codeAdminMessages } from "../packages/core/src/pages/admin/code/messages";
-import { createCodeReview, ReviewBody, ReviewDialog, reviewHeadActions } from "../packages/core/src/pages/admin/code/review";
+import { createCodeReview, ReviewBody, ReviewDialog } from "../packages/core/src/pages/admin/code/review";
 import { codeReviewMessages } from "../packages/core/src/pages/admin/code/review-messages";
 
 declare global {
@@ -103,7 +103,7 @@ const code = () => (
 const adminStates: FixtureReviewVariant[] = ["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"];
 /**
  * The admin review as Administration › Code › Freigaben opens it on v2: the version's props as the screen maps them,
- * its deeds in the detail head, its views under it and the statement with the overview in the pane.
+ * its views under the head, and Cloud's one approval card with the overview in the pane.
  */
 function Admin() {
   const detail = window.approvalAdminFixtures[adminStates.find((s) => s === state()) ?? "normal"];
@@ -128,7 +128,6 @@ function Admin() {
                 {review.props.title}
               </Text>
             }
-            end={reviewHeadActions(review)}
           />
         }
         status={<Bar start={<Tabs label={r.tabsLabel} items={review.tabs()} />} />}

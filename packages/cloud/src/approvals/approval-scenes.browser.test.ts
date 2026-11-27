@@ -79,6 +79,8 @@ const SCENE_CSS = `
   .scene { box-sizing: border-box; width: min(100%, 796px); margin: 0 auto; padding: 24px 16px; }
   .scene-label { margin: 18px 0 0; font: 600 13px/1.4 var(--font-sans, sans-serif); color: var(--k2b-text-secondary); }
   .scene--everywhere { width: min(100%, 1400px); }
+  /* the v2 review is a pane of the app's page: the page gives its edges, not the scene */
+  .scene--review-admin { padding: 0; }
   .scene-places { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px 28px; align-items: start; }
   .scene-places [data-place="page"] { grid-column: 1 / -1; }
   .scene-places [data-place="panel"] { max-width: 420px; }
@@ -190,37 +192,31 @@ describe("Approval scenes", () => {
           expect(await noOverflow(page)).toBe(0);
           await shot(page, `review-facts-${theme}-${width}`);
           await page.goto("https://cloud.example.test/?scene=review-admin");
-          // The v2 review keeps its deeds in the detail head: the short words on the button, the whole ones as its hint.
-          const admin = page.locator(".scene--review-admin");
+          // The v2 review decides in Cloud's one approval card, as chat and the side panel do; its head has no decisions.
+          const admin = page.locator(".cloud-approval-frame");
+          expect(await admin.count()).toBe(1);
           const secondary = admin.getByRole("button", {
-            name: "Ablehnen / ändern",
+            name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …",
             exact: true,
           });
           await secondary.waitFor();
-          expect(await secondary.getAttribute("title")).toBe("Ablehnen oder ändern …");
-          const singleLine = await secondary.locator(".k2-btn-label").evaluate((label) => ({
-            height: label.getBoundingClientRect().height,
-            line: Number.parseFloat(getComputedStyle(label).lineHeight),
-          }));
-          expect(singleLine.height).toBeLessThanOrEqual(singleLine.line + 1);
-          // On the phone the approval gives way in the head (the workspace floats it); on the desktop it stands beside.
-          const approve = admin.locator("button", { hasText: "Version 5 freigeben" });
-          expect(await approve.isVisible()).toBe(width !== 390);
+          if (width === 390) {
+            const singleLine = await secondary.locator(".k2b-button__label").evaluate((label) => ({
+              height: label.getBoundingClientRect().height,
+              line: Number.parseFloat(getComputedStyle(label).lineHeight),
+            }));
+            expect(singleLine.height).toBeLessThanOrEqual(singleLine.line + 1);
+          }
+          const approve = admin.locator("[data-approval-primary]");
+          expect(await approve.isVisible()).toBe(true);
+          expect(await page.locator(".scene--review-admin").getByRole("button", { name: "Version 5 freigeben" }).count()).toBe(1);
           expect(await noOverflow(page)).toBe(0);
           await shot(page, `review-admin-${theme}-${width}`);
           await secondary.click();
           await page.getByRole("dialog").waitFor();
-          await settled(page);
-          // While the decision dialog is open the approval is neither busy nor reachable: the modal dialog covers it.
+          // While the decision dialog is open the approval waits for it: approve is off, and not busy.
           expect(await approve.getAttribute("aria-busy")).toBeNull();
-          expect(
-            await approve.evaluate((button) => {
-              const box = button.getBoundingClientRect();
-              if (!box.width || !box.height) return false;
-              const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-              return hit !== null && button.contains(hit);
-            }),
-          ).toBe(false);
+          expect(await approve.isDisabled()).toBe(true);
           await shot(page, `review-admin-decision-${theme}-${width}`);
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "detached" });

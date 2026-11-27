@@ -172,7 +172,7 @@ test("a failed reply keeps its text with Try again, and only the author deletes"
 test("requesting changes asks for a text that names who gets it, keeps the draft, and sends the outcome", async () => {
   await goto(review);
   await settled(page);
-  await button("Ablehnen / ändern").click();
+  await button("Ablehnen oder ändern …").click();
   const dialog = page.getByRole("dialog");
   await dialog.getByText("Lea Muster bekommt deine Nachricht.", { exact: false }).waitFor();
   await dialog.getByText("3 Kommentare am Code gehen mit.").waitFor();
@@ -183,7 +183,7 @@ test("requesting changes asks for a text that names who gets it, keeps the draft
   expect(fixture.requests).toEqual([]);
   await dialog.getByRole("textbox").fill("Bitte nur Rückrufwünsche.");
   await dialog.getByRole("button", { name: "Abbrechen" }).click();
-  await button("Ablehnen / ändern").click();
+  await button("Ablehnen oder ändern …").click();
   expect(await page.getByRole("dialog").getByRole("textbox").inputValue()).toBe("Bitte nur Rückrufwünsche.");
   await page.getByRole("dialog").getByRole("button", { name: "Änderungen anfordern" }).click();
   await reload();
@@ -206,7 +206,7 @@ test("requesting changes asks for a text that names who gets it, keeps the draft
 
 test("a refused decision keeps the dialog with its text; approving sends the binding and reloads into the result", async () => {
   await goto(`${review}&state=dialogfail`);
-  await button("Ablehnen / ändern").click();
+  await button("Ablehnen oder ändern …").click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("radio", { name: "Ablehnen …", exact: true }).click();
   await dialog.getByRole("textbox").fill("Nicht bei uns.");
@@ -283,8 +283,11 @@ test("a review opens as its own page on the phone, with the way back to the list
   await main().getByText("Version 3 von Rückruf bestätigen freigeben?").waitFor();
   const back = main().getByRole("link", { name: "Freigaben" }).filter({ visible: true }).first();
   expect(await back.getAttribute("href")).toBe("/admin/code?sec=approvals");
-  // The approval floats as the page's one main action.
-  await main().getByRole("button", { name: "Version 3 freigeben" }).filter({ visible: true }).first().waitFor();
+  // The approval card decides on the phone too: both decisions side by side, the approve once on the page.
+  const card = main().locator(".cloud-approval-frame");
+  await card.getByRole("button", { name: "Ablehnen / ändern", exact: true }).waitFor();
+  expect(await main().getByRole("button", { name: "Version 3 freigeben" }).filter({ visible: true }).count()).toBe(1);
+  expect(await card.getByRole("button", { name: "Version 3 freigeben" }).isVisible()).toBe(true);
   await back.click();
   await reload();
   await main().getByText("4 Freigaben warten").waitFor();

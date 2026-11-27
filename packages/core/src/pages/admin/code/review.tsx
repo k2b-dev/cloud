@@ -1,3 +1,4 @@
+import { ApprovalFrame, type ApprovalFrameProps } from "@k2b/cloud/approvals/ui";
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { formatRelative } from "@k2b/cloud/shared";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
@@ -20,7 +21,7 @@ import {
   useLocale,
   useToast,
 } from "@k2b/ui/v2";
-import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import {
   CODE_REVIEW_COMMENT_LENGTH,
@@ -108,7 +109,7 @@ const writeArrival = (arrival: Arrival) => {
   }
 };
 
-/** The worded sentences mark the version and the automation with [[…]] for the chips of v1; v2 reads them as text. */
+/** The worded sentences mark the version and the automation with [[…]]; the approval card reads them as plain text. */
 const plain = (sentence: string) => sentence.replace(/\[\[|\]\]/g, "");
 
 /** Comments as threads at their lines: entries of one line in time order, a reply under its line even without its root. */
@@ -130,8 +131,8 @@ const threadsOf = (comments: readonly CodeReviewComment[]): ReviewThread[] => {
 
 /**
  * The state of one review: the tab in the address, the decision with its recovery, the explanation, and the comments.
- * The screen puts its deeds in the detail head and its views in the pane; deciding sends the unchanged binding and the
- * server rechecks everything.
+ * The review decides through Cloud's one approval card in its pane; deciding sends the unchanged binding and the server
+ * rechecks everything.
  */
 export function createCodeReview(props: CodeReviewProps) {
   const locale = useLocale();
@@ -152,8 +153,24 @@ export function createCodeReview(props: CodeReviewProps) {
   const [failure, setFailure] = createSignal<{ code?: string; text: string } | null>(null);
   const [signingOut, setSigningOut] = createSignal(false);
   const [signOutFailed, setSignOutFailed] = createSignal(false);
-  const [dialog, setDialog] = createSignal(false);
+  const [dialog, showDialog] = createSignal(false);
   const drafts: Record<"changes" | "reject", string> = { changes: "", reject: "" };
+  // The approval waits for the dialog it opened, as for any answer: its approve stays off until the dialog closes.
+  let asked: (() => void) | undefined;
+  const setDialog = (open: boolean) => {
+    showDialog(open);
+    if (open) return;
+    asked?.();
+    asked = undefined;
+  };
+  const ask = () => {
+    if (busy() || unknown()) return Promise.resolve();
+    setFailure(null);
+    setDialog(true);
+    return new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+  };
 
   const pending = () => props.status === "pending";
   const closed = () => !pending() || unknown() !== null;
@@ -414,6 +431,7 @@ export function createCodeReview(props: CodeReviewProps) {
 
   return {
     props,
+    locale,
     t,
     ta,
     tab,
@@ -433,6 +451,7 @@ export function createCodeReview(props: CodeReviewProps) {
     signInHref,
     signInAdmin,
     approve,
+    ask,
     send,
     dialog,
     setDialog,
@@ -458,38 +477,6 @@ export function createCodeReview(props: CodeReviewProps) {
 }
 export type CodeReview = ReturnType<typeof createCodeReview>;
 
-/** The deeds of a review in its head: decide while it is open, go on once it is closed, check a lost answer. */
-export function reviewHeadActions(review: CodeReview): JSX.Element {
-  const t = review.t;
-  const p = review.props;
-  return (
-    <Show
-      when={!review.closed()}
-      fallback={
-        <Show
-          when={review.unknown()}
-          fallback={
-            <Button href={p.nextHref ?? p.listHref} forward={Boolean(p.nextHref)}>
-              {p.nextHref ? t().nextApproval : t().backToList}
-            </Button>
-          }
-        >
-          <Button icon="refresh" onClick={() => reloadCodeArea()}>
-            {t().checkState}
-          </Button>
-        </Show>
-      }
-    >
-      <Button icon="message-2" keep title={t().rejectOrChange} disabled={review.busy()} onClick={() => review.setDialog(true)}>
-        {t().rejectOrChangeShort}
-      </Button>
-      <Button variant="primary" icon="check" busy={review.busy()} disabled={!review.mayDecide()} onClick={() => void review.approve()}>
-        {t().approve({ n: p.number })}
-      </Button>
-    </Show>
-  );
-}
-
 /** The way to the other waiting approvals, behind "…" in the head. */
 export const reviewMenu = (
   t: CodeReviewMessages,
@@ -508,8 +495,11 @@ export const reviewMenu = (
       ]
     : [];
 
-/** The statement of the review under its head: the question while it is open, the outcome once it is closed. */
-function ReviewStatement(props: { review: CodeReview }) {
+/**
+ * The approval of the review: Cloud's one approval card, the same as in chat, the side panel and Freigaben, so a person
+ * always recognises it. Open, it asks with its two decisions; closed, it says what happened and offers the way on.
+ */
+function ReviewApproval(props: { review: CodeReview }) {
   const review = props.review;
   const t = review.t;
   const p = review.props;
@@ -539,14 +529,15 @@ function ReviewStatement(props: { review: CodeReview }) {
         : t().afterRejected({ who: p.recipient, n: p.number, keep: review.keep() });
     return p.status === "withdrawn" ? review.keep() : t().closedWhy;
   };
-  const state = (): JSX.Element => {
-    if (review.unknown()) return <StateWord>{t().statusUnknown}</StateWord>;
-    if (decision?.outcome === "approved") return <StateWord>{t().statusApproved}</StateWord>;
-    if (decision?.outcome === "changes_requested") return <StateWord>{t().statusChanges}</StateWord>;
-    if (decision?.outcome === "rejected") return <StateWord>{t().statusRejected}</StateWord>;
-    if (p.status === "withdrawn") return <StateWord muted>{t().statusWithdrawn}</StateWord>;
-    if (p.status === "superseded" || p.status === "cancelled") return <StateWord muted>{t().statusSuperseded}</StateWord>;
-    return <StateWord muted>{t().statusExpired}</StateWord>;
+  /** For assistive technology only: the visible sentence already says the state once. */
+  const status = (): NonNullable<ApprovalFrameProps["status"]> => {
+    if (review.unknown()) return { tone: "warning", label: t().statusUnknown };
+    if (decision?.outcome === "approved") return { tone: "done", label: t().statusApproved };
+    if (decision?.outcome === "changes_requested") return { tone: "warning", label: t().statusChanges };
+    if (decision?.outcome === "rejected") return { tone: "error", label: t().statusRejected };
+    if (p.status === "withdrawn") return { tone: "off", label: t().statusWithdrawn };
+    if (p.status === "superseded" || p.status === "cancelled") return { tone: "off", label: t().statusSuperseded };
+    return { tone: "expired", label: t().statusExpired };
   };
   const message = () => {
     const lost = review.unknown();
@@ -555,39 +546,59 @@ function ReviewStatement(props: { review: CodeReview }) {
     const label = mine ? (decision.outcome === "rejected" ? t().yourReason : t().yourMessage) : t().theirMessage({ who: decision.by });
     return { label, text: decision.comment, who: mine ? t().youCap : decision.by, at: decision.at };
   };
+  const source = () => ({ name: t().source, icon: "ti ti-code" });
   return (
-    // k2b-ui gap: the tinted object head (40 px sign, name 18, three key facts; ObjectHead, #4360) comes with DP; a band
-    // with the review's statement stands in its place under the head
-    <Show
-      when={!review.closed()}
-      fallback={
-        <Band tone={review.unknown() || decision?.outcome === "changes_requested" ? "warn" : undefined} label={t().source}>
-          <Text type="body" weight="strong">
-            {plain(sentence())}
-          </Text>
-          <Text>{state()}</Text>
-          <Text muted>{why()}</Text>
-          <Show when={message()}>
-            {(note) => (
-              <Row
-                avatar={{ name: note().who }}
-                lines={[note().text, note().at ? `${note().label} · ${formatRelative(note().at!, p.dateConfig)}` : note().label]}
+    <>
+      <Band label={t().source}>
+        {/* k2b-ui gap: Cloud's one approval card (ApprovalFrame of @k2b/cloud) is v1; it stands in a Canvas with the look
+            it has in chat, the side panel and Freigaben */}
+        <Canvas label={t().source}>
+          <Show
+            when={!review.closed()}
+            fallback={
+              <ApprovalFrame
+                locale={review.locale()}
+                state="decided"
+                source={source()}
+                status={status()}
+                reason={{ text: why() }}
+                resultAnchor
+                sentence={plain(sentence())}
+                confirm={
+                  review.unknown()
+                    ? { label: t().checkState, filled: false, onSelect: () => reloadCodeArea() }
+                    : { label: p.nextHref ? t().nextApproval : t().backToList, href: p.nextHref ?? p.listHref, filled: false }
+                }
               />
-            )}
+            }
+          >
+            <ApprovalFrame
+              locale={review.locale()}
+              state="open"
+              source={source()}
+              sentence={plain(t().question({ n: p.number, title: p.title }))}
+              reason={{ text: p.reason, icon: "ti ti-eye" }}
+              secondary={{ label: t().rejectOrChange, shortLabel: t().rejectOrChangeShort, onSelect: review.ask }}
+              confirm={{ label: t().approve({ n: p.number }), icon: "ti ti-check", onSelect: review.approve }}
+              unavailable={review.unavailable() ? { text: review.unavailable(), icon: "ti ti-lock" } : undefined}
+            />
           </Show>
-        </Band>
-      }
-    >
-      <Band tone={review.mayDecide() ? "yours" : undefined} label={t().source}>
-        <Text type="body" weight="strong">
-          {plain(t().question({ n: p.number, title: p.title }))}
-        </Text>
-        <Text>{p.reason}</Text>
+        </Canvas>
         <Text type="meta" muted>
-          {review.unavailable() ?? p.byline}
+          {p.byline}
         </Text>
       </Band>
-    </Show>
+      <Show when={review.closed() && message()}>
+        {(note) => (
+          <Section icon="message-2" title={note().label}>
+            <Row
+              avatar={{ name: note().who }}
+              lines={[note().text, note().at ? `${note().who} · ${formatRelative(note().at!, p.dateConfig)}` : note().who]}
+            />
+          </Section>
+        )}
+      </Show>
+    </>
   );
 }
 
@@ -871,7 +882,7 @@ export function ReviewBody(props: { review: CodeReview }) {
   );
   return (
     <>
-      <ReviewStatement review={review} />
+      <ReviewApproval review={review} />
       <ReviewNotices review={review} />
       <Show when={review.tab() === "overview"}>
         <ReviewOverview review={review} />

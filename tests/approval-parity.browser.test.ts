@@ -9,30 +9,32 @@ const root = resolve(import.meta.dir, "..");
 const adminStates = ["normal", "own", "sole", "approved", "rejected", "changes", "withdrawn", "followup"] satisfies FixtureReviewVariant[];
 
 /**
- * The v2 admin review of one state: the pane named after the version, the statement band in it, and at most two deeds
- * in its head, to decide while it is open and one way on once it is closed. On the phone a deed without `keep` gives
- * way in the head (the workspace floats the approval and the pane has its way back).
+ * The v2 admin review of one state: the pane named after the version holds Cloud's one approval card, the same as
+ * chat and the side panel draw, and the card holds every decision: two while the version is open, the way on once it
+ * is closed. The head of the pane decides nothing, so no approval stands twice on the page.
  */
 const expectAdminReview = async (page: Page, variant: FixtureReviewVariant, width: number) => {
   const detail = fixtureApprovalDetail(variant);
   const n = detail.version.number;
   const pane = page.getByRole("region", { name: `${detail.code.title} · Version ${n}`, exact: true });
-  expect(await pane.getByRole("region", { name: "Code", exact: true }).isVisible()).toBe(true);
+  const card = pane.getByRole("region", { name: "Code", exact: true }).locator(".cloud-approval-frame");
+  expect(await card.count()).toBe(1);
+  expect(await card.isVisible()).toBe(true);
   const head = pane.locator('[data-slot="head"]').first();
-  // hidden deeds count too: on the phone they are there but give way
-  const approve = head.getByRole("button", { name: `Version ${n} freigeben`, exact: true, includeHidden: true });
+  expect(await head.getByRole("button", { includeHidden: true }).count()).toBe(0);
+  const approve = page.getByRole("button", { name: `Version ${n} freigeben`, exact: true, includeHidden: true });
   if (detail.status === "pending") {
-    expect(await head.getByRole("button", { name: "Ablehnen / ändern", exact: true }).isVisible()).toBe(true);
+    expect(
+      await card.getByRole("button", { name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …", exact: true }).isVisible(),
+    ).toBe(true);
     expect(await approve.count()).toBe(1);
-    expect(await approve.isVisible()).toBe(width !== 390);
+    expect(await card.getByRole("button", { name: `Version ${n} freigeben`, exact: true }).count()).toBe(1);
+    expect(await approve.isVisible()).toBe(true);
     expect(await approve.isDisabled()).toBe(!detail.canApprove);
   } else {
     expect(await approve.count()).toBe(0);
-    const back = head.getByRole("link", { name: "Zurück zur Liste", exact: true, includeHidden: true });
-    expect(await back.count()).toBe(1);
-    expect(await back.isVisible()).toBe(width !== 390);
+    expect(await card.getByRole("link", { name: "Zurück zur Liste", exact: true }).isVisible()).toBe(true);
   }
-  expect(await head.locator(".k2-btn").filter({ visible: true }).count()).toBeLessThanOrEqual(2);
 };
 const shots = process.env.CAPBLOCKS_SHOTS;
 let browser: Browser;
@@ -150,12 +152,9 @@ for (const theme of ["light", "dark"])
             await settled(page);
             expect(errors).toEqual([]);
             const frames = page.locator(".cloud-approval-frame");
-            if (family === "admin") {
-              // The v2 admin review states the approval in a band under the detail head and keeps its deeds in the head;
-              // it shows no card of the shared approval frame, so the card geometry below holds for the other families.
-              await expectAdminReview(page, adminStates.find((s) => s === state) ?? "normal", width);
-              expect(await frames.count()).toBe(0);
-            } else expect(await frames.count()).toBeGreaterThan(0);
+            expect(await frames.count()).toBeGreaterThan(0);
+            // The v2 admin review shows the same card in its pane; the card geometry below holds for it as for every family.
+            if (family === "admin") await expectAdminReview(page, adminStates.find((s) => s === state) ?? "normal", width);
             for (const frame of await frames.all()) {
               const geometry = await frame.evaluate((node) => {
                 const title = node.querySelector(".k2b-notice-card__title")!;
