@@ -151,6 +151,59 @@ export function Fixture() {
           </Pane>
         </Workspace>
       </div>
+      {/* the app's "…" has a name of its own: it is still the "…" that takes the folded actions */}
+      <div class="case" data-case="named">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Text type="row" weight="strong">
+                  Angebot Lackfabrik Nordhaus
+                </Text>
+              }
+              end={
+                <>
+                  {actions.map((action) => (
+                    <Button keep icon={action.icon} label={action.label} onClick={deed(action.label)} />
+                  ))}
+                  <Menu label="Mehr zum Angebot" items={[{ label: "Umbenennen", icon: "pencil", onClick: deed("Umbenennen") }]} />
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Angebot">
+            <Text>Das Angebot.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      {/* a menu with a symbol of its own after the "…" ("Ansicht") never folds: the "…" before it still takes the actions */}
+      <div class="case" data-case="view">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Text type="row" weight="strong">
+                  Angebot Lackfabrik Nordhaus
+                </Text>
+              }
+              end={
+                <>
+                  {actions.map((action) => (
+                    <Button keep icon={action.icon} label={action.label} onClick={deed(action.label)} />
+                  ))}
+                  <Menu items={[{ label: "Umbenennen", icon: "pencil", onClick: deed("Umbenennen") }]} />
+                  <Menu icon="eye" label="Ansicht" items={[{ label: "Kompakt", onClick: deed("Kompakt") }]} />
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Angebot">
+            <Text>Das Angebot.</Text>
+          </Pane>
+        </Workspace>
+      </div>
       <div class="case" data-case="before">
         <Workspace
           head={
