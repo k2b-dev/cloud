@@ -130,7 +130,8 @@ moves.
 ### Section
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
-`actions` (≤ 2 text buttons in the head), `summary` (one sentence),
+`actions` (≤ 2 text buttons in the head; they keep their words and fold
+into a "⋯" menu when the head has no room for them), `summary` (one sentence),
 `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
