@@ -340,10 +340,12 @@ for (const width of [1440, 390])
       for (const name of ["record", "worst"] as const) {
         await page.goto(`${server.url.href}?screen=${name}`);
         const canvas = page.locator('[data-k2-part="Canvas"]').first();
-        await canvas.locator("svg").waitFor();
+        await canvas.locator("svg:visible").waitFor();
         await settled(page);
-        const day = await canvas.evaluate((drawing) => {
-          const box = drawing.getBoundingClientRect();
+        const day = await canvas.evaluate((frame) => {
+          const box = frame.getBoundingClientRect();
+          // the server sends the wide and the phone's day; the one this width shows is measured
+          const drawing = [...frame.querySelectorAll(".wx-day-wide, .wx-day-phone")].find((one) => one.getClientRects().length > 0)!;
           const labels = [...drawing.querySelectorAll("span")]
             .filter((span) => span.textContent?.trim() && !span.querySelector("span"))
             .map((span) => span.getBoundingClientRect());
@@ -367,10 +369,31 @@ for (const width of [1440, 390])
       // the record's week: seven bars on one scale, the coldest day starting at the scale's start
       await page.goto(`${server.url.href}?screen=record`);
       await settled(page);
-      // the table holds the desktop and the phone rows; the visible ones are the week
+      // the week shows once: the table on a wide screen, one line per day on the phone
       const bars = page.locator('[data-k2-part="RangeBar"]:visible');
       expect(await bars.count()).toBe(7);
-      expect(await bars.nth(3).getAttribute("aria-label")).toBe("-3,4° bis 4,6°");
+      // the coldest day (So. 29., -3,4°) starts at the scale's start; its words stand beside the bar, which says nothing
+      expect(
+        await bars.nth(3).evaluate((track) => track.querySelector("i")!.getBoundingClientRect().left - track.getBoundingClientRect().left),
+      ).toBe(0);
+      expect(await bars.nth(3).getAttribute("aria-hidden")).toBe("true");
+      if (width === 390) {
+        // the phone (review 27.11., "busy and heavy"): a quieter day of about 160 px, and each day one line of 44 px
+        const phone = await page.evaluate(() => ({
+          day: [...document.querySelectorAll<HTMLElement>(".wx-day-phone > div")].map((day) => day.getBoundingClientRect().height),
+          rows: [...document.querySelectorAll<HTMLElement>('.wx-week-phone [role="listitem"]')].map(
+            (row) => row.getBoundingClientRect().height,
+          ),
+          lists: [...document.querySelectorAll<HTMLElement>('[data-k2-part="Table"], [data-k2-part="List"]')]
+            .filter((list) => list.getClientRects().length > 0)
+            .map((list) => list.getAttribute("aria-label")),
+        }));
+        expect(phone.day.length).toBe(1);
+        expect(phone.day[0]!).toBeLessThanOrEqual(180);
+        expect(phone.rows).toEqual([44, 44, 44, 44, 44, 44, 44]);
+        // the hours' list stays; the week's table and its phone rows give way to the one-line days
+        expect(phone.lists).toEqual(["Stündliche Vorhersage"]);
+      }
       // a sunny day's sign is amber, a rainy one blue: data colours, not the text ink
       const colors = await page.evaluate(() => ({
         ink: getComputedStyle(document.querySelector('[data-k2-part="Table"]')!).color,

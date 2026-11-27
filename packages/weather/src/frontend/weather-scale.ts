@@ -34,6 +34,9 @@ export const TONE_COLORS: Record<Exclude<WeatherTone, "plain">, ThemeColor> = {
   thunder: { light: "#7c3aed", dark: "#a78bfa" },
 };
 
+/** The rain of the phone's day: a softer blue for its thin bars, still at 3:1 on the surface. */
+export const RAIN_SOFT: ThemeColor = { light: "#3b82f6", dark: "#93c5fd" };
+
 /** The tone of a condition code (`clear-day`, `rain`, …); clouds, fog, wind and the night stay plain. */
 export const weatherTone = (condition: string): WeatherTone => {
   switch (condition) {

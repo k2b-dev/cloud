@@ -28,7 +28,7 @@ import {
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { weatherMessages } from "../messages";
 import DayChart from "./_components/DayChart";
@@ -179,6 +179,21 @@ export default function WeatherScreen(props: WeatherScreenProps) {
   );
 }
 
+/**
+ * Phone and wide screen differ by layout alone, so the server sends both and CSS shows one: the phone's quieter day
+ * (about 160 px) and its week of one-line days; from 768 px the full day and the week's table.
+ */
+const PHONE_RULES = `
+@media not all and (min-width: 768px) {
+  .wx-day-wide { display: none; }
+  [data-k2-part="Section"]:has(.wx-week-phone) :is([data-k2-part="Table"], [data-k2-part="List"]) { display: none; }
+}
+@media (min-width: 768px) {
+  .wx-day-phone { display: none; }
+  [data-k2-part="Canvas"]:has(> .wx-week-phone) { display: none; }
+}
+`;
+
 /** The open location: the hero and its day, the week and the hours in the colours of weather, the measurements and radar. */
 function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
   const locale = useLocale();
@@ -206,16 +221,8 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
       <Icon name="temperature" color={temperatureColor(hour.degrees)} /> {hour.temperature}
     </>
   );
-  // a day from its low to its high on the week's one scale, coloured cold to warm
-  const range = (day: WeatherDay) => (
-    <RangeBar
-      from={day.low}
-      to={day.high}
-      domain={week()}
-      stops={temperatureStops}
-      label={t().rangeLabel({ low: day.lowText, high: day.highText })}
-    />
-  );
+  // a day from its low to its high on the week's one scale, coloured cold to warm; its low and high stand beside it
+  const range = (day: WeatherDay) => <RangeBar from={day.low} to={day.high} domain={week()} stops={temperatureStops} decorative />;
   const facts = () => [...(w().today ? [`${t().high} ${w().today!.high}`, `${t().low} ${w().today!.low}`] : []), ...w().alerts];
   return (
     <Pane label={t().weatherFor({ name: props.open.name })} scrollKey={`weather-${props.open.id}`}>
@@ -228,7 +235,17 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
           to: w().hourly.at(-1)?.temperature ?? w().temperature,
         })}
       >
-        <div style={{ padding: "16px 20px 4px", display: "flex", "flex-wrap": "wrap", "align-items": "center", gap: "4px 16px" }}>
+        {/* the phone shows the quieter day and the week as one line per day; the wide screen the full day and the table */}
+        <style>{PHONE_RULES}</style>
+        <div
+          style={{
+            padding: "16px var(--k2-edge) 4px",
+            display: "flex",
+            "flex-wrap": "wrap",
+            "align-items": "center",
+            gap: "4px 16px",
+          }}
+        >
           <span style={{ display: "inline-flex", "align-items": "center", gap: "10px" }}>
             <i
               class={`ti ti-${w().icon}`}
@@ -245,17 +262,60 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
           </Show>
         </div>
         <Show when={w().hourly.length > 1}>
-          <DayChart hours={w().hourly} rain={t().rainChance} locale={locale()} />
+          <div class="wx-day-wide">
+            <DayChart hours={w().hourly} rain={t().rainChance} locale={locale()} />
+          </div>
+          <div class="wx-day-phone">
+            <DayChart hours={w().hourly} rain={t().rainChance} locale={locale()} compact />
+          </div>
         </Show>
       </Canvas>
       <Pane.Split>
         <Pane label={t().hourlyForecast}>
           <Section icon="calendar" title={t().sevenDayForecast} summary={w().daily.length > 0 ? undefined : t().noForecast}>
             <Show when={w().daily.length > 0}>
+              <Canvas label={t().sevenDayForecast}>
+                {/* the week on the phone: one line of 44 px per day, without lines between them; the sign in its colour, the
+                    day in regular weight, the low, the range on the week's one scale, the high, the rain quiet at the end.
+                    k2b-ui gap: a v2 list of one-line rows with an inset hairline or none (Y's List inset) does not exist
+                    yet; until it does, the lines are drawn in this Canvas. */}
+                <div class="wx-week-phone" role="list" style={{ padding: "0 var(--k2-edge) 4px" }}>
+                  <For each={w().daily}>
+                    {(day) => (
+                      <div
+                        role="listitem"
+                        style={{
+                          display: "grid",
+                          "grid-template-columns": "20px minmax(0, 1fr) 40px minmax(56px, 1.4fr) 40px 44px",
+                          "align-items": "center",
+                          "column-gap": "8px",
+                          height: "44px",
+                          font: "var(--k2-t-body)",
+                          color: "var(--k2-text)",
+                          "font-variant-numeric": "tabular-nums",
+                        }}
+                      >
+                        <i
+                          class={`ti ti-${day.icon}`}
+                          role="img"
+                          aria-label={day.condition}
+                          style={{ "font-size": "18px", color: toneColor(day.tone) }}
+                        />
+                        <span style={{ overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>{day.day}</span>
+                        <span style={{ "text-align": "end", color: "var(--k2-muted)" }}>{day.lowText}</span>
+                        <RangeBar from={day.low} to={day.high} domain={week()} stops={temperatureStops} decorative />
+                        <span>{day.highText}</span>
+                        <span style={{ "text-align": "end", font: "var(--k2-t-meta)", color: "var(--k2-subtle)" }}>{day.rain}</span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Canvas>
               <Table
                 label={t().sevenDayForecast}
                 rows={w().daily}
-                // on the phone too the week reads at a glance: the sign and the range, the bar under them
+                // a narrow column of the wide screen (1024 px) reads the week in two lines: the sign, the day and its range,
+                // the bar under them (the phone has its own one-line days above)
                 phone={(day) => ({
                   lines: [
                     <>

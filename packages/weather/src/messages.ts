@@ -145,7 +145,6 @@ export const weatherMessages = i18n.define({
       nextHours: "Next 12 hours",
       dayAhead: ({ now, from, to }: { now: string; from: string; to: string }) =>
         `Now ${now}. The next hours: temperature from ${from} to ${to}, with the chance of rain for each hour.`,
-      rangeLabel: ({ low, high }: { low: string; high: string }) => `${low} to ${high}`,
       measuredNow: "Measured now",
       stateLabel: "State",
       invalidKeys: "Invalid keys",
@@ -327,7 +326,6 @@ export const weatherMessages = i18n.define({
       nextHours: "Nächste 12 Stunden",
       dayAhead: ({ now, from, to }: { now: string; from: string; to: string }) =>
         `Jetzt ${now}. Die nächsten Stunden: Temperatur von ${from} bis ${to}, mit der Regenwahrscheinlichkeit jeder Stunde.`,
-      rangeLabel: ({ low, high }: { low: string; high: string }) => `${low} bis ${high}`,
       measuredNow: "Jetzt gemessen",
       stateLabel: "Bundesland",
       invalidKeys: "Ungültige Einstellungen",

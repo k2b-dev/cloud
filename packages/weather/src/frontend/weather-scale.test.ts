@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TEMPERATURE_STOPS, TONE_COLORS, temperatureHex, WEATHER_SURFACES, weatherTone } from "./weather-scale";
+import { RAIN_SOFT, TEMPERATURE_STOPS, TONE_COLORS, temperatureHex, WEATHER_SURFACES, weatherTone } from "./weather-scale";
 
 // WCAG relative luminance and contrast ratio.
 const luminance = (hex: string) => {
@@ -33,8 +33,8 @@ describe("the colours of weather", () => {
     expect(temperatureHex(5, "light")).not.toBe(temperatureHex(10, "light"));
   });
 
-  test("each weather sign keeps 3:1 against the surface, light and dark", () => {
-    for (const [tone, color] of Object.entries(TONE_COLORS))
+  test("each weather sign and the phone's soft rain keep 3:1 against the surface, light and dark", () => {
+    for (const [tone, color] of Object.entries({ ...TONE_COLORS, rainSoft: RAIN_SOFT }))
       for (const theme of ["light", "dark"] as const)
         expect({ tone, theme, enough: contrast(color[theme], WEATHER_SURFACES[theme]) >= 3 }).toEqual({ tone, theme, enough: true });
   });
