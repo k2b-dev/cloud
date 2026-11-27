@@ -41,7 +41,8 @@ setDefaultTimeout(240_000);
 const NOW = new Date().toISOString();
 const DATE_CONTEXT = { locale: "en", timeZone: "UTC" };
 const origin = "https://cloud.example.test";
-const shortId = sql`substr(translate(encode(gen_random_bytes(6), 'base64'), '+/=', 'xyz'), 1, 6)`;
+/** A fresh short ID per row; built on use, because `sql` exists only once the suite started the platform. */
+const shortId = () => sql`substr(translate(encode(gen_random_bytes(6), 'base64'), '+/=', 'xyz'), 1, 6)`;
 const users: string[] = [];
 const spaces: string[] = [];
 
@@ -77,7 +78,7 @@ const seed = async (scale: Scale) => {
   const title = long ? "Prepare the quarterly inventory count for the northern warehouse and agree the dates with every team lead" : "Task";
   const rows = await sql<{ id: string; short_id: string }[]>`
     INSERT INTO spaces.spaces (short_id, name, description, color)
-    SELECT ${shortId}, ${long ? "Customer service north and the regional partner network" : "Space"} || ' ' || n,
+    SELECT ${shortId()}, ${long ? "Customer service north and the regional partner network" : "Space"} || ' ' || n,
       ${long ? "Everything the regional customer service teams plan, track and hand over, including partner escalations and weekly reviews." : "Team work"},
       (ARRAY['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6'])[1 + n % 4]
     FROM generate_series(1, ${scale.spaces}) AS n
@@ -99,14 +100,14 @@ const seed = async (scale: Scale) => {
   // Six columns in the main Space (the last one done), one column in every other Space.
   const columns = await sql<{ id: string }[]>`
     INSERT INTO spaces.columns (short_id, space_id, name, rank, is_done)
-    SELECT ${shortId}, ${main.id}::uuid, name, position * 1024, position = ${COLUMNS.length}
+    SELECT ${shortId()}, ${main.id}::uuid, name, position * 1024, position = ${COLUMNS.length}
     FROM unnest(${toPgTextArray(COLUMNS)}::text[]) WITH ORDINALITY AS c(name, position)
     ORDER BY position
     RETURNING id`;
   await sql`INSERT INTO spaces.columns (short_id, space_id, name, rank)
-    SELECT ${shortId}, id, 'Open', 1024 FROM spaces.spaces WHERE id = ANY(${toPgUuidArray(ids.slice(1))}::uuid[])`;
+    SELECT ${shortId()}, id, 'Open', 1024 FROM spaces.spaces WHERE id = ANY(${toPgUuidArray(ids.slice(1))}::uuid[])`;
   await sql`INSERT INTO spaces.tags (short_id, space_id, name, color)
-    SELECT ${shortId}, ${main.id}::uuid, ${long ? "Partner escalation" : "Tag"} || ' ' || n, '#6366f1' FROM generate_series(1, ${scale.tags}) AS n`;
+    SELECT ${shortId()}, ${main.id}::uuid, ${long ? "Partner escalation" : "Tag"} || ' ' || n, '#6366f1' FROM generate_series(1, ${scale.tags}) AS n`;
   const columnIds = columns.map((column) => column.id);
   // Both automatic board columns, so the board reads eight lists: overdue and blocked tasks gather there.
   await sql`INSERT INTO spaces.virtual_columns (space_id, kind, rank) VALUES (${main.id}::uuid, 'overdue', 512), (${main.id}::uuid, 'blocked', 768)`;
@@ -114,7 +115,7 @@ const seed = async (scale: Scale) => {
   // tasks were finished over the last two weeks.
   await sql`
     INSERT INTO spaces.items (short_id, space_id, column_id, title, priority, deadline, rank, completed_at, created_at, updated_at)
-    SELECT ${shortId}, ${main.id}::uuid, (${toPgUuidArray(columnIds)}::uuid[])[1 + (n - 1) % 6], ${title} || ' ' || n,
+    SELECT ${shortId()}, ${main.id}::uuid, (${toPgUuidArray(columnIds)}::uuid[])[1 + (n - 1) % 6], ${title} || ' ' || n,
       (ARRAY['low', 'medium', 'high', 'urgent', NULL])[1 + n % 5],
       CASE WHEN n % 4 <> 0 THEN ${NOW}::timestamptz + ((n % 21) - 7) * interval '1 day' END,
       n * 1024,
@@ -124,14 +125,14 @@ const seed = async (scale: Scale) => {
   // Events this month in the main Space, three tasks in every other Space.
   await sql`
     INSERT INTO spaces.items (short_id, space_id, column_id, title, starts_at, ends_at, rank)
-    SELECT ${shortId}, ${main.id}::uuid, ${columnIds[1]!}::uuid, ${long ? "Weekly review with the partner network and all regional leads" : "Meeting"} || ' ' || n,
+    SELECT ${shortId()}, ${main.id}::uuid, ${columnIds[1]!}::uuid, ${long ? "Weekly review with the partner network and all regional leads" : "Meeting"} || ' ' || n,
       date_trunc('month', ${NOW}::timestamptz) + (n % 28) * interval '1 day' + (8 + n % 9) * interval '1 hour',
       date_trunc('month', ${NOW}::timestamptz) + (n % 28) * interval '1 day' + (9 + n % 9) * interval '1 hour',
       (100000 + n) * 1024
     FROM generate_series(1, ${scale.events}) AS n`;
   await sql`
     INSERT INTO spaces.items (short_id, space_id, column_id, title, deadline, rank)
-    SELECT ${shortId}, c.space_id, c.id, ${title} || ' ' || n, ${NOW}::timestamptz + (n - 2) * interval '1 day', n * 1024
+    SELECT ${shortId()}, c.space_id, c.id, ${title} || ' ' || n, ${NOW}::timestamptz + (n - 2) * interval '1 day', n * 1024
     FROM spaces.columns c CROSS JOIN generate_series(1, 3) AS n
     WHERE c.space_id = ANY(${toPgUuidArray(ids.slice(1))}::uuid[])`;
   // The reader holds every third task of the main Space, tasks carry tags, and every tenth waits on another.
@@ -148,11 +149,11 @@ const seed = async (scale: Scale) => {
   const [item] = await sql<{ id: string; short_id: string }[]>`
     SELECT id, short_id FROM spaces.items WHERE space_id = ${main.id}::uuid AND rank = 1024`;
   await sql`INSERT INTO spaces.comments (short_id, item_id, user_id, content, created_at)
-    SELECT ${shortId}, ${item!.id}::uuid, ${id}::uuid, ${long ? "The partner confirmed the new delivery window; we still need the signed form before Friday, otherwise the count moves." : "Looks good."} || ' ' || n,
+    SELECT ${shortId()}, ${item!.id}::uuid, ${id}::uuid, ${long ? "The partner confirmed the new delivery window; we still need the signed form before Friday, otherwise the count moves." : "Looks good."} || ' ' || n,
       ${NOW}::timestamptz - n * interval '10 minutes'
     FROM generate_series(1, ${scale.comments}) AS n`;
   await sql`INSERT INTO spaces.item_checklist_entries (short_id, item_id, label, rank)
-    SELECT ${shortId}, ${item!.id}::uuid, 'Step ' || n, n * 1024 FROM generate_series(1, ${long ? 30 : 4}) AS n`;
+    SELECT ${shortId()}, ${item!.id}::uuid, 'Step ' || n, n * 1024 FROM generate_series(1, ${long ? 30 : 4}) AS n`;
   await sql`INSERT INTO spaces.item_links (item_id, url, label)
     SELECT ${item!.id}::uuid, 'https://docs.example.test/handbook/' || n, 'Handbook ' || n FROM generate_series(1, 3) AS n`;
   const cookie = `session_token=${await createTestSession(id)}`;
