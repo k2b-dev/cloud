@@ -3,7 +3,7 @@
  * filter of this list. The declaration in `query.ts` reads the address; the service filters with the person's access.
  */
 import { hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { notebooksService } from "@/service";
@@ -53,7 +53,9 @@ export default ssr<AuthContext>(async (c) => {
   const address = parseNotesAddress(query, url.searchParams);
   const mode = requestedPresentationMode(url.searchParams);
   const sidebarFilter = parseSidebarFilter(url.searchParams);
-  const [list, sidebar] = await Promise.all([
+  const dateConfig = getDateConfig(c);
+  const now = new Date();
+  const [list, sidebar, figures] = await Promise.all([
     notebooksService.pages.list({
       notebookId: notebook.id,
       userId: user.id,
@@ -65,6 +67,7 @@ export default ssr<AuthContext>(async (c) => {
       limit: NOTES_PER_PAGE,
     }),
     loadSidebarWithoutNote({ notebook, userId: user.id, sort: settings.treeSort, locale, filter: sidebarFilter, permission }),
+    notebooksService.figures.notes({ notebookId: notebook.id, timeZone: getTimeZone(c), now }),
   ]);
   const pages = Math.max(1, Math.ceil(list.total / NOTES_PER_PAGE));
   // A deletion or an old link can leave the requested page past the end; open the last page instead.
@@ -83,7 +86,7 @@ export default ssr<AuthContext>(async (c) => {
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
     tags,
     workspaceCursor,
-    dateConfig: getDateConfig(c),
+    dateConfig,
     sidebarFilter,
     presentationMode: mode,
   };
@@ -118,10 +121,11 @@ export default ssr<AuthContext>(async (c) => {
         pages={pages}
         total={list.total}
         items={list.items}
+        figures={figures}
         ignored={ignored}
         mode={mode}
         graphBack={c.req.path + url.search}
-        now={new Date().toISOString()}
+        now={now.toISOString()}
       />
     </Layout>
   );

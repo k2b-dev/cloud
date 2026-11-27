@@ -2,24 +2,26 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import {
+  Avatar,
   Bar,
   Button,
+  Cells,
   Chip,
-  Empty,
   FilterBar,
+  Inline,
   Input,
-  List,
   ListOrder,
   Notice,
   Pane,
-  Row,
-  StatusRow,
+  type Person,
+  Table,
   Tabs,
   Text,
   Workspace,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import type { PageListEntry } from "../../../service/page-list";
+import type { NotesFigures } from "../../../service/notebook-figures";
+import type { PageEditor, PageListEntry } from "../../../service/page-list";
 import { usePageSwap } from "../../lib/page-swap";
 import { buildNoteUrl } from "../../params";
 import NotebookSidebarBody from "../_components/sidebar/NotebookSidebarBody";
@@ -35,6 +37,8 @@ export type NotesListScreenProps = {
   pages: number;
   total: number;
   items: PageListEntry[];
+  /** The notebook's key figures for the head of the list: changes per day, notes, the last change. */
+  figures: NotesFigures;
   /** Parameters of the address that did not apply, already worded. */
   ignored: string | null;
   /** The presentation the list was opened in (`book` for readers); links to notes keep it. */
@@ -45,10 +49,20 @@ export type NotesListScreenProps = {
   now: string;
 };
 
+/** A face for a person who changed something: their picture where they have one, else their initials. */
+const personOf = (editor: { kind: string; id: string | null; displayName?: string; name?: string; avatarHash: string | null }): Person => ({
+  name: editor.name ?? editor.displayName ?? "",
+  image:
+    editor.kind === "user" && editor.id && editor.avatarHash
+      ? `/api/accounts/users/${encodeURIComponent(editor.id)}/avatar?rev=${encodeURIComponent(editor.avatarHash)}`
+      : undefined,
+});
+
 /**
- * The notebook's notes as one list on v2: all of them or the favorites (views in the head), a tag and favorites as
- * statements, the search in the head, the order in words. It replaces the tag page; every change shows the list again
- * from the server, which filters it with the person's access.
+ * The notebook's notes as one table on v2: all of them or the favorites (views in the head), a tag and favorites as
+ * statements, the search in the head, the order in words. Above it the notebook's key figures: how much changed in
+ * the last days and by whom, its notes, its last change. Each row shows who changed the note lately. It replaces the
+ * tag page; every change shows the list again from the server, which filters it with the person's access.
  */
 export default function NotesListScreen(props: NotesListScreenProps) {
   const locale = useLocale();
@@ -59,28 +73,27 @@ export default function NotesListScreen(props: NotesListScreenProps) {
   const query = createMemo(() => notesQuery(locale(), props.ctx.tags));
   const [state, setState] = createSignal<NotesState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
-  const [refreshing, setRefreshing] = createSignal(false);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const href = (next: NotesState, page = 1) => notesHref(notebookId(), query(), next, page, props.mode);
   const favoritesView = () => notesViews(query()).favorites;
   const changed = () => query().serialize(state()).toString() !== query().serialize(query().reset()).toString();
+  const days = () => props.figures.days.length;
 
   const change = (next: NotesState) => {
     setState(next);
-    setRefreshing(true);
     void showChanges();
   };
   const search = (text: string) => {
     const next = query().set(state(), "q", text.trim());
-    if (next) {
-      setRefreshing(true);
-      void openPage(href(next));
-    }
+    if (next) void openPage(href(next));
   };
   const when = (at: string) => dates.formatDateTimeRelative(at, { ...props.ctx.dateConfig, base: props.now });
   const emptyText = () =>
     changed() || state().search ? t().noMatches : state().view === "favorites" ? t().noFavoritesYet : t().noNotesYet;
   const canWrite = sidebar.canWrite;
+  const timeOf = (note: PageListEntry) => when(state().sort.field === "created" ? note.createdAt : note.updatedAt);
+  const tagHref = (tag: string) => href(query().set(query().reset(), "tag", tag) ?? query().reset());
+  const editorsLabel = (editors: PageEditor[]) => t().changedByNames({ names: editors.map((editor) => editor.name).join(", ") });
 
   return (
     <>
@@ -141,17 +154,53 @@ export default function NotesListScreen(props: NotesListScreenProps) {
           scrollKey={`notebooks-notes-${notebookId()}`}
           status={
             <>
+              {/* k2b-ui gap: hero band + tinted object head (DP) – the notebook's hero figure with its real trend and
+                  its key facts stand in Cells until the band (figure 30, the trend as a chart) exists. */}
+              <Cells>
+                <Cells.Cell
+                  icon="pencil"
+                  label={t().changes({ days: days() })}
+                  value={number(props.figures.changes)}
+                  meta={props.figures.people > 0 ? t().byPeople({ count: number(props.figures.people) }) : t().noChangesYet}
+                  trend={{
+                    values: props.figures.days,
+                    label: t().changesTrend({
+                      days: days(),
+                      total: number(props.figures.changes),
+                      today: number(props.figures.days.at(-1) ?? 0),
+                    }),
+                  }}
+                />
+                <Cells.Cell
+                  icon="notes"
+                  label={t().notes}
+                  value={number(props.figures.notes)}
+                  meta={t().newNotes({ count: number(props.figures.newNotes), days: days() })}
+                />
+                <Cells.Cell
+                  icon="clock"
+                  label={t().lastChange}
+                  // the note that changed last, as plain words so a long title ends in "…"; the cell opens it
+                  value={props.figures.latest?.note?.title ?? (props.figures.latest ? t().deletedNote : t().nothingChanged)}
+                  href={
+                    props.figures.latest?.note
+                      ? buildNoteUrl(notebookId(), props.figures.latest.note.shortId, props.mode === "book" ? "book" : undefined)
+                      : undefined
+                  }
+                  meta={
+                    props.figures.latest
+                      ? t().byWhom({ name: props.figures.latest.actor.displayName, when: when(props.figures.latest.at) })
+                      : undefined
+                  }
+                />
+              </Cells>
               <FilterBar
                 query={query()}
                 state={state()}
                 onChange={change}
                 icons={{ favorite: "star", tag: "hash" }}
                 results={t().notesCount({ count: number(props.total) })}
-              />
-              <StatusRow
-                lead={t().notesCount({ count: number(props.total) })}
-                loading={refreshing()}
-                filters={<ListOrder query={query()} state={state()} onChange={change} />}
+                end={<ListOrder query={query()} state={state()} onChange={change} />}
               />
             </>
           }
@@ -163,48 +212,70 @@ export default function NotesListScreen(props: NotesListScreenProps) {
               </Notice>
             )}
           </Show>
-          <Show
-            when={props.items.length > 0}
-            fallback={
-              changed() || state().search ? (
-                <Empty
-                  icon="filter-off"
-                  text={state().filters.tag ? `${emptyText()} ${t().tagIndexMayBeStale}` : emptyText()}
-                  action={{
-                    label: t().resetFilters,
+          <Table
+            label={t().notes}
+            rows={props.items}
+            rowKey={(note) => note.shortId}
+            open={(note) => ({ href: buildNoteUrl(notebookId(), note.shortId, props.mode === "book" ? "book" : undefined) })}
+            empty={
+              changed() || state().search
+                ? {
                     icon: "filter-off",
-                    href: notesHref(notebookId(), query(), query().reset(), 1, props.mode),
-                  }}
-                />
-              ) : (
-                <Empty icon={state().view === "favorites" ? "star" : "file-text"} text={emptyText()} />
-              )
+                    text: state().filters.tag ? `${emptyText()} ${t().tagIndexMayBeStale}` : emptyText(),
+                    action: {
+                      label: t().resetFilters,
+                      icon: "filter-off",
+                      href: notesHref(notebookId(), query(), query().reset(), 1, props.mode),
+                    },
+                  }
+                : { icon: state().view === "favorites" ? "star" : "file-text", text: emptyText() }
             }
-          >
-            <List label={t().notes}>
-              <For each={props.items}>
-                {(note) => (
-                  <Row
-                    icon={note.lockedAt ? "lock" : "file-text"}
-                    lines={note.preview ? [note.title, note.preview] : [note.title]}
-                    time={when(state().sort.field === "created" ? note.createdAt : note.updatedAt)}
-                    marks={
-                      note.tags.length > 0 ? (
-                        <For each={note.tags.slice(0, 3)}>
-                          {(tag) => (
-                            <Chip tag href={href(query().set(query().reset(), "tag", tag) ?? query().reset())}>
-                              {`#${tag}`}
-                            </Chip>
-                          )}
-                        </For>
-                      ) : undefined
-                    }
-                    href={buildNoteUrl(notebookId(), note.shortId, props.mode === "book" ? "book" : undefined)}
-                  />
-                )}
-              </For>
-            </List>
-          </Show>
+            phone={(note) => ({
+              mark: { icon: note.lockedAt ? "lock" : "file-text", label: note.lockedAt ? t().locked : undefined },
+              lines: [note.title, [...note.tags.slice(0, 2).map((tag) => `#${tag}`), note.editors[0]?.name].filter(Boolean).join(" · ")],
+              time: timeOf(note),
+            })}
+            columns={[
+              {
+                title: t().note,
+                // sized columns keep every row one line: long words end in "…" (B: rows keep one height)
+                width: { min: 180, default: 260 },
+                mark: (note) => ({ icon: note.lockedAt ? "lock" : "file-text", label: note.lockedAt ? t().locked : undefined }),
+                cell: (note) => note.title,
+              },
+              {
+                title: t().tags,
+                width: { min: 120, default: 170 },
+                drop: true,
+                cell: (note) => (
+                  <Inline>
+                    <For each={note.tags.slice(0, 2)}>
+                      {(tag) => (
+                        <Chip tag href={tagHref(tag)}>
+                          {`#${tag}`}
+                        </Chip>
+                      )}
+                    </For>
+                  </Inline>
+                ),
+              },
+              {
+                title: state().sort.field === "created" ? t().created : t().lastChanged,
+                width: { min: 110, default: 130 },
+                align: "end",
+                cell: (note) => timeOf(note),
+              },
+              {
+                // the data column, last: it takes the rest of a wide row, so the facts stay together on the left
+                // instead of the row stretching between them (B: large screens never stretch rows)
+                title: t().changedBy,
+                drop: true,
+                // who changed the note lately, the last one first
+                cell: (note) =>
+                  note.editors.length > 0 ? <Avatar.Stack people={note.editors.map(personOf)} label={editorsLabel(note.editors)} /> : "",
+              },
+            ]}
+          />
           <Show when={props.pages > 1}>
             <Bar
               start={<Text type="meta">{t().pageOf({ page: props.page, pages: props.pages })}</Text>}
