@@ -41,6 +41,28 @@ export type WebhookQuerySource = {
   requestId: null;
 };
 
+/**
+ * A point in time as ISO text. The database hands out dates, and the last request as Postgres text
+ * ("2026-11-26 09:42:00.123+00"), which not every browser reads; both renders format the same ISO text.
+ */
+export const instant = (value: unknown): string => {
+  if (value instanceof Date) return value.toISOString();
+  const text = String(value)
+    .trim()
+    .replace(" ", "T")
+    .replace(/([+-]\d\d)$/, "$1:00");
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
+};
+
+export const normalizeEndpoint = (endpoint: Endpoint): Endpoint => ({
+  ...endpoint,
+  createdAt: instant(endpoint.createdAt),
+  lastRequestAt: endpoint.lastRequestAt === null ? null : instant(endpoint.lastRequestAt),
+});
+
+export const normalizeLog = (log: WebhookLog): WebhookLog => ({ ...log, createdAt: instant(log.createdAt) });
+
 export const assertOk = async (response: Pick<Response, "json" | "ok" | "status">): Promise<void> => {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
@@ -66,18 +88,27 @@ const sameWebhookSource = (left: WebhookQuerySource, right: WebhookQuerySource) 
   left.query === right.query &&
   left.requestId === right.requestId;
 
-export const createWebhookQueries = (source: Accessor<WebhookQuerySource>) => {
+/**
+ * The endpoints and the requests of the current address. `initial` is what the server loaded for the first address,
+ * so the first picture has its rows and nothing loads again until the address changes.
+ */
+export const createWebhookQueries = (
+  source: Accessor<WebhookQuerySource>,
+  initial?: { source: WebhookQuerySource; endpoints: Endpoint[]; logs: WebhookLog[] },
+) => {
   const endpoints = query.create({
     source: () => "endpoints",
+    initial: initial && { source: "endpoints", data: initial.endpoints },
     load: async (_source, { abortSignal }) => {
       const response = await apiClient.webhooks.endpoints.$get({}, { init: { signal: abortSignal } });
       await assertOk(response);
-      return ((await response.json()) as { items: Endpoint[] }).items;
+      return ((await response.json()) as { items: Endpoint[] }).items.map(normalizeEndpoint);
     },
   });
   const logs = query.create({
     source,
     isSameSource: sameWebhookSource,
+    initial: initial && { source: initial.source, data: { source: initial.source, items: initial.logs } },
     load: async (state, { abortSignal }) => {
       const logQuery = buildLogQuery(state);
       const response =
@@ -85,7 +116,7 @@ export const createWebhookQueries = (source: Accessor<WebhookQuerySource>) => {
           ? await apiClient.webhooks["incoming-logs"].$get({ query: logQuery }, { init: { signal: abortSignal } })
           : await apiClient.webhooks["outgoing-logs"].$get({ query: logQuery }, { init: { signal: abortSignal } });
       await assertOk(response);
-      return { source: state, items: ((await response.json()) as { items: WebhookLog[] }).items };
+      return { source: state, items: ((await response.json()) as { items: WebhookLog[] }).items.map(normalizeLog) };
     },
   });
   const currentLogs = () => {

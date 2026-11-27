@@ -33,6 +33,10 @@ export default function ToolsScreen(props: {
   end?: JSX.Element;
   /** The page's main deed, mirrored for the phone. */
   primary?: Action;
+  /** The views of a tool with more than one (`Tabs`); they stand at the head's start in place of the path. */
+  views?: JSX.Element;
+  /** The width of a detail that opens beside the tool's list, while one is open. */
+  detail?: number;
   children: JSX.Element;
 }) {
   const locale = useLocale();
@@ -74,13 +78,15 @@ export default function ToolsScreen(props: {
         head={
           <Bar
             start={
-              // the overview is named by the sidebar's current entry; a tool says where it stands
-              open() ? <Path label={t().appName} items={[{ label: t().appName, href: "/tools" }, { label: open()!.name }]} /> : undefined
+              // a tool's own views (tabs) or where it stands; the overview is named by the sidebar's current entry
+              props.views ??
+              (open() ? <Path label={t().appName} items={[{ label: t().appName, href: "/tools" }, { label: open()!.name }]} /> : undefined)
             }
             end={props.end}
           />
         }
         primary={props.primary}
+        detail={props.detail}
       >
         {props.children}
       </Workspace>

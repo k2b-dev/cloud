@@ -221,11 +221,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Data: client type color; the chip names the type (public or confidential).",
   },
   {
-    file: "packages/tools/src/frontend/tools/WebhookTester.island.tsx",
-    subject: 'if (method === "GET") return "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";',
-    reason: "Data: HTTP method color; the chip names the method.",
-  },
-  {
     file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
     subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"',
     reason: "Control: drop target under a dragged card.",

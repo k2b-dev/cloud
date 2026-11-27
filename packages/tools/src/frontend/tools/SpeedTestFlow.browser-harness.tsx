@@ -103,22 +103,14 @@ document.documentElement.lang = lang;
 render(
   () => (
     <LocaleProvider locale={lang}>
-      <main class="mx-auto w-full max-w-5xl p-4 flex flex-col gap-4">
-        <header class="tools-tool-header">
-          <h1 class="text-xl font-semibold">{lang === "de" ? "Internet-Speedtest" : "Internet Speed Test"}</h1>
-        </header>
-        <SpeedTest
-          server="https://speedtest.k2b.dev"
-          enabled={scenario !== "disabled"}
-          initialCliVariant={scenario === "public" ? "node" : undefined}
-        />
-      </main>
+      <SpeedTest server="https://speedtest.k2b.dev" enabled={scenario !== "disabled"} />
     </LocaleProvider>
   ),
-  document.getElementById("root")!,
+  document.getElementById("app")!,
 );
-if (!["idle", "offline", "disabled", "public"].includes(scenario))
-  requestAnimationFrame(() => {
-    document.querySelector<HTMLButtonElement>(".tools-speedtest-start")?.click();
-    if (scenario === "cancel") setTimeout(() => document.querySelector<HTMLButtonElement>(".tools-speedtest-start")?.click(), 500);
-  });
+// The start button is the pane's one button with the start word; the scenarios that measure press it at once.
+const start = () =>
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    /^(Test starten|Start test)$/.test(button.textContent!.trim()),
+  );
+if (!["idle", "offline", "disabled"].includes(scenario)) requestAnimationFrame(() => start()?.click());
