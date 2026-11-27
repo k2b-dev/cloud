@@ -364,8 +364,8 @@ for (const column of [900, 760, 640])
     });
   });
 
-test("a selection with six deeds shows those that fit in their order and the rest in its '…', its count in 14 px 600, and nothing leaves its bar (Files v3)", async () => {
-  for (const width of [1440, 1024, 390])
+for (const width of [1440, 1024, 390])
+  test(`a selection with six deeds shows those that fit in their order and the rest in its '…', its count in 14 px 600, and nothing leaves its bar at ${width} px (Files v3)`, async () => {
     await withPage(
       "selection",
       async (page) => {
@@ -414,7 +414,7 @@ test("a selection with six deeds shows those that fit in their order and the res
       },
       width,
     );
-});
+  });
 
 test("a selection takes the bar's place at the same height, so the list does not move", async () => {
   let before = 0;
