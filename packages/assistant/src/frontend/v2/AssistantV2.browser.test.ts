@@ -671,6 +671,11 @@ describe("Assistant on v2", () => {
         await settled(page);
         await shoot(page, `${view.name}-apps`);
         expect(await pane.locator('[data-k2-part="StatusRow"]').textContent()).toContain("Läufe heute");
+        // A heading is never cut: the hero's words stand whole beside the exception chips at every width.
+        const lead = await pane
+          .locator(".k2-status-lead")
+          .evaluate((element) => ({ text: element.textContent, scroll: element.scrollWidth, width: element.clientWidth }));
+        expect(lead.scroll).toBeLessThanOrEqual(lead.width);
         if (view === phone) {
           // On the phone the shell's bar holds the one search; New chat floats as the list's main action.
           expect(await page.locator(".k2-fab:visible").textContent()).toContain("Neuer Chat");

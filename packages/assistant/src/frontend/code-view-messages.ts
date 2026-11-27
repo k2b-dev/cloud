@@ -76,10 +76,8 @@ export const codeViewMessages = i18n.define({
       appsFactApps: "apps",
       appsColumnName: "Name",
       appsColumnNext: "Next run",
-      appsExceptionNeedsYou: ({ count, name }: { count: number; name: string }) =>
-        count === 1 ? `1 needs you · ${name}` : `${count} need you · ${name} …`,
-      appsExceptionRunning: ({ count, name }: { count: number; name: string }) =>
-        count === 1 ? `1 running · ${name}` : `${count} running · ${name} …`,
+      appsExceptionNeedsYou: ({ count }: { count: number }) => (count === 1 ? "1 needs you" : `${count} need you`),
+      appsExceptionRunning: ({ count }: { count: number }) => `${count} running`,
       appsExceptionPaused: ({ count }: { count: number }) => `${count} paused`,
       appsColumnState: "State",
       appsColumnWhen: "When",
@@ -152,8 +150,8 @@ export const codeViewMessages = i18n.define({
       appsFactApps: "Apps",
       appsColumnName: "Name",
       appsColumnNext: "Nächster Lauf",
-      appsExceptionNeedsYou: ({ count, name }) => (count === 1 ? `1 braucht dich · ${name}` : `${count} brauchen dich · ${name} …`),
-      appsExceptionRunning: ({ count, name }) => (count === 1 ? `1 läuft · ${name}` : `${count} laufen · ${name} …`),
+      appsExceptionNeedsYou: ({ count }) => (count === 1 ? "1 braucht dich" : `${count} brauchen dich`),
+      appsExceptionRunning: ({ count }) => (count === 1 ? "1 läuft" : `${count} laufen`),
       appsExceptionPaused: ({ count }) => `${count} pausiert`,
       appsColumnState: "Zustand",
       appsColumnWhen: "Wann",

@@ -75,14 +75,16 @@ export default function AssistantAppsV2(props: Omit<CodeOverviewProps, "onCreate
             facts={[{ value: o.counts().all, after: t().appsFactApps }]}
             filters={
               <>
-                {/* The exceptions, never the norm: what needs the person and what is paused filter the list too. */}
+                {/* The exceptions, never the norm: what needs the person and what is paused filter the list too. They
+                    say only how many, so the hero's words stay whole beside them at 1024 (a heading is never cut);
+                    the filter names the apps. */}
                 <Show when={needingYou().length > 0 || o.filter() === "attention"}>
                   <Chip status="bad" pressed={o.filter() === "attention"} onClick={() => toggle("attention")}>
-                    {t().appsExceptionNeedsYou({ count: needingYou().length, name: needingYou()[0]?.title ?? "" })}
+                    {t().appsExceptionNeedsYou({ count: needingYou().length })}
                   </Chip>
                 </Show>
                 <Show when={running().length > 0}>
-                  <Chip ai>{t().appsExceptionRunning({ count: running().length, name: running()[0]!.title })}</Chip>
+                  <Chip ai>{t().appsExceptionRunning({ count: running().length })}</Chip>
                 </Show>
                 <Show when={o.counts().paused > 0 || o.filter() === "paused"}>
                   <Chip status="warn" pressed={o.filter() === "paused"} onClick={() => toggle("paused")}>

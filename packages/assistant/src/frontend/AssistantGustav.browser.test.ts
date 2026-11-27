@@ -796,7 +796,7 @@ describe("Gustav", () => {
           .waitFor({ state: "attached" });
         const hero = await list.locator('[data-k2-part="StatusRow"]').textContent();
         expect(hero).toContain("Läufe heute");
-        expect(hero).toContain("1 braucht dich · Stoffpreise prüfen");
+        expect(hero).toContain("1 braucht dich");
         // Explanations stand in the empty state only.
         expect(await list.getByText("Dein Code läuft als du, mit deinen Rechten und nicht mehr.").count()).toBe(0);
         // The schedule is the second line of the name; the phone shows when the app runs next instead.
