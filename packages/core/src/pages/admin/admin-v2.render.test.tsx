@@ -124,7 +124,12 @@ describe("v2 admin screens on the server", () => {
   });
   test("announcements list their entries with state and times; the address opens one as a form beside the list", () => {
     const list = render(() =>
-      createComponent(AnnouncementsScreen, { nav: adminNavFixture("/admin/announcements"), rows: [announcement], open: null }),
+      createComponent(AnnouncementsScreen, {
+        nav: adminNavFixture("/admin/announcements"),
+        rows: [announcement],
+        open: null,
+        timeZone: "Europe/Berlin",
+      }),
     );
     expect(list.text).toContain("Wartung am Samstag");
     expect(list.text).toContain("20.11.2026, 09:00");
@@ -132,12 +137,22 @@ describe("v2 admin screens on the server", () => {
     expect(list.body.querySelector('[data-k2-part="Field"]')).toBeNull();
     expect(loaders(list.body)).toBe(0);
     const open = render(() =>
-      createComponent(AnnouncementsScreen, { nav: adminNavFixture("/admin/announcements"), rows: [announcement], open: announcement.id }),
+      createComponent(AnnouncementsScreen, {
+        nav: adminNavFixture("/admin/announcements"),
+        rows: [announcement],
+        open: announcement.id,
+        timeZone: "Europe/Berlin",
+      }),
     );
     expect(open.body.querySelector('input[value="Wartung am Samstag"]')).not.toBeNull();
     expect(open.text).toContain("Löschen");
     const empty = render(() =>
-      createComponent(AnnouncementsScreen, { nav: adminNavFixture("/admin/announcements"), rows: [], open: "new" }),
+      createComponent(AnnouncementsScreen, {
+        nav: adminNavFixture("/admin/announcements"),
+        rows: [],
+        open: "new",
+        timeZone: "Europe/Berlin",
+      }),
     );
     expect(empty.text).toContain("Noch keine Ankündigungen");
     expect(empty.text).toContain("Erstellen");

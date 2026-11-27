@@ -255,6 +255,7 @@ export async function adminV2BrowserFixture() {
       nav: adminNavFixture("/admin/announcements"),
       rows,
       open: requested === "new" || rows.some((row) => row.id === requested) ? requested : null,
+      timeZone: "Europe/Berlin",
     };
     return respond(c, "announcements", props, () => createComponent(AnnouncementsScreen, props));
   });

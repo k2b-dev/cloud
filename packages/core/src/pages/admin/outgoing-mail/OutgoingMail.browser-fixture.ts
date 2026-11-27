@@ -31,6 +31,7 @@ const profile = (key: string, name: string, extra: Partial<AdminMailProfile> = {
   updatedAt: "2026-10-01T08:00:00.000Z",
   updatedBy: null,
   appCount: 2,
+  usedLast24h: 312,
   ...extra,
 });
 const app = (appId: string, name: string, extra: Partial<AdminMailApp> = {}): AdminMailApp => ({

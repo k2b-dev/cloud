@@ -105,6 +105,25 @@ test("a new announcement needs a title and text, then saves; deleting one asks f
   expect(errors).toEqual([]);
 });
 
+test("an announcement's moments are picked in the calendar in the reader's zone and saved as instants", async () => {
+  await goto("/admin/announcements?entry=aaaaaaaa-0000-4000-8000-000000000001");
+  const main = page.locator("main");
+  // the moment shows in Berlin's wall time: 08:00 UTC is 09:00
+  await main.getByRole("button", { name: /20\. Nov\. 2026, 09:00/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Veröffentlichung" });
+  await dialog.locator('[data-value="2026-12-01"]').click();
+  await dialog.getByRole("group", { name: "Uhrzeit" }).getByRole("spinbutton", { name: "Stunde" }).focus();
+  await page.keyboard.type("0730");
+  await dialog.getByRole("button", { name: "Übernehmen", exact: true }).click();
+  await main.getByRole("button", { name: /Dez\.? 2026, 07:30/ }).waitFor();
+  await button("Speichern").click();
+  await page.waitForFunction(() => !location.search.includes("entry="));
+  expect(sent("PATCH", "/api/admin/core/announcements/aaaaaaaa-0000-4000-8000-000000000001")[0]?.body).toMatchObject({
+    publishedAt: "2026-12-01T06:30:00.000Z",
+  });
+  expect(errors).toEqual([]);
+});
+
 test("a shortcut moves down and saves the whole bar with its revision", async () => {
   await goto("/admin/apps/navigation?shortcut=bbbbbbbb-0000-4000-8000-000000000001");
   await page.locator("main").getByRole("button", { name: "Nach unten" }).click();
