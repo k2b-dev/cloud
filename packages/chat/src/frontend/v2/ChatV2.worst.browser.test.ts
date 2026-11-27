@@ -176,6 +176,9 @@ const intact = async (page: Page, width: number, name: string) => {
   expect({ name, width, wide }).toEqual({ name, width, wide: [] });
 };
 
+/** The open page beside the list (on the phone the page itself). */
+const detail = (page: Page) => page.locator('[data-k2-part="Pane"][data-detail]');
+
 const screens = (): readonly { name: string; path: () => string; ready: (page: Page) => Promise<unknown> }[] => [
   { name: "11-worst-list", path: () => "/app/chat", ready: (page) => page.getByText("Projektabstimmung").first().waitFor() },
   {
@@ -198,8 +201,12 @@ const screens = (): readonly { name: string; path: () => string; ready: (page: P
     path: () => `/app/chat/c/${ids.many}`,
     ready: (page) => page.locator(".chat-conversation__composer").waitFor(),
   },
-  { name: "16-worst-for-you", path: () => "/app/chat/for-you", ready: (page) => page.getByText("ليلى").first().waitFor() },
-  { name: "17-worst-channels", path: () => "/app/chat/channels", ready: (page) => page.getByText("Geschäftsführung").first().waitFor() },
+  { name: "16-worst-for-you", path: () => "/app/chat/for-you", ready: (page) => detail(page).getByText("ليلى").first().waitFor() },
+  {
+    name: "17-worst-channels",
+    path: () => "/app/chat/channels",
+    ready: (page) => detail(page).getByText("Geschäftsführung").first().waitFor(),
+  },
   {
     name: "18-worst-threads",
     path: () => `/app/chat/c/${ids.threads}/threads`,
