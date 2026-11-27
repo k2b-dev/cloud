@@ -35,7 +35,11 @@ export function Demo() {
       <Pane label="Pfade">
         <Bar start={<Path label="Ort lang" items={[{ label: space, href: "#space" }, { label: "Space-Einstellungen" }]} />} />
         <Bar start={<Path label="Ort tief" items={deep} />} />
-        <Bar start={<Path label="Seite lang 3" items={[{ label: "Spaces", href: "#spaces" }, { label: space, href: "#space" }, { label: page }]} />} />
+        <Bar
+          start={
+            <Path label="Seite lang 3" items={[{ label: "Spaces", href: "#spaces" }, { label: space, href: "#space" }, { label: page }]} />
+          }
+        />
         <Bar start={<Path label="Seite lang 5" items={[...deep.slice(0, 4), { label: page }]} />} />
         <Bar
           start={

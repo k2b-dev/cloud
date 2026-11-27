@@ -431,15 +431,15 @@ export const Path = (props: PathProps) => {
   const t = useUiMessages();
   const [level, setLevel] = createSignal<PathFold>(untrack(() => props.items.length) >= 4 ? 1 : 0);
   const last = () => props.items.length - 1;
-  const folds = (index: number, at: PathFold = level()) =>
-    index < last() && (at === 2 || (at === 1 && index > 0 && index < last() - 1));
+  const folds = (index: number, at: PathFold = level()) => index < last() && (at === 2 || (at === 1 && index > 0 && index < last() - 1));
   let nav: HTMLElement | undefined;
   onMount(() => {
     if (!nav) return;
-    const width = (length: string) => {
+    // a length as it lays out in the type of the element it is for
+    const width = (length: string, within: HTMLElement) => {
       const probe = document.createElement("span");
       probe.style.cssText = `position:absolute;visibility:hidden;width:${length}`;
-      nav?.append(probe);
+      within.append(probe);
       const found = probe.offsetWidth;
       probe.remove();
       return found;
@@ -449,11 +449,11 @@ export const Path = (props: PathProps) => {
       const places = [...nav.querySelectorAll<HTMLElement>(":scope > .k2-path-step")];
       const current = nav.querySelector<HTMLElement>(":scope > b");
       if (places.length === 0 || !current) return setLevel(0);
-      // each place at its least (its own width or 12 characters), the page at its own (or 16 characters, beyond which
-      // it shortens)
-      const cap = width("12ch");
+      // each place at its least (its own width or 12 characters), the page at its own or the start's least, beyond which
+      // it shortens (`--k2-start-least`, the same least the bar's fold gives the start)
+      const cap = width("12ch", places[0]!);
       const least = places.map((place) => Math.min(place.scrollWidth, cap));
-      const page = Math.min(current.scrollWidth, width("16ch"));
+      const page = Math.min(current.scrollWidth, width("var(--k2-start-least)", current));
       const more = nav.querySelector<HTMLElement>(":scope > .k2-path-fold")?.scrollWidth ?? 0;
       const chevron = current.previousElementSibling instanceof HTMLElement ? current.previousElementSibling.offsetWidth : 0;
       const step = chevron + 2 * (Number.parseFloat(getComputedStyle(nav).columnGap) || 0);

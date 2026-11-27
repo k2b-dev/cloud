@@ -95,6 +95,9 @@
   --k2-h-control: 36px;
   --k2-h-control-small: 28px;
 
+  /* the least a bar's start gives way to: the name of its open page or item at its shortest (Path, the bar's fold) */
+  --k2-start-least: 16ch;
+
   /* default column widths */
   --k2-w-side: 248px;
   --k2-w-detail: 380px;
@@ -2982,7 +2985,8 @@
   display: inline-flex;
   flex: none;
 }
-/* While #4392's fold measures a bar, a path counts at its least: "…", the chevron and its page, at most 16 characters.
+/* While #4392's fold measures a bar, a path counts at its least: "…", the chevron and its page, at most
+   `--k2-start-least`.
    The end folds until that least has room, and the path folds the rest itself. */
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :is(.k2-path-step, .k2-icon:not(:has(+ b))) {
   display: none;
@@ -2993,7 +2997,7 @@
   visibility: visible;
 }
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > b {
-  max-width: 16ch;
+  max-width: var(--k2-start-least);
 }
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {
