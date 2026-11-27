@@ -133,4 +133,25 @@ suite("overview reads across the reachable Spaces", () => {
     expect(await loadSpacesSidebar({ userId: nobody, dateConfig })).toMatchObject({ spaces: [], myWorkCount: 0 });
     expect((await activity.list({ subject: { type: "user", userId: nobody } })).items).toEqual([]);
   });
+
+  test("a Space-bound account reads activity only of its own Space, also when the caller names no binding", async () => {
+    // Bound to "Direct", with grants on "Direct" and on a second Space: the binding, not the grants, limits its reach.
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+      VALUES ('Reach bound account', 'resource_bound', 'spaces', 'space', ${direct.id}) RETURNING id`;
+    const subject = { type: "service_account" as const, serviceAccountId: account!.id };
+    const [other] = await sql<{ id: string }[]>`INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, 'Bound other') RETURNING id`;
+    await sql`INSERT INTO spaces.activity_events (space_id, actor_kind, actor_id, action, created_at, last_occurred_at)
+      VALUES (${other!.id}::uuid, 'user', ${reader}::uuid, 'space.updated', '2026-11-27T10:00:00Z', '2026-11-27T10:00:00Z')`;
+    for (const spaceId of [direct.id, other!.id]) {
+      const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access (service_account_id, permission)
+        VALUES (${account!.id}::uuid, 'read') RETURNING id`;
+      await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${spaceId}::uuid, ${grant!.id}::uuid)`;
+    }
+    // A path that does not pass the binding (no getScopedSpaceAccess in front of it) reads nothing across Spaces.
+    expect((await activity.list({ subject })).items).toEqual([]);
+    // With its binding it reads its own Space alone.
+    const bound = await activity.list({ subject, boundSpaceId: direct.id });
+    expect(bound.items.length).toBeGreaterThan(0);
+    expect(new Set(bound.items.map((entry) => entry.space.id))).toEqual(new Set([direct.id]));
+  });
 });

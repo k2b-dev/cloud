@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { buildSpacePrincipalCondition, listReachableSpaceIds } from "./access";
+import { buildSpacePrincipalCondition, listReachableSpaceIds, mayReadAcrossSpaces } from "./access";
 
 type SqlExecutor = typeof sql;
 
@@ -143,6 +143,11 @@ export const list = async (params: {
   /** The Spaces the subject reaches, when the request resolved them already. */
   spaceIds?: string[];
 }): Promise<SpaceActivityPage> => {
+  // A read across Spaces checks the subject's reach itself, as every other cross-Space read does: a Space-bound
+  // account reads only with its binding, whatever path calls this.
+  if (!params.spaceId && !params.itemId && !(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) {
+    return { items: [], nextCursor: null };
+  }
   const cursor = decodeActivityCursor(params.cursor);
   const limit = Math.min(Math.max(params.limit ?? 30, 1), 100);
   // A read across Spaces filters by the reachable ids, so it stays on idx_spaces_activity_space;
