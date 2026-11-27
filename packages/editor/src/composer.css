@@ -18,11 +18,52 @@
   font: var(--k2-t-row);
   color: var(--k2-text);
 }
+/* Long names never break the head (break-ui 25.11.): "To" and its symbol keep their size, the recipients take the
+   room that is left and are cut with "…" at rest; the end (sender, Cc, Bcc) takes at most half of the head, and the
+   sender's name is cut there before anything leaves the card. */
+.k2-ui .k2-composer-to {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.k2-ui .k2-composer-to > * {
+  flex: none;
+  white-space: nowrap;
+}
+.k2-ui .k2-composer-to > :last-child:not(:first-child) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.k2-ui .k2-composer-to > .k2-text:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .k2-ui .k2-composer-head-end {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
   margin-left: auto;
+}
+.k2-ui .k2-composer-head-end > * {
+  flex: none;
+  white-space: nowrap;
+}
+/* what gives way: the sender (a menu button or its words) and what writes along; Cc and Bcc stay whole */
+.k2-ui .k2-composer-head-end > :is(.k2-btn[data-menu], .k2-text, [role="status"]) {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-composer-head-end > .k2-btn[data-menu] > .k2-btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* body text in its role (14/20); the mockup's 22 px reading line is not one of the four roles */
 .k2-ui .k2-composer-write {

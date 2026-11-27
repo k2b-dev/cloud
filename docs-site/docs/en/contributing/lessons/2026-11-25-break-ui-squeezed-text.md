@@ -1,0 +1,6 @@
+### Worst-case text pressed v2 parts to nothing, and the measure passed it
+
+- **What happened:** The break-ui test of the Mail v2 pilot fed long tags, names and addresses into the screens. A row's sender and preview were 0 px wide beside its marks, "Vorschlag" and the composer's recipient stood one letter per line, and the open view's tab hid. `measureV2Layout` reported none of it.
+- **Root cause:** `packages/ui/src/v2/v2.css` let the auto column of a row's marks grow to their full width before the text column got any (`minmax(0, 1fr)` takes only what is left), and the composer head let every part shrink to nothing. The measure in `packages/ui/src/v2/testing/measure-v2-layout.ts` looked for cut labels and wrapped one-line texts, never for text that had no room left at all.
+- **Error class:** Text pressed by its neighbours to a box of a few pixels, or to one letter per line, so its words are gone while every check passes.
+- **Guard:** `measureV2Layout` reports such text as `squeezed` (red and green pages in `measure-v2-layout.browser.test.ts`). The Mail v2 browser tests open the worst-case fixture (`?fixture=worst`) at 1440, 1024 and 390 px and expect no `squeezed` and no `cut` finding, in Chromium and WebKit.

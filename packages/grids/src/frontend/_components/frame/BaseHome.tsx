@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, StatusRow, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Empty, FilterBar, Input, List, ListOrder, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { navigationReferenceKey } from "../../../navigation-contracts";
 import { workspaceMessages } from "../workspace/messages";
@@ -88,9 +88,8 @@ function HomeHead(props: HomeProps) {
               { label: t().allResources, href: tabHref("resources"), current: props.tab === "resources" },
             ]}
           />
-        ) : (
-          <Text type="body">{props.state.base.name}</Text>
-        )
+        ) : // the sidebar names the base and marks its overview; the head does not repeat it (look rules)
+        undefined
       }
       end={
         <>
@@ -227,16 +226,15 @@ function HomeList(props: HomeProps) {
       label={props.state.base.name}
       scrollKey={`grids-home-${props.state.base.id}`}
       status={
-        <>
-          <FilterBar
-            query={query()}
-            state={state()}
-            onChange={props.setQuery}
-            icons={{ type: "category" }}
-            results={t().resourcesCount({ count: number(shown().length) })}
-          />
-          <StatusRow lead={lead()} />
-        </>
+        // two rows above the list (look rule 9): the head, then this bar with the count and the order at its end
+        <FilterBar
+          query={query()}
+          state={state()}
+          onChange={props.setQuery}
+          icons={{ type: "category" }}
+          results={lead()}
+          end={<ListOrder query={query()} state={state()} onChange={props.setQuery} />}
+        />
       }
     >
       <LiveNotice />
@@ -256,9 +254,7 @@ function HomeList(props: HomeProps) {
               <For each={byKind()}>
                 {(group) => (
                   <Section icon={sectionIcon[group.type]} title={sectionLabel(group.type)} count={number(group.entries.length)}>
-                    <List label={sectionLabel(group.type)}>
-                      <For each={group.entries}>{row}</For>
-                    </List>
+                    <List label={sectionLabel(group.type)} items={group.entries} rowKey={navigationReferenceKey} row={row} />
                   </Section>
                 )}
               </For>
@@ -269,9 +265,7 @@ function HomeList(props: HomeProps) {
             <For each={byGroup()}>
               {(group) => (
                 <Section icon="folder" title={group.name} count={number(group.entries.length)}>
-                  <List label={group.name}>
-                    <For each={group.entries}>{row}</For>
-                  </List>
+                  <List label={group.name} items={group.entries} rowKey={navigationReferenceKey} row={row} />
                 </Section>
               )}
             </For>

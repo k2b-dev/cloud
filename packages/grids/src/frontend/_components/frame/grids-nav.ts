@@ -106,6 +106,12 @@ export function createGridsNav(state: NavigationState): GridsNav {
     };
   };
 
+  /** A view whose table this person cannot open as a page of its own. */
+  const orphan = (view: NavigationResource) =>
+    !Object.entries(state.catalog.viewsByTable).some(
+      ([tableId, list]) =>
+        list.some((each) => each.id === view.id) && resources.some((each) => each.type === "table" && each.id === tableId),
+    );
   /** Tables with their views one level in; views of tables not shown stand on their own. */
   const tablePlaces = (entries: NavigationResource[]): NavItem[] => {
     const tables = entries.filter((entry) => entry.type === "table");
@@ -135,7 +141,9 @@ export function createGridsNav(state: NavigationState): GridsNav {
   /** The places of one kind, with the kind's own entry first ("All documents"). */
   const placesOf = (type: NavigationResourceType): NavItem[] => {
     const own = resources.filter((resource) => resource.type === type);
-    if (type === "table") return tablePlaces(resources.filter((resource) => resource.type === "table" || resource.type === "view"));
+    // a table's views are the tabs in the head of its page; views of tables not shown here stand on their own
+    if (type === "table")
+      return tablePlaces(resources.filter((resource) => resource.type === "table" || (resource.type === "view" && orphan(resource))));
     if (type === "documentTemplate")
       return [
         { label: t().allDocuments, icon: "files", href: href("/documents"), current: active === "documentTemplate:all" },

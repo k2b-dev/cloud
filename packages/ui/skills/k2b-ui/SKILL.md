@@ -68,10 +68,18 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
+| a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
+| an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
+| several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
+| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
+| a list that can grow without end (mail, records, a log) | `List items rowKey row`: only the rows in view are in the page | – |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
+| files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
+| a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
@@ -133,6 +141,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 9. **Lines separate groups, not entries or the parts of one thing.** No
    line under a section head, none between its entries, none inside a
    `Group`.
+10. **Every list that can grow without end scales.** Give such a list its
+   data (`List items rowKey row`, or a `Table`): only the rows in view are
+   in the page, so 10,000 rows cost what 30 do. Write rows out only for a
+   few fixed ones.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
@@ -151,6 +163,27 @@ that failed to load once would stand. A connection that retries on its own
 says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
+## How a screen looks: dense, clear, with faces
+
+The target (design pass 26.11.): dense, clear, space-efficient, tailored
+and appealing. Dense is not busy: show more, never the same thing twice.
+
+1. **Each thing carries its mark.** Every row, card and sidebar entry for a
+   thing leads with its `Mark` (colour and symbol, or thumbnail) or a
+   person's `Avatar`; without its own colour it takes its kind's, never grey.
+2. **The first line says what counts today.** `StatusRow` lead or `Cells`:
+   a statement with a number, chips with a tone for what lets one act. A
+   count such as "6 Einträge" is never the biggest text.
+3. **A state is colour, symbol and word.** A value with a limit gets a bar,
+   a short history a `Spark`.
+4. **Space structures, lines separate groups**; no box inside a card.
+5. **No empty half**: a detail only while open, a side column only if full.
+6. **People beside what they did:** avatars, stacks, `Digest activity`.
+7. **Four type sizes** (12, 13, 14, 18); sample data dense and real.
+8. **At most two head rows** over list and detail: path and deeds, then
+   `FilterBar` with count, order and display at its `end`.
+9. **Settings are `Setting` rows**: value beside the name, never a form.
+
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
@@ -158,10 +191,10 @@ a `Notice` that names the deed.
   (`tone`), `Cells`, `Tiles`, `Canvas`.
 - **Structure:** `Section`, `Group`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Steps`.
-- **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `DatePicker`, `Check`, `Choice`.
+  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  `Chip`, `Progress`, `Spark`, `Steps`.
+- **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
+  `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

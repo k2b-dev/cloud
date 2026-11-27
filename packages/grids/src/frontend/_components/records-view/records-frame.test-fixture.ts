@@ -1,0 +1,43 @@
+import type { NavigationState } from "../workspace/navigation-catalog";
+
+/** The smallest base frame a records page renders in, for tests: one base, no catalog, nothing to manage. */
+export const testFrame = (overrides: Partial<NavigationState> = {}): NavigationState => ({
+  kind: "ok",
+  base: {
+    id: "BASE01",
+    name: "Events",
+    description: null,
+    documentDefaults: {},
+    createdBy: null,
+    deletedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  title: [{ title: "Events" }],
+  rememberPath: "/app/grids/BASE01",
+  adminModeRequested: false,
+  editModeToggleHref: "/app/grids/BASE01/table/TABLE1?edit=true",
+  canManageBase: false,
+  canCreateTables: false,
+  canUseEditMode: false,
+  canUseQueryWorkspace: false,
+  liveCursor: null,
+  navigation: { revision: 1, groups: [] },
+  route: { kind: "records", activeKey: "table:TABLE1", activeTableId: "TABLE1" },
+  catalog: {
+    customApps: [],
+    workflows: [],
+    workflowLaunchers: [],
+    workflowLevels: {},
+    tables: [],
+    tableLevels: {},
+    fieldsByTable: {},
+    viewsByTable: {},
+    formsByTable: {},
+    documentTemplatesByTable: {},
+    documentTemplateLevels: {},
+    sidebarForms: [],
+    sidebarDocumentTemplates: [],
+  },
+  ...overrides,
+});

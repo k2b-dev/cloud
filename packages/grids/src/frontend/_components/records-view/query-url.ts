@@ -37,6 +37,7 @@
 
 import { z } from "zod";
 import { ComputedColumnSpecSchema, FieldColumnSpecSchema, type RecordQuery, ShortIdSchema } from "../../../contracts";
+import { type FilterStatements, filterLeaves, splitFilter, statementLeaves } from "./filter-statements";
 
 /**
  * URL-owned subset of RecordQuery. The full RecordQuery additionally
@@ -199,6 +200,15 @@ const parseCalendarState = (params: URLSearchParams): RecordsState["calendar"] =
 const parseCardSize = (value: string | null): CardSize =>
   value === "small" || value === "large" || value === "medium" ? value : DEFAULT_CARD_SIZE;
 
+/** Adds the FilterBar's statements of a table page (`f-<field>`) to the leaves of its `filter` JSON. */
+const withStatements = (query: RecordsUrlQuery, params: URLSearchParams, statements?: FilterStatements): RecordsUrlQuery => {
+  if (!statements) return query;
+  const stated = statementLeaves(statements, params);
+  const leaves = filterLeaves(query.filter);
+  if (stated.length === 0 || leaves === null) return query;
+  return { ...query, filter: { op: "AND", filters: [...stated, ...leaves] } as RecordsUrlQuery["filter"] };
+};
+
 /**
  * Reads URLSearchParams and produces a typed RecordsState. Bad / missing
  * params produce empty fragments — never throws.
@@ -208,8 +218,8 @@ const parseCardSize = (value: string | null): CardSize =>
  * boundary via `c.req.param("tableId" / "viewId")`, not
  * here.
  */
-export const parseRecordsState = (params: URLSearchParams): RecordsState => ({
-  query: parseRecordsQuery(params),
+export const parseRecordsState = (params: URLSearchParams, statements?: FilterStatements): RecordsState => ({
+  query: withStatements(parseRecordsQuery(params), params, statements),
   cursor: params.get("cursor") || null,
   selectedRecordId: params.get("record") || null,
   // Free-text search lives outside RecordQuery (SSR merges it into the filter
@@ -286,11 +296,24 @@ const appendSearchOverride = (url: URL, search: RecordsState["search"], viewQuer
  * to the bookmark. Suppressing matches keeps view URLs symbolic
  * ("the view, as it stands") rather than denormalized snapshots.
  */
-export const buildRecordsUrl = (path: UrlPathContext, state: RecordsState, viewQuery?: RecordQuery | null): string => {
+export const buildRecordsUrl = (
+  path: UrlPathContext,
+  state: RecordsState,
+  viewQuery?: RecordQuery | null,
+  statements?: FilterStatements,
+): string => {
   const url = new URL(recordsPath(path), "http://x");
 
-  const { query, search } = state;
+  const { search } = state;
+  // On a table page the leaves the FilterBar can state stand as its parameters; the rest stays in `filter`.
+  const split = statements && !viewQuery ? splitFilter(statements, state.query.filter) : undefined;
+  const query =
+    split && split.rest !== null
+      ? { ...state.query, filter: split.rest.length ? ({ op: "AND", filters: split.rest } as RecordQuery["filter"]) : undefined }
+      : state.query;
   appendJsonOverride(url, query, viewQuery, "filter");
+  if (split && split.rest !== null)
+    for (const [name, value] of statements!.query.serialize(split.state)) url.searchParams.append(name, value);
   const recordMeta = query.recordMeta;
   if (hasUrlValue(recordMeta) && !matchesRecordQuery(query, viewQuery, "recordMeta"))
     url.searchParams.set("meta", JSON.stringify(recordMeta));

@@ -196,6 +196,15 @@ Not every GQL query works as a nested source. For example, a saved query with re
 - Use public IDs in braces when generated configuration or a migration needs an immutable reference.
 - Do not use removed `#field` aliases.
 
+For example, a table and fields whose names contain spaces, filtered by a text value:
+
+```gql
+from table "Line Items"
+select "Item name", "Net amount"
+where "Approval status" = 'Approved'
+sort "Net amount" desc
+```
+
 An alias after `as` must start with a letter or an underscore. It can then contain letters, numbers, and underscores, up to 64 characters. An alias cannot be a GQL keyword, a logical operator, or a reserved literal. Later references to an alias ignore case.
 
 When a table or view query editor has no `from`, the current page can provide the source. Write `from` explicitly when the query must stay understandable outside that page.

@@ -184,6 +184,8 @@ export type PublicWorkspaceRoute =
       canManageTemplate: boolean;
       initialRecordId: string | null;
       initialDocumentViewMode: GridsDocumentViewMode;
+      initialSearch: string;
+      initialPath: string[];
       initialBrowserPage: PublicDocumentBrowseResponse;
     }
   | {

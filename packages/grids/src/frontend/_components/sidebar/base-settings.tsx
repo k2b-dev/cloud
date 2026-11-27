@@ -1,8 +1,8 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { dialogCore, panelDialogWideOptions, prompts, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicBase as Base } from "../../../api/public-dto";
-import BaseSettingsPanel from "../settings/BaseSettingsPanel";
 import type { NavigationResource } from "../workspace/navigation-catalog";
 import { sidebarMessages } from "./messages";
 
@@ -17,6 +17,10 @@ export function createBaseSettings(props: { base: Base; navigationResources: Nav
       const accessResponse = await apiClient.access["by-base"][":baseId"].$get({ param: { baseId: props.base.id } });
       if (!accessResponse.ok) throw new Error(t.loadSettingsFailed);
       const accessEntries = await accessResponse.json();
+      // the settings (access editor included) load when someone opens them, not with every page of the base
+      const loaded = await importOnDemand(() => import("../settings/BaseSettingsPanel"));
+      if (!loaded) return;
+      const BaseSettingsPanel = loaded.default;
       await dialogCore.open<void>(
         (close, context) => (
           <div class="flex h-[86vh] min-h-0 flex-col overflow-hidden">

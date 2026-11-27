@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { PublicField, PublicGridRecord } from "../../../api/public-dto";
 import "../ssr-test-plugin";
+import { testFrame } from "./records-frame.test-fixture";
 
 const { default: RecordsView } = await import("./RecordsView");
 
@@ -41,6 +42,7 @@ type RecordsViewProps = Parameters<typeof RecordsView>[0];
 
 /** A table page as the server renders it; `overrides` narrow it to the case under test. */
 const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProps => ({
+  frame: testFrame(),
   baseId: "BASE01",
   tableId: "TABLE1",
   tableKind: "stored",
@@ -90,26 +92,16 @@ const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProp
   ...overrides,
 });
 
-const loadingState = (html: string) => ({
-  searchInput: html.match(/<input name="grids-record-search"[^>]*>/)?.[0],
-  searchIcon: html.match(/k2b-text-input__icon[^>]*>(.*?)<\/span>/)?.[1],
-  recordsArea: html.match(/<div class="([^"]*transition-opacity[^"]*)"/)?.[1],
-});
-
-test("server HTML shows the SSR records as loaded, without the loading spinner or dimming", () => {
+test("server HTML shows the SSR records as loaded on v2, with no loading placeholder", () => {
   const html = renderToString(() => createComponent(RecordsView, recordsViewProps({})));
-
-  const { searchInput, searchIcon, recordsArea } = loadingState(html);
   expect(html).toContain("Draft the brochure");
-  expect(searchInput).toBeDefined();
-  expect(searchInput).not.toContain("aria-busy");
-  expect(searchIcon).toContain("ti ti-search");
-  expect(searchIcon).not.toContain("k2b-spin");
-  expect(recordsArea).toBeDefined();
-  expect(recordsArea).not.toContain("opacity-60");
+  expect(html).toContain('data-k2-part="Table"');
+  expect(html).toContain('aria-label="Search records"');
+  expect(html).not.toContain('data-k2-part="Loading"');
+  expect(html).not.toMatch(/\bclass="(?!k2-|ti )[^"]*"/);
 });
 
-test("server HTML shows a failed server read as its error with a retry, not as an empty table that is loading", () => {
+test("server HTML shows a failed server read as its error with a retry, not as an empty table", () => {
   const html = renderToString(() =>
     createComponent(
       RecordsView,
@@ -120,28 +112,25 @@ test("server HTML shows a failed server read as its error with a retry, not as a
       }),
     ),
   );
-
-  const { searchInput, searchIcon, recordsArea } = loadingState(html);
-  expect(html).toContain("Could not refresh records");
+  expect(html).toContain("Records could not be refreshed");
   expect(html).toContain("The filter is invalid: unknown field.");
   expect(html).toContain("Retry");
   expect(html).not.toContain("No records yet");
-  expect(html.match(/Add record/g)).toHaveLength(1);
-  expect(searchInput).not.toContain("aria-busy");
-  expect(searchIcon).not.toContain("k2b-spin");
-  expect(recordsArea).not.toContain("opacity-60");
+  expect(html).toContain("New record");
 });
 
-test("server HTML shows an empty table as one empty state whose action is the toolbar's create control", () => {
+test("server HTML shows an empty table as one empty state whose action creates a record", () => {
   const empty = { initialData: { items: [], nextCursor: null } };
   const writer = renderToString(() => createComponent(RecordsView, recordsViewProps({ ...empty, canWrite: true })));
-  expect(writer).toContain("No records yet");
-  expect(writer.match(/Add record/g)).toHaveLength(2);
+  expect(writer).toContain("No records yet.");
+  expect(writer).toContain('data-k2-part="Empty"');
+  // the head's button, the phone's floating action and the empty state's way out
+  expect(writer.match(/New record/g)?.length).toBeGreaterThanOrEqual(2);
 
-  // Only forms may add records here, and none is active: the toolbar shows nothing, so the empty state has no action slot.
+  // Only forms may add records here, and none is active: nothing offers to create.
   const noControl = renderToString(() =>
     createComponent(RecordsView, recordsViewProps({ ...empty, canWrite: true, disableDirectInsert: true })),
   );
-  expect(noControl).toContain("No records yet");
-  expect(noControl).not.toContain("k2b-placeholder__action");
+  expect(noControl).toContain("No records yet.");
+  expect(noControl).not.toContain("New record");
 });

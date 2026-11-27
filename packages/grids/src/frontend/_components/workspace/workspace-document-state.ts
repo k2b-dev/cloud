@@ -20,12 +20,21 @@ export const loadDocumentTemplateState = async (
   }
   const canWriteTemplate = gridsService.permission.hasAtLeast(level, "write");
   const canManageTemplate = gridsService.permission.hasAtLeast(level, "admin");
-  const initialDocumentViewMode = common.params.initialDocumentViewMode ?? "list";
+  // The address names the view, the search and the open folder; without them the view last chosen (a cookie) stands.
+  const address = common.chrome.url.searchParams;
+  const initialSearch = (address.get("q") ?? "").trim();
+  const requested = address.get("mode");
+  const initialDocumentViewMode = initialSearch
+    ? "list"
+    : requested === "folders" || requested === "list"
+      ? requested
+      : (common.params.initialDocumentViewMode ?? "list");
+  const initialPath = initialDocumentViewMode === "folders" ? (address.get("path") ?? "").split("/").filter(Boolean).slice(0, 2) : [];
   const initialBrowserPage = await gridsService.document.browseDocumentsForTemplate({
     templateId: template.id,
-    q: "",
+    q: initialSearch,
     tags: [],
-    path: [],
+    path: initialPath,
     limit: PUBLIC_DOCUMENT_PAGE_LIMIT,
     cursor: null,
     timeZone: common.params.dateConfig?.timeZone,
@@ -42,6 +51,8 @@ export const loadDocumentTemplateState = async (
       canManageTemplate,
       initialRecordId: common.chrome.url.searchParams.get("record"),
       initialDocumentViewMode,
+      initialSearch,
+      initialPath,
       initialBrowserPage,
     },
     [...common.chrome.titleBase, { title: t.documents }, { title: template.name }],

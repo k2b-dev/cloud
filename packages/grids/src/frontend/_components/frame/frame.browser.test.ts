@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
-import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
+import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant, queryResultFixture, templateFixture } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
 // rules of v2 hold at 1440, 1024 and 390 px, the worst-case data breaks nothing, and 1,000 bases or tables stay
@@ -22,6 +22,8 @@ const buildHarness = async (): Promise<string> => {
     entrypoints: [resolve(import.meta.dir, "frame.browser-harness.tsx")],
     target: "browser",
     format: "iife",
+    // the page parses and runs the whole harness before it shows anything: minified, as an app's islands ship
+    minify: true,
     conditions: ["browser"],
     plugins: [
       {
@@ -55,6 +57,8 @@ let browser: Browser;
 let css: string;
 let harness: string;
 let icons: { css: string; font: string };
+// the real type of Cloud (IBM Plex) instead of the system fallback, so the pictures count as evidence
+let plex: { css: string; dir: string };
 beforeAll(async () => {
   harness = await buildHarness();
   const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
@@ -62,6 +66,8 @@ beforeAll(async () => {
   const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
   if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
   icons = { css: iconCss.replace(fontAsset, "/tabler-icons.woff2"), font: fileURLToPath(new URL(fontAsset, iconCssUrl)) };
+  const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+  plex = { css: (await Bun.file(plexCss).text()).replaceAll("./fonts/", "/fonts/"), dir: join(plexCss, "..", "fonts") };
   const v2Css = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css")), "utf8");
   css = [
     "@layer properties, theme, base, components, utilities;",
@@ -83,11 +89,11 @@ const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
 const page = (variant: FixtureVariant) =>
   `<!doctype html><html lang="de" class="light" data-variant="${variant}"><head><meta charset="utf-8">` +
-  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
+  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
-type Seen = { created: unknown[] };
+type Seen = { created: unknown[]; queries: Array<string | null> };
 
 /** Runs in the page: Date flows on from the pinned instant; timers and animation frames stay real. */
 const pinPageClock = (at: number) => {
@@ -120,7 +126,7 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
-  const seen: Seen = { created: [] };
+  const seen: Seen = { created: [], queries: [] };
   // the live channel stays quiet: no change arrives while the test runs
   await tab.routeWebSocket(/\/api\/grids\/live/, () => {});
   await tab.route(`${origin}/**`, async (route) => {
@@ -133,8 +139,19 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
       seen.created.push(route.request().postDataJSON());
       return route.fulfill({ status: 503, json: { message: "Base creation unavailable" } });
     }
+    // the query answers with the orders, a page of 100 from the cursor on
+    if (url.pathname === "/api/grids/gql/by-base/Bas001/execute") {
+      const cursor = (route.request().postDataJSON() as { cursor?: string }).cursor;
+      seen.queries.push(cursor ?? null);
+      return route.fulfill({ json: queryResultFixture(variant, cursor ? Number(cursor.replace("cursor-", "")) : 0) });
+    }
+    // a template's documents answer from the same fixture as the page, for the address the screen asks for
+    if (url.pathname === "/api/grids/documents/by-template/TPL001/browse")
+      return route.fulfill({ json: templateFixture(variant, url.searchParams).initialBrowserPage });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
+    if (url.pathname === "/plex.css") return route.fulfill({ contentType: "text/css", body: plex.css });
+    if (url.pathname.startsWith("/fonts/")) return route.fulfill({ path: join(plex.dir, url.pathname.slice("/fonts/".length)) });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
@@ -158,6 +175,28 @@ const expectClean = async (tab: Page) => {
 };
 
 const elements = (tab: Page) => tab.evaluate(() => document.querySelectorAll("#root *").length);
+/**
+ * Where a page's time goes, for the huge cases: the document's bytes (the harness inlines all CSS), the harness script,
+ * its run (render; the harness renders in the browser, it has no hydration) and the fonts' load after it.
+ */
+const timing = (tab: Page, variant: FixtureVariant) =>
+  tab.evaluate(
+    (bytes) => {
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      const script = performance.getEntriesByType("resource").find((entry) => entry.name.endsWith("/harness.js")) as
+        | PerformanceResourceTiming
+        | undefined;
+      const ms = (value: number | undefined) => (value === undefined ? "?" : `${Math.round(value)} ms`);
+      return [
+        `HTML ${Math.round(bytes / 1024)} KiB`,
+        `harness.js ${Math.round((script?.decodedBodySize ?? 0) / 1024)} KiB loaded at ${ms(script?.responseEnd)}`,
+        `parsed ${ms(nav?.domInteractive)}`,
+        `script run until DOMContentLoaded ${ms(nav ? nav.domContentLoadedEventStart - nav.domInteractive : undefined)}`,
+        `load ${ms(nav?.loadEventEnd)}`,
+      ].join(", ");
+    },
+    page(variant).length,
+  );
 
 describe("the bases overview on v2", () => {
   for (const variant of ["plain", "worst"] as const)
@@ -231,13 +270,14 @@ describe("the bases overview on v2", () => {
     }
   }, 60_000);
 
-  test("1,000 bases stay bounded: 100 rows a page, ready quickly", async () => {
+  test("1,000 bases stay bounded: 100 a page, only those in view in the page", async () => {
     const { context, tab, errors, readyMs } = await open(wide, "/app/grids", "huge");
     try {
-      expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(100);
+      // a page holds 100 bases; the virtual table keeps only those in view in the page
+      expect(await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count()).toBeLessThanOrEqual(60);
       expect(await tab.getByText("Seite 1 von 10").count()).toBe(1);
       const count = await elements(tab);
-      console.info(`grids bases huge: ${count} elements, ready ${readyMs} ms`);
+      console.info(`grids bases huge: ${count} elements, ready ${readyMs} ms; ${await timing(tab, "huge")}`);
       expect(count).toBeLessThan(6000);
       expect(readyMs).toBeLessThan(5000);
       expect(errors).toEqual([]);
@@ -289,7 +329,9 @@ describe("a base home on v2", () => {
     try {
       const nav = tab.locator("[data-k2-part=Nav]");
       expect(await nav.getByRole("link", { name: "Übersicht" }).getAttribute("aria-current")).toBe("page");
-      expect(await nav.getByRole("link", { name: "Offene Aufträge" }).getAttribute("href")).toBe("/app/grids/Bas001/table/T1/view/V1");
+      expect(await nav.getByRole("link", { name: "Aufträge", exact: true }).getAttribute("href")).toBe("/app/grids/Bas001/table/T1");
+      // a table's views are the tabs of its page, not places of the sidebar
+      expect(await nav.getByRole("link", { name: "Offene Aufträge" }).count()).toBe(0);
       expect(await nav.getByRole("link", { name: "Bearbeiten" }).getAttribute("href")).toBe("/app/grids/Bas001?edit=true");
       expect(errors).toEqual([]);
     } finally {
@@ -297,16 +339,427 @@ describe("a base home on v2", () => {
     }
   }, 60_000);
 
-  test("a base with 1,000 tables renders and states its size", async () => {
+  test("a base with 1,000 tables keeps only the rows in view of its lists", async () => {
+    const small = await open(wide, "/app/grids/Bas001");
+    const smallMs = small.readyMs;
+    await small.context.close();
     const { context, tab, errors, readyMs } = await open(wide, "/app/grids/Bas001", "huge");
     try {
       const count = await elements(tab);
-      // k2b-ui gap: Nav and Section lists are not virtualized yet (lane MW); this pins today's size.
-      console.info(`grids home huge: ${count} elements, ready ${readyMs} ms`);
-      expect(readyMs).toBeLessThan(8000);
+      const rows = await tab.locator("[data-k2-part=Pane] [data-k2-part=Row]").count();
+      // k2b-ui gap: the sidebar Nav still holds all 1,000 tables until MW virtualizes large Nav groups.
+      console.info(
+        `grids home huge: ${count} elements, ${rows} rows in the page, ready ${readyMs} ms (+${readyMs - smallMs} ms over a small base)`,
+      );
+      expect(rows).toBeLessThanOrEqual(120);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
     }
   }, 60_000);
+});
+
+describe("the records page on v2", () => {
+  const table = "/app/grids/Bas001/table/table";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const view of [wide, narrow, phone]) {
+        const { context, tab, errors } = await open(view, `${table}?edit=true`, variant);
+        try {
+          await expectClean(tab);
+          await shoot(tab, `grids-records-${variant}-light-${view.name}`);
+          expect(await tab.locator("[data-k2-part=Loading]").count()).toBe(0);
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      }
+    }, 90_000);
+
+  test("amounts, dates and formula dates stand whole on one line", async () => {
+    const { context, tab, errors } = await open(wide, table);
+    try {
+      for (const expected of ["12400,00 EUR", "2026-11-14", "2026-12-01"]) {
+        const cell = tab.locator("[data-k2-part=Table] tbody tr:first-child td", { hasText: expected }).first();
+        const fits = await cell.evaluate((td) => {
+          const line = td.querySelector(".k2-cell-line") ?? td;
+          return { scroll: line.scrollWidth, client: line.clientWidth, text: line.textContent?.trim() };
+        });
+        expect(fits.text).toBe(expected);
+        expect(fits.scroll).toBeLessThanOrEqual(fits.client);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a row opens its record in the address, the head sorts, and Filter opens its dialog", async () => {
+    const { context, tab, errors } = await open(wide, table);
+    try {
+      await tab.locator("[data-k2-part=Table] tbody tr:first-child").click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("record") === "record-0");
+      await tab.locator("[data-k2-part=RecordHead]").waitFor();
+      await shoot(tab, "grids-records-open-light-1440");
+      // Back closes the record again: the address holds what is open
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("record"));
+      expect(await tab.locator("[data-k2-part=RecordHead]").count()).toBe(0);
+
+      await tab.locator("[data-k2-part=Table] thead").getByRole("button", { name: "Fällig", exact: true }).click();
+      await tab.waitForFunction(() => (new URL(location.href).searchParams.get("sort") ?? "").includes('"date"'));
+
+      await tab.getByRole("button", { name: "Weitere Filter" }).click();
+      await tab.getByRole("dialog", { name: "Filtern und sortieren" }).waitFor();
+      await shoot(tab, "grids-records-filter-light-1440");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a simple filter is a statement in the address; other filters stay in the dialog", async () => {
+    const address = `${table}?f-status=Arbeit&filter=${encodeURIComponent(JSON.stringify({ op: "AND", filters: [{ fieldId: "text", op: "regex", value: "^W" }] }))}`;
+    const { context, tab, errors } = await open(wide, address);
+    try {
+      const bar = tab.locator("[data-k2-part=FilterBar]");
+      await bar.waitFor();
+      expect(await bar.textContent()).toContain("Status");
+      expect(await bar.textContent()).toContain("Arbeit");
+      // the regex leaf has no statement: the dialog keeps it and its button counts it
+      expect(await tab.getByRole("button", { name: "Weitere Filter (1)" }).count()).toBe(1);
+      await shoot(tab, "grids-records-filterbar-light-1440");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the table's views are the tabs of its head", async () => {
+    const { context, tab, errors } = await open(wide, table);
+    try {
+      const tabs = tab.locator("[data-slot=head] [data-k2-part=Tabs]");
+      expect(await tabs.getByRole("link", { name: /Offene Aufträge/ }).getAttribute("href")).toBe(`${table}/view/V1`);
+      expect(await tabs.getByRole("link", { name: "Alle", exact: true }).getAttribute("aria-current")).toBe("page");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 records keep only the rows in view and add little to the page's time", async () => {
+    // the cost of the thousand rows is what they add to the same page with ten
+    const small = await open(wide, table);
+    const smallMs = small.readyMs;
+    await small.context.close();
+    const { context, tab, errors, readyMs } = await open(wide, table, "huge");
+    try {
+      const count = await elements(tab);
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(
+        `grids records huge: ${count} elements, ${rows} rows in the page, ready ${readyMs} ms (+${readyMs - smallMs} ms over ten rows); ${await timing(tab, "huge")}`,
+      );
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});
+
+describe("all documents on v2", () => {
+  const documents = "/app/grids/Bas001/documents";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const view of [wide, narrow, phone])
+        for (const address of [documents, `${documents}?mode=list`]) {
+          const { context, tab, errors } = await open(view, address, variant);
+          try {
+            await expectClean(tab);
+            await shoot(tab, `grids-documents-${address.includes("list") ? "list" : "folders"}-${variant}-light-${view.name}`);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 120_000);
+
+  test("a folder opens in the address and Back returns to the folders", async () => {
+    const { context, tab, errors } = await open(wide, documents);
+    try {
+      await tab.locator("[data-k2-part=Pane] [data-k2-part=List] [data-k2-part=Row]").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("path") === "TPL001");
+      expect(await tab.locator("[data-k2-part=Path]").textContent()).toContain("Rechnung");
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("path"));
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Tabs]").count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("filters and an old sort name keep working in the address", async () => {
+    const { context, tab, errors } = await open(wide, `${documents}?view=list&workflow=WFL001&sort=oldest`);
+    try {
+      const bar = tab.locator("[data-k2-part=FilterBar]");
+      expect(await bar.textContent()).toContain("Monatsabschluss");
+      // a run this person can open is a link to it
+      expect(await tab.locator('[data-k2-part=Table] a[href*="/workflows/WFL001?run="]').count()).toBeGreaterThan(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 documents keep only the rows in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, `${documents}?mode=list`, "huge");
+    try {
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(
+        `grids documents huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms; ${await timing(tab, "huge")}`,
+      );
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});
+
+describe("the query of a base on v2", () => {
+  const query = `/app/grids/Bas001/query?q=${encodeURIComponent("from table Aufträge")}`;
+  const view = "/app/grids/Bas001/table/table/view/V9";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const each of [wide, narrow, phone])
+        for (const [name, address] of [
+          ["query", query],
+          ["query-empty", "/app/grids/Bas001/query"],
+          ["query-view", view],
+        ] as const) {
+          const { context, tab, errors } = await open(each, address, variant);
+          try {
+            await shoot(tab, `grids-${name}-${variant}-light-${each.name}`);
+            await expectClean(tab);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 180_000);
+
+  test("a source puts its from line in the query, a field its name at the caret", async () => {
+    const { context, tab, errors } = await open(wide, "/app/grids/Bas001/query");
+    try {
+      const editor = tab.getByRole("textbox", { name: "GQL-Abfrage" });
+      await tab.locator("[aria-label=Quellen] [data-k2-part=Row]", { hasText: "Ersatzteile" }).locator(".k2-row-open").click();
+      expect(await editor.inputValue()).toBe("from table Ersatzteile");
+      await editor.fill("from table Aufträge\nlimit 5");
+      await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(19, 19));
+      await tab.getByRole("button", { name: "Felder von Aufträge" }).click();
+      await tab.getByRole("menuitem", { name: /Status/ }).click();
+      expect(await editor.inputValue()).toBe("from table AufträgeStatus\nlimit 5");
+      // the query stays in the address, so reload shows the same
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q")?.includes("limit 5"));
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("Next loads the next page of rows and keeps its cursor in the address", async () => {
+    const { context, tab, errors, seen } = await open(wide, query, "huge");
+    try {
+      // the toolbar over the rows says which rows came
+      const status = tab.locator("[aria-label=Abfrage] [data-k2-part=Bar]").first();
+      expect(await status.textContent()).toContain("Zeilen 1–100");
+      await tab.getByRole("button", { name: "Weiter", exact: true }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("cursor") === "cursor-100");
+      expect(await status.textContent()).toContain("Zeilen 101–200");
+      expect(seen.queries).toEqual(["cursor-100"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 tables keep only the sources in view, 100 rows only those in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, query, "huge");
+    try {
+      const sources = await tab.locator("[aria-label=Quellen] [data-k2-part=Row]").count();
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(
+        `grids query huge: ${await elements(tab)} elements, ${sources} sources, ${rows} rows in the page, ready ${readyMs} ms; ${await timing(tab, "huge")}`,
+      );
+      expect(sources).toBeLessThanOrEqual(60);
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});
+
+describe("the documents of a template on v2", () => {
+  const template = "/app/grids/Bas001/document/table/TPL001";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const each of [wide, narrow, phone])
+        for (const [name, address] of [
+          ["template", template],
+          ["template-folders", `${template}?mode=folders&path=2026`],
+        ] as const) {
+          const { context, tab, errors } = await open(each, address, variant);
+          try {
+            await shoot(tab, `grids-${name}-${variant}-light-${each.name}`);
+            await expectClean(tab);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 120_000);
+
+  test("a year and a month open in the address; Back returns to the years", async () => {
+    const { context, tab, errors } = await open(wide, `${template}?mode=folders`);
+    try {
+      await tab.locator("[data-k2-part=List] [data-k2-part=Row]", { hasText: "2026" }).locator("a").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("path") === "2026");
+      await tab.locator("[data-k2-part=List] [data-k2-part=Row]", { hasText: "November" }).locator("a").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("path") === "2026/11");
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Path]").textContent()).toContain("November");
+      // the month's documents load after the step
+      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-spacer])").length > 0);
+      await tab.goBack();
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("path"));
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Tabs]").count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a search stands in the address and lists what matches", async () => {
+    const { context, tab, errors } = await open(wide, template);
+    try {
+      const search = tab.getByRole("searchbox", { name: "Dokumente durchsuchen" });
+      await search.fill("0003");
+      await search.press("Enter");
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "0003");
+      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-spacer])").length === 1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 documents keep only the rows in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, template, "huge");
+    try {
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(`grids template huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms`);
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});
+
+describe("a workflow on v2", () => {
+  const workflow = "/app/grids/Bas001/workflows/W1";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const each of [wide, narrow, phone])
+        for (const [name, address] of [
+          ["workflow", workflow],
+          ["workflow-run", `${workflow}?run=RUN00002`],
+        ] as const) {
+          const { context, tab, errors } = await open(each, address, variant);
+          try {
+            await shoot(tab, `grids-${name}-${variant}-light-${each.name}`);
+            await expectClean(tab);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 120_000);
+
+  test("a run opens beside the runs in the address, and Back closes it", async () => {
+    const { context, tab, errors } = await open(wide, workflow);
+    try {
+      expect(await tab.locator("[data-k2-part=Pane][data-detail]").count()).toBe(0);
+      await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").nth(2).locator("a").first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("run") === "RUN00002");
+      expect(await tab.locator("[data-k2-part=Pane][data-detail]").count()).toBe(1);
+      await tab.goBack();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("run"));
+      expect(await tab.locator("[data-k2-part=Pane][data-detail]").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a status filter from an old link stands as a statement", async () => {
+    const { context, tab, errors } = await open(wide, `${workflow}?status=failed`);
+    try {
+      expect(await tab.locator("[data-k2-part=FilterBar]").textContent()).toContain("Fehlgeschlagen");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 runs keep only the rows in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, workflow, "huge");
+    try {
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(`grids workflow huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms`);
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});
+
+// break-ui: every v2 screen of Grids with no entry, exactly one, and the worst case, on a phone and a wide screen
+describe("break-ui on every Grids screen", () => {
+  const screens = [
+    ["bases", "/app/grids"],
+    ["base-home", "/app/grids/Bas001"],
+    ["records", "/app/grids/Bas001/table/table"],
+    ["records-open", "/app/grids/Bas001/table/table?record=record-0"],
+    ["documents", "/app/grids/Bas001/documents?view=list"],
+    ["template", "/app/grids/Bas001/document/table/TPL001"],
+    ["query", `/app/grids/Bas001/query?q=${encodeURIComponent("from table Aufträge")}`],
+    ["query-view", "/app/grids/Bas001/table/table/view/V9"],
+    ["workflow", "/app/grids/Bas001/workflows/W1"],
+  ] as const;
+  for (const variant of ["empty", "one", "worst"] as const)
+    test(`${variant}: holds at 390 and 1440 px`, async () => {
+      const broken: string[] = [];
+      for (const [name, address] of screens)
+        for (const view of [wide, phone]) {
+          const { context, tab, errors } = await open(view, address, variant);
+          try {
+            await shoot(tab, `breakui-${name}-${variant}-light-${view.name}`);
+            await tab.mouse.move(0, 0);
+            const outline = await describeV2Page(tab, "#root");
+            const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+            const problems = [
+              ...(outline.includes("Problems (") ? [outline.slice(outline.indexOf("Problems ("))] : []),
+              ...layout.problems,
+            ];
+            for (const problem of [...problems, ...errors]) broken.push(`${name} ${view.name}: ${problem}`);
+          } finally {
+            await context.close();
+          }
+        }
+      expect(broken).toEqual([]);
+    }, 240_000);
 });

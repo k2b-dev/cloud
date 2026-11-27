@@ -23,7 +23,9 @@ describe("record finalization UI contract", () => {
     expect(source).toContain("title: t().finalizeRecordTitle");
     expect(source).toContain("t().finalizationLockDetail");
     expect(source).toContain("!rec.finalizedAt");
-    expect(source).toContain("showFinalizationStatus={Boolean(rec.finalizedAt || finalization()?.enabled)}");
+    // the head names the state: finalized, or a draft while finalization is on
+    expect(source).toContain("? t().finalized");
+    expect(source).toContain(": finalization()?.enabled");
     expect(source).toContain("record()?.id === result.originalRecordId");
     expect(source).toContain("createCorrectionMut.abort()");
     expect(source).toContain('intent === "cancellation" ? t().createCancellationDraft : t().createCorrectionDraft');

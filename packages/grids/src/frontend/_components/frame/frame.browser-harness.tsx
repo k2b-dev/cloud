@@ -1,9 +1,25 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import DocumentsScreen from "../documents/DocumentsScreen";
+import DocumentTemplateScreen from "../documents/DocumentTemplateScreen";
 import BasesOverview from "../overview/BasesOverview";
 import { basesQuery, parseBasesAddress } from "../overview/bases-query";
+import QueryScreen from "../query/QueryScreen";
+import QueryViewScreen from "../query/QueryViewScreen";
+import RecordsView from "../records-view/RecordsView";
+import WorkflowScreen from "../workflows/WorkflowScreen";
 import BaseHome from "./BaseHome";
-import { baseHomeFixture, basesFixture, type FixtureVariant } from "./frame.browser-fixture";
+import {
+  baseHomeFixture,
+  basesFixture,
+  documentsFixture,
+  type FixtureVariant,
+  queryFixture,
+  queryViewFixture,
+  recordsFixture,
+  templateFixture,
+  workflowFixture,
+} from "./frame.browser-fixture";
 import { homeTab, resourcesQuery } from "./resources-query";
 
 /**
@@ -18,7 +34,19 @@ const params = new URLSearchParams(location.search);
 render(
   () => (
     <LocaleProvider locale="de">
-      {location.pathname === "/app/grids" ? (
+      {location.pathname.includes("/workflows/") ? (
+        <WorkflowScreen {...workflowFixture(variant, params)} />
+      ) : location.pathname.includes("/document/") ? (
+        <DocumentTemplateScreen {...templateFixture(variant, params)} />
+      ) : location.pathname.endsWith("/query") ? (
+        <QueryScreen {...queryFixture(variant, params)} />
+      ) : location.pathname.endsWith("/view/V9") ? (
+        <QueryViewScreen {...queryViewFixture(variant)} />
+      ) : location.pathname.endsWith("/documents") ? (
+        <DocumentsScreen {...documentsFixture(variant, params)} />
+      ) : location.pathname.includes("/table/") ? (
+        <RecordsView {...recordsFixture(variant, params)} />
+      ) : location.pathname === "/app/grids" ? (
         <BasesOverview state={parseBasesAddress(basesQuery("de"), params).state} {...basesFixture(variant, params)} />
       ) : (
         (() => {

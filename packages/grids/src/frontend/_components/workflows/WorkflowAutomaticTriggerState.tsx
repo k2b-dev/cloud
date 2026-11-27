@@ -1,4 +1,5 @@
 import { useLocale } from "@k2b/ui";
+import { Chip, Row, Section } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import type { PublicTable } from "../../../api/public-dto";
 import type { PublicWorkflowTriggerRuntimeState } from "../workspace/workspace-public-state-model";
@@ -29,39 +30,37 @@ export function WorkflowAutomaticTriggerState(props: { state: PublicWorkflowTrig
   });
   const tableLabel = (tableId: string | null): string =>
     tableId ? (props.tables.find((table) => table.id === tableId)?.name ?? t().unavailableTable) : t().anyAccessibleTable;
+  // the schedule and each record event as one row: what fires, its state, and when or on what
   return (
-    <section class="paper flex flex-wrap items-start gap-x-6 gap-y-2 p-3" aria-label={t().automaticTriggers}>
+    <Section title={t().automaticTriggers}>
       <Show when={props.state.schedule}>
         {(schedule) => (
-          <div class="min-w-56 flex-1">
-            <div class="flex items-center gap-2 text-xs font-medium text-primary">
-              <i class="ti ti-calendar-time" aria-hidden="true" />
-              <span>{scheduleStateLabel()[schedule().state]}</span>
-            </div>
-            <p class="mt-1 text-xs text-dimmed">
-              <span class="font-mono">{schedule().cron}</span> · {schedule().timezone}
-              <Show when={schedule().nextRunAt}>
-                {(next) => <> · {t().nextRun({ value: formatScheduledRun(next(), schedule().timezone, locale()) })}</>}
-              </Show>
-            </p>
-            <Show when={schedule().problem}>{(problem) => <p class="mt-1 text-xs text-red-600 dark:text-red-400">{problem()}</p>}</Show>
-          </div>
+          <Row
+            icon="calendar-time"
+            lines={[
+              scheduleStateLabel()[schedule().state],
+              [
+                schedule().cron,
+                schedule().timezone,
+                ...(schedule().nextRunAt
+                  ? [t().nextRun({ value: formatScheduledRun(schedule().nextRunAt!, schedule().timezone, locale()) })]
+                  : []),
+              ].join(" · "),
+            ]}
+            states={schedule().problem ? <Chip status="bad">{schedule().problem}</Chip> : undefined}
+          />
         )}
       </Show>
       <For each={props.state.recordEvents}>
         {(trigger) => (
-          <div class="min-w-56 flex-1">
-            <div class="flex items-center gap-2 text-xs font-medium text-primary">
-              <i class="ti ti-bolt" aria-hidden="true" />
-              <span>{trigger.state === "active" ? t().enabled : t().paused}</span>
-            </div>
-            <p class="mt-1 text-xs text-dimmed">
-              {tableLabel(trigger.tableId)} · {trigger.event}
-              {trigger.hasFilter ? ` · ${t().filtered}` : ` · ${t().allMatchingRecords}`}
-            </p>
-          </div>
+          // what fires it, once: the workflow's own state stands in its head; only a paused trigger says so
+          <Row
+            icon="bolt"
+            lines={[`${tableLabel(trigger.tableId)} · ${trigger.event}`, trigger.hasFilter ? t().filtered : t().allMatchingRecords]}
+            states={trigger.state === "active" ? undefined : <Chip status="warn">{t().paused}</Chip>}
+          />
         )}
       </For>
-    </section>
+    </Section>
   );
 }
