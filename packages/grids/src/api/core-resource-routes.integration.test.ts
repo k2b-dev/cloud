@@ -648,6 +648,48 @@ describe("classic resource route contracts", () => {
   );
 
   postgresTest(
+    "select option colours are written only as colours and read as hex",
+    async () => {
+      const fixture = newFixture();
+      await setupFixture(fixture);
+      try {
+        const path = `/fields/by-table/${fixture.tablePublicId}`;
+        const select = (color: string) => ({
+          name: `Status ${color}`,
+          type: "select",
+          config: { options: [{ id: "open", label: "Open", color }] },
+        });
+        const fieldCount = await count("fields", "table_id", fixture.tableId);
+        const refused = await app.request(path, jsonRequest(fixture.tokens.admin, select("red; background: url(https://x.test/a)")));
+        expect(refused.status).toBe(400);
+        expect(await refused.text()).toContain("a select option colour is a hex colour such as #2563eb or one of: blue");
+        expect(await count("fields", "table_id", fixture.tableId)).toBe(fieldCount);
+
+        expect((await app.request(path, jsonRequest(fixture.tokens.admin, select("#2563eb")))).status).toBe(201);
+        expect((await app.request(path, jsonRequest(fixture.tokens.admin, select("blue")))).status).toBe(201);
+        // a colour stored before colours were checked
+        await sql`
+          INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (${testUuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Status legacy', 'select',
+            ${{ options: [{ id: "open", label: "Open", color: "url(x)" }] }}::jsonb, 90)
+        `;
+
+        const listed = (await (await app.request(path, bearer(fixture.tokens.admin))).json()) as Array<{
+          name: string;
+          config: { options?: Array<Record<string, unknown>> };
+        }>;
+        const colorOf = (name: string) => listed.find((field) => field.name === name)?.config.options?.[0];
+        expect(colorOf("Status #2563eb")).toEqual({ id: "open", label: "Open", color: "#2563eb" });
+        expect(colorOf("Status blue")).toEqual({ id: "open", label: "Open", color: "#0000ff" });
+        expect(colorOf("Status legacy")).toEqual({ id: "open", label: "Open" });
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    20_000,
+  );
+
+  postgresTest(
     "pages a permission-aware public-ID Record change feed",
     async () => {
       const fixture = newFixture();
