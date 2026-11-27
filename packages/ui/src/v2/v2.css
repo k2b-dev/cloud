@@ -1134,6 +1134,25 @@
 }
 
 /* across a hero's drawing the ticks stand as tall as its bars (identity B): ok 38, a failure the whole 44 */
+/* ticks under an area: one slot per value across the drawing's width, so each value stands over the middle of its
+   slot and the cut on the left edge of the first failed one (the area draws in the same slots) */
+.k2-ui .k2-hero-trend[data-under] > .k2-ticks[data-stretch] {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  margin-inline: 0;
+}
+.k2-ui .k2-hero-trend[data-under] > .k2-ticks[data-stretch] > i {
+  min-width: 0;
+  max-width: none;
+  margin-inline-end: 2px;
+}
+/* right to left the time runs from the right: a drawing mirrors as its ticks do */
+.k2-ui .k2-hero-draw:dir(rtl) {
+  scale: -1 1;
+}
 .k2-ui .k2-hero .k2-ticks[data-stretch] {
   height: 44px;
   margin-inline: 0;
@@ -3232,6 +3251,10 @@
 .k2-ui .k2-spark[data-kind="line"] {
   width: 80px;
   overflow: visible;
+}
+/* right to left the history runs from the right, as the bars of a spark do */
+.k2-ui .k2-spark[data-kind="line"]:dir(rtl) {
+  scale: -1 1;
 }
 .k2-ui .k2-spark[data-kind="line"] > path {
   fill: none;

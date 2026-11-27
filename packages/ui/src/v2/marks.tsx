@@ -1,4 +1,4 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { personColor } from "../surfaces/person-color";
@@ -302,7 +302,7 @@ export const Preview = (props: PreviewProps) => {
 };
 
 export type SparkProps = {
-  /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. */
+  /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. At most 60, the newest. */
   values: readonly number[];
   /**
    * What the bars say, in one sentence a person who cannot see them gets the same from: the thing, the direction and
@@ -319,27 +319,45 @@ export type SparkProps = {
   kind?: "bars" | "line";
 };
 
-/**
- * A few small bars of a short history, such as changes per day: in the colour of the thing it stands beside (its
- * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number.
- */
 const LINE_WIDTH = 80;
 const LINE_HEIGHT = 20;
+/** At most this many values of a spark are drawn: the newest. A longer history is summed up first (per day, per week). */
+const SPARK_VALUES = 60;
 
+/**
+ * A few small bars of a short history, such as changes per day: in the colour of the thing it stands beside (its
+ * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number. At most
+ * 60 values, the newest; a value that is no number (NaN, Infinity) is a gap in a line and a quiet stub as a bar.
+ */
 export const Spark = (props: SparkProps) => {
-  const top = () => Math.max(...props.values, 0);
-  // a line shows the shape between its lowest and highest value, 2 px kept above and below for its stroke; a history
-  // of one value, or of equal values, is a flat line in the middle
-  const low = () => Math.min(...props.values);
-  const line = () =>
-    props.values
-      .map((value, index) => {
-        const x = props.values.length > 1 ? (index / (props.values.length - 1)) * LINE_WIDTH : index * LINE_WIDTH;
-        const span = top() - low();
-        const y = span > 0 ? LINE_HEIGHT - 2 - ((value - low()) / span) * (LINE_HEIGHT - 4) : LINE_HEIGHT / 2;
-        return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join("") + (props.values.length === 1 ? `H${LINE_WIDTH}` : "");
+  const shown = createMemo(() => (props.values.length > SPARK_VALUES ? props.values.slice(-SPARK_VALUES) : props.values));
+  // the lowest and highest value once per drawing, of the values that are numbers
+  const range = createMemo(() => {
+    const finite = shown().filter((value) => Number.isFinite(value));
+    return finite.length ? { low: Math.min(...finite), high: Math.max(...finite) } : undefined;
+  });
+  // a line shows the shape between its lowest and highest value, 2 px kept above and below for its stroke; equal
+  // values are a flat line in the middle, a value that is no number a gap; a history of one value spans the width
+  const line = createMemo(() => {
+    const values = shown();
+    const span = range() ? range()!.high - range()!.low : 0;
+    let open = false;
+    let path = "";
+    values.forEach((value, index) => {
+      if (!Number.isFinite(value)) {
+        open = false;
+        return;
+      }
+      const x = values.length > 1 ? (index / (values.length - 1)) * LINE_WIDTH : 0;
+      const y = span > 0 ? LINE_HEIGHT - 2 - ((value - range()!.low) / span) * (LINE_HEIGHT - 4) : LINE_HEIGHT / 2;
+      // a point alone between two gaps stays a dot
+      path += `${open ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}${open ? "" : "l0,0"}`;
+      open = true;
+    });
+    return values.length === 1 && path ? `${path}H${LINE_WIDTH}` : path;
+  });
+  // bars stand from zero: the highest bar is the highest value of at least zero
+  const top = createMemo(() => Math.max(range()?.high ?? 0, 0));
   if (props.kind === "line")
     return (
       <svg
@@ -357,8 +375,14 @@ export const Spark = (props: SparkProps) => {
     );
   return (
     <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label} style={custom({ "--k2-c": props.color })}>
-      <For each={props.values}>
-        {(value) => <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((value / top()) * 100)) : 8}%` })} />}
+      <For each={shown()}>
+        {(value) => (
+          <i
+            style={custom({
+              "--k2-v": `${top() > 0 && Number.isFinite(value) ? Math.max(8, Math.round((Math.max(value, 0) / top()) * 100)) : 8}%`,
+            })}
+          />
+        )}
       </For>
     </span>
   );

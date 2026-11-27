@@ -808,3 +808,24 @@ export const OwnerScreen = (props: { color: string }) => (
     </Pane.Split>
   </Workspace>
 );
+
+// a history alone in a pane's section: the values of the last hour above their fetches, the last three failed
+// (review r3 of #4360: the cut over the first failed fetch)
+export const TrendUnderScreen = () => (
+  <Workspace>
+    <Pane label="Verlauf">
+      <Section title="Werte je Minute" count="letzte Stunde">
+        <Trend
+          kind="area"
+          values={perMinute}
+          failedFrom={57}
+          label="Werte je Minute, letzte Stunde: gleichmäßig um 1.440, seit 10:40 keine"
+          ticks={{ slots: fetchesPerMinute, label: "Abrufe der letzten Stunde: 57 erfolgreich, die letzten 3 fehlgeschlagen" }}
+          start="09:43"
+          caption="Abrufe"
+          end="10:42"
+        />
+      </Section>
+    </Pane>
+  </Workspace>
+);

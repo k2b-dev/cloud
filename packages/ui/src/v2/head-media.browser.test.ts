@@ -57,7 +57,8 @@ type Case =
   | "head-worst"
   | "head-bare"
   | `owner-${string}`
-  | "tiles-current";
+  | "tiles-current"
+  | "trend-under";
 
 let browser: Browser;
 let client: string;
@@ -2237,7 +2238,7 @@ test("identity B Pulse at 1440 shows what the study shows: bases in the sidebar,
         const ticks = history.querySelector(".k2-ticks")!;
         const alarm = detail.querySelector(".k2-row[data-states]")!;
         return {
-          bases: document.querySelectorAll(".k2-nav a, .k2-nav [href]").length >= 8,
+          bases: document.querySelectorAll(".k2-nav a[href]").length,
           // every view stands as a tab or, where the head lacks room, in its menu "Mehr"
           tabs: [...list.querySelectorAll("[data-slot='head'] .k2-tabs > .k2-tab")].map((tab) =>
             [...tab.childNodes]
@@ -2257,7 +2258,8 @@ test("identity B Pulse at 1440 shows what the study shows: bases in the sidebar,
           told: [alarm.querySelectorAll(".k2-avs").length, alarm.textContent?.includes("per Mail benachrichtigt")],
         };
       });
-      expect(found.bases).toBe(true);
+      // "Alle Basen" and the seven bases
+      expect(found.bases).toBe(8);
       expect(found.tabs).toEqual(["Quellen 8", "SQL", "Abfragen 14", "Alarme 6"]);
       expect(found.more).toBe(1);
       expect(found.history).toEqual([2, 60, 3, true, "09:43 Abrufe 10:42"]);
@@ -2273,17 +2275,23 @@ test("identity B Pulse at 390: the last fetches keep time, result and duration w
   await withPage(
     "pulse-b",
     async (page) => {
-      const lines = await page.evaluate(() =>
-        [
-          ...document.querySelectorAll<HTMLElement>(".k2-pane[data-detail] .k2-sec[aria-label='Letzte Abrufe'] tbody td"),
-          // nothing of a result cut: no part of its cell is wider than its box
-        ].map(
-          (cell) => [cell, ...cell.querySelectorAll<HTMLElement>("*")].filter((part) => part.scrollWidth > part.clientWidth + 1).length,
-        ),
-      );
-      // five fetches of time, result and duration
-      expect(lines.length).toBe(15);
-      expect(lines.filter(Boolean)).toEqual([]);
+      const found = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll<HTMLElement>(".k2-pane[data-detail] .k2-sec[aria-label='Letzte Abrufe'] tbody tr")];
+        const cells = rows.flatMap((row) => [...row.querySelectorAll<HTMLElement>(":scope > td, :scope > th")]);
+        // one line: no cell is taller than the shortest row, and nothing of a cell is wider than its box
+        const lowest = Math.min(...rows.map((row) => row.getBoundingClientRect().height));
+        return {
+          rows: rows.length,
+          cells: cells.length,
+          taller: rows.filter((row) => row.getBoundingClientRect().height > lowest + 0.5).length,
+          cut: cells.filter((cell) =>
+            [cell, ...cell.querySelectorAll<HTMLElement>("*")].some((part) => part.scrollWidth > part.clientWidth + 1),
+          ).length,
+          // a failure has its × before its words
+          crosses: rows.filter((row) => row.querySelector(".k2-icon.ti-x, .ti-x")).length,
+        };
+      });
+      expect(found).toEqual({ rows: 5, cells: 15, taller: 0, cut: 0, crosses: 3 });
     },
     390,
   );
@@ -2704,3 +2712,42 @@ test("in a dialog on the phone a notice of many lines keeps its height above the
     390,
   );
 });
+
+// the values of the last hour above their fetches (review r3 of #4360): one slot per minute across the drawing's width,
+// so the cut stands on the left edge of the first failed fetch, right to left on its right edge; the ticks as wide as
+// the drawing, at 420 and 1100 px of drawing
+for (const [width, dir] of [
+  [420, "ltr"],
+  [1100, "ltr"],
+  [420, "rtl"],
+] as const)
+  test(`a history over its ticks: the cut stands on the edge of the first failed tick, ${width} px ${dir}`, async () => {
+    await withPage(
+      "trend-under",
+      async (page) => {
+        if (dir === "rtl") {
+          await page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
+          await settled(page);
+        }
+        const found = await page.evaluate((rtl) => {
+          const trend = document.querySelector<HTMLElement>(".k2-hero-trend[data-under]")!;
+          const draw = trend.querySelector(".k2-hero-draw")!.getBoundingClientRect();
+          const strip = trend.querySelector(".k2-ticks")!.getBoundingClientRect();
+          const cut = trend.querySelector(".k2-hero-cut")!.getBoundingClientRect();
+          const bad = trend.querySelector(".k2-ticks > i[data-s='bad']")!.getBoundingClientRect();
+          const centre = cut.left + cut.width / 2;
+          return {
+            drawing: Math.round(draw.width),
+            strip: [Math.round(strip.left - draw.left), Math.round(strip.right - draw.right)],
+            offset: Math.round((centre - (rtl ? bad.right : bad.left)) * 10) / 10,
+          };
+        }, dir === "rtl");
+        // about the given width (the pane's text edge is 16 on the phone, 20 beside it)
+        expect(Math.abs(found.drawing - width)).toBeLessThanOrEqual(12);
+        expect(found.strip).toEqual([0, 0]);
+        expect(Math.abs(found.offset)).toBeLessThanOrEqual(1);
+      },
+      // the pane's text edges and the page's 8 px: the drawing is the given width
+      width + 2 * 16 + 16,
+    );
+  });

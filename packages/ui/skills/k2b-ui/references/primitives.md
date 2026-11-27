@@ -113,7 +113,8 @@ status | icon, count, word, who }`, one line of "● number word who").
 (below) draws a hero's history as `trend` `ticks`. `Trend` (the same
 `kind`, `values`, `label`, `start`, `caption`, `end`, and under an area
 `ticks` of `{ slots, label }`): a history alone in a section of a detail,
-from text edge to text edge. `Dot` (`status`): a good state is a neutral dot and word. Rows of
+from text edge to text edge; under an area each value stands over its tick.
+A history draws at most 120 values, a `Spark` 60: the newest. `Dot` (`status`): a good state is a neutral dot and word. Rows of
 a table or list part by a very quiet line; the strong hairline parts two
 things (head from content, list from detail, groups).
 
@@ -382,7 +383,7 @@ lines instead of cutting a thing.
   never only the title of the data, `color` (the data colour of its thing;
   without it the owner's, else the app's), `kind` (`bars`, or `line`: one
   soft line of 80 px where the shape over a month matters, such as use over
-  30 days). A few bars of a short history, the history soft and the last in
+  30 days; a value that is no number is a gap). A few bars of a short history, the history soft and the last in
   the full ink; beside a number, never instead of it.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
   `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an

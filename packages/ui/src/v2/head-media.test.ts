@@ -11,8 +11,8 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-head-media-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Mark, Preview, Ticks } = await import("./marks");
-const { Hero, ObjectHead } = await import("./identity");
+const { Mark, Preview, Spark, Ticks } = await import("./marks");
+const { Hero, ObjectHead, Trend } = await import("./identity");
 const { Cells, Tiles } = await import("./layout");
 const { Nav, Path } = await import("./components");
 const { Choice, Input, Select, Setting } = await import("./controls");
@@ -226,4 +226,43 @@ test("the head of an open thing and the ticks come whole from the server", () =>
   expect(head).toContain("Liefert keine Werte");
   const ticks = html(Ticks, { slots: ["ok", "bad", "none"], label: "3 Abrufe" });
   expect([...ticks.matchAll(/data-s="(\w+)"/g)].map((match) => match[1])).toEqual(["ok", "bad", "none"]);
+});
+
+// a drawing is bounded (review r3 of #4360): a spark draws its newest 60 values, a history its newest 120, so a long
+// series neither grows the page nor the time to draw it
+test("a spark and a history draw only their newest values, fast, however long the series", () => {
+  const long = Array.from({ length: 20_000 }, (_, index) => index % 97);
+  const started = performance.now();
+  const bars = html(Spark, { values: long, label: "lang" });
+  const line = html(Spark, { values: long, label: "lang", kind: "line" });
+  const trend = html(Trend, { kind: "bars", values: long, label: "lang" });
+  const area = html(Trend, {
+    kind: "area",
+    values: long,
+    failedFrom: long.length - 3,
+    label: "lang",
+    ticks: { slots: long.map((_, index) => (index >= long.length - 3 ? "bad" : "ok")), label: "Abrufe" },
+  });
+  const took = performance.now() - started;
+  expect(bars.match(/<i /g)?.length).toBe(60);
+  expect(line.match(/[ML]/g)?.length).toBe(60);
+  expect(trend.match(/<rect /g)?.length).toBe(120);
+  // the area's newest 120 values over the newest 120 ticks, the last three failed
+  expect(/class="k2-hero-line" d="([^"]*)"/.exec(area)?.[1]?.match(/[ML]/g)?.length).toBe(120);
+  expect(area.match(/data-s="bad"/g)?.length).toBe(3);
+  expect(area).toContain('class="k2-hero-cut"');
+  // linear: four drawings of 20.000 values in well under a second (quadratic took seconds each)
+  expect(took).toBeLessThan(1000);
+});
+
+test("a spark line skips what is no number and scales negative values between their lowest and highest", () => {
+  const path = (values: number[]) => /<path d="([^"]*)"/.exec(html(Spark, { values, label: "x", kind: "line" }))?.[1] ?? "";
+  // a gap: the line breaks and goes on, nothing NaN in the path
+  const gap = path([1, 2, Number.NaN, 3, Number.POSITIVE_INFINITY, 4]);
+  expect(gap).not.toContain("NaN");
+  expect(gap.match(/M/g)?.length).toBe(3);
+  // all negative: the highest value at the top (y 2), the lowest at the bottom (y 18)
+  expect(path([-5, -1, -3])).toBe("M0.0,18.0l0,0L40.0,2.0L80.0,10.0");
+  // equal values, also negative ones: a flat line in the middle
+  expect(path([-2, -2, -2])).toBe("M0.0,10.0l0,0L40.0,10.0L80.0,10.0");
 });

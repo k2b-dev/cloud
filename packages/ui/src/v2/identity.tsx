@@ -1,20 +1,14 @@
-import { For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
-import { Dot, Icon, Mark, type MarkProps, type TickState, Ticks } from "./marks";
+import { createMemo, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
+import { Dot, Icon, Mark, type MarkProps, type TickState, Ticks, type TicksProps } from "./marks";
 import { PaneHeadContext } from "./pane-head";
 import type { Status } from "./types";
 
 // ── Hero ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * The real history beside the figure, drawn from the values the caller has (never an invented series):
- * - `bars`: one bar per period, such as new connections per day; the last one (today) in full colour;
- * - `area`: a line with its area, such as values per minute; `from` tints the time from that index on as failed;
- * - `ticks`: one tick per fetch or check, such as the fetches of today; a failed one stands red and full height.
- * Where no real history exists yet (a new app, nothing counted so far), pass the kind with no values and `empty`: the
- * place of the drawing keeps its height and says so, so a history that comes later moves nothing. Never draw an
- * invented series. An area needs two values; with fewer it stands as empty.
- */
-export type HeroTrend = {
+/** At most this many values of a history are drawn: the newest. An app with a longer history sums it up first (per hour, per day). */
+const TREND_VALUES = 120;
+
+type TrendWords = {
   /** What the drawing says, in one sentence a person who cannot see it gets the same from. */
   label: string;
   /** What stands in the drawing's place while there is no history, such as "Noch keine Verbindungen gezählt". */
@@ -23,11 +17,30 @@ export type HeroTrend = {
   start?: string;
   caption?: string;
   end?: string;
-} & (
-  | { kind: "bars"; values: readonly number[] }
-  | { kind: "area"; values: readonly number[]; failedFrom?: number }
-  | { kind: "ticks"; values: readonly TickState[] }
-);
+};
+
+/**
+ * The real history beside the figure, drawn from the values the caller has (never an invented series):
+ * - `bars`: one bar per period, such as new connections per day; the last one (today) in full colour;
+ * - `area`: a line with its area, such as values per minute; `failedFrom` tints the time from that index on as failed;
+ *   `ticks` under it stand one per value, such as the fetch of each minute, each value above its tick;
+ * - `ticks`: one tick per fetch or check, such as the fetches of today; a failed one stands red and full height.
+ * At most 120 values are drawn, the newest. Where no real history exists yet (a new app, nothing counted so far), pass
+ * the kind with no values and `empty`: the place of the drawing keeps its height and says so, so a history that comes
+ * later moves nothing. Never draw an invented series. An area needs two values; with fewer it stands as empty.
+ */
+export type HeroTrend = TrendWords &
+  (
+    | { kind: "bars"; values: readonly number[] }
+    | {
+        kind: "area";
+        values: readonly number[];
+        failedFrom?: number;
+        /** Under the area: one tick per value, such as the fetch of each minute, with its own sentence. */
+        ticks?: Pick<TicksProps, "slots" | "label">;
+      }
+    | { kind: "ticks"; values: readonly TickState[] }
+  );
 
 /** One exception under the figure: "● 1 Fehler  Drucker Halle 2 seit 10:40", who quiet after the words. */
 export type HeroException = {
@@ -45,13 +58,9 @@ export type HeroException = {
 
 /**
  * A history on its own, such as the values per minute of the last hour in a detail's section: the drawing of a
- * `Hero`'s trend from text edge to text edge, with its words under it. Under an area, `ticks` stand one per check of
- * the same time, a failure red, so where the values stop and why read as one picture.
+ * `Hero`'s trend from text edge to text edge, with its words under it (the same kinds and values as `HeroTrend`).
  */
-export type TrendProps = HeroTrend & {
-  /** Under an area: one tick per check of the same time, such as the fetches of the last hour, with its own sentence. */
-  ticks?: { slots: readonly TickState[]; label: string };
-};
+export type TrendProps = HeroTrend;
 
 export type HeroProps = {
   /** The one figure that counts today, such as "178" or "41.380"; in the figure type, once per screen. */
@@ -71,10 +80,15 @@ const BAR_HEIGHT = 56;
 const BAR = 14.4;
 const BAR_GAP = 3;
 
+/** The newest values a drawing holds: the end of the series. */
+const newest = <T,>(values: readonly T[]) => (values.length > TREND_VALUES ? values.slice(-TREND_VALUES) : values);
+
 /** Bars of a history in one box: the last in the app's colour, the others soft, a zero a quiet stub. */
 const Bars = (props: { values: readonly number[]; label: string }) => {
-  const width = () => Math.max(props.values.length * (BAR + BAR_GAP) - BAR_GAP, 1);
-  const top = () => Math.max(...props.values, 1);
+  const shown = createMemo(() => newest(props.values));
+  const width = () => Math.max(shown().length * (BAR + BAR_GAP) - BAR_GAP, 1);
+  // the highest value once per drawing, not once per bar
+  const top = createMemo(() => Math.max(...shown(), 1));
   return (
     <svg
       class="k2-hero-draw"
@@ -84,7 +98,7 @@ const Bars = (props: { values: readonly number[]; label: string }) => {
       viewBox={`0 0 ${width()} ${BAR_HEIGHT}`}
       preserveAspectRatio="none"
     >
-      <For each={props.values}>
+      <For each={shown()}>
         {(value, index) => {
           const height = () => Math.max(value > 0 ? 2 : 1, (value / top()) * BAR_HEIGHT);
           return (
@@ -94,7 +108,7 @@ const Bars = (props: { values: readonly number[]; label: string }) => {
               width={BAR}
               height={height()}
               rx={1.5}
-              data-tone={value === 0 ? "none" : index() === props.values.length - 1 ? "now" : undefined}
+              data-tone={value === 0 ? "none" : index() === shown().length - 1 ? "now" : undefined}
             />
           );
         }}
@@ -103,68 +117,93 @@ const Bars = (props: { values: readonly number[]; label: string }) => {
   );
 };
 
-/** A line with its area; from `failedFrom` on the time is tinted as failed. */
-const Area = (props: { values: readonly number[]; label: string; failedFrom?: number }) => {
-  const width = 400;
+const AREA_WIDTH = 400;
+
+/**
+ * A line with its area; from `failedFrom` on the time is tinted as failed. `slotted`: ticks stand under it, one per
+ * value, so each value stands over the middle of its slot and the cut at the left edge of the first failed slot.
+ */
+const Area = (props: { values: readonly number[]; label: string; failedFrom?: number; slotted?: boolean }) => {
   const height = BAR_HEIGHT;
-  const top = () => Math.max(...props.values, 1);
-  const x = (index: number) => (props.values.length > 1 ? (index / (props.values.length - 1)) * width : 0);
+  const count = () => props.values.length;
+  // the highest value once per drawing, not once per point
+  const top = createMemo(() => Math.max(...props.values, 1));
+  const x = (index: number) =>
+    props.slotted ? ((index + 0.5) / count()) * AREA_WIDTH : count() > 1 ? (index / (count() - 1)) * AREA_WIDTH : 0;
   const y = (value: number) => height - 2 - (value / top()) * (height - 6);
   // from index 0 on is a failure too; an index past the last value is none
-  const failed = () =>
-    props.failedFrom != null && props.failedFrom < props.values.length ? { value: Math.max(0, props.failedFrom) } : undefined;
-  const line = () => props.values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join("");
+  const failed = () => {
+    if (props.failedFrom == null || props.failedFrom >= count()) return undefined;
+    const from = Math.max(0, props.failedFrom);
+    // an object, so a cut at x 0 (all of it failed) still shows
+    return { x: props.slotted ? (from / count()) * AREA_WIDTH : x(from) };
+  };
+  const line = createMemo(() =>
+    props.values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(""),
+  );
+  const ends = () => (props.slotted ? [x(0), x(count() - 1)] : [0, AREA_WIDTH]);
   return (
     <svg
       class="k2-hero-draw"
       role="img"
       aria-label={props.label}
       height={height}
-      viewBox={`0 0 ${width} ${height}`}
+      viewBox={`0 0 ${AREA_WIDTH} ${height}`}
       preserveAspectRatio="none"
     >
       <Show when={failed()}>
-        {(from) => (
+        {(cut) => (
           <>
-            <rect class="k2-hero-failed" x={x(from().value)} y={0} width={width - x(from().value)} height={height} />
+            <rect class="k2-hero-failed" x={cut().x} y={0} width={AREA_WIDTH - cut().x} height={height} />
             {/* where it began to fail: a dashed red line across the drawing (the study's cut) */}
-            <line class="k2-hero-cut" x1={x(from().value)} x2={x(from().value)} y1={0} y2={height} vector-effect="non-scaling-stroke" />
+            <line class="k2-hero-cut" x1={cut().x} x2={cut().x} y1={0} y2={height} vector-effect="non-scaling-stroke" />
           </>
         )}
       </Show>
-      <path class="k2-hero-fill" d={`${line()}L${width},${height}L0,${height}Z`} />
+      <path class="k2-hero-fill" d={`${line()}L${ends()[1]},${height}L${ends()[0]},${height}Z`} />
       <path class="k2-hero-line" d={line()} vector-effect="non-scaling-stroke" />
     </svg>
   );
 };
 
 /** A history with its words under it: in a `Hero` beside the figure, or alone in a section of a detail. */
-export const Trend = (props: TrendProps) => (
-  <div class="k2-hero-trend" data-k2-part="Trend">
-    {(() => {
-      // no history yet: its place keeps the drawing's height and says so
-      if (props.values.length < (props.kind === "area" ? 2 : 1))
-        return (
-          <span class="k2-hero-none" data-kind={props.kind} role="img" aria-label={props.empty ?? props.label}>
-            {props.empty}
-          </span>
-        );
-      if (props.kind === "bars") return <Bars values={props.values} label={props.label} />;
-      if (props.kind === "area") return <Area values={props.values} label={props.label} failedFrom={props.failedFrom} />;
-      return <Ticks slots={props.values} label={props.label} stretch />;
-    })()}
-    <Show when={props.kind === "area" ? props.ticks : undefined}>
-      {(ticks) => <Ticks slots={ticks().slots} label={ticks().label} stretch />}
-    </Show>
-    <Show when={props.start || props.caption || props.end}>
-      <span class="k2-hero-cap">
-        <span>{props.start}</span>
-        <span class="k2-hero-what">{props.caption}</span>
-        <span>{props.end}</span>
-      </span>
-    </Show>
-  </div>
-);
+export const Trend = (props: TrendProps) => {
+  // an area with ticks under it keeps the newest values of both, the same count, so each value stands over its tick
+  const under = () => (props.kind === "area" ? props.ticks : undefined);
+  const dropped = () => Math.max(0, props.values.length - TREND_VALUES);
+  return (
+    <div class="k2-hero-trend" data-k2-part="Trend" data-under={under() ? "" : undefined}>
+      {(() => {
+        // no history yet: its place keeps the drawing's height and says so
+        if (props.values.length < (props.kind === "area" ? 2 : 1))
+          return (
+            <span class="k2-hero-none" data-kind={props.kind} role="img" aria-label={props.empty ?? props.label}>
+              {props.empty}
+            </span>
+          );
+        if (props.kind === "bars") return <Bars values={props.values} label={props.label} />;
+        if (props.kind === "area")
+          return (
+            <Area
+              values={newest(props.values)}
+              label={props.label}
+              failedFrom={props.failedFrom == null ? undefined : props.failedFrom - dropped()}
+              slotted={props.ticks !== undefined}
+            />
+          );
+        return <Ticks slots={newest(props.values)} label={props.label} stretch />;
+      })()}
+      <Show when={under()}>{(ticks) => <Ticks slots={newest(ticks().slots)} label={ticks().label} stretch />}</Show>
+      <Show when={props.start || props.caption || props.end}>
+        <span class="k2-hero-cap">
+          <span>{props.start}</span>
+          <span class="k2-hero-what">{props.caption}</span>
+          <span>{props.end}</span>
+        </span>
+      </Show>
+    </div>
+  );
+};
 
 /**
  * The one figure of a screen, right under its head: the number or statement that counts today in the colour of the
