@@ -92,13 +92,17 @@ describe("Chat v2 server render", () => {
       expect(html).toContain(v2.noneOpen);
       expect(html).not.toContain("chat-list-page");
     });
-    test(`a mention is the one statement, quiet in the head, in ${locale}`, () => {
+    test(`the frame has no head bar: search and New chat stand in the nav, a mention on its chat's row, in ${locale}`, () => {
       const html = render(
         locale,
         props({ sidebar: { items: [...rows, chat("Chat05", "Lager-Team", { unread: 2, mentionsUnread: 2 })], nextCursor: null } }),
       );
       expect(html).not.toContain('data-k2-part="StatusRow"');
-      expect(html).toContain(v2.mentions({ count: (2).toLocaleString(locale), names: "Lager-Team" }));
+      // Valentin, v8: no bar above the list; its search and "New chat" are the nav's
+      expect(html).toContain('class="k2-nav-search"');
+      expect(html).toContain('class="k2-nav-primary"');
+      expect(html).not.toContain('data-k2-part="Bar"><div class="k2-bar-start"><span');
+      expect(html).toMatch(/Lager-Team<\/span><span class="k2-row-meta">(?:<!--!\$-->)*2<\/span>/);
     });
     test(`an empty list says there are no chats yet in ${locale}`, () => {
       const html = render(locale, props({ sidebar: { items: [], nextCursor: null } }));

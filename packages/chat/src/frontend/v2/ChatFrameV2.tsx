@@ -4,7 +4,6 @@ import {
   Bar,
   Button,
   Canvas,
-  Input,
   Menu,
   type MenuEntry,
   Nav,
@@ -54,13 +53,9 @@ export type ChatDetailV2 = {
 
 export type ChatFrameV2Props = {
   nav: { label: string; groups: readonly NavGroup[]; foot?: readonly NavItem[] };
-  /** Deeds on the whole list, such as "Mark all read", behind one "…" in the head. */
-  listMenu: { label: string; items: readonly MenuEntry[] };
   newChat: Action;
   search: { value: string; onInput: (value: string) => void; onKeyDown: (event: KeyboardEvent) => void };
   list: {
-    /** What to act on that the nav does not say; quiet words in the head, empty without it. */
-    lead?: string;
     notices: readonly ChatListNotice[];
     content: JSX.Element;
   };
@@ -104,9 +99,10 @@ const HeadButton = (props: { button: ChatHeadButton }) => (
 );
 
 /**
- * Chat on @k2b/ui v2: the places in the sidebar (and the phone's menu); the head with the search and "New chat"; the
- * chats as a list beside the open chat, whose history and composer are Chat's own drawing; the chat's info beside it.
- * On the phone the list is the page, and an open chat is a page of its own with its way back.
+ * Chat on @k2b/ui v2: the places in the sidebar (and the phone's menu) under Chat's search and "New chat", with no
+ * head bar of its own (Valentin, v8); the chats as a list beside the open chat, whose history and composer are Chat's
+ * own drawing; the chat's info beside it. On the phone the list is the page, "New chat" floats over it, and an open
+ * chat is a page of its own with its way back.
  */
 export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
   const locale = useLocale();
@@ -123,35 +119,19 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
         detailEmpty={{ icon: "messages", text: v2().noneOpen }}
         // On the phone the main action floats over the list only; in an open chat it would cover the composer.
         primary={props.detail() ? undefined : props.newChat}
-        sidebar={<Nav title={t().appName} icon="messages" groups={props.nav.groups} foot={props.nav.foot} />}
-        head={
-          <Bar
-            // What to act on that the nav does not say ("2 mentions · Lager-Team") stands as quiet words in the head,
-            // a row that is always there: a mention that arrives live changes words, never a height.
-            start={<Text type="meta">{props.list.lead ?? ""}</Text>}
-            end={
-              <>
-                {/* k2b-ui gap (Z2): the head's search should be a symbol that opens over the head on click or "/". */}
-                <Input
-                  type="search"
-                  icon="search"
-                  label={t().searchChats}
-                  placeholder={t().searchChats}
-                  value={props.search.value}
-                  onInput={props.search.onInput}
-                  onKeyDown={props.search.onKeyDown}
-                />
-                <Menu label={props.listMenu.label} items={props.listMenu.items} />
-                <Button
-                  variant="primary"
-                  icon={props.newChat.icon}
-                  disabled={props.newChat.disabled}
-                  onClick={() => props.newChat.onClick?.()}
-                >
-                  {props.newChat.label}
-                </Button>
-              </>
-            }
+        sidebar={
+          <Nav
+            title={t().appName}
+            icon="messages"
+            search={{
+              label: t().searchChats,
+              value: props.search.value,
+              onInput: props.search.onInput,
+              onKeyDown: props.search.onKeyDown,
+            }}
+            primary={props.newChat}
+            groups={props.nav.groups}
+            foot={props.nav.foot}
           />
         }
       >

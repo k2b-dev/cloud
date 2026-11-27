@@ -3300,6 +3300,8 @@ export function ChatWorkspaceView(
             current: atList() && !archived() && filter() === "unread",
             count: (unreadTotal() ?? loadedUnread()) || undefined,
             onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("unread") : navigation.fallback()),
+            // the head's "…" is gone (Valentin, v8): reading all of them is a deed of the unread ones
+            menu: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
           },
           {
             label: t().forYou,
@@ -3489,19 +3491,6 @@ export function ChatWorkspaceView(
         action: { label: t().retry, onClick: () => void systemList.load(false) },
       });
     return notices;
-  };
-  /**
-   * The one statement over the list says only what the nav does not: who mentioned the reader where (the nav already
-   * counts unread chats). Without a mention the list stands without a statement.
-   */
-  const v2Lead = (): string | undefined => {
-    if (archived()) return undefined;
-    const mentioned = rows().filter((row) => row.mentionsUnread > 0);
-    if (mentioned.length === 0) return undefined;
-    const count = mentioned.reduce((sum, row) => sum + row.mentionsUnread, 0);
-    const names = mentioned.slice(0, 2).map((row) => row.title);
-    if (mentioned.length > 2) names.push(`+${mentioned.length - 2}`);
-    return v2t().mentions({ count: count.toLocaleString(locale()), names: names.join(", ") });
   };
   const [followBusy, setFollowBusy] = createSignal(false);
   const toggleFollow = async (chatId: string, threadId: string, on: boolean) => {
@@ -3744,7 +3733,6 @@ export function ChatWorkspaceView(
     return (
       <V2.ChatFrameV2
         nav={v2Nav()}
-        listMenu={{ label: v2t().listActions, items: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }] }}
         newChat={{ label: t().newChat, icon: "message-plus", onClick: () => void newChat() }}
         search={{
           get value() {
@@ -3759,9 +3747,6 @@ export function ChatWorkspaceView(
           },
         }}
         list={{
-          get lead() {
-            return v2Lead();
-          },
           get notices() {
             return v2Notices();
           },

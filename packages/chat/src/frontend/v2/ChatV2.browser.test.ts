@@ -285,7 +285,7 @@ for (const [width, height] of [
     }
   }, 60_000);
 
-test("a mention that arrives live changes the head's words and moves no row", async () => {
+test("a mention that arrives live shows as '@' on its row and moves no row", async () => {
   const { page, errors, close } = await load("/app/chat", 1440, 900);
   try {
     const first = page.locator('[data-k2-part="Row"]').first();
@@ -295,7 +295,7 @@ test("a mention that arrives live changes the head's words and moves no row", as
     // reads the chat's row again, with its "@" count from the server.
     harness.setNotifications(open, { level: "mentions", choice: "mentions", until: null, defaultLevel: "all", following: null }, 2);
     harness.receiveIn(open, nora, "@Robin kannst du das prüfen?", { thread: invoice });
-    await page.locator('[data-k2-workspace] [data-slot="head"]', { hasText: "Lieferung KW 49" }).waitFor();
+    await page.locator('[data-k2-part="Row"]', { hasText: "Lieferung KW 49" }).locator(".k2-row-meta", { hasText: "@" }).waitFor();
     expect(await first.boundingBox()).toEqual(before);
     expect(errors).toEqual([]);
   } finally {
