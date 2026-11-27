@@ -1072,7 +1072,6 @@ export const hydrateMessageFromSource = async (params: {
                 );
               }
             }
-            if (parts.some((part) => part.attachment)) await indexMessageAttachments(tx, params.messageId);
             const searchChunks = splitSearchText(plainText);
             for (let position = 0; position < searchChunks.length; position += 1) {
               await tx`
@@ -1118,6 +1117,8 @@ export const hydrateMessageFromSource = async (params: {
           hydrated_at = now()
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
+            // After the body: the index records which inline parts the stored HTML references.
+            if (parts.some((part) => part.attachment)) await indexMessageAttachments(tx, params.messageId);
             if (!duplicate.duplicateFound) {
               collaborationEvent = await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });
               if (receipt) {

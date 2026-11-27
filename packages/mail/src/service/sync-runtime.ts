@@ -1229,10 +1229,9 @@ const finishEnvelopeProjection = async (
   // size of the copy that stored it while another copy is still on the server, so it does not move
   // in time. The MIME structure and protocol facts still follow the latest copy, as hydration
   // labels the parts of the source it loads with that structure, and only a delivered copy carries
-  // list headers. The attachment file index follows a date that moves, in the same statement.
+  // list headers.
   if (!newlyInserted)
     await params.db`
-    WITH updated AS (
     UPDATE mail.message_contents mc
     SET
       message_id = ${params.message.messageId},
@@ -1254,11 +1253,6 @@ const finishEnvelopeProjection = async (
       ) AS present
     ) other_copy
     WHERE mc.id = ${messageContentId}::uuid
-    RETURNING mc.id, mc.internal_date
-    )
-    UPDATE mail.attachment_files indexed_file SET internal_date = updated.internal_date
-    FROM updated
-    WHERE indexed_file.message_id = updated.id AND indexed_file.internal_date IS DISTINCT FROM updated.internal_date
   `;
   await upsertAddresses(params.db, messageContentId, params.message, newlyInserted);
   await params.db`

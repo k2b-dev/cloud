@@ -1,16 +1,16 @@
 import { sql } from "@k2b/cloud";
 import { backgroundWork, logger, startRuntimeInterval } from "@k2b/cloud/services";
-import { MIN_LIST_IMAGE_BYTES } from "../attachment-preview-policy";
 
 type SqlClient = typeof sql;
 type SqlFragment = Bun.SQL.Query<unknown>;
 
 /**
- * Mail offers its attachments to the shared file chooser as one read-only source. This index holds one row per
- * attachment a person would pick: mailbox, date, sender and file facts, so every folder of the source is one indexed
- * query. Rows follow their attachment (`ON DELETE CASCADE`), so hydration, which replaces a message's attachments,
- * replaces their rows too. Months are UTC: capabilities know no person's time zone, and a stored bucket needs one zone.
- * Every statement is idempotent and runs on each start.
+ * Mail offers its attachments to the shared file chooser as one read-only source. This index holds one row per stored
+ * attachment with the facts every folder reads: mailbox, date, sender, file facts, and what decides whether a person
+ * picks it (disposition, Content-ID, whether the body references it). The source filters when it reads
+ * (`attachment-files.ts`), so a changed rule needs no reindex. Rows follow their attachment (`ON DELETE CASCADE`), so
+ * hydration, which replaces a message's attachments, replaces their rows too. Months are UTC: capabilities know no
+ * person's time zone, and a stored bucket needs one zone. Every statement is idempotent and runs on each start.
  */
 export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
   await db`
@@ -26,7 +26,9 @@ export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
       size_bytes bigint NOT NULL CHECK (size_bytes >= 0),
       content_type text NOT NULL,
       blob_id uuid NOT NULL,
-      disposition text
+      disposition text,
+      content_id text,
+      body_references boolean NOT NULL
     )
   `.simple();
   // Years, months and senders group in this order; a sender's files read it newest first.
@@ -34,7 +36,7 @@ export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS attachment_files_folder_idx
     ON mail.attachment_files (mailbox_id, month DESC, sender_email, internal_date DESC, attachment_id DESC)
   `.simple();
-  // A message whose date moves updates its rows by message.
+  // An assigned-only reader starts from their conversations' messages; a message whose date moves updates by message.
   await db`CREATE INDEX IF NOT EXISTS attachment_files_message_idx ON mail.attachment_files (message_id)`.simple();
   await db`
     CREATE TABLE IF NOT EXISTS mail.attachment_files_backfill (
@@ -44,25 +46,42 @@ export const migrateAttachmentFiles = async (db: SqlClient): Promise<void> => {
       completed_at timestamptz
     )
   `.simple();
+  // A sync that moves a message's date moves its rows. A row trigger rather than the sync statement itself: its query
+  // runs after the message row lock with a fresh snapshot, so it also sees rows that hydration or the backfill committed
+  // while the sync waited for that lock, which the waiting statement's own snapshot would miss.
+  await db`CREATE OR REPLACE FUNCTION mail.move_attachment_file_dates() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      UPDATE mail.attachment_files SET internal_date = NEW.internal_date
+      WHERE message_id = NEW.id AND internal_date IS DISTINCT FROM NEW.internal_date;
+      RETURN NULL;
+    END; $$`.simple();
+  // Created once: replacing it on every start would take a table lock on every message write.
+  await db`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'mail.message_contents'::regclass
+      AND tgname = 'message_contents_attachment_file_dates') THEN
+      CREATE TRIGGER message_contents_attachment_file_dates AFTER UPDATE OF internal_date ON mail.message_contents
+        FOR EACH ROW WHEN (OLD.internal_date IS DISTINCT FROM NEW.internal_date)
+        EXECUTE FUNCTION mail.move_attachment_file_dates();
+    END IF;
+  END $$`.simple();
 };
 
 /**
- * Inline parts that the body references by Content-ID, and images below the list's signature-logo threshold, belong
- * to the message's look, not to the files someone passes on. The list's image previews leave out the same parts.
+ * One statement: the index rows of the attachments that `attachments` selects (a subquery of `id`). Whether the body
+ * references an inline part compares its Content-ID with the stored HTML's `cid:` links, which the sanitizer keeps.
  */
-const pickable = () => sql`
-  NOT (a.disposition = 'inline' AND a.content_id IS NOT NULL)
-  AND NOT (lower(btrim(split_part(a.content_type, ';', 1))) LIKE 'image/%' AND a.size_bytes < ${MIN_LIST_IMAGE_BYTES})
-`;
-
-/** One statement: the index rows of the attachments that `attachments` selects (a subquery of `id`). */
 const insertAttachmentFiles = (db: SqlClient, attachments: SqlFragment) => db<{ attachment_id: string }[]>`
   INSERT INTO mail.attachment_files (
     attachment_id, mailbox_id, message_id, internal_date, sender_email, sender_name,
-    filename, size_bytes, content_type, blob_id, disposition
+    filename, size_bytes, content_type, blob_id, disposition, content_id, body_references
   )
   SELECT a.id, mc.mailbox_id, mc.id, mc.internal_date, COALESCE(sender.normalized_email, ''),
-    NULLIF(btrim(sender.display_name), ''), a.filename, a.size_bytes, a.content_type, a.blob_id, a.disposition
+    NULLIF(btrim(sender.display_name), ''), a.filename, a.size_bytes, a.content_type, a.blob_id, a.disposition, a.content_id,
+    COALESCE(
+      length(btrim(a.content_id, '<> ')) > 0
+        AND strpos(lower(mc.sanitized_html), 'cid:' || lower(btrim(a.content_id, '<> '))) > 0,
+      false
+    )
   FROM mail.attachments a
   JOIN mail.message_contents mc ON mc.id = a.message_id
   LEFT JOIN LATERAL (
@@ -72,18 +91,20 @@ const insertAttachmentFiles = (db: SqlClient, attachments: SqlFragment) => db<{ 
     ORDER BY address.position
     LIMIT 1
   ) sender ON true
-  WHERE a.id IN (${attachments}) AND ${pickable()}
+  WHERE a.id IN (${attachments})
   ON CONFLICT (attachment_id) DO NOTHING
   RETURNING attachment_id
 `;
 
-/** Ingest calls this in the transaction that stores the message's attachments, after them and its addresses. */
+/** Ingest calls this in the transaction that stores the message, after its attachments, addresses and body. */
 export const indexMessageAttachments = async (db: SqlClient, messageId: string): Promise<void> => {
   await insertAttachmentFiles(db, sql`SELECT id FROM mail.attachments WHERE message_id = ${messageId}::uuid`);
 };
 
 // Match the existing startup migrations' 100-row transaction budget (shared drafts, reply drafts).
 export const ATTACHMENT_FILES_BACKFILL_BATCH = 100;
+// Lets ingest's transactions in between batches; one million attachments add 10,000 × 50 ms = 500 s of pauses.
+const BACKFILL_PAUSE_MS = 50;
 const BACKFILL_INTERVAL_MS = 10 * 60_000;
 const log = logger("mail:attachment-files");
 
@@ -92,39 +113,59 @@ export type AttachmentFileBackfill = { afterId: string; indexed: number; complet
 /**
  * Indexes the attachments stored before the index existed, one batch per transaction in attachment order. The cursor
  * commits with each batch, so a crash or another process resumes after finished work, and rows ingest already wrote
- * stay as they are. A batch holds its attachments `FOR KEY SHARE SKIP LOCKED`: only a delete locks an attachment row,
- * so a skipped one is on its way out (hydration's replacement indexes itself), and the batch never waits on, or
- * deadlocks with, a cascade that locks a message's attachments in another order. In maintenance „Ruhe“ it stops between
- * batches and answers `null` before the first; the next run resumes from the cursor.
+ * stay as they are.
+ *
+ * A batch locks what it reads and never waits: its attachments `FOR KEY SHARE`, their messages `FOR SHARE`, both
+ * `SKIP LOCKED`. A delete (hydration's replacement, a purge) or a sync that moves the message's date holds one of them,
+ * so waiting could deadlock with a cascade that locks in another order, and reading past a date move would store the
+ * old date. A skipped attachment stays ahead of the cursor, which stops just below the first one, so a delete that
+ * rolls back loses nothing. A batch that moves nothing ends the run; the next one retries after the interval. In
+ * maintenance „Ruhe“ it stops between batches and answers `null` before the first.
  */
 export const backfillAttachmentFiles = async (signal?: AbortSignal): Promise<AttachmentFileBackfill | null> => {
   let progress: AttachmentFileBackfill | null = null;
   for (;;) {
     signal?.throwIfAborted();
     if (backgroundWork.paused()) return progress;
-    progress = await sql.begin(async (tx): Promise<AttachmentFileBackfill> => {
+    const step = await sql.begin(async (tx): Promise<AttachmentFileBackfill & { moved: boolean }> => {
       await tx`SET LOCAL lock_timeout = '10s'`;
       await tx`INSERT INTO mail.attachment_files_backfill (singleton) VALUES (true) ON CONFLICT DO NOTHING`;
       const [marker] = await tx<{ after_id: string; indexed: string | number; completed_at: Date | null }[]>`
         SELECT after_id, indexed, completed_at FROM mail.attachment_files_backfill WHERE singleton FOR UPDATE
       `;
       if (!marker) throw new Error("Attachment file backfill marker is missing");
-      if (marker.completed_at) return { afterId: marker.after_id, indexed: Number(marker.indexed), completed: true };
-      const [batch] = await tx<{ last_id: string | null; scanned: number; indexed: number }[]>`
-        WITH batch AS (
+      if (marker.completed_at) return { afterId: marker.after_id, indexed: Number(marker.indexed), completed: true, moved: false };
+      const [batch] = await tx<
+        { scanned: number; last_id: string | null; below_skipped: string | null; skipped: boolean; indexed: number }[]
+      >`
+        WITH candidates AS (
           SELECT id FROM mail.attachments WHERE id > ${marker.after_id}::uuid ORDER BY id LIMIT ${ATTACHMENT_FILES_BACKFILL_BATCH}
-          FOR KEY SHARE SKIP LOCKED
+        ), locked AS (
+          SELECT a.id
+          FROM mail.attachments a
+          JOIN mail.message_contents mc ON mc.id = a.message_id
+          WHERE a.id IN (SELECT id FROM candidates)
+          FOR KEY SHARE OF a SKIP LOCKED
+          FOR SHARE OF mc SKIP LOCKED
         ), indexed AS (
-          ${insertAttachmentFiles(tx, sql`SELECT id FROM batch`)}
+          ${insertAttachmentFiles(tx, sql`SELECT id FROM locked`)}
+        ), first_skipped AS (
+          SELECT c.id FROM candidates c WHERE c.id NOT IN (SELECT id FROM locked) ORDER BY c.id LIMIT 1
         )
-        SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS last_id,
-          (SELECT count(*) FROM batch)::int AS scanned,
+        SELECT (SELECT count(*) FROM candidates)::int AS scanned,
+          (SELECT id FROM candidates ORDER BY id DESC LIMIT 1) AS last_id,
+          (SELECT c.id FROM candidates c WHERE c.id < (SELECT id FROM first_skipped) ORDER BY c.id DESC LIMIT 1) AS below_skipped,
+          EXISTS (SELECT 1 FROM first_skipped) AS skipped,
           (SELECT count(*) FROM indexed)::int AS indexed
       `;
-      const next: AttachmentFileBackfill = {
-        afterId: batch?.last_id ?? marker.after_id,
+      const scanned = batch?.scanned ?? 0;
+      const skipped = batch?.skipped === true;
+      const afterId = (skipped ? batch?.below_skipped : batch?.last_id) ?? marker.after_id;
+      const next = {
+        afterId,
         indexed: Number(marker.indexed) + (batch?.indexed ?? 0),
-        completed: (batch?.scanned ?? 0) < ATTACHMENT_FILES_BACKFILL_BATCH,
+        completed: !skipped && scanned < ATTACHMENT_FILES_BACKFILL_BATCH,
+        moved: afterId !== marker.after_id,
       };
       await tx`
         UPDATE mail.attachment_files_backfill
@@ -134,13 +175,15 @@ export const backfillAttachmentFiles = async (signal?: AbortSignal): Promise<Att
       `;
       return next;
     });
-    if (progress.completed) return progress;
+    progress = { afterId: step.afterId, indexed: step.indexed, completed: step.completed };
+    if (step.completed || !step.moved) return progress;
+    await Bun.sleep(BACKFILL_PAUSE_MS);
   }
 };
 
 let backfill: { stop(): Promise<void> } | undefined;
 
-/** Runs the backfill after start and again after a failure or maintenance „Ruhe“; once finished, a run is one read. */
+/** Runs the backfill after start and again after a failure, a stalled batch or maintenance „Ruhe“; once finished, a run is one read. */
 export const startAttachmentFileBackfill = (): void => {
   backfill ??= startRuntimeInterval({
     intervalMs: BACKFILL_INTERVAL_MS,

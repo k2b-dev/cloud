@@ -128,12 +128,20 @@ The source has these folders:
    address only. Mail without a sender is under **Unknown sender**.
 4. The attachments from that sender in that month, newest first.
 
-Inline images that the message body references by Content-ID are not in the
-source. Images smaller than 4 KiB are not in the source either, because they
-are usually signature logos. The Mail list's image previews use the same
-rule. Months are in UTC, because capabilities do not know the person's time
-zone. Attachments of a message that is no longer in a folder are not in the
-source.
+Mail indexes every attachment it stores and decides when it lists one. These
+attachments are not in the source:
+
+- An inline part (`Content-Disposition: inline`) that the message body shows
+  through a `cid:` link to its Content-ID, such as a signature logo. An inline
+  part with a Content-ID that the body does not show stays in the source.
+  Apple Mail and iOS Mail send photos and PDFs this way.
+- A JPEG, PNG, GIF or WebP image smaller than 4 KiB. These are the formats
+  that the Mail list previews, and it leaves out the same small images as
+  logos. Other small files, such as an SVG, stay in the source.
+- A file larger than 100 MiB, which `attachment.content.read` does not open.
+- An attachment of a message that is no longer in any folder.
+
+Months are in UTC, because capabilities do not know the person's time zone.
 
 Access follows the Mail list. A person with access to the whole mailbox sees
 all its attachments. A person with assigned access sees only the attachments
@@ -143,9 +151,13 @@ Credential scopes and resource-bound service accounts limit the source the
 same way as other Mail reads. `attachment.content.read` checks access again
 for each file. It streams the stored attachment with a limit of 100 MiB.
 
-Each folder is one indexed query with keyset pagination of up to 100
-entries. A mailbox folder costs six statements, whatever the page size: one
-to find the mailbox, four for access, and one for the folder.
+Each folder is one query with keyset pagination of up to 100 entries. For a
+person with access to the whole mailbox, years and months take one index
+step each, a month's senders read that month, and a sender's files read an
+index range. For a person with assigned access, each folder reads only the
+attachments of their assigned conversations, however large the mailbox is.
+A mailbox folder costs six statements, whatever the page size: one to find
+the mailbox, four for access, and one for the folder.
 
 ### Upgrade
 
@@ -154,11 +166,15 @@ changes no existing data. Mail fills the table when it stores a message.
 After start, Mail adds the attachments that were stored before the upgrade
 in a background job, 100 attachments per transaction. The job saves its
 position in `mail.attachment_files_backfill`. A restart or a second replica
-continues from that position. Until the job is done, the source shows only
-part of the older attachments.
+continues from that position. The job does not wait for a message that Mail
+is storing or syncing at that moment. It leaves that message for a later run
+and pauses for 50 ms between transactions. Until the job is done, the source
+shows only part of the older attachments.
 
 A replica that still runs an older image does not add attachments to the
-table. Upgrade all Mail replicas together. If an older replica received
-mail after the job finished, delete the single row of
-`mail.attachment_files_backfill`. Mail then runs the job again on its next
-start. A new run adds only the missing attachments.
+table. It also removes rows when it loads a message again, because loading
+replaces the message's attachments, and it does not add the new rows.
+Upgrade all Mail replicas together. If an older replica ran during or after
+the job, delete the single row of `mail.attachment_files_backfill`. Mail
+then runs the job again on its next start. A new run adds only the missing
+attachments.

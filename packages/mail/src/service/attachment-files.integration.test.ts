@@ -9,20 +9,26 @@ import { unwrap } from "@k2b/stdlib";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
+import { MAX_DRAFT_ATTACHMENT_BYTES } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { grantMailboxAccess } from "./access";
-import { backfillAttachmentFiles } from "./attachment-file-index";
-import { listAttachmentFiles } from "./attachment-files";
+import { grantMailboxAccess, type MailboxAccess } from "./access";
+import { backfillAttachmentFiles, indexMessageAttachments } from "./attachment-file-index";
+import { attachmentFileQueries, listAttachmentFiles } from "./attachment-files";
 import type { MailRequestContext } from "./auth";
 import type { ConnectorEnvelope } from "./connectors";
 import { setMailboxPreference } from "./mailbox-preferences";
 import { createMailbox } from "./mailboxes";
+import { storeReadableBlob } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
+import { materializeOutboundMessage } from "./outbound-message-projection";
+import { outboundDraftSnapshotSchema } from "./outbound-mime";
 import { ingestEnvelope } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats");
 
 type Address = { name: string; address: string };
+type Plan = { "Relation Name"?: string; "Actual Rows"?: number; "Actual Loops"?: number; Plans?: Plan[] };
+const planNodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(planNodes)];
 type Part = { filename: string; type: string; bytes: number; disposition: "attachment" | "inline"; contentId?: string };
 
 const base64 = (bytes: number, fill: number) =>
@@ -46,7 +52,7 @@ suite("Mail attachments as a file-provider source", () => {
   let mailbox = { id: "", shortId: "", resourceId: "", folderId: "" };
   let other = { id: "", shortId: "", resourceId: "", folderId: "" };
   let nextUid = 100;
-  const envelopes = new Map<string, { envelope: ConnectorEnvelope; contentId: string }>();
+  const envelopes = new Map<string, { envelope: ConnectorEnvelope; contentId: string; source: Buffer }>();
 
   const createUser = async (role: string): Promise<User> => {
     const uid = `mail-files-${role}-${suffix}`;
@@ -119,7 +125,7 @@ suite("Mail attachments as a file-provider source", () => {
   const receive = async (
     target: typeof mailbox,
     key: string,
-    params: { from: Address | null; date: string; parts: Part[] },
+    params: { from: Address | null; date: string; parts: Part[]; html?: string },
   ): Promise<{ messageId: string; conversationId: string }> => {
     nextUid += 1;
     const messageIdHeader = `<${key}-${suffix}@example.test>`;
@@ -148,7 +154,6 @@ suite("Mail attachments as a file-provider source", () => {
       message: envelope,
       captureWorkflowTriggers: false,
     });
-    envelopes.set(key, { envelope, contentId: messageId });
     const boundary = `b-${key}`;
     const source = Buffer.from(
       [
@@ -161,9 +166,21 @@ suite("Mail attachments as a file-provider source", () => {
         `Content-Type: multipart/mixed; boundary="${boundary}"`,
         "",
         `--${boundary}`,
-        "Content-Type: text/plain; charset=utf-8",
-        "",
-        `Body of ${key}`,
+        ...(params.html
+          ? [
+              `Content-Type: multipart/alternative; boundary="alt-${key}"`,
+              "",
+              `--alt-${key}`,
+              "Content-Type: text/plain; charset=utf-8",
+              "",
+              `Body of ${key}`,
+              `--alt-${key}`,
+              "Content-Type: text/html; charset=utf-8",
+              "",
+              params.html,
+              `--alt-${key}--`,
+            ]
+          : ["Content-Type: text/plain; charset=utf-8", "", `Body of ${key}`]),
         ...params.parts.flatMap((part, index) => [
           `--${boundary}`,
           `Content-Type: ${part.type}; name="${part.filename}"`,
@@ -177,6 +194,7 @@ suite("Mail attachments as a file-provider source", () => {
         "",
       ].join("\r\n"),
     );
+    envelopes.set(key, { envelope, contentId: messageId, source });
     expect(await hydrateMessageFromSource({ messageId, source: Readable.from([source]) })).toMatchObject({ status: "hydrated" });
     const [link] = await sql<{ conversation_id: string }[]>`
       SELECT conversation_id::text FROM mail.conversation_messages WHERE message_id = ${messageId}::uuid
@@ -198,9 +216,10 @@ suite("Mail attachments as a file-provider source", () => {
     } while (cursor && pages.length < 20);
     return pages;
   };
-  // report.pdf and photo.jpg share one message and date; their order between them is the attachment ID's.
-  const aliceFiles = ["photo.jpg", "report.pdf", "a3.txt", "a2.txt", "a1.txt"];
-  const inDateOrder = (names: string[]) => [...names.slice(0, 2).sort(), ...names.slice(2)];
+  // The first message's four shown files share one date; their order between them is the attachment ID's.
+  const firstFiles = ["icon.svg", "photo.jpg", "report.pdf", "scan.pdf"];
+  const aliceFiles = [...firstFiles, "a3.txt", "a2.txt", "a1.txt"];
+  const inDateOrder = (names: string[]) => [...names.slice(0, 4).sort(), ...names.slice(4)];
   const alice: Address = { name: "Alice Example", address: "alice@example.test" };
   const bob: Address = { name: "", address: "bob@example.test" };
   let march = "";
@@ -239,7 +258,12 @@ suite("Mail attachments as a file-provider source", () => {
         { filename: "logo.png", type: "image/png", bytes: 6000, disposition: "inline", contentId: `logo-${suffix}@example.test` },
         { filename: "dot.gif", type: "image/gif", bytes: 40, disposition: "attachment" },
         { filename: "photo.jpg", type: "image/jpeg", bytes: 6000, disposition: "inline" },
+        // As Apple Mail sends a PDF: inline with a Content-ID that the body never references.
+        { filename: "scan.pdf", type: "application/pdf", bytes: 6000, disposition: "inline", contentId: `scan-${suffix}@example.test` },
+        // Small, but not a format the list previews, so not taken for a logo.
+        { filename: "icon.svg", type: "image/svg+xml", bytes: 300, disposition: "attachment" },
       ],
+      html: `<p>Body of first</p><img src="cid:logo-${suffix}@example.test" alt="Logo">`,
     });
     await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${first.conversationId}::uuid, ${assigned.id}::uuid)`;
     await receive(mailbox, "bob", {
@@ -315,7 +339,7 @@ suite("Mail attachments as a file-provider source", () => {
     expect(await items(reader, { parent: march, query: "BOB" })).toEqual(["bob@example.test"]);
   });
 
-  test("a sender's folder lists their attachments newest first, without inline images or signature logos", async () => {
+  test("a sender's folder lists their attachments newest first, without body images or small preview-format logos", async () => {
     const page = unwrap(await list(reader, { parent: aliceMarch }));
     expect(inDateOrder(page.items.map((entry) => entry.name))).toEqual(aliceFiles);
     expect(page.items.find((entry) => entry.name === "report.pdf")).toMatchObject({
@@ -328,14 +352,27 @@ suite("Mail attachments as a file-provider source", () => {
       SELECT a.filename FROM mail.attachments a JOIN mail.message_contents mc ON mc.id = a.message_id
       WHERE mc.mailbox_id = ${mailbox.id}::uuid ORDER BY a.filename
     `;
-    // Both left-out parts are stored attachments; only the file source leaves them out.
+    // Both left-out parts are stored and indexed; the source leaves them out when it reads.
     expect(stored.map((row) => row.filename)).toEqual(expect.arrayContaining(["dot.gif", "logo.png"]));
+    const indexed = await sql<{ filename: string; disposition: string; content_id: string | null; body_references: boolean }[]>`
+      SELECT filename, disposition, content_id, body_references FROM mail.attachment_files
+      WHERE message_id = ${envelopes.get("first")!.contentId}::uuid ORDER BY filename
+    `;
+    expect(indexed.map((row) => [row.filename, row.disposition, row.body_references])).toEqual([
+      ["dot.gif", "attachment", false],
+      ["icon.svg", "attachment", false],
+      ["logo.png", "inline", true],
+      ["photo.jpg", "inline", false],
+      ["report.pdf", "attachment", false],
+      ["scan.pdf", "inline", false],
+    ]);
+    expect(indexed.find((row) => row.filename === "scan.pdf")?.content_id).toBe(`<scan-${suffix}@example.test>`);
     expect(await items(reader, { parent: aliceMarch, query: "A2" })).toEqual(["a2.txt"]);
   });
 
   test("pages hold at most the limit and continue by cursor until next is null", async () => {
     const pages = await all(reader, aliceMarch, 2);
-    expect(pages.map((page) => page.items.length)).toEqual([2, 2, 1]);
+    expect(pages.map((page) => page.items.length)).toEqual([2, 2, 2, 1]);
     expect(pages.at(-1)?.next).toBeNull();
     // The pages hold the unpaged listing in its order, each file once.
     const unpaged = unwrap(await list(reader, { parent: aliceMarch })).items.map((entry) => entry.id);
@@ -354,7 +391,7 @@ suite("Mail attachments as a file-provider source", () => {
   test("an assigned-only reader sees only the attachments of their conversations", async () => {
     expect(await items(assigned, { parent: mailbox.shortId })).toEqual(["2026"]);
     expect(await items(assigned, { parent: march })).toEqual(["Alice Example (alice@example.test)"]);
-    expect(inDateOrder(await items(assigned, { parent: aliceMarch }))).toEqual(["photo.jpg", "report.pdf"]);
+    expect((await items(assigned, { parent: aliceMarch })).sort()).toEqual(firstFiles);
     expect(await items(assigned, { parent: bobMarch })).toEqual([]);
     expect(await items(assigned, { parent: `${mailbox.shortId}/2025/12/-` })).toEqual([]);
   });
@@ -461,6 +498,8 @@ suite("Mail attachments as a file-provider source", () => {
         // Resolve the mailbox, four grant reads (actor, mailbox, mailbox-wide and assigned grants), one folder query.
         expect(small).toHaveLength(6);
         expect(large).toHaveLength(6);
+        // An assigned-only reader's folders take the same statements.
+        expect(await meter.during(() => list(assigned, { parent, limit: 100 }))).toHaveLength(6);
       }
     } finally {
       await meter.close();
@@ -510,7 +549,12 @@ suite("Mail attachments as a file-provider source", () => {
       WHERE mailbox_id IN (${mailbox.id}::uuid, ${other.id}::uuid) ORDER BY attachment_id
     `;
     const before = await snapshot();
-    expect(before).toHaveLength(8);
+    // Every stored attachment of both mailboxes has its row, including the parts the source does not show.
+    const [stored] = await sql<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM mail.attachments a JOIN mail.message_contents mc ON mc.id = a.message_id
+      WHERE mc.mailbox_id IN (${mailbox.id}::uuid, ${other.id}::uuid)
+    `;
+    expect(before).toHaveLength(stored!.count);
     await sql`DELETE FROM mail.attachment_files WHERE mailbox_id IN (${mailbox.id}::uuid, ${other.id}::uuid)`;
     await sql`DELETE FROM mail.attachment_files_backfill`;
     const first = await backfillAttachmentFiles();
@@ -555,10 +599,210 @@ suite("Mail attachments as a file-provider source", () => {
     const senders = unwrap(await list(owner, { parent: `${other.shortId}/2026/03` })).items;
     // The name is cut to the contract's 255 characters; the ID is the address's hash.
     const folder = senders.find((entry) => entry.id.includes("/h:"));
-    expect(folder?.id).toMatch(new RegExp(`^${other.shortId}/2026/03/h:[0-9a-f]{32}$`));
+    expect(folder?.id).toMatch(new RegExp(`^${other.shortId}/2026/03/h:[0-9a-f]{64}$`));
     expect(folder?.name).toHaveLength(255);
     expect(long.address.startsWith(folder!.name.slice(0, 200))).toBe(true);
     expect(await items(owner, { parent: folder!.id })).toEqual(["long.txt"]);
     expect(senders.every((entry) => entry.id.length <= 2048)).toBe(true);
+  });
+
+  test("files the read capability would refuse as too large are not listed", async () => {
+    const contract = envelopes.get("bob")!.contentId;
+    await sql`UPDATE mail.attachment_files SET size_bytes = ${MAX_DRAFT_ATTACHMENT_BYTES + 1} WHERE message_id = ${contract}::uuid`;
+    try {
+      expect(await items(reader, { parent: bobMarch })).toEqual([]);
+      expect(await items(reader, { parent: march })).toEqual(["Alice Example (alice@example.test)"]);
+    } finally {
+      await sql`UPDATE mail.attachment_files SET size_bytes = 300 WHERE message_id = ${contract}::uuid`;
+    }
+    expect(await items(reader, { parent: bobMarch })).toEqual(["contract.txt"]);
+  });
+
+  test("hydrating a message again replaces its rows and never doubles them", async () => {
+    const { contentId, source } = envelopes.get("bob")!;
+    const rows = () => sql<{ attachment_id: string; filename: string }[]>`
+      SELECT attachment_id, filename FROM mail.attachment_files WHERE message_id = ${contentId}::uuid
+    `;
+    const before = await rows();
+    await sql`UPDATE mail.message_contents SET hydration_status = 'envelope' WHERE id = ${contentId}::uuid`;
+    expect(await hydrateMessageFromSource({ messageId: contentId, source: Readable.from([source]) })).toMatchObject({ status: "hydrated" });
+    const after = await rows();
+    expect(after.map((row) => row.filename)).toEqual(before.map((row) => row.filename));
+    expect(after.map((row) => row.attachment_id)).not.toEqual(before.map((row) => row.attachment_id));
+    expect(await items(reader, { parent: bobMarch })).toEqual(["contract.txt"]);
+  });
+
+  test("a sent message indexes its files in its projection, and the logo its body shows stays out", async () => {
+    const logoId = `logo.${crypto.randomUUID()}@example.test`;
+    const file = Buffer.alloc(5000, 7);
+    const fileBlob = await storeReadableBlob(Readable.from([file]), file.length);
+    const snapshot = outboundDraftSnapshotSchema.parse({
+      format: "markdown",
+      revision: 1,
+      from: { name: "Team", address },
+      replyTo: null,
+      envelopeFrom: null,
+      to: [{ name: "Bob", address: bob.address }],
+      cc: [],
+      bcc: [],
+      subject: `Sent files ${suffix}`,
+      body: "See attached",
+      renderedHtml: `<p>See attached</p><img src="cid:${logoId}" alt="Team">`,
+      inlineLogo: { versionId: crypto.randomUUID(), sha256: "a".repeat(64), contentType: "image/png", byteLength: 5000, contentId: logoId },
+      attachments: [
+        {
+          id: crypto.randomUUID(),
+          blobId: fileBlob.id,
+          filename: "offer.pdf",
+          contentType: "application/pdf",
+          byteLength: file.length,
+          contentHash: fileBlob.contentHash,
+        },
+      ],
+    });
+    const projection = await sql.begin((tx) =>
+      materializeOutboundMessage({
+        db: tx,
+        mailboxId: mailbox.id,
+        outboxId: crypto.randomUUID(),
+        stableMessageId: `<sent-${suffix}@example.test>`,
+        conversationId: null,
+        snapshot,
+        inlineLogoContent: Buffer.alloc(5000, 9),
+        internalDate: new Date("2026-02-14T09:00:00.000Z"),
+        byteLength: 10_000,
+      }),
+    );
+    const rows = await sql<{ filename: string; disposition: string; body_references: boolean; sender_email: string }[]>`
+      SELECT filename, disposition, body_references, sender_email FROM mail.attachment_files
+      WHERE message_id = ${projection.messageId}::uuid ORDER BY filename
+    `;
+    expect(rows).toEqual([
+      { filename: "logo.png", disposition: "inline", body_references: true, sender_email: address },
+      { filename: "offer.pdf", disposition: "attachment", body_references: false, sender_email: address },
+    ]);
+    // Once the sent copy lies in a folder, the source shows its file under the mailbox's own address, without the logo.
+    const [ref] = await sql<{ id: string }[]>`
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${mailbox.folderId}::uuid, ${projection.messageId}::uuid, 1, 9001) RETURNING id
+    `;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
+      VALUES (${ref!.id}::uuid, ${mailbox.folderId}::uuid, ${projection.messageId}::uuid, ARRAY[]::text[])`;
+    expect(await items(reader, { parent: `${mailbox.shortId}/2026/02/e:${encodeURIComponent(address)}` })).toEqual(["offer.pdf"]);
+  });
+
+  test("the backfill never waits on a delete or a date move, loses nothing to a rollback and reads the moved date", async () => {
+    const rolledBack = envelopes.get("alice-1")!.contentId;
+    const moved = envelopes.get("alice-2")!.contentId;
+    const deleted = envelopes.get("alice-3")!.contentId;
+    const attachmentsOf = async (messageId: string) =>
+      (await sql<{ id: string }[]>`SELECT id FROM mail.attachments WHERE message_id = ${messageId}::uuid`).map((row) => row.id);
+    const [rolledBackIds, movedIds, deletedIds] = [
+      await attachmentsOf(rolledBack),
+      await attachmentsOf(moved),
+      await attachmentsOf(deleted),
+    ];
+    const held = [...rolledBackIds, ...movedIds, ...deletedIds].sort();
+    await sql`DELETE FROM mail.attachment_files WHERE mailbox_id IN (${mailbox.id}::uuid, ${other.id}::uuid)`;
+    await sql`DELETE FROM mail.attachment_files_backfill`;
+    // Three writers hold their locks: a hydration that will roll back, a purge that commits, and a sync's date move.
+    const writers = [await sql.reserve(), await sql.reserve(), await sql.reserve()] as const;
+    const [hydration, purge, sync] = writers;
+    try {
+      await hydration`BEGIN`;
+      await hydration`DELETE FROM mail.message_parts WHERE message_id = ${rolledBack}::uuid`;
+      await purge`BEGIN`;
+      await purge`DELETE FROM mail.message_parts WHERE message_id = ${deleted}::uuid`;
+      await sync`BEGIN`;
+      await sync`UPDATE mail.message_contents SET internal_date = '2026-05-02T09:00:00Z' WHERE id = ${moved}::uuid`;
+      const startedAt = performance.now();
+      const blocked = await backfillAttachmentFiles(AbortSignal.timeout(20_000));
+      // Shorter than the batch's 10 s lock timeout: it skipped, never waited.
+      expect(performance.now() - startedAt).toBeLessThan(5_000);
+      expect(blocked?.completed).toBe(false);
+      const [marker] = await sql<{ after_id: string }[]>`SELECT after_id::text FROM mail.attachment_files_backfill`;
+      expect(marker!.after_id < held[0]!).toBe(true);
+      const early = await sql<{ attachment_id: string }[]>`
+        SELECT attachment_id FROM mail.attachment_files
+        WHERE attachment_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${held}::jsonb))
+      `;
+      expect(early).toEqual([]);
+      await hydration`ROLLBACK`;
+      await purge`COMMIT`;
+      await sync`COMMIT`;
+    } finally {
+      for (const writer of writers) {
+        await writer`ROLLBACK`.catch(() => undefined);
+        writer.release();
+      }
+    }
+    let progress = await backfillAttachmentFiles();
+    for (let run = 1; run < 5 && !progress?.completed; run += 1) progress = await backfillAttachmentFiles();
+    expect(progress?.completed).toBe(true);
+    const indexed = await sql<{ attachment_id: string; month: string }[]>`
+      SELECT attachment_id, month::text FROM mail.attachment_files
+      WHERE attachment_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${held}::jsonb))
+    `;
+    const months = new Map(indexed.map((row) => [row.attachment_id, row.month]));
+    for (const id of rolledBackIds) expect(months.get(id)).toBe("2026-03-01");
+    for (const id of movedIds) expect(months.get(id)).toBe("2026-05-01");
+    for (const id of deletedIds) expect(months.has(id)).toBe(false);
+    expect(await attachmentsOf(deleted)).toEqual([]);
+    expect(await items(reader, { parent: aliceMarch })).toContain("a1.txt");
+    expect(await items(reader, { parent: `${mailbox.shortId}/2026/05` })).toEqual(["Alice Example (alice@example.test)"]);
+  });
+
+  test("an assigned-only reader's folders read their own attachments, not the mailbox's other rows", async () => {
+    const blob = await storeReadableBlob(Readable.from([Buffer.from("x")]), 1);
+    const [bulk] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id, mailbox_id, subject, normalized_subject, internal_date, size_bytes, content_hash, hydration_status)
+      VALUES (${newShortId()}, ${mailbox.id}::uuid, 'Bulk', 'bulk', '2026-03-12T09:00:00Z', 1,
+        encode(sha256(convert_to(${`bulk-${suffix}`}, 'UTF8')), 'hex'), 'complete')
+      RETURNING id
+    `;
+    await sql`INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
+      VALUES (${bulk!.id}::uuid, 'from', 0, 'Alice Example', 'alice@example.test', 'alice@example.test')`;
+    // 3,000 attachments in the reader's own month and sender, in a conversation the reader is not assigned to.
+    await sql`
+      WITH parts AS (
+        INSERT INTO mail.message_parts (message_id, part_path, content_type, disposition, filename, size_bytes, blob_id, hydration_status)
+        SELECT ${bulk!.id}::uuid, 'bulk-' || g, 'text/plain', 'attachment', 'bulk-' || g || '.txt', 1, ${blob.id}::uuid, 'complete'
+        FROM generate_series(1, 3000) g
+        RETURNING id, part_path, filename
+      )
+      INSERT INTO mail.attachments (short_id, message_id, part_id, filename, content_type, disposition, size_bytes, blob_id)
+      SELECT 'B' || lpad(substr(part_path, 6), 5, '0'), ${bulk!.id}::uuid, id, filename, 'text/plain', 'attachment', 1, ${blob.id}::uuid
+      FROM parts
+    `;
+    const [ref] = await sql<{ id: string }[]>`
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${mailbox.folderId}::uuid, ${bulk!.id}::uuid, 1, 9002) RETURNING id
+    `;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
+      VALUES (${ref!.id}::uuid, ${mailbox.folderId}::uuid, ${bulk!.id}::uuid, ARRAY[]::text[])`;
+    await indexMessageAttachments(sql, bulk!.id);
+    await sql`ANALYZE mail.attachment_files`;
+    await sql`ANALYZE mail.conversation_assignees`;
+    await sql`ANALYZE mail.conversation_messages`;
+    const access: MailboxAccess = { scope: "assigned", permission: "read", userId: assigned.id };
+    const sender = { email: alice.address };
+    const queries = {
+      years: attachmentFileQueries.months(mailbox.id, access, { from: "-infinity", before: "infinity", step: "year", limit: 100 }),
+      months: attachmentFileQueries.months(mailbox.id, access, { from: "2026-01-01", before: "2027-01-01", step: "month", limit: 100 }),
+      senders: attachmentFileQueries.senders(mailbox.id, access, { year: 2026, month: 3, after: null, query: null, limit: 100 }),
+      files: attachmentFileQueries.files(mailbox.id, access, { year: 2026, month: 3, sender, query: null, cursor: null, limit: 100 }),
+    };
+    for (const [name, query] of Object.entries(queries)) {
+      const [explained] = await sql<{ "QUERY PLAN": unknown }[]>`EXPLAIN (ANALYZE, FORMAT JSON) ${query}`;
+      const raw = explained!["QUERY PLAN"];
+      const plan = (typeof raw === "string" ? JSON.parse(raw) : raw) as { Plan: Plan }[];
+      const read = planNodes(plan[0]!.Plan)
+        .filter((node) => node["Relation Name"] === "attachment_files")
+        .reduce((sum, node) => sum + (node["Actual Rows"] ?? 0) * (node["Actual Loops"] ?? 1), 0);
+      // The reader's own attachments (six indexed parts of one message), never the 3,000 others of the month.
+      expect({ name, read: read <= 20 }).toEqual({ name, read: true });
+    }
+    expect((await items(assigned, { parent: aliceMarch })).sort()).toEqual(firstFiles);
+    expect(await items(reader, { parent: aliceMarch, limit: 3 })).toHaveLength(3);
   });
 });

@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import type { FileProviderEntry, FileProviderListData } from "@k2b/cloud/contracts";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
+import { IMAGE_PREVIEW_CONTENT_TYPES, MIN_LIST_IMAGE_BYTES } from "../attachment-preview-policy";
 import { mailCapabilityMessages } from "../capability-messages";
-import { getMailboxAccess, isCurrentActorActive, type MailboxAccess, messageVisibleTo } from "./access";
+import { MAX_DRAFT_ATTACHMENT_BYTES } from "../contracts";
+import { getMailboxAccess, isCurrentActorActive, type MailboxAccess } from "./access";
 import { capByCredentialScopes, type MailRequestContext, personalPrincipal } from "./auth";
 import { readableMailboxes } from "./focus";
 
@@ -17,9 +20,9 @@ type SqlFragment = Bun.SQL.Query<unknown>;
  */
 const MAILBOX = "[0-9A-Za-z]{6}";
 // A sender's address is header text of up to 320 characters; encoded, it can outgrow the contract's 2,048-character IDs.
-// Short ones stay readable in the ID, longer ones go by their MD5, which the files query compares within the month.
+// Short ones stay readable in the ID, longer ones go by their SHA-256, which the files query compares within the month.
 const SENDER_IN_ID = 512;
-const FOLDER = new RegExp(`^(${MAILBOX})(?:/((?!0000)\\d{4})(?:/(0[1-9]|1[0-2])(?:/(-|e:[^/]{1,${SENDER_IN_ID}}|h:[0-9a-f]{32}))?)?)?$`);
+const FOLDER = new RegExp(`^(${MAILBOX})(?:/((?!0000)\\d{4})(?:/(0[1-9]|1[0-2])(?:/(-|e:[^/]{1,${SENDER_IN_ID}}|h:[0-9a-f]{64}))?)?)?$`);
 const UNKNOWN_SENDER = "-";
 
 type Folder =
@@ -51,13 +54,14 @@ const monthId = (mailbox: string, year: number, month: number) => `${yearId(mail
 const senderKey = (sender: string) => {
   if (!sender) return UNKNOWN_SENDER;
   const encoded = encodeURIComponent(sender);
-  return encoded.length <= SENDER_IN_ID ? `e:${encoded}` : `h:${createHash("md5").update(sender, "utf8").digest("hex")}`;
+  return encoded.length <= SENDER_IN_ID ? `e:${encoded}` : `h:${createHash("sha256").update(sender, "utf8").digest("hex")}`;
 };
 const senderId = (mailbox: string, year: number, month: number, sender: string) => `${monthId(mailbox, year, month)}/${senderKey(sender)}`;
 
 /**
- * The chooser cleans every name again; the provider keeps names inside the contract by the same rule: no control
- * characters, path separators or bidi controls, at most 255 characters with the extension kept, never empty.
+ * Names within the contract: no control characters, path separators or bidi controls (the chooser's set), at most the
+ * contract's 255 characters (UTF-16 code units) with the extension kept, never empty. The chooser cleans each name
+ * again and also cuts it to 255 UTF-8 bytes.
  */
 const UNSAFE_NAME_CHARACTERS = /[\u0000-\u001f\u007f-\u009f/\\\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 export const providerName = (value: string | null, fallback: string): string => {
@@ -83,9 +87,41 @@ const mediaType = (value: string): string | undefined => {
 const contains = (column: SqlFragment, query: string | null) =>
   query === null ? sql`true` : sql`strpos(lower(${column}), lower(${query})) > 0`;
 
-/** The Mail list's rule for a row: a message the reader may see that still lies in a folder. */
-const visibleFile = (access: MailboxAccess) => sql`
-  ${messageVisibleTo(access, sql`f.message_id`)}
+/**
+ * The rows a folder reads, as `f`. A reader of the whole mailbox walks the folder index. An assigned-only reader
+ * starts from their conversations (assignee index, conversation links, `attachment_files_message_idx`): the Mail list's
+ * `messageVisibleTo` rule, driven from the small side, so a large shared mailbox costs their attachments, not its rows.
+ */
+const scopedFiles = (mailboxId: string, access: MailboxAccess) =>
+  access.scope === "mailbox"
+    ? { with: sql``, from: sql`mail.attachment_files f`, mailbox: sql`f.mailbox_id = ${mailboxId}::uuid` }
+    : {
+        with: sql`WITH assigned_files AS MATERIALIZED (
+          SELECT DISTINCT ON (f.attachment_id) f.*
+          FROM mail.conversation_assignees assignee
+          JOIN mail.conversation_messages link ON link.conversation_id = assignee.conversation_id
+          JOIN mail.attachment_files f ON f.message_id = link.message_id
+          WHERE assignee.principal_id = ${access.userId ?? access.serviceAccountId}::uuid
+            AND f.mailbox_id = ${mailboxId}::uuid
+          ORDER BY f.attachment_id
+        )`,
+        from: sql`assigned_files f`,
+        mailbox: sql`true`,
+      };
+
+/**
+ * What the source shows of an indexed attachment, decided when it reads: not an inline part the body references by
+ * Content-ID (inline photos and PDFs from Apple Mail stay), not a preview-format image (JPEG, PNG, GIF, WebP) under the
+ * list's signature-logo threshold, nothing `attachment.content.read` refuses as too large, and only mail that still lies
+ * in a folder, like the Mail list.
+ */
+const shown = () => sql`
+  NOT (f.disposition = 'inline' AND f.body_references)
+  AND NOT (
+    lower(btrim(split_part(f.content_type, ';', 1))) = ANY(${toPgTextArray([...IMAGE_PREVIEW_CONTENT_TYPES])}::text[])
+    AND f.size_bytes < ${MIN_LIST_IMAGE_BYTES}
+  )
+  AND f.size_bytes <= ${MAX_DRAFT_ATTACHMENT_BYTES}
   AND EXISTS (
     SELECT 1 FROM mail.message_placements placement
     WHERE placement.message_id = f.message_id AND placement.deleted_at IS NULL
@@ -177,11 +213,11 @@ const listMailboxFolders = async (
     ORDER BY labelled.key, m.short_id
     LIMIT ${input.limit + 1}
   `;
-  const shown = rows.slice(0, input.limit);
-  const last = shown.at(-1);
+  const listed = rows.slice(0, input.limit);
+  const last = listed.at(-1);
   return ok(
     page(
-      shown.map((row) => ({ kind: "folder" as const, id: row.short_id, name: providerName(row.label, row.short_id) })),
+      listed.map((row) => ({ kind: "folder" as const, id: row.short_id, name: providerName(row.label, row.short_id) })),
       rows.length > input.limit && last ? JSON.stringify({ key: last.key, id: last.short_id }) : null,
     ),
   );
@@ -198,11 +234,11 @@ const listYears = async (
   if (!cursor.ok) return cursor;
   const before = cursor.data ? `${String(cursor.data.year).padStart(4, "0")}-01-01` : "infinity";
   const rows = await monthsWithFiles(mailboxId, access, { from: "-infinity", before, step: "year", limit: input.limit });
-  const shown = rows.slice(0, input.limit);
-  const last = shown.at(-1);
+  const listed = rows.slice(0, input.limit);
+  const last = listed.at(-1);
   return ok(
     page(
-      shown
+      listed
         .filter((row) => query === null || String(row.year).includes(query))
         .map((row) => ({ kind: "folder" as const, id: yearId(mailbox, row.year), name: String(row.year) })),
       rows.length > input.limit && last ? JSON.stringify({ year: last.year }) : null,
@@ -210,24 +246,38 @@ const listYears = async (
   );
 };
 
+type MonthRange = { from: string; before: string; step: "year" | "month"; limit: number };
+
 /**
  * The newest months below `before` that hold a file the reader may see, one per year or per month, at most
- * `limit + 1`. A loose index scan: each step is one descent of the folder index below the previous hit, so a mailbox
- * with years of attachments costs one step per year or month, not one row per attachment.
+ * `limit + 1`. For the whole mailbox a loose index scan: each step is one descent of the folder index below the
+ * previous hit, so years of attachments cost one step per year or month. For an assigned-only reader, the distinct
+ * months of their own attachments.
  */
-const monthsWithFiles = async (
-  mailboxId: string,
-  access: MailboxAccess,
-  range: { from: string; before: string; step: "year" | "month"; limit: number },
-) => {
+const monthsQuery = (mailboxId: string, access: MailboxAccess, range: MonthRange) => {
+  if (access.scope !== "mailbox") {
+    const scope = scopedFiles(mailboxId, access);
+    const bucket = range.step === "year" ? sql`date_trunc('year', f.month)::date` : sql`f.month`;
+    return sql<{ year: number; month: number }[]>`
+      ${scope.with}
+      SELECT extract(year FROM picked.month)::int AS year, extract(month FROM picked.month)::int AS month
+      FROM (
+        SELECT DISTINCT ${bucket} AS month
+        FROM ${scope.from}
+        WHERE f.month >= ${range.from}::date AND f.month < ${range.before}::date AND ${shown()}
+      ) picked
+      ORDER BY picked.month DESC
+      LIMIT ${range.limit + 1}
+    `;
+  }
   const below = range.step === "year" ? sql`date_trunc('year', found.month)::date` : sql`found.month`;
-  const rows = await sql<{ year: number; month: number }[]>`
+  return sql<{ year: number; month: number }[]>`
     WITH RECURSIVE found AS (
       (
         SELECT f.month, 1 AS depth
         FROM mail.attachment_files f
         WHERE f.mailbox_id = ${mailboxId}::uuid AND f.month >= ${range.from}::date AND f.month < ${range.before}::date
-          AND ${visibleFile(access)}
+          AND ${shown()}
         ORDER BY f.month DESC
         LIMIT 1
       )
@@ -236,7 +286,7 @@ const monthsWithFiles = async (
         SELECT f.month
         FROM mail.attachment_files f
         WHERE f.mailbox_id = ${mailboxId}::uuid AND f.month >= ${range.from}::date AND f.month < ${below}
-          AND ${visibleFile(access)}
+          AND ${shown()}
         ORDER BY f.month DESC
         LIMIT 1
       ), found.depth + 1
@@ -248,8 +298,9 @@ const monthsWithFiles = async (
     WHERE month IS NOT NULL
     ORDER BY found.month DESC
   `;
-  return rows;
 };
+
+const monthsWithFiles = async (mailboxId: string, access: MailboxAccess, range: MonthRange) => await monthsQuery(mailboxId, access, range);
 
 type Messages = ReturnType<typeof mailCapabilityMessages>;
 
@@ -266,11 +317,11 @@ const listMonths = async (
   const year = String(folder.year).padStart(4, "0");
   const before = cursor.data ? `${year}-${pad(cursor.data.month)}-01` : `${String(folder.year + 1).padStart(4, "0")}-01-01`;
   const rows = await monthsWithFiles(mailboxId, access, { from: `${year}-01-01`, before, step: "month", limit: input.limit });
-  const shown = rows.slice(0, input.limit);
-  const last = shown.at(-1);
+  const listed = rows.slice(0, input.limit);
+  const last = listed.at(-1);
   return ok(
     page(
-      shown
+      listed
         .map((row) => ({
           kind: "folder" as const,
           id: monthId(folder.mailbox, folder.year, row.month),
@@ -293,25 +344,12 @@ const listSenders = async (
   const cursor = readCursor(SenderCursor, input.cursor);
   if (!cursor.ok) return cursor;
   const after = cursor.data?.sender ?? null;
-  const rows = await sql<{ sender_email: string; sender_name: string | null; latest: Date }[]>`
-    SELECT f.sender_email,
-      (array_agg(f.sender_name ORDER BY f.internal_date DESC) FILTER (WHERE f.sender_name IS NOT NULL))[1] AS sender_name,
-      max(f.internal_date) AS latest
-    FROM mail.attachment_files f
-    WHERE f.mailbox_id = ${mailboxId}::uuid
-      AND f.month = make_date(${folder.year}::int, ${folder.month}::int, 1)
-      AND (${after}::text IS NULL OR f.sender_email > ${after}::text)
-      AND (${query}::text IS NULL OR ${contains(sql`f.sender_email`, query)} OR ${contains(sql`COALESCE(f.sender_name, '')`, query)})
-      AND ${visibleFile(access)}
-    GROUP BY f.sender_email
-    ORDER BY f.sender_email
-    LIMIT ${input.limit + 1}
-  `;
-  const shown = rows.slice(0, input.limit);
-  const last = shown.at(-1);
+  const rows = await sendersQuery(mailboxId, access, { year: folder.year, month: folder.month, after, query, limit: input.limit });
+  const listed = rows.slice(0, input.limit);
+  const last = listed.at(-1);
   return ok(
     page(
-      shown.map((row) => ({
+      listed.map((row) => ({
         kind: "folder" as const,
         id: senderId(folder.mailbox, folder.year, folder.month, row.sender_email),
         name: providerName(
@@ -335,37 +373,19 @@ const listFiles = async (
 ): Promise<Result<FileProviderListData>> => {
   const cursor = readCursor(FileCursor, input.cursor);
   if (!cursor.ok) return cursor;
-  const rows = await sql<
-    {
-      attachment_id: string;
-      short_id: string;
-      filename: string | null;
-      size_bytes: string | number;
-      content_type: string;
-      internal_date: Date;
-      position: string;
-    }[]
-  >`
-    SELECT f.attachment_id, a.short_id, f.filename, f.size_bytes, f.content_type, f.internal_date,
-      -- Microseconds, so the cursor never falls between two rows of one millisecond.
-      to_char(f.internal_date AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS position
-    FROM mail.attachment_files f
-    JOIN mail.attachments a ON a.id = f.attachment_id
-    WHERE f.mailbox_id = ${mailboxId}::uuid
-      AND f.month = make_date(${folder.year}::int, ${folder.month}::int, 1)
-      AND ${"hash" in folder.sender ? sql`md5(f.sender_email) = ${folder.sender.hash}` : sql`f.sender_email = ${folder.sender.email}`}
-      AND ${contains(sql`COALESCE(f.filename, '')`, query)}
-      AND (${cursor.data?.at ?? null}::timestamptz IS NULL
-        OR (f.internal_date, f.attachment_id) < (${cursor.data?.at ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid))
-      AND ${visibleFile(access)}
-    ORDER BY f.internal_date DESC, f.attachment_id DESC
-    LIMIT ${input.limit + 1}
-  `;
-  const shown = rows.slice(0, input.limit);
-  const last = shown.at(-1);
+  const rows = await filesQuery(mailboxId, access, {
+    year: folder.year,
+    month: folder.month,
+    sender: folder.sender,
+    query,
+    cursor: cursor.data,
+    limit: input.limit,
+  });
+  const listed = rows.slice(0, input.limit);
+  const last = listed.at(-1);
   return ok(
     page(
-      shown.map((row) => {
+      listed.map((row) => {
         const type = mediaType(row.content_type);
         return {
           kind: "file" as const,
@@ -380,3 +400,73 @@ const listFiles = async (
     ),
   );
 };
+
+type SenderPage = { year: number; month: number; after: string | null; query: string | null; limit: number };
+
+/** One month's senders in address order, with their newest display name: one group over that month's rows. */
+const sendersQuery = (mailboxId: string, access: MailboxAccess, at: SenderPage) => {
+  const scope = scopedFiles(mailboxId, access);
+  return sql<{ sender_email: string; sender_name: string | null; latest: Date }[]>`
+    ${scope.with}
+    SELECT f.sender_email,
+      (array_agg(f.sender_name ORDER BY f.internal_date DESC) FILTER (WHERE f.sender_name IS NOT NULL))[1] AS sender_name,
+      max(f.internal_date) AS latest
+    FROM ${scope.from}
+    WHERE ${scope.mailbox}
+      AND f.month = make_date(${at.year}::int, ${at.month}::int, 1)
+      AND (${at.after}::text IS NULL OR f.sender_email > ${at.after}::text)
+      AND (${at.query}::text IS NULL OR ${contains(sql`f.sender_email`, at.query)} OR ${contains(sql`COALESCE(f.sender_name, '')`, at.query)})
+      AND ${shown()}
+    GROUP BY f.sender_email
+    ORDER BY f.sender_email
+    LIMIT ${at.limit + 1}
+  `;
+};
+
+type FilePage = {
+  year: number;
+  month: number;
+  sender: { email: string } | { hash: string };
+  query: string | null;
+  cursor: { at: string; id: string } | null;
+  limit: number;
+};
+
+/** One sender's files of a month, newest first, by keyset; a hashed sender is compared within the month. */
+const filesQuery = (mailboxId: string, access: MailboxAccess, at: FilePage) => {
+  const scope = scopedFiles(mailboxId, access);
+  const sender =
+    "hash" in at.sender
+      ? sql`encode(sha256(convert_to(f.sender_email, 'UTF8')), 'hex') = ${at.sender.hash}`
+      : sql`f.sender_email = ${at.sender.email}`;
+  return sql<
+    {
+      attachment_id: string;
+      short_id: string;
+      filename: string | null;
+      size_bytes: string | number;
+      content_type: string;
+      internal_date: Date;
+      position: string;
+    }[]
+  >`
+    ${scope.with}
+    SELECT f.attachment_id, a.short_id, f.filename, f.size_bytes, f.content_type, f.internal_date,
+      -- Microseconds, so the cursor never falls between two rows of one millisecond.
+      to_char(f.internal_date AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS position
+    FROM ${scope.from}
+    JOIN mail.attachments a ON a.id = f.attachment_id
+    WHERE ${scope.mailbox}
+      AND f.month = make_date(${at.year}::int, ${at.month}::int, 1)
+      AND ${sender}
+      AND ${contains(sql`COALESCE(f.filename, '')`, at.query)}
+      AND (${at.cursor?.at ?? null}::timestamptz IS NULL
+        OR (f.internal_date, f.attachment_id) < (${at.cursor?.at ?? null}::timestamptz, ${at.cursor?.id ?? null}::uuid))
+      AND ${shown()}
+    ORDER BY f.internal_date DESC, f.attachment_id DESC
+    LIMIT ${at.limit + 1}
+  `;
+};
+
+/** The folder queries, unexecuted, so tests can read their plans. */
+export const attachmentFileQueries = { months: monthsQuery, senders: sendersQuery, files: filesQuery };
