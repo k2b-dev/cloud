@@ -353,7 +353,10 @@ describe("Venue on v2", () => {
         { method: "DELETE", path: "/api/venue/venues/Cafe01/assignments/Asg006", body: null },
       ]);
       // back to my shifts, where the calendar subscription stands
-      await tab.getByRole("link", { name: /^Meine Schichten/ }).first().click();
+      await tab
+        .getByRole("link", { name: /^Meine Schichten/ })
+        .first()
+        .click();
       await tab.waitForURL(/\/my-shifts/);
       await tab.getByRole("button", { name: "Kalender abonnieren" }).click();
       const dialog = tab.getByRole("dialog");
