@@ -52,8 +52,10 @@ const hydrated = async (kind: Kind, width: number, run: (page: Page, before: str
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8">${script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${html}</div></body></html>`,
     );
+    // the page as the server sent it, before any script ran
+    await settled(page);
     const before = await boxes(page);
-    await page.addScriptTag({ content: `window.__k2Kind = ${JSON.stringify(kind)};` });
+    await page.addScriptTag({ content: `window.__k2WindowKind = ${JSON.stringify(kind)};` });
     await page.addScriptTag({ content: client }).catch(() => undefined);
     // a node the client makes differently throws in hydration: the page never says it is done
     await page.waitForFunction(() => window.__k2Hydrated === true).catch(() => undefined);
