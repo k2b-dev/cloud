@@ -93,7 +93,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   track(spyOn(notebooksService.tag, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 1 }]);
   track(spyOn(notebooksService.pageTemplate, "list")).mockResolvedValue({ ok: true, data: [] });
   track(spyOn(notebooksService.note.favorites, "listIds")).mockResolvedValue([]);
-  const backlinks = track(spyOn(notebooksService.note.backlinks, "list")).mockResolvedValue([]);
+  const backlinks = track(spyOn(notebooksService.note.backlinks, "list")).mockResolvedValue({ items: [], total: 0 });
   const comments = track(spyOn(notebooksService.note.comments, "listPage")).mockResolvedValue({
     items: [],
     total: 0,

@@ -22,6 +22,19 @@ const mkField = (overrides: Partial<Field> & Pick<Field, "id" | "type">): Field 
   ...overrides,
 });
 
+describe("export values stay raw while screens show the reader's locale", () => {
+  test("an amount and a date are exported as stored, without thousands, currency sign or local date", () => {
+    const amount = mkField({ id: "amount", type: "number", config: { decimalPlaces: 2, unit: "EUR", unitPosition: "suffix" } });
+    const due = mkField({ id: "due", type: "date" });
+    const at = mkField({ id: "at", type: "date", config: { includeTime: true } });
+    const options = { markdown: "raw" as const, dateConfig: { locale: "de", timeZone: "Europe/Berlin" } };
+    expect(formatCellForExport("12400.00", amount, options)).toBe("12400.00");
+    expect(formatCellForExport("-987654321.5", amount, options)).toBe("-987654321.5");
+    expect(formatCellForExport("2026-11-14", due, options)).toBe("2026-11-14");
+    expect(formatCellForExport("2026-11-14T12:53:00.000Z", at, options)).toBe("2026-11-14 13:53");
+  });
+});
+
 // =============================================================================
 // csvQuote — RFC 4180 quoting. Plain text passes through; cells with
 // commas, quotes, CR, or LF get wrapped + internal quotes doubled.

@@ -1,6 +1,7 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
+import { cssColor } from "../internal/color";
 import { AvatarFaces } from "../surfaces/AvatarStack";
 import type { CalendarEvent, CalendarProps } from "./Calendar";
 import { useCalendarMessages } from "./calendar-messages";
@@ -141,7 +142,8 @@ export const EventChip = (props: {
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const color = () => props.event.color ?? "blue";
   const selected = () => Boolean(props.owner.selectedEventId) && props.owner.selectedEventId === props.event.id;
-  const style = () => (props.event.colorHex ? { "--k2b-calendar-accent": props.event.colorHex } : undefined);
+  const accent = () => cssColor(props.event.colorHex);
+  const style = () => (accent() ? { "--k2b-calendar-accent": accent() } : undefined);
   const activate = (anchor: HTMLElement) => {
     if (props.owner.onEventActivate) props.owner.onEventActivate(props.event);
     else props.owner.openEventDetail?.(props.event, anchor);
@@ -332,7 +334,7 @@ export const EventChip = (props: {
   const attributes = () => ({
     class: "k2b-calendar-event",
     "data-calendar-event": "",
-    "data-color": props.event.colorHex ? undefined : color(),
+    "data-color": accent() ? undefined : color(),
     "data-selected": selected() ? "true" : undefined,
     "data-compact": props.compact ? "true" : undefined,
     "data-fill": props.fill ? "true" : undefined,
