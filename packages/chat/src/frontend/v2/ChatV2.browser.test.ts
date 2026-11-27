@@ -377,6 +377,14 @@ for (const [width, height] of [
       await detail.locator('[data-k2-part="RecordHead"]', { hasText: "Besichtigung" }).waitFor();
       // it stands in the stream's place: no menu of the place's discussions in its head, the place only in its way back
       expect(await detail.locator('[data-slot="head"] button[aria-haspopup="menu"]', { hasText: "Besichtigung" }).count()).toBe(0);
+      // the item is reachable on every screen: in the head, or in its "…" where the phone has no room
+      const head = detail.locator('[data-slot="head"]');
+      const openIn = head.getByRole("link", { name: /Open in Spaces/ });
+      if (!(await openIn.isVisible())) {
+        await head.locator(".k2-bar-fold button").click();
+        await page.getByRole("menuitem", { name: /Open in Spaces/ }).waitFor();
+        await page.keyboard.press("Escape");
+      }
       await shoot(page, `09-discussion-open-light-${width}`);
       // the way back to the place stands above it on every screen and leads back to its stream
       const back = detail.locator('[data-k2-part="Back"] a', { hasText: `Ausstellung ${width}` });

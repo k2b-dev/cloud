@@ -3671,13 +3671,21 @@ export function ChatWorkspaceView(
         onClick: away.jump,
       });
     if (resource?.href)
-      buttons.push({ label: t().openInType({ title: resource.typeTitle }), icon: "external-link", href: resource.href, words: true });
+      // the discussion's item and following it stay on the phone too, folded into "…" where the head has no room
+      buttons.push({
+        label: t().openInType({ title: resource.typeTitle }),
+        icon: "external-link",
+        href: resource.href,
+        words: true,
+        keep: true,
+      });
     if (system() && thread?.resource && thread.following !== undefined)
       buttons.push({
         label: thread.following ? t().followOn : t().followOff,
         icon: thread.following ? "bell-ringing" : "bell-plus",
         words: true,
         pressed: thread.following === true,
+        keep: true,
         busy: followBusy(),
         onClick: () => void toggleFollow(current.id, thread.id, !thread.following),
       });

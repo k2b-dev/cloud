@@ -95,6 +95,7 @@ const HeadButton = (props: { button: ChatHeadButton }) => (
       onNavigate={props.button.onNavigate}
       onClick={() => props.button.onClick?.()}
       pressed={props.button.pressed}
+      keep={props.button.keep}
       busy={props.button.busy}
       disabled={props.button.disabled}
     >
