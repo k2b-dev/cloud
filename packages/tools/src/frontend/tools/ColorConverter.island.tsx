@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { Band, Button, Canvas, ColorInput, Facts, Field, Input, Section } from "@k2b/ui/v2";
 import { batch, createSignal } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
@@ -228,29 +228,18 @@ export default function ColorConverter() {
           label: w().result,
           children: (
             <Section icon="palette" title={t().colorPicker} summary={t().hint}>
-              {/* k2b-ui gap: v2 has no colour picker; the swatch opens the browser's own picker until it has one. */}
+              {/* the colour itself, large: the page's hero; it is picked with the colour field beside it */}
               <Canvas label={t().colorPicker} height={240}>
-                <label style={{ display: "block", height: "100%", margin: "0 20px", position: "relative", cursor: "pointer" }}>
-                  <span
-                    style={{
-                      display: "block",
-                      height: "100%",
-                      "border-radius": "8px",
-                      border: "1px solid rgb(0 0 0 / 0.1)",
-                      "background-color": pickerColor(),
-                    }}
-                  />
-                  <input
-                    type="color"
-                    aria-label={t().colorPicker}
-                    value={pickerColor()}
-                    onInput={(event) => {
-                      setPickerColor(event.currentTarget.value);
-                      syncFrom("picker");
-                    }}
-                    style={{ position: "absolute", inset: "0", width: "100%", height: "100%", opacity: "0", cursor: "pointer" }}
-                  />
-                </label>
+                <span
+                  style={{
+                    display: "block",
+                    height: "100%",
+                    margin: "0 20px",
+                    "border-radius": "8px",
+                    border: "1px solid rgb(0 0 0 / 0.1)",
+                    "background-color": pickerColor(),
+                  }}
+                />
               </Canvas>
               {/* what the colour is good for: its contrast to white and black text grounds, as WCAG counts it */}
               <Facts
@@ -267,6 +256,15 @@ export default function ColorConverter() {
           children: (
             // k2b-ui gap: a v2 Input for technical values in monospace (HEX, RGB, HSL); the fields stay proportional
             <Band label={w().input}>
+              <Field label={t().colorPicker}>
+                <ColorInput
+                  value={pickerColor()}
+                  onChange={(value) => {
+                    setPickerColor(value);
+                    syncFrom("picker");
+                  }}
+                />
+              </Field>
               <Field label="HEX" hint={t().hexDescription} error={hexError()}>
                 <Input
                   icon="hash"

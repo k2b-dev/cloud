@@ -1,6 +1,6 @@
 import { i18n, password as pwdGen } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Check, Chip, Choice, Facts, Field, Inline, Input, Progress, Section } from "@k2b/ui/v2";
+import { Band, Button, Canvas, Check, Chip, Choice, Facts, Field, Inline, Progress, Section, Slider } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
@@ -88,12 +88,6 @@ const tone = (mode: PasswordMode, char: string): string | undefined => {
   if (mode === "memorable" && char === "-") return "var(--k2-bad)";
   if (/[^A-Za-z0-9]/.test(char)) return "var(--k2-warn-ink)";
   return undefined;
-};
-
-/** A whole number from a field, kept inside its range. */
-const within = (value: string, min: number, max: number, fallback: number) => {
-  const number = Number.parseInt(value, 10);
-  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
 };
 
 /**
@@ -242,13 +236,7 @@ export default function PasswordGenerator() {
                 </Field>
                 <Show when={mode() === "random"}>
                   <Field label={t().characters} optional="8–64">
-                    <Input
-                      type="number"
-                      min={8}
-                      max={64}
-                      value={String(randomLength())}
-                      onInput={(value) => setRandomLength(within(value, 8, 64, 20))}
-                    />
+                    <Slider min={8} max={64} value={randomLength()} onChange={setRandomLength} />
                   </Field>
                   <Check switch label={t().uppercase} checked={randomUppercase()} onChange={setRandomUppercase} />
                   <Check switch label={t().numbers} checked={randomNumbers()} onChange={setRandomNumbers} />
@@ -256,13 +244,7 @@ export default function PasswordGenerator() {
                 </Show>
                 <Show when={mode() === "memorable"}>
                   <Field label={t().words} optional="3–8">
-                    <Input
-                      type="number"
-                      min={3}
-                      max={8}
-                      value={String(memorableWords())}
-                      onInput={(value) => setMemorableWords(within(value, 3, 8, 4))}
-                    />
+                    <Slider min={3} max={8} value={memorableWords()} onChange={setMemorableWords} />
                   </Field>
                   <Check switch label={t().capitalizeFirstLetter} checked={memorableCapitalize()} onChange={setMemorableCapitalize} />
                   <Check switch label={t().useFullWords} checked={memorableFullWords()} onChange={setMemorableFullWords} />
@@ -271,13 +253,7 @@ export default function PasswordGenerator() {
                 </Show>
                 <Show when={mode() === "pin"}>
                   <Field label={t().digits} optional="4–12">
-                    <Input
-                      type="number"
-                      min={4}
-                      max={12}
-                      value={String(pinLength())}
-                      onInput={(value) => setPinLength(within(value, 4, 12, 6))}
-                    />
+                    <Slider min={4} max={12} value={pinLength()} onChange={setPinLength} />
                   </Field>
                 </Show>
               </Band>

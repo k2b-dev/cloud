@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { Band, Button, Facts, Field, Section, Slider } from "@k2b/ui/v2";
 import { createMemo, createSignal, onMount } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
@@ -78,16 +78,7 @@ export default function UuidGenerator() {
           children: (
             <Band label={w().settings}>
               <Field label={t().count} hint={t().countDescription} optional="1–100">
-                <Input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={String(count())}
-                  onInput={(value) => {
-                    const next = Number.parseInt(value, 10);
-                    if (Number.isFinite(next)) setCount(Math.min(100, Math.max(1, next)));
-                  }}
-                />
+                <Slider min={1} max={100} value={count()} onChange={setCount} />
               </Field>
             </Band>
           ),

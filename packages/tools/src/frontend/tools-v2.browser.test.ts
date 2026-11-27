@@ -98,11 +98,14 @@ const worstCases: { name: string; query: string; act?: (page: Page) => Promise<v
     name: "worst-password-64",
     query: "screen=password",
     act: async (page) => {
-      await page
-        .getByRole("spinbutton", { name: /Zeichen/ })
-        .or(page.getByRole("textbox", { name: /Zeichen/ }))
-        .first()
-        .fill("64");
+      // the length is a slider over 8–64: End takes it to the longest
+      const length = page.getByRole("slider", { name: /Zeichen/ });
+      await length.press("End");
+      // the thumb is a native range field: its value, or the ARIA value where it carries one
+      await page.waitForFunction(
+        (thumb) => (thumb as HTMLInputElement).value === "64" || thumb?.getAttribute("aria-valuenow") === "64",
+        await length.elementHandle(),
+      );
       // the switch draws its own mark over its input: press its words, as a person does
       await page.getByText("Symbole", { exact: true }).click();
       await page.getByRole("switch", { name: "Symbole" }).and(page.locator(":checked")).waitFor({ state: "attached" });

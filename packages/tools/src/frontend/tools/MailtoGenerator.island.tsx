@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Button, Facts, Field, Input, Notice, Section } from "@k2b/ui/v2";
+import { Button, Facts, Field, Input, Notice, Section, TagsInput } from "@k2b/ui/v2";
 import { createMemo, createSignal } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
@@ -14,7 +14,7 @@ export const mailtoMessages = i18n.define({
       toLabel: "To",
       toDescription: "Primary recipient email address.",
       toPlaceholder: "recipient@example.com",
-      ccDescription: "Carbon copy, visible to all recipients. Separate several addresses with commas.",
+      ccDescription: "Carbon copy, visible to all recipients. Enter adds each address.",
       ccPlaceholder: "Add CC address...",
       bccDescription: "Blind carbon copy, hidden from other recipients.",
       bccPlaceholder: "Add BCC address...",
@@ -36,7 +36,7 @@ export const mailtoMessages = i18n.define({
       toLabel: "An",
       toDescription: "E-Mail-Adresse für das Feld „An“.",
       toPlaceholder: "empfaenger@example.com",
-      ccDescription: "Kopie, für alle Empfänger sichtbar. Mehrere Adressen mit Kommas trennen.",
+      ccDescription: "Kopie, für alle Empfänger sichtbar. Enter fügt jede Adresse hinzu.",
       ccPlaceholder: "CC-Adresse hinzufügen...",
       bccDescription: "Blindkopie, die für andere empfangende Personen nicht sichtbar ist.",
       bccPlaceholder: "BCC-Adresse hinzufügen...",
@@ -57,12 +57,6 @@ export const mailtoMessages = i18n.define({
 });
 
 /** Addresses typed into one field, separated by commas, semicolons or spaces. */
-const addresses = (value: string) =>
-  value
-    .split(/[\s,;]+/)
-    .map((address) => address.trim())
-    .filter(Boolean);
-
 /**
  * Email links on v2: the recipients, subject and text as fields, the link with its Markdown and HTML forms below as
  * values to copy, and "Im Mailprogramm öffnen" as the page's main deed. The Reply-To limit of `mailto:` is a note
@@ -73,16 +67,17 @@ export default function MailtoGenerator() {
   const t = () => mailtoMessages.resolve([locale()]).t;
   const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
   const [to, setTo] = createSignal("");
-  const [cc, setCc] = createSignal("");
-  const [bcc, setBcc] = createSignal("");
+  // several addresses each, one tag per address
+  const [cc, setCc] = createSignal<string[]>([]);
+  const [bcc, setBcc] = createSignal<string[]>([]);
   const [subject, setSubject] = createSignal("");
   const [body, setBody] = createSignal("");
   const mailto = createMemo(() => {
     const toAddr = to().trim();
     if (!toAddr) return "";
     const params: string[] = [];
-    if (addresses(cc()).length > 0) params.push(`cc=${encodeURIComponent(addresses(cc()).join(","))}`);
-    if (addresses(bcc()).length > 0) params.push(`bcc=${encodeURIComponent(addresses(bcc()).join(","))}`);
+    if (cc().length > 0) params.push(`cc=${encodeURIComponent(cc().join(","))}`);
+    if (bcc().length > 0) params.push(`bcc=${encodeURIComponent(bcc().join(","))}`);
     if (subject().trim()) params.push(`subject=${encodeURIComponent(subject().trim())}`);
     if (body().trim()) params.push(`body=${encodeURIComponent(body().trim())}`);
     return `mailto:${encodeURIComponent(toAddr)}${params.length > 0 ? `?${params.join("&")}` : ""}`;
@@ -113,15 +108,12 @@ export default function MailtoGenerator() {
               <Field label={t().toLabel} hint={t().toDescription}>
                 <Input type="email" icon="mail" placeholder={t().toPlaceholder} value={to()} onInput={setTo} />
               </Field>
-              {/* k2b-ui gap: v2 has no tags input for several addresses; they are typed into one field, separated by commas. */}
-              <Field.Row>
-                <Field label="CC" hint={t().ccDescription} optional={w().optional}>
-                  <Input icon="users" placeholder={t().ccPlaceholder} value={cc()} onInput={setCc} />
-                </Field>
-                <Field label="BCC" hint={t().bccDescription} optional={w().optional}>
-                  <Input icon="user-off" placeholder={t().bccPlaceholder} value={bcc()} onInput={setBcc} />
-                </Field>
-              </Field.Row>
+              <Field label="CC" hint={t().ccDescription} optional={w().optional}>
+                <TagsInput type="email" placeholder={t().ccPlaceholder} value={cc()} onChange={setCc} />
+              </Field>
+              <Field label="BCC" hint={t().bccDescription} optional={w().optional}>
+                <TagsInput type="email" placeholder={t().bccPlaceholder} value={bcc()} onChange={setBcc} />
+              </Field>
               <Field label={t().subjectLabel} hint={t().subjectDescription} optional={w().optional}>
                 <Input placeholder={t().subjectPlaceholder} value={subject()} onInput={setSubject} />
               </Field>
