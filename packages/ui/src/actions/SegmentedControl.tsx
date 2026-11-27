@@ -5,6 +5,8 @@ export type SegmentOption<T extends string = string> = {
   value: T;
   label: JSX.Element;
   icon?: string;
+  /** A hint on hover, such as the option's name where a narrow place shows only its icon. */
+  title?: string;
   disabled?: boolean;
 };
 
@@ -76,6 +78,7 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
             type="button"
             role="radio"
             class="k2b-segmented-control__option"
+            title={option.title}
             aria-checked={currentValue() === option.value}
             data-selected={currentValue() === option.value ? "true" : undefined}
             disabled={props.disabled || option.disabled}

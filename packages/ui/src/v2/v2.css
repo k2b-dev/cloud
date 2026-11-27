@@ -3760,15 +3760,39 @@
 .k2-ui .k2-bar[data-status-row] {
   container: k2-status / inline-size;
 }
-.k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
+.k2-ui .k2-bar[data-selecting] .k2-status-clear > .k2-btn[data-variant="text"] > .k2-icon {
   display: none;
 }
+/* The count never shrinks and reads in the body's size, strong. The actions follow it and take the room up to the way
+   out, which so always stands at the end of the bar; the ones without room fold into the "…" right after the last one
+   in sight (the bar's fold, bar-fold.ts), and the way out never folds. */
+.k2-ui .k2-bar[data-status-row][data-selecting] > .k2-bar-start {
+  flex: none;
+}
+.k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-lead {
+  flex: none;
+  max-width: none;
+  font: var(--k2-t-body);
+  font-weight: 600;
+}
+.k2-ui .k2-bar[data-status-row][data-selecting] > .k2-bar-end {
+  /* the bar of a selection keeps its actions on the phone too, where a status row's end once went */
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 0;
+  justify-content: flex-start;
+}
+.k2-ui .k2-bar[data-selecting] > .k2-bar-end > .k2-status-clear {
+  display: flex;
+  margin-left: auto;
+}
 @container k2-status (max-width: 599px) {
-  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) {
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-end > .k2-btn:not([data-variant]):has(> .k2-icon) {
     width: var(--k2-h-control-small);
     padding: 0;
   }
-  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) > .k2-btn-label {
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-end > .k2-btn:not([data-variant]):has(> .k2-icon) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3778,15 +3802,15 @@
   }
 }
 @container k2-status (max-width: 399px) {
-  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] {
+  .k2-ui .k2-bar[data-selecting] .k2-status-clear > .k2-btn[data-variant="text"] {
     width: var(--k2-h-control-small);
     padding: 0;
     justify-content: center;
   }
-  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
+  .k2-ui .k2-bar[data-selecting] .k2-status-clear > .k2-btn[data-variant="text"] > .k2-icon {
     display: flex;
   }
-  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-btn-label {
+  .k2-ui .k2-bar[data-selecting] .k2-status-clear > .k2-btn[data-variant="text"] > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -4527,14 +4551,22 @@
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
   align-items: center;
 }
-/* the head of a panel's sheet: its name, which leads back to the entries ("‹ Datum und Uhrzeit …") */
-.k2-ui .k2-pop[data-presentation="sheet"] > .k2-panel-back {
+/* A panel's head: its name, which leads back to the entries it took the place of ("‹ Datum und Uhrzeit …"); a
+   menu entry in look, the words strong as a sheet's step. 44 px for a finger in the phone's sheet. */
+.k2-ui .k2-pop > .k2-panel-back {
   align-self: stretch;
   width: auto;
-  height: 44px;
-  margin: 0 8px;
+  margin-bottom: 4px;
   font-weight: 600;
   color: var(--k2-text);
+}
+.k2-ui .k2-pop[data-presentation="sheet"] > .k2-panel-back {
+  height: 44px;
+  margin: 0 8px;
+}
+/* the menu a panel took the place of waits behind it, unseen, until the panel leads back */
+.k2-ui .k2-menu[data-covered] {
+  visibility: hidden;
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
@@ -5915,11 +5947,12 @@
 .k2-ui .k2-order .k2-btn > .k2-icon {
   font-size: 14px;
 }
-/* A narrow status row (below 600 px, as for the bar of a selection): every control at its end that has a symbol
-   keeps only the symbol, as the head's controls on the phone, sort and group included; the words stay its name. A
-   menu keeps its chevron. A control with words alone keeps them, and the lead gives way to it. */
+/* A narrow status row (below 600 px): every control at its end that has a symbol keeps only the symbol, as the
+   head's controls on the phone, sort and group included; the words stay its name. A menu keeps its chevron. A control
+   with words alone keeps them, and the lead gives way to it. The bar of a selection gives way on its own: its actions
+   first, its way out only below 400 px. */
 @container k2-status (max-width: 599px) {
-  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
+  .k2-ui .k2-bar[data-status-row]:not([data-selecting]) > .k2-bar-end .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -5927,11 +5960,11 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:not([data-menu]):has(> .k2-icon:first-child) {
+  .k2-ui .k2-bar[data-status-row]:not([data-selecting]) > .k2-bar-end .k2-btn:not([data-menu]):has(> .k2-icon:first-child) {
     width: var(--k2-h-control);
     padding: 0;
   }
-  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn[data-variant="text"]:not([data-menu]):has(> .k2-icon:first-child) {
+  .k2-ui .k2-bar[data-status-row]:not([data-selecting]) > .k2-bar-end .k2-btn[data-variant="text"]:not([data-menu]):has(> .k2-icon:first-child) {
     width: var(--k2-h-control-small);
   }
 }
