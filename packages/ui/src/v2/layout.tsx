@@ -421,7 +421,9 @@ export type PaneProps = PaneBase &
          * an `href`: the address of the list without the open entry. While it is there, the head of the workspace gives
          * way on the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may
          * show in its own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head
-         * action without it, the × gives way on the phone, so the detail has one way back there.
+         * action without it, the × gives way on the phone, so the detail has one way back there. A pane without a
+         * `head` (an editor, whose name stood in the workspace's head) names itself after the way back by its `label`:
+         * "‹ Werkstatt  Notizen.md".
          */
         back: Action;
       }
@@ -493,6 +495,15 @@ export const Pane = (props: PaneProps) => {
           <div class="k2-pane-back" data-k2-part="Back">
             {/* a long name is cut with "…"; the whole name is the hint under the pointer */}
             <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" titled />
+            {/* the workspace's head gives way here: a pane without a head of its own names what stands open */}
+            <Show when={!head() && props.label}>
+              {(label) => (
+                // the page's name for assistive technology too: it heads the pane as its title would
+                <span class="k2-pane-back-name" role="heading" aria-level={2}>
+                  {label()}
+                </span>
+              )}
+            </Show>
           </div>
         )}
       </Show>

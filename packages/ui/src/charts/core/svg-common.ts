@@ -937,7 +937,15 @@ export const formatNumberValue = (value: number, format: ((value: number) => str
   return `${format ? format(value) : fmt(value)}${unit}`;
 };
 
-export const thresholdFillAttr = (color: string | undefined): string => (color ? ` fill="${escapeXml(color)}"` : "");
+/**
+ * The paint of a mark that may have its own colour (a state, a threshold): that colour, or the series colour of its
+ * place. A series class sets `fill` in CSS, and a CSS rule beats a `fill` attribute, so a mark with its own colour does
+ * not get the class (as a gauge with a threshold colour).
+ */
+export const seriesPaint = (color: string | undefined, index: number, className?: string): string => {
+  const classes = [className, color ? undefined : `stdlib-chart-series-${index % 8}`].filter(Boolean).join(" ");
+  return [classes ? `class="${classes}"` : "", color ? `fill="${escapeXml(color)}"` : ""].filter(Boolean).join(" ");
+};
 
 export const thresholdStrokeAttr = (color: string | undefined): string => (color ? ` stroke="${escapeXml(color)}"` : "");
 

@@ -164,6 +164,39 @@ describe("v2.css in a browser", () => {
 });
 
 describe("measureV2Layout", () => {
+  // W5 (Pulse): a table wider than its column scrolls inside it, and what it holds is cut at the column's line, right
+  // beside the grip's pill. That content is not the pill: it made the pill look 0.5 to 1 px off its line at DPR 1.
+  const overflowing = columns(
+    '<div class="row">Leser</div>',
+    '<div style="overflow-x: auto"><table style="width: 600px; border-spacing: 0">' +
+      '<tr style="height: 186px"><td></td></tr>' +
+      '<tr style="height: 20px"><td style="padding: 0 0 0 241px"><span data-probe="cut" style="display: inline-block; width: 40px; height: 20px; vertical-align: top; background: var(--k2-text)"></span></td></tr>' +
+      "</table></div>",
+  );
+  for (const scale of [1, 2])
+    test(
+      `green at DPR ${scale}: an overflowing table cut at the line beside the grip is not the pill`,
+      async () => {
+        const page = await open(overflowing, { scale });
+        try {
+          // the table's content reaches the line at the pill's height, cut by its column
+          const cut = await page.$eval('[data-probe="cut"]', (span) => {
+            const r = span.getBoundingClientRect();
+            const grip = document.querySelector('[data-probe="grip"]')!.getBoundingClientRect();
+            return { right: r.right, gripLeft: grip.left, inside: r.top <= grip.top + 3 && r.bottom >= grip.top + 4 };
+          });
+          expect(cut.inside).toBe(true);
+          expect(cut.right).toBeGreaterThan(cut.gripLeft);
+          const result = await measureV2Layout(page);
+          expect(result.problems).toEqual([]);
+          expect(result.grips).toEqual([{ grip: '[data-probe="grip"]', dom: 0, pixels: 0, lineWidth: 1 }]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   for (const scale of [1, 2])
     test(
       `green at DPR ${scale}: lines reach their edges, no double line, roles only, the grip centred on its line`,
@@ -579,6 +612,28 @@ describe("measureV2Layout", () => {
         ]);
       } finally {
         await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A control that gave way to its symbol keeps its words only as its name (sr-only, 1 px, clipped): the outline does
+  // not take that for a cut label. A label squeezed to 1 px without being hidden so is still cut.
+  test(
+    "the outline takes a visually hidden label as a name, and a label squeezed to 1 px as cut",
+    async () => {
+      const button = (probe: string, label: string) =>
+        `<button type="button" class="k2-btn" data-probe="${probe}"><i class="ti ti-plus k2-icon" aria-hidden="true"></i><span class="k2-btn-label" style="${label}">Todo anlegen</span></button>`;
+      const folded = await open(
+        columns(button("folded", "position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap")),
+      );
+      const squeezed = await open(columns(button("squeezed", "display:inline-block; width:1px; overflow:hidden; white-space:nowrap")));
+      try {
+        expect(await describeV2Page(folded)).not.toContain("cuts its label");
+        expect(await describeV2Page(squeezed)).toContain('"Todo anlegen" cuts its label');
+      } finally {
+        await folded.close();
+        await squeezed.close();
       }
     },
     TEST_TIMEOUT,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { charts } from "../charts/core";
+import { charts, renderChartSvg } from "../charts/core";
 import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
 
 describe("responsive SVG presentation", () => {
@@ -83,4 +83,41 @@ test("map viewport fills its CSS box without changing geographic paths or croppi
   expect(overview).toContain("--k2b-map-inverse-scale:calc(max(");
   expect(svg).toContain("scale(4)");
   expect(overview).toContain("scale(1)");
+});
+
+// The server paints a selected mark with the colour the browser reads from it: a state or a threshold with its own
+// colour, not the series colour of its row or place.
+test("SSR selects a mark with its own colour in that colour, as the browser does", () => {
+  const timeline = renderChartSvg(
+    {
+      kind: "stateTimeline",
+      rows: [
+        { label: "Queue", intervals: [{ from: 0, to: 1, state: "ok" }] },
+        { label: "Worker", intervals: [{ from: 1, to: 2, state: "failed" }] },
+      ],
+      states: [
+        { state: "ok", label: "Healthy", color: "#10b981" },
+        { state: "failed", label: "Failed", color: "#ef4444" },
+      ],
+    },
+    480,
+    200,
+  );
+  const failed = selectedChartSvg(timeline, { role: "interval", index: 0, seriesIndex: 1 });
+  expect(failed).toContain("--k2b-chart-selection-color:color-mix(in srgb,#ef4444 72%");
+  const gauge = renderChartSvg(
+    {
+      kind: "barGauge",
+      data: [{ label: "Disk", value: 92 }],
+      thresholds: [
+        { value: 0, color: "#10b981" },
+        { value: 90, color: "#ef4444" },
+      ],
+    },
+    480,
+    120,
+  );
+  const datum = /data-chart-datum="([^"]*)"/.exec(gauge)![1]!.replace(/&quot;/g, '"');
+  const { role, index, seriesIndex } = JSON.parse(datum) as { role: string; index: number; seriesIndex?: number };
+  expect(selectedChartSvg(gauge, { role, index, seriesIndex })).toContain("--k2b-chart-selection-color:color-mix(in srgb,#ef4444 72%");
 });
