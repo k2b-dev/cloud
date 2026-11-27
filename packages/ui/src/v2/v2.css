@@ -2919,16 +2919,14 @@
   box-shadow: inset 0 -2px 0 var(--k2-blue);
 }
 
-/* Path: where the page stands, in the start of its head. It takes the room the head's actions leave, which keep
-   theirs. The page it names stays whole (cut only when it alone is wider than the room); the places before it shorten
-   first, and the middle ones fold into "…" (components.tsx) while each stays in the page out of the flow, so the path
-   can measure what it would need. */
-.k2-ui .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-start {
+/* Path: where the page stands, in the start of its head. Beside the head's actions it takes the room they leave
+   (#4392's fold measures with the path at its least, below). The places before the page shorten first, each down to
+   its least (its own width or 12 characters); the page itself shortens last, with "…". The server's page lays this
+   out the same way. Folded places stay in the page, out of the flow, out of sight and out of the tab order, so the
+   path can measure what they would need. */
+.k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-start:has(> .k2-path) {
   flex: 1 1 0;
   min-width: 0;
-}
-.k2-ui .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-end {
-  flex: none;
 }
 .k2-ui .k2-path {
   position: relative;
@@ -2943,8 +2941,11 @@
 .k2-ui .k2-bar-start > .k2-path {
   flex: 1 1 0;
 }
+/* a place starts at its least (12 characters, never more than its own width), never shrinks below it, and grows to its
+   own width while there is room; only the page itself shrinks */
 .k2-ui .k2-path-step {
-  flex: 0 1 auto;
+  flex: 1000 0 12ch;
+  max-width: max-content;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2952,8 +2953,8 @@
   text-decoration: none;
 }
 .k2-ui .k2-path > b {
-  flex: 0 0 auto;
-  max-width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 600;
@@ -2963,10 +2964,13 @@
   font-size: 14px;
   color: var(--k2-n400);
 }
-/* a folded place keeps no room and makes no overflow; its scrollWidth still says how wide it would be */
-.k2-ui .k2-path > [data-folded] {
+/* a folded place and the chevron before it keep no room and make no overflow; its scrollWidth still says how wide it
+   would be */
+.k2-ui .k2-path > [data-folded],
+.k2-ui .k2-path > .k2-icon:has(+ [data-folded]) {
   position: absolute;
   width: 0;
+  min-width: 0;
   overflow: hidden;
   visibility: hidden;
   pointer-events: none;
@@ -2974,6 +2978,14 @@
 .k2-ui .k2-path-fold {
   display: inline-flex;
   flex: none;
+}
+/* While #4392's fold measures a bar, a path counts as its page alone, at most 16 characters: the end folds until that
+   least of the path has room. */
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :not(b) {
+  display: none;
+}
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > b {
+  max-width: 16ch;
 }
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {

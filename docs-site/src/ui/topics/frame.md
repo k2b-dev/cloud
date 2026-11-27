@@ -32,7 +32,8 @@ The workspace decides from its own width, on the server's page too, so nothing j
 
 - Where a sub-page stands: "Lager › Halle 1"; the last item is the page itself.
 - It stands in the head `Bar start` instead of tabs, and takes the room the actions leave; the actions keep their words.
-- The page it names stays whole. Without room the places before it shorten first, and then the places between the first one and the parent go into a "…" that opens them as a menu.
+- Without room the places before the page shorten first, each down to its own width or 12 characters; the page itself shortens last, with "…".
+- From four places on, the places between the first one and the parent stand in a "…" that opens them as a menu, until every place has room at that least. The server already sends them folded, so nothing moves when the page comes alive.
 - On the phone the head with a path is hidden, and the shell's bar names the page.
 
 ## Parts

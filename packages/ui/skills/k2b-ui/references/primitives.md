@@ -415,9 +415,10 @@ lines instead of cutting a thing.
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
-  head `Bar start` instead of `Tabs`. The last item is the page itself and
-  stays whole; without room the places before it shorten, then the middle
-  ones fold into a "…" menu ("Weitere Orte"). On
+  head `Bar start` instead of `Tabs`. The last item is the page itself;
+  without room the places before it shorten to their own width or 12
+  characters first, and the page last. From four places on the middle ones
+  stand in a "…" menu ("Weitere Orte") until all have room. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
