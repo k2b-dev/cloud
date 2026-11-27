@@ -95,5 +95,20 @@ export const areaFormMessages = i18n.define({
   },
 });
 
+/** Words of a list in Core's admin areas that shows only its first rows. */
+export const areaListMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      shownOf: ({ shown, total }: { shown: string; total: string }) => `${shown} of ${total}`,
+      narrowSearch: "Narrow the search",
+    },
+    de: {
+      shownOf: ({ shown, total }) => `${shown} von ${total}`,
+      narrowSearch: "Suche eingrenzen",
+    },
+  },
+});
+
 export type AreaFormMessages = ReturnType<typeof areaFormMessages.resolve>["t"];
 export const checkAreaFormMessages = () => areaFormMessages.check();

@@ -174,7 +174,7 @@ export const providersFixture = (input: AiFixtureInput): AiProvidersData => {
     overview,
     models: index.models,
     variants: index.variants,
-    open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn", dialog: query.o ?? null },
+    open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn", dialog: query.o ?? null, mq: query.mq ?? "" },
     provider: failed ? null : provider,
     model: failed || input.state === "detailempty" ? null : model,
     usage: model ? aiFixtureUsage(model.id) : null,
@@ -309,6 +309,11 @@ export const createCatalogApi = () => {
     if (available) {
       if (state === "listfail") return Response.json({ code: "list_failed", message: "Der Anbieter antwortete mit 502." }, { status: 502 });
       if (state === "listempty") return Response.json({ models: [] });
+      // a provider that offers far more models than one list shows (OpenRouter offers hundreds)
+      if (state === "worst")
+        return Response.json({
+          models: Array.from({ length: 1000 }, (_, index) => ({ providerModel: `vendor/offered-${index}`, label: `Angebot ${index}` })),
+        });
       return Response.json({
         models: [
           { providerModel: "gpt-oss-120b", label: "GPT-OSS 120B", contextWindow: 131_072 },

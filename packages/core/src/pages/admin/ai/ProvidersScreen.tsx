@@ -1,5 +1,6 @@
 import type { AiModel, AiModelSlot, AiModelVariant, AiProvider } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
+import { navigateTo } from "@k2b/ssr/nav";
 import {
   Bar,
   Button,
@@ -10,6 +11,7 @@ import {
   Facts,
   Failed,
   Icon,
+  Input,
   type NavProps,
   Pane,
   Path,
@@ -20,8 +22,9 @@ import {
   useLocale,
 } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
+import { CappedNote, capped, ROW_CAP } from "../_area/capped";
 import StateWord from "../_area/StateWord";
-import { aiAreaHref } from "./area";
+import { AI_AREA_PATH, aiAreaHref } from "./area";
 import ConnectionDetail from "./ConnectionDetail";
 import type { AiProvidersData } from "./catalog-data";
 import { type AiDeleteTarget, DeleteDialog } from "./delete";
@@ -85,8 +88,22 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
 
   const modelsOf = (id: string) => data().models.filter((model) => model.providerId === id);
   const slotsOf = (model: AiModel) => aiModelSlots(index(), model.id);
+  /** The search in the open provider's models (`mq`); the whole catalog is in the island, so it filters here. */
+  const modelQuery = () => data().open.mq;
+  const matchingModels = (id: string) => {
+    const needle = modelQuery().toLowerCase();
+    const models = modelsOf(id);
+    return needle ? models.filter((model) => `${model.label} ${model.providerModel} ${model.id}`.toLowerCase().includes(needle)) : models;
+  };
   const providersHref = aiAreaHref({ sec: "providers" });
-  const providerHref = (id: string) => aiAreaHref({ sec: "providers", p: id });
+  /** The open provider keeps its model search; another provider opens with all of its models. */
+  const providerHref = (id: string) => aiAreaHref({ sec: "providers", p: id, mq: id === data().open.p ? modelQuery() : undefined });
+  const searchModels = (text: string) => {
+    const params = new URLSearchParams(window.location.search);
+    if (text.trim()) params.set("mq", text.trim());
+    else params.delete("mq");
+    navigateTo(`${window.location.pathname}?${params}`);
+  };
   const assignments = () =>
     Object.fromEntries(Object.entries(data().overview.assignments).map(([slot, entry]) => [slot, entry.variantId])) as Partial<
       Record<AiModelSlot, string | null>
@@ -182,19 +199,67 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
     />
   );
 
-  /** The models of one provider: in its detail, and as the list beside an open model. */
+  /**
+   * The search in a provider's models, where its list is longer than one capped table or a search is set. Enter sends
+   * `mq` also without JavaScript (a GET form, with the open model kept); Escape in a filled field shows all again.
+   */
+  const searchable = (entry: ProviderRow) => modelsOf(entry.id).length > ROW_CAP || Boolean(modelQuery());
+  const searchParams = (entry: ProviderRow) => {
+    const params: [string, string][] = [
+      ["sec", "providers"],
+      ["p", entry.id],
+    ];
+    const open = data().open.m;
+    if (open) params.push(["m", open]);
+    return params;
+  };
+  const modelSearch = (entry: ProviderRow) => (
+    <Show when={searchable(entry)}>
+      <Input
+        type="search"
+        icon="search"
+        name="mq"
+        label={t().searchProviderModels}
+        placeholder={t().amSearch}
+        value={modelQuery()}
+        send={{ action: AI_AREA_PATH, params: searchParams(entry), onSearch: searchModels }}
+        onKeyDown={(event) => {
+          if (event.isComposing) return;
+          const input = event.currentTarget as HTMLInputElement;
+          if (event.key === "Escape" && input.value) {
+            input.value = "";
+            searchModels("");
+          }
+        }}
+      />
+    </Show>
+  );
+
+  /**
+   * The models of one provider: in its detail, and as the list beside an open model. An open model's detail is its own
+   * address (`m`) and reads on the server, so it opens also when its row is not among the rows shown.
+   */
+  // k2b-ui gap: virtual Table (MW, #4211); until it lands the table shows the first ROW_CAP matches and a line says how to reach the rest
   const modelTable = (entry: ProviderRow, narrow: boolean) => (
     <Table
       label={t().nModels({ p: modelsOf(entry.id).length })}
-      rows={modelsOf(entry.id)}
+      rows={capped(matchingModels(entry.id))}
       rowKey={(model) => model.id}
       current={data().open.m ?? undefined}
-      open={(model) => ({ href: aiAreaHref({ sec: "providers", p: entry.id, m: model.id }) })}
-      empty={{
-        icon: "cube",
-        text: `${t().noModelsYet}. ${t().noModelsYetSub}`,
-        action: { label: t().addModels, icon: "plus", onClick: () => setAdding("models") },
-      }}
+      open={(model) => ({ href: aiAreaHref({ sec: "providers", p: entry.id, m: model.id, mq: modelQuery() }) })}
+      empty={
+        modelQuery()
+          ? {
+              icon: "filter-off",
+              text: t().noModelsMatch({ p: modelQuery() }),
+              action: { label: t().showAllModels, href: aiAreaHref({ sec: "providers", p: entry.id, m: data().open.m ?? undefined }) },
+            }
+          : {
+              icon: "cube",
+              text: `${t().noModelsYet}. ${t().noModelsYetSub}`,
+              action: { label: t().addModels, icon: "plus", onClick: () => setAdding("models") },
+            }
+      }
       phone={(model) => ({
         // slot for #4208/#4223 (DP): the model's mark leads the phone row
         lines: [model.label, [kindLabel(model), classes(model), model.enabled ? "" : t().disabled].filter(Boolean).join(" · ")],
@@ -282,7 +347,9 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
           count={modelsOf(detail.entry.id).length}
           actions={[{ label: t().addModels, icon: "plus", onClick: () => setAdding("models") }]}
         >
+          {modelSearch(detail.entry)}
           {modelTable(detail.entry, false)}
+          <CappedNote total={matchingModels(detail.entry.id).length} />
         </Section>
         <Section icon="plug-connected" title={t().connection}>
           <Facts
@@ -404,9 +471,12 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
               label={t().nModels({ p: modelsOf(entry().id).length })}
               width={{ min: 300, default: 380 }}
               scrollKey="admin-ai-provider-models"
-              status={<StatusRow lead={`${entry().label} · ${t().nModels({ p: modelsOf(entry().id).length })}`} />}
+              status={
+                <StatusRow lead={`${entry().label} · ${t().nModels({ p: modelsOf(entry().id).length })}`} filters={modelSearch(entry())} />
+              }
             >
               {modelTable(entry(), true)}
+              <CappedNote total={matchingModels(entry().id).length} />
             </Pane>
           )}
         </Show>

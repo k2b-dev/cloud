@@ -103,20 +103,65 @@ test("classes, providers and budgets keep the v2 rules at every width, with no l
   expect(errors).toEqual([]);
 }, 300_000);
 
-test("a provider with 1,000 models keeps the layout rules (k2b-ui gap: no virtual table yet, so it renders every row)", async () => {
-  page.setDefaultTimeout(60_000);
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(`${fixture.url}?locale=en&sec=providers&p=cortecs&state=worst`, { timeout: 60_000 });
+// k2b-ui gap: virtual Table (MW, #4211); until it lands a list that can grow shows its first 100 rows and a search.
+test("a provider with 1,000 models is ready at once with its first 100, a search in the address, and every model reachable", async () => {
+  // the rows of the provider's models table ("1003 models"), not those of the providers beside it
+  const rows = () =>
+    main()
+      .getByRole("table", { name: /\d+ models?$/ })
+      .locator("tbody tr");
+  const timed = async (query: string) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const started = Date.now();
+    await page.goto(`${fixture.url}?locale=en&${query}`);
+    await page.locator('main.k2-ui[data-ready="true"]').waitFor();
+    return Date.now() - started;
+  };
+  expect(await timed("sec=providers&p=cortecs&state=worst")).toBeLessThan(1500);
+  expect(await rows().count()).toBeLessThanOrEqual(100);
+  // the fixture's three Cortecs models and the 1,000 of the worst case, counted in the page's locale
+  expect(await main().getByText("100 of 1,003 · Narrow the search").isVisible()).toBe(true);
+  expect((await measureV2Layout(page, { root: "main.k2-ui" })).problems).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  // the search lives in the address: Enter sends `mq`, the model beyond the first hundred shows, and its link keeps it
+  const search = main().getByRole("searchbox", { name: "Search this provider’s models" });
+  await search.fill("Modell 999");
+  await search.press("Enter");
+  await page.waitForURL(/mq=Modell\+999/);
   await page.locator('main.k2-ui[data-ready="true"]').waitFor();
+  expect(await rows().count()).toBe(1);
   expect(
     await main()
       .getByRole("link", { name: /Modell 999/ })
+      .first()
+      .getAttribute("href"),
+  ).toBe("/admin/ai?sec=providers&p=cortecs&m=bulk-999&mq=Modell+999");
+  expect(
+    await main()
+      .getByText(/ of .* · Narrow the search/)
       .count(),
-  ).toBe(1);
-  expect((await measureV2Layout(page, { root: "main.k2-ui" })).problems).toEqual([]);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  ).toBe(0);
+
+  // an open model beyond the first hundred is its own address: its detail opens without its row, and the list stays capped
+  expect(await timed("sec=providers&p=cortecs&m=bulk-998&state=worst")).toBeLessThan(1500);
+  expect(await page.getByRole("textbox", { name: /^Display name/ }).inputValue()).toBe("Modell 998");
+  expect(await rows().count()).toBeLessThanOrEqual(100);
+
+  // the dialog that adds models shows the first 100 of what the provider offers, and its search reaches the rest
+  await timed("sec=providers&p=cortecs&state=worst");
+  await button("Add models").first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("100 of 1,000 · Narrow the search").waitFor();
+  expect(await dialog.getByRole("checkbox").count()).toBeLessThanOrEqual(100);
+  await dialog.getByRole("searchbox").fill("Angebot 999");
+  expect(await dialog.getByRole("checkbox", { name: /Angebot 999/ }).count()).toBe(1);
+
+  await page.goto(`${fixture.url}?locale=de&sec=providers&p=cortecs&state=worst`);
+  await page.locator('main.k2-ui[data-ready="true"]').waitFor();
+  expect(await main().getByText("100 von 1.003 · Suche eingrenzen").isVisible()).toBe(true);
   expect(errors).toEqual([]);
-}, 120_000);
+});
 
 test("the AI sections stand under their entry in the admin bar, and an open provider and model live in the address", async () => {
   await goto("sec=providers");

@@ -13,6 +13,8 @@ export type AiAreaQuery = {
   m?: string;
   /** The provider's connection instead of a model. */
   pane?: "conn";
+  /** In `providers`: the search in the open provider's models. */
+  mq?: string;
   /** Class or tool in `classes`. */
   slot?: AiModelSlot;
   /** In `budgets`: a rule's scope, `new`, `brake` or `people`. */
@@ -34,13 +36,16 @@ export const parseAiAreaQuery = (query: Record<string, string | undefined>): AiA
   const sec = AI_AREA_SECTIONS.find((section) => section === query.sec);
   const slot = AI_MODEL_SLOTS.find((candidate) => candidate === query.slot);
   if (!sec) return {};
-  if (sec === "providers")
+  if (sec === "providers") {
+    const mq = query.p ? (query.mq ?? "").trim() : "";
     return {
       sec,
       ...(query.p ? { p: query.p } : {}),
       ...(query.p && query.pane === "conn" ? { pane: "conn" } : query.p && query.m ? { m: query.m } : {}),
+      ...(mq ? { mq } : {}),
       ...(query.o === "provider" || (query.o === "models" && query.p) ? { o: query.o } : {}),
     };
+  }
   if (sec === "classes") return { sec, ...(slot ? { slot } : {}) };
   if (sec === "budgets") return { sec, ...(query.rule ? { rule: query.rule } : {}) };
   return { sec };

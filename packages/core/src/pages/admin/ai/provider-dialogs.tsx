@@ -18,6 +18,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createResource, createSignal, For, Show } from "solid-js";
+import { CappedNote, capped } from "../_area/capped";
 import { aiAreaHref } from "./area";
 import { AiAdminError, aiAdminApi, aiSlug, readAiAdmin, reloadAiArea } from "./client";
 import { aiAreaMessages } from "./messages";
@@ -607,7 +608,8 @@ export function AddModelsDialog(props: {
       <Show when={list.state === "ready" && (list() ?? []).length > 0}>
         <Input type="search" icon="search" label={t().amSearch} placeholder={t().amSearch} value={query()} onInput={setQuery} />
         {/* k2b-ui gap: a list of choices with a quiet second line (Check has one label); the facts follow the name */}
-        <For each={visible()}>
+        {/* k2b-ui gap: virtual Table (MW, #4211); a provider offers hundreds of models, so the first matches show and the search reaches the rest */}
+        <For each={capped(visible())}>
           {(model) => {
             const added = () => props.existing.includes(model.providerModel);
             return (
@@ -631,6 +633,7 @@ export function AddModelsDialog(props: {
             );
           }}
         </For>
+        <CappedNote total={visible().length} />
       </Show>
       <Show when={error()}>
         <Notice tone="bad" title={t().saveFailed}>
