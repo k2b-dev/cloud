@@ -113,9 +113,11 @@ for (const width of [1440, 390])
       // a press on the preview, far from the name, presses the card's button
       const preview = await card.locator(".k2-tile-preview").boundingBox();
       await page.mouse.click(preview!.x + preview!.width / 2, preview!.y + preview!.height / 2);
+      await settled(page);
       expect(await page.evaluate(() => window.__k2Opened)).toBe(1);
       await button.focus();
       await page.keyboard.press("Enter");
+      await settled(page);
       expect(await page.evaluate(() => window.__k2Opened)).toBe(2);
       const cut = await button.evaluate((element) => ({
         overflow: getComputedStyle(element).textOverflow,
