@@ -74,8 +74,7 @@ describe("My apps & automations on v2", () => {
     expect(text).toContain("–");
     // B rule 1: the exceptions stand beside the hero, each with the first one it names; the create action beside them.
     // "Im Chat erstellen" stands in the page's head (AssistantPageFrame), not in the status row.
-    for (const part of ["1 braucht dich · Stoffpreise prüfen", "1 läuft · Rückfragen sammeln", "1 pausiert"])
-      expect(text).toContain(part);
+    for (const part of ["1 braucht dich · Stoffpreise prüfen", "1 läuft · Rückfragen sammeln", "1 pausiert"]) expect(text).toContain(part);
     // Explanations belong to the empty state, not to every day.
     expect(text).not.toContain("Dein Code läuft als du");
   });
