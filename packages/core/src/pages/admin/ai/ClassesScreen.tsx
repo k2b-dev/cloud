@@ -150,7 +150,6 @@ export default function ClassesScreen(props: { nav: NavProps; data: AiClassesDat
                 <Notice
                   tone="note"
                   icon="stairs"
-                  title={t().recsEmpty}
                   actions={[{ label: t().addProvider, icon: "plus", href: aiAreaHref({ sec: "providers" }, { o: "provider" }) }]}
                 >
                   {t().clsEmptyNote}
@@ -419,7 +418,6 @@ function SlotDetail(props: { slot: AiModelSlot; data: AiClassesData; appNames: R
         <Notice
           tone="note"
           icon="stairs"
-          title={t().recsEmpty}
           actions={[{ label: t().addProvider, icon: "plus", href: aiAreaHref({ sec: "providers" }, { o: "provider" }) }]}
         >
           {t().clsEmptyNote}
