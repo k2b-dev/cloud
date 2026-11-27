@@ -179,7 +179,9 @@ height that is left, so the drawing still fills it.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`measure` (its head, sentence and rows keep the reading measure of `Prose`,
+720 px of text, so a short list in a wide pane stays together; its line
+still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
@@ -261,7 +263,10 @@ A `Row`:
   colour, symbol, word): under the lines on the title's text edge; they
   wrap to more lines instead of being cut, on the phone too, and the row
   grows only when they are there.
-- `action` (one framed button at the end; under the text on the phone),
+- `action` (one framed button at the end; under the text on the phone; its
+  name is its words and then the row's title, "Ansehen Angebot Küche", so
+  rows with the same deed are told apart: name nothing yourself; on the
+  phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
@@ -348,6 +353,10 @@ one.
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`title` gives text its full words as a tooltip where its place may cut it:
+the title of an open entry in its detail's head takes two lines, then "…".
+Two lines make that head 65 px: beside a list, its line then no longer meets
+the status row (K1 holds for a one-line title).
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 
@@ -404,7 +413,9 @@ lines instead of cutting a thing.
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
-  `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
+  `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
+  is about, such as a row's title: its name is its own words, then those;
+  `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the
   width, the look and the focus stay, a second press and a second sending
   of the form do nothing), `pressed` (a toggle such as a favourite star:
@@ -515,10 +526,12 @@ lines instead of cutting a thing.
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there), `color` (the place's data colour: its symbol becomes its
-  `Mark`, the same as in its rows and on its card). `quota: { label, value,
-  of, text }` shows what the open place uses above the foot ("Werkstatt ·
-  38,2 von 100 GB" over a bar; amber from 75 %, red from 90 %). An item with `items` instead of `icon` and a link folds
+  problem there, `"running"` for work that runs now: a small turning mark
+  in the dot's place that says "Läuft"), `color` (the place's data colour:
+  its symbol becomes its `Mark`, the same as in its rows and on its card).
+  `quota: { label, value, of, text }` shows what the open place uses above
+  the foot ("Werkstatt · 38,2 von 100 GB" over a bar; amber from 75 %, red
+  from 90 %). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.

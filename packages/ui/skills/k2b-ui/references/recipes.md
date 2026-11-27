@@ -320,6 +320,11 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
   overlay. It needs the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor, which
   every Cloud page has; with `v2.css` alone a chart has no size (gap), so
   this recipe draws its plan itself.
+- A state timeline (`kind="stateTimeline"`) takes `now` from the page (the
+  server's request time, never a clock in the component) and draws it as a
+  thin line with "Jetzt" on its time axis; runs of seconds stay 3 units wide, centred on their
+  start; a start still to come has `planned: true` and is an outline that
+  says "geplant".
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).

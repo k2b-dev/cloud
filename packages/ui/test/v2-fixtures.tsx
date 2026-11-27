@@ -584,7 +584,73 @@ export const fixtures = {
   list: () => <LayoutFixture open={false} />,
   // the way back to a list with a long name, such as a search
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
+  // an editor: a detail without a head of its own, its name in its label; the way back leads to a long folder name
+  namedBack: () =>
+    shell(
+      <Pane.Split>
+        <Pane label="Breite der Liste" width={{ min: 320, default: 432 }}>
+          <List label="Dateien">
+            {["Notizen.md", "Aufmaß Küche.pdf", "Materialliste.xlsx", "Angebot 2026-118.pdf", "Ansicht Front.jpg", "Budget 2027.xlsx"].map(
+              (name, index) => (
+                <Row lines={[name, `Geändert vor ${index + 2} Stunden · Mira Sommer`]} />
+              ),
+            )}
+          </List>
+        </Pane>
+        <Pane detail label="Notizen.md" back={{ label: "Angebote und Ausschreibungen 2026", href: "#angebote" }}>
+          <Prose
+            markdown={
+              "Zuschnitt Küchenfront bis Freitag. Eiche geölt, 19 mm.\n\nAufmaß am Dienstag mit Frau Lindqvist. Die Nische links ist 4 mm schmaler als im Plan.\n\n- Maße prüfen\n- Kanten bestellen\n- Arbeitsplatte Granit, 38 mm\n- Spüle als Unterbau\n- Sockel 100 mm\n- Lüftungsgitter unter dem Backofen\n- Topfbänder 110°\n- Montage am Donnerstag"
+            }
+          />
+        </Pane>
+      </Pane.Split>,
+    ),
   structure: StructureFixture,
+  // head actions of sections: with a leading symbol, with only a trailing "forward" chevron, and words only
+  headActions: () => (
+    <Workspace
+      sidebar={
+        <Nav
+          title="Werkstatt"
+          icon="tool"
+          groups={[
+            {
+              items: [
+                { label: "Aufträge", icon: "list", current: true },
+                { label: "Kunden", icon: "users" },
+              ],
+            },
+          ]}
+        />
+      }
+      head={<Bar start={<Text type="body">Auftrag AU-1</Text>} />}
+    >
+      <Pane label="Auftrag">
+        <Section
+          icon="info-circle"
+          title="Angaben"
+          actions={[
+            { label: "Filtern", icon: "filter" },
+            { label: "Weiter", forward: true },
+          ]}
+        >
+          <Facts
+            items={[
+              { label: "Kunde", value: "Holzwerk Brandt" },
+              { label: "Auftrag", value: "Einbauschrank Flur" },
+              { label: "Betrag", value: "180,50 €" },
+              { label: "Fällig", value: "12. Nov." },
+            ]}
+          />
+        </Section>
+        <Section icon="braces" title="Daten" actions={[{ label: "Rohdaten anzeigen" }]}>
+          <Row icon="ruler" lines={["Aufmaß", "2,40 × 0,60 m"]} />
+          <Row icon="palette" lines={["Oberfläche", "Eiche geölt"]} />
+        </Section>
+      </Pane>
+    </Workspace>
+  ),
   table: TableFixture,
   grid: GridFixture,
   controls: ControlsFixture,
