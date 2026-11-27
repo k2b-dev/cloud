@@ -4,7 +4,6 @@ import {
   Bar,
   Button,
   Canvas,
-  Input,
   Menu,
   type MenuEntry,
   Nav,
@@ -55,14 +54,11 @@ export type ChatDetailV2 = {
 };
 
 export type ChatFrameV2Props = {
+  /** The filters (Unread, For you, Discover channels) and the archive at the foot; the chats follow the filters. */
   nav: { label: string; groups: readonly NavGroup[]; foot?: readonly NavItem[] };
-  /** Deeds on the whole list, such as "Mark all read", behind one "…" in the head. */
-  listMenu: { label: string; items: readonly MenuEntry[] };
   newChat: Action;
   search: { value: string; onInput: (value: string) => void; onKeyDown: (event: KeyboardEvent) => void };
   list: {
-    /** What to act on that the nav does not say; quiet words in the head, empty without it. */
-    lead?: string;
     notices: readonly ChatListNotice[];
     content: JSX.Element;
   };
@@ -106,68 +102,60 @@ const HeadButton = (props: { button: ChatHeadButton }) => (
 );
 
 /**
- * Chat on @k2b/ui v2: the places in the sidebar (and the phone's menu); the head with the search and "New chat"; the
- * chats as a list beside the open chat, whose history and composer are Chat's own drawing; the chat's info beside it.
- * On the phone the list is the page, and an open chat is a page of its own with its way back.
+ * Chat on @k2b/ui v2 in two columns (Valentin, v8): the sidebar holds Chat's name, the search and "New chat", the
+ * filters as entries, then the chats themselves, which scroll on their own above the archive; the open chat (or one of
+ * Chat's pages) takes the rest, with its info beside it. There is no head bar of its own. On the phone the chats with
+ * their search are the page, "New chat" floats, and an open chat is a page of its own with its way back.
  */
 export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const v2 = () => chatV2Messages.resolve([locale()]).t;
+  /** The chats as the nav's own rows: the list's notices over the list (or the search's results). */
+  const chats: NavGroup = {
+    phone: "page",
+    list: () => (
+      <>
+        <For each={props.list.notices}>
+          {(notice) => (
+            <Notice tone={notice.tone} actions={notice.action ? [notice.action] : undefined}>
+              {notice.text}
+            </Notice>
+          )}
+        </For>
+        {props.list.content}
+      </>
+    ),
+  };
   return (
     <>
       <V2WorkspaceNavigation label={props.nav.label} groups={props.nav.groups} foot={props.nav.foot} />
       <Workspace
         sidebarLabel={v2().sidebarWidth}
-        // The chat keeps room to read: where list, chat and sidebar do not fit (a tablet), the sidebar is a drawer.
-        // The chat, or its info while open, keeps room to read: where it does not fit, the sidebar becomes a drawer.
+        // The chats need more room than a few entries; the chat, or its info while open, keeps room to read, and where
+        // both do not fit (a tablet), the sidebar becomes a drawer.
+        sidebarWidth={{ min: 280, default: 340 }}
         detail={520}
         detailEmpty={{ icon: "messages", text: v2().noneOpen }}
-        // On the phone the main action floats over the list only; in an open chat it would cover the composer.
+        // On the phone the main action floats over the chats only; in an open chat it would cover the composer.
         primary={props.detail() ? undefined : props.newChat}
-        sidebar={<Nav title={t().appName} icon="messages" groups={props.nav.groups} foot={props.nav.foot} />}
-        head={
-          <Bar
-            // What to act on that the nav does not say ("2 mentions · Lager-Team") stands as quiet words in the head,
-            // a row that is always there: a mention that arrives live changes words, never a height.
-            start={<Text type="meta">{props.list.lead ?? ""}</Text>}
-            end={
-              <>
-                {/* k2b-ui gap (Z2): the head's search should be a symbol that opens over the head on click or "/". */}
-                <Input
-                  type="search"
-                  icon="search"
-                  label={t().searchChats}
-                  placeholder={t().searchChats}
-                  value={props.search.value}
-                  onInput={props.search.onInput}
-                  onKeyDown={props.search.onKeyDown}
-                />
-                <Menu label={props.listMenu.label} items={props.listMenu.items} />
-                <Button
-                  variant="primary"
-                  icon={props.newChat.icon}
-                  disabled={props.newChat.disabled}
-                  onClick={() => props.newChat.onClick?.()}
-                >
-                  {props.newChat.label}
-                </Button>
-              </>
-            }
+        sidebar={
+          <Nav
+            title={t().appName}
+            icon="messages"
+            search={{
+              label: t().searchChats,
+              value: props.search.value,
+              onInput: props.search.onInput,
+              onKeyDown: props.search.onKeyDown,
+            }}
+            primary={props.newChat}
+            groups={[...props.nav.groups, chats]}
+            foot={props.nav.foot}
           />
         }
       >
         <Pane.Split>
-          <Pane label={v2().listWidth} width={{ min: 300, default: 380 }} scrollKey="chat-list">
-            <For each={props.list.notices}>
-              {(notice) => (
-                <Notice tone={notice.tone} actions={notice.action ? [notice.action] : undefined}>
-                  {notice.text}
-                </Notice>
-              )}
-            </For>
-            {props.list.content}
-          </Pane>
           <Show when={props.detail()?.key} keyed>
             {(_key) => {
               // The head follows the open chat; the drawing stays for as long as the key does.

@@ -6,12 +6,9 @@ export const chatV2Messages = i18n.define({
   messages: {
     en: {
       sidebarWidth: "Width of the sidebar",
-      listWidth: "Width of the chat list",
       infoPane: "Chat info",
       noneOpen: "No chat open",
       moreDiscussions: "Show more discussions",
-      mentions: ({ count, names }: { count: string; names: string }) => `${count === "1" ? "1 mention" : `${count} mentions`} · ${names}`,
-      listActions: "Chat list actions",
       chatActions: "Chat actions",
       threads: "Threads",
       info: "Info",
@@ -23,13 +20,9 @@ export const chatV2Messages = i18n.define({
     },
     de: {
       sidebarWidth: "Breite der Seitenleiste",
-      listWidth: "Breite der Chatliste",
       infoPane: "Chatinfo",
       noneOpen: "Kein Chat geöffnet",
       moreDiscussions: "Weitere Diskussionen anzeigen",
-      mentions: ({ count, names }: { count: string; names: string }) =>
-        `${count === "1" ? "1 Erwähnung" : `${count} Erwähnungen`} · ${names}`,
-      listActions: "Aktionen der Chatliste",
       chatActions: "Aktionen des Chats",
       threads: "Threads",
       info: "Info",

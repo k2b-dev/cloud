@@ -3283,25 +3283,24 @@ export function ChatWorkspaceView(
   const loadedUnread = () => rows().reduce((sum, row) => sum + row.unread, 0);
   /** A place's discussions hand their search and state filter to the pane's head once their page has loaded. */
   const [directoryTools, setDirectoryTools] = createSignal<JSX.Element>();
+  // The chats stand in the nav itself (Valentin, v8), so there is no "Chats" entry: "Unread" and "Archive" filter them,
+  // and pressed again they lead back to all chats.
+  const unreadOn = () => atList() && !archived() && filter() === "unread";
+  const archiveOn = () => atList() && archived();
   const v2Nav = () => ({
     label: t().appName,
     groups: [
       {
         items: [
           {
-            label: t().chats,
-            icon: "messages",
-            href: basePath,
-            current: atList() && !archived() && filter() === "all",
-            onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("all") : backToList(navigation)),
-          },
-          {
             label: t().unreadChats,
             icon: "mail",
-            href: `${basePath}?filter=unread`,
-            current: atList() && !archived() && filter() === "unread",
+            href: unreadOn() ? basePath : `${basePath}?filter=unread`,
+            current: unreadOn(),
             count: (unreadTotal() ?? loadedUnread()) || undefined,
-            onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("unread") : navigation.fallback()),
+            onNavigate: (navigation: LinkNavigateEvent) =>
+              atList() ? void changeList(unreadOn() ? "all" : "unread") : navigation.fallback(),
+            menu: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
           },
           {
             label: t().forYou,
@@ -3325,9 +3324,10 @@ export function ChatWorkspaceView(
       {
         label: t().archive,
         icon: "archive",
-        href: `${basePath}/archive`,
-        current: atList() && archived(),
-        onNavigate: (navigation: LinkNavigateEvent) => (atList() ? void changeList("archive") : navigation.fallback()),
+        href: archiveOn() ? basePath : `${basePath}/archive`,
+        current: archiveOn(),
+        onNavigate: (navigation: LinkNavigateEvent) =>
+          atList() ? void changeList(archiveOn() ? "all" : "archive") : navigation.fallback(),
       },
     ],
   });
@@ -3479,19 +3479,6 @@ export function ChatWorkspaceView(
         action: { label: t().retry, onClick: () => void systemList.load(false) },
       });
     return notices;
-  };
-  /**
-   * The one statement over the list says only what the nav does not: who mentioned the reader where (the nav already
-   * counts unread chats). Without a mention the list stands without a statement.
-   */
-  const v2Lead = (): string | undefined => {
-    if (archived()) return undefined;
-    const mentioned = rows().filter((row) => row.mentionsUnread > 0);
-    if (mentioned.length === 0) return undefined;
-    const count = mentioned.reduce((sum, row) => sum + row.mentionsUnread, 0);
-    const names = mentioned.slice(0, 2).map((row) => row.title);
-    if (mentioned.length > 2) names.push(`+${mentioned.length - 2}`);
-    return v2t().mentions({ count: count.toLocaleString(locale()), names: names.join(", ") });
   };
   const [followBusy, setFollowBusy] = createSignal(false);
   const toggleFollow = async (chatId: string, threadId: string, on: boolean) => {
@@ -3737,7 +3724,6 @@ export function ChatWorkspaceView(
     return (
       <V2.ChatFrameV2
         nav={v2Nav()}
-        listMenu={{ label: v2t().listActions, items: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }] }}
         newChat={{ label: t().newChat, icon: "message-plus", onClick: () => void newChat() }}
         search={{
           get value() {
@@ -3752,9 +3738,6 @@ export function ChatWorkspaceView(
           },
         }}
         list={{
-          get lead() {
-            return v2Lead();
-          },
           get notices() {
             return v2Notices();
           },

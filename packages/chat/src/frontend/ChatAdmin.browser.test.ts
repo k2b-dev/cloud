@@ -174,6 +174,10 @@ for (const [state, width, height] of [
       await page.getByText("Orte ohne Benachrichtigung").first().waitFor();
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
+      // The way to Chat's logs is there at every width, the phone included: it stands in the statement's row.
+      const logs = page.getByRole("link", { name: "Logs", exact: true });
+      expect(await logs.isVisible()).toBe(true);
+      expect(await logs.getAttribute("href")).toBe("/admin/observability/logs?search=chat");
       if (shots) {
         mkdirSync(shots, { recursive: true });
         await page.screenshot({ path: join(shots, `${state ? "19-worst-admin" : "03-admin"}-light-${width}.png`) });

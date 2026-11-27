@@ -81,7 +81,13 @@ describe("Chat v2 server render", () => {
       const html = render(locale, props());
       expect(html).toContain('data-k2-part="Workspace"');
       expect(html).toContain('data-k2-part="Nav"');
-      // The nav counts unread chats; the list has no status row of its own (a live statement would move it).
+      // Two columns (Valentin, v8): the chats are the nav's own rows under its search and "New chat", the phone's page;
+      // there is no list pane, no head bar and no "Chats" entry of their own.
+      expect(html).toContain('class="k2-nav-search"');
+      expect(html).toContain('class="k2-nav-primary"');
+      expect(html).toMatch(/class="k2-nav-list" data-phone="page">(?:(?!<\/nav>).)*Werkstatt Nord/s);
+      expect(html).not.toContain('data-slot="head"><button');
+      expect(html).not.toContain(`<span class="k2-ni-name">${t.chats}</span>`);
       expect(html).not.toContain('data-k2-part="StatusRow"');
       // One list without headings: the pinned chat first, marked with its pin, then the chats and channels.
       const order = ["Werkstatt Nord", "Nora Weber", "Lieferung KW 49", "Ankündigungen"].map((title) => html.indexOf(title));
@@ -96,13 +102,15 @@ describe("Chat v2 server render", () => {
       expect(html).toContain(v2.noneOpen);
       expect(html).not.toContain("chat-list-page");
     });
-    test(`a mention is the one statement, quiet in the head, in ${locale}`, () => {
+    test(`a mention is said once, on its chat's row, with no statement above the chats, in ${locale}`, () => {
       const html = render(
         locale,
         props({ sidebar: { items: [...rows, chat("Chat05", "Lager-Team", { unread: 2, mentionsUnread: 2 })], nextCursor: null } }),
       );
       expect(html).not.toContain('data-k2-part="StatusRow"');
-      expect(html).toContain(v2.mentions({ count: (2).toLocaleString(locale), names: "Lager-Team" }));
+      expect(html).toMatch(/Lager-Team<\/span><span class="k2-row-meta">(?:<!--!\$-->)*2<\/span>/);
+      // the frame has no head of its own that could hold a statement
+      expect(html).not.toContain('data-k2-part="Bar"><div class="k2-bar-start"><span');
     });
     test(`an empty list says there are no chats yet in ${locale}`, () => {
       const html = render(locale, props({ sidebar: { items: [], nextCursor: null } }));

@@ -31,7 +31,8 @@ export default function ChatAdmin(props: { view: ChatAdminView }): JSX.Element {
         label={view().title}
         status={
           // Logs stands in the row of the statement (Valentin, v8: no bar of its own above it).
-          // k2b-ui gap: the status row's end leaves on the phone, so Logs is not there; an end action that stays is asked.
+          // The status row keeps its end on the phone (R, #4426), so Logs stays reachable at every width; the browser test
+          // asserts it at 390 px.
           <StatusRow
             lead={view().state}
             facts={[{ value: view().observed }]}
