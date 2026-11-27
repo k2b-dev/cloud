@@ -69,8 +69,8 @@ export default function BookPage(props: BookPageProps) {
       head={<BookHead notebookId={props.notebookId} fullWidth={props.fullWidth} initial={initial} now={props.now} />}
     >
       <Pane label={props.notebookName}>
-        {/* k2b-ui gap: a Canvas cannot fill its pane; the reading surface keeps its own scroller (reading position,
-            full width), so the app's stylesheet lets this one Canvas take the pane's height (app.css). */}
+        {/* k2b-ui gap: #4356 (Canvas height="fill") – until it lands, the app's stylesheet lets this one Canvas take
+            the pane's height (app.css); the reading surface keeps its own scroller (reading position, full width). */}
         <Canvas label={book().book}>
           <BookReader notebookId={props.notebookId} html={props.html} fullWidth={props.fullWidth} initial={initial} />
         </Canvas>

@@ -19,7 +19,8 @@
   flex-direction: column;
   height: 100%;
 }
-/* v2 keeps the Canvas a block, so Book's one surface takes the height itself. */
+/* k2b-ui gap: #4356 (Canvas height="fill"). Until it lands, v2 keeps the Canvas a block, so Book's one surface takes
+   the height itself; when it lands, Book's Canvas takes height="fill" and this rule goes. */
 [data-k2-canvas] > .notebook-book-document {
   height: 100%;
 }
