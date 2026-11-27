@@ -61,7 +61,7 @@ const personOf = (editor: { kind: string; id: string | null; displayName?: strin
 /**
  * The notebook's notes as one table on v2: all of them or the favorites (views in the head), a tag and favorites as
  * statements, the search in the head, the order in words. Above it the notebook's key figures: how much changed in
- * the last days and by whom, its notes, its last change. Each row shows who changed the note lately. It replaces the
+ * the last days and by whom, and its notes. Each row shows who changed the note lately. It replaces the
  * tag page; every change shows the list again from the server, which filters it with the person's access.
  */
 export default function NotesListScreen(props: NotesListScreenProps) {
@@ -77,6 +77,8 @@ export default function NotesListScreen(props: NotesListScreenProps) {
   const href = (next: NotesState, page = 1) => notesHref(notebookId(), query(), next, page, props.mode);
   const favoritesView = () => notesViews(query()).favorites;
   const changed = () => query().serialize(state()).toString() !== query().serialize(query().reset()).toString();
+  /** A filter or a search narrows the list; an order alone does not, so the hero's count stays the only one. */
+  const narrowed = () => Object.values(state().filters).some((value) => value != null) || Boolean(state().search);
   const days = () => props.figures.days.length;
 
   const change = (next: NotesState) => {
@@ -184,7 +186,7 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                 onChange={change}
                 icons={{ favorite: "star", tag: "hash" }}
                 // the hero counts the notebook's notes; the bar counts only what a filter or search leaves
-                results={changed() || state().search ? t().notesCount({ count: number(props.total) }) : undefined}
+                results={narrowed() ? t().notesCount({ count: number(props.total) }) : undefined}
                 end={<ListOrder query={query()} state={state()} onChange={change} />}
               />
             </>

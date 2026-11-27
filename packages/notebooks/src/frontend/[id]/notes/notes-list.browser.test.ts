@@ -114,6 +114,8 @@ const open = async (
         body: page(options.sample ?? "normal", options.permission ?? "write", options.hostSearch),
       });
     }
+    // the sidebar's filtered list (its quick filters); the guard below only needs the chips to answer
+    if (/^\/api\/notebooks\/[^/]+\/tree\/list$/.test(url.pathname)) return route.fulfill({ json: { total: 0, offset: 0, items: [] } });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
@@ -225,6 +227,38 @@ describe("the notes list on v2", () => {
       expect(chips).toEqual({ overflow: 0, lines: 1, past: 0 });
       const right = Object.fromEntries(starts.map(({ name, right }) => [name, right]));
       expect([right.search, right["first row"], right["foot row"]]).toEqual([SIDEBAR_GUTTER, SIDEBAR_GUTTER, SIDEBAR_GUTTER]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("choosing a long tag in the sidebar shortens only the tag chip; Favoriten and Zuletzt keep their place and width", async () => {
+    const { context, tab, errors } = await open(wide, PATH, { sample: "worst" });
+    try {
+      const fixed = () =>
+        tab.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2-ws-side .notebook-sidebar-chips > .notebook-sidebar-chip")].map((chip) => {
+            const box = chip.getBoundingClientRect();
+            return [Math.round(box.left), Math.round(box.width)];
+          }),
+        );
+      const before = await fixed();
+      expect(before).toHaveLength(2);
+      await tab.locator(".k2-ws-side .notebook-sidebar-chip-host .notebook-sidebar-chip").click();
+      await tab.getByRole("menuitemradio", { name: /sehr-langer-tag-name-ohne-ende/ }).click();
+      await tab.waitForFunction(
+        () =>
+          document.querySelector(".k2-ws-side .notebook-sidebar-chip-host .k2b-truncate-fade")?.textContent ===
+          "sehr-langer-tag-name-ohne-ende",
+      );
+      await settled(tab);
+      expect(await fixed()).toEqual(before);
+      const row = await tab.evaluate(() => {
+        const chips = document.querySelector<HTMLElement>(".k2-ws-side .notebook-sidebar-chips")!;
+        return chips.scrollWidth - chips.clientWidth;
+      });
+      expect(row).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
