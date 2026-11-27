@@ -385,7 +385,11 @@ export function ChatWorkspace(props: {
                 />
               )}
             </Show>
-            <div class="artifact-pane__body">
+            {/* The v2 page's context tab holds v2 sections, which keep their own text edge: the body adds none. */}
+            <div
+              class="artifact-pane__body"
+              data-flush={props.contextV2 && initial.kind === "context" && initial.category === "context" ? "" : undefined}
+            >
               <ErrorBoundary
                 fallback={(_error, reset) => (
                   <Placeholder

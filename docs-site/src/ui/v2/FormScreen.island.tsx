@@ -80,7 +80,7 @@ export default function FormScreen() {
               />
               <Button onClick={discard}>Abbrechen</Button>
               <Button
-                variant="primary"
+                variant="primary" floats
                 icon="check"
                 disabled={quantityError() !== undefined}
                 onClick={() =>

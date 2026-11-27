@@ -77,6 +77,8 @@ export type ProjectParts = {
     refresh: () => Promise<unknown> | void;
   };
   chatItems: () => AiConversation[];
+  /** Opens a chat's settings (name, Project) from its row. */
+  editChat: (chat: AiConversation) => void;
   searchChats: () => unknown;
   openConversation: (conversationId: string, nav: LinkNavigateEvent) => Promise<void>;
   loadMore: () => Promise<void>;
@@ -596,8 +598,11 @@ export default function AssistantProjectView(props: Props) {
     const project = props.project;
     void projectSettings(locale(), ({ openAssistantProjectSettingsDialog }) => openAssistantProjectSettingsDialog(project, live));
   };
+  // A chat of the Project opens its settings (name, Project) from its row, on v1 and v2.
+  const editChat = (chat: AiConversation) => void openAssistantConversationEditor(chat);
   const parts = {
     props,
+    editChat,
     text,
     copy,
     chatTotal,
@@ -681,7 +686,7 @@ export default function AssistantProjectView(props: Props) {
                           size="xs"
                           variant="subtle"
                           label={copy().editNamed({ name: chat.title })}
-                          onClick={() => void openAssistantConversationEditor(chat)}
+                          onClick={() => editChat(chat)}
                         >
                           <i class="ti ti-settings" aria-hidden="true" />
                         </IconButton>

@@ -9,7 +9,7 @@ import { assistantV2Messages } from "./assistant-v2-messages";
 
 /**
  * The chat and its tabs scroll inside themselves, so they fill the Canvas without asking for their own height.
- * k2b-ui gap: on the phone a pane with a `Canvas height="fill"` takes `min-height: min-content`, so a drawing as
+ * k2b-ui gap: #4407: on the phone a pane with a `Canvas height="fill"` takes `min-height: min-content`, so a drawing as
  * tall as its content (a chat with a long history) grows the pane past the screen and pushes the composer out of view.
  * Laid out from the Canvas's edges, the drawing reports no height of its own and the Canvas keeps the height left.
  */
@@ -70,6 +70,10 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
     nav.search(query().trim());
   };
   const path = () => [{ label: t().assistant, href: props.nav.basePath }, ...props.path()];
+  // Read once: the object holds the tabs' content, and Solid makes a prop of JSX a getter, so every read of
+  // `props.tabs` would draw that content anew (outside any update, too, when a layout read asks a pane whether it is
+  // the detail).
+  const tabs = props.tabs;
   // The chat whose details are open, as the list knows it now, so a pin shows at once.
   const detailsChat = () => {
     const id = detailsOf();
@@ -83,7 +87,9 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
   // The chat and, while one is open, its tabs: the Assistant's working columns.
   const ChatColumns = () => (
     <Pane.Split>
-      <Pane label={v2().chatPane}>
+      {/* One pane at a time on the phone and in the panel, as in v1: the pane in front is the detail, and v2 hides the
+          other one there (still mounted, so a run or an editor in a tab keeps its state). Beside each other from 768 px. */}
+      <Pane label={v2().chatPane} detail={tabs.open() && !tabs.focused()}>
         <Canvas label={v2().chatPane} height="fill">
           {/* The chat's own layout reads its width from this container (`assistant-chat`): from 56 rem the chat's
               context stands beside the timeline, as in v1. */}
@@ -92,17 +98,15 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
           </div>
         </Canvas>
       </Pane>
-      <Show when={props.tabs.open()}>
-        {/* k2b-ui gap (Z2, gap a): in a Split on the phone only the pane in front should stand; a pane that is no
-            detail still stands under the chat. Take Z2's fix in once it lands; no app CSS here. */}
+      <Show when={tabs.open()}>
         <Pane
           label={v2().tabsPane}
-          detail={props.tabs.focused()}
-          back={props.tabs.focused() ? props.tabs.back() : undefined}
+          detail={tabs.focused()}
+          back={tabs.focused() ? tabs.back() : undefined}
           width={{ min: 320, default: 680 }}
         >
           <Canvas label={v2().tabsPane} height="fill">
-            <div style={drawing}>{props.tabs.content}</div>
+            <div style={drawing}>{tabs.content}</div>
           </Canvas>
         </Pane>
       </Show>
@@ -127,10 +131,8 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
             start={props.path().length > 0 ? <Path label={t().assistant} items={path()} /> : undefined}
             end={
               <>
-                {/* k2b-ui gap (Z2): the head's search should be a symbol that opens over the head on click or "/"
-                    (SEARCH + CREATE rule); at 1024 the field squeezes the path. It stays a field until Z2's head
-                    lands: v2 keeps the head on the phone only while it holds a search, and without the head the phone
-                    would lose "Neuer Chat" and the chat's "…". Enter opens Cloud's search in the chats. */}
+                {/* The search of every chat; on the phone the host's bar holds it and the head's field gives way.
+                    Enter opens Cloud's search in the chats. */}
                 <Input
                   type="search"
                   icon="search"
@@ -152,14 +154,15 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
                     />
                   )}
                 </Show>
-                {/* The one way to create; it stays on the phone, where no button floats over the composer.
-                    k2b-ui gap: v2's primary is always blue; Gustav's primary is plum (appearance.primary "ai", rule
+                {/* The one way to create. On a list screen the floating button repeats it on the phone (`floats`);
+                    in a chat and on a settings page it stays in the head, where no button floats over the composer.
+                    k2b-ui gap: #4406: v2's primary is always blue; Gustav's primary is plum (appearance.primary "ai", rule
                     assistant-no-blue). Lane Y brings it as a platform token; until then no colour of our own. */}
                 {/* A page with its own primary (Save on a settings page) keeps New chat secondary: one primary per page. */}
                 <Button
                   variant={props.pagePrimary?.() ? "secondary" : "primary"}
                   icon="plus"
-                  keep
+                  floats={props.fab?.()}
                   disabled={props.newChat().disabled}
                   onClick={() => props.newChat().onClick?.()}
                 >

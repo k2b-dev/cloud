@@ -401,8 +401,9 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
   const withCode = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(withCode).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  // The server and the first client render show the v2 pane loading; the list arrives with its code.
-  expect(view).toMatch(appsLoading);
+  // The page's island brings My apps, so the server's list is the first picture: no loader.
+  expect(view).not.toMatch(appsLoading);
+  expect(view).toContain("Weekly sales report");
   expect(view).not.toContain("Your Code runs as you, with your rights and no more.");
   const seed = codeSeed(view);
   expect(seed).toMatchObject({ has: true, open: true, page: { items: [{ id: "c_week01", title: "Weekly sales report" }] } });
@@ -429,9 +430,20 @@ test("Gustav's settings at ?prefs=<tab> render as the page's own view, so a relo
   );
   spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
   mockCodeQueries([]);
+  const prefs = {
+    userId: user.id,
+    memoryEnabled: true,
+    suggestNextMessage: false,
+    memoryLearningEnabled: true,
+    selection: null,
+    updatedAt: "2026-11-14T08:00:00.000Z",
+  };
+  spies.push(spyOn(ai.aiUserPrefs, "get").mockResolvedValue(prefs));
   const html = await (await request("https://cloud.example.test/app/assistant?prefs=chat")).text();
-  // The settings' pane stands from the first picture, loading; no chat opens behind it.
-  expect(html).toMatch(/data-k2-part="Pane"[^>]*aria-label="Personalize"[\s\S]*?data-k2-part="Loading"/);
+  // The server reads the settings, so the first picture shows the tab's fields, without a loader; no chat opens behind it.
+  expect(html).not.toMatch(/data-k2-part="Pane"[^>]*aria-label="Personalize"[\s\S]*?data-k2-part="Loading"/);
+  expect(html).toMatch(/data-k2-part="Pane"[^>]*aria-label="Personalize"/);
+  expect(islandProps(html).initialPrefs).toMatchObject({ prefs, access: { baseUrl: "https://cloud.example.test/api/ai/openai/v1" } });
   expect(islandProps(html).initialPrefsTab).toBe("chat");
   expect(islandProps(html).initialConversationId).toBeNull();
   // An unknown tab is no settings view.
@@ -454,7 +466,9 @@ test("an unknown Code answer keeps the entry, and the list shows its error with 
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(plain).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  expect(view).toMatch(appsLoading);
+  // The failure is the first picture too: no loader, the error with its way to try again.
+  expect(view).not.toMatch(appsLoading);
+  expect(view).toContain("Your automations could not be loaded.");
   const seed = codeSeed(view);
   // A failed list is part of the seed, so the loaded view shows the error instead of asking Core again.
   expect(seed).toMatchObject({ has: true, open: true, page: null });

@@ -123,7 +123,7 @@ export default function OfferActions(props: Props) {
               </Menu>
               <Menu label="Ansicht" icon="adjustments-horizontal" items={view()} />
               <Menu
-                variant="primary"
+                variant="primary" floats
                 icon="plus"
                 items={[
                   { label: "Leeres Angebot", icon: "file" },
@@ -191,7 +191,7 @@ export default function OfferActions(props: Props) {
                         Senden
                       </Button>
                       <Menu label="Weitere Aktionen" items={deeds(offer())} />
-                      <Button variant="ghost" icon="x" label="Schließen" href="#" />
+                      <Button variant="ghost" icon="x" label="Schließen" href="#" closes />
                     </>
                   }
                 />

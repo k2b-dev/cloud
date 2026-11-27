@@ -115,6 +115,8 @@ import { openAssistantCloudReference, resolveAssistantCloudResource } from "./As
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
 import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
+import type { AssistantPrefsSeed } from "./AssistantPrefsModals";
+import type { AssistantProjectSettingsSeed } from "./AssistantProjectSettingsDialog";
 import AssistantProjectView, { type ProjectParts } from "./AssistantProjectView";
 import type { AssistantQueueEntry } from "./AssistantQueue";
 import type { AssistantQueueHost } from "./AssistantQueueConnected";
@@ -278,8 +280,12 @@ export type AssistantWorkspaceProps = {
   approvals: { page?: ApprovalPage; open: boolean };
   /** Gustav's settings at `?prefs=<tab>`, a view of v2's page (null in the panel). */
   initialPrefsTab?: AssistantPrefsTab | null;
+  /** What that page shows first, read on the server; null when it could not be read (the page reads it itself). */
+  initialPrefs?: AssistantPrefsSeed | null;
   /** The open Project's settings, a page of v2 at `?project=<id>&settings=1`. */
   initialProjectSettings?: boolean;
+  /** What that page shows first, read on the server; null when it could not be read (the page reads it itself). */
+  initialProjectSettingsSeed?: AssistantProjectSettingsSeed | null;
   /**
    * The person's own Code: whether they have any (unknown counts as yes, so their Code stays reachable), whether the
    * page opened on its list, and the list's first page when it did (null when Core could not list it).
@@ -472,11 +478,14 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
   };
   /** Gustav's settings at one tab, as v2's page shows them; the address keeps the tab for reload and Back. */
   const [prefsTab, setPrefsTab] = createSignal<AssistantPrefsTab>(props.initialPrefsTab ?? "personalization");
+  // The server's settings serve only the page it rendered; a later visit reads them fresh.
+  const [prefsRendered, setPrefsRendered] = createSignal(Boolean(props.initialPrefsTab));
   const openPrefs = (tab: AssistantPrefsTab) => {
     const href = assistantPrefsHref(basePath, tab);
     if (mainView() === "prefs" && prefsTab() === tab) return;
     navigationRequest++;
     setProjectView(null);
+    if (mainView() !== "prefs") setPrefsRendered(false);
     setPrefsTab(tab);
     setMainView("prefs");
     navigate(href, { scroll: "manual", viewTransition: false });
@@ -1452,6 +1461,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     if (current()) await waitingFocus.focus(anchor, current);
   };
   const [projectSettings, setProjectSettings] = createSignal(Boolean(props.initialProjectSettings));
+  // The server's models and access serve only the settings page it rendered; a later visit reads them fresh.
+  const [projectSettingsRendered, setProjectSettingsRendered] = createSignal(Boolean(props.initialProjectSettings));
   /** The open Project's settings page, and the way back to the Project after a save or a press on its name. */
   const openProjectSettings = () => {
     const projectId = projectView()?.projectId;
@@ -1461,6 +1472,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
   };
   const closeProjectSettings = () => {
     const projectId = projectView()?.projectId;
+    setProjectSettingsRendered(false);
     setProjectSettings(false);
     if (projectId) navigate(assistantProjectHref(window.location.href, projectId), { scroll: "manual", viewTransition: false });
   };
@@ -1568,11 +1580,13 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
       const prefs = props.embedded ? null : assistantPrefsTabFromHref(window.location.href);
       if (prefs) {
         setProjectView(null);
+        if (mainView() !== "prefs") setPrefsRendered(false);
         setPrefsTab(prefs);
         setMainView("prefs");
         return;
       }
       setMainView(null);
+      setProjectSettingsRendered(false);
       setProjectSettings(!props.embedded && assistantProjectSettingsFromHref(window.location.href));
       if (projectId) {
         void openProject(projectId).catch(() => navigateTo(basePath));
@@ -3743,9 +3757,11 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     mainView,
     openPrefs,
     prefsTab,
+    prefsSeed: () => (prefsRendered() ? props.initialPrefs : undefined),
     projectSettings,
     openProjectSettings,
     closeProjectSettings,
+    projectSettingsSeed: () => (projectSettingsRendered() ? props.initialProjectSettingsSeed : undefined),
     projectView,
     ProjectContent,
     codeRendered,

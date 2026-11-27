@@ -68,7 +68,7 @@ export default function AssistantProjectV2(p: ProjectParts) {
               when={p.chatItems().length > 0}
               fallback={
                 <Show when={!p.chats.error() && !p.chats.loading()}>
-                  <Empty icon="messages" text={p.text("No Project p.chats yet.")} />
+                  <Empty icon="messages" text={p.text("No Project chats yet.")} />
                 </Show>
               }
             >
@@ -81,19 +81,20 @@ export default function AssistantProjectV2(p: ProjectParts) {
                       time={<Format.RelativeTime value={chat.updatedAt} />}
                       href={assistantConversationHref("/app/assistant", chat.id)}
                       onNavigate={(nav) => p.openConversation(chat.id, nav)}
+                      action={{ label: p.copy().editNamed({ name: chat.title }), icon: "settings", onClick: () => p.editChat(chat) }}
                     />
                   )}
                 </For>
               </List>
             </Show>
           </Section>
-          {/* k2b-ui gap: a pane has no foot for a composer; it follows the chats until the design study places it. */}
+          {/* k2b-ui gap: #4334: a pane has no foot for a composer; it follows the chats until the design study places it. */}
           <Canvas label={p.text("Project")}>
             <div class="assistant-project-composer-v2">{p.props.composer}</div>
           </Canvas>
         </Pane>
         <Pane side label={p.text("Project context")} width={{ min: 300, default: 352 }}>
-          {/* k2b-ui gap: the context's sections (rows with menus, drop to add files) have no v2 parts yet; v1's
+          {/* k2b-ui gap: #4409: the context's sections (rows with menus, drop to add files) have no v2 parts yet; v1's
               sections draw themselves here, the same as in the chat's p.context column. */}
           <Canvas label={p.text("Project context")}>
             <div ref={p.setContextPanel} class="assistant-project-context-v2">

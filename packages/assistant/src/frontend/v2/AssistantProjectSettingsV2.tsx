@@ -3,15 +3,20 @@ import type { AiProject } from "@k2b/cloud/ai";
 import { AiModelField } from "@k2b/cloud/ai/ui";
 import { Bar, Button, Canvas, Failed, Field, Inline, Input, Loading, Notice, Pane, RecordHead, Section } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import { createProjectSettings } from "../AssistantProjectSettingsDialog";
+import { type AssistantProjectSettingsSeed, createProjectSettings } from "../AssistantProjectSettingsDialog";
 
 /**
  * A Project's settings as a page of v2 (screen brief 3, recipe "form"): the Project's name in the head, then its
  * fields with their hints, then who has access. Saving returns to the Project. Discard and Save stand in the flow after
  * the fields and move to the pane's foot (sticky while there are changes) with G's Pane `foot` (#4334).
  */
-export default function AssistantProjectSettingsV2(props: { project: AiProject; onDone: () => void }) {
-  const s = createProjectSettings({ project: props.project, close: props.onDone });
+export default function AssistantProjectSettingsV2(props: {
+  project: AiProject;
+  onDone: () => void;
+  /** The models and access the server read for this page, so its first picture shows them. */
+  initial?: AssistantProjectSettingsSeed | null;
+}) {
+  const s = createProjectSettings({ project: props.project, close: props.onDone, initial: props.initial });
   const text = s.text;
   const readOnly = () => props.project.permission === "read";
 
@@ -33,7 +38,7 @@ export default function AssistantProjectSettingsV2(props: { project: AiProject; 
         >
           <Input multiline value={s.instructions()} onInput={s.setInstructions} maxLength={16_000} disabled={s.saving() || readOnly()} />
         </Field>
-        {/* k2b-ui gap: the model choice is Cloud's shared v1 field (`@k2b/cloud/ai/ui`); it draws itself here until it
+        {/* k2b-ui gap: #4405: the model choice is Cloud's shared v1 field (`@k2b/cloud/ai/ui`); it draws itself here until it
             has a v2 form. */}
         <Canvas label={text("Default model")}>
           <div class="assistant-project-settings-v2__model">
@@ -89,7 +94,7 @@ export default function AssistantProjectSettingsV2(props: { project: AiProject; 
             }
           >
             {(entries) => (
-              // k2b-ui gap: the access summary is Cloud's shared v1 part (`@k2b/cloud/access/ui`).
+              // k2b-ui gap: #4405: the access summary is Cloud's shared v1 part (`@k2b/cloud/access/ui`).
               <Canvas label={text("Project access")}>
                 <div class="assistant-project-settings-v2__access">
                   <AccessSummary entries={entries()} />

@@ -1,10 +1,12 @@
 import {
   aiConversations,
   aiProjects,
+  aiUserPrefs,
   assistantAiSettingsState,
   getAiChatQuotas,
   getLiveDictationStatus,
   loadAiStreamState,
+  peopleAiModels,
 } from "@k2b/cloud/ai";
 import { buildAiMessageTimeline, collectAiWakeupLines } from "@k2b/cloud/ai/browser";
 import { aiLive } from "@k2b/cloud/ai/live";
@@ -43,6 +45,11 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = assistantMessages.resolve([locale]);
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
+  // v1's list filter "At places" (`?places=1`) is the sidebar's folder "An Orten" on v2: an old address opens the page.
+  if (!embedded && url.searchParams.has("places")) {
+    url.searchParams.delete("places");
+    return c.redirect(`${url.pathname}${url.search}`, 302);
+  }
   const requestedConversationId = url.searchParams.get("conversation") ?? undefined;
   const requestedProjectId = url.searchParams.get("project") ?? undefined;
   const initialArtifactPath = url.searchParams.get("artifact");
@@ -108,6 +115,16 @@ export default ssr<AuthContext>(async (c) => {
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
     panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
   ]);
+  // Gustav's settings page draws its first picture from these, as its browser read would: the person's settings and
+  // whether the OpenAI-compatible API is on. Null: unreadable now, so the page reads them itself and says so.
+  const initialPrefs = prefsTab
+    ? await Promise.all([aiUserPrefs.get(user.id), coreSettings.get<boolean>("ai.openai_api_enabled")])
+        .then(([prefs, apiEnabled]) => ({
+          prefs,
+          access: apiEnabled ? { baseUrl: `${publicCloudOrigin(appUrl)}/api/ai/openai/v1`, models: settings.options } : null,
+        }))
+        .catch(() => null)
+    : null;
   // An app that does not answer right now leaves the place to the panel, which shows "Try again" in the bar.
   const initialPlace = (() => {
     try {
@@ -146,6 +163,17 @@ export default ssr<AuthContext>(async (c) => {
       })
     : null;
   const projectContext = activeProject ? await loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null;
+  // A Project's settings page (its administrators') draws its first picture from these, as its browser reads would.
+  const projectSettingsOpen = !embedded && activeProject?.permission === "admin" && url.searchParams.get("settings") === "1";
+  const initialProjectSettingsSeed =
+    projectSettingsOpen && activeProjectRecord
+      ? await Promise.all([
+          peopleAiModels(c.get("accessSubject")),
+          aiProjects.listAccess(activeProjectRecord.id, { actor: c.get("actor"), accessSubject: c.get("accessSubject") }, locale),
+        ])
+          .then(([models, access]) => (access ? { models, access } : null))
+          .catch(() => null)
+      : null;
 
   const selectedConversationId =
     activeProject || approvalsOpen || codeOpen || prefsTab
@@ -258,8 +286,10 @@ export default ssr<AuthContext>(async (c) => {
     initialProjectContext: projectContext,
     approvals: { ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen },
     initialPrefsTab: prefsTab,
+    initialPrefs,
     // A Project's settings are its administrators' page on v2; the panel and everyone else get the Project.
-    initialProjectSettings: !embedded && activeProject?.permission === "admin" && url.searchParams.get("settings") === "1",
+    initialProjectSettings: projectSettingsOpen,
+    initialProjectSettingsSeed,
     code: {
       has: hasCode,
       open: codeOpen,
