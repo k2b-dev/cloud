@@ -913,6 +913,11 @@
   min-width: 0;
   max-width: 100%;
 }
+/* the tile of what is open now takes the tint of the app it belongs to, as an open row; only its ground changes */
+.k2-ui .k2-tile[data-current],
+.k2-ui .k2-tiles > .k2-tile[data-current][data-open]:hover {
+  background: var(--k2-app-tint);
+}
 .k2-ui .k2-tile > span {
   display: flex;
   flex-direction: column;
