@@ -38,6 +38,8 @@ const fixture = (opened: string[], clicked: string[]) => {
         { label: "Archiv", icon: "archive", href: "/app/demo/archive", nested: true, dot: "ok" },
         // a fold: closed while none of its entries is the open one
         { label: "Mehr", nested: true, items: [{ label: "Spam", icon: "alert-octagon", href: "/app/demo/spam" }] },
+        // work that runs here: the old menu has no running state, and running is no unread mail
+        { label: "Entwurf", icon: "pencil", href: "/app/demo/drafts", nested: true, dot: "running" },
       ],
     },
     {
@@ -116,6 +118,7 @@ test("the menu's tree: named groups are sections, nested entries stand under the
                 defaultExpanded: false,
                 children: [{ id: "/app/demo/spam", label: "Spam", icon: "ti ti-alert-octagon", href: "/app/demo/spam" }],
               },
+              { id: "/app/demo/drafts", label: "Entwurf", icon: "ti ti-pencil", href: "/app/demo/drafts" },
             ],
           },
           { id: "group:0:menu:0", label: "Neues Postfach", icon: "ti ti-mail-plus", action: "group:0:menu:0" },
@@ -177,5 +180,57 @@ test("in the sheet the mailbox row keeps its whole link, a fold opens and closes
     expect(rowOf("Kontakt").querySelector(".k2b-dropdown__trigger, [aria-haspopup='menu']")).not.toBeNull();
   } finally {
     view.cleanup();
+  }
+});
+
+test("a tree group keeps its loaded places: a place with children folds them behind its own link, open on the way to the open one", async () => {
+  const dom = createDomTestHarness();
+  const { default: V2WorkspaceNavigation } = await import("./V2WorkspaceNavigation");
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const groups: NavGroup[] = [
+    {
+      label: "Ordner",
+      tree: {
+        label: "Ordner",
+        current: "texte",
+        items: [
+          {
+            key: "projekte",
+            label: "Projekte",
+            icon: "folder",
+            href: "/files/projekte",
+            children: [{ key: "texte", label: "Texte", icon: "folder", href: "/files/texte", count: 4 }],
+          },
+          // children not loaded yet: a plain link, the folder opens as a page
+          { key: "archiv", label: "Archiv", icon: "archive", href: "/files/archiv", branch: true },
+        ],
+      },
+    },
+  ];
+  const page = render(() => <V2WorkspaceNavigation label="Dateien" groups={groups} />, dom.root);
+  try {
+    expect(readWorkspaceNavigation()?.navigation.items()).toEqual([
+      {
+        id: "group:0",
+        label: "Ordner",
+        section: true,
+        children: [
+          {
+            id: "/files/projekte",
+            label: "Projekte",
+            icon: "ti ti-folder",
+            defaultExpanded: true,
+            children: [
+              { id: "/files/projekte:self", label: "Projekte", icon: "ti ti-folder", href: "/files/projekte" },
+              { id: "/files/texte", label: "Texte", icon: "ti ti-folder", badge: 4, active: true, href: "/files/texte" },
+            ],
+          },
+          { id: "/files/archiv", label: "Archiv", icon: "ti ti-archive", href: "/files/archiv" },
+        ],
+      },
+    ]);
+  } finally {
+    page();
+    dom.cleanup();
   }
 });

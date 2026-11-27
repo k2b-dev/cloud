@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { withNormalizedSelectColors } from "../field-types/select-colors";
 import { LOOKUP_TARGET_META_KEY, type LookupTargetMeta } from "../lookup-display";
 import type { SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
@@ -23,11 +24,12 @@ const targetMeta = (field: TargetField): LookupTargetMeta => ({
   icon: field.icon ?? null,
 });
 
-const mapTargetField = (row: DbFieldRow): TargetField => ({
+/** A lookup's target field as it is read: its select colours as hex, like every other read of a field. */
+export const mapTargetField = (row: DbFieldRow): TargetField => ({
   id: row.id,
   name: row.name,
   type: row.type,
-  config: parseJsonbRow<Record<string, unknown>>(row.config, {}),
+  config: withNormalizedSelectColors(row.type, parseJsonbRow<Record<string, unknown>>(row.config, {})),
   icon: row.icon,
   deletedAt: row.deleted_at ? row.deleted_at.toISOString() : null,
 });
