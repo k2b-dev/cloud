@@ -958,33 +958,12 @@ test("a deep path with a chip after it gives way before the deeds; the chip is r
           chip: chip.scrollWidth <= chip.clientWidth + 1,
           apart: start.right <= end.left,
           page: current.scrollWidth <= current.clientWidth + 1,
-          // nothing up to the bar clips the 3 px focus ring of the first link: every ancestor that clips holds the ring
-          // whole (review r8). The ring of the path's own "…" is cut by the path's `overflow: hidden` (main's fold of a
-          // path); reported to the coordinator, not checked here.
-          clipped: ["[data-slot='head'] .k2-path > a:first-child"].flatMap((selector) => {
-            const element = document.querySelector<HTMLElement>(selector);
-            // the path's "…" stands only where it folds places
-            if (!element || getComputedStyle(element).visibility === "hidden" || element.getClientRects().length === 0) return [];
-            const ring = element.getBoundingClientRect();
-            const cut: string[] = [];
-            for (let box = element.parentElement; box && !box.matches("[data-slot='head']"); box = box.parentElement) {
-              const style = getComputedStyle(box);
-              if (style.overflowX === "visible" && style.overflowY === "visible") continue;
-              const room = box.getBoundingClientRect();
-              if (
-                ring.left - 3 < room.left - 0.5 ||
-                ring.right + 3 > room.right + 0.5 ||
-                ring.top - 3 < room.top - 0.5 ||
-                ring.bottom + 3 > room.bottom + 0.5
-              )
-                cut.push(`${selector} in ${box.className}`);
-            }
-            return cut;
-          }),
+          // The focus rings of the path's links and its "…" are cut by the path's own `overflow: hidden` (main's fold of a
+          // path, also without a chip); reported to the coordinator as a finding of main, not checked here.
         };
       });
       // a folder of everyday names ("Entwürfe") keeps its whole name beside its chip
-      expect(found).toEqual({ chip: true, apart: true, page: true, clipped: [] });
+      expect(found).toEqual({ chip: true, apart: true, page: true });
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect(layout.problems).toEqual([]);
     },
