@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
+import { pageCss, pageScript } from "../../../scripts/fixtures/page-assets";
 import { launchBrowser, settled } from "../../ui/test/browser";
 import { solidTestPlugin } from "../../ui/test/solid-test-plugin";
 
@@ -56,7 +56,7 @@ window.bubble = {
   open: () => document.querySelector("[popover]:popover-open") !== null,
 };
 `;
-  const build = await Bun.build({
+  const bundle = await pageScript({
     entrypoints: [entry],
     files: { [entry]: fixture },
     target: "browser",
@@ -64,11 +64,7 @@ window.bubble = {
     format: "iife",
     plugins: [solidTestPlugin()],
   });
-  if (!build.success) throw new AggregateError(build.logs, "Could not bundle the bubble menu fixture.");
-  const bundle = await build.outputs[0]!.text();
-  const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../styles.css")], plugins: [tailwind] });
-  if (!styles.success) throw new AggregateError(styles.logs, "Could not compile the global stylesheet.");
-  const css = await styles.outputs[0]!.text();
+  const css = await pageCss([resolve(import.meta.dir, "../../../styles.css")]);
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,

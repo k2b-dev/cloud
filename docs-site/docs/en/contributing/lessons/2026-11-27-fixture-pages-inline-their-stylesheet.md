@@ -1,0 +1,6 @@
+### Browser fixtures ran into their 5 s budget because each page carried 2.8 MB of inline CSS
+
+- **What happened:** On a loaded runner, the Storage admin browser tests hit their 5 s default timeout: at 4x CPU throttle 8 of 30 failed, while the server rendered each page in about 25 ms.
+- **Root cause:** The fixture put all of the page CSS (the root `styles.css` with `@k2b/ui`, 2.79 MB unminified) into a `<style>` element of every document and served a 3.7 MB unminified harness; the browser parsed both on every load, and about 180 fixtures copy that pattern.
+- **Error class:** A test fixture builds its assets differently from the production build (inline instead of linked, unminified instead of minified), so its pages cost more than real ones and the budget measures the fixture, not the page.
+- **Guard:** `scripts/fixtures/page-assets.ts` builds page CSS and harness scripts minified, once per process, and serves them as linked files; `page-assets.test.ts` pins it, testing.md ("Serve a fixture page's stylesheet and script") makes it the convention, and the other fixtures move to it package by package after the v2 push; a repository rule against inline Tailwind builds follows once they have.

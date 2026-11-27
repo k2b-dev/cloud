@@ -577,6 +577,45 @@ navigation that the page starts itself, such as after a click, and every other
 error. `packages/ui/test/browser.browser.test.ts` guards these cases in
 Chromium and WebKit.
 
+### Serve a fixture page's stylesheet and script
+
+A fixture page with the real Cloud styles carries about 2.5 MB of CSS. Inline
+in a `<style>` element, the browser parses all of it before the page goes on,
+on every load. Linked, the same pages loaded about a fifth faster at 4x CPU
+throttle, the state of a loaded runner. Build the page with
+`scripts/fixtures/page-assets.ts`:
+
+```ts
+import { fixtureAsset, fixtureAssetResponse, pageCss, pageScript } from "../../../../scripts/fixtures/page-assets";
+
+const css = fixtureAsset(await pageCss([appCss, rootStylesCss]), "css");
+const script = fixtureAsset(await pageScript({ entrypoints: [harness], target: "browser", format: "iife" }), "js");
+const server = Bun.serve({
+  port: 0,
+  fetch(request) {
+    const asset = fixtureAssetResponse(new URL(request.url).pathname);
+    if (asset) return asset;
+    return new Response(
+      `<!doctype html><html><head><link rel="stylesheet" href="${css}"></head>` +
+        `<body class="k2b-ui"><div id="root"></div><script src="${script}"></script></body></html>`,
+      { headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  },
+});
+```
+
+- `pageCss(entries)` compiles the stylesheets with Tailwind, minified as the
+  production build ships them, in the order given. An app's `app.css` and the
+  root `styles.css` are joined under the cascade layer order of a Cloud page.
+  The same entries are compiled once per test process.
+- `pageScript(config)` bundles a harness into one minified file. A build that
+  splits into chunks stays a plain `Bun.build`.
+- `fixtureAsset(text, "css" | "js")` returns an address under `/__fixture/`
+  named by the text's hash. `fixtureAssetResponse(pathname)` answers it with a
+  long cache lifetime, or returns `undefined` for every other path.
+- A page from `page.setContent` has no origin to load a file from, so it
+  inlines the `pageCss` text in a `<style>` element.
+
 ### Run WebKit locally
 
 Playwright's WebKit needs system libraries that most Linux machines do not
