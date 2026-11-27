@@ -10,6 +10,12 @@
  *   enforce this.
  */
 
+export {
+  createInstallPrompt,
+  type InstallationPlatform,
+  type InstallPrompt,
+  installationPlatform,
+} from "../feedback/install";
 // The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
 export { useLocale } from "../intl/locale";
 export { NoticeStack, type NoticeStackProps, TabBar, type TabBarItem, type TabBarProps } from "./app-frame";
@@ -97,6 +103,7 @@ export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+export { InstallGuide, type InstallGuideProps, Only, type OnlyProps, serverInstall } from "./install-guide";
 // Layer 1: the primitives.
 export {
   Band,

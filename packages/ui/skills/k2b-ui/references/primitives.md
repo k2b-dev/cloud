@@ -533,6 +533,19 @@ lines instead of cutting a thing.
   `hidden` attribute on `.k2-tabbar`) steps it aside for a screen of its own,
   such as one chat with its composer at the bottom edge; floating notices
   then stand above the safe area alone.
+- `InstallGuide`: `appName`, `install`, `url`, `note?`; how to install the
+  page as an app on this platform, from v2 parts: the browser's own dialog,
+  Safari's steps on iPhone, iPad and Mac, the steps of other browsers, a
+  warning and the link to copy inside another app's browser, Chrome for
+  Samsung Internet. On the server pass `serverInstall(installationPlatform(
+  userAgent, "", 0))`, in the browser `createInstallPrompt()`. Where a browser
+  may offer its dialog later (Chrome, Edge), the steps and the dialog's button
+  share one place from the server's page on, so nothing moves. The host owns
+  the surface, heading and dismissal.
+- `Only`: `when` `installed`, `browser`, `touch` or `pointer`; content for one
+  kind of window or device, picked by the stylesheet from the server's page
+  on (the installed app and the browser tab, a finger and a mouse), such as
+  pairing in the installed app and the install guide in the browser.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above

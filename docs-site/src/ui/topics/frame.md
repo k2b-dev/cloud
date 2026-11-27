@@ -72,6 +72,18 @@ The places of an installed app on the phone, at the bottom edge with the safe ar
 
 <Props of="TabBar TabBarItem" />
 
+### InstallGuide
+
+How to install the page as an app on this platform: the browser's own dialog, Safari's steps on iPhone, iPad and Mac, the steps of other browsers, a warning and the link to copy inside another app's browser, and Chrome for Samsung Internet. On the server pass `serverInstall(installationPlatform(userAgent, "", 0))`, in the browser `createInstallPrompt()`. Where a browser may offer its dialog only after the page loads (Chrome, Edge), the steps and the dialog's button share one place from the server's page on, as tall as the taller, so nothing moves when it arrives. iPadOS Safari reports a Mac: for a Mac the server's page holds the Mac's steps and the iPad's, and the pointer picks them. The host owns the surface, its heading and dismissal.
+
+<Props of="InstallGuide" />
+
+### Only
+
+Content for one kind of window or device: `installed` (the app opened from the Home Screen or the dock), `browser`, `touch` or `pointer`. The stylesheet picks it from the server's page on, so the first picture is the final one; elsewhere it is not in the layout and not read out. iPadOS Safari reports a Mac: its touch steps come from `touch`, not from the user agent.
+
+<Props of="Only" />
+
 ### Tabs
 
 Views of one thing; a menu tab at the end holds the views without a tab of their own.
