@@ -79,6 +79,8 @@ export default function NotebooksStart(props: {
                 {t().firstNotebookPurpose}
               </Text>
             </Band>
+            {/* k2b-ui gap: Tile onOpen (#4314) – the ways to start become tiles whose action opens the dialog (a real
+                button); until it lands they stand as rows that open the same dialog or the way beside the list. */}
             <List label={t().firstNotebook}>
               <Row
                 lines={[t().blankNotebook, t().blankNotebookHint]}

@@ -244,6 +244,45 @@ test("a way to start opens beside the list, stays in the address, and comes back
   }
 }, 60_000);
 
+test("the keyboard alone reaches each way to start, and Enter or Space opens the dialog", async () => {
+  const page = await open(390);
+  try {
+    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
+    const focusOn = async (name: string) => {
+      for (let step = 0; step < 20; step += 1) {
+        if (await row(page, name).evaluate((element) => element === document.activeElement)) return;
+        await page.keyboard.press("Tab");
+      }
+      throw new Error(`Tab never reached ${name}`);
+    };
+    await focusOn("Leeres Notizbuch");
+    await page.keyboard.press("Enter");
+    await dialog.getByRole("textbox", { name: "Name" }).waitFor();
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "hidden" });
+    await focusOn("Handbuch");
+    await page.keyboard.press("Space");
+    await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
+    expect(created).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("on a wide screen the keyboard opens a way to start beside the list", async () => {
+  const page = await open(1440);
+  try {
+    await row(page, "Handbuch").focus();
+    await page.keyboard.press("Enter");
+    await detail(page).locator('[data-slot="head"]').getByText("Handbuch").first().waitFor();
+    await detail(page).getByRole("button", { name: "Erstellen" }).focus();
+    await page.keyboard.press("Space");
+    await page.getByRole("dialog", { name: "Neues Notizbuch" }).waitFor();
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
 test("on the phone a way to start opens the dialog right away", async () => {
   const page = await open(390);
   try {
