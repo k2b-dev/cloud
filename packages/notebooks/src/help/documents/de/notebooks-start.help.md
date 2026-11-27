@@ -8,15 +8,14 @@ order: 100
 
 Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Dein Text bleibt zuerst lesbar. Struktur oder Automatik ergänzt du nur dort, wo sie eine Notiz leichter nutzbar machen.
 
-**Von der Übersicht aus**
+**Loslegen**
 
 ## Notizbuch finden oder erstellen {icon="layout-grid"}
 
 :::reference
-- **Alle Notizbücher:** Die Übersicht zeigt alle Notizbücher, auf die du Zugriff hast. Öffne ein Notizbuch, um weiterzuarbeiten. Erstelle ein neues Notizbuch, wenn das Wissen eigenen Zugriff und eigene Einstellungen braucht.
-- **Favoriten:** Markiere ein Notizbuch als Favorit, damit du es in der Übersicht und der Seitenleiste schnell erreichst.
-- **Suche und letzte Notizen:** Suche nach einem bekannten Namen. Unter **Zuletzt bearbeitet** öffnest du eine deiner letzten Notizen aus allen Notizbüchern und arbeitest weiter.
-- **Weitermachen, wo du warst:** **Notizbücher** in der Navigation öffnet das Notizbuch, das du in diesem Browser zuletzt angesehen hast. Das gilt auch, wenn du es in einem anderen Tab angesehen hast. Wurde es gelöscht oder nicht mehr mit dir geteilt, öffnet sich die Übersicht.
+- **Weitermachen, wo du warst:** **Notizbücher** öffnet das Notizbuch, das du in diesem Browser zuletzt angesehen hast. Das gilt auch, wenn du es in einem anderen Tab angesehen hast. Wurde es gelöscht oder nicht mehr mit dir geteilt, öffnet sich das erste Notizbuch, auf das du Zugriff hast.
+- **Notizbuch wechseln:** Der Wechsler oben in der Seitenleiste zeigt alle Notizbücher, auf die du Zugriff hast. Erstelle dort ein neues Notizbuch, wenn das Wissen eigenen Zugriff und eigene Einstellungen braucht.
+- **Suche und letzte Notizen:** Mit **Notizen durchsuchen** in der Seitenleiste findest du einen bekannten Namen. **Zuletzt** in der Seitenleiste zeigt die zuletzt geänderten Notizen.
 - **Vorlagen:** Wähle eine Vorlage nur, wenn ihre Struktur zur Arbeit passt. Für einen neuen Zweck ist ein leeres Notizbuch der sicherste Start.
 :::
 

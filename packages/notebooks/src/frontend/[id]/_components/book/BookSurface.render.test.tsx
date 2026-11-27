@@ -70,9 +70,8 @@ describe("Book surface", () => {
     expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
     expect(snapshot).not.toContain('"id":"all"');
     expect(await selectHtml(html, '.k2b-app-workspace__sidebar-item[href="/app/notebooks"]')).toHaveLength(0);
-    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/notebooks"]'))[0]?.text).toContain(
-      locale === "en" ? "All notebooks" : "Alle Notizbücher",
-    );
+    // there is no overview: the switcher lists the notebooks and offers no way to /app/notebooks
+    expect(await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/notebooks"]')).toHaveLength(0);
   });
 
   test("loads math styles even when entering through an empty or tag reading surface", () => {
