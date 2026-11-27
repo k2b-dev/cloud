@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
-import { ensureAiConversationSidebarIndex } from "./conversation-indexes";
+import { createIndexIfMissing } from "../services/concurrent-index";
+import { AI_CONVERSATION_SIDEBAR_INDEX } from "./conversation-indexes";
 
 // The sidebar's query (`listSidebarConversations` in store.ts): its table, filter and order. The order is checked against
 // the store's source below, so the index and the query cannot drift apart unnoticed.
@@ -60,12 +61,15 @@ databaseSuite()("the sidebar's chat index", () => {
   test("the sidebar reads its page from the index in order, where it sorted every open chat before", async () => {
     await sql`DROP INDEX IF EXISTS ai.idx_ai_conversations_owner_sidebar`.simple();
     const before = await sidebarPlan(owner, 41);
-    expect(await ensureAiConversationSidebarIndex()).toBe(true);
+    // What the first deploy costs: the migration builds it in its transaction, while writes of the table wait.
+    const startedAt = performance.now();
+    await sql.begin((tx) => createIndexIfMissing(tx, AI_CONVERSATION_SIDEBAR_INDEX));
+    const buildMs = Math.round(performance.now() - startedAt);
     await sql`ANALYZE ai.conversations`.simple();
     const after = await sidebarPlan(owner, 41);
     const whole = await sidebarPlan(owner, null);
     console.info(
-      `sidebar plan without the index:\n${before}\n\nwith it (first page of 41):\n${after}\n\nwith it (every open chat):\n${whole}`,
+      `sidebar index built in ${buildMs} ms for 15,000 chats\n\nsidebar plan without the index:\n${before}\n\nwith it (first page of 41):\n${after}\n\nwith it (every open chat):\n${whole}`,
     );
     expect(before).toContain("Sort");
     expect(after).toContain("idx_ai_conversations_owner_sidebar");
@@ -74,13 +78,20 @@ databaseSuite()("the sidebar's chat index", () => {
     expect(whole).not.toContain("Sort");
   });
 
-  test("a repeated migration keeps the valid index, and an interrupted build is replaced", async () => {
-    expect(await ensureAiConversationSidebarIndex()).toBe(true);
-    // An invalid leftover, as an interrupted CREATE INDEX CONCURRENTLY leaves it.
-    await sql`UPDATE pg_catalog.pg_index SET indisvalid = false WHERE indexrelid = to_regclass('ai.idx_ai_conversations_owner_sidebar')`.simple();
-    expect(await ensureAiConversationSidebarIndex()).toBe(true);
-    const [index] = await sql<{ valid: boolean }[]>`SELECT indisvalid AS valid FROM pg_catalog.pg_index
-      WHERE indexrelid = to_regclass('ai.idx_ai_conversations_owner_sidebar')`;
-    expect(index?.valid).toBe(true);
+  test("a repeated migration takes no lock once the index exists, even while a build holds the table", async () => {
+    await sql.begin((tx) => createIndexIfMissing(tx, AI_CONVERSATION_SIDEBAR_INDEX));
+    const holder = await sql.reserve();
+    try {
+      // SHARE UPDATE EXCLUSIVE, as a concurrent build holds it; a plain CREATE INDEX IF NOT EXISTS would wait for it.
+      await holder`BEGIN`.simple();
+      await holder`LOCK TABLE ai.conversations IN SHARE UPDATE EXCLUSIVE MODE`.simple();
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '2s'`.simple();
+        await createIndexIfMissing(tx, AI_CONVERSATION_SIDEBAR_INDEX);
+      });
+    } finally {
+      await holder`ROLLBACK`.simple();
+      holder.release();
+    }
   });
 });

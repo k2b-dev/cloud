@@ -1,7 +1,7 @@
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
-import { addMissingColumns, buildConcurrentIndexesInBackground } from "../services/concurrent-index";
+import { addMissingColumns, buildConcurrentIndexesInBackground, createIndexIfMissing } from "../services/concurrent-index";
 import { logger } from "../services/logging";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
 import { AI_CONVERSATION_SIDEBAR_INDEX } from "./conversation-indexes";
@@ -332,6 +332,9 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.conversations(created_by_user_id, pinned_at DESC, updated_at DESC)
     WHERE archived_at IS NULL
   `.simple();
+  // Built in the migration like the table's other indexes, not concurrently: every start takes strong locks on this
+  // table (#4492), so a background build here would hold the next replica's start and every chat write behind it.
+  await createIndexIfMissing(sql, AI_CONVERSATION_SIDEBAR_INDEX);
 
   await sql`
     CREATE TABLE IF NOT EXISTS ai.messages (
@@ -2483,7 +2486,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   console.log("  ✓ ai conversation tables");
   await migrateAiNextMessages();
   // Built next to live writes after the migration; startup never waits for them, and queries run without them meanwhile.
-  void buildConcurrentIndexesInBackground([AI_INFERENCE_TURN_INDEX, AI_CONVERSATION_SIDEBAR_INDEX], {
+  void buildConcurrentIndexesInBackground([AI_INFERENCE_TURN_INDEX], {
     log: logger("ai:migrate"),
     purpose: "AI",
   });
