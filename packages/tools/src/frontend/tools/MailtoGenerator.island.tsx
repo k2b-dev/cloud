@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Button, Facts, Field, Input, Notice, Section, Text } from "@k2b/ui/v2";
-import { createMemo, createSignal, Show } from "solid-js";
+import { Button, Facts, Field, Input, Notice, Section } from "@k2b/ui/v2";
+import { createMemo, createSignal } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -135,16 +135,14 @@ export default function MailtoGenerator() {
           label: w().result,
           children: (
             <>
-              <Section icon="link" title={w().result}>
-                <Show when={mailto()} fallback={<Text type="meta">{w().nothingYet}</Text>}>
-                  <Facts
-                    items={[
-                      { label: t().mailtoLink, value: mailto(), mono: true, copy: mailto() },
-                      { label: "Markdown", value: markdownLink(), mono: true, copy: markdownLink() },
-                      { label: "HTML", value: htmlLink(), mono: true, copy: htmlLink() },
-                    ]}
-                  />
-                </Show>
+              <Section icon="link" title={w().result} summary={mailto() ? undefined : w().nothingYet}>
+                <Facts
+                  items={[
+                    { label: t().mailtoLink, value: mailto() || "–", mono: true, copy: mailto() || undefined },
+                    { label: "Markdown", value: mailto() ? markdownLink() : "–", mono: true, copy: mailto() ? markdownLink() : undefined },
+                    { label: "HTML", value: mailto() ? htmlLink() : "–", mono: true, copy: mailto() ? htmlLink() : undefined },
+                  ]}
+                />
               </Section>
             </>
           ),

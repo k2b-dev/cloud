@@ -1,7 +1,7 @@
 import { encoding, i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Choice, Facts, Field, Input, Section, Text } from "@k2b/ui/v2";
-import { createMemo, createSignal, Show } from "solid-js";
+import { Choice, Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { createMemo, createSignal } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -136,10 +136,8 @@ export default function EncodingTool() {
           label: w().result,
           children: (
             <>
-              <Section icon="transform" title={w().result}>
-                <Show when={result().output} fallback={<Text type="meta">{w().nothingYet}</Text>}>
-                  <Facts items={[{ label: outputLabel(), value: result().output, mono: true, copy: result().output }]} />
-                </Show>
+              <Section icon="transform" title={w().result} summary={result().output ? undefined : w().nothingYet}>
+                <Facts items={[{ label: outputLabel(), value: result().output || "–", mono: true, copy: result().output || undefined }]} />
               </Section>
             </>
           ),

@@ -96,6 +96,9 @@ const toolColumn = { min: 320, default: 400 };
  * A generator (password, UUID, text) leads with its result as the page's hero and keeps its options in a side column
  * at a fixed width; a converter (hash, encoding) takes what goes in at a fixed width on the left and shows the result
  * beside it. On the phone the two stand one under the other in this order: the result first for a generator.
+ *
+ * k2b-ui gap: a block of two columns that ends with its content. `Pane.Split` runs both columns and their seam to
+ * the end of the page, so under a short result the column stays white to the bottom; the parts are made dense instead.
  */
 export const ToolPanes = (props: {
   kind: "generator" | "converter";

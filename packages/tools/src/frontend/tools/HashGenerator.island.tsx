@@ -1,7 +1,7 @@
 import { crypto, i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Facts, Field, Input, Section, Text } from "@k2b/ui/v2";
-import { createEffect, createSignal, Show } from "solid-js";
+import { Facts, Field, Input, Section } from "@k2b/ui/v2";
+import { createEffect, createSignal } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
@@ -55,16 +55,20 @@ export default function HashGenerator() {
         result={{
           label: w().result,
           children: (
-            <Section icon="hash" title={w().result}>
+            <Section icon="hash" title={w().result} summary={input() ? undefined : w().nothingYet}>
               {/* before any text, one quiet line where the result will stand */}
-              <Show when={input()} fallback={<Text type="meta">{w().nothingYet}</Text>}>
-                <Facts
-                  items={[
-                    { label: "SHA-256", value: sha256() || "…", mono: true, copy: sha256() || undefined },
-                    { label: "FNV-1a", value: fnv1a(), hint: t().notCryptographic, mono: true, copy: fnv1a() },
-                  ]}
-                />
-              </Show>
+              <Facts
+                items={[
+                  { label: "SHA-256", value: input() ? sha256() || "…" : "–", mono: true, copy: (input() && sha256()) || undefined },
+                  {
+                    label: "FNV-1a",
+                    value: input() ? fnv1a() : "–",
+                    hint: t().notCryptographic,
+                    mono: true,
+                    copy: input() ? fnv1a() : undefined,
+                  },
+                ]}
+              />
             </Section>
           ),
         }}

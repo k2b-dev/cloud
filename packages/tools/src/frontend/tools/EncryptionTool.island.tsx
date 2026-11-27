@@ -301,10 +301,8 @@ export default function EncryptionTool() {
                   {error()}
                 </Notice>
               </Show>
-              <Section icon="file-code" title={t().output}>
-                <Show when={output()} fallback={<Text type="meta">{w().nothingYet}</Text>}>
-                  <Facts items={[{ label: t().output, value: output(), mono: true, copy: output() }]} />
-                </Show>
+              <Section icon="file-code" title={t().output} summary={output() ? undefined : w().nothingYet}>
+                <Facts items={[{ label: t().output, value: output() || "–", mono: true, copy: output() || undefined }]} />
               </Section>
             </>
           ),

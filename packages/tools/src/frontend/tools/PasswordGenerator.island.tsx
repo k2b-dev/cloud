@@ -1,7 +1,7 @@
 import { i18n, password as pwdGen } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Check, Choice, Field, Inline, Input, Progress, Section } from "@k2b/ui/v2";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { Band, Button, Canvas, Check, Chip, Choice, Facts, Field, Inline, Input, Progress, Section } from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 
@@ -38,6 +38,10 @@ export const passwordMessages = i18n.define({
       copyPassword: "Copy password",
       refreshPassword: "Refresh password",
       strength: "Strength",
+      lengthChip: ({ count }: { count: number }) => `${count} characters`,
+      lowercase: "Lowercase",
+      recent: "Generated before",
+      recentHint: "Only in this tab; nothing is stored.",
       strengthLabel: ({ word, bits }: { word: string; bits: number }) => `${word} · ${bits} bit`,
       strengthWord: ({ score }: { score: number }) => ["very weak", "weak", "fair", "strong", "very strong"][score] ?? "",
     },
@@ -69,6 +73,10 @@ export const passwordMessages = i18n.define({
       copyPassword: "Passwort kopieren",
       refreshPassword: "Passwort neu generieren",
       strength: "Stärke",
+      lengthChip: ({ count }) => `${count} Zeichen`,
+      lowercase: "Kleinbuchstaben",
+      recent: "Zuvor erzeugt",
+      recentHint: "Nur in diesem Tab, nichts wird gespeichert.",
       strengthLabel: ({ word, bits }) => `${word} · ${bits} Bit`,
       strengthWord: ({ score }) => ["sehr schwach", "schwach", "mittel", "stark", "sehr stark"][score] ?? "",
     },
@@ -127,6 +135,24 @@ export default function PasswordGenerator() {
     }
   });
   const strength = createMemo(() => pwdGen.strength(password()));
+  const contents = createMemo(() => {
+    const value = password();
+    return [
+      /[A-Z]/.test(value) ? t().uppercase : undefined,
+      /[a-z]/.test(value) ? t().lowercase : undefined,
+      /[0-9]/.test(value) ? t().digits : undefined,
+      /[^A-Za-z0-9]/.test(value) ? t().symbols : undefined,
+    ].filter((kind): kind is string => kind !== undefined);
+  });
+  // the last five passwords before this one, in this tab's memory only: never stored, gone on reload
+  const [recent, setRecent] = createSignal<{ value: string; time: string }[]>([]);
+  createEffect(
+    on(password, (_next, previous) => {
+      if (!previous) return;
+      const time = new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+      setRecent((list) => [{ value: previous, time }, ...list].slice(0, 5));
+    }),
+  );
   const refresh = () => setNonce((value) => value + 1);
   const copyAction = { label: t().copyPassword, icon: "copy", onClick: () => void copy(password()) };
   return (
@@ -145,40 +171,56 @@ export default function PasswordGenerator() {
         result={{
           label: t().generatedPassword,
           children: (
-            <Section icon="key" title={t().generatedPassword} actions={[{ label: t().refreshPassword, icon: "refresh", onClick: refresh }]}>
-              {/* The password is drawn: large, sign by sign, digits and symbols in their own colour, wrapped anywhere. */}
-              <Canvas label={t().generatedPassword} height={120}>
-                <div
-                  style={{
-                    display: "grid",
-                    "place-items": "center",
-                    height: "100%",
-                    padding: "0 20px",
-                    // three fixed steps by length keep the 120 px drawing whole: 64 signs with symbols take two lines at
-                    // 16 px on a phone, where 28 px cut them after the third line; anything longer scrolls inside
-                    font: `600 ${password().length <= 20 ? 28 : password().length <= 40 ? 22 : 16}px/1.3 var(--k2-font-mono)`,
-                    "overflow-y": "auto",
-                    "text-align": "center",
-                    "overflow-wrap": "anywhere",
-                    // the lines share the signs evenly, so no single sign stands alone on the last line
-                    "text-wrap": "balance",
-                    "user-select": "all",
-                  }}
-                >
-                  <span>
-                    <For each={password().split("")}>{(char) => <span style={{ color: tone(mode(), char) }}>{char}</span>}</For>
-                  </span>
-                </div>
-              </Canvas>
-              {/* the strength is a value with a limit: a bar and its word; 128 bits and more fill it */}
-              <Inline>
-                <Progress
-                  value={Math.min(128, Math.round(strength().entropy))}
-                  of={128}
-                  label={`${t().strength}: ${t().strengthLabel({ word: t().strengthWord({ score: strength().score }), bits: Math.round(strength().entropy) })}`}
-                />
-              </Inline>
-            </Section>
+            <>
+              <Section
+                icon="key"
+                title={t().generatedPassword}
+                actions={[{ label: t().refreshPassword, icon: "refresh", onClick: refresh }]}
+              >
+                {/* The password is drawn: large, sign by sign, digits and symbols in their own colour, wrapped anywhere. */}
+                <Canvas label={t().generatedPassword} height={120}>
+                  <div
+                    style={{
+                      display: "grid",
+                      "place-items": "center",
+                      height: "100%",
+                      padding: "0 20px",
+                      // three fixed steps by length keep the 120 px drawing whole, the short ones as the figure of the page (30):
+                      // 64 signs with symbols take two lines at 16 px on a phone; anything longer scrolls inside
+                      font: `600 ${password().length <= 20 ? 30 : password().length <= 40 ? 22 : 16}px/1.3 var(--k2-font-mono)`,
+                      "overflow-y": "auto",
+                      "text-align": "center",
+                      "overflow-wrap": "anywhere",
+                      // the lines share the signs evenly, so no single sign stands alone on the last line
+                      "text-wrap": "balance",
+                      "user-select": "all",
+                    }}
+                  >
+                    <span>
+                      <For each={password().split("")}>{(char) => <span style={{ color: tone(mode(), char) }}>{char}</span>}</For>
+                    </span>
+                  </div>
+                </Canvas>
+                {/* the strength is a value with a limit: a bar and its word; 128 bits and more fill it */}
+                <Inline>
+                  <Progress
+                    value={Math.min(128, Math.round(strength().entropy))}
+                    of={128}
+                    label={`${t().strength}: ${t().strengthLabel({ word: t().strengthWord({ score: strength().score }), bits: Math.round(strength().entropy) })}`}
+                  />
+                </Inline>
+                {/* what the password holds, as quiet chips: its length and its kinds of signs */}
+                <Inline>
+                  <Chip>{t().lengthChip({ count: password().length })}</Chip>
+                  <For each={contents()}>{(kind) => <Chip>{kind}</Chip>}</For>
+                </Inline>
+              </Section>
+              <Show when={recent().length > 0}>
+                <Section icon="history" title={t().recent} count={recent().length} summary={t().recentHint}>
+                  <Facts items={recent().map((entry) => ({ label: entry.time, value: entry.value, mono: true, copy: entry.value }))} />
+                </Section>
+              </Show>
+            </>
           ),
         }}
         input={{
