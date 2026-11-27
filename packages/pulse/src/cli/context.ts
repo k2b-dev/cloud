@@ -1,5 +1,5 @@
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import { type PulseBase, type PulseSource, SOURCE_PAGE_MAX } from "../contracts";
+import { BASE_PAGE_MAX, type PulseBase, type PulseSource, SOURCE_PAGE_MAX } from "../contracts";
 import { exactMatch, readApi } from "./shared";
 
 export const PULSE_BASE_DEFAULT_KEY = "pulse.base";
@@ -29,7 +29,19 @@ export const requireRestArg = (args: string[], index: number, label: string): st
   return value;
 };
 
-const listBases = (ctx: CloudCliContext): Promise<PulseBase[]> => readApi<PulseBase[]>(ctx, "/bases");
+/** The bases whose name or description holds `ref`, one bounded page; the exact match is picked from them. */
+const searchBases = (ctx: CloudCliContext, ref: string): Promise<PulseBase[]> =>
+  readApi<PulseBase[]>(ctx, `/bases?q=${encodeURIComponent(ref)}&limit=${BASE_PAGE_MAX}`);
+
+/** Every base the caller can read, page by page. */
+export const listAllBases = async (ctx: CloudCliContext): Promise<PulseBase[]> => {
+  const bases: PulseBase[] = [];
+  for (;;) {
+    const page = await readApi<PulseBase[]>(ctx, `/bases?limit=${BASE_PAGE_MAX}&offset=${bases.length}`);
+    bases.push(...page);
+    if (page.length < BASE_PAGE_MAX) return bases;
+  }
+};
 
 export const resolveBase = async (ctx: CloudCliContext, ref: string): Promise<PulseBase> => {
   if (SHORT_ID_RE.test(ref)) {
@@ -39,7 +51,7 @@ export const resolveBase = async (ctx: CloudCliContext, ref: string): Promise<Pu
       if (!(error instanceof Error) || !error.message.startsWith("404 ")) throw error;
     }
   }
-  return exactMatch(await listBases(ctx), ref, [(base) => base.id, (base) => base.name], "Pulse base");
+  return exactMatch(await searchBases(ctx, ref), ref, [(base) => base.id, (base) => base.name], "Pulse base");
 };
 
 export const resolveBaseFromCommand = async (

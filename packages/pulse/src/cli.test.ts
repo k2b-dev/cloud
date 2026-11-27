@@ -132,8 +132,23 @@ describe("pulse CLI", () => {
 
     await pulseCli.run(ctx);
 
-    expect(calls.map((call) => call.path)).toEqual(["/api/pulse/bases/Ops123", "/api/pulse/bases"]);
+    // the name is searched on the server, so a person with many bases never reads all of them
+    expect(calls.map((call) => call.path)).toEqual(["/api/pulse/bases/Ops123", "/api/pulse/bases?q=Ops123&limit=100"]);
     expect(lines[0]).toBe(`Ops123 (${baseId})`);
+  });
+
+  test("lists every base page by page, until a page is shorter than the page size", async () => {
+    const page = (from: number, count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        ...base,
+        id: `B${String(from + index).padStart(5, "0")}`,
+        name: `Base ${from + index}`,
+      }));
+    const { ctx, calls } = createContext(["list"], {}, [jsonResponse(page(0, 100)), jsonResponse(page(100, 3))]);
+
+    await pulseCli.run(ctx);
+
+    expect(calls.map((call) => call.path)).toEqual(["/api/pulse/bases?limit=100&offset=0", "/api/pulse/bases?limit=100&offset=100"]);
   });
 
   test("rejects an ambiguous exact six-character base name after an ID miss", async () => {

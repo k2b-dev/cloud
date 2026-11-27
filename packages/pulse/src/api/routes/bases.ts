@@ -15,6 +15,7 @@ import {
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { BASE_PAGE_MAX } from "../../contracts";
 import { BaseSchemaReadSchema, SchemaReadInputSchema } from "../../schema-contracts";
 import { pulseService } from "../../service";
 import { retryBase } from "../../service/base-admin";
@@ -23,6 +24,7 @@ import { readBaseSchema } from "../../service/base-schema-read";
 import { projectBases } from "../../service/public-resources";
 import { RetentionStoreUnavailable } from "../../store/retention";
 import {
+  BasePageQuerySchema,
   BaseReadSchema,
   BaseSchema,
   CreateBaseSchema,
@@ -51,13 +53,21 @@ const routes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Pulse"],
       summary: "List accessible Pulse bases",
-      responses: { 200: jsonResponse(z.array(BaseSchema), "Pulse bases") },
+      description:
+        "One page of the bases the caller can read, newest change first: `limit` (100 at most and by default) and `offset` page through them, `q` searches names and descriptions. A page shorter than `limit` is the last.",
+      responses: { 200: jsonResponse(z.array(BaseSchema).max(BASE_PAGE_MAX), "One page of Pulse bases") },
     }),
-    async (c) =>
-      respond(
+    v("query", BasePageQuerySchema),
+    async (c) => {
+      const page = c.req.valid("query");
+      return respond(
         c,
-        projectResult(pulseService.base.list(requestAccessScope(c)), (items) => projectBases(items)),
-      ),
+        projectResult(
+          pulseService.base.list(requestAccessScope(c), { limit: page.limit ?? BASE_PAGE_MAX, offset: page.offset, query: page.q }),
+          (items) => projectBases(items),
+        ),
+      );
+    },
   )
   .post(
     "/bases",

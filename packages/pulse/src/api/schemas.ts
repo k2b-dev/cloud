@@ -1,7 +1,15 @@
 import { AccessMemberSchema, PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
-import { FETCH_TICKS, FETCHES_TODAY_SLOTS, METRIC_TYPES, SOURCE_HOUR_MINUTES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
+import {
+  BASE_PAGE_MAX,
+  FETCH_TICKS,
+  FETCHES_TODAY_SLOTS,
+  METRIC_TYPES,
+  SOURCE_HOUR_MINUTES,
+  SOURCE_KINDS,
+  SOURCE_PAGE_MAX,
+} from "../contracts";
 
 export { SOURCE_ALERTS_MAX } from "../service/source-alerts";
 export { SOURCE_HISTORY_MAX } from "../service/source-history";
@@ -247,6 +255,11 @@ export const StoreOutageSchema = z.object({ unavailable: z.boolean(), since: z.s
 /** One base as its read route returns it: the list fields plus the live store outage the Sources tab re-checks. */
 export const BaseReadSchema = BaseSchema.extend({ outage: StoreOutageSchema });
 
+export const BasePageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(BASE_PAGE_MAX).optional().describe(`Bases per page, ${BASE_PAGE_MAX} at most and by default`),
+  offset: z.coerce.number().int().min(0).optional().describe("Bases to skip, for the next page"),
+  q: z.string().trim().max(200).optional().describe("Only bases whose name or description contains these words"),
+});
 export const SourcePageQuerySchema = z.object({
   limit: z.coerce
     .number()
