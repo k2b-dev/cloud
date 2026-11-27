@@ -1,11 +1,13 @@
 import { z } from "zod";
+import { SelectColorSchema } from "./select-colors";
 import { fail, ok, type ValueFieldType } from "./types";
 import { fieldValidationMessages } from "./validation-messages";
 
 const SelectOptionSchema = z.object({
   id: z.string().min(1),
   label: z.string(),
-  color: z.string().optional(),
+  // a colour written before colours were checked reads as none; writing one is refused in field validation
+  color: SelectColorSchema.optional().catch(undefined),
   description: z.string().optional(),
 });
 

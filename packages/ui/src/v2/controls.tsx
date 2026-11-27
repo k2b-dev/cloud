@@ -9,13 +9,15 @@ import {
   onMount,
   children as resolveChildren,
   Show,
+  untrack,
   useContext,
 } from "solid-js";
 import { Dynamic, isServer } from "solid-js/web";
 import { ActionButton } from "./button";
-import { Icon } from "./marks";
+import { useControlMessages } from "./control-messages";
+import { Avatar, Icon } from "./marks";
 import { textEdge } from "./tokens";
-import type { Action } from "./types";
+import type { Action, Person } from "./types";
 
 type FieldIds = {
   /** The id of the one control the label names. */
@@ -171,7 +173,6 @@ Field.Row = (props: {
   </div>
 );
 
-/** The field around a control, for the controls in modules of their own. */
 export const useField = () => useContext(FieldContext);
 
 type InputBase = {
@@ -479,6 +480,8 @@ export const MarkCheck = (
   props: ({ label: string; labelledBy?: undefined } | { label?: undefined; labelledBy: string }) & {
     checked?: boolean | "mixed";
     onChange?: (checked: boolean) => void;
+    /** `false`: out of the tab order, where the thing around it takes the focus and Space (a tile of a grid). */
+    focusable?: false;
   },
 ) => (
   <span class="k2-mark">
@@ -487,6 +490,7 @@ export const MarkCheck = (
       type="checkbox"
       aria-label={props.label}
       aria-labelledby={props.labelledBy}
+      tabindex={props.focusable === false ? -1 : undefined}
       checked={props.checked === true}
       ref={(input) => mixed(input, () => props.checked === "mixed")}
       onChange={(event) => props.onChange?.(event.currentTarget.checked)}
@@ -499,24 +503,41 @@ export const MarkCheck = (
   </span>
 );
 
+/** An option of a `Choice`: words, or a value with its words and, for a person, their face before the words. */
+export type ChoiceOption = string | { value: string; label: string; person?: Person };
+
 export type ChoiceProps = {
   /** The name the choice is sent under in a form. */
   name: string;
-  /** The few options, all visible: words, or a value with its words. */
-  options: readonly (string | { value: string; label: string })[];
-  /** The chosen value. */
-  value?: string;
+  /** The few options, all visible: words, or a value with its words (and a `person` whose face leads them). */
+  options: readonly ChoiceOption[];
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
-  /** Called with the value a person chose. */
-  onChange?: (value: string) => void;
   /** The choice cannot be changed now: every option dimmed, the chosen one still shown. */
   disabled?: boolean;
-};
+} & (
+  | {
+      multiple?: false;
+      /** The chosen value. */
+      value?: string;
+      /** Called with the value a person chose. */
+      onChange?: (value: string) => void;
+    }
+  | {
+      /** Several options may be chosen: boxes instead of points; the form sends one entry per chosen value. */
+      multiple: true;
+      /** The chosen values. */
+      value?: readonly string[];
+      /** Called with all chosen values after each change. */
+      onChange?: (values: string[]) => void;
+    }
+);
 
 /**
- * A few visible options, one of which is chosen: round points, each on one 20 px text line. With a `label` and no
- * Field around it, it stands in a field of its own, so its question is visible and names the group.
+ * A few visible options, one of which is chosen: round points, each on one 20 px text line; with `multiple` boxes,
+ * several of which are chosen. An option for a person leads with their face (20 px), and is named by its words alone.
+ * With a `label` and no Field around it, it stands in a field of its own, so its question is visible and names the
+ * group.
  */
 export const Choice = (props: ChoiceProps) => {
   if (!useField() && props.label !== undefined)
@@ -531,41 +552,94 @@ export const Choice = (props: ChoiceProps) => {
 const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
+  const t = useControlMessages();
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
-  const [own, setOwn] = createSignal(props.value);
-  const value = () => (props.onChange ? props.value : own());
+  const given = (): readonly string[] => (props.multiple ? (props.value ?? []) : props.value === undefined ? [] : [props.value]);
+  // the values the choice started with: a form's reset puts them back (the inputs' default, and what the choice holds)
+  const initial = untrack(given);
+  const [own, setOwn] = createSignal<readonly string[]>(initial);
+  const chosen = () => (props.onChange ? given() : own());
+  const choose = (value: string, on: boolean) => {
+    if (props.multiple) {
+      const next = on ? [...chosen().filter((each) => each !== value), value] : chosen().filter((each) => each !== value);
+      const ordered = options()
+        .map((option) => option.value)
+        .filter((each) => next.includes(each));
+      setOwn(ordered);
+      props.onChange?.(ordered);
+    } else {
+      setOwn([value]);
+      props.onChange?.(value);
+    }
+  };
+  let group: HTMLDivElement | undefined;
+  const onReset = (event: Event) => {
+    if (!(event.target instanceof HTMLFormElement) || !group || !event.target.contains(group)) return;
+    setOwn(initial);
+    // A choice the page holds stays as the page holds it: the reset puts the inputs back to their defaults, so one
+    // task later they show the page's choice again, and the form sends what the page holds.
+    const inputs = group;
+    if (props.onChange)
+      setTimeout(() => {
+        for (const input of inputs.querySelectorAll<HTMLInputElement>("input.k2-mark-input"))
+          input.checked = chosen().includes(input.value);
+      });
+  };
+  onMount(() => {
+    document.addEventListener("reset", onReset);
+    onCleanup(() => document.removeEventListener("reset", onReset));
+  });
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is group or radiogroup, and both are named
     <div
+      ref={group}
       class="k2-choices"
       data-k2-part="Choice"
-      role="radiogroup"
+      role={props.multiple ? "group" : "radiogroup"}
       aria-label={field ? undefined : props.label}
       aria-labelledby={field?.label}
       aria-describedby={field?.described}
       aria-disabled={props.disabled ? "true" : undefined}
     >
       <For each={options()}>
-        {(option) => (
-          <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
-            <span class="k2-mark">
-              <input
-                class="k2-mark-input"
-                type="radio"
-                name={props.name}
-                value={option.value}
-                checked={option.value === value()}
-                required={field?.required || undefined}
-                disabled={props.disabled}
-                onChange={() => {
-                  setOwn(option.value);
-                  props.onChange?.(option.value);
-                }}
-              />
-              <span class="k2-radio" data-checked={option.value === value() ? "" : undefined} data-k2-mark="" />
-            </span>
-            <span class="k2-choice-text">{option.label}</span>
-          </label>
-        )}
+        {(option, index) => {
+          const on = () => chosen().includes(option.value);
+          return (
+            <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
+              <span class="k2-mark">
+                <input
+                  class="k2-mark-input"
+                  type={props.multiple ? "checkbox" : "radio"}
+                  name={props.name}
+                  value={option.value}
+                  checked={on()}
+                  // points: the group is required; boxes: while none is chosen the first one says "choose at least one",
+                  // so the form asks for one, and no box sounds mandatory on its own
+                  required={(field?.required && !props.multiple) || undefined}
+                  ref={(input: HTMLInputElement) => {
+                    input.defaultChecked = initial.includes(option.value);
+                    // the box that is first now: options that change their order hand the sentence on
+                    if (props.multiple)
+                      createRenderEffect(() =>
+                        input.setCustomValidity(index() === 0 && field?.required && chosen().length === 0 ? t().chooseOne : ""),
+                      );
+                  }}
+                  disabled={props.disabled}
+                  onChange={(event) => choose(option.value, event.currentTarget.checked)}
+                />
+                <Show when={props.multiple} fallback={<span class="k2-radio" data-checked={on() ? "" : undefined} data-k2-mark="" />}>
+                  <span class="k2-check" data-checked={on() ? "" : undefined} data-k2-mark="">
+                    <Show when={on()}>
+                      <Icon name="check" />
+                    </Show>
+                  </span>
+                </Show>
+              </span>
+              <Show when={"person" in option && option.person}>{(person) => <Avatar {...person()} decorative />}</Show>
+              <span class="k2-choice-text">{option.label}</span>
+            </label>
+          );
+        }}
       </For>
     </div>
   );

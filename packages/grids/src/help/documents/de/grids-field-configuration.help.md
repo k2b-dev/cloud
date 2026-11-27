@@ -42,6 +42,8 @@ Namen sind innerhalb der Tabelle eindeutig. Grids ignoriert beim Vergleich Groß
 | `file` | `maxFiles` 1–100, wenn gesetzt; `accept` mit bis zu 100 MIME-Typen, MIME-Wildcards oder Dateiendungen. Hochladen und Entfernen nutzen die Dateivorgänge, keine JSON-Schreibvorgänge am Datensatz. |
 | `object_list` | Siehe den Spaltenvertrag weiter unten. |
 
+Tabellen, die Datensatzansicht und die Datensatzdetails zeigen Zahlen und Daten in der Sprache der lesenden Person. Eine Zahl hat Tausendertrennzeichen (`12.400,5`). Ein Betrag, dessen `unit` ein Währungscode wie `EUR` ist, zeigt das Währungszeichen (`12.400,00 €`), wenn `decimalPlaces` leer ist oder zur Währung passt. Ein Datum erscheint kurz und numerisch (`14.11.2026`). Gespeicherte Werte, die API, die CLI und Exporte behalten die gespeicherte Form (`12400.00`, `2026-11-14`).
+
 Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`- oder `service_account`-Referenz. Maschinelle Aufrufer können gespeicherte Referenzen lesen. Für nichtleere Principal-Werte ist ein benutzergebundener Verzeichniskontext nötig. Verborgene Identitäten behalten private Beschriftungen. Eine Identität in einem Feld ist ein Wert. Sie gibt keinen Zugriff. Um die aktuelle Person sicher einzutragen, nutze die konfigurierte Übermittlung einer veröffentlichten App, kein Eingabefeld, das die Person ändern kann.
 
 ## Relationen und berechnete Werte konfigurieren {icon="link"}

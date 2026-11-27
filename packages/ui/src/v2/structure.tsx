@@ -12,6 +12,8 @@ export const HeadActions = (props: { actions?: TwoActions }) => (
       <Button
         variant="text"
         icon={action.icon}
+        // on the phone the head keeps only the symbol: the words stay the button's name and hint
+        title={action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}
@@ -37,6 +39,12 @@ export type SectionProps = {
   actions?: TwoActions;
   /** One sentence under the head that sums the section up. */
   summary?: JSX.Element;
+  /**
+   * Its head, its sentence and its rows stay at the reading measure of `Prose` (720 px of text), so in a wide pane a
+   * short list stays together instead of its words standing at the left edge and its deeds at the right. The section's
+   * line still reaches the edges of its column. Below the measure it changes nothing.
+   */
+  measure?: boolean;
   /** The way to all of it, at the end ("All deliveries ›"). */
   more?: Action;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
@@ -50,7 +58,7 @@ export type SectionProps = {
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
   return (
-    <section class="k2-sec" data-k2-part="Section" aria-label={props.title}>
+    <section class="k2-sec" data-k2-part="Section" aria-label={props.title} data-measure={props.measure ? "" : undefined}>
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (
