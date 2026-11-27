@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { checkSource, rule } from "./inline-access-editors";
+import { allowed, checkSource, rule } from "./inline-access-editors";
 
 const editor = (props: string) =>
   `import { PermissionEditor } from "@k2b/cloud/access/ui";\nexport const Share = () => (\n  <PermissionEditor initialEntries={[]} ${props} />\n);\n`;
@@ -23,9 +24,14 @@ test("the shared access package, tests, browser harnesses and the documented aud
     "packages/cloud/src/access/AccessDialog.tsx",
     "packages/notes/src/frontend/Share.behavior.test.tsx",
     "packages/notes/src/frontend/Share.browser-harness.tsx",
-    "packages/core/src/pages/admin/rail/NavigationScreen.tsx",
+    ...allowed,
   ])
     expect(checkSource(file, editor(""))).toEqual([]);
+});
+
+test("every allowed audience picker is a file of the repository, so a rename cannot leave a stale exception", () => {
+  const root = resolve(import.meta.dir, "../..");
+  for (const file of allowed) expect({ file, exists: existsSync(resolve(root, file)) }).toEqual({ file, exists: true });
 });
 
 test("the summary and the dialog are not findings", () => {
