@@ -16,6 +16,7 @@ let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let shell: Awaited<ReturnType<typeof chatShellPage>>;
 let browser: Browser;
 let open: string;
+let invoice: string;
 
 const people = [
   { id: "44444444-4444-4444-8444-444444444444", name: "Lena Hoffmann" },
@@ -64,7 +65,7 @@ beforeAll(async () => {
   const workshop = harness.addChat({ members: [nora, tobias, lena], name: "Werkstatt Nord", count: 9, end: minutes(4), unread: 2 });
   harness.addChat({ members: [nora], count: 6, end: minutes(12), unread: 3 });
   open = harness.addChat({ members: [tobias, jonas, mira], name: "Lieferung KW 49", count: 14, end: minutes(25), spacing: 2 });
-  harness.addThread(open, { name: "Rechnung 4471", count: 4, unread: 1 });
+  invoice = harness.addThread(open, { name: "Rechnung 4471", count: 4, unread: 1 });
   harness.addThread(open, { name: "Abholung Montag", count: 3 });
   harness.setNotifications(open, { level: "mentions", choice: "mentions", until: null, defaultLevel: "all", following: null });
   harness.addChat({ members: [lena], count: 5, end: minutes(48) });
@@ -279,6 +280,24 @@ for (const [width, height] of [
       await close();
     }
   }, 60_000);
+
+test("a mention that arrives live changes the head's words and moves no row", async () => {
+  const { page, errors, close } = await load("/app/chat", 1440, 900);
+  try {
+    const first = page.locator('[data-k2-part="Row"]').first();
+    await first.waitFor();
+    const before = await first.boundingBox();
+    // An existing chat: the list keeps its order while messages arrive elsewhere, as in v1. A message in a thread
+    // reads the chat's row again, with its "@" count from the server.
+    harness.setNotifications(open, { level: "mentions", choice: "mentions", until: null, defaultLevel: "all", following: null }, 2);
+    harness.receiveIn(open, nora, "@Robin kannst du das prüfen?", { thread: invoice });
+    await page.locator('[data-k2-workspace] [data-slot="head"]', { hasText: "Lieferung KW 49" }).waitFor();
+    expect(await first.boundingBox()).toEqual(before);
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 60_000);
 
 // break-ui: the worst names and counts a list meets. Rows keep their sign and time, names are cut with "…", nothing
 // leaves its column, and the v2 rules hold at both widths. Last in the file: these chats join the list from here on.

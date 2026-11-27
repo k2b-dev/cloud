@@ -3741,9 +3741,6 @@ export function ChatWorkspaceView(
           get lead() {
             return v2Lead();
           },
-          get loading() {
-            return listLoading() || listPending();
-          },
           get notices() {
             return v2Notices();
           },

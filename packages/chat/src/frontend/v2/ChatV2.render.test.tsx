@@ -81,7 +81,7 @@ describe("Chat v2 server render", () => {
       const html = render(locale, props());
       expect(html).toContain('data-k2-part="Workspace"');
       expect(html).toContain('data-k2-part="Nav"');
-      // The nav counts unread chats; without a mention the list stands without a statement of its own.
+      // The nav counts unread chats; the list has no status row of its own (a live statement would move it).
       expect(html).not.toContain('data-k2-part="StatusRow"');
       for (const title of ["Werkstatt Nord", "Nora Weber", "Lieferung KW 49", "Ankündigungen"]) expect(html).toContain(title);
       for (const section of [t.pinnedChats, v2.directAndGroups, t.channels]) expect(html).toContain(section);
@@ -92,12 +92,12 @@ describe("Chat v2 server render", () => {
       expect(html).toContain(v2.noneOpen);
       expect(html).not.toContain("chat-list-page");
     });
-    test(`a mention is the one statement over the list in ${locale}`, () => {
+    test(`a mention is the one statement, quiet in the head, in ${locale}`, () => {
       const html = render(
         locale,
         props({ sidebar: { items: [...rows, chat("Chat05", "Lager-Team", { unread: 2, mentionsUnread: 2 })], nextCursor: null } }),
       );
-      expect(html).toContain('data-k2-part="StatusRow"');
+      expect(html).not.toContain('data-k2-part="StatusRow"');
       expect(html).toContain(v2.mentions({ count: (2).toLocaleString(locale), names: "Lager-Team" }));
     });
     test(`an empty list says there are no chats yet in ${locale}`, () => {

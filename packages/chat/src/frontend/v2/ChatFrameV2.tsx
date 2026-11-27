@@ -15,7 +15,6 @@ import {
   type Person,
   RecordHead,
   type RecordId,
-  StatusRow,
   Text,
   useLocale,
   Workspace,
@@ -60,9 +59,8 @@ export type ChatFrameV2Props = {
   newChat: Action;
   search: { value: string; onInput: (value: string) => void; onKeyDown: (event: KeyboardEvent) => void };
   list: {
-    /** What to act on that the nav does not say; without it, no status row. */
+    /** What to act on that the nav does not say; quiet words in the head, empty without it. */
     lead?: string;
-    loading: boolean;
     notices: readonly ChatListNotice[];
     content: JSX.Element;
   };
@@ -128,6 +126,9 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
         sidebar={<Nav title={t().appName} icon="messages" groups={props.nav.groups} foot={props.nav.foot} />}
         head={
           <Bar
+            // What to act on that the nav does not say ("2 mentions · Lager-Team") stands as quiet words in the head,
+            // a row that is always there: a mention that arrives live changes words, never a height.
+            start={<Text type="meta">{props.list.lead ?? ""}</Text>}
             end={
               <>
                 {/* k2b-ui gap (Z2): the head's search should be a symbol that opens over the head on click or "/". */}
@@ -155,12 +156,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
         }
       >
         <Pane.Split>
-          <Pane
-            label={v2().listWidth}
-            width={{ min: 300, default: 380 }}
-            scrollKey="chat-list"
-            status={props.list.lead ? <StatusRow lead={props.list.lead} loading={props.list.loading} /> : undefined}
-          >
+          <Pane label={v2().listWidth} width={{ min: 300, default: 380 }} scrollKey="chat-list">
             <For each={props.list.notices}>
               {(notice) => (
                 <Notice tone={notice.tone} actions={notice.action ? [notice.action] : undefined}>
