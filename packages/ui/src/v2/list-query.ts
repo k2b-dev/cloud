@@ -81,13 +81,55 @@ export type PeriodValue<P extends string = string> =
 // Fields
 // ---------------------------------------------------------------------------------------------------------------
 
+/**
+ * How a statement compares, the verb a person picks: "ist", "ist nicht", "enthält", "vor", "ist leer". Stable
+ * codes. A field that declares `verbs` offers them in its editor; the first one is its default and keeps the field's
+ * plain URL (`title=Vitrine`), every other stands in the parameter name (`title.contains=Vitrine`, `due.empty=`).
+ *
+ * - `is`: equals; for several values "is one of". `not`: is none of them, or for a number or text not equal.
+ * - `contains`, `notContains`, `startsWith`, `endsWith`: text.
+ * - `before`, `after`: earlier or later than a day or a point in time, or for a number below or above it.
+ * - `between`: a range or a preset, what a range field holds without verbs.
+ * - `empty`, `notEmpty`: the field has no value, or any; the statement holds no value.
+ */
+export type FilterVerb =
+  | "is"
+  | "not"
+  | "contains"
+  | "notContains"
+  | "startsWith"
+  | "endsWith"
+  | "before"
+  | "after"
+  | "between"
+  | "empty"
+  | "notEmpty";
+
+/** The verbs each field kind allows; a field declares those it offers, its default first. */
+export const filterVerbs = {
+  choice: ["is", "not", "empty", "notEmpty"],
+  lookup: ["is", "not", "empty", "notEmpty"],
+  text: ["is", "not", "contains", "notContains", "startsWith", "endsWith", "empty", "notEmpty"],
+  numberRange: ["between", "is", "not", "before", "after", "empty", "notEmpty"],
+  dateRange: ["between", "is", "before", "after", "empty", "notEmpty"],
+  timeRange: ["between", "before", "after", "empty", "notEmpty"],
+  bool: ["is", "empty", "notEmpty"],
+} as const satisfies Record<ListQueryField["kind"], readonly FilterVerb[]>;
+
 type FieldCommon = {
   /** Final display text of the field, the start of its sentence ("Status is …"). */
   readonly label: string;
-  /** Replaces the word "is" in the sentence when the field needs another verb. No other operators exist. */
+  /** Replaces the word "is" in the sentence of a field without `verbs`. */
   readonly op?: string;
   /** Shown first when someone adds a filter. */
   readonly common: boolean;
+  /** The heading "+ Filter" lists the field under, for a list of many fields (a table with hundreds of columns). */
+  readonly category?: string;
+  /**
+   * The verbs the person may pick, the default first (see {@link FilterVerb}); without it the field has one. The first
+   * compares with a value: it keeps the plain URL name, and a form's empty field (`a=`) must not mean "is empty".
+   */
+  readonly verbs?: readonly FilterVerb[];
 };
 
 /** Fixed values declared in code; one or many may be chosen. URL: `status=open,closed`. */
@@ -176,8 +218,8 @@ export type ListQueryField =
   | BoolField<unknown>
   | TextField<unknown>;
 
-/** The value type one field holds in the state. */
-export type ListQueryFieldValue<F> =
+/** The value a field holds without verbs, or that its default verb compares with. */
+type PlainValue<F> =
   F extends ChoiceField<infer V, infer M, unknown>
     ? M extends false
       ? V
@@ -198,12 +240,54 @@ export type ListQueryFieldValue<F> =
                 ? string
                 : never;
 
+/** What a verb compares with: a range or preset for `between`, one number or day for the others, else the plain value. */
+type VerbValue<F, V> =
+  F extends NumberRangeField<unknown>
+    ? V extends "between"
+      ? NumberRange
+      : number
+    : F extends DateRangeField<infer P, unknown> | TimeRangeField<infer P, unknown>
+      ? V extends "between"
+        ? PeriodValue<P>
+        : string
+      : PlainValue<F>;
+
+/**
+ * A statement of a field with `verbs`: its verb and what it compares with. `empty` and `notEmpty` hold no value; a
+ * number verb holds one number, a day verb one day (`YYYY-MM-DD`) or minute (`YYYY-MM-DDTHH:MMZ`), `between` the
+ * range or preset the field holds without verbs.
+ */
+export type FilterTerm<F, V extends FilterVerb> = V extends "empty" | "notEmpty"
+  ? { readonly verb: V }
+  : V extends FilterVerb
+    ? { readonly verb: V; readonly value: VerbValue<F, V> }
+    : never;
+
+/**
+ * The value type one field holds in the state: its plain value, or with `verbs` a {@link FilterTerm}. A field built at
+ * runtime (typed `ListQueryField`) may have either.
+ */
+export type ListQueryFieldValue<F> = F extends { readonly verbs: readonly (infer V extends FilterVerb)[] }
+  ? FilterTerm<F, V>
+  : F extends { readonly verbs?: undefined }
+    ? PlainValue<F>
+    : PlainValue<F> | FilterTerm<F, FilterVerb>;
+
+type WithVerbs<VB> = [VB] extends [never] ? { readonly verbs?: undefined } : { readonly verbs: readonly VB[] };
+
+/**
+ * A built field with the type of its verbs: `common` copies `verbs` exactly when the spec has them, which is what
+ * `WithVerbs` says, so the field's state value is a {@link FilterTerm} exactly when it has verbs.
+ */
+const verbed = <T, VB>(built: T): T & WithVerbs<VB> => built as T & WithVerbs<VB>;
+
 // A type parameter given explicitly must match the properties: `<..., false>` needs `multiple: false`, a mandatory
 // type needs its `required` value. Inference reads both from the properties that are present.
 type FieldSpec<R> = {
   readonly label: string;
   readonly op?: string;
   readonly common?: boolean;
+  readonly category?: string;
 } & ([R] extends [undefined]
   ? { readonly required?: undefined }
   : {
@@ -218,20 +302,30 @@ type ChoiceValue<V extends string, M extends boolean> = M extends false ? V : re
 /** Builders for the filter fields of {@link defineListQuery}. */
 export const field = {
   /** Fixed values declared in code. `multiple: false` allows exactly one value. */
-  choice<const V extends string, M extends boolean = true, const R extends ChoiceValue<NoInfer<V>, NoInfer<M>> | undefined = undefined>(
-    spec: FieldSpec<R> & MultipleSpec<M> & { readonly options: readonly ListQueryOption<V>[]; readonly counts?: boolean },
-  ): NoInfer<ChoiceField<V, M, R>> {
-    return {
+  choice<
+    const V extends string,
+    M extends boolean = true,
+    const R extends ChoiceValue<NoInfer<V>, NoInfer<M>> | undefined = undefined,
+    const VB extends (typeof filterVerbs.choice)[number] = never,
+  >(
+    spec: FieldSpec<R> &
+      MultipleSpec<M> & { readonly options: readonly ListQueryOption<V>[]; readonly counts?: boolean; readonly verbs?: readonly VB[] },
+  ): NoInfer<ChoiceField<V, M, R> & WithVerbs<VB>> {
+    return verbed<ChoiceField<V, M, R>, VB>({
       kind: "choice",
       ...common(spec),
       options: spec.options,
       multiple: (spec.multiple ?? true) as M,
       counts: spec.counts ?? false,
       required: spec.required as R,
-    };
+    });
   },
   /** Values loaded on demand. `resolve` names the chosen IDs for the first paint. */
-  lookup<M extends boolean = true, const R extends (M extends false ? string : readonly string[]) | undefined = undefined>(
+  lookup<
+    M extends boolean = true,
+    const R extends (M extends false ? string : readonly string[]) | undefined = undefined,
+    const VB extends (typeof filterVerbs.lookup)[number] = never,
+  >(
     spec: FieldSpec<R> &
       MultipleSpec<M> & {
         readonly load: LookupField["load"];
@@ -239,9 +333,10 @@ export const field = {
         readonly limit?: number;
         readonly minChars?: number;
         readonly failure?: LookupField["failure"];
+        readonly verbs?: readonly VB[];
       },
-  ): NoInfer<LookupField<M, R>> {
-    return {
+  ): NoInfer<LookupField<M, R> & WithVerbs<VB>> {
+    return verbed<LookupField<M, R>, VB>({
       kind: "lookup",
       ...common(spec),
       multiple: (spec.multiple ?? true) as M,
@@ -251,42 +346,77 @@ export const field = {
       minChars: spec.minChars ?? 0,
       ...(spec.failure ? { failure: spec.failure } : {}),
       required: spec.required as R,
-    };
+    });
   },
   /** A number from–to with open ends. */
-  numberRange<const R extends NumberRange | undefined = undefined>(
-    spec: FieldSpec<R> & { readonly unit?: string; readonly presets?: readonly NumberRange[] },
-  ): NoInfer<NumberRangeField<R>> {
-    return { kind: "numberRange", ...common(spec), unit: spec.unit, presets: spec.presets ?? [], required: spec.required as R };
+  numberRange<const R extends NumberRange | undefined = undefined, const VB extends (typeof filterVerbs.numberRange)[number] = never>(
+    spec: FieldSpec<R> & { readonly unit?: string; readonly presets?: readonly NumberRange[]; readonly verbs?: readonly VB[] },
+  ): NoInfer<NumberRangeField<R> & WithVerbs<VB>> {
+    return verbed<NumberRangeField<R>, VB>({
+      kind: "numberRange",
+      ...common(spec),
+      unit: spec.unit,
+      presets: spec.presets ?? [],
+      required: spec.required as R,
+    });
   },
   /** Calendar days from–to, or a declared preset. */
-  dateRange<const P extends string = never, const R extends PeriodValue<NoInfer<P>> | undefined = undefined>(
-    spec: FieldSpec<R> & { readonly presets?: readonly ListQueryOption<P>[] },
-  ): NoInfer<DateRangeField<P, R>> {
-    return { kind: "dateRange", ...common(spec), presets: spec.presets ?? [], required: spec.required as R };
+  dateRange<
+    const P extends string = never,
+    const R extends PeriodValue<NoInfer<P>> | undefined = undefined,
+    const VB extends (typeof filterVerbs.dateRange)[number] = never,
+  >(
+    spec: FieldSpec<R> & { readonly presets?: readonly ListQueryOption<P>[]; readonly verbs?: readonly VB[] },
+  ): NoInfer<DateRangeField<P, R> & WithVerbs<VB>> {
+    return verbed<DateRangeField<P, R>, VB>({
+      kind: "dateRange",
+      ...common(spec),
+      presets: spec.presets ?? [],
+      required: spec.required as R,
+    });
   },
   /** Points in time (UTC minutes) from–to, or a declared preset. `custom: false` allows only the presets. */
-  timeRange<const P extends string, const R extends PeriodValue<NoInfer<P>> | undefined = undefined>(
-    spec: FieldSpec<R> & { readonly presets: readonly ListQueryOption<P>[]; readonly custom?: boolean },
-  ): NoInfer<TimeRangeField<P, R>> {
-    return { kind: "timeRange", ...common(spec), presets: spec.presets, custom: spec.custom ?? true, required: spec.required as R };
+  timeRange<
+    const P extends string,
+    const R extends PeriodValue<NoInfer<P>> | undefined = undefined,
+    const VB extends (typeof filterVerbs.timeRange)[number] = never,
+  >(
+    spec: FieldSpec<R> & { readonly presets: readonly ListQueryOption<P>[]; readonly custom?: boolean; readonly verbs?: readonly VB[] },
+  ): NoInfer<TimeRangeField<P, R> & WithVerbs<VB>> {
+    return verbed<TimeRangeField<P, R>, VB>({
+      kind: "timeRange",
+      ...common(spec),
+      presets: spec.presets,
+      custom: spec.custom ?? true,
+      required: spec.required as R,
+    });
   },
   /** Yes or no, with the application's words for both. */
-  bool<const R extends boolean | undefined = undefined>(
-    spec: FieldSpec<R> & { readonly labels: { readonly yes: string; readonly no: string } },
-  ): NoInfer<BoolField<R>> {
-    return { kind: "bool", ...common(spec), labels: spec.labels, required: spec.required as R };
+  bool<const R extends boolean | undefined = undefined, const VB extends (typeof filterVerbs.bool)[number] = never>(
+    spec: FieldSpec<R> & { readonly labels: { readonly yes: string; readonly no: string }; readonly verbs?: readonly VB[] },
+  ): NoInfer<BoolField<R> & WithVerbs<VB>> {
+    return verbed<BoolField<R>, VB>({ kind: "bool", ...common(spec), labels: spec.labels, required: spec.required as R });
   },
   /** Exactly one free text value. */
-  text<const R extends string | undefined = undefined>(spec: FieldSpec<R>): NoInfer<TextField<R>> {
-    return { kind: "text", ...common(spec), required: spec.required as R };
+  text<const R extends string | undefined = undefined, const VB extends (typeof filterVerbs.text)[number] = never>(
+    spec: FieldSpec<R> & { readonly verbs?: readonly VB[] },
+  ): NoInfer<TextField<R> & WithVerbs<VB>> {
+    return verbed<TextField<R>, VB>({ kind: "text", ...common(spec), required: spec.required as R });
   },
 };
 
-const common = (spec: { readonly label: string; readonly op?: string; readonly common?: boolean }): FieldCommon => ({
+const common = (spec: {
+  readonly label: string;
+  readonly op?: string;
+  readonly common?: boolean;
+  readonly category?: string;
+  readonly verbs?: readonly FilterVerb[];
+}): FieldCommon => ({
   label: spec.label,
   ...(spec.op === undefined ? {} : { op: spec.op }),
   common: spec.common ?? false,
+  ...(spec.category === undefined ? {} : { category: spec.category }),
+  ...(spec.verbs === undefined ? {} : { verbs: spec.verbs }),
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -359,7 +489,17 @@ export type ListQueryDeclaration<
   readonly group?: { readonly [K in G]: GroupOption };
   /** Other URL parameters the page owns beside the query, such as a selection or a page number. */
   readonly pageParams?: readonly string[];
+  /**
+   * The names the query writes its view, search, sort and grouping under, where the page needs the plain names for
+   * itself (a table with its own `sort` and `q`): `{ sort: "order", search: "find" }`. The defaults are `view`,
+   * `q`, `sort` and `group`, and a name is reserved only for what the declaration has: without `search` the name `q`
+   * is free for a field or a page parameter, without `group` the name `group`, with a fixed sort the name `sort`.
+   */
+  readonly params?: { readonly view?: string; readonly search?: string; readonly sort?: string; readonly group?: string };
 };
+
+/** The URL names a query writes its view, search, sort and grouping under (see `params`). */
+export type ListQueryParamNames = { readonly view: string; readonly search: string; readonly sort: string; readonly group: string };
 
 type RequiredKeys<F> = {
   [K in keyof F]: F[K] extends { readonly required: infer R } ? (undefined extends R ? never : K) : never;
@@ -415,6 +555,8 @@ export type ListQuery<
   S extends string = string,
   G extends string = string,
 > = ListQueryDeclaration<F, S, G> & {
+  /** The URL names of view, search, sort and grouping, `params` applied. */
+  readonly names: ListQueryParamNames;
   /** Reads a URL. Invalid and unknown parts are dropped and reported in `issues`, never thrown. */
   parse(params: URLSearchParams | string): ListQueryParseResult<ListQueryState<F, S, G>>;
   /**
@@ -422,9 +564,11 @@ export type ListQuery<
    * Its text keeps `,` `:` `/` and `@` readable (`status=open,sold`); everything else is encoded as usual.
    * Defaults and mandatory fields at their default are omitted, so equal states give equal URLs.
    * Parameters of `base` the query does not own come first and stay unchanged. Whatever `serialize` writes, `parse`
-   * reads back to the same state. States from `parse`, `set`, `clear` and `reset` always fit; a state built by hand
-   * that the URL cannot hold (an undeclared value, sort or group, a reversed range, a number with an exponent, more
-   * than {@link LIST_QUERY_MAX_LENGTH} characters) throws a `RangeError`. Derive follow-up states with `set`.
+   * reads back to the same state. What the declaration does not know (an option, preset, sort or group an app deleted
+   * while an old link or saved view still names it) is left out, as `parse` leaves it out. States from `parse`,
+   * `set`, `clear` and `reset` always fit; a state built by hand that the URL cannot hold otherwise (a reversed
+   * range, a number with an exponent, more than {@link LIST_QUERY_MAX_LENGTH} characters) throws a `RangeError`.
+   * Derive follow-up states with `set`.
    */
   serialize(state: ListQueryState<F, S, G>, base?: URLSearchParams | string): URLSearchParams;
   /**
@@ -499,7 +643,6 @@ export type ViewStore = {
 /** Longest query `parse` accepts, in characters of the owned parameters: the link length that passes on safely. */
 export const LIST_QUERY_MAX_LENGTH = 2000;
 
-const RESERVED = new Set(["view", "q", "sort", "group"]);
 const NAME = /^[A-Za-z][A-Za-z0-9-]*$/;
 const VIEW_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -658,34 +801,152 @@ const encode = (definition: ListQueryField, value: unknown): string | undefined 
   }
 };
 
-type Checked = { readonly raw: string; readonly value: unknown } | "empty" | "invalid";
+/** A verb that compares with no value. */
+const noValue = (verb: FilterVerb): boolean => verb === "empty" || verb === "notEmpty";
 
-/** Checks a state value against the URL: its text, and the canonical value `parse` reads from that text. */
-const check = (definition: ListQueryField, value: unknown): Checked => {
-  const raw = encode(definition, value);
+/**
+ * How a verb's value reads and writes: as the field's plain value (`between`, and every verb of a choice, lookup, text
+ * or yes/no), as one number, or as one day or minute.
+ */
+const verbShape = (definition: ListQueryField, verb: FilterVerb): "plain" | "number" | "day" | "minute" => {
+  if (verb === "between") return "plain";
+  if (definition.kind === "numberRange") return "number";
+  if (definition.kind === "dateRange") return "day";
+  if (definition.kind === "timeRange") return "minute";
+  return "plain";
+};
+
+/** The value of one verb from URL text (`""` for `empty` and `notEmpty`). */
+const decodeTerm = (definition: ListQueryField, verb: FilterVerb, raw: string): Decoded => {
+  if (noValue(verb)) return raw === "" ? { value: { verb }, invalid: [] } : { invalid: [raw] };
+  const shape = verbShape(definition, verb);
+  if (shape === "plain") {
+    const decoded = decode(definition, raw);
+    return decoded.value === undefined ? decoded : { value: { verb, value: decoded.value }, invalid: decoded.invalid };
+  }
+  if (shape === "number") {
+    const value = decodeNumber(raw);
+    return value === undefined ? { invalid: [raw] } : { value: { verb, value }, invalid: [] };
+  }
+  return (shape === "day" ? validDay : validMinute)(raw) ? { value: { verb, value: raw }, invalid: [] } : { invalid: [raw] };
+};
+
+/** The URL text of a verb's value: `undefined` when the statement is empty, `null` when the URL cannot hold it. */
+const encodeTerm = (definition: ListQueryField, verb: FilterVerb, value: unknown): string | undefined | null => {
+  if (noValue(verb)) return "";
+  const shape = verbShape(definition, verb);
+  if (shape === "plain") return encode(definition, value);
+  if (value === undefined || value === "") return undefined;
+  if (shape === "number") return encodeNumber(value);
+  return typeof value === "string" ? value : null;
+};
+
+/** The URL name of a field's statement: the field's key for its default verb, `key.verb` for every other. */
+const paramOf = (key: string, definition: ListQueryField, verb: FilterVerb | undefined): string =>
+  verb === undefined || verb === definition.verbs?.[0] ? key : `${key}.${verb}`;
+
+type Checked = { readonly name: string; readonly raw: string; readonly value: unknown } | "empty" | "invalid";
+
+/**
+ * Whether the parts of this value that `decode` refused are only values the declaration does not know: options of a
+ * choice and presets of a period, which an app may delete while old links and saved views still name them. Those are
+ * left out, as `parse` leaves them out; anything else the URL cannot hold (a reversed range, a number with an
+ * exponent) stays invalid.
+ */
+const forgettable = (definition: ListQueryField, value: unknown): boolean =>
+  definition.kind === "choice" ||
+  ((definition.kind === "dateRange" || definition.kind === "timeRange") && isRecord(value) && value.kind === "preset");
+
+/**
+ * Checks a state value against the URL: its name and text, and the canonical value `parse` reads from that text.
+ * `strict` refuses what the declaration does not know instead of leaving it out: a new value given to `set`, a
+ * mandatory default.
+ */
+const check = (key: string, definition: ListQueryField, value: unknown, strict = false): Checked => {
+  const verbs = definition.verbs;
+  if (!verbs) {
+    const raw = encode(definition, value);
+    if (raw === undefined) return "empty";
+    if (raw === null) return "invalid";
+    const decoded = decode(definition, raw);
+    if (decoded.invalid.length > 0 && (strict || !forgettable(definition, value))) return "invalid";
+    if (decoded.value === undefined) return decoded.invalid.length > 0 ? "empty" : "invalid";
+    // The canonical text: declared value order, no duplicates, the shortest number form.
+    const canonical = encode(definition, decoded.value);
+    return typeof canonical === "string" ? { name: key, raw: canonical, value: decoded.value } : "invalid";
+  }
+  if (value === undefined) return "empty";
+  if (!isRecord(value) || typeof value.verb !== "string") return "invalid";
+  const verb = verbs.find((candidate) => candidate === value.verb);
+  if (!verb) return "invalid";
+  const raw = encodeTerm(definition, verb, value.value);
   if (raw === undefined) return "empty";
   if (raw === null) return "invalid";
-  const decoded = decode(definition, raw);
-  if (decoded.invalid.length > 0 || decoded.value === undefined) return "invalid";
-  // The canonical text: declared value order, no duplicates, the shortest number form.
-  const canonical = encode(definition, decoded.value);
-  return typeof canonical === "string" ? { raw: canonical, value: decoded.value } : "invalid";
+  const decoded = decodeTerm(definition, verb, raw);
+  if (decoded.invalid.length > 0 && (strict || verbShape(definition, verb) !== "plain" || !forgettable(definition, value.value))) {
+    return "invalid";
+  }
+  if (!isRecord(decoded.value)) return decoded.invalid.length > 0 ? "empty" : "invalid";
+  const canonical = encodeTerm(definition, verb, decoded.value.value);
+  return typeof canonical === "string" ? { name: paramOf(key, definition, verb), raw: canonical, value: decoded.value } : "invalid";
 };
 
 const assertCode = (code: string, what: string): void => {
   if (code === "" || code.includes(",")) throw new Error(`defineListQuery: ${what} "${code}" must be non-empty and contain no comma`);
 };
 
+/** The URL names of view, search, sort and grouping: the declared ones, else the defaults. */
+const namesOf = (declaration: ListQueryDeclaration): ListQueryParamNames => ({
+  view: declaration.params?.view ?? "view",
+  search: declaration.params?.search ?? "q",
+  sort: declaration.params?.sort ?? "sort",
+  group: declaration.params?.group ?? "group",
+});
+
+/** The names the query writes besides its fields: only for what the declaration has. */
+const reservedOf = (declaration: ListQueryDeclaration, names: ListQueryParamNames): ReadonlySet<string> =>
+  new Set([
+    names.view,
+    ...(declaration.search ? [names.search] : []),
+    ...(declaration.sort.fixed === undefined ? [names.sort] : []),
+    ...(declaration.group ? [names.group] : []),
+  ]);
+
+/** Whether `set` takes this key for a part the declaration has: "q" for its search, "sort" for a sort to choose, "group". */
+const setKeyOf = (declaration: ListQueryDeclaration, key: string): boolean =>
+  (key === "q" && declaration.search !== undefined) ||
+  (key === "sort" && declaration.sort.fixed === undefined) ||
+  (key === "group" && declaration.group !== undefined);
+
 /** Checks a declaration and returns the checked defaults of its mandatory fields. */
 const checkDeclaration = (declaration: ListQueryDeclaration): ReadonlyMap<string, { readonly raw: string; readonly value: unknown }> => {
   const pageParams = new Set(declaration.pageParams ?? []);
+  const names = namesOf(declaration);
+  for (const name of Object.values(names)) {
+    if (!NAME.test(name)) throw new Error(`defineListQuery: parameter name "${name}" is not a stable code`);
+  }
+  if (new Set(Object.values(names)).size !== 4) throw new Error("defineListQuery: two parameters have the same name");
+  const reserved = reservedOf(declaration, names);
   const defaults = new Map<string, { readonly raw: string; readonly value: unknown }>();
   for (const [key, definition] of Object.entries(declaration.fields)) {
     // Keys of Object.prototype would read as inherited values from the state's filters.
-    if (!NAME.test(key) || RESERVED.has(key) || key in Object.prototype) {
+    if (!NAME.test(key) || reserved.has(key) || key in Object.prototype) {
       throw new Error(`defineListQuery: field key "${key}" is reserved or not a stable code`);
     }
     if (pageParams.has(key)) throw new Error(`defineListQuery: "${key}" is both a field and a page parameter`);
+    // `set` takes "q", "sort" and "group" for the parts; a field of that key would hide its part from it (and from the
+    // bar), whatever name the address gives the part
+    if (setKeyOf(declaration, key)) throw new Error(`defineListQuery: field key "${key}" is the set key of the ${key} part`);
+    if (definition.verbs) {
+      const allowed: readonly FilterVerb[] = filterVerbs[definition.kind];
+      if (definition.verbs.length === 0 || definition.verbs.some((verb) => !allowed.includes(verb))) {
+        throw new Error(`defineListQuery: verbs of ${key} must be some of ${allowed.join(", ")}`);
+      }
+      if (new Set(definition.verbs).size !== definition.verbs.length) throw new Error(`defineListQuery: verbs of ${key} repeat`);
+      // the first verb keeps the plain name, and a form that sends an empty field (`status=`) must not filter on empty
+      if (noValue(definition.verbs[0]!)) throw new Error(`defineListQuery: the first verb of ${key} must compare with a value`);
+      if (definition.required !== undefined) throw new Error(`defineListQuery: ${key} has verbs and cannot be mandatory`);
+    }
     if (definition.kind === "choice") for (const option of definition.options) assertCode(option.value, `value of ${key}`);
     if (definition.kind === "dateRange" || definition.kind === "timeRange") {
       for (const preset of definition.presets) {
@@ -697,13 +958,13 @@ const checkDeclaration = (declaration: ListQueryDeclaration): ReadonlyMap<string
       throw new Error(`defineListQuery: limit of ${key} must be between 1 and 50`);
     }
     if (definition.required !== undefined) {
-      const checked = check(definition, definition.required);
+      const checked = check(key, definition, definition.required, true);
       if (typeof checked === "string") throw new Error(`defineListQuery: required value of ${key} is not valid`);
       defaults.set(key, checked);
     }
   }
   for (const name of pageParams) {
-    if (RESERVED.has(name)) throw new Error(`defineListQuery: page parameter "${name}" is reserved`);
+    if (reserved.has(name)) throw new Error(`defineListQuery: page parameter "${name}" is reserved`);
   }
   const sort = declaration.sort;
   if (sort.fixed === undefined) {
@@ -731,7 +992,11 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
   const defaults = checkDeclaration(declaration);
   type State = ListQueryState<F, S, G>;
   const fields: readonly (readonly [string, ListQueryField])[] = Object.entries(declaration.fields);
-  const owned = new Set<string>(["view", ...fields.map(([key]) => key), "q", "sort", "group"]);
+  const names = namesOf(declaration);
+  /** Every URL name of a field: its key, and `key.verb` for each verb but the default. */
+  const paramsOf = (key: string, definition: ListQueryField): readonly string[] =>
+    definition.verbs ? definition.verbs.map((verb) => paramOf(key, definition, verb)) : [key];
+  const owned = new Set<string>([...reservedOf(declaration, names), ...fields.flatMap(([key, definition]) => paramsOf(key, definition))]);
   const pageParams = new Set(declaration.pageParams ?? []);
   const sortDeclaration: SortDeclaration<string> = declaration.sort;
   const sortOptions: Readonly<Record<string, SortOption>> = sortDeclaration.options ?? {};
@@ -776,22 +1041,38 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
     }
     const filters = requiredFilters();
     for (const [key, definition] of fields) {
-      const raw = first.get(key);
-      if (raw === undefined || raw === "") continue;
-      const decoded = decode(definition, raw);
-      for (const value of decoded.invalid) issues.push({ code: "invalid", param: key, value });
-      if (decoded.value !== undefined) filters[key] = decoded.value;
+      if (!definition.verbs) {
+        const raw = first.get(key);
+        if (raw === undefined || raw === "") continue;
+        const decoded = decode(definition, raw);
+        for (const value of decoded.invalid) issues.push({ code: "invalid", param: key, value });
+        if (decoded.value !== undefined) filters[key] = decoded.value;
+        continue;
+      }
+      // One statement per field: the first of its names in the address counts, any other is a duplicate.
+      let taken = false;
+      for (const [name, raw] of first) {
+        const verb = definition.verbs.find((candidate) => paramOf(key, definition, candidate) === name);
+        if (!verb || (raw === "" && !noValue(verb))) continue;
+        if (taken) {
+          issues.push({ code: "duplicate", param: name, value: raw });
+          continue;
+        }
+        const decoded = decodeTerm(definition, verb, raw);
+        for (const value of decoded.invalid) issues.push({ code: "invalid", param: name, value });
+        if (decoded.value !== undefined) {
+          filters[key] = decoded.value;
+          taken = true;
+        }
+      }
     }
     const state: { filters: Record<string, unknown>; search?: string; sort: SortState<string>; group?: string; view?: string } = {
       filters,
       sort: defaultSort,
     };
-    const search = first.get("q");
-    if (search !== undefined && search !== "") {
-      if (declaration.search) state.search = search;
-      else issues.push({ code: "unknown", param: "q", value: search });
-    }
-    const sort = first.get("sort");
+    const search = declaration.search ? first.get(names.search) : undefined;
+    if (search !== undefined && search !== "") state.search = search;
+    const sort = sortDeclaration.fixed ? undefined : first.get(names.sort);
     if (sort !== undefined && sort !== "") {
       const dot = sort.lastIndexOf(".");
       const sortField = sort.slice(0, dot);
@@ -800,17 +1081,17 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
       const option = sortDeclaration.fixed ? undefined : own(sortOptions, sortField);
       const match = (option?.directions ?? (option ? DIRECTIONS : [])).find((candidate) => candidate === direction);
       if (dot > 0 && match) state.sort = { field: sortField, direction: match };
-      else issues.push({ code: "invalid", param: "sort", value: sort });
+      else issues.push({ code: "invalid", param: names.sort, value: sort });
     }
-    const group = first.get("group");
+    const group = declaration.group ? first.get(names.group) : undefined;
     if (group !== undefined && group !== "") {
       if (Object.hasOwn(groups, group)) state.group = group;
-      else issues.push({ code: "invalid", param: "group", value: group });
+      else issues.push({ code: "invalid", param: names.group, value: group });
     }
-    const view = first.get("view");
+    const view = first.get(names.view);
     if (view !== undefined && view !== "") {
       if (VIEW_KEY.test(view)) state.view = view;
-      else issues.push({ code: "invalid", param: "view", value: view });
+      else issues.push({ code: "invalid", param: names.view, value: view });
     }
     return { state: asState(state), issues };
   };
@@ -821,27 +1102,24 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
     for (const [name, value] of new URLSearchParams(base ?? "")) if (!owned.has(name)) params.append(name, value);
     if (state.view !== undefined && state.view !== "") {
       if (!VIEW_KEY.test(state.view)) return new RangeError(`serialize: view "${state.view}" is not a view key`);
-      params.set("view", state.view);
+      params.set(names.view, state.view);
     }
     const filters: Readonly<Record<string, unknown>> = state.filters;
     for (const [key, definition] of fields) {
-      const checked = check(definition, own(filters, key));
+      const checked = check(key, definition, own(filters, key));
       if (checked === "empty") continue;
       if (checked === "invalid") return new RangeError(`serialize: the URL cannot hold the value of "${key}"`);
-      if (checked.raw !== defaults.get(key)?.raw) params.set(key, checked.raw);
+      if (checked.raw !== defaults.get(key)?.raw) params.set(checked.name, checked.raw);
     }
-    if (declaration.search && state.search) params.set("q", state.search);
+    if (declaration.search && state.search) params.set(names.search, state.search);
+    // a sort or grouping the declaration does not (or no longer) offer is left out, as parse leaves it out
     if (state.sort.field !== defaultSort.field || state.sort.direction !== defaultSort.direction) {
       const option = sortDeclaration.fixed ? undefined : own(sortOptions, state.sort.field);
-      if (!option || !(option.directions ?? DIRECTIONS).includes(state.sort.direction)) {
-        return new RangeError(`serialize: sort "${state.sort.field}.${state.sort.direction}" is not an option`);
+      if (option && (option.directions ?? DIRECTIONS).includes(state.sort.direction)) {
+        params.set(names.sort, `${state.sort.field}.${state.sort.direction}`);
       }
-      params.set("sort", `${state.sort.field}.${state.sort.direction}`);
     }
-    if (state.group !== undefined) {
-      if (!Object.hasOwn(groups, state.group)) return new RangeError(`serialize: group "${state.group}" is not an option`);
-      params.set("group", state.group);
-    }
+    if (state.group !== undefined && Object.hasOwn(groups, state.group)) params.set(names.group, state.group);
     const length = ownedLength(params);
     if (length > LIST_QUERY_MAX_LENGTH) {
       return new RangeError(`serialize: the query has ${length} characters, more than ${LIST_QUERY_MAX_LENGTH}`);
@@ -863,29 +1141,36 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
       ...rest,
       filters,
     };
-    if (key === "q") {
+    // a field may hold the name of a part the declaration does not have (a field `q` without a search); it comes first
+    const field = own<ListQueryField>(declaration.fields, key);
+    if (field) {
+      const checked = check(key, field, value, true);
+      if (checked === "invalid") return undefined;
+      const stored = checked === "empty" ? defaults.get(key)?.value : checked.value;
+      if (stored === undefined) delete filters[key];
+      else filters[key] = stored;
+    } else if (key === "q") {
       if (typeof value !== "string" || (!declaration.search && value !== "")) return undefined;
       if (value === "") delete next.search;
       else next.search = value;
     } else if (key === "sort") {
       if (!isRecord(value) || typeof value.field !== "string" || (value.direction !== "asc" && value.direction !== "desc"))
         return undefined;
+      // a new sort or grouping must be one the declaration offers; only what the state already holds is left out
+      const option = sortDeclaration.fixed ? undefined : own(sortOptions, value.field);
+      const isDefault = value.field === defaultSort.field && value.direction === defaultSort.direction;
+      if (!isDefault && !(option && (option.directions ?? DIRECTIONS).includes(value.direction))) return undefined;
       next.sort = { field: value.field, direction: value.direction };
     } else if (key === "group") {
       if (value === undefined) delete next.group;
-      else if (typeof value === "string") next.group = value;
+      else if (typeof value === "string" && Object.hasOwn(groups, value)) next.group = value;
       else return undefined;
     } else {
-      const definition = own<ListQueryField>(declaration.fields, key);
-      if (!definition) return undefined;
-      const checked = check(definition, value);
-      if (checked === "invalid") return undefined;
-      const stored = checked === "empty" ? defaults.get(key)?.value : checked.value;
-      if (stored === undefined) delete filters[key];
-      else filters[key] = stored;
+      return undefined;
     }
-    const result = asState(next);
-    return write(result) instanceof RangeError ? undefined : result;
+    const written = write(asState(next));
+    // the state the address holds: what the declaration does not know (a deleted option, an old sort) is gone from it
+    return written instanceof RangeError ? undefined : parse(written).state;
   };
 
   const clear = (state: State, key: keyof F & string): State => {
@@ -896,5 +1181,5 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
     return asState({ ...state, filters });
   };
 
-  return { ...declaration, parse, serialize, set: change, clear, reset };
+  return { ...declaration, names, parse, serialize, set: change, clear, reset };
 }

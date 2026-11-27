@@ -39,6 +39,32 @@ The one way to let people filter, sort or group a list or table. Recipe:
 | `bool` | "2FA ist aus" | yes or no |
 | `text` | "Request-ID ist 7f3a9c" | one field |
 
+With `verbs`, the editor starts with a "Vergleich" select and the statement
+says the verb: "Titel enthält Vitrine", "Preis über 500 €", "Fällig ist leer".
+
+## Verbs, categories, parameter names
+
+`verbs` on a field lets the person choose how it compares; the first is the
+default and keeps the plain address name (`title=Vitrine`), every other one is
+`key.verb` (`status.not=online,sold`, `price.after=500`, `due.empty=`). The
+state then holds a term `{ verb, value }` (`empty` and `notEmpty` have no
+value); a field without `verbs` keeps its plain value. `filterVerbs[kind]`
+lists what each kind allows; a `required` field has no verbs, and the first
+verb compares with a value (never `empty`: a form's empty field `a=` must
+not mean "is empty").
+
+```ts
+title: field.text({ label: "Titel", verbs: ["contains", "is", "notContains", "empty"] }),
+due: field.dateRange({ label: "Fällig", category: "Termine", verbs: ["before", "after", "between", "empty"] }),
+```
+
+`category` puts a field under a heading in "+ Filter"; from more than ten
+fields on, "+ Filter" and the phone sheet search the fields. `params: {
+search, sort, group, view }` renames what the query writes besides its fields,
+so the page keeps `sort` or `q` (`pageParams`); `query.names` has the names
+in use. A field key never equals the `set` key of a declared part (`q`,
+`sort`, `group`).
+
 ## Sorts
 
 Each sort option names what it orders with `kind`: `date` ("Neueste zuerst" /
@@ -78,3 +104,7 @@ no × at its default; changed, it is tinted and × returns it to the default.
   `viewIcon(scope)` gives a saved view's tab its symbol.
 - A value the address cannot hold is refused at its field; nothing is
   written.
+- What the app deleted (an option, preset, sort or group an old link or saved
+  view still names) is left out by `parse`, `serialize` and `set`, never
+  thrown. Build no app-side filter for it. A new value given to `set` must
+  still be declared.

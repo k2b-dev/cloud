@@ -1,0 +1,6 @@
+### An old link with a deleted tag stopped a whole list
+
+- **What happened:** A Spaces link named a tag the Space had deleted since (`tags=Gone01`). The app built its filter state from it, `serialize` of `@k2b/ui/v2/list-query` threw a `RangeError`, and the list and the board stopped. In the v2 `FilterBar` the same state locked every option, because each follow-up state still carried the deleted value and `set` refused it.
+- **Root cause:** `parse` left values the declaration does not know out, but `serialize` and `set` treated the same values as a programming error. Declarations built from an app's current data (tags, columns, statuses) make such values ordinary: old links and saved views outlive the options they name.
+- **Error class:** Two readings of one contract: the reader forgives what the writer refuses, so data that is valid today breaks the page tomorrow without any change to the code.
+- **Guard:** `serialize` and `set` now leave out what the declaration does not know (options, presets, sorts, groups), as `parse` does; only a new value given to `set` must be declared. `list-query.test.ts` ("values an app deleted") pins parse, serialize and set for every field kind, and `filter-verbs.browser.test.ts` shows a stale state in the bar and changes it, in Chromium and WebKit.

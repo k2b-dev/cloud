@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { defineListQuery, field, LIST_QUERY_MAX_LENGTH, type ListQueryStateOf, type LookupItem } from "./list-query";
+import { defineListQuery, field, LIST_QUERY_MAX_LENGTH, type ListQueryField, type ListQueryStateOf, type LookupItem } from "./list-query";
 
 const noItems = async (): Promise<readonly LookupItem[]> => [];
 
@@ -238,10 +238,10 @@ describe("list query URL", () => {
     expect(only.parse("sort=name.desc").issues).toEqual([{ code: "invalid", param: "sort", value: "name.desc" }]);
   });
 
-  test("a fixed sort has no URL parameter", () => {
+  test("a fixed sort has no URL parameter; the name is not the query's", () => {
     const parsed = logs.parse("sort=time.asc");
     expect(parsed.state.sort).toEqual({ field: "time", direction: "desc" });
-    expect(parsed.issues).toEqual([{ code: "invalid", param: "sort", value: "time.asc" }]);
+    expect(parsed.issues).toEqual([{ code: "unknown", param: "sort", value: "time.asc" }]);
   });
 
   test("search needs a declaration; without one `q` is unknown", () => {
@@ -348,9 +348,9 @@ describe("list query review guards", () => {
         sort: { options: { name: { label: "Name" } }, default: { field: "constructor" as "name", direction: "asc" } },
       }),
     ).toThrow("default sort");
-    expect(() => articles.serialize({ ...articles.reset(), sort: { field: "constructor" as "price", direction: "asc" } })).toThrow(
-      RangeError,
-    );
+    // an inherited key is no option: serialize leaves it out like any sort it does not know, and set refuses it
+    expect(articles.serialize({ ...articles.reset(), sort: { field: "constructor" as "price", direction: "asc" } }).toString()).toBe("");
+    expect(articles.set(articles.reset(), "sort", { field: "constructor" as "price", direction: "asc" })).toBeUndefined();
   });
 
   test("field keys of Object.prototype are refused, so no filter reads an inherited value", () => {
@@ -452,8 +452,23 @@ describe("list query declaration", () => {
   const sort = { fixed: { field: "id", direction: "asc", label: "ID" } } as const;
 
   test("reserved, underscore and malformed field keys are refused", () => {
-    for (const key of ["q", "view", "sort", "group", "_open", "a b", "1st"]) {
-      expect(() => defineListQuery({ key: "x", fields: { [key]: field.text({ label: "X" }) }, sort })).toThrow("field key");
+    const sorted = { options: { id: { label: "ID" } }, default: { field: "id", direction: "asc" } } as const;
+    for (const key of ["view", "sort", "_open", "a b", "1st"]) {
+      expect(() => defineListQuery({ key: "x", fields: { [key]: field.text({ label: "X" }) }, sort: sorted })).toThrow("field key");
+    }
+    // with a fixed sort the name `sort` is free
+    expect(defineListQuery({ key: "x", fields: { sort: field.text({ label: "X" }) }, sort }).names.sort).toBe("sort");
+    // a name is reserved only for what the declaration has: `q` with a search, `group` with groupings
+    for (const key of ["q", "group"]) {
+      expect(() =>
+        defineListQuery({
+          key: "x",
+          fields: { [key]: field.text({ label: "X" }) },
+          search: { label: "S" },
+          sort,
+          group: { a: { label: "A" } },
+        }),
+      ).toThrow("field key");
     }
   });
 
@@ -484,6 +499,287 @@ describe("list query declaration", () => {
 
   test("a page parameter that is also a field or reserved is refused", () => {
     expect(() => defineListQuery({ key: "x", fields: { id: field.text({ label: "ID" }) }, sort, pageParams: ["id"] })).toThrow("both");
-    expect(() => defineListQuery({ key: "x", fields: {}, sort, pageParams: ["q"] })).toThrow("reserved");
+    expect(() => defineListQuery({ key: "x", fields: {}, sort, search: { label: "S" }, pageParams: ["q"] })).toThrow("reserved");
+    expect(() => defineListQuery({ key: "x", fields: {}, sort, pageParams: ["view"] })).toThrow("reserved");
+  });
+});
+
+const sort = { fixed: { field: "id", direction: "asc", label: "ID" } } as const;
+
+describe("filter verbs", () => {
+  const people = async (): Promise<readonly LookupItem[]> => [];
+  const records = defineListQuery({
+    key: "records",
+    fields: {
+      title: field.text({ label: "Title", verbs: ["contains", "is", "not", "startsWith", "empty", "notEmpty"] }),
+      status: field.choice({
+        label: "Status",
+        options: [
+          { value: "open", label: "Open" },
+          { value: "done", label: "Done" },
+        ],
+        verbs: ["is", "not", "empty"],
+      }),
+      owner: field.lookup({ label: "Owner", load: async () => ({ items: [] }), resolve: people, verbs: ["is", "not", "notEmpty"] }),
+      price: field.numberRange({ label: "Price", verbs: ["between", "is", "before", "after", "empty"] }),
+      due: field.dateRange({
+        label: "Due",
+        presets: [{ value: "next-7d", label: "Next 7 days" }],
+        verbs: ["between", "is", "before", "after", "empty"],
+      }),
+      seen: field.timeRange({ label: "Seen", presets: [{ value: "last-1h", label: "Last hour" }], verbs: ["between", "after"] }),
+      plain: field.text({ label: "Plain" }),
+    },
+    sort: { options: { title: { label: "Title" } }, default: { field: "title", direction: "asc" } },
+  });
+  type State = ListQueryStateOf<typeof records>;
+
+  test("the default verb keeps the plain name, every other stands in the name, and all round-trip", () => {
+    const state: State = {
+      filters: {
+        title: { verb: "contains", value: "Vitrine" },
+        status: { verb: "not", value: ["done"] },
+        owner: { verb: "notEmpty" },
+        price: { verb: "after", value: 500 },
+        due: { verb: "is", value: "2026-12-15" },
+        seen: { verb: "after", value: "2026-11-24T08:00Z" },
+        plain: "x",
+      },
+      sort: { field: "title", direction: "asc" },
+    };
+    const text = records.serialize(state).toString();
+    expect(text).toBe(
+      "title=Vitrine&status.not=done&owner.notEmpty=&price.after=500&due.is=2026-12-15&seen.after=2026-11-24T08:00Z&plain=x",
+    );
+    expect(records.parse(text)).toEqual({ state, issues: [] });
+  });
+
+  test("between keeps the plain value of a range field, and the default verb's value reads as before", () => {
+    const parsed = records.parse("price=500..2000&due=next-7d&status=open,done");
+    expect(parsed.state.filters).toEqual({
+      price: { verb: "between", value: { min: 500, max: 2000 } },
+      due: { verb: "between", value: { kind: "preset", preset: "next-7d" } },
+      status: { verb: "is", value: ["open", "done"] },
+    });
+  });
+
+  test("a verb the field does not declare is not the query's; a bad value is invalid; one statement per field", () => {
+    const parsed = records.parse("title.endsWith=x&price.after=abc&status=open&status.not=done&due.empty=yes");
+    expect(parsed.state.filters).toEqual({ status: { verb: "is", value: ["open"] } });
+    expect(parsed.issues).toEqual([
+      { code: "unknown", param: "title.endsWith", value: "x" },
+      { code: "duplicate", param: "status.not", value: "done" },
+      { code: "invalid", param: "price.after", value: "abc" },
+      { code: "invalid", param: "due.empty", value: "yes" },
+    ]);
+  });
+
+  test("set takes a verb's statement, refuses an undeclared verb or a wrong value, and empties a statement", () => {
+    const start = records.reset();
+    const next = must(records.set(start, "title", { verb: "startsWith", value: "Vit" }));
+    expect(records.serialize(next).toString()).toBe("title.startsWith=Vit");
+    expect(must(records.set(next, "title", { verb: "empty" })).filters.title).toEqual({ verb: "empty" });
+    // an empty text clears the statement
+    expect(must(records.set(next, "title", { verb: "contains", value: "" })).filters.title).toBeUndefined();
+    // @ts-expect-error: endsWith is not one of the field's verbs
+    expect(records.set(start, "title", { verb: "endsWith", value: "x" })).toBeUndefined();
+    expect(records.set(start, "due", { verb: "before", value: "2026-02-30" })).toBeUndefined();
+    expect(records.set(start, "price", { verb: "is", value: Number.NaN })).toBeUndefined();
+  });
+
+  test("a declaration refuses verbs its kind does not have, repeated ones, and verbs on a mandatory field", () => {
+    expect(() =>
+      defineListQuery({
+        key: "x",
+        // @ts-expect-error: a yes/no field has no "contains"
+        fields: { a: field.bool({ label: "A", labels: { yes: "y", no: "n" }, verbs: ["contains"] }) },
+        sort,
+      }),
+    ).toThrow("verbs");
+    expect(() => defineListQuery({ key: "x", fields: { a: field.text({ label: "A", verbs: ["is", "is"] }) }, sort })).toThrow("repeat");
+    // the first verb keeps the plain name: `a=` from a form's empty field must never mean "is empty"
+    expect(() => defineListQuery({ key: "x", fields: { a: field.text({ label: "A", verbs: ["empty", "is"] }) }, sort })).toThrow(
+      "compare with a value",
+    );
+    expect(() =>
+      defineListQuery({
+        key: "x",
+        fields: { a: field.choice({ label: "A", options: [{ value: "o", label: "O" }], verbs: ["notEmpty"] }) },
+        sort,
+      }),
+    ).toThrow("compare with a value");
+    expect(() => defineListQuery({ key: "x", fields: { a: field.text({ label: "A", verbs: [] }) }, sort })).toThrow("verbs");
+    expect(() =>
+      defineListQuery({ key: "x", fields: { a: field.text({ label: "A", required: "v", verbs: ["is", "not"] }) }, sort }),
+    ).toThrow("mandatory");
+  });
+});
+
+describe("parameter names", () => {
+  test("a declaration renames view, search, sort and group, and the plain names are free for the page", () => {
+    const grid = defineListQuery({
+      key: "grid",
+      fields: { name: field.text({ label: "Name" }) },
+      search: { label: "Find" },
+      sort: { options: { name: { label: "Name" } }, default: { field: "name", direction: "asc" } },
+      group: { kind: { label: "Kind" } },
+      params: { search: "find", sort: "order", group: "by", view: "preset" },
+      pageParams: ["sort", "q", "group", "view"],
+    });
+    expect(grid.names).toEqual({ view: "preset", search: "find", sort: "order", group: "by" });
+    const parsed = grid.parse("name=a&find=b&order=name.desc&by=kind&preset=mine&sort=col3.asc&q=raw&view=table");
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state).toEqual({
+      filters: { name: "a" },
+      search: "b",
+      sort: { field: "name", direction: "desc" },
+      group: "kind",
+      view: "mine",
+    });
+    // the page's own parameters stay as they are
+    expect(grid.serialize(parsed.state, "sort=col3.asc&q=raw&view=table").toString()).toBe(
+      "sort=col3.asc&q=raw&view=table&preset=mine&name=a&find=b&order=name.desc&by=kind",
+    );
+  });
+
+  test("names must be stable codes and distinct, and a field cannot take a renamed one", () => {
+    const base = { key: "x", fields: {}, sort: { options: { id: { label: "ID" } }, default: { field: "id", direction: "asc" } } } as const;
+    expect(() => defineListQuery({ ...base, params: { sort: "a b" } })).toThrow("stable code");
+    expect(() => defineListQuery({ ...base, params: { sort: "view" } })).toThrow("same name");
+    expect(() => defineListQuery({ ...base, fields: { order: field.text({ label: "O" }) }, params: { sort: "order" } })).toThrow(
+      "field key",
+    );
+  });
+
+  test("a renamed part frees its address name, but a field never takes the key `set` reaches the part by", () => {
+    const base = { key: "x", sort: { options: { id: { label: "ID" } }, default: { field: "id", direction: "asc" } } } as const;
+    // "sort" is set's key of the sort: a field `sort` would hide the sort from set (and from the bar)
+    expect(() => defineListQuery({ ...base, fields: { sort: field.text({ label: "Sorte" }) }, params: { sort: "order" } })).toThrow(
+      "set key",
+    );
+    expect(() =>
+      defineListQuery({
+        ...base,
+        fields: { group: field.text({ label: "Warengruppe" }) },
+        group: { id: { label: "ID" } },
+        params: { group: "by" },
+      }),
+    ).toThrow("set key");
+    // without the part, the key is free: a field `q` without a search, a field `sort` with a fixed sort
+    const free = defineListQuery({
+      key: "y",
+      fields: { q: field.text({ label: "Q" }), sort: field.text({ label: "Sorte" }) },
+      sort: { fixed: { field: "id", direction: "asc", label: "ID" } },
+    });
+    expect(free.parse("q=a&sort=b").state.filters).toEqual({ q: "a", sort: "b" });
+  });
+});
+
+test("a declaration built at runtime with hundreds of fields parses and serializes", () => {
+  const fields: Record<string, ListQueryField> = {};
+  for (let index = 0; index < 300; index += 1) {
+    fields[`c${index}`] = field.text({
+      label: `Column ${index}`,
+      category: index < 150 ? "Stammdaten" : "Zahlen",
+      verbs: ["contains", "is", "empty"],
+    });
+  }
+  const wide = defineListQuery({
+    key: "wide",
+    fields,
+    sort: { options: { c0: { label: "Column 0" } }, default: { field: "c0", direction: "asc" } },
+  });
+  const parsed = wide.parse("c7=Berg&c250.empty=");
+  expect(parsed.issues).toEqual([]);
+  expect(parsed.state.filters).toEqual({ c7: { verb: "contains", value: "Berg" }, c250: { verb: "empty" } });
+  expect(wide.serialize(parsed.state).toString()).toBe("c7=Berg&c250.empty=");
+  expect(wide.fields.c250?.category).toBe("Zahlen");
+});
+
+describe("values an app deleted", () => {
+  // A Space deleted its tag "Gone01" and a sort column, while an old link and a saved view still name them. The
+  // declaration is built from the app's current data, as Spaces and Grids build it at runtime.
+  const tags = [
+    { value: "Tag01", label: "Urgent" },
+    { value: "Tag02", label: "Later" },
+  ];
+  const space = defineListQuery({
+    key: "space",
+    fields: {
+      tags: field.choice({ label: "Tags", options: tags }),
+      column: field.choice({ label: "Column", options: tags, multiple: false }),
+      not: field.choice({ label: "Not", options: tags, verbs: ["not", "is", "empty"] }),
+      assignee: field.lookup({ label: "Assignee", load: async () => ({ items: [] }), resolve: noItems }),
+      due: field.dateRange({ label: "Due", presets: [{ value: "this-week", label: "This week" }] }),
+      seen: field.timeRange({
+        label: "Seen",
+        presets: [{ value: "last-1h", label: "Last hour" }],
+        required: { kind: "preset", preset: "last-1h" },
+      }),
+      price: field.numberRange({ label: "Price" }),
+      done: field.bool({ label: "Done", labels: { yes: "yes", no: "no" } }),
+      title: field.text({ label: "Title" }),
+    },
+    search: { label: "Search" },
+    sort: { options: { title: { label: "Title" }, due: { label: "Due" } }, default: { field: "title", direction: "asc" } },
+    group: { column: { label: "Column" } },
+  });
+  // what the app hands the bar: its own state, built from an old link or saved view, naming what no longer exists
+  const stale = {
+    filters: {
+      tags: ["Tag01", "Gone01"],
+      column: "Gone02",
+      not: { verb: "not", value: ["Gone01"] },
+      assignee: ["u-deleted"],
+      due: { kind: "preset", preset: "last-month" },
+      seen: { kind: "preset", preset: "last-24h" },
+      price: { min: 5 },
+      done: true,
+      title: "Vase",
+    },
+    sort: { field: "deletedColumn", direction: "desc" },
+    group: "deletedGroup",
+  } as unknown as ListQueryStateOf<typeof space>;
+
+  test("parse leaves out each deleted option, preset, sort and group, reports it, and never throws", () => {
+    const parsed = space.parse(
+      "tags=Tag01,Gone01&column=Gone02&not=Gone01&assignee=u-deleted&due=last-month&seen=last-24h&price=5..&done=yes&title=Vase&sort=deletedColumn.desc&group=deletedGroup",
+    );
+    expect(parsed.state).toEqual({
+      filters: {
+        tags: ["Tag01"],
+        assignee: ["u-deleted"],
+        seen: { kind: "preset", preset: "last-1h" },
+        price: { min: 5 },
+        done: true,
+        title: "Vase",
+      },
+      sort: { field: "title", direction: "asc" },
+    } as unknown as ListQueryStateOf<typeof space>);
+    expect(parsed.issues.map((issue) => issue.param).sort()).toEqual(["column", "due", "group", "not", "seen", "sort", "tags"]);
+  });
+
+  test("serialize leaves them out the same way: the address of a stale state is the one parse reads back", () => {
+    // a lookup code is the app's to name: it stays (the bar marks it when the app cannot name it)
+    const text = space.serialize(stale).toString();
+    expect(text).toBe("tags=Tag01&assignee=u-deleted&price=5..&done=yes&title=Vase");
+    expect(space.serialize(space.parse(text).state).toString()).toBe(text);
+  });
+
+  test("set works on a stale state and returns the state the address holds", () => {
+    const next = must(space.set(stale, "title", "Bowl"));
+    expect(next.filters).toEqual({
+      tags: ["Tag01"],
+      assignee: ["u-deleted"],
+      seen: { kind: "preset", preset: "last-1h" },
+      price: { min: 5 },
+      done: true,
+      title: "Bowl",
+    });
+    expect(next.sort).toEqual({ field: "title", direction: "asc" });
+    expect(next.group).toBeUndefined();
+    // a new value must still be one the declaration knows: set refuses it instead of changing it on the way
+    expect(space.set(stale, "tags", ["Gone01"] as unknown as "Tag01"[])).toBeUndefined();
+    expect(space.set(stale, "group", "deletedGroup" as "column")).toBeUndefined();
   });
 });

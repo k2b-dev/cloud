@@ -2197,7 +2197,9 @@
   background: var(--k2-surface);
   min-width: 0;
 }
-.k2-ui .k2-input:focus-within {
+/* a field rings while one types in it; a selection is a button and rings only for the keys (its own rule below), so a
+   dialog's quiet first focus on it shows no ring */
+.k2-ui .k2-input:not([data-select]):focus-within {
   border-color: var(--k2-blue);
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
@@ -4735,6 +4737,45 @@
   flex-direction: column;
   gap: 12px;
   padding: 0 12px 8px;
+}
+/* The verb of a field with several ("enthält", "ist leer"): one select under the head, on the text edge. */
+.k2-ui .k2-fed-verb {
+  display: flex;
+  padding: 0 12px 8px;
+}
+.k2-ui .k2-fed-verb > .k2-input[data-select] {
+  flex: 1;
+  min-width: 0;
+}
+/* One day or minute of a verb ("vor", "nach"): the calendar right in the editor, centred under the verb as in the
+   phone sheet's calendar step. */
+.k2-ui .k2-fed-pick {
+  display: flex;
+  justify-content: center;
+  padding: 0 12px 4px;
+}
+.k2-ui .k2-fsheet .k2-fed-verb {
+  padding-inline: var(--k2-edge);
+}
+.k2-ui .k2-fsheet .k2-fed-pick .k2-dpick {
+  width: 308px;
+}
+/* "+ Filter" for many fields: the search over them, as wide as a filter's editor. */
+.k2-ui .k2-pop.k2-fpick {
+  padding-top: 8px;
+}
+.k2-ui .k2-fpick .k2-opt > .k2-icon {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fsheet-search {
+  margin: 8px var(--k2-edge) 4px;
+}
+/* the phone sheet over many fields stands at its full height while it searches them: fewer matches never move it */
+.k2-ui .k2-dialog[data-presentation="sheet"]:has(.k2-fsheet[data-many]) {
+  height: calc(100dvh - 48px);
+}
+.k2-ui .k2-dialog[data-presentation="sheet"]:has(.k2-fsheet[data-many]) .k2-dialog-body {
+  flex: 1;
 }
 .k2-ui .k2-fed-body[data-flush] {
   padding-inline: 0;

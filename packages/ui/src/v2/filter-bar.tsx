@@ -1,13 +1,28 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+} from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
+import { useCommand } from "./behavior/command";
 import { useListbox } from "./behavior/lists";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
-import { Choice, Field, Input } from "./controls";
+import { Choice, Field, Input, Select } from "./controls";
 import { DatePicker } from "./date-picker";
 import { type FilterMessages, useFilterMessages } from "./filter-messages";
 import type {
+  FilterVerb,
   ListQuery,
   ListQueryField,
   ListQueryOption,
@@ -22,9 +37,10 @@ import type {
 } from "./list-query";
 import { Lookup } from "./lookup";
 import { Icon } from "./marks";
-import { Menu, type MenuEntry, type MenuItem } from "./menu";
+import { Menu, type MenuEntry, type MenuItem, TriggerFace } from "./menu";
 import { readNumber, showNumber } from "./number-text";
 import { Dialog } from "./overlays";
+import { Empty } from "./states";
 import { useToast } from "./toast";
 
 // ── Reading a state ────────────────────────────────────────────────────────────────────────────────────────────
@@ -46,28 +62,6 @@ const rangeOf = (definition: ListQueryField): Extract<ListQueryField, { kind: "n
   definition.kind === "numberRange" ? definition : undefined;
 const codes = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : typeof value === "string" ? [value] : [];
-
-/** The URL text of a value, in the address format of `defineListQuery`; `undefined` clears the field. */
-const encode = (definition: ListQueryField, value: unknown): string | undefined => {
-  switch (definition.kind) {
-    case "choice":
-    case "lookup": {
-      const list = codes(value);
-      return list.length ? list.join(",") : undefined;
-    }
-    case "numberRange":
-      return isRange(value) && (value.min !== undefined || value.max !== undefined) ? `${value.min ?? ""}..${value.max ?? ""}` : undefined;
-    case "dateRange":
-    case "timeRange":
-      if (!isPeriod(value)) return undefined;
-      if (value.kind === "preset") return value.preset;
-      return value.from || value.to ? `${value.from ?? ""}..${value.to ?? ""}` : undefined;
-    case "bool":
-      return typeof value === "boolean" ? (value ? "yes" : "no") : undefined;
-    case "text":
-      return typeof value === "string" && value.trim() ? value.trim() : undefined;
-  }
-};
 
 const labelOf = (options: readonly ListQueryOption[], code: string) => options.find((option) => option.value === code)?.label ?? code;
 
@@ -148,8 +142,20 @@ const useFormats = (timeZone: () => string): (() => Formats) => {
   });
 };
 
-/** The value words of a field, without its name: "Eingeliefert oder Fotografiert", "ab 500 €". */
+/** The value words of a field, without its name: "Eingeliefert oder Fotografiert", "ab 500 €", "enthält Vitrine". */
 const valueParts = (
+  definition: ListQueryField,
+  value: unknown,
+  t: FilterMessages,
+  format: Formats,
+  names: ReadonlyMap<string, LookupItem>,
+): Part[] => {
+  if (definition.verbs) return isTerm(value) ? termParts(definition, value, t, format, names) : [];
+  return plainParts(definition, value, t, format, names);
+};
+
+/** The words of a field's own value: what a field without verbs holds, and what `between` or `is` compare with. */
+const plainParts = (
   definition: ListQueryField,
   value: unknown,
   t: FilterMessages,
@@ -158,8 +164,12 @@ const valueParts = (
 ): Part[] => {
   switch (definition.kind) {
     case "choice":
+      // an option the app deleted (an old link) shows as its code with a warning, as a lookup code nobody can name
       return listParts(
-        codes(value).map((code) => ({ text: labelOf(definition.options, code) })),
+        codes(value).map((code) => {
+          const option = definition.options.find((each) => each.value === code);
+          return option ? { text: option.label } : { text: code, missing: true };
+        }),
         t,
       );
     case "lookup":
@@ -201,6 +211,86 @@ const valueParts = (
   }
 };
 
+// ── Verbs ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A statement of a field with verbs, as the state holds it. */
+type Term = { readonly verb: FilterVerb; readonly value?: unknown };
+const isTerm = (value: unknown): value is Term =>
+  typeof value === "object" && value !== null && "verb" in value && typeof value.verb === "string";
+
+/** A verb that compares with no value: "ist leer", "ist nicht leer". */
+const noValue = (verb: FilterVerb) => verb === "empty" || verb === "notEmpty";
+
+/** What a verb compares with: the field's own value, one number, or one day or minute (as `list-query` reads it). */
+const verbShape = (definition: ListQueryField, verb: FilterVerb): "plain" | "number" | "day" | "minute" | "none" => {
+  if (noValue(verb)) return "none";
+  if (verb === "between") return "plain";
+  if (definition.kind === "numberRange") return "number";
+  if (definition.kind === "dateRange") return "day";
+  if (definition.kind === "timeRange") return "minute";
+  return "plain";
+};
+
+/** The verb's words in the sentence: "enthält", "über", "am"; ranges carry their own words for `between`. */
+const verbWord = (definition: ListQueryField, verb: FilterVerb, t: FilterMessages, several = false): string | undefined => {
+  const kind = definition.kind;
+  const dated = kind === "dateRange" || kind === "timeRange";
+  switch (verb) {
+    case "is":
+      return kind === "dateRange" ? t.verbOn : t.verbIs;
+    case "not":
+      return several ? t.verbNoneOf : t.verbNot;
+    case "contains":
+      return t.verbContains;
+    case "notContains":
+      return t.verbNotContains;
+    case "startsWith":
+      return t.verbStartsWith;
+    case "endsWith":
+      return t.verbEndsWith;
+    case "before":
+      return dated ? t.verbBefore : t.verbBelow;
+    case "after":
+      return dated ? t.verbAfter : t.verbAbove;
+    case "between":
+      return undefined;
+    case "empty":
+      return t.verbEmpty;
+    case "notEmpty":
+      return t.verbNotEmpty;
+  }
+};
+
+/** A verb as its choice in the editor names it: "enthält", "ist leer", and for a range "zwischen". */
+const verbChoice = (definition: ListQueryField, verb: FilterVerb, t: FilterMessages) =>
+  verb === "between" ? t.verbBetween : verb === "not" ? t.verbNot : (verbWord(definition, verb, t) ?? verb);
+
+/** The words of a statement with a verb, without the field's name: "enthält Vitrine", "ist weder A noch B", "über 500 €". */
+const termParts = (
+  definition: ListQueryField,
+  term: Term,
+  t: FilterMessages,
+  format: Formats,
+  names: ReadonlyMap<string, LookupItem>,
+): Part[] => {
+  const shape = verbShape(definition, term.verb);
+  if (shape === "none") return [{ text: verbWord(definition, term.verb, t) ?? "" }];
+  let values: Part[];
+  if (shape === "number") {
+    const unit = definition.kind === "numberRange" && definition.unit ? ` ${definition.unit}` : "";
+    values = typeof term.value === "number" ? [{ text: `${format.number(term.value)}${unit}`, value: true }] : [];
+  } else if (shape === "day" || shape === "minute") {
+    values = typeof term.value === "string" ? [{ text: (shape === "day" ? format.day : format.minute)(term.value), value: true }] : [];
+  } else {
+    values = plainParts(definition, term.value, t, format, names);
+  }
+  const several = term.verb === "not" && codes(term.value).length > 1;
+  // "ist weder A, B noch C": the joining word of the last value follows the verb
+  if (several) values = values.map((part) => (part.text === ` ${t.or} ` ? { text: ` ${t.nor} ` } : part));
+  const word = verbWord(definition, term.verb, t, several);
+  return word ? [{ text: `${word} ` }, ...values] : values;
+};
+
 /** Whether a field's sentence says "ist" before its values; ranges and periods carry their own words. */
 const saysIs = (definition: ListQueryField) =>
   definition.kind === "choice" || definition.kind === "lookup" || definition.kind === "bool" || definition.kind === "text";
@@ -208,7 +298,14 @@ const saysIs = (definition: ListQueryField) =>
 /** The whole statement: "Status ist Eingeliefert oder Fotografiert", "Preis ab 500 €", "Zeitraum letzte 15 Minuten". */
 const statementParts = (definition: ListQueryField, values: Part[], t: FilterMessages): Part[] => [
   { text: `${definition.label} ` },
-  ...(saysIs(definition) ? [{ text: `${definition.op ?? t.is} ` }] : definition.op ? [{ text: `${definition.op} ` }] : []),
+  // a field with verbs says its verb in its values
+  ...(definition.verbs
+    ? []
+    : saysIs(definition)
+      ? [{ text: `${definition.op ?? t.is} ` }]
+      : definition.op
+        ? [{ text: `${definition.op} ` }]
+        : []),
   ...values,
 ];
 
@@ -219,26 +316,28 @@ const plain = (parts: readonly Part[]) => parts.map((part) => part.text).join(""
 /** The query parameters of a state, without the view it started from: two states are equal when these are. */
 const stateText = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>, state: ListQueryState<F, S, G>) => {
   const params = query.serialize(state);
-  params.delete("view");
+  params.delete(query.names.view);
   return params.toString();
 };
 
 /**
- * The state after one change of the address, or `undefined` when the address cannot hold it. `parse` reports every
- * part it had to drop, a value it does not accept or a query over the 2,000 characters a link carries (then it falls
- * back to the default state); any report refuses the change, so a list never silently loses its filters. The change
- * goes through the address text because the editors hold values of any field; `set` gives the same guarantee for
- * code that knows its field's type.
+ * The state after one change (a field, `"q"`, `"sort"` or `"group"`), or `undefined` when the value is not valid or
+ * the address cannot hold the result (more than the 2,000 characters a link carries): the query's own `set`, so the
+ * bar writes no address text of its own and a list never silently loses its filters. The editors hold values of any
+ * field by its key; `set` checks key and value itself and never throws.
  */
 const follow = <F extends Fields, S extends string, G extends string>(
   query: ListQuery<F, S, G>,
   state: ListQueryState<F, S, G>,
-  edit: (params: URLSearchParams) => void,
-): ListQueryState<F, S, G> | undefined => {
-  const params = query.serialize(state);
-  edit(params);
-  const { state: next, issues } = query.parse(params);
-  return issues.length > 0 ? undefined : next;
+  key: string,
+  value: unknown,
+): ListQueryState<F, S, G> | undefined =>
+  (query.set as (state: ListQueryState<F, S, G>, key: string, value: unknown) => ListQueryState<F, S, G> | undefined)(state, key, value);
+
+/** A sort as the menus name it (`price.desc`), as `set` takes it. */
+const sortValue = (text: string) => {
+  const dot = text.lastIndexOf(".");
+  return { field: text.slice(0, dot), direction: text.slice(dot + 1) };
 };
 
 /** The phone of v2: every width below 768 px. */
@@ -377,39 +476,37 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   // The view the state started from stays in the address: its tab stays current and counts as changed.
   // What the address cannot hold (a value parse would drop, a number it cannot write, more than 2000 characters) is
   // never written: the editor that asked says so at its field, and the list stays as it is.
-  const apply = (edit: (params: URLSearchParams) => void): boolean => {
-    const next = follow(props.query, props.state, edit);
-    if (!next) return false;
+  const apply = (key: string, value: unknown): ListQueryState<F, S, G> | undefined => {
+    const next = follow(props.query, props.state, key, value);
+    if (!next) return undefined;
     const inEditor = open() !== undefined || sheet() !== undefined;
     write(next, inEditor ? !pushed : true);
     if (inEditor) pushed = true;
-    return true;
+    return next;
   };
   const setField = (key: string, value: unknown): boolean => {
     const definition = props.query.fields[key];
     if (!definition) return false;
-    const text = encode(definition, value);
-    const applied = apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
-    if (applied && text !== undefined && draft() === key) setDraft(undefined);
+    const next = apply(key, value);
+    if (!next) return false;
+    const active = (next.filters as Readonly<Record<string, unknown>>)[key] !== undefined;
+    if (active && draft() === key) setDraft(undefined);
     // emptying every bound in the open editor keeps that editor: the filter waits as a dashed draft that does not apply
-    if (applied && text === undefined && open() === key && definition.required === undefined) setDraft(key);
-    return applied;
+    if (!active && open() === key && definition.required === undefined) setDraft(key);
+    return true;
   };
-  const removeField = (key: string) => apply((params) => params.delete(key));
-  /** Whether the address could hold this value of a field: what cannot is offered locked. */
-  const canSet = (key: string, value: unknown) => {
-    const definition = props.query.fields[key];
-    if (!definition) return false;
-    const text = encode(definition, value);
-    return follow(props.query, props.state, (params) => (text === undefined ? params.delete(key) : params.set(key, text))) !== undefined;
-  };
-  const canEdit = (edit: (params: URLSearchParams) => void) => follow(props.query, props.state, edit) !== undefined;
+  const removeField = (key: string) => apply(key, undefined) !== undefined;
+  /** Whether the address could hold this value of a field (or of `"sort"`, `"group"`): what cannot is offered locked. */
+  const canSet = (key: string, value: unknown) => follow(props.query, props.state, key, value) !== undefined;
   const reset = () => write(base(), true);
 
   const values = (key: string, definition: ListQueryField) => valueParts(definition, filters()[key], t(), format(), namesOf(key));
   const sentence = (key: string, definition: ListQueryField) => statementParts(definition, values(key, definition), t());
-  const isDefault = (key: string, definition: ListQueryField) =>
-    definition.required !== undefined && encode(definition, filters()[key]) === encode(definition, definition.required);
+  const isDefault = (key: string, definition: ListQueryField) => {
+    if (definition.required === undefined) return false;
+    const atDefault = follow(props.query, props.state, key, definition.required);
+    return atDefault !== undefined && stateText(props.query, atDefault) === stateText(props.query, props.state);
+  };
 
   // Names for lookup codes of the address the server did not name: each code is asked for once in the browser. A code
   // the app cannot name (deleted, or the load failed) stays a code with a warning; opening its editor asks again.
@@ -453,20 +550,17 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
     setTimeout(() => setOpen(key));
   };
 
+  const meta = (key: string, definition: ListQueryField) => (filters()[key] === undefined ? undefined : plain(values(key, definition)));
   const addEntries = (): MenuEntry[] => {
     const entry = ([key, definition]: [string, ListQueryField]): MenuItem => ({
       label: definition.label,
       icon: props.icons?.[key] ?? undefined,
-      meta: filters()[key] === undefined ? undefined : plain(values(key, definition)),
+      meta: meta(key, definition),
       onClick: () => openField(key),
     });
-    const common = fields().filter(([, definition]) => definition.common);
-    const rest = fields().filter(([, definition]) => !definition.common);
-    if (common.length === 0 || rest.length === 0) return fields().map(entry);
-    return [
-      { title: t().common, items: common.map(entry) },
-      { title: t().further, items: rest.map(entry) },
-    ];
+    const groups = fieldGroups(fields(), t());
+    if (groups.length === 1) return groups[0]!.fields.map(entry);
+    return groups.map((group) => ({ title: group.title ?? t().further, items: group.fields.map(entry) }));
   };
 
   const shown = createMemo(() => {
@@ -542,9 +636,16 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
           }}
         </For>
         <span class="k2-fbar-add">
-          <Menu icon="plus" items={addEntries()}>
-            {t().addFilter}
-          </Menu>
+          <Show
+            when={fields().length > searchFrom}
+            fallback={
+              <Menu icon="plus" items={addEntries()}>
+                {t().addFilter}
+              </Menu>
+            }
+          >
+            <FieldPicker fields={fields()} icons={props.icons} meta={meta} onPick={openField} />
+          </Show>
         </span>
         <Show when={changed()}>
           <span class="k2-fbar-reset">
@@ -586,7 +687,6 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
         onNames={remember}
         timeZone={timeZone()}
         canSet={canSet}
-        canEdit={canEdit}
         changed={changed()}
         results={props.results}
         canSave={(props.views?.stores.some((store) => store.writable) ?? false) && changed()}
@@ -596,8 +696,8 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
         }}
         sentence={(key, definition) => plain(values(key, definition))}
         onField={setField}
-        onSort={(value) => apply((params) => params.set("sort", value))}
-        onGroup={(value) => apply((params) => (value ? params.set("group", value) : params.delete("group")))}
+        onSort={(value) => apply("sort", sortValue(value)) !== undefined}
+        onGroup={(value) => apply("group", value || undefined) !== undefined}
         onReset={reset}
       />
       <Show when={props.views}>
@@ -619,6 +719,151 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
         )}
       </Show>
     </div>
+  );
+};
+
+// ── Adding a filter ────────────────────────────────────────────────────────────────────────────────────────────
+
+/** From this many fields on, "+ Filter" opens a search over them instead of a plain menu: a menu this long is a wall. */
+const searchFrom = 10;
+
+type FieldGroup = { title?: string; fields: [string, ListQueryField][] };
+
+/**
+ * The fields as "+ Filter" lists them: the common ones first ("Häufig"), then each category under its heading in the
+ * order of its first field, then the rest ("Weitere"). One group without a heading when there is nothing to tell apart.
+ */
+const fieldGroups = (fields: readonly [string, ListQueryField][], t: FilterMessages): FieldGroup[] => {
+  const common = fields.filter(([, definition]) => definition.common);
+  const byCategory = new Map<string, [string, ListQueryField][]>();
+  const rest: [string, ListQueryField][] = [];
+  for (const entry of fields) {
+    if (entry[1].common) continue;
+    const category = entry[1].category;
+    if (category === undefined) rest.push(entry);
+    else byCategory.set(category, [...(byCategory.get(category) ?? []), entry]);
+  }
+  const groups: FieldGroup[] = [
+    ...(common.length > 0 ? [{ title: t.common, fields: common }] : []),
+    ...[...byCategory].map(([title, list]) => ({ title, fields: list })),
+    ...(rest.length > 0 ? [{ title: t.further, fields: rest }] : []),
+  ];
+  return groups.length === 1 ? [{ fields: groups[0]!.fields }] : groups;
+};
+
+/** Text as the field search compares it: lower case, without accents ("Fällig" is found by "fallig"). */
+const folded = (text: string) => text.toLocaleLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+
+/** The fields whose name or category holds the search text, in their groups; empty groups go. */
+const fieldMatches = (groups: readonly FieldGroup[], query: string): FieldGroup[] => {
+  const words = folded(query.trim());
+  if (!words) return [...groups];
+  return groups.flatMap((group) => {
+    const found = group.fields.filter(([, definition]) =>
+      [definition.label, definition.category ?? ""].some((text) => folded(text).includes(words)),
+    );
+    return found.length > 0 ? [{ ...group, fields: found }] : [];
+  });
+};
+
+/** The field keys of the group with this heading ("" for the one without). */
+const keysIn = (groups: readonly FieldGroup[], title: string): string[] =>
+  groups.find((group) => (group.title ?? "") === title)?.fields.map(([key]) => key) ?? [];
+
+/**
+ * "+ Filter" for many fields: core's command in a popover, a search over the fields with their groups. The focus stays
+ * in the search; the arrows move through the fields, Enter or a press opens the chosen one's editor.
+ */
+const FieldPicker = (props: {
+  fields: readonly [string, ListQueryField][];
+  icons?: Readonly<Record<string, string | undefined>>;
+  meta: (key: string, definition: ListQueryField) => string | undefined;
+  onPick: (key: string) => void;
+}) => {
+  const t = useFilterMessages();
+  const [open, setOpen] = createSignal(false);
+  const [query, setQuery] = createSignal("");
+  const popover = usePopover(() => ({
+    open: open(),
+    onOpenChange: (next: boolean) => {
+      setOpen(next);
+      if (!next) setQuery("");
+    },
+  }));
+  const groups = createMemo(() => fieldMatches(fieldGroups(props.fields, t()), query()));
+  const list = useCommand(() => ({
+    query: query(),
+    onQueryChange: setQuery,
+    onAction: (key: string) => {
+      setOpen(false);
+      setQuery("");
+      props.onPick(key);
+    },
+    filter: false,
+    loop: false,
+  }));
+  const idBase = createUniqueId();
+  let popup: HTMLElement | undefined;
+  return (
+    <>
+      <popover.Trigger class="k2-btn" data-k2-part="Button" data-menu="">
+        <TriggerFace icon="plus" label={t().addFilter} iconOnly={false} chevron />
+      </popover.Trigger>
+      <popover.Popup
+        ref={(element: HTMLElement) => {
+          popup = element;
+        }}
+        initialFocus={() => popup?.querySelector<HTMLElement>("input") ?? null}
+        class="k2-pop k2-fpop k2-fpick"
+        data-k2-part="Popover"
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+      >
+        <list.Root class="k2-lookup" data-k2-part="FieldPicker">
+          <div class="k2-input k2-lookup-search" data-search="">
+            <Icon name="search" />
+            <list.Input aria-label={t().searchFields} placeholder={t().searchFields} spellcheck={false} />
+          </div>
+          <list.List class="k2-lookup-list" aria-label={t().addFilter}>
+            {/* by name, not by object: a new search keeps the entries that still match and their highlight */}
+            <For each={groups().map((group) => group.title ?? "")}>
+              {(title, index) => {
+                // core names a group by its label's id; each entry names its group, else core takes it for empty
+                const id = `${idBase}-${index()}`;
+                return (
+                  <list.Group class="k2-opt-group" id={id}>
+                    <Show when={title}>
+                      <list.GroupLabel class="k2-opt-head" id={id} group={id}>
+                        {title}
+                      </list.GroupLabel>
+                    </Show>
+                    <For each={keysIn(groups(), title)}>
+                      {(key) => {
+                        const definition = props.fields.find(([each]) => each === key)![1];
+                        return (
+                          <list.Item class="k2-opt" value={key} label={definition.label} group={id}>
+                            <Show when={props.icons?.[key]}>{(name) => <Icon name={name()} />}</Show>
+                            <span class="k2-opt-label">{definition.label}</span>
+                            <Show when={props.meta(key, definition)}>{(words) => <span class="k2-opt-meta">{words()}</span>}</Show>
+                          </list.Item>
+                        );
+                      }}
+                    </For>
+                  </list.Group>
+                );
+              }}
+            </For>
+          </list.List>
+          <Show when={groups().length === 0}>
+            <div class="k2-lookup-state">
+              <Empty icon="search-off" text={t().noField({ query: query().trim() })} />
+            </div>
+          </Show>
+        </list.Root>
+      </popover.Popup>
+    </>
   );
 };
 
@@ -646,7 +891,12 @@ const Statement = (props: {
   const popover = usePopover(() => ({ open: props.open, onOpenChange: props.onOpenChange }));
   let popup: HTMLElement | undefined;
   // a draft says what it will be, in the grammar of its kind: "Lagerort ist …", but "Preis …" (a range brings its own words)
-  const draftWord = () => props.definition.op ?? (saysIs(props.definition) ? t().is : undefined);
+  const draftWord = () => {
+    const verbs = props.definition.verbs;
+    // a field with several verbs has no word yet: its verb is chosen in the editor
+    if (verbs) return verbs.length === 1 ? verbChoice(props.definition, verbs[0]!, t()) : undefined;
+    return props.definition.op ?? (saysIs(props.definition) ? t().is : undefined);
+  };
   const words = () =>
     props.draft ? [props.definition.label, draftWord(), "…"].filter((word) => word !== undefined).join(" ") : plain(props.parts);
   const removable = () => !props.draft && (props.definition.required === undefined || !props.fixed);
@@ -783,14 +1033,19 @@ type EditorProps = {
 const Editor = (props: EditorProps) => {
   const t = useFilterMessages();
   const [refused, setRefused] = createSignal(false);
+  const verbs = () => props.definition.verbs;
+  // the word after the field's name: its one verb, or "ist" for the kinds that say it; several verbs are a choice
+  const headWord = () => {
+    const list = verbs();
+    if (list) return list.length === 1 ? verbChoice(props.definition, list[0]!, t()) : undefined;
+    return saysIs(props.definition) ? (props.definition.op ?? t().is) : undefined;
+  };
   return (
     <div class="k2-fed" data-k2-part="FilterEditor">
       <Show when={!props.bare}>
         <div class="k2-fed-h">
           <span class="k2-fed-t">{props.definition.label}</span>
-          <Show when={saysIs(props.definition)}>
-            <span class="k2-fed-op">{props.definition.op ?? t().is}</span>
-          </Show>
+          <Show when={headWord()}>{(word) => <span class="k2-fed-op">{word()}</span>}</Show>
           <Show when={props.onRemove}>
             {(remove) => (
               <span class="k2-fed-end">
@@ -802,14 +1057,31 @@ const Editor = (props: EditorProps) => {
           </Show>
         </div>
       </Show>
-      <EditorBody
-        {...props}
-        onChange={(value) => {
-          const applied = props.onChange(value);
-          setRefused(!applied);
-          return applied;
-        }}
-      />
+      <Show
+        when={verbs()}
+        fallback={
+          <EditorBody
+            {...props}
+            onChange={(value) => {
+              const applied = props.onChange(value);
+              setRefused(!applied);
+              return applied;
+            }}
+          />
+        }
+      >
+        {(list) => (
+          <TermEditor
+            {...props}
+            verbs={list()}
+            onChange={(value) => {
+              const applied = props.onChange(value);
+              setRefused(!applied);
+              return applied;
+            }}
+          />
+        )}
+      </Show>
       {/* ranges, periods and text say it at their own fields */}
       <Show
         when={refused() && (props.definition.kind === "choice" || props.definition.kind === "lookup" || props.definition.kind === "bool")}
@@ -825,22 +1097,26 @@ const Editor = (props: EditorProps) => {
 const EditorBody = (props: EditorProps) => {
   const definition = props.definition;
   switch (definition.kind) {
-    case "choice":
+    case "choice": {
+      // only the options the declaration knows: one the app deleted (an old link) goes with the next change, and no
+      // change carries it on (the address could not hold it, so every option would be locked)
+      const known = () => codes(props.value).filter((code) => definition.options.some((option) => option.value === code));
       return (
         <Options
           label={definition.label}
           options={definition.options}
           multiple={definition.multiple}
-          value={codes(props.value)}
+          value={known()}
           counts={definition.counts ? props.counts : undefined}
           possible={(code) => {
-            const chosen = codes(props.value);
+            const chosen = known();
             if (!definition.multiple) return props.possible(code);
             return props.possible(chosen.includes(code) ? chosen.filter((other) => other !== code) : [...chosen, code]);
           }}
           onChange={(next) => props.onChange(definition.multiple ? next : next[0])}
         />
       );
+    }
     case "lookup":
       return (
         <Lookup
@@ -904,6 +1180,140 @@ const EditorBody = (props: EditorProps) => {
     case "text":
       return <TextEditor label={definition.label} value={typeof props.value === "string" ? props.value : ""} onChange={props.onChange} />;
   }
+};
+
+/** A minute of the address ("2026-11-24T08:00Z") as an instant. */
+const minuteMoment = (text: string) => Date.parse(text.replace(/Z$/, ":00Z"));
+/** An instant as a minute of the address. */
+const minuteText = (moment: number) => `${new Date(moment).toISOString().slice(0, 16)}Z`;
+
+/**
+ * The editor of a field with verbs: the verb as a choice ("enthält", "ist nicht", "ist leer"), then what it compares
+ * with: the field's own values (`is`, `not`, the text verbs, `between`), one number, one day or one minute, or nothing
+ * (`empty`, `notEmpty`, which apply as they are chosen). The verb is the editor's own until a value applies with it.
+ * Another verb keeps the value when it compares with the same kind of value; else the filter waits for a new one.
+ */
+const TermEditor = (props: EditorProps & { verbs: readonly FilterVerb[] }) => {
+  const t = useFilterMessages();
+  const term = () => (isTerm(props.value) ? props.value : undefined);
+  const [verb, setVerb] = createSignal<FilterVerb>(term()?.verb ?? props.verbs[0]!);
+  // back and forward, or another place, may bring another verb
+  createEffect(
+    on(
+      () => term()?.verb,
+      (now) => now && setVerb(now),
+      { defer: true },
+    ),
+  );
+  const shape = () => verbShape(props.definition, verb());
+  const [refused, setRefused] = createSignal(false);
+  const choose = (next: FilterVerb) => {
+    if (next === verb()) return;
+    const before = term();
+    setRefused(false);
+    setVerb(next);
+    if (noValue(next)) {
+      setRefused(!props.onChange({ verb: next }));
+      return;
+    }
+    const keeps = before && !noValue(before.verb) && verbShape(props.definition, before.verb) === verbShape(props.definition, next);
+    if (keeps && props.onChange({ verb: next, value: before.value })) return;
+    if (before) props.onChange(undefined);
+  };
+  const wrap = (value: unknown) => (value === undefined ? undefined : { verb: verb(), value });
+  const label = () => `${props.definition.label} ${verbChoice(props.definition, verb(), t())}`;
+  return (
+    <>
+      <Show when={props.verbs.length > 1}>
+        <div class="k2-fed-verb">
+          <Select
+            label={t().verb}
+            options={props.verbs.map((each) => ({ value: each, label: verbChoice(props.definition, each, t()) }))}
+            value={verb()}
+            onChange={(next) => choose(next as FilterVerb)}
+          />
+        </div>
+      </Show>
+      <Switch>
+        <Match when={shape() === "plain"}>
+          <EditorBody
+            {...props}
+            value={term()?.verb === verb() ? term()?.value : undefined}
+            possible={(value) => props.possible(wrap(value))}
+            onChange={(value) => props.onChange(wrap(value))}
+          />
+        </Match>
+        <Match when={shape() === "number" && rangeOf(props.definition)}>
+          {(range) => (
+            <div class="k2-fed-body">
+              <NumberEntry
+                label={label()}
+                value={term()?.verb === verb() && typeof term()?.value === "number" ? (term()?.value as number) : undefined}
+                unit={range().unit}
+                sheet={props.bare}
+                onApply={(amount) => (props.onChange(wrap(amount)) ? undefined : t().valueRejected)}
+              />
+            </div>
+          )}
+        </Match>
+        <Match when={(shape() === "day" || shape() === "minute") && periodOf(props.definition)}>
+          {(period) => {
+            const day = () => period().kind === "dateRange";
+            const shown = () => {
+              const current = term();
+              if (current?.verb !== verb() || typeof current.value !== "string") return undefined;
+              if (day()) return current.value;
+              const moment = minuteMoment(current.value);
+              return Number.isNaN(moment) ? undefined : wallTime(moment, props.timeZone);
+            };
+            const [error, setError] = createSignal<BoundError>();
+            const pick = (text: string | undefined) => {
+              if (text === undefined) {
+                setError(undefined);
+                props.onChange(undefined);
+                return;
+              }
+              let value = text;
+              if (!day()) {
+                const current = term();
+                // a minute that was not changed keeps its instant, also when its wall time exists twice
+                if (current?.verb === verb() && typeof current.value === "string" && shown() === text) value = current.value;
+                else {
+                  const moment = fromWallTime(text, props.timeZone);
+                  if (moment === undefined) return setError("missing");
+                  value = minuteText(moment);
+                }
+              }
+              setError(props.onChange(wrap(value)) ? undefined : "rejected");
+            };
+            return (
+              <div class="k2-fed-pick">
+                <DatePicker
+                  value={shown()}
+                  time={!day()}
+                  defaultTime="00:00"
+                  timeZone={day() ? undefined : props.timeZone}
+                  label={label()}
+                  error={error() && boundError(error()!, t())}
+                  autoFocus={!props.bare}
+                  onPick={pick}
+                  onClear={() => pick(undefined)}
+                />
+              </div>
+            );
+          }}
+        </Match>
+      </Switch>
+      {/* choices, lookups and yes or no say it under the whole editor */}
+      <Show
+        when={refused() && !(props.definition.kind === "choice" || props.definition.kind === "lookup" || props.definition.kind === "bool")}
+      >
+        <p class="k2-fed-error" data-flush="" role="alert">
+          {t().valueRejected}
+        </p>
+      </Show>
+    </>
+  );
 };
 
 /**
@@ -1363,7 +1773,7 @@ const PeriodEditor = (props: {
   const [rejected, setRejected] = createSignal(false);
   createEffect(
     on(
-      () => `${props.value?.kind}:${encode(props.definition, props.value) ?? ""}`,
+      () => JSON.stringify(props.value ?? null),
       () => setRejected(false),
       { defer: true },
     ),
@@ -1541,8 +1951,8 @@ export type ListOrderProps<F extends Fields, S extends string, G extends string>
 export const ListOrder = <F extends Fields, S extends string, G extends string>(props: ListOrderProps<F, S, G>) => {
   const t = useFilterMessages();
   // a choice whose state the address cannot hold is locked in the menu, so a choice never drops the filters
-  const change = (edit: (params: URLSearchParams) => void) => {
-    const next = follow(props.query, props.state, edit);
+  const change = (key: "sort" | "group", value: unknown) => {
+    const next = follow(props.query, props.state, key, value);
     if (!next) return;
     if (!isServer) {
       const text = props.query.serialize(next, location.search).toString();
@@ -1553,7 +1963,7 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
   const words = () => orderWords(props.query, props.state, t());
   const groups = () => groupEntries(props.query, t());
   const choices = () => sortChoices(props.query, props.state, t());
-  const fits = (sort: string) => follow(props.query, props.state, (params) => params.set("sort", sort)) !== undefined;
+  const fits = (sort: string) => follow(props.query, props.state, "sort", sortValue(sort)) !== undefined;
   return (
     <span class="k2-order" data-k2-part="ListOrder">
       <Show
@@ -1574,14 +1984,14 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
               choice: choices().field,
               onChoose: (value) => {
                 const sort = choices().fields.find((entry) => entry.value === value)?.sort;
-                if (sort) change((params) => params.set("sort", sort));
+                if (sort) change("sort", sortValue(sort));
               },
               items: choices().fields.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
             },
             {
               title: t().order,
               choice: choices().direction,
-              onChoose: (value) => change((params) => params.set("sort", `${choices().field}.${value}`)),
+              onChoose: (value) => change("sort", { field: choices().field, direction: value }),
               items: choices().orders.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
             },
           ]}
@@ -1597,13 +2007,11 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
             {
               title: t().group,
               choice: props.state.group ?? "",
-              onChoose: (value) => change((params) => (value ? params.set("group", value) : params.delete("group"))),
+              onChoose: (value) => change("group", value || undefined),
               items: groups().map((entry) => ({
                 label: entry.label,
                 value: entry.value,
-                disabled: !follow(props.query, props.state, (params) =>
-                  entry.value ? params.set("group", entry.value) : params.delete("group"),
-                ),
+                disabled: !follow(props.query, props.state, "group", entry.value || undefined),
               })),
             },
           ]}
@@ -1882,7 +2290,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   onNames: (field: string, items: readonly LookupItem[]) => void;
   timeZone: string;
   canSet: (key: string, value: unknown) => boolean;
-  canEdit: (edit: (params: URLSearchParams) => void) => boolean;
+
   changed: boolean;
   results?: string;
   canSave: boolean;
@@ -1895,6 +2303,14 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
 }) => {
   const t = useFilterMessages();
   const filters = (): Readonly<Record<string, unknown>> => props.state.filters;
+  // A bound step of a field with verbs is the bound of its "zwischen": the only verb that edits a range or period.
+  const between = (key: string) => {
+    const value = filters()[key];
+    if (!props.query.fields[key]?.verbs) return value;
+    return isTerm(value) && value.verb === "between" ? value.value : undefined;
+  };
+  const onBetween = (key: string, value: unknown) =>
+    props.onField(key, props.query.fields[key]?.verbs && value !== undefined ? { verb: "between", value } : value);
   const field = () => {
     const key = props.place?.field;
     const definition = key === undefined ? undefined : props.query.fields[key];
@@ -1923,6 +2339,25 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
       <Icon name="chevron-right" />
     </button>
   );
+  const FieldRow = ([key, definition]: [string, ListQueryField]) => (
+    <Row
+      icon={props.icons?.[key]}
+      label={definition.label}
+      value={filters()[key] === undefined ? undefined : props.sentence(key, definition)}
+      onClick={() => props.onPlace({ field: key })}
+    />
+  );
+  const many = () => Object.keys(props.query.fields).length > searchFrom;
+  // the search stays while the person steps into a field and back, and goes with the sheet
+  const [search, setSearch] = createSignal("");
+  createEffect(
+    on(
+      () => props.open,
+      (open) => !open && setSearch(""),
+      { defer: true },
+    ),
+  );
+  const sheetGroups = createMemo(() => fieldMatches(fieldGroups(Object.entries(props.query.fields), t()), search()));
   const Single = (single: {
     label: string;
     options: readonly ListQueryOption[];
@@ -1971,22 +2406,50 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
         </>
       }
     >
-      <div class="k2-fsheet" data-k2-part="FilterSheet">
+      <div
+        class="k2-fsheet"
+        data-k2-part="FilterSheet"
+        // the list of many fields with its search: the sheet keeps its full height, so a search never moves it
+        data-many={many() && props.place?.field === undefined && props.place?.display === undefined ? "" : undefined}
+      >
         <Show
           when={props.place?.field !== undefined || props.place?.display !== undefined}
           fallback={
             <>
-              <div class="k2-fsheet-sec">{t().filters}</div>
-              <For each={Object.entries(props.query.fields)}>
-                {([key, definition]) => (
-                  <Row
-                    icon={props.icons?.[key]}
-                    label={definition.label}
-                    value={filters()[key] === undefined ? undefined : props.sentence(key, definition)}
-                    onClick={() => props.onPlace({ field: key })}
+              <Show
+                when={many()}
+                fallback={
+                  <>
+                    <div class="k2-fsheet-sec">{t().filters}</div>
+                    <For each={Object.entries(props.query.fields)}>{FieldRow}</For>
+                  </>
+                }
+              >
+                {/* many fields: a search over them, and their groups with headings */}
+                <div class="k2-input k2-lookup-search k2-fsheet-search" data-search="">
+                  <Icon name="search" />
+                  <input
+                    type="search"
+                    aria-label={t().searchFields}
+                    placeholder={t().searchFields}
+                    spellcheck={false}
+                    value={search()}
+                    onInput={(event) => setSearch(event.currentTarget.value)}
                   />
-                )}
-              </For>
+                </div>
+                {/* by name, not by object: a new search keeps the rows that still match, so a tap never lands on a row made anew */}
+                <For each={sheetGroups().map((group) => group.title ?? "")}>
+                  {(title) => (
+                    <>
+                      <div class="k2-fsheet-sec">{title || t().filters}</div>
+                      <For each={keysIn(sheetGroups(), title)}>{(key) => FieldRow([key, props.query.fields[key]!])}</For>
+                    </>
+                  )}
+                </For>
+                <Show when={sheetGroups().length === 0}>
+                  <Empty icon="search-off" text={t().noField({ query: search().trim() })} />
+                </Show>
+              </Show>
               <Show when={!props.query.sort.fixed || props.query.group}>
                 <div class="k2-fsheet-sec">{t().display}</div>
                 <Show when={!props.query.sort.fixed}>
@@ -2045,9 +2508,9 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
                             <RangeBound
                               sheet
                               definition={range()}
-                              value={rangeValue(filters()[current().key])}
+                              value={rangeValue(between(current().key))}
                               bound={step().bound}
-                              onChange={(value) => props.onField(current().key, value)}
+                              onChange={(value) => onBetween(current().key, value)}
                               onDone={() => props.onPlace({ field: current().key })}
                             />
                           )}
@@ -2058,10 +2521,10 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
                         <BoundPicker
                           sheet
                           definition={period()}
-                          value={periodValue(filters()[current().key])}
+                          value={periodValue(between(current().key))}
                           bound={step().bound}
                           timeZone={props.timeZone}
-                          onChange={(value) => props.onField(current().key, value)}
+                          onChange={(value) => onBetween(current().key, value)}
                           onDone={() => props.onPlace({ field: current().key })}
                         />
                       )}
@@ -2077,7 +2540,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               label={t().sortBy}
               options={choices().fields}
               value={choices().field}
-              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().fields, value)))}
+              possible={(value) => props.canSet("sort", sortValue(sortOf(choices().fields, value)))}
               onChange={(value) => props.onSort(sortOf(choices().fields, value))}
             />
             <div class="k2-fsheet-sec">{t().order}</div>
@@ -2085,7 +2548,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               label={t().order}
               options={choices().orders}
               value={choices().direction}
-              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().orders, value)))}
+              possible={(value) => props.canSet("sort", sortValue(sortOf(choices().orders, value)))}
               onChange={(value) => props.onSort(sortOf(choices().orders, value))}
             />
           </Show>
@@ -2094,7 +2557,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               label={t().group}
               options={groupEntries(props.query, t())}
               value={props.state.group ?? ""}
-              possible={(value) => props.canEdit((params) => (value ? params.set("group", value) : params.delete("group")))}
+              possible={(value) => props.canSet("group", value || undefined)}
               onChange={props.onGroup}
             />
           </Show>
