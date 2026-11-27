@@ -46,6 +46,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Field.Row",
     "Field",
     "Setting",
+    "QrCode",
+    "CodeDisplay",
     "Disclosure",
     "Toast",
     "Empty",
@@ -387,6 +389,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           element.querySelector("thead th[data-select]") ? "select" : "",
           groups ? `${groups} groups` : "",
           element.querySelector("[data-sticky]") ? "sticky" : "",
+          table?.getAttribute("role") === "treegrid"
+            ? `tree, ${element.querySelectorAll("tbody > tr[aria-expanded='true']").length} open`
+            : "",
           nextOf(element)?.classList.contains("k2-table-phone") ? "phone rows" : "",
         ].filter(Boolean);
         const columns = heads.map((th) => {
@@ -441,6 +446,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Field.Row":
         return "Field.Row";
+      case "QrCode":
+        return `QrCode ${quote(element.querySelector("img")?.getAttribute("alt"))}`;
+      case "CodeDisplay":
+        return `CodeDisplay ${quote(element.textContent)}`;
       case "Disclosure": {
         const head = element.querySelector(":scope > .k2-disc-head");
         return `Disclosure ${quote(head?.textContent)} ${head?.getAttribute("aria-expanded") === "true" ? "open" : "closed"}`;
