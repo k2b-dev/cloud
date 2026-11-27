@@ -2117,6 +2117,12 @@
 .k2-ui .k2-prose :where(tr):last-child > :where(td) {
   border-bottom: 0;
 }
+/* short text a person wrote (`compact`, a comment): a heading is no larger than the text, only stronger */
+.k2-ui .k2-prose[data-compact] :where(h1, h2, h3, h4) {
+  font: var(--k2-t-body);
+  line-height: 22px;
+  font-weight: 600;
+}
 
 /* ── Inline: one line of things with a fixed gap ────────────────────────────────────────────────────────────── */
 .k2-ui .k2-inline {

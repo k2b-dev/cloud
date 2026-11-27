@@ -340,7 +340,9 @@ inline. Emphasis is a weight, never a size.
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
 safe links only) or children. A Markdown table reads like a small table
 (cells 12 px apart, the head as a Table head); align a column of numbers
-right (`--:`) and its figures line up.
+right (`--:`) and its figures line up. `compact` for short text a person
+wrote (a comment): tables become lines of text, headings stay at the
+text's size.
 
 ### Inline
 
