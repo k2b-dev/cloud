@@ -97,13 +97,21 @@ export function Demo() {
           }
           end={<Crowded />}
         />
-        {/* a long lead title beside a path, and an end that never folds (the bar's fold folds the end first, so only
-            such an end leaves the shortage to the start): the title gives way first, down to its floor */}
+        {/* a long lead title beside a path that has room at its least, and an end that never folds (the bar's fold
+            folds the end first, so only such an end leaves the shortage to the start): the title gives way first */}
         <Bar
           start={
             <>
               <Text type="lead">Angebot für den Einbauschrank im Flur der Familie Oswald mit Schiebetüren und Beleuchtung</Text>
-              <Path label="Ort neben Titel" items={deep} />
+              <Path
+                label="Ort neben Titel"
+                items={[
+                  { label: "Spaces", href: "#spaces" },
+                  { label: "Werkstatt", href: "#space" },
+                  { label: "Projekte", href: "#projekte" },
+                  { label: "Küche" },
+                ]}
+              />
             </>
           }
           end={<Button variant="primary">Neu</Button>}
