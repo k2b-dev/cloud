@@ -28,6 +28,8 @@ declare global {
     __k2Escapes?: number;
     /** Set before the fixture mounts: the head shows where the page stands (a `Path`) instead of its views. */
     __k2PathHead?: boolean;
+    /** Set before the fixture mounts: the head holds nothing but its search (no menu "…"), so on the phone it gives way. */
+    __k2BareHead?: boolean;
   }
 }
 
@@ -129,7 +131,7 @@ render(
                   window.__k2Escapes = (window.__k2Escapes ?? 0) + 1;
                 }}
               />
-              <Button keep variant="ghost" icon="dots" label="Weitere Aktionen" />
+              {window.__k2BareHead ? null : <Button keep variant="ghost" icon="dots" label="Weitere Aktionen" />}
             </>
           }
         />

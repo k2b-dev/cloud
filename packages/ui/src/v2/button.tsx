@@ -44,6 +44,12 @@ type ButtonBase = {
   /** Stays in a head on the phone, where the other actions move into the menu. */
   keep?: boolean;
   /**
+   * The page's main action in its head that `Workspace`'s `primary` repeats: on the phone the floating button stands
+   * for it, so the head lets it go there (one primary per page). A head left with nothing but its path and search
+   * then gives way to the host's bar; any other control keeps the head.
+   */
+  floats?: boolean;
+  /**
    * A hint under the pointer, for a button whose words give way to its symbol in a narrow place (the bar of a
    * selection). An icon button shows its label as the hint by itself.
    */
@@ -99,6 +105,7 @@ export const Button = (props: ButtonProps) => {
       data-icon-only={iconOnly() ? "" : undefined}
       data-menu={props.menu ? "" : undefined}
       data-keep={props.keep ? "" : undefined}
+      data-floats={props.floats ? "" : undefined}
     >
       <>
         <Show when={props.avatar} fallback={<Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>}>

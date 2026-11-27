@@ -26,7 +26,8 @@ The working surface of an app: one per screen.
   (name of its grip).
 - `head`: a `Bar` across the main column (56 px).
 - `primary`: the main `Action`. It floats bottom right on the phone only;
-  also put the same action as `Button variant="primary"` in the head end.
+  also put the same action as `Button variant="primary" floats` in the head
+  end, so the head lets it go on the phone (one primary per page).
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
   (a pane made before it, kept in a variable, is not counted).
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
@@ -279,7 +280,8 @@ lines instead of cutting a thing.
   of the form do nothing), `pressed` (a toggle such as a favourite star:
   `true` is on, its symbol and words in the one colour of pressed, `false`
   is off; not for links or the primary action), `type`, `keep` (stays
-  in a head on the phone), `title` (a hint under the pointer, for a button
+  in a head on the phone), `floats` (the head's twin of `Workspace primary`:
+  it leaves the head on the phone, where the floating button stands for it), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the

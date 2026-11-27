@@ -81,7 +81,14 @@ One filled action per surface: the page, and each open dialog or sheet
 ### `the primary action is hidden at this width` (outline at 390 px)
 
 Head actions hide on the phone. Give `Workspace` the same action as
-`primary`; it floats there. A head button that must stay gets `keep`.
+`primary`; it floats there, and mark the head's button `floats`. A head
+button that must stay gets `keep`.
+
+### `2 primary buttons ("Neu", "Neu")` (outline at 390 px)
+
+The head's main action and the floating `Workspace primary` both show. Mark
+the head's button `floats`: on the phone it leaves the head, and a head that
+then holds nothing but its path and search gives way.
 
 ### `the floating main action … covers "Speichern" at this width` (outline at 390 px)
 
