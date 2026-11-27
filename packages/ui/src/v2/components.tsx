@@ -1,6 +1,7 @@
 import {
   type ChildrenReturn,
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -16,7 +17,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
-import { type Fold, watchFold } from "./bar-fold";
+import { watchFold } from "./bar-fold";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
@@ -589,7 +590,8 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out.
+   * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end,
+   * right after the last one in sight (the bar's fold), and the way out stays at the end of the bar.
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
@@ -606,25 +608,30 @@ export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
-  // On the phone the end that has no room beside the shortened lead folds into one "+n" (the bar's fold, the last
-  // first), which opens what it holds as a menu: a pressed chip is an entry with a check. Wider, nothing folds.
+  // The bar's fold watches the row while entries are selected (the actions without room fold into "…" from the end,
+  // the way out never), and on the phone (the end that has no room beside the shortened lead folds into one "+n",
+  // the last first, which opens what it holds as a menu: a pressed chip is an entry with a check). Wider and without
+  // a selection, nothing folds. None on the server's page.
   let bar: HTMLDivElement | undefined;
   const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [phone, setPhone] = createSignal(false);
   onMount(() => {
-    const element = bar;
-    if (!element) return;
-    const phone = matchMedia("not all and (min-width: 768px)");
-    let fold: Fold | undefined;
-    const follow = () => {
-      fold?.stop();
-      fold = phone.matches ? watchFold(element, (entries) => setFolded(entries)) : undefined;
-      if (!fold) setFolded([]);
-    };
+    const query = matchMedia("not all and (min-width: 768px)");
+    const follow = () => setPhone(query.matches);
     follow();
-    phone.addEventListener("change", follow);
+    query.addEventListener("change", follow);
+    onCleanup(() => query.removeEventListener("change", follow));
+  });
+  const selecting = createMemo(() => props.selection !== undefined);
+  createEffect(() => {
+    // both are read, so the fold starts again on the row's other end when a selection begins or ends
+    const watch = selecting();
+    const narrow = phone();
+    if (!bar || !(watch || narrow)) return;
+    const fold = watchFold(bar, (entries) => setFolded(entries));
     onCleanup(() => {
-      phone.removeEventListener("change", follow);
-      fold?.stop();
+      fold.stop();
+      setFolded([]);
     });
   });
   return (
@@ -687,17 +694,29 @@ export const StatusRow = (props: StatusRowProps) => {
         }
       >
         {(selection) => (
-          <div class="k2-bar-start">
-            <Show when={props.select}>
-              {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
-            </Show>
-            <span class="k2-status-lead" aria-live="polite">
-              {selection().count}
-            </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
-            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
-          </div>
+          <>
+            <div class="k2-bar-start">
+              <Show when={props.select}>
+                {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
+              </Show>
+              <span class="k2-status-lead" aria-live="polite">
+                {selection().count}
+              </span>
+            </div>
+            {/* the actions fold from the end into "…" where they have no room (the bar's fold), the way out never; in a
+                narrow column they keep only their symbols first, the way out its ×; the words stay their names */}
+            <div class="k2-bar-end">
+              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+              <Show when={folded().length > 0}>
+                <span class="k2-bar-fold">
+                  <Menu items={folded()} />
+                </span>
+              </Show>
+              <span class="k2-status-clear" data-closes="">
+                <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
+              </span>
+            </div>
+          </>
         )}
       </Show>
     </div>

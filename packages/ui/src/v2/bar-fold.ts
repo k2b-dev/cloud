@@ -34,8 +34,11 @@ type Watched = {
 /** The buttons a bar may fold into "…"; the one list for the fold and for `measureV2Layout`. */
 export const foldable =
   '.k2-btn:not([data-variant="primary"], [data-floats], [data-closes], [aria-haspopup], [popover]), :is(button, a).k2-chip:not([popover])';
-/** What stands after the "…" that takes the folded buttons without folding itself: a closing ×, the primary. */
-const neverFolds = '[data-variant="primary"], [data-floats], [data-closes]';
+/**
+ * What stands after the "…" that takes the folded buttons without folding itself: a closing ×, the primary, a menu
+ * of its own (a symbol such as "Ansicht", or words such as "Filter"). A "…" that offers itself is no such menu.
+ */
+const neverFolds = '[data-variant="primary"], [data-floats], [data-closes], [aria-haspopup]';
 
 /**
  * The parts of an element as laid out in its row: a wrapper of `display: contents` (an island) is looked through; the
@@ -109,9 +112,9 @@ const measure = (entry: Watched): Found => {
       ? Number.parseFloat(getComputedStyle(parent).columnGap) || 0
       : endGap;
   });
-  // the end's last "…" menu, after which stand only parts that never fold (a closing ×, the primary), takes the
-  // folded buttons: nothing new stands beside it, and nothing after the ×
-  const last = [...controls].reverse().find((control) => !control.matches(neverFolds));
+  // the end's last "…" menu, after which stand only parts that never fold (a closing ×, the primary, a menu of its
+  // own), takes the folded buttons: nothing new stands beside it, and nothing after the ×
+  const last = [...controls].reverse().find((control) => entry.hosts.has(control) || !control.matches(neverFolds));
   const host = last && entry.hosts.has(last) ? last : undefined;
   const more = bar.querySelector<HTMLElement>(":scope > .k2-bar-end > .k2-bar-fold .k2-btn");
   // the bar's own "…" is a button of the bar's own height for controls, as square as an icon button
@@ -155,6 +158,8 @@ const fold = (bars: Iterable<Watched>) => {
     const same = next.length === entry.folded.length && next.every((control, at) => control === entry.folded[at]);
     // a button that folds while it has the focus hands it to the "…" that now holds it, once that is drawn
     const focused = next.find((control) => control === document.activeElement && !entry.folded.includes(control));
+    // the bar's own "…" that holds the focus and goes (every button has room again) hands it to the last button
+    const leaving = next.length === 0 && !!entry.bar.querySelector(":scope > .k2-bar-end > .k2-bar-fold")?.contains(document.activeElement);
     if (!same) {
       for (const control of entry.folded) if (!next.includes(control)) control.removeAttribute("data-k2-folded");
       for (const control of next) control.setAttribute("data-k2-folded", "");
@@ -172,6 +177,15 @@ const fold = (bars: Iterable<Watched>) => {
       entry.show(entries, host);
     }
     if (focused) (host ?? entry.bar.querySelector<HTMLElement>(":scope > .k2-bar-end > .k2-bar-fold .k2-btn"))?.focus();
+    // once the "…" is gone (it goes with the update that `show` starts), the focus would fall to the page
+    if (leaving)
+      queueMicrotask(() => {
+        if (entry.bar.querySelector(":scope > .k2-bar-end > .k2-bar-fold")?.contains(document.activeElement)) return;
+        [...entry.bar.querySelectorAll<HTMLElement>(`:scope > .k2-bar-end :is(${foldable})`)]
+          .filter((control) => !control.closest(`.k2-bar-fold, ${neverFolds}`) && control.getClientRects().length > 0)
+          .at(-1)
+          ?.focus();
+      });
   });
 };
 
