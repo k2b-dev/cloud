@@ -85,8 +85,9 @@ const worst = (nav: ChatAdminView["nav"]): ChatAdminView => ({
     value: "Gestört",
     detail: "Die Prüfung der Leserechte war nicht möglich: Die Gesundheitsprüfung hat ihre Kapazität erreicht · geprüft 22:41",
   },
-  providers: Array.from({ length: 14 }, (_, index) => ({
-    type: index % 2 ? "notebooks.notebook" : "spaces.space",
+  // One row per kind of place with discussions: a few kinds, never dozens.
+  providers: Array.from({ length: 4 }, (_, index) => ({
+    type: ["spaces.space", "notebooks.notebook", "files.folder", "grids.base"][index] ?? "spaces.space",
     line: "Die Anwendung hat keinen Zugang, um Inhalte im Namen des Systems zu lesen, und muss in der Administration freigegeben werden · geprüft 22:38",
   })),
 });
