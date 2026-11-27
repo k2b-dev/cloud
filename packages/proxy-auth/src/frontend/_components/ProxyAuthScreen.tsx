@@ -6,13 +6,11 @@ import {
   Bar,
   Button,
   Cells,
-  Chip,
   confirm,
   Dialog,
   Empty,
   Facts,
   Field,
-  Inline,
   Input,
   Lookup,
   Menu,
@@ -189,10 +187,6 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
 
   /** A figure in the person's number format. */
   const number = (value: number) => value.toLocaleString(locale());
-  const copy = (value: string) => {
-    void navigator.clipboard?.writeText(value);
-    toast(t().copied, { status: "ok" });
-  };
 
   /**
    * The open client: a band when nobody gets through, the address Traefik asks (the hero of a proxy client), the
@@ -323,11 +317,12 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             {
               title: t().client,
               width: { min: 180, default: 240 },
+              // in the cell's own text flow, not an Inline: the cell cuts a long name with “…”, a flex row would clip it bare
               cell: (client) => (
-                <Inline>
+                <>
                   <Text weight="strong">{client.groups.length === 0 ? clip(client.name, NAME_IN_LINE) : client.name}</Text>
-                  <Show when={client.groups.length === 0}>{blocked()}</Show>
-                </Inline>
+                  <Show when={client.groups.length === 0}> {blocked()}</Show>
+                </>
               ),
             },
             { title: t().allowedGroups, width: { min: 140, default: 180 }, cell: (client) => groupLine(client), drop: true },
