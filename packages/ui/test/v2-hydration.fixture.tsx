@@ -167,6 +167,9 @@ export function Fixture() {
             <Field name="note" label="Notiz">
               <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />
             </Field>
+            <Field name="answer" label="Lange Antwort">
+              <Input multiline value={"Erste\nZweite\nDritte\nVierte\nFünfte\nSechste\nSiebte\nAchte"} />
+            </Field>
           </Section>
           {/* the form controls beyond text (#4191): each renders the same on the server and in the browser */}
           <Section title="Einstellungen">
