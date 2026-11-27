@@ -807,6 +807,14 @@ export type Tile = {
   people?: readonly Person[];
   /** Cards only: quiet words at the end of the foot, such as "Felix · vor 2 Min". */
   foot?: string;
+  /**
+   * Cards only: quiet lines in the card's body, in reading order, such as the pages a template makes, the steps of a
+   * recipe or the items of a catalog entry. `level` indents a line one step per level (its place in a tree). Each
+   * line is cut with "…". Lines are text, also in a card that opens: the card's name is its one way in.
+   */
+  lines?: readonly TileLine[];
+  /** Cards only: a quiet last line after `lines`, for what they leave out, such as "+12 weitere Seiten". */
+  linesMore?: string;
   /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
   trend?: SparkProps;
   /** Media only: the picture of the thing, such as a photo or the first page of a PDF; its symbol stands without one. */
@@ -818,6 +826,12 @@ export type Tile = {
   /** The stable key of the tile, which a selection names; its `href` or title when not set. */
   key?: string;
 };
+
+/** One quiet line in a card's body; `level` is its depth in a tree (0, the default, stands at the start). */
+export type TileLine = { text: string; level?: number };
+
+/** The deepest indent a card's line takes; deeper lines stand at this one. */
+const TILE_LINE_LEVELS = 6;
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
 export type TileCreate = {
@@ -842,6 +856,12 @@ export type TilesProps = {
    * such as the bases of Grids or the projects of a team. Without it: small tiles in one wrapping line (attachments).
    */
   variant?: "card" | "media";
+  /**
+   * Cards only: at most this many cards share a row, growing with the width, such as the three ways to start a
+   * notebook across the page. A card never gets narrower than its 240 px for it: below that the cards wrap as without
+   * it.
+   */
+  perRow?: number;
   /** The last tile makes a new thing: a dashed card, or among media a dashed picture with a plus ("Neuer Ordner"). */
   create?: TileCreate;
   /**
@@ -893,6 +913,25 @@ const TileCard = (props: { tile: Tile }) => (
             </span>
           )}
         </For>
+      </span>
+    </Show>
+    <Show when={props.tile.lines?.length || props.tile.linesMore}>
+      <span class="k2-tile-lines">
+        <For each={props.tile.lines}>
+          {(line) => {
+            const level = Math.max(0, Math.min(TILE_LINE_LEVELS, Math.floor(line.level ?? 0)));
+            return (
+              <span class="k2-tile-line" style={custom({ "--k2-level": level > 0 ? String(level) : undefined })}>
+                {line.text}
+              </span>
+            );
+          }}
+        </For>
+        <Show when={props.tile.linesMore}>
+          <span class="k2-tile-line" data-more="">
+            {props.tile.linesMore}
+          </span>
+        </Show>
       </span>
     </Show>
     <Show when={props.tile.people?.length || props.tile.foot}>
@@ -1008,6 +1047,8 @@ export const Tiles = (props: TilesProps) => (
     class="k2-tiles"
     data-k2-part="Tiles"
     data-variant={props.variant}
+    data-per-row={props.variant === "card" && props.perRow ? "" : undefined}
+    style={props.variant === "card" && props.perRow ? custom({ "--k2-per-row": String(Math.max(1, Math.floor(props.perRow))) }) : undefined}
     data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
     role="list"
     aria-label={props.label}

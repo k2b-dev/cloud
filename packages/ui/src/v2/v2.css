@@ -954,6 +954,14 @@
   align-items: stretch;
   padding: 4px var(--k2-edge) 12px;
 }
+/* At most n cards share a row and grow with the width; a track never gets narrower than a card's 240 px, so below
+   that the cards wrap as without it. */
+.k2-ui .k2-tiles[data-variant="card"][data-per-row] {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(240px, calc((100% - (var(--k2-per-row) - 1) * 12px) / var(--k2-per-row))), 1fr)
+  );
+}
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile {
   height: auto;
   display: flex;
@@ -1037,6 +1045,26 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
   min-width: 0;
+}
+/* A card's own lines, such as the pages a template makes: quiet, one line each, indented by their level. They lie
+   under the card's open target like the rest of it, so they are text, never a second link. */
+.k2-ui .k2-tile > .k2-tile-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font: var(--k2-t-meta);
+  color: var(--k2-muted);
+}
+.k2-ui .k2-tile-line {
+  padding-inline-start: calc(var(--k2-level, 0) * var(--k2-level-step, 16px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.k2-ui .k2-tile-line[data-more] {
+  color: var(--k2-subtle);
 }
 .k2-ui .k2-tile-foot-text {
   margin-left: auto;
