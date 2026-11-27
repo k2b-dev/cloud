@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { transparentIslands } from "../../scripts/v2-island-css";
+import { shippedV2Css } from "../../scripts/v2-island-css";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { describeV2Page, measureV2Layout } from "./testing";
@@ -31,7 +31,7 @@ for (const name of recipes) {
   );
 }
 const source = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
-const shipped = transparentIslands(source);
+const shipped = shippedV2Css(source);
 // The style `html()` of @k2b/ssr writes into every page.
 const islandStyle = "solid-client,solid-island{display:contents}";
 const testCss =
@@ -258,6 +258,25 @@ test("groups, fields and cells keep their spacing beside empty islands, and cont
         }
       }
 }, 90_000);
+
+// what follows a table in a pane is the app's content: an empty island after its phone form counts as nothing
+test("stacked panes: a large table at the end of its pane gives its end line way, also before empty islands", async () => {
+  const empty = (count: number) => "<solid-island></solid-island>".repeat(count);
+  for (const count of [0, 1, 3])
+    for (const after of ["", '<div class="k2-notice">Hinweis</div>']) {
+      const html =
+        '<div class="k2-split"><section class="k2-pane"><div class="k2-scroll">' +
+        `<div class="k2-table-scroll" id="ts"></div><div class="k2-table-phone"><div class="k2-list"><div class="k2-row"></div></div></div>${empty(count)}${after}${after ? empty(count) : ""}` +
+        '</div></section><div class="k2-seam"></div><section class="k2-pane"></section><div class="k2-seam"></div></div>';
+      const opened = await page(shipped, html, 390);
+      try {
+        const end = await opened.evaluate(() => getComputedStyle(document.getElementById("ts")!).getPropertyValue("--k2-table-end").trim());
+        expect(end === "0", `${count} empty after the phone form${after ? ", then a notice" : ""}`).toBe(!after);
+      } finally {
+        await opened.close();
+      }
+    }
+}, 60_000);
 
 describe("a small island inside a v2 container keeps the container's layout", () => {
   test("there are recipes", () => {
