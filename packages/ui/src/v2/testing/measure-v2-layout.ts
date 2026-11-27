@@ -581,7 +581,7 @@ function measureInPage(options: InPage): DomResult {
       for (const r of textBoxes(control, (node) => shortened.some((part) => part.contains(node))))
         if (r.left < Math.max(box.left, clip.left) - 0.5 || r.right > Math.min(box.right, clip.right) + 0.5) clipped = true;
       // A button the end of a bar cuts before the page is alive folds into its "…" once the bar measures (`Bar`): on the
-      // server's page the end cuts what it has no room for, from its start, so the primary at its end stays whole.
+      // server's page the end cuts what it has no room for, from its start, so the parts at its end stay whole.
       const folds =
         control.closest('.k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end') !== null && control.matches(options.folds);
       if (clipped && !folds)

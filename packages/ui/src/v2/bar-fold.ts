@@ -63,7 +63,8 @@ const entryOf = (control: HTMLElement): MenuItem => {
   const pressed = control.getAttribute("aria-pressed");
   // the symbol before the words, not the chevron of `forward` or `menu` after them
   const lead = control.firstElementChild?.matches(".k2-icon") ? control.firstElementChild.getAttribute("data-name") : null;
-  const href = control instanceof HTMLAnchorElement ? control.getAttribute("href") : null;
+  // a disabled link is an anchor without an address (`Button`): it stays a link entry, which then leads nowhere
+  const href = control instanceof HTMLAnchorElement ? (control.getAttribute("href") ?? "") : null;
   const entry: MenuItem = {
     label: nameOf(control),
     icon: lead ?? undefined,
@@ -71,7 +72,7 @@ const entryOf = (control: HTMLElement): MenuItem => {
     checked: pressed === null ? undefined : pressed === "true",
   };
   // a link stays a link: a click with Ctrl or the middle button opens its page beside, a plain one goes as it goes
-  return href ? { ...entry, href, onNavigate: () => control.click() } : { ...entry, onClick: () => control.click() };
+  return href !== null ? { ...entry, href, onNavigate: () => control.click() } : { ...entry, onClick: () => control.click() };
 };
 
 type Found = { folded: HTMLElement[]; host: HTMLElement | undefined };

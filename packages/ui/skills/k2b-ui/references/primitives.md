@@ -107,9 +107,10 @@ cannot offer its "…": the bar then shows its own, "Mehr in dieser Leiste". The
 closing ×, a `Menu`, a search and a button that opens a menu never fold.
 Only when nothing more can fold does the `start` shorten with "…", down
 to its least, never to nothing. The browser measures the fold once the
-page is alive; before that the start keeps its whole width (up to the
-bar's) and the end cuts from its start, so its primary stays. A bar that
-fits never changes.
+page is alive; before that the bar stands as it does when nothing folds
+(the end whole, the start given way down to its least), so the server's
+page is the live one wherever nothing folds. Only an end that has to fold
+cuts, from its start, until the fold takes over.
 
 ### Band
 

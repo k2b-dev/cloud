@@ -663,15 +663,23 @@
    The start of a Bar keeps a least: `--k2-start-least` of its name (or less, where its whole content is narrower), or
    its open tab; it gives way down to that and never to nothing. `width` gives the least (the flex minimum is the
    smaller of it and the start's content), `flex-basis: content` its whole width. A button in it ("1.000 Kommentare")
-   shortens its words with "…" too. */
+   shortens its words with "…" too. The start gives way before the end does: weights, not a factor below 1 (factors
+   that add up to less than 1 take only that part of the missing room). */
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start {
-  flex: 0 1 content;
+  flex: 0 1000 content;
   width: var(--k2-start-least);
   min-width: auto;
 }
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-btn {
   flex: 0 1 auto;
   min-width: 0;
+}
+/* Inside the start, its title (the words a head leads with: `lead`, or `strong`) takes the shortage first; a quiet
+   label beside it ("Versionsverlauf") and a button ("1.000 Kommentare") keep their width until then, and the start as
+   a whole never goes below its least. By what the words are, not by their place, so an island around a part changes
+   nothing; and only a weight: where everything fits, nothing changes. */
+.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-text:is(.k2-t-lead, .k2-strong) {
+  flex-shrink: 1000;
 }
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-btn > .k2-btn-label {
   min-width: 0;
@@ -680,25 +688,17 @@
   white-space: nowrap;
 }
 /* The end folds first: the buttons that do not fit beside the whole start go into "…". Before the page is alive (no
-   `data-k2-fitted`) the start keeps its whole width, up to the bar's (not a fraction less, which would hide a tab),
-   and the end cuts what it has no room for from its start, so its primary at the end stays whole: at load only
-   buttons turn into "…". Once measured, the start gives way first, down to its least, and the end cuts only what no
-   fold could take. 4 px inside the cut keep the rings of its buttons. */
+   `data-k2-fitted`) the bar stands as it stands when nothing folds: the end whole, the start given way down to its
+   least. So the server's page is the live one wherever nothing folds. Only where even the least does not leave the
+   end its room does the end cut, from its start, so the parts at its end stay whole, until the fold takes over.
+   4 px inside the cut keep the rings of its buttons. */
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-end {
   margin-right: -4px;
   padding-inline: 4px;
   overflow: clip;
 }
-.k2-ui .k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-start {
-  flex-shrink: 0;
-  max-width: 100%;
-}
 .k2-ui .k2-bar[data-k2-part="Bar"]:not([data-k2-fitted]) > .k2-bar-end {
   justify-content: flex-end;
-}
-/* weights, not a factor below 1: factors that add up to less than 1 take only that part of the missing room */
-.k2-ui .k2-bar[data-k2-part="Bar"][data-k2-fitted] > .k2-bar-start {
-  flex-shrink: 1000;
 }
 .k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end > [data-k2-folded] {
   display: none;

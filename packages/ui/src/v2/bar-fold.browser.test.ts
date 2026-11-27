@@ -243,8 +243,9 @@ test("390 px: inside the start the last words take the shortage; a fixed label a
       // Notebooks' version history: "Versionsverlauf" whole, the note title shortened
       expect([live, await whole(page, head("history"), ".k2-text:first-child")]).toEqual([live, true]);
       expect([live, await whole(page, head("history"), ".k2-text:last-child")]).toEqual([live, false]);
-      // the notebook head: the title gives first, "1.000 Kommentare" stays whole
-      expect([live, await whole(page, head("book"), ".k2-btn")]).toEqual([live, true]);
+      // the notebook head, once its end folded (it has to: on the server's page its whole end leaves the start only
+      // its least): the title gives first, "1.000 Kommentare" stays whole
+      if (live) expect(await whole(page, head("book"), ".k2-btn")).toBe(true);
     });
 });
 

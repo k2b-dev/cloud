@@ -247,8 +247,10 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
 
 type EntryKind = "submenu" | "tick" | "link" | "deed";
 
+// A link stays a link while it is disabled (it then leads nowhere, see `Entry`): its kind keys its element, and an
+// element made anew would lose the focus of the keys.
 const kindOf = (entry: MenuItem): EntryKind =>
-  entry.items ? "submenu" : entry.checked !== undefined ? "tick" : entry.href !== undefined && !entry.disabled ? "link" : "deed";
+  entry.items ? "submenu" : entry.checked !== undefined ? "tick" : entry.href !== undefined ? "link" : "deed";
 
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
@@ -319,13 +321,17 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       <Show
         when={props.item.onNavigate}
         fallback={
-          <props.level.LinkItem {...keyed} href={props.item.href}>
+          <props.level.LinkItem {...keyed} href={props.item.disabled ? undefined : props.item.href}>
             <EntryFace item={props.item} lead={props.lead} />
           </props.level.LinkItem>
         }
       >
         {(onNavigate) => (
-          <props.level.NavLinkItem {...keyed} href={props.item.href} onNavigate={onNavigate()}>
+          <props.level.NavLinkItem
+            {...keyed}
+            href={props.item.disabled ? undefined : props.item.href}
+            onNavigate={props.item.disabled ? undefined : onNavigate()}
+          >
             <EntryFace item={props.item} lead={props.lead} />
           </props.level.NavLinkItem>
         )}

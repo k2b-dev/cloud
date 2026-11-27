@@ -620,8 +620,9 @@ export type BarProps = {
  * plain `Menu` "…" is followed only by parts that never fold, they are that menu's first section; an end made outside
  * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
  * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
- * browser measures the fold once the page is alive; before that the start keeps its whole width (up to the bar's) and
- * the end cuts what has no room from its start, so its primary stays. A bar that fits is never changed.
+ * browser measures the fold once the page is alive; before that the bar stands as it does when nothing folds (the end
+ * whole, the start given way down to its least), so the server's page is the live one wherever nothing folds. Only an
+ * end that has to fold cuts, from its start, until the fold takes over.
  */
 export const Bar = (props: BarProps) => {
   const t = useOverlayMessages();
