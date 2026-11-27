@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { weatherScreenFixtures } from "./weather-screen.fixture";
 
 const provenance = {
@@ -341,6 +341,7 @@ for (const width of [1440, 390])
         await page.goto(`${server.url.href}?screen=${name}`);
         const canvas = page.locator('[data-k2-part="Canvas"]').first();
         await canvas.locator("svg").waitFor();
+        await settled(page);
         const day = await canvas.evaluate((drawing) => {
           const box = drawing.getBoundingClientRect();
           const labels = [...drawing.querySelectorAll("span")]
@@ -365,6 +366,7 @@ for (const width of [1440, 390])
       }
       // the record's week: seven bars on one scale, the coldest day starting at the scale's start
       await page.goto(`${server.url.href}?screen=record`);
+      await settled(page);
       // the table holds the desktop and the phone rows; the visible ones are the week
       const bars = page.locator('[data-k2-part="RangeBar"]:visible');
       expect(await bars.count()).toBe(7);
