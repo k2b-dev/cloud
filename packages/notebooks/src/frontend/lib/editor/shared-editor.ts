@@ -13,6 +13,7 @@ import type { TextEditorControls } from "@k2b/ui/text-editor";
 import { gridLine, rowCount } from "@k2b/ui/text-editor/model";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { hexColor } from "../color";
 
 type Peer = { name: string; color: string };
 const peerOf = (state: unknown): Peer | null => {
@@ -71,7 +72,7 @@ export const tableCellPresence = (ytext: Y.Text, awareness: Awareness): Extensio
         }
         for (const [cell, peers] of next) {
           cell.setAttribute("data-peer", peers.map((peer) => peer.name).join(", "));
-          cell.style.setProperty("--pc", peers[0]!.color);
+          cell.style.setProperty("--pc", hexColor(peers[0]!.color) ?? "transparent");
         }
         this.marked = new Set(next.keys());
       };
