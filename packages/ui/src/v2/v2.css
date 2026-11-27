@@ -609,6 +609,36 @@
 .k2-ui .k2-scroll > * {
   flex: none;
 }
+/* The foot of a column (`Pane foot`): a bar in the flow after the content, its deeds at the end, as high as a head.
+   It draws the line above it, so the last line of the content gives way. With unsaved changes it stays on the bottom
+   of the column while it scrolls (sticky in the column, never the window), the surface under it, and the fade at the
+   column's end gives way. */
+.k2-ui .k2-scroll > [data-slot="foot"] > .k2-bar {
+  height: var(--k2-h-head);
+  justify-content: flex-end;
+  border-top: var(--k2-hairline);
+  border-bottom: 0;
+  background: var(--k2-surface);
+}
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > :is(.k2-sec, .k2-row, .k2-notice, .k2-band):nth-last-child(1 of :not([data-slot="foot"])),
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > .k2-list:nth-last-child(1 of :not([data-slot="foot"])) > .k2-row:last-child,
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > .k2-table-phone:nth-last-child(1 of :not([data-slot="foot"])) > .k2-list > .k2-row:last-child {
+  border-bottom: 0;
+}
+.k2-ui .k2-scroll > [data-slot="foot"][data-unsaved] > .k2-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+/* a field that takes the focus (Tab) is scrolled into view above the foot that stays, never under it, with room to
+   spare (WebKit stops a little short of the padding) */
+.k2-ui .k2-pane > .k2-scroll:has(> [data-slot="foot"][data-unsaved]) {
+  scroll-padding-bottom: calc(var(--k2-h-head) + 16px);
+}
+.k2-ui .k2-split > .k2-pane > .k2-scroll:has(> [data-slot="foot"][data-unsaved]) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 /* panes side by side inside content: the list beside its reader, the main column beside its info column */
 .k2-ui .k2-split {
   position: relative;
@@ -3945,6 +3975,27 @@
     -webkit-mask-image: none;
     mask-image: none;
     animation: none;
+  }
+  /* panes that stand one under the other (a form beside its info column) scroll as one page: the split is the
+     scroller of the column (a foot that stays sticks to it, and a focused field is scrolled above that foot) */
+  .k2-ui .k2-ws-main > .k2-split[data-stack]:not(:has(> .k2-pane[data-detail])) {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  .k2-ui .k2-ws-main > .k2-split[data-stack]:not(:has(> .k2-pane[data-detail])):has(> .k2-pane > .k2-scroll > [data-slot="foot"][data-unsaved]) {
+    scroll-padding-bottom: calc(var(--k2-h-head) + 16px);
+  }
+  /* one pane (the list while no detail is open) is the page: it fills the height and scrolls on its own, so its status
+     stays above it, its scrollKey holds its place and a foot that stays sticks to it */
+  .k2-ui .k2-ws-main > .k2-split:not([data-stack]) > .k2-pane {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .k2-ui .k2-ws-main > .k2-split:not([data-stack]) > .k2-pane > .k2-scroll {
+    overflow-y: auto;
   }
   /* a detail that is there (a mail that is open) is the page; the list is the page while no detail is there */
   .k2-ui .k2-split > .k2-pane[data-detail] {

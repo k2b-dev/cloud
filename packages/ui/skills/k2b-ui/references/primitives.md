@@ -68,6 +68,11 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   back to where it was scrolled.
 - `side`: the info column of a record; quieter sections, a `more` link
   becomes a row.
+- `foot` (a `Bar` with `end`, such as "Verwerfen" and "Speichern" under
+  a form of settings): ends the column in the flow. With `unsaved` it stays
+  on the bottom of the column while it scrolls (in the column, not the
+  window). Its "Speichern" is the page's one primary, so a page with a
+  `foot` has no `Workspace primary`.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
