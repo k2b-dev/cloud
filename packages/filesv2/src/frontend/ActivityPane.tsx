@@ -188,9 +188,10 @@ export default function ActivityPane(props: ActivityPaneProps) {
     const telling = new Set(lines.filter((line) => line.count > 1).map((line) => line.group));
     return lines.filter((line) => telling.has(line.group));
   });
-  // Under the list and above its older pages (Valentin 26.11.: give the page structure; beside it, it squeezed the
-  // list at 1024): one quiet section, its lines under the heads who, where and what kind of change. A search has it
-  // too, over its hits' changes.
+  // A context column beside the changes (Valentin v5: the page was "strukturlos und nackt" with it under the list),
+  // which gives way below the list where both do not fit, so it never squeezes the list (26.11.: it did at 1024):
+  // one quiet section, its lines under the heads who, where and what kind of change. A search has it too, over its
+  // hits' changes.
   const summarySection = () => (
     <Show when={showSummary()}>
       <Section title={h().v2Summary}>
@@ -230,97 +231,105 @@ export default function ActivityPane(props: ActivityPaneProps) {
         </>
       }
     >
-      <Show
-        when={
-          !props.filters.baseId &&
-          props.bases.some((base) => base.id.startsWith("cloud:")) &&
-          props.bases.some((base) => base.id.startsWith("freeipa:"))
-        }
-      >
-        <Notice tone="note">{h().historyOverviewUnavailable}</Notice>
-      </Show>
-      <Switch>
-        <Match when={unavailable()}>
-          <Empty icon="history-off" text={h().historyUnavailable} />
-        </Match>
-        <Match when={!props.initial}>
-          <Failed text={`${h().errorTitle}. ${h().errorText}`} onRetry={props.onReload} />
-        </Match>
-        <Match when={props.filters.q}>
-          {(words) => (
-            <ActivitySearch
-              query={words()}
-              entries={entries()}
-              hasMore={!!next()}
-              loadingMore={loadingOlder()}
-              moreFailed={olderFailed()}
-              onLoadMore={() => void more()}
-              limitReached={limited()}
-              env={props.env}
-              actions={props.actions}
-              loadChain={props.loadChain}
-              loadBatch={props.loadBatch}
-              retentionDays={props.retentionDays}
-              clearHref={activityUrl({ ...props.filters, q: undefined })}
-              onNavigate={props.env.onNavigate}
-              onChanged={changed}
-              summary={summarySection()}
-            />
-          )}
-        </Match>
-        <Match when={lines().length === 0 && (next() || olderFailed())}>
-          <Empty icon="history" text={h().nothingVisibleYet} />
-        </Match>
-        <Match when={lines().length === 0 && mine() && !narrowed()}>
-          {/* Nothing of their own yet: the way to everyone else's changes is one click. */}
-          <Empty
-            icon="history"
-            text={`${h().noMineTitle}. ${h().noMineText}`}
-            action={{ label: h().showAll, icon: "users", href: allHref(), onNavigate: props.env.onNavigate }}
-          />
-        </Match>
-        <Match when={lines().length === 0 && filtered()}>
-          <Empty
-            icon="filter-off"
-            text={h().emptyTitle}
-            action={{ label: h().resetFilters, icon: "filter-off", href: resetHref(), onNavigate: props.env.onNavigate }}
-          />
-        </Match>
-        <Match when={lines().length === 0}>
-          <Empty icon="history" text={`${h().noActivityTitle}. ${h().noActivityText}`} />
-        </Match>
-        <Match when={lines().length > 0}>
-          {/* the day stands once over its changes, so each row says its time alone */}
-          <List
-            label={h().activity}
-            items={lines()}
-            rowKey={(item) => item.key}
-            group={(item) => ({ key: item.day.key, label: item.day.label })}
-            row={line}
-          />
-        </Match>
-      </Switch>
-      <Show when={!props.filters.q}>{summarySection()}</Show>
-      <Show when={props.initial && !props.filters.q && !unavailable()}>
-        <Show when={olderFailed()}>
-          <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void more() }]}>
-            {h().olderFailed}
-          </Notice>
-        </Show>
-        <Show when={next() && !olderFailed()}>
-          <Bar
-            start={<Text type="meta">{lead()}</Text>}
-            end={
-              <Button icon="chevron-down" busy={loadingOlder()} onClick={() => void more()}>
-                {h().loadOlder}
-              </Button>
+      <Pane.Split>
+        <Pane label={h().activity}>
+          <Show
+            when={
+              !props.filters.baseId &&
+              props.bases.some((base) => base.id.startsWith("cloud:")) &&
+              props.bases.some((base) => base.id.startsWith("freeipa:"))
             }
-          />
+          >
+            <Notice tone="note">{h().historyOverviewUnavailable}</Notice>
+          </Show>
+          <Switch>
+            <Match when={unavailable()}>
+              <Empty icon="history-off" text={h().historyUnavailable} />
+            </Match>
+            <Match when={!props.initial}>
+              <Failed text={`${h().errorTitle}. ${h().errorText}`} onRetry={props.onReload} />
+            </Match>
+            <Match when={props.filters.q}>
+              {(words) => (
+                <ActivitySearch
+                  query={words()}
+                  entries={entries()}
+                  hasMore={!!next()}
+                  loadingMore={loadingOlder()}
+                  moreFailed={olderFailed()}
+                  onLoadMore={() => void more()}
+                  limitReached={limited()}
+                  env={props.env}
+                  actions={props.actions}
+                  loadChain={props.loadChain}
+                  loadBatch={props.loadBatch}
+                  retentionDays={props.retentionDays}
+                  clearHref={activityUrl({ ...props.filters, q: undefined })}
+                  onNavigate={props.env.onNavigate}
+                  onChanged={changed}
+                />
+              )}
+            </Match>
+            <Match when={lines().length === 0 && (next() || olderFailed())}>
+              <Empty icon="history" text={h().nothingVisibleYet} />
+            </Match>
+            <Match when={lines().length === 0 && mine() && !narrowed()}>
+              {/* Nothing of their own yet: the way to everyone else's changes is one click. */}
+              <Empty
+                icon="history"
+                text={`${h().noMineTitle}. ${h().noMineText}`}
+                action={{ label: h().showAll, icon: "users", href: allHref(), onNavigate: props.env.onNavigate }}
+              />
+            </Match>
+            <Match when={lines().length === 0 && filtered()}>
+              <Empty
+                icon="filter-off"
+                text={h().emptyTitle}
+                action={{ label: h().resetFilters, icon: "filter-off", href: resetHref(), onNavigate: props.env.onNavigate }}
+              />
+            </Match>
+            <Match when={lines().length === 0}>
+              <Empty icon="history" text={`${h().noActivityTitle}. ${h().noActivityText}`} />
+            </Match>
+            <Match when={lines().length > 0}>
+              {/* the day stands once over its changes, so each row says its time alone */}
+              <List
+                label={h().activity}
+                items={lines()}
+                rowKey={(item) => item.key}
+                group={(item) => ({ key: item.day.key, label: item.day.label })}
+                row={line}
+              />
+            </Match>
+          </Switch>
+          <Show when={props.initial && !props.filters.q && !unavailable()}>
+            <Show when={olderFailed()}>
+              <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void more() }]}>
+                {h().olderFailed}
+              </Notice>
+            </Show>
+            <Show when={next() && !olderFailed()}>
+              <Bar
+                start={<Text type="meta">{lead()}</Text>}
+                end={
+                  <Button icon="chevron-down" busy={loadingOlder()} onClick={() => void more()}>
+                    {h().loadOlder}
+                  </Button>
+                }
+              />
+            </Show>
+            <Show when={limited()}>
+              <Notice tone="note">{h().searchLimit}</Notice>
+            </Show>
+          </Show>
+        </Pane>
+        <Show when={showSummary()}>
+          {/* narrower than the changes, which keep the room (B: the list keeps its width, the context is quieter) */}
+          <Pane side label={h().v2Summary} width={{ min: 280, default: 360 }}>
+            {summarySection()}
+          </Pane>
         </Show>
-        <Show when={limited()}>
-          <Notice tone="note">{h().searchLimit}</Notice>
-        </Show>
-      </Show>
+      </Pane.Split>
     </Pane>
   );
 }
