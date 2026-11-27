@@ -164,6 +164,39 @@ describe("v2.css in a browser", () => {
 });
 
 describe("measureV2Layout", () => {
+  // W5 (Pulse): a table wider than its column scrolls inside it, and what it holds is cut at the column's line, right
+  // beside the grip's pill. That content is not the pill: it made the pill look 0.5 to 1 px off its line at DPR 1.
+  const overflowing = columns(
+    '<div class="row">Leser</div>',
+    '<div style="overflow-x: auto"><table style="width: 600px; border-spacing: 0">' +
+      '<tr style="height: 186px"><td></td></tr>' +
+      '<tr style="height: 20px"><td style="padding: 0 0 0 241px"><span data-probe="cut" style="display: inline-block; width: 40px; height: 20px; vertical-align: top; background: var(--k2-text)"></span></td></tr>' +
+      "</table></div>",
+  );
+  for (const scale of [1, 2])
+    test(
+      `green at DPR ${scale}: an overflowing table cut at the line beside the grip is not the pill`,
+      async () => {
+        const page = await open(overflowing, { scale });
+        try {
+          // the table's content reaches the line at the pill's height, cut by its column
+          const cut = await page.$eval('[data-probe="cut"]', (span) => {
+            const r = span.getBoundingClientRect();
+            const grip = document.querySelector('[data-probe="grip"]')!.getBoundingClientRect();
+            return { right: r.right, gripLeft: grip.left, inside: r.top <= grip.top + 3 && r.bottom >= grip.top + 4 };
+          });
+          expect(cut.inside).toBe(true);
+          expect(cut.right).toBeGreaterThan(cut.gripLeft);
+          const result = await measureV2Layout(page);
+          expect(result.problems).toEqual([]);
+          expect(result.grips).toEqual([{ grip: '[data-probe="grip"]', dom: 0, pixels: 0, lineWidth: 1 }]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   for (const scale of [1, 2])
     test(
       `green at DPR ${scale}: lines reach their edges, no double line, roles only, the grip centred on its line`,
@@ -584,6 +617,28 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A control that gave way to its symbol keeps its words only as its name (sr-only, 1 px, clipped): the outline does
+  // not take that for a cut label. A label squeezed to 1 px without being hidden so is still cut.
+  test(
+    "the outline takes a visually hidden label as a name, and a label squeezed to 1 px as cut",
+    async () => {
+      const button = (probe: string, label: string) =>
+        `<button type="button" class="k2-btn" data-probe="${probe}"><i class="ti ti-plus k2-icon" aria-hidden="true"></i><span class="k2-btn-label" style="${label}">Todo anlegen</span></button>`;
+      const folded = await open(
+        columns(button("folded", "position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap")),
+      );
+      const squeezed = await open(columns(button("squeezed", "display:inline-block; width:1px; overflow:hidden; white-space:nowrap")));
+      try {
+        expect(await describeV2Page(folded)).not.toContain("cuts its label");
+        expect(await describeV2Page(squeezed)).toContain('"Todo anlegen" cuts its label');
+      } finally {
+        await folded.close();
+        await squeezed.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "red: a label cut by a parent that hides what overflows; a scroller does not cut",
     async () => {
@@ -658,6 +713,87 @@ describe("measureV2Layout", () => {
       } finally {
         await page.close();
         await lines.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A lead that keeps its width in a start that gave way runs out of it and under the chip beside it: cut mid-word,
+  // no "…" (the status rows of ipa-hosts and proxy-auth with a detail open, 26.11.).
+  const leadRow = (lead: string) =>
+    columns(
+      '<div class="row" style="display:flex; width:300px">' +
+        `<div data-probe="start" style="display:flex; flex:1 1 0; min-width:0"><span class="k2-t-row" data-probe="lead" style="${lead}">1 Client ist bis zur Konfiguration gesperrt</span></div>` +
+        '<span class="k2-t-meta" style="flex:none">bis zur Konfiguration gesperrt</span></div>',
+    );
+
+  test(
+    'red: a text that runs out of a box that does not clip it is cut mid-word under its neighbour; green with "…"',
+    async () => {
+      const page = await open(leadRow("flex:none; white-space:nowrap"));
+      const ellipsis = await open(leadRow("flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          expect.stringMatching(
+            /^\[data-probe="lead"\] "1 Client ist bis zur Konfiguration ges\w*" runs \d+ px out of \[data-probe="start"\] and under what stands beside it/,
+          ),
+        ]);
+        expect((await measureV2Layout(ellipsis)).cut).toEqual([]);
+      } finally {
+        await page.close();
+        await ellipsis.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: text that scrolls in its own box, or stands out of its place on purpose, does not run under a neighbour",
+    async () => {
+      const long = "zeile_eins = holeDieEinträgeAusDemProtokollUndSortiereSie(nachDerZeit)";
+      const page = await open(
+        columns(
+          [
+            // code that scrolls sideways in its own box, and a bar of words that scrolls
+            `<div class="row" style="width:240px"><pre class="k2-t-row" data-probe="code" style="margin:0; overflow-x:auto">${long}</pre></div>`,
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="bar" style="overflow-x:auto; white-space:nowrap">Alle · Fehler · Warnungen · Hinweise · Gateway · Mail · Zustellung</div></div>',
+            // moved on purpose: a transform, a negative margin, an indent
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="moved" style="display:inline-block; transform:translateX(-24px)">Verschoben</span></div>',
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="pulled" style="display:inline-block; margin-left:-8px">Eingerückt</span></div>',
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="indent" style="text-indent:-12px">Hängend</div></div>',
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="placed" style="display:inline-block; position:relative; left:-16px">Versetzt</span></div>',
+          ].join(""),
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut.filter((line) => line.includes("runs"))).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A small move is no licence to run far out: a long word shifted by 4 px still runs out by much more than 4 px, and a
+  // box that scrolls its text still must stand in its place.
+  test(
+    "red: a long word moved by 4 px still runs out of its row, and a scroller wider than its row sticks out",
+    async () => {
+      const word = "Protokolleintragszusammenfassungsübersichtsseitenkopfzeilenbeschriftungstextfeld";
+      const page = await open(
+        columns(
+          `<div class="row" style="width:240px"><span class="k2-t-row" data-probe="shifted" style="display:inline-block; white-space:nowrap; transform:translateX(-4px)">${word}</span></div>` +
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="wide" style="width:400px; overflow-x:auto; white-space:nowrap">Alle · Fehler · Warnungen · Hinweise · Gateway · Mail · Zustellung</div></div>',
+        ),
+      );
+      try {
+        const runs = (await measureV2Layout(page)).cut.filter((line) => line.includes(" runs "));
+        expect(runs).toEqual([
+          expect.stringMatching(/^\[data-probe="shifted"\] "Protokoll\S*" runs \d+ px out of/),
+          expect.stringMatching(/^\[data-probe="wide"\] "Alle · Fehler[^"]*" runs \d+ px out of/),
+        ]);
+      } finally {
+        await page.close();
       }
     },
     TEST_TIMEOUT,

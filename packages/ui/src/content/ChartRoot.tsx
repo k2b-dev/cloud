@@ -173,7 +173,16 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
     // A state timeline names its states in the HTML legend below the drawing, and its definitions get the ids of this
     // instance (unique per page, on the server and in the browser).
-    return drawing.kind === "stateTimeline" ? { ...drawing, legend: false, idPrefix: `${chartTooltipId}-drawing` } : drawing;
+    // Its words ("Jetzt", "geplant") come in the page's language.
+    return drawing.kind === "stateTimeline"
+      ? {
+          ...drawing,
+          legend: false,
+          idPrefix: `${chartTooltipId}-drawing`,
+          nowLabel: chartMessages().chartNow,
+          plannedLabel: chartMessages().chartPlanned,
+        }
+      : drawing;
   };
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
@@ -206,6 +215,11 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     onCleanup(() => sizes.disconnect());
   };
   const stateLegend = () => (props.kind === "stateTimeline" && props.legend !== false ? (props.states ?? []) : []);
+  // a timeline with planned starts names their outline in its legend
+  const plannedInLegend = () =>
+    stateLegend().length > 0 &&
+    props.kind === "stateTimeline" &&
+    props.rows.some((row) => row.intervals.some((interval) => interval.planned));
   const legendValue = (index: number) => {
     if (props.kind === "line") {
       const defaultX = lineLegendX(props);
@@ -751,6 +765,14 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
                 </span>
               )}
             </For>
+            <Show when={plannedInLegend()}>
+              <span class="k2b-chart__legend-item" data-planned="">
+                <svg class="stdlib-chart k2b-chart__legend-swatch" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+                  <rect x="1.5" y="1.5" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-dasharray="2 1.5" />
+                </svg>
+                <span>{chartMessages().chartPlannedLegend}</span>
+              </span>
+            </Show>
           </div>
         </Show>
         <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />

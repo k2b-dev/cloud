@@ -42,7 +42,8 @@ const variantFiles = async (entries: string[], overrides: Record<string, string>
  */
 export async function islandBundleSize(entries: string[], overrides?: Record<string, string>, transform?: IslandSourceTransform) {
   const files = transform ? await variantFiles(entries, overrides, transform) : overrides;
-  const first = await buildIslandClosure(entries, files);
+  const importers = new Set<string>();
+  const first = await buildIslandClosure(entries, files, undefined, undefined, importers);
   if (!first.metafile) throw new Error("Missing island bundle metafile");
   const used = new Set<string>();
   for (const output of Object.values(first.metafile.outputs))
@@ -52,10 +53,10 @@ export async function islandBundleSize(entries: string[], overrides?: Record<str
       .map((input) => resolve(input))
       .filter((input) => !used.has(input)),
   );
-  // Every name a module of the build imports or re-exports by name; a dead module keeps only those exports.
+  // Every name a module of the build imports or re-exports by name; a dead module keeps only those exports. The importers
+  // include modules the bundler dropped whole, which the metafile leaves out but the second build links again (#4332).
   const imported = new Set<string>();
-  for (const input of Object.keys(first.metafile.inputs)) {
-    const path = resolve(input);
+  for (const path of importers) {
     if (!/\.[cm]?[jt]sx?$/.test(path)) continue;
     const code = files?.[path] ?? (await Bun.file(path).text());
     for (const [, list] of code.matchAll(/\b(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\b/g))

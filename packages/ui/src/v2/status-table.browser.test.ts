@@ -5,13 +5,13 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-status-table.client";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { textEdge } from "./tokens";
 
 // A filtered list as an operations log draws it (test/v2-status-table.client.tsx): the status row measures its own
-// column, drops its key figures below 760 px so the order controls keep their words, and holds a place for its loading
-// mark; the large table with a sticky first column starts body, head and group rows on one text edge; a phone row ends
-// in the state of its entry.
+// column, lets its key figures and then its lead give way so the order controls keep their words, folds those controls
+// to their symbols below 600 px, and holds a place for its loading mark; the large table with a sticky first column
+// starts body, head and group rows on one text edge; a phone row ends in the state of its entry.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -102,27 +102,42 @@ const statusRow = () => {
     gaps: [before, ...seen.map((figure) => figure.shape)].flatMap((shape, index, shapes) =>
       index === 0 ? [] : [Math.round(shape.left - shapes[index - 1]!.right)],
     ),
-    controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => ({
+    // the buttons and the switches at the end (a switch is a `Check` in a `.k2-choice`)
+    controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end :is(.k2-btn, .k2-choice)")].map((button) => ({
       name: button.textContent?.trim(),
       inside: button.getBoundingClientRect().right <= inner + 0.5,
       whole: button.scrollWidth <= button.clientWidth,
       clear: button.getBoundingClientRect().left >= lead.right,
     })),
+    /** The lead: whether its words are cut, and whether a cut ends in "…" instead of running on. */
+    lead: (() => {
+      const element = row.querySelector<HTMLElement>(".k2-status-lead")!;
+      const style = getComputedStyle(element);
+      return {
+        cut: element.scrollWidth > element.clientWidth + 0.5,
+        ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+        // a cut lead keeps about a word (4.5 em) or all of it, never a letter and "…"
+        word: element.clientWidth >= Math.min(4.5 * Number.parseFloat(style.fontSize), element.scrollWidth) - 0.5,
+      };
+    })(),
+    /** The words of each control in sight (a folded control keeps them only as its name). */
+    words: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => {
+      const label = button.querySelector(".k2-btn-label")?.getBoundingClientRect();
+      return label !== undefined && label.width > 1 && label.height > 1;
+    }),
   };
 };
 
 /**
- * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls keep their words.
- * Below 600 px this fixture's lead and worded controls do not fit beside each other at all; there only the figures
- * and the controls themselves are checked.
+ * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls stay whole within
+ * the row and clear of the lead; a lead that does not fit is cut with "…".
  */
-const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>) => {
+const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>, word = true) => {
   expect(found.wrong).toBe(0);
   expect(found.shown).toEqual(found.shown.map((_, index) => index < found.shown.filter(Boolean).length));
   for (const gap of found.gaps) expect(gap).toBe(16);
-  const beside = found.width >= 600;
-  for (const control of found.controls)
-    expect({ ...control, clear: beside ? control.clear : true }).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+  for (const control of found.controls) expect(control).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+  if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: word ? true : found.lead.word });
 };
 
 // Figures give way only where they do not fit before the controls, never by the row's width alone (#4149).
@@ -154,6 +169,321 @@ for (const column of [1440, 1024, 900, 760, 400])
       { column },
     );
   });
+
+// A lead and worded controls that do not fit beside each other: the lead is cut with "…" first, the controls keep
+// their words; below 600 px the controls keep only their symbols and the words stay their names (#4166).
+for (const long of [false, true])
+  for (const column of [760, 600, 400, 320])
+    test(`a status row ${column} px wide with a ${long ? "long" : "short"} lead: lead and controls never overlap`, async () => {
+      await withPage(
+        async (page) => {
+          if (long) await page.evaluate(() => window.__k2LongLead?.());
+          await settled(page);
+          const found = await page.evaluate(statusRow);
+          expect(found.width).toBe(column);
+          expectHeld(found);
+          const folded = column <= 600;
+          expect(found.words).toEqual([!folded, !folded]);
+          if (long && !folded) expect(found.lead.cut).toBe(true);
+          for (const name of ["Neueste zuerst", "Nach Minute"])
+            expect(await page.getByRole("button", { name, exact: true }).isVisible()).toBe(true);
+        },
+        { column },
+      );
+    });
+
+// The operations log (break-ui finding 21): large counts, live as a toggle with a symbol and the short label "Live",
+// and sort and grouping as framed menus in words. Live is on, or blocked (until now, first page): then the toggle is
+// disabled and the reason is a figure. At every width, also the narrow list column beside an open entry, the figures
+// give way before they reach a control, the lead keeps about a word and is cut before a control, and no control is cut
+// or pushed past the row's edge. In a window of 1024 px, where the finding was seen, the list column is about 760 px
+// beside the sidebar and 520 px with an entry open.
+for (const live of ["on", "until-now", "first-page"] as const)
+  for (const [width, column] of [
+    [1440, 1440],
+    [1440, 1024],
+    [1024, 760],
+    [1024, 520],
+    [1440, 600],
+    [1440, 400],
+    [1440, 320],
+  ] as const)
+    test(`a status row ${column} px wide in a window of ${width} px as the operations log draws it, live ${live}: nothing overlaps`, async () => {
+      await withPage(
+        async (page) => {
+          await page.evaluate((state) => window.__k2Logs?.(state), live);
+          await settled(page);
+          const found = await page.evaluate(statusRow);
+          expect(found.width).toBe(column);
+          // at 320 px three folded controls (two of them menus with their chevron) leave the lead less than a word
+          expectHeld(found, column > 320);
+          expect(found.controls.map((control) => control.name)).toEqual(["Live", "Eingang ↓", "Keine Gruppen"]);
+          expect(found.words).toEqual(column <= 600 ? [false, false, false] : [true, true, true]);
+          // where they fit beside the lead, every figure stays, also the reason live is blocked; at 1024 px the reason
+          // does not fit beside the whole lead and the counts, and only it gives way
+          if (column >= 1440) expect(found.shown.every(Boolean)).toBe(true);
+          if (column === 1024) expect(found.shown.slice(0, 2)).toEqual([true, true]);
+          const toggle = page.getByRole("button", { name: "Live", exact: true });
+          expect(await toggle.isDisabled()).toBe(live !== "on");
+          expect(await toggle.getAttribute("aria-pressed")).toBe(live === "on" ? "true" : "false");
+        },
+        { width, column },
+      );
+    });
+
+// A list with an entry open beside it (proxy-auth, ipa-hosts; design review 26.11.): the narrower list column cuts the
+// long lead with "…" before the chip at its end, never mid-word under the chip, and the whole statement stays as a hint
+// on hover. measureV2Layout reports nothing cut in the row.
+for (const width of [1440, 1024])
+  test(`a list with an entry open in a window of ${width} px: the lead ends in "…" before the chip and keeps its words as hint`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2Proxy?.());
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const lead = row.querySelector<HTMLElement>(".k2-status-lead")!;
+          const chip = row.querySelector(".k2-bar-end .k2-chip")!.getBoundingClientRect();
+          const style = getComputedStyle(lead);
+          return {
+            detail: document.querySelector(".k2-pane[data-detail]") !== null,
+            cut: lead.scrollWidth > lead.clientWidth + 0.5,
+            ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+            clear: lead.getBoundingClientRect().right <= chip.left,
+            title: lead.title,
+          };
+        });
+        // at 1440 the list beside the entry holds the whole lead; at 1024 it is cut with "…"
+        expect(found).toEqual({
+          detail: true,
+          cut: width === 1024,
+          ellipsis: true,
+          clear: true,
+          title: "1 Client ist bis zur Konfiguration gesperrt",
+        });
+        expect((await measureV2Layout(page, { root: '[data-k2-part="StatusRow"]' })).cut).toEqual([]);
+      },
+      { width },
+    );
+  });
+
+// The order of giving way (Tools, U3): the lead and the figures share the room before the filters, each up to its own
+// width. In rows of 1440 and 1024 px the figures keep their width and only the lead gives way (cut with "…" at 1024 px);
+// in a row of 700 px both are long for their part: the lead is cut and keeps 40 %, the later figures fold; below 600 px
+// (560), where the controls fold, the lead keeps 60 %. On the phone the figures and filters leave and the lead takes
+// the row.
+for (const [width, column] of [
+  [1440, 1440],
+  [1440, 1024],
+  [1440, 700],
+  [1440, 560],
+  [390, 390],
+] as const)
+  test(`a row of ${column} px, a long lead, three figures and filters: the lead gives way first, then the figures`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          window.__k2LongLead?.();
+          window.__k2ThreeFacts?.();
+        });
+        await settled(page);
+        const found = await page.evaluate(statusRow);
+        if (width < 768) {
+          // on the phone the figures and filters have left, so only the lead is measured there
+          expect(found.lead).toEqual({ cut: true, ellipsis: true, word: true });
+          return;
+        }
+        expectHeld(found);
+        const room = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          return {
+            lead: row.querySelector(".k2-status-lead")!.getBoundingClientRect().width,
+            facts: row.querySelector(".k2-status-facts")!.getBoundingClientRect().width,
+          };
+        });
+        // the lead gives way first: every figure keeps its width, the lead is what is cut
+        if (column >= 1024) expect(found.shown).toEqual([true, true, true]);
+        if (column === 1024) expect(found.lead.cut).toBe(true);
+        if (column === 700) {
+          // then the figures: the lead is cut and keeps its 40 %, the later figures fold
+          expect(found.lead.cut).toBe(true);
+          expect(found.shown[0]).toBe(true);
+          expect(found.shown.filter(Boolean).length).toBeLessThan(3);
+          expect(Math.abs(room.lead / (room.lead + room.facts) - 0.4)).toBeLessThanOrEqual(0.02);
+        }
+        if (column === 560) {
+          // below 600 px, where the controls fold, the lead keeps 60 % (about a word beside them)
+          expect(found.lead.cut).toBe(true);
+          expect(found.shown.filter(Boolean).length).toBeLessThan(3);
+          expect(Math.abs(room.lead / (room.lead + room.facts) - 0.6)).toBeLessThanOrEqual(0.02);
+        }
+      },
+      { width, column },
+    );
+  });
+
+// Mail's list column (a select box, a short lead, one long figure, no filters): beside the short lead the figure takes
+// all the rest of the row (Opus review of #4259: a cap on the figures hid it). At 432 px the figure is longer than that
+// rest where the type is wide, and folds whole; at 520 px it fits and stays in sight.
+for (const column of [432, 520])
+  test(`a status row ${column} px wide as Mail's list draws it gives its one long figure all the rest`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2MailFact?.());
+        await settled(page);
+        const found = await page.evaluate(statusRow);
+        expect(found.width).toBe(column);
+        expectHeld(found);
+        expect(found.lead.cut).toBe(false);
+        // the figures reach the end of the row's start: they take the rest, no cap
+        const rest = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          return (
+            row.querySelector(".k2-bar-start")!.getBoundingClientRect().right -
+            row.querySelector(".k2-status-facts")!.getBoundingClientRect().right
+          );
+        });
+        // at 432 px the figure is in sight where the engine's type lets it fit, else it was given all the rest
+        if (column === 432) expect(found.shown[0] || rest <= 2).toBe(true);
+        if (column === 520) expect(found.shown).toEqual([true]);
+      },
+      { column },
+    );
+  });
+
+/**
+ * The chips of a status row's statement and its lead: each chip in sight whole or not at all, after the lead and clear
+ * of the controls; whether the lead keeps about a word (4.5 em, or all of it); and whether the lead stands at that
+ * floor, as it does when the chips have given way. Self-contained (Playwright sends its source).
+ */
+const statusMarks = () => {
+  const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+  const lead = row.querySelector<HTMLElement>(".k2-status-lead")!;
+  const group = row.querySelector(".k2-status-marks")!.getBoundingClientRect();
+  const end = row.querySelector(".k2-bar-end");
+  const endLeft = end && getComputedStyle(end).display !== "none" ? end.getBoundingClientRect().left : Number.POSITIVE_INFINITY;
+  const style = getComputedStyle(lead);
+  const floor = Math.min(4.5 * Number.parseFloat(style.fontSize), lead.scrollWidth);
+  return {
+    chips: [...row.querySelectorAll<HTMLElement>(".k2-status-marks .k2-chip")].map((chip) => {
+      const box = chip.getBoundingClientRect();
+      const inside =
+        box.left >= group.left - 0.5 && box.right <= group.right + 0.5 && box.top >= group.top - 0.5 && box.bottom <= group.bottom + 0.5;
+      const outside = box.top >= group.bottom - 0.5 || box.left >= group.right - 0.5;
+      return {
+        name: chip.textContent?.trim(),
+        seen: inside,
+        whole: inside || outside,
+        clear: !inside || (box.left >= lead.getBoundingClientRect().right && box.right <= endLeft),
+      };
+    }),
+    lead: {
+      cut: lead.scrollWidth > lead.clientWidth + 0.5,
+      ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+      word: lead.clientWidth >= floor - 0.5,
+      atFloor: Math.abs(lead.getBoundingClientRect().width - floor) <= 1,
+    },
+  };
+};
+
+/** Every chip whole or not at all, the first ones stay, none under the lead or a control; the lead keeps a word. */
+const expectMarksHeld = (found: ReturnType<typeof statusMarks>) => {
+  expect(found.chips.map((chip) => chip.name)).toEqual(["1 ohne Zugriff", "2 laufen ab"]);
+  for (const chip of found.chips) expect({ ...chip, seen: true }).toEqual({ name: chip.name, seen: true, whole: true, clear: true });
+  const seen = found.chips.map((chip) => chip.seen);
+  expect(seen).toEqual(seen.map((_, index) => index < seen.filter(Boolean).length));
+  // about a word of the lead stays beside the chips, at every width
+  expect(found.lead.word).toBe(true);
+  if (found.lead.cut) expect(found.lead.ellipsis).toBe(true);
+  // the chips are what gives way: a chip leaves only where the lead stands at its floor
+  if (seen.includes(false)) expect(found.lead.atFloor).toBe(true);
+};
+
+// Tinted chips of the statement (W2, Notebooks admin; rule 2): an exception "1 ohne Zugriff" stands as a red chip after
+// the lead, also on the phone, beside a long lead, figures and the filters. Both chips are in sight at 1440 px and on the
+// phone at 390 px; in a desktop row of 320 px beside two folded controls a chip gives way, whole, and the lead keeps
+// about a word.
+for (const [width, column] of [
+  [1440, 1440],
+  [390, 390],
+  [1440, 320],
+] as const)
+  test(`a row of ${column} px in a window of ${width} px: the statement carries its tinted chips, whole or not at all`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          window.__k2LongLead?.();
+          window.__k2Marks?.();
+        });
+        await settled(page);
+        const found = await page.evaluate(statusMarks);
+        expectMarksHeld(found);
+        const seen = found.chips.map((chip) => chip.seen);
+        if (column === 1440 || width < 768) expect(seen).toEqual([true, true]);
+        if (column === 320) expect(seen.includes(false)).toBe(true);
+        // the outline names the chips a person sees, not one that gave way
+        const outline = await describeV2Page(page);
+        for (const chip of found.chips) expect(outline.includes(`"${chip.name}"]`)).toBe(chip.seen);
+      },
+      { width, column },
+    );
+  });
+
+// Just above and below the points where a chip gives way: rows from 480 down to 320 px in steps of 20. At each width the
+// rule holds; as the row narrows the chips in sight only get fewer, and both steps (two to one, one to none or a chip
+// less) happen in this span, so the series passes over the threshold rather than beside it.
+test("rows from 480 to 320 px: the chips give way one by one, whole, and the lead keeps about a word at every step", async () => {
+  const counts: number[] = [];
+  for (const column of [480, 460, 440, 420, 400, 380, 360, 340, 320])
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          window.__k2LongLead?.();
+          window.__k2Marks?.();
+        });
+        await settled(page);
+        const found = await page.evaluate(statusMarks);
+        expectMarksHeld(found);
+        counts.push(found.chips.filter((chip) => chip.seen).length);
+      },
+      { column },
+    );
+  // never more chips in a narrower row, and the series crosses a threshold
+  expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  expect(new Set(counts).size).toBeGreaterThan(1);
+}, 60_000);
+
+// `marks={missing() > 0 && <Chip …/>}` passes `false` while nothing is missing: the row is then the row without chips,
+// no empty group, the same lead and figures, so nothing moves when the exception comes or goes (Opus review of #4259).
+test("a row of 1024 px with marks={false} is the row without marks: no empty group, the same lead and figures", async () => {
+  const measure = async (state?: "none") =>
+    withPage(
+      async (page) => {
+        await page.evaluate((marks) => {
+          window.__k2LongLead?.();
+          window.__k2ThreeFacts?.();
+          if (marks) window.__k2Marks?.(marks);
+        }, state);
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const width = (selector: string) => Math.round((row.querySelector(selector)?.getBoundingClientRect().width ?? -1) * 10) / 10;
+          return {
+            group: row.querySelector(".k2-status-marks") !== null,
+            lead: width(".k2-status-lead"),
+            facts: width(".k2-status-facts"),
+          };
+        });
+        results.push(found);
+      },
+      { column: 1024 },
+    );
+  const results: { group: boolean; lead: number; facts: number }[] = [];
+  await measure();
+  await measure("none");
+  expect(results[1]).toEqual(results[0]!);
+  expect(results[1]!.group).toBe(false);
+});
 
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
