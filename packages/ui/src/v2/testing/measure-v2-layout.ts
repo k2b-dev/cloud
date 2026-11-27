@@ -73,7 +73,7 @@ export type V2LayoutOptions = {
   oneLine?: string;
   /** Drawn marks whose lines are no dividers, such as the track of steps; their text is still measured. */
   figure?: string;
-  /** Text that has no type role, such as initials in an avatar. */
+  /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
 };
 
@@ -848,7 +848,7 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     prose: options.prose ?? "[data-k2-prose]",
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
-    untyped: options.untyped ?? "[data-k2-avatar]",
+    untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
     frames: options.frames ?? ".k2-bar, .k2-pane",

@@ -19,6 +19,7 @@ export { announce } from "./announce";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
+  type ActivityEntry,
   Digest,
   type DigestEntry,
   type DigestProps,
@@ -116,6 +117,8 @@ export {
   Pane,
   type PaneProps,
   type Tile,
+  type TileCreate,
+  type TileStat,
   Tiles,
   type TilesProps,
   Workspace,
@@ -125,12 +128,17 @@ export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from ".
 export {
   Avatar,
   type AvatarProps,
+  type AvatarStackProps,
   Chip,
   type ChipProps,
   Icon,
   type IconProps,
+  Mark,
+  type MarkProps,
   Progress,
   type ProgressProps,
+  Spark,
+  type SparkProps,
   type TickState,
   Ticks,
   type TicksProps,

@@ -141,14 +141,26 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron), `loading` (a bar lies on value and `meta`;
+`href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
+as orders per day this week), `loading` (a bar lies on value and `meta`;
 what is there keeps its room unseen under it, a value not there yet is one
-line; symbol and label stay). Use for the key statements of a record.
+line; symbol and label stay, a `trend` keeps its place unseen). Use for the
+key statements of a record or the home of a place.
 
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href? }[]`, `more` (an action after them), `label`. Never nested.
+href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+Never nested. With `color` the symbol becomes the thing's `Mark`.
+
+`variant="card"`: each thing a card in a grid (at least 240 px a card) for
+an overview of things with a face, such as the bases of Grids. A card
+adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
+in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
+at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
+the card's colour). The whole card opens its `href`. `create` adds the last
+card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
+and `choices` as round chips (templates). Cards hold no box and no line.
 
 ### Canvas
 
@@ -217,7 +229,9 @@ content, a list and its detail, one section and the next. A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
-- lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
+- lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
+  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
   it needs: a count or a number stays whole, a long note is cut with "…",
@@ -370,6 +384,26 @@ name wraps in a small table and ends with "…" in one with column widths.
   height. Use it for a column of states in a dense table or list, where a
   chip on every line is too loud.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
+  the colour of its kind: table, form, PDF), `image` (a thumbnail over the
+  symbol; while it loads and when it fails the symbol shows), `kind` (the
+  type on its corner: `PDF`), `label` (without one it is decoration beside
+  its name). The place sets the size: 20 in the sidebar and in a sentence,
+  24 leading a row of one line, 32 leading a row of two or three, 36 on a
+  card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
+  other with a ring and "+n"; one picture with every name. In a narrow
+  place (a 90 px column) it shows the faces it holds whole and counts the
+  rest; the count is always right and never cut, from the first render.
+- `Spark`: `values` (oldest first), `label`: what the bars say as one
+  sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
+  never only the title of the data. A few bars of a short history, the
+  last strongest; beside a number, never instead of it.
+- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
+  `Section`, `Cells.Cell`, `Digest`) are validated: a hex colour, an
+  `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
+  the primitives derive readable foregrounds themselves (symbols and bars
+  3:1, type 4.5:1, light and dark), so a pale yellow works too.
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
   the writing direction; at most 60 in a table cell, more are cut at its
   end), `label` (always "what, period: what happened", such as
@@ -515,7 +549,9 @@ name wraps in a small table and ends with "…" in one with column widths.
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
   problem there, `"running"` for work that runs now: a small turning mark
-  in the dot's place that says "Läuft"). An item with `items` instead of `icon` and a link folds
+  in the dot's place that says "Läuft"), `color` (the place's data colour:
+  its symbol becomes its `Mark`, the same as in its rows and on its card).
+  An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
@@ -588,7 +624,12 @@ name wraps in a small table and ends with "…" in one with column widths.
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
-  title, state: { icon, label, tone? }, text, href? }[]`.
+  title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
+  who did what, `{ person, text, time, place?, href?, onNavigate? }[]`
+  (`onNavigate` opens the thing in place, as on rows). The sentence
+  names the person in `<Text weight="strong">` and the thing with its
+  `Mark` and name; place and time stand quiet under it. A form or a
+  workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
   optional `base` (the view's state, where "Zurücksetzen" returns),
