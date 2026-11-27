@@ -1035,6 +1035,7 @@ for (const width of [700, 390])
           const setting = page.locator("[data-k2-part='Setting']", { hasText: name }).first();
           await setting.locator(".k2-field-action button").focus();
           await page.keyboard.press("Shift+Tab");
+          await settled(page);
           const value = await setting.evaluate((element) => {
             const focused = document.activeElement;
             if (!focused || !element.contains(focused) || focused.closest(".k2-field-action")) return null;
@@ -1042,6 +1043,7 @@ for (const width of [700, 390])
             return { top: box.top, bottom: box.bottom, right: box.right, middle: box.top + box.height / 2 };
           });
           await page.keyboard.press("Tab");
+          await settled(page);
           const deed = await setting.evaluate((element) => {
             const focused = document.activeElement;
             if (!focused?.closest(".k2-field-action") || !element.contains(focused)) return null;
