@@ -139,16 +139,16 @@ const box = (page: Page, selector: string) =>
     });
 
 for (const width of [1440, 1920, 1024, 390]) {
-  test(`${width}: without a notebook the page is one question and four cards in its middle, no nav, a clean v2 page`, async () => {
+  test(`${width}: without a notebook the page is one line and four cards in its middle, no nav, a clean v2 page`, async () => {
     const page = await open(width);
     try {
       const outline = await describeV2Page(page, "#root");
       expect(outline.includes("Problems (") ? outline : "").toBe("");
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      // no sidebar, no switcher, no head: only the question and the ways to start
+      // no sidebar, no switcher, no head: only the line and the ways to start
       expect(await page.locator(".k2-ws-side, [data-k2-part='Nav'], .k2-ws-main > [data-slot='head'], .k2-fab").count()).toBe(0);
-      expect(await page.getByText("Womit soll dein erstes Notizbuch beginnen?").isVisible()).toBe(true);
+      expect(await page.getByText("Leg dein erstes Notizbuch an").isVisible()).toBe(true);
       // the blank notebook, then three templates; each with how many pages it makes and the first of them
       const cards = page.locator('[data-k2-part="Tiles"] .k2-tile');
       expect(await cards.allInnerTexts()).toEqual([
@@ -169,14 +169,14 @@ for (const width of [1440, 1920, 1024, 390]) {
         // four in one row, in the middle of the page across and in height
         expect(new Set(tops).size).toBe(1);
         expect(Math.abs(tiles.left - pane.left - (pane.right - tiles.right))).toBeLessThanOrEqual(1);
-        const question = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
-        expect(Math.abs(question.top - pane.top - (pane.bottom - tiles.bottom))).toBeLessThanOrEqual(1);
+        const line = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
+        expect(Math.abs(line.top - pane.top - (pane.bottom - tiles.bottom))).toBeLessThanOrEqual(1);
       }
       if (width < 768) {
         // the phone: from the top, the cards under each other
         expect(new Set(tops).size).toBe(4);
-        const question = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
-        expect(question.top - pane.top).toBeLessThan(40);
+        const line = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
+        expect(line.top - pane.top).toBeLessThan(40);
       }
     } finally {
       await page.close();

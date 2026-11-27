@@ -133,8 +133,9 @@ the pointer, with the focus, on touch, and on all tiles while one is
 selected; a selected tile is blue with a line inside its edge.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
-never gets narrower than 240 px for it, so below that they wrap, down to
-one under the other.
+never gets narrower than 240 px for it. Where n do not fit, a row holds
+half of them (four as 2 × 2, never 3 + 1), and below that one under the
+other.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card

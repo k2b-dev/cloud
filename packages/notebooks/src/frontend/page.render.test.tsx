@@ -133,7 +133,7 @@ test("the address of an open dialog sends the same page under it, so the dialog 
   expect(await cards("?new=nothing")).toEqual(await cards(""));
 });
 
-test("without a notebook, Notebooks is one question and four cards in a centred page, read from the notebooks alone", async () => {
+test("without a notebook, Notebooks is one line and four cards in a centred page, read from the notebooks alone", async () => {
   list.mockResolvedValue({ items: [], total: 0, page: 1, perPage: 1, hasNext: false });
   const recent = spyOn(notebooksService.note, "recentForUser");
   const activity = spyOn(notebooksService.activity, "list");
@@ -145,7 +145,7 @@ test("without a notebook, Notebooks is one question and four cards in a centred 
   // the page stands in the middle from the server's first render, without a sidebar, a head or a floating action
   expect(await selectHtml(html, '[data-k2-part="Pane"][data-center]')).toHaveLength(1);
   expect(await selectHtml(html, ".k2-ws-side, [data-k2-part='Nav'], .k2-ws-main > [data-slot='head'], .k2-fab")).toHaveLength(0);
-  expect(html).toContain("Womit soll dein erstes Notizbuch beginnen?");
+  expect(html).toContain("Leg dein erstes Notizbuch an");
   // the blank notebook, then the diary, the recipes and the reading list, each with its page count, sharing one row;
   // each card is a real link to its dialog, so it works before the page is live
   const ways = await selectHtml(html, '[data-k2-part="Tiles"][data-per-row] .k2-tile');

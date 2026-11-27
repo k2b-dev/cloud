@@ -31,10 +31,10 @@ const startUrl = (id: string | null) => {
  * Notebooks for a person who has none yet. Everyone else never sees this page: `/app/notebooks` opens the notebook
  * they used last.
  *
- * Screen brief: a person opens Notebooks for the first time. They need, in this order: (1) the question what their
- * first notebook starts with, (2) the ways to start, a blank notebook or one of three templates, (3) what each makes
+ * Screen brief: a person opens Notebooks for the first time. They need, in this order: (1) the invitation to make their
+ * first notebook, (2) the ways to start, a blank notebook or one of three templates, (3) what each makes
  * before they choose it: how many pages and the first of them. Nothing else is on the page: no sidebar, no switcher
- * (Valentin: no nav, a few nice tiles in the middle). Eye path: the question, then the four cards from the blank one
+ * (Valentin: no nav, a few nice tiles in the middle). Eye path: the line, then the four cards from the blank one
  * on. A card opens the new-notebook dialog with its way to start; the dialog is in the address (`?new=`), so a reload
  * shows it again and back closes it. The fourth template and any later one stay in the dialog's choice of template.
  * On the phone the cards stand under each other from the top.
@@ -89,7 +89,7 @@ export default function NotebooksStart(props: {
     <>
       <Workspace>
         <Pane label={t().notebooks} center>
-          <Text type="lead">{t().firstNotebookQuestion}</Text>
+          <Text type="lead">{t().firstNotebook}</Text>
           {/* each card in Notebooks' colour: it is the one thing to do here */}
           <Tiles
             variant="card"

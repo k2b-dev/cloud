@@ -271,6 +271,7 @@
   --k2-avs-rest: initial;
   --k2-canvas-h: initial;
   --k2-per-row: initial;
+  --k2-per-row-half: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
   --k2-fade: initial;
@@ -839,13 +840,26 @@
   padding: 0 var(--k2-edge);
   min-width: 0;
 }
-/* `perRow`: at most n tiles share a row and grow with it; a track never gets narrower than 240 px, so below that they
-   wrap, down to one under the other. The part name outranks the rules of a variant that lays its tiles out itself. */
+/* `perRow`: at most n tiles share a row and grow with it; a track never gets narrower than 240 px. Where n do not
+   fit, a row holds half of them (n / 2, rounded up: four as 2 × 2, never 3 + 1), and below 240 px one under the
+   other. The last term is the track of that half while the row is narrower than n tiles of 240 px, and far below
+   zero once it is wide enough, so `max()` then takes the n tracks. The part name outranks the rules of a variant that
+   lays its tiles out itself. */
 .k2-ui .k2-tiles[data-k2-part][data-per-row] {
   display: grid;
   grid-template-columns: repeat(
     auto-fill,
-    minmax(max(240px, calc((100% - (var(--k2-per-row) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row))), 1fr)
+    minmax(
+      max(
+        240px,
+        calc((100% - (var(--k2-per-row) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row)),
+        min(
+          calc((100% - (var(--k2-per-row-half) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row-half)),
+          calc((var(--k2-per-row) * 240px + (var(--k2-per-row) - 1) * var(--k2-tiles-gap) - 100%) * 1000)
+        )
+      ),
+      1fr
+    )
   );
   align-items: stretch;
 }
