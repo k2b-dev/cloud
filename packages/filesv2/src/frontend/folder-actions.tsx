@@ -300,6 +300,9 @@ export function createFolderActions(ctx: FolderContext) {
 
   let dropPreparation: AbortController | undefined;
   onCleanup(() => dropPreparation?.abort());
+  // the folder a drop of folders is being read for: it shows as work in progress there, with its way to cancel, until
+  // the upload starts (a large tree takes seconds; the place says so instead of a silent wait)
+  const [readingDrop, setReadingDrop] = createSignal<{ location: string; cancel: () => void } | null>(null);
   /** Files dropped from outside the page; folder entries are read while the drop is still running. */
   const dropFiles = (files: readonly File[], dataTransfer: DataTransfer, root: string) => {
     const dropped = Array.from(dataTransfer.items ?? [])
@@ -314,6 +317,7 @@ export function createFolderActions(ctx: FolderContext) {
     dropPreparation = request;
     const source = ctx.location();
     const timer = setTimeout(() => request.abort(), 30_000);
+    setReadingDrop({ location: source, cancel: () => request.abort() });
     const fail = (message: string) => toast(message, { status: "bad" });
     void readDroppedEntries(dropped, request.signal)
       .then((result) => {
@@ -324,7 +328,10 @@ export function createFolderActions(ctx: FolderContext) {
       .catch((error) => {
         if (!request.signal.aborted) fail(error instanceof Error && error.message === "drop_too_large" ? b().dropTooLarge : b().loadFailed);
       })
-      .finally(() => clearTimeout(timer));
+      .finally(() => {
+        clearTimeout(timer);
+        if (dropPreparation === request) setReadingDrop(null);
+      });
   };
 
   const editable = (entry: FileEntry) =>
@@ -632,7 +639,7 @@ export function createFolderActions(ctx: FolderContext) {
   const folderOperations = createMemo((): FolderOperation[] =>
     operations()
       .filter((operation) => operation.location === ctx.location())
-      .map((operation) => {
+      .map((operation): FolderOperation => {
         if (operation.state === "running")
           return {
             id: operation.id,
@@ -668,8 +675,24 @@ export function createFolderActions(ctx: FolderContext) {
           text: operation.error?.message ?? t().unavailable,
           actions: [...without, { label: b().opDiscard, onClick: () => dropOperation(operation.id) }],
         };
-      }),
+      })
+      .concat(readingDropRow()),
   );
+  /** The reading of a dropped folder tree, as work in progress in its folder. */
+  const readingDropRow = (): FolderOperation[] => {
+    const reading = readingDrop();
+    if (!reading || reading.location !== ctx.location()) return [];
+    return [
+      {
+        id: "drop-reading",
+        name: b().droppedFolders,
+        afterPath: "",
+        state: "running",
+        text: b().readingDrop,
+        actions: [{ label: b().opCancel, onClick: reading.cancel }],
+      },
+    ];
+  };
 
   /*
    * A file opens large in the Lightbox, with the folder's other files to step through. A file an editor opens offers
