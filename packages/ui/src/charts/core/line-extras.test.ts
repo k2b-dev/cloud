@@ -153,6 +153,52 @@ test("a colour scale needs rising stops of known tones; a band needs from below 
   expect(draw({ series: [{ data: temperature, colorScale: [{ value: 0, tone: "blue" }] }] })).toThrow(RangeError);
   expect(draw({ bands: [{ from: start + hour, to: start }] })).toThrow(RangeError);
   expect(draw({ track: { label: " ", data: rain } })).toThrow(RangeError);
+  // a tone is one of the scale's own, never a name every object has
+  for (const tone of ["toString", "constructor", "__proto__"])
+    expect(
+      draw({
+        series: [
+          {
+            data: temperature,
+            colorScale: [
+              { value: 0, tone },
+              { value: 10, tone: "red" },
+            ],
+          },
+        ],
+      }),
+    ).toThrow(RangeError);
+  // on a log axis a stop at or below 0 has no place, as a threshold or a marker there
+  expect(
+    draw({
+      yAxis: { scale: "log" },
+      series: [
+        {
+          data: temperature.map((p) => ({ ...p, y: p.y + 10 })),
+          colorScale: [
+            { value: 0, tone: "blue" },
+            { value: 20, tone: "red" },
+          ],
+        },
+      ],
+    }),
+  ).toThrow(RangeError);
+});
+
+test("a dry day keeps the track's scale at 0 to 1, never around 0", () => {
+  const dry = renderChartSvg(
+    { ...day, track: { label: "Regen", data: rain.map((p) => ({ ...p, y: 0 })), format: (v: number) => `${v} %` } },
+    480,
+    240,
+  );
+  const ticks = [...dry.matchAll(/class="stdlib-chart-tick-label k2b-line-track-tick"[^>]*>([^<]*)</g)].map((tick) => tick[1]);
+  expect(ticks).toEqual(["0 %", "1 %"]);
+  expect(dry).not.toContain('<rect class="k2b-line-bar"');
+});
+
+test("a track never squeezes the line: below a plot as tall as the track the chart asks for more height", () => {
+  expect(() => renderChartSvg(day, 480, 120)).toThrow(RangeError);
+  expect(() => renderChartSvg(day, 480, 240)).not.toThrow();
 });
 
 test("a line chart without the extras draws as before", () => {

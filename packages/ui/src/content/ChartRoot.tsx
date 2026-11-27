@@ -4,6 +4,7 @@ import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { calendarLayout } from "../charts/core/calendar-layout";
+import { lineScaleTones } from "../charts/core/line-extras";
 import { lineDetailsEnabled, lineLegendX } from "../charts/core/line-options";
 import type { ChartDrawingOptions } from "../charts/core/render";
 import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
@@ -174,15 +175,16 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     // A state timeline names its states in the HTML legend below the drawing, and its definitions get the ids of this
     // instance (unique per page, on the server and in the browser).
     // Its words ("Jetzt", "geplant") come in the page's language.
-    return drawing.kind === "stateTimeline"
-      ? {
-          ...drawing,
-          legend: false,
-          idPrefix: `${chartTooltipId}-drawing`,
-          nowLabel: chartMessages().chartNow,
-          plannedLabel: chartMessages().chartPlanned,
-        }
-      : drawing;
+    if (drawing.kind === "stateTimeline")
+      return {
+        ...drawing,
+        legend: false,
+        idPrefix: `${chartTooltipId}-drawing`,
+        nowLabel: chartMessages().chartNow,
+        plannedLabel: chartMessages().chartPlanned,
+      };
+    // A line's colour scale defines gradients: their ids are this instance's too, so two charts never share one.
+    return drawing.kind === "line" ? { ...drawing, idPrefix: `${chartTooltipId}-drawing` } : drawing;
   };
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
@@ -691,6 +693,19 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
                     height="10"
                     aria-hidden="true"
                   >
+                    {/* a line with a colour scale shows its scale, first stop to last; the series class outranks an
+                        attribute, so its gradient is the swatch's style */}
+                    <Show when={"colorScale" in series && series.colorScale}>
+                      {(stops) => (
+                        <defs>
+                          <linearGradient id={`${chartTooltipId}-legend-${index()}`}>
+                            <For each={stops()}>
+                              {(stop, at) => <stop offset={at() / (stops().length - 1)} stop-color={lineScaleTones[stop.tone]} />}
+                            </For>
+                          </linearGradient>
+                        </defs>
+                      )}
+                    </Show>
                     <rect
                       x="1"
                       y="1"
@@ -698,6 +713,9 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
                       height="8"
                       rx="2"
                       class={`stdlib-chart-series-${index() % 8}`}
+                      style={
+                        "colorScale" in series && series.colorScale ? { fill: `url(#${chartTooltipId}-legend-${index()})` } : undefined
+                      }
                       fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${
                         (props.kind === "line" && lineDetailsEnabled(props)
                           ? ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"]

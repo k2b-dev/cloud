@@ -128,6 +128,10 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   const trackHeight = track ? (track.height ?? 48) : 0;
   const area = track ? { ...full, y1: full.y1 - trackHeight - LINE_TRACK_GAP } : full;
   const strip = track && { ...full, y0: full.y1 - trackHeight };
+  // The line stays the chart's main measure: its plot is at least as tall as the track, and tall enough that its Y
+  // labels (12 px apart at the tick font) do not run together.
+  if (track && area.y1 - area.y0 < Math.max(trackHeight, (yAxis.ticks.length - 1) * 12))
+    throw new RangeError("A line track needs a plot at least as tall as the track: give the chart more height");
   const xMap = pickMapper(xAxis.scale),
     yMap = pickMapper(yAxis.scale);
   const x = (value: number) => xMap(value, xAxis.domain, [area.x0, area.x1]);
@@ -217,7 +221,7 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   if (track && trackScale && strip) body.push(lineTrackSvg(track, trackScale, x, strip, paint(opts.series.length)));
   const boundsByPoint = new Map(forecast.map((point) => [point.source, point]));
   opts.series.forEach((s, i) => {
-    const scale = s.colorScale && lineScaleGradient(s.colorScale, y, i);
+    const scale = s.colorScale && lineScaleGradient(s.colorScale, y, i, opts.idPrefix);
     if (scale) body.push(`<defs>${scale.defs}</defs>`);
     const stroke = scale?.paint ?? paint(i);
     // the series class paints a line in its palette colour and outranks an attribute: a scale's gradient is a style
@@ -347,7 +351,7 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
           ? (axis?.format?.(point.y) ?? new Intl.NumberFormat(opts.locale ?? "en", { maximumFractionDigits: 6 }).format(point.y))
           : "—";
       // a line with a colour scale shows its scale from its first stop to its last in the swatch
-      const key = series.colorScale && lineScaleKey(series.colorScale);
+      const key = series.colorScale && lineScaleKey(series.colorScale, entry.seriesIndex, opts.idPrefix);
       const swatch = key?.paint ?? paint(entry.seriesIndex);
       if (key) legend.push(`<defs>${key.defs}</defs>`);
       const label = series.label || seriesLabel(entry.seriesIndex);

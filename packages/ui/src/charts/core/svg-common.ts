@@ -1189,6 +1189,8 @@ export type LineOptions = Omit<SeriesChartOptions, "series"> & {
   series: LineSeries[];
   /** Shaded ranges of X behind the data, such as the night hours: quiet, behind the grid, the lines and the track. */
   bands?: { from: number; to: number; label?: string }[];
+  /** The start of the ids the drawing defines (a colour scale's gradients); `<Chart>` passes one per chart on the page. */
+  idPrefix?: string;
   /** Bars in a strip of their own under the plot, on the same X axis. */
   track?: LineTrack;
   /** Render smooth Catmull-Rom curves. Default `true`. Pass `false` for

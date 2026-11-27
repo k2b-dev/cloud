@@ -24,7 +24,8 @@ export const lineScaleTones: Record<LineScaleTone, string> = {
 };
 
 /** Throws for options a drawing could only show wrong. */
-export const checkLineExtras = (opts: Pick<LineOptions, "series" | "bands" | "track">) => {
+export const checkLineExtras = (opts: Pick<LineOptions, "series" | "bands" | "track" | "yAxis">) => {
+  const log = opts.yAxis?.scale === "log";
   for (const band of opts.bands ?? [])
     if (!Number.isFinite(band.from) || !Number.isFinite(band.to) || band.from >= band.to)
       throw new RangeError("A line band needs a finite from below its finite to");
@@ -37,7 +38,8 @@ export const checkLineExtras = (opts: Pick<LineOptions, "series" | "bands" | "tr
     for (const [index, stop] of stops.entries()) {
       if (!Number.isFinite(stop.value) || (index > 0 && stop.value <= stops[index - 1]!.value))
         throw new RangeError("Colour scale stops need finite values in rising order");
-      if (!(stop.tone in lineScaleTones)) throw new RangeError(`Unknown colour scale tone: ${stop.tone}`);
+      if (!Object.hasOwn(lineScaleTones, stop.tone)) throw new RangeError(`Unknown colour scale tone: ${stop.tone}`);
+      if (log && stop.value <= 0) throw new RangeError("Colour scale stops must be positive on a log axis");
     }
   }
 };
@@ -65,11 +67,19 @@ const gradientId = (seed: string) => {
  * A vertical gradient in the plot's own coordinates: a point of the line takes the colour of its value. Returns the
  * definition and the paint that refers to it.
  */
-export const lineScaleGradient = (stops: NonNullable<LineSeries["colorScale"]>, y: (value: number) => number, seriesIndex: number) => {
+export const lineScaleGradient = (
+  stops: NonNullable<LineSeries["colorScale"]>,
+  y: (value: number) => number,
+  seriesIndex: number,
+  idPrefix?: string,
+) => {
   const top = y(stops[0]!.value);
   const bottom = y(stops.at(-1)!.value);
   const offsets = stops.map((stop) => (y(stop.value) - top) / (bottom - top));
-  const id = gradientId(`${seriesIndex}|${fmt(top)}|${fmt(bottom)}|${stops.map((stop) => `${stop.value}:${stop.tone}`).join(",")}`);
+  // one id per chart on the page (`<Chart>` passes its own prefix); a bare drawing derives one from what it draws
+  const id = idPrefix
+    ? `${idPrefix}-scale-${seriesIndex}`
+    : gradientId(`${seriesIndex}|${fmt(top)}|${fmt(bottom)}|${stops.map((stop) => `${stop.value}:${stop.tone}`).join(",")}`);
   const marks = stops.map((stop, index) => `<stop offset="${fmt(offsets[index]!)}" stop-color="${lineScaleTones[stop.tone]}"/>`).join("");
   return {
     defs: `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="${fmt(top)}" y2="${fmt(bottom)}">${marks}</linearGradient>`,
@@ -78,8 +88,8 @@ export const lineScaleGradient = (stops: NonNullable<LineSeries["colorScale"]>, 
 };
 
 /** The scale from its first stop to its last, left to right, for a legend's swatch. */
-export const lineScaleKey = (stops: NonNullable<LineSeries["colorScale"]>) => {
-  const id = gradientId(`key|${stops.map((stop) => stop.tone).join(",")}`);
+export const lineScaleKey = (stops: NonNullable<LineSeries["colorScale"]>, seriesIndex: number, idPrefix?: string) => {
+  const id = idPrefix ? `${idPrefix}-key-${seriesIndex}` : gradientId(`key|${seriesIndex}|${stops.map((stop) => stop.tone).join(",")}`);
   const marks = stops
     .map((stop, index) => `<stop offset="${fmt(index / (stops.length - 1))}" stop-color="${lineScaleTones[stop.tone]}"/>`)
     .join("");
@@ -94,8 +104,12 @@ export const lineScaleToneAt = (stops: NonNullable<LineSeries["colorScale"]>, va
 export const LINE_TRACK_GAP = 22;
 
 /** The scale of a track: from 0 (unless its domain says otherwise) to its highest value, two labels. */
-export const lineTrackScale = (track: LineTrack) =>
-  computeAxisScale([...(track.domain ? [] : [0]), ...track.data.map((p) => p.y)], { domain: track.domain, ticks: 2 });
+export const lineTrackScale = (track: LineTrack) => {
+  const values = track.data.map((p) => p.y).filter(Number.isFinite);
+  // a dry day: every value 0 (or none) keeps the scale at 0 to 1, never around 0
+  if (!track.domain && values.every((value) => value === 0)) return computeAxisScale([0, 1], { domain: [0, 1], ticks: 2 });
+  return computeAxisScale([...(track.domain ? [] : [0]), ...values], { domain: track.domain, ticks: 2 });
+};
 
 /**
  * A track: its label above it, its scale at its start (the lowest and the highest value, like the Y axis's labels),

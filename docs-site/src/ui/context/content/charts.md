@@ -208,9 +208,11 @@ a second Y axis over the lines; a second measure gets a track of its own.
 - `track` draws bars in a strip of their own under the plot: its `label` stands
   above it and names its scale, which shows its lowest and highest value at the
   strip's start, written with the track's `format`. The scale starts at 0 unless
-  `domain` says otherwise; `height` sets the strip (default 48 px). Each bar
-  stands under its X and carries its value as a title. The X axis's labels stand
-  under the track.
+  `domain` says otherwise, and a track of zeros (a dry day) keeps 0 to 1;
+  `height` sets the strip (default 48 px). Each bar stands under its X and
+  carries its value as a title. The X axis's labels stand under the track. The
+  line's plot stays at least as tall as the track; a chart too low for both
+  throws, so give it more height.
 
 ```tsx
 <Chart kind="line" timeAxis={{ timeZone: "Europe/Berlin" }}
