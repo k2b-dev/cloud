@@ -1,16 +1,20 @@
+import { createSignal } from "solid-js";
 import { LocaleProvider } from "../src/intl/locale";
-import { Bar, Button, Pane, Tabs, Text, Workspace } from "../src/v2";
+import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 
-// Two heads that do not fit on the phone, each in a box of its own (`.case`):
-// - "record": three tabs and six actions that stay on the phone (`keep`), then the primary action with its words. The
-//   tabs give way to the open one and "Mehr"; what still does not fit folds into "…". Every action writes its name
-//   to `window.__deeds`.
+// Three heads that do not fit on the phone, each in a box of its own (`.case`):
+// - "record": two tabs and six actions that stay on the phone (`keep`), then the primary action. The start stays
+//   whole; what does not fit folds into "…". "Favorit" is a toggle (`window.__k2Press()` flips it), "Archivieren"
+//   can be locked (`window.__k2Lock(true)`). Every action writes its name to `window.__deeds`.
 // - "book": the head of a notebook page, a title and a button "1.000 Kommentare" in the start, five actions at its
-//   end, which fit. The start gives way to its last pixel: its words shorten with "…".
+//   end. All of them fold, and then the start shortens down to its least.
+// - "menu": a title, four actions and the head's own menu "…" at the end: the folded actions are its first section.
 
 declare global {
   interface Window {
     __deeds?: string[];
+    __k2Press?: () => void;
+    __k2Lock?: (locked: boolean) => void;
   }
 }
 
@@ -23,11 +27,15 @@ const actions = [
   { icon: "printer", label: "Drucken" },
   { icon: "download", label: "Exportieren" },
   { icon: "history", label: "Verlauf" },
-  { icon: "copy", label: "Duplizieren" },
-  { icon: "archive", label: "Archivieren" },
 ];
 
 export function Fixture() {
+  const [favourite, setFavourite] = createSignal(false);
+  const [locked, setLocked] = createSignal(false);
+  if (typeof window !== "undefined") {
+    window.__k2Press = () => setFavourite((on) => !on);
+    window.__k2Lock = setLocked;
+  }
   return (
     <LocaleProvider locale="de">
       <div class="case" data-case="record">
@@ -39,7 +47,6 @@ export function Fixture() {
                   label="Ansichten"
                   items={[
                     { label: "Übersicht", href: "#overview", current: true },
-                    { label: "Aktivität", href: "#activity" },
                     { label: "Dateien", href: "#files" },
                   ]}
                 />
@@ -49,6 +56,8 @@ export function Fixture() {
                   {actions.map((action) => (
                     <Button keep icon={action.icon} label={action.label} onClick={deed(action.label)} />
                   ))}
+                  <Button keep icon="star" label="Favorit" pressed={favourite()} onClick={deed("Favorit")} />
+                  <Button keep icon="archive" label="Archivieren" disabled={locked()} onClick={deed("Archivieren")} />
                   <Button keep variant="primary" icon="plus" onClick={deed("Neu")}>
                     Neu
                   </Button>
@@ -90,6 +99,36 @@ export function Fixture() {
         >
           <Pane label="Seite">
             <Text>Die Seite des Notizbuchs.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="menu">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Text type="row" weight="strong">
+                  Angebot Lackfabrik Nordhaus
+                </Text>
+              }
+              end={
+                <>
+                  {actions.map((action) => (
+                    <Button keep icon={action.icon} label={action.label} onClick={deed(action.label)} />
+                  ))}
+                  <Menu
+                    items={[
+                      { label: "Umbenennen", icon: "pencil", onClick: deed("Umbenennen") },
+                      { label: "Löschen", icon: "trash", danger: true, onClick: deed("Löschen") },
+                    ]}
+                  />
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Angebot">
+            <Text>Das Angebot.</Text>
           </Pane>
         </Workspace>
       </div>
