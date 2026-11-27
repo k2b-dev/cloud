@@ -146,12 +146,13 @@ const rules: readonly V2Rule[] = [
   {
     id: "grip",
     title: "A grip sits centred on its line",
-    text: "A grip is a round pill of 11 × 20 px over its 1 px line. Its centre is the centre of the line within ±0.25 px, at device pixel ratio 1 and 2. On hover, focus and drag only the colour turns blue.",
+    text: "A grip is a round pill of 11 × 20 px over its 1 px line. Its centre is the centre of the line within ±0.25 px, at device pixel ratio 1 and 2. It shows only where it is wanted: under the pointer along its line, on keyboard focus, while pressed or dragged, and on touch screens always; only its opacity changes, so nothing moves. On hover, focus and drag only the colour turns blue.",
     excerpts: [
       // Taken at device pixel ratio 4 and shown twice as large as on screen.
       { src: "/assets/ui-v2/grip.png", alt: "A grip pill centred on the line between list and reader, enlarged", width: 184, height: 160 },
     ],
-    checked: "measureV2Layout measures each grip in the DOM and again in a screenshot, inside the grip only.",
+    checked:
+      "measureV2Layout shows every grip while it measures, then measures each grip in the DOM and again in a screenshot, inside the grip only.",
     code: {
       title: "A browser test",
       language: "ts",
