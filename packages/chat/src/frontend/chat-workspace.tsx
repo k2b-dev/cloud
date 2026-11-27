@@ -95,11 +95,13 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
+import { containerIcon, loadSystemThreads, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
 import {
   chatHasThreads,
   isUnread,
   messageThread,
+  type Thread,
+  type ThreadList,
   type ThreadView,
   threadHref as threadAddress,
   threadIcon,
@@ -901,6 +903,28 @@ export function ChatWorkspaceView(
     }
     return result;
   };
+  // v2: the state a place's discussions are shown in (its cards and its head menu), and the server's pages of them
+  // for that state, so the menu finds a discussion whose card lies outside the loaded window too.
+  type PlaceFilter = "all" | "open" | "done" | "unread";
+  const [placeFilter, setPlaceFilter] = createSignal<PlaceFilter>("all");
+  const [placeFound, setPlaceFound] = createSignal<{ chat: string; filter: PlaceFilter; list: ThreadList } | null>(null);
+  const placeShows = (thread: Thread) => {
+    const filter = placeFilter();
+    return filter === "all" || (filter === "unread" ? thread.unread > 0 : (filter === "done") === !!thread.resource?.done);
+  };
+  const findDiscussions = async (chatId: string, filter: PlaceFilter, more = false) => {
+    const previous = placeFound();
+    const same = previous?.chat === chatId && previous.filter === filter;
+    const cursor = more && same ? (previous.list.nextCursor ?? undefined) : undefined;
+    const page = await loadSystemThreads(
+      chatId,
+      { filter: filter === "all" ? undefined : filter, cursor },
+      AbortSignal.timeout(15_000),
+    ).catch(() => null);
+    if (!page) return void toast.error(t().threadsLoadFailed);
+    if (placeFilter() !== filter || conversation()?.id !== chatId) return;
+    setPlaceFound({ chat: chatId, filter, list: { ...page, items: more && same ? [...previous.list.items, ...page.items] : page.items } });
+  };
   const items = createMemo<readonly ChatFeedItem[]>((previous) => {
     const current = openChat();
     if (!current) return [];
@@ -982,6 +1006,54 @@ export function ChatWorkspaceView(
       }
       merged.push(...shown.slice(next));
       result.splice(0, result.length, ...groupEvents(merged, mixed));
+    }
+    // v2: a place's discussions about its items stand as cards in its "General" stream, at their last activity
+    // (Valentin, v8: no column of its own). They come from the thread list the chat already holds, no query of their
+    // own; a discussion whose last activity lies outside the loaded window shows once the reader gets there.
+    if (props.v2 && current.conversation?.kind === "system" && view === "general" && current.threads) {
+      const words = props.v2.chatV2Messages.resolve([locale()]).t;
+      const cards = current.threads.items
+        .filter((thread) => thread.resource && !thread.archived && placeShows(thread))
+        .filter((thread) => (!first || thread.lastActivityAt >= first) && (!current.hasNewer || !last || thread.lastActivityAt <= last))
+        .map((thread): ChatFeedItem => {
+          const resource = thread.resource!;
+          const author = thread.lastMessage?.author ?? null;
+          return {
+            key: `discussion:${thread.id}`,
+            kind: "discussion",
+            authorId: "",
+            authorName: "",
+            body: thread.name,
+            at: thread.lastActivityAt,
+            own: false,
+            discussion: {
+              href: viewHref(threadHref(current.id, thread.id)),
+              onOpen: () => void openView(current.id, thread.id),
+              name: thread.name,
+              icon: threadIcon(thread),
+              state: resource.status ?? (resource.done ? t().threadsDone : t().threadsOpen),
+              done: !!resource.done,
+              line: thread.lastMessage
+                ? `${author?.id === props.viewerId ? t().you : (author?.name.split(" ")[0] ?? "")}: ${thread.lastMessage.preview}`
+                : t().noMessagesYet,
+              author,
+              unread: thread.unread,
+              unreadLabel: thread.unread > 0 ? words.newCount({ count: thread.unread.toLocaleString(locale()) }) : "",
+              openLabel: words.openDiscussion,
+            },
+          };
+        })
+        .sort((a, b) => a.at.localeCompare(b.at));
+      if (cards.length > 0) {
+        let next = 0;
+        const merged: ChatFeedItem[] = [];
+        for (const item of result) {
+          while (next < cards.length && cards[next]!.at < item.at) merged.push(cards[next++]!);
+          merged.push(item);
+        }
+        merged.push(...cards.slice(next));
+        result.splice(0, result.length, ...merged);
+      }
     }
     // Sends wait at the end of the newest history; a window further back shows them once the reader is there.
     if (!current.hasNewer) {
@@ -1636,9 +1708,11 @@ export function ChatWorkspaceView(
       const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
       if (token !== systemOpen) return;
       store?.includeSystemChats([current]);
-      if ((await open(chatRoute(current.id))) === "applied") {
+      // v2 opens a place on its "General" stream, its discussions as cards in it; v1 keeps "All threads".
+      const start: ThreadView = props.v2 ? "general" : "all";
+      if ((await open(chatRoute(current.id, start))) === "applied") {
         setListPredecessor(false);
-        go(viewHref(threadHref(current.id, "all")));
+        go(viewHref(threadHref(current.id, start)));
       }
     } catch {
       if (token === systemOpen) toast.error(t().openFailed);
@@ -3383,7 +3457,8 @@ export function ChatWorkspaceView(
     viewerId: props.viewerId,
     dateConfig: props.dateConfig,
     now,
-    href: (row) => listHref(panelHref(row.id, null)),
+    // a place leads to its "General" stream, so its address is the one the page keeps
+    href: (row) => listHref(panelHref(row.id, null, null, row.kind === "system" ? "general" : "all")),
     onNavigate: (row) => (navigation) => {
       if (row.kind !== "system") return openFromList(row.id, navigation);
       const ref = row.resource;
@@ -3493,10 +3568,88 @@ export function ChatWorkspaceView(
     }
   };
   const [newAway, setNewAway] = createSignal<{ direction: "above" | "below"; jump: () => void } | null>(null);
-  const backAction = (): ChatDetailV2["back"] =>
-    backToThreadDirectory() && route().chatId
+  const backAction = (): ChatDetailV2["back"] => {
+    // A discussion about an item leads back to its place's "General" stream, where its card stands.
+    const current = conversation();
+    const view = openChat()?.view;
+    if (current?.kind === "system" && view && view !== "general" && view !== "all")
+      return {
+        label: current.title,
+        href: listHref(threadHref(current.id, "general")),
+        onNavigate: (navigation: LinkNavigateEvent) => openView(current.id, "general", navigation),
+      };
+    return backToThreadDirectory() && route().chatId
       ? { label: t().backToThreads, href: listHref(threadsPageHref(route().chatId!)), onNavigate: backToThreads }
       : { label: t().chats, href: listHref(), onNavigate: backToList };
+  };
+  /**
+   * A place's head menu (v2): what to show (all, open, done, unread), its General stream and its discussions in that
+   * state, each opening as a page of its own, more from the server while it has them, and "Discuss an item".
+   */
+  const placeMenu = (current: Conversation): MenuEntry[] => {
+    const view = openChat()?.view ?? "general";
+    const found = placeFound();
+    const list = found?.chat === current.id && found.filter === placeFilter() ? found.list : null;
+    const shown = list?.items ?? (openChat()?.threads?.items ?? []).filter((thread) => thread.resource && placeShows(thread));
+    const go = (target: ThreadView) => (navigation: LinkNavigateEvent) => openView(current.id, target, navigation);
+    const states: { value: PlaceFilter; label: string }[] = [
+      { value: "all", label: t().allThreads },
+      { value: "open", label: t().threadsOpen },
+      { value: "done", label: t().threadsDone },
+      { value: "unread", label: t().threadsUnread },
+    ];
+    return [
+      {
+        title: v2t().discussionState,
+        choice: placeFilter(),
+        onChoose: (value: string) => {
+          const next = states.find((state) => state.value === value)?.value;
+          if (!next) return;
+          setPlaceFilter(next);
+          void findDiscussions(current.id, next);
+        },
+        items: states.map((state) => ({ label: state.label, value: state.value })),
+      },
+      {
+        title: t().systemChats,
+        choice: view,
+        items: [
+          {
+            label: viewName("general", openChat()?.threads ?? null, t()),
+            icon: "messages",
+            value: "general",
+            href: listHref(threadHref(current.id, "general")),
+            onNavigate: go("general"),
+          },
+          ...shown.map((thread) => ({
+            label: thread.name,
+            icon: threadIcon(thread).replace(/^ti ti-/, ""),
+            value: thread.id,
+            meta: [
+              thread.resource?.status ?? (thread.resource?.done ? t().threadsDone : t().threadsOpen),
+              thread.unread > 0 ? thread.unread.toLocaleString(locale()) : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            href: listHref(threadHref(current.id, thread.id)),
+            onNavigate: go(thread.id),
+          })),
+        ],
+      },
+      ...(list === null || list.nextCursor != null
+        ? [
+            {
+              label: t().moreThreads,
+              icon: "dots",
+              onClick: () => findDiscussions(current.id, placeFilter(), list !== null),
+            } satisfies MenuEntry,
+          ]
+        : []),
+      ...(canCreateThread()
+        ? [{ label: t().discussElement, icon: "plus", disabled: creatingThread(), onClick: () => void createThread() } satisfies MenuEntry]
+        : []),
+    ];
+  };
   const chatDetail = (current: Conversation): ChatDetailV2 => {
     const thread = openThread();
     const resource = system() ? (thread?.resource ?? undefined) : undefined;
@@ -3566,27 +3719,29 @@ export function ChatWorkspaceView(
         ],
       },
       back: backAction(),
-      picker: threaded()
-        ? {
-            label: t().switchThread({ name: viewTitle() }),
-            name: viewTitle(),
-            items: props.v2!.threadMenu({
-              t: t(),
-              chatId: current.id,
-              basePath,
-              view: openChat()?.view ?? "all",
-              threads: openChat()?.threads ?? null,
-              unread: current.unread,
-              system: system(),
-              canAdmin: canCreateThread(),
-              creating: creatingThread(),
-              total: current.summaryCursor == null ? current.threads : undefined,
-              onSelect: (view) => (navigation) => openView(current.id, view, navigation),
-              onOverview: (navigation) => openOverview(navigation),
-              onCreate: () => void createThread(),
-            }),
-          }
-        : undefined,
+      picker: system()
+        ? { label: t().switchThread({ name: viewTitle() }), name: viewTitle(), items: placeMenu(current) }
+        : threaded()
+          ? {
+              label: t().switchThread({ name: viewTitle() }),
+              name: viewTitle(),
+              items: props.v2!.threadMenu({
+                t: t(),
+                chatId: current.id,
+                basePath,
+                view: openChat()?.view ?? "all",
+                threads: openChat()?.threads ?? null,
+                unread: current.unread,
+                system: system(),
+                canAdmin: canCreateThread(),
+                creating: creatingThread(),
+                total: current.summaryCursor == null ? current.threads : undefined,
+                onSelect: (view) => (navigation) => openView(current.id, view, navigation),
+                onOverview: (navigation) => openOverview(navigation),
+                onCreate: () => void createThread(),
+              }),
+            }
+          : undefined,
       buttons,
       menu,
       content: conversationView,

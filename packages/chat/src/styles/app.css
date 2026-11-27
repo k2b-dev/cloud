@@ -1180,3 +1180,115 @@
   width: min(14rem, 60%);
   height: 1.25rem;
 }
+
+/* A discussion about an item in its place's stream: a card at the reading column's start, after the senders' column,
+   that leads to the discussion as a whole (Valentin, v8: no column of its own for a place's discussions). */
+.chat-discussion {
+  display: flex;
+  flex-direction: column;
+  margin: 0.25rem 1rem 0.25rem 3.75rem;
+  max-width: min(38.75rem, calc(100% - 4.75rem));
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  color: var(--k2b-text);
+  text-decoration: none;
+}
+.chat-discussion:hover {
+  background: var(--k2b-hover);
+}
+.chat-discussion:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+.chat-discussion__top {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  min-width: 0;
+}
+.chat-discussion__sign {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--ui-app-selected);
+  color: var(--ui-app-accent-text);
+  font-size: 1.125rem;
+}
+.chat-discussion__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-discussion__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.chat-discussion__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the state in words after a dot in the app's colour; done is quiet */
+.chat-discussion__state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3125rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.chat-discussion__state::before {
+  content: "";
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: var(--k2b-radius-round);
+  background: var(--ui-app-accent-text);
+}
+.chat-discussion[data-done] .chat-discussion__state::before {
+  background: var(--k2b-text-muted);
+}
+.chat-discussion__line {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-discussion[data-unread] .chat-discussion__line {
+  color: var(--k2b-text);
+  font-weight: 500;
+}
+.chat-discussion__face {
+  flex: none;
+}
+.chat-discussion__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--k2b-border);
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+.chat-discussion__new {
+  color: var(--ui-app-accent-text);
+  font-weight: 600;
+}
+.chat-discussion__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+  color: var(--ui-app-accent-text);
+  font-weight: 500;
+}
