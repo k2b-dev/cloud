@@ -8,8 +8,8 @@
   item is no `a` or `button`, so the row's link navigated before the item's dialog could open.
 - **Error class:** A container that acts on clicks from its whole subtree, which also holds layers that only look
   outside it (menus, popovers, dialogs).
-- **Guard:** #4282 made the row leave a click from a menu or popover that does not hold the row; this change adds
-  dialogs to those layers. `table-row-menu.browser.test.ts` chooses the item by pointer and by key in Chromium and
+- **Guard:** #4282 made the row leave a click from a menu or popover that does not hold the row, which also covers
+  this case. `table-row-menu.browser.test.ts` chooses the item by pointer and by key in Chromium and
   WebKit, checks the dialog, that the row's link did not move, the focus back on the menu's button, that the row still
   opens by a click on it, and that a table inside a dialog opens its rows (`row-menu.browser.test.ts` of #4282 checks
   a table inside a popover).

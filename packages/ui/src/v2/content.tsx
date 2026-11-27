@@ -640,10 +640,9 @@ export const Table = <T,>(props: TableProps<T>) => {
   const openRow = (event: MouseEvent & { currentTarget: HTMLTableRowElement }) => {
     // A control in the row, and a menu or popover that opened from one, keeps its click: choosing an entry in a row's
     // menu must not also open the row (the menu may stand elsewhere in the page, but its click still reaches the row
-    // through the component tree); so does a dialog that opened from the row. A dialog or popover the whole table stands
-    // in is no such control: its rows open.
+    // through the component tree). A dialog or popover the whole table stands in is no such control: its rows open.
     if (!(event.target instanceof Element)) return;
-    const control = event.target.closest("a, button, input, label, select, textarea, [role=menu], [popover], dialog, [role=dialog]");
+    const control = event.target.closest("a, button, input, label, select, textarea, [role=menu], [popover]");
     if (control && !control.contains(event.currentTarget)) return;
     const open = event.currentTarget.querySelector<HTMLElement>(".k2-row-open");
     if (!open || event.altKey) return;
