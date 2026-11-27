@@ -1,16 +1,6 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
-import {
-  Avatar,
-  Button,
-  Dropdown,
-  type DropdownAction,
-  type DropdownItem,
-  IconButton,
-  IconButtonLink,
-  Tooltip,
-  useLocale,
-} from "@k2b/ui";
+import { Avatar, Button, Dropdown, type DropdownAction, type DropdownItem, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { MailCollaborator } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";

@@ -8,12 +8,7 @@ import { overviewMessages } from "../../../overview-messages";
 import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
 import { syncSpacePrimaryHref } from "./space-primary";
-import {
-  createNewSpace,
-  createPinnedSpaces,
-  createSpacesNavigationItems,
-  type SpacesSidebarData,
-} from "./spaces-navigation";
+import { createNewSpace, createPinnedSpaces, createSpacesNavigationItems, type SpacesSidebarData } from "./spaces-navigation";
 import type { SpaceContext } from "./types";
 
 export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: SpacesSidebarData; dateConfig?: DateContext }) {

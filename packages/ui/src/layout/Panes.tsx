@@ -532,12 +532,7 @@ export default function Panes(props: PanesProps): JSX.Element {
                 menuClass="k2b-panes__menu"
                 lazy
               >
-                <Dropdown.Trigger
-                  class="k2b-panes__arrange"
-                  variant="ghost"
-                  size="sm"
-                  tooltip={false}
-                >
+                <Dropdown.Trigger class="k2b-panes__arrange" variant="ghost" size="sm" tooltip={false}>
                   <i class="ti ti-layout-columns" aria-hidden="true" />
                   <span>{panesMessages().arrange}</span>
                 </Dropdown.Trigger>

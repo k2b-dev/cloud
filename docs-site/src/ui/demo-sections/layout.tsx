@@ -909,13 +909,7 @@ const [layout, setLayout] = createSignal<PanesLayout>(storedLayout ?? defaultLay
 />`}
     >
       <div class="ui-panes-demo">
-        <Panes
-          layout={layout()}
-          onLayoutChange={setLayout}
-          defaultLayout={arrangedPanesDefault}
-          items={items}
-          ariaLabel="Reply panes"
-        />
+        <Panes layout={layout()} onLayoutChange={setLayout} defaultLayout={arrangedPanesDefault} items={items} ariaLabel="Reply panes" />
       </div>
     </DemoCard>
   );

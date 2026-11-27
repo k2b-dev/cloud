@@ -107,12 +107,7 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
                   </AppWorkspace.SidebarItem>
                   {/* The collapsed rail hides labels and row actions. A row with a pin action names its wrapper, not its
                       link, so the rail gets a plain row whose link carries the name. */}
-                  <AppWorkspace.SidebarItem
-                    sidebarMode="collapsed"
-                    href={`/app/spaces/${space.id}`}
-                    title={title}
-                    active={active()}
-                  >
+                  <AppWorkspace.SidebarItem sidebarMode="collapsed" href={`/app/spaces/${space.id}`} title={title} active={active()}>
                     {icon()}
                     <AppWorkspace.SidebarItemLabel marquee={false}>{space.name}</AppWorkspace.SidebarItemLabel>
                   </AppWorkspace.SidebarItem>
