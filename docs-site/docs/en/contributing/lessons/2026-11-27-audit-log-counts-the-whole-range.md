@@ -1,0 +1,6 @@
+### The visible audit log counted and skipped its whole range on every load
+
+- **What happened:** Each load of the administration's activity log counted every entry of its range (30 days) and tested the JSON of every row to leave out the automatic app-key entries. It then paged with OFFSET. On a log of 600,000 entries over a year, 90 % of them automatic, the count read 49,845 rows (42 ms) and page 20 read 10,010 rows, and both grow with the log, which has no retention. The newest visible entries had no index of their own, so a short "latest" list read past the automatic entries.
+- **Root cause:** `audit.list` offered only an exact count over the whole match and OFFSET paging. The log had no index that excludes the automatic entries, which are most of its rows.
+- **Error class:** A list whose count and paging cost grows with the whole table instead of with the page: an exact `COUNT(*)` and an OFFSET over an append-only log without retention.
+- **Guard:** `audit.list` takes `cursor` (keyset on the exact time and id) and `count: "bounded"` (stops at `AUDIT_COUNT_BOUND`), and the migration builds `idx_audit_events_visible_created`. `list.integration.test.ts` pins two statements per page in every mode, cursor pages without gaps or repeats across entries of the same microsecond, the bound, the plan of the newest visible entries, and a repeated migration.
