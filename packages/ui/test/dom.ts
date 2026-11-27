@@ -29,6 +29,9 @@ const globalBindings = (window: Window): Record<string, unknown> => ({
   MutationObserver: window.MutationObserver,
   ResizeObserver: window.ResizeObserver,
   getComputedStyle: window.getComputedStyle.bind(window),
+  // A browser always has it, and a shared primitive may read it while it renders (a v2 menu or dialog asks whether
+  // the window is the phone), so every behavior test gets it as a browser would.
+  matchMedia: window.matchMedia.bind(window),
   requestAnimationFrame: window.requestAnimationFrame.bind(window),
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
 });
