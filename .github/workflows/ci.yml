@@ -197,16 +197,16 @@ jobs:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min for unit/integration;
       # WebKit reserves more headroom as described below.
-      # Unit timings are maxima from the green merge-group runs 45924282705,
-      # 45924281140, 45924280021, 45924278090 and 45924177089 and the
-      # stopped run 45919933131 (#4386). Split by their file times:
-      # @k2b/ui v2 (403 s of files) out of @k2b/ui rest, @k2b/ui layout
-      # (376 s) and content (482 s) from layout-content, @k2b/cloud
-      # access-browser-approvals (338 s) out of @k2b/cloud rest, and
-      # @k2b/cloud-app-notebooks frontend-lib (216 s) from its rest; each part
-      # carries its build or 1 s process overhead. ui rest and ui v2 together
-      # take the 1052 s the stopped run reached. Fourteen shards need at most
-      # 14.09 min; thirteen need 15.08 min and miss the 15-min target.
+      # Unit timings are maxima from the merge-group runs 45984038239 (stopped
+      # in @k2b/ui rest) and 45984035848 and from this split's own run
+      # 45955041359 (#4386, #4404). Split by file times: @k2b/ui v2 out of
+      # @k2b/ui rest, @k2b/ui layout and content out of layout-content,
+      # @k2b/cloud access-browser-approvals out of @k2b/cloud rest, and
+      # @k2b/cloud-app-notebooks frontend-lib out of the package. The two rests
+      # keep the larger of their measured time (531.7 s, 450.3 s) and their file
+      # times (632.1 s, 566.0 s); the main runs measured them before the split.
+      # Fourteen shards need at most 13.90 min; thirteen need 14.96 min and
+      # leave no room under the 15-min target.
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
