@@ -68,7 +68,7 @@ describe("topic pages", () => {
   test("Lists and tables is finished and is the reference page", () => {
     const topic = topics.find((candidate) => candidate.slug === "lists-and-tables");
     expect(topic?.parsed.front.status).toBeUndefined();
-    expect(topic?.parts).toEqual(["List", "Row", "Table", "StatusRow", "Pane.Split", "Empty · Loading · Failed"]);
+    expect(topic?.parts).toEqual(["List", "Row", "Table", "Trees", "StatusRow", "Pane.Split", "Empty · Loading · Failed"]);
   });
 
   test("a wrong shape is named", () => {
