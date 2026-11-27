@@ -173,10 +173,10 @@ test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
 // in `@media (prefers-reduced-motion: reduce)` that stops it. An animation on a scroll timeline follows the person's own
 // scroll and is no motion of its own. (Core's sheet moves are pinned in menus and overlays browser tests.)
 test("every animation and transition in v2.css stops under prefers-reduced-motion", () => {
-  const reduced = (rule: postcss.Rule) => {
-    for (let parent = rule.parent; parent; parent = parent.parent)
-      if (parent.type === "atrule" && (parent as postcss.AtRule).params.includes("prefers-reduced-motion: reduce")) return true;
-    return false;
+  const reduced = (rule: postcss.Rule): boolean => {
+    const parent = rule.parent;
+    if (parent?.type !== "atrule") return false;
+    return (parent as postcss.AtRule).params.includes("prefers-reduced-motion: reduce");
   };
   // The chain of classes and tags a selector names, without its attributes and simple pseudo-classes: a stop for
   // `.a > .b` also stops `.a[data-x] > .b:first-child`, so a rule is stopped when its chain ends in a stop's chain.
