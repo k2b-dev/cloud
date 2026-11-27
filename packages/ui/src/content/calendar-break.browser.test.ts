@@ -39,7 +39,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (view: "week" | "day", width: number, height: number, empty: boolean): Promise<Page> => {
+const open = async (view: "week" | "day", width: number, height: number, empty: boolean, dir: "ltr" | "rtl" = "ltr"): Promise<Page> => {
   const touch = width < 768;
   const page = await browser.newPage({
     viewport: { width, height },
@@ -50,7 +50,7 @@ const open = async (view: "week" | "day", width: number, height: number, empty: 
   page.setDefaultTimeout(4000);
   await page.clock.install({ time: new Date("2026-10-27T10:40:00+01:00") });
   await page.setContent(
-    `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>body{margin:0}#host{height:100vh;display:flex;flex-direction:column}#host>*{flex:1}</style></head><body class="k2b-ui"><div id="host"></div><script>window.fixtureOptions = ${JSON.stringify({ view, empty })}</script><script>${script}</script></body></html>`,
+    `<!doctype html><html lang="en" dir="${dir}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>body{margin:0}#host{height:100vh;display:flex;flex-direction:column}#host>*{flex:1}</style></head><body class="k2b-ui"><div id="host"></div><script>window.fixtureOptions = ${JSON.stringify({ view, empty })}</script><script>${script}</script></body></html>`,
   );
   await page.locator(".k2b-content-calendar").waitFor();
   await settled(page);
@@ -68,6 +68,22 @@ test("week, 390 px: all-day bars that began before the first day on screen show 
         .evaluate((element) => element.getBoundingClientRect().toJSON());
       // its first letters stand on the screen, right of the label, never a fragment under or left of it
       expect({ title, left: box.left >= label - 0.5 }).toEqual({ title, left: true });
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+test("week, 390 px, right to left: the titles stand left of the label, which is on the right", async () => {
+  const page = await open("week", 390, 844, false, "rtl");
+  try {
+    const label = await page.locator(".k2b-calendar-week__all-day-label").evaluate((element) => element.getBoundingClientRect().left);
+    for (const title of ["Aleksandra Wiśniewska-Kowalczyk", "Sam Example · away"]) {
+      const box = await page
+        .locator(".k2b-calendar-week__all-day .k2b-calendar-event__title", { hasText: title })
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().toJSON());
+      expect({ title, beside: box.right <= label + 0.5 && box.right > 0 }).toEqual({ title, beside: true });
     }
   } finally {
     await page.close();
