@@ -234,7 +234,10 @@
   font-weight: 600;
 }
 
-.dashboard-page .dashboard-widget-placeholder {
+/* A widget's message sits in its frame without the 24px block padding that @k2b/ui gives a placeholder
+   (`.k2b-ui .k2b-placeholder`, same specificity). A page links this sheet before the shared global.css, so the
+   placeholder class is named here as well to outrank that rule in the order the page loads them (#4411). */
+.dashboard-page .k2b-placeholder.dashboard-widget-placeholder {
   gap: 0.25rem;
   padding: 0 0.75rem;
 }

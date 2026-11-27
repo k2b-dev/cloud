@@ -162,7 +162,9 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
 `measure` (its head, sentence and rows keep the reading measure of `Prose`,
 720 px of text, so a short list in a wide pane stays together; its line
-still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+still reaches the column's edges), `more` (one link under the rows, its
+words on their text edge, never at the right: "All deliveries ›"; its
+`meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
@@ -339,7 +341,8 @@ lines instead of cutting a thing.
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
-  such as the one a thread is assigned to), `href` (+ `onNavigate`),
+  such as the one a thread is assigned to), `href` (+ `onNavigate`, or
+  `download`: `true` or a file name, the browser saves the file),
   `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
   is about, such as a row's title: its name is its own words, then those;
   `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
@@ -350,7 +353,8 @@ lines instead of cutting a thing.
   is off; not for links or the primary action), `type`, `keep` (stays
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
-  it needs `label`.
+  it needs `label`. With children, `label` is its name only where the
+  words alone do not say enough, and it begins with the words.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
