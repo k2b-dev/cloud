@@ -687,7 +687,7 @@ export const listAppsDetailed = async (): Promise<AppRegistryDetail[]> => {
 /**
  * Aggregate every running app's `legalLinks` into one flat list. Used by the
  * login footer, app Footer, and rail "more" dropdown to render a unified set
- * of legal/info links (Imprint, Privacy, Terms, FAQ, …).
+ * of legal/info links (Imprint, Privacy, Terms, …).
  *
  * Order = registration order across apps (no explicit weights — KISS). Within
  * one app, declaration order is preserved. Duplicate `href`s are de-duped
