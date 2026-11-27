@@ -66,7 +66,8 @@ export default function GridsStart(props: GridsStartProps) {
             onNavigate: (event: LinkNavigateEvent) => open(event, way.id),
             // under the name how many tables it makes (mockup empty-start-tiles v4)
             meta: way.preview ? t().tableCount({ count: way.preview.tables, formatted: number(way.preview.tables) }) : t().blankBaseFoot,
-            // k2b-ui gap (Tile preview, asked of W2): the main table's columns and first sample rows above the name
+            // above the name the main table's first columns and sample rows; the blank base shows a table's sign
+            preview: way.preview ? { table: { columns: way.preview.columns, rows: way.preview.rows } } : { icon: "table" },
           }))}
         />
       </Pane>

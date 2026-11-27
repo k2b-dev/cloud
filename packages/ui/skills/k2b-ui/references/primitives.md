@@ -93,7 +93,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   scrolls, and on the phone it always starts at the top. Only for a page
   with little on it and nothing beside it, such as the first start of an
   app without data: one `Text type="lead"` line and `Tiles perRow={4}` with
-  the ways to start, without a sidebar. No line or box of its own; CSS
+  the ways to start, without a sidebar. The line stands centred over the
+  cards, on the phone at the start. No line or box of its own; CSS
   alone, so the server's first render already stands there.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
@@ -161,15 +162,20 @@ Like things to press, such as attachments: `items: { icon, title, meta?,
 href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
 Never nested. With `color` the symbol becomes the thing's `Mark`.
 `perRow={n}`: at most n tiles share a row and grow with its width; a tile
-never gets narrower than 240 px for it, so below that they wrap, down to
-one under the other.
+never gets narrower than 240 px for it. Where n do not fit, a row holds
+half of them (four as 2 × 2, never 3 + 1), and below that one under the
+other. On the phone a row always holds half of them, even below 240 px.
 
 `variant="card"`: each thing a card in a grid (at least 240 px a card) for
 an overview of things with a face, such as the bases of Grids. A card
 adds `stats` (`{ icon?, label, status?, yours? }`: "6 Tabellen", "8 knapp"
 in `warn`), `people` (an `Avatar.Stack` at the foot), `foot` (quiet words
 at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
-the card's colour). The whole card opens its `href`. `create` adds the last
+the card's colour), `preview` (a glance of what it holds across its top,
+112 px, 84 px on the phone: `{ table: { columns, rows } }` as a small
+table of words, two columns on the phone, `{ page: { title, text? } }`, or
+`{ icon }` for a thing that holds nothing yet; it is a picture, the card
+keeps its name). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
 

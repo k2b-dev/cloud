@@ -198,6 +198,10 @@ describe("Grids before its first base", () => {
           expect.stringContaining("Inventar"),
           expect.stringContaining("Rechnungswesen"),
         ]);
+        // above each name a preview: a template's main table with its sample rows, the blank base a table's sign
+        expect(await ways.locator(".k2-tile-preview").count()).toBe(4);
+        expect(await ways.locator(".k2-tile-pv-table").count()).toBe(3);
+        expect(await ways.nth(1).locator(".k2-tile-pv-table tbody tr").count()).toBeGreaterThan(0);
         // from 1440 on the four ways stand in one row; below, a card keeps its 240 px and they wrap
         if (view === wide || view === xl) {
           await settled(tab);

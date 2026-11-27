@@ -281,6 +281,7 @@
   --k2-heat-at: initial;
   --k2-canvas-h: initial;
   --k2-per-row: initial;
+  --k2-per-row-half: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
   --k2-fade: initial;
@@ -668,9 +669,12 @@
    own measure and at most that of four cards of 240 px with their 12 px gaps between the text edges, and in the
    middle of the height. Auto margins centre it where it fits and fall to zero where it does not, so taller content
    starts at the top and scrolls with nothing cut away above (centring the flex column itself would cut it). On the
-   phone it starts at the top. */
+   phone it starts at the top. Its parts keep 12 px between them, and the text edge stands above and below it too, so
+   it never touches the head of the page. */
 .k2-ui .k2-pane[data-center] > .k2-scroll {
   align-items: center;
+  gap: 12px;
+  padding-block: var(--k2-edge);
 }
 .k2-ui .k2-pane[data-center] > .k2-scroll > * {
   width: min(100%, calc(4 * 240px + 3 * 12px + 2 * var(--k2-edge)));
@@ -681,9 +685,16 @@
 .k2-ui .k2-pane[data-center] > .k2-scroll > :last-child {
   margin-bottom: auto;
 }
+/* its lines of text stand centred over what follows, as a title over the cards; on the phone at the start */
+.k2-ui .k2-pane[data-center] > .k2-scroll > .k2-text {
+  text-align: center;
+}
 @media not all and (min-width: 768px) {
   .k2-ui .k2-pane[data-center] > .k2-scroll > :first-child {
     margin-top: 0;
+  }
+  .k2-ui .k2-pane[data-center] > .k2-scroll > .k2-text {
+    text-align: start;
   }
 }
 /* panes side by side inside content: the list beside its reader, the main column beside its info column */
@@ -962,15 +973,35 @@
   padding: 0 var(--k2-edge);
   min-width: 0;
 }
-/* `perRow`: at most n tiles share a row and grow with it; a track never gets narrower than 240 px, so below that they
-   wrap, down to one under the other. The part name outranks the rules of a variant that lays its tiles out itself. */
+/* `perRow`: at most n tiles share a row and grow with it; a track never gets narrower than 240 px. Where n do not
+   fit, a row holds half of them (n / 2, rounded up: four as 2 × 2, never 3 + 1), and below 240 px one under the
+   other. The last term is the track of that half while the row is narrower than n tiles of 240 px, and far below
+   zero once it is wide enough, so `max()` then takes the n tracks. The part name outranks the rules of a variant that
+   lays its tiles out itself. */
 .k2-ui .k2-tiles[data-k2-part][data-per-row] {
   display: grid;
   grid-template-columns: repeat(
     auto-fill,
-    minmax(max(240px, calc((100% - (var(--k2-per-row) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row))), 1fr)
+    minmax(
+      max(
+        240px,
+        calc((100% - (var(--k2-per-row) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row)),
+        min(
+          calc((100% - (var(--k2-per-row-half) - 1) * var(--k2-tiles-gap)) / var(--k2-per-row-half)),
+          calc((var(--k2-per-row) * 240px + (var(--k2-per-row) - 1) * var(--k2-tiles-gap) - 100%) * 1000)
+        )
+      ),
+      1fr
+    )
   );
   align-items: stretch;
+}
+/* On the phone a row holds half of them, also below 240 px a tile (the approved first start: four as 2 × 2); a tile's
+   name is cut with "…" there like anywhere. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tiles[data-k2-part][data-per-row] {
+    grid-template-columns: repeat(var(--k2-per-row-half), minmax(0, 1fr));
+  }
 }
 .k2-ui .k2-tile {
   display: flex;
@@ -1033,6 +1064,86 @@
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-open]:hover {
   background: var(--k2-n50);
 }
+/* A card's preview: a glance of what it holds across its top, edge to edge above its name, on the quiet surface with a
+   line under it; a small table or page stands in it on the card's surface, its top corners round, its foot cut off by
+   the line, as a sheet seen from above. 112 px, 84 px and two columns on the phone. */
+.k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-preview] {
+  overflow: hidden;
+}
+.k2-ui .k2-tile > .k2-tile-preview {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  height: 112px;
+  margin: -12px -12px 0;
+  padding: 12px 12px 0;
+  overflow: hidden;
+  background: var(--k2-n50);
+  border-bottom: var(--k2-hairline);
+}
+.k2-ui .k2-tile-pv-table,
+.k2-ui .k2-tile-pv-page {
+  flex: none;
+  width: 100%;
+  background: var(--k2-surface);
+  border: var(--k2-hairline);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+.k2-ui .k2-tile-pv-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font: var(--k2-t-meta);
+}
+.k2-ui .k2-tile-pv-table :is(th, td) {
+  padding: 5px 6px;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: var(--k2-hairline);
+}
+/* the line under the preview closes the table: its last row draws none of its own */
+.k2-ui .k2-tile-pv-table tr:last-child td {
+  border-bottom: 0;
+}
+.k2-ui .k2-tile-pv-table th {
+  font-weight: 500;
+  color: var(--k2-text-2);
+}
+.k2-ui .k2-tile-pv-table td {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-pv-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-pv-page > b {
+  font: var(--k2-t-row);
+  font-weight: 600;
+  color: var(--k2-text);
+}
+.k2-ui .k2-tile-preview > .k2-icon {
+  margin: auto;
+  font-size: 28px;
+  color: var(--k2-subtle);
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tile > .k2-tile-preview {
+    height: 84px;
+    padding: 10px 10px 0;
+  }
+  .k2-ui .k2-tile-pv-table :is(th, td)[data-past] {
+    display: none;
+  }
+}
 .k2-ui .k2-tile > .k2-tile-top {
   display: flex;
   flex-direction: row;
@@ -1046,6 +1157,13 @@
 .k2-ui .k2-tiles[data-variant="card"] .k2-tile-title {
   font: var(--k2-t-body);
   font-weight: 600;
+}
+/* a name that opens (a link, or a button with `onOpen`) is cut with "…" like a plain one: a button would cut hard */
+.k2-ui .k2-tile-title > .k2-row-open {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
 .k2-ui .k2-tile-name > .k2-tile-title > .k2-row-open::after {
