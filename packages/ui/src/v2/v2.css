@@ -1389,6 +1389,9 @@
 /* separate borders, so a row of 40 px is 40 px with its line, as in the large table of the mockup */
 .k2-ui .k2-table {
   width: 100%;
+  /* the columns of a small table with widths and the floor of the last one (see `Table`): where they need more, the
+     table scrolls sideways in its scroller instead of pressing the last column to 0 px */
+  min-width: var(--k2-table-min, 0);
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;

@@ -737,6 +737,18 @@ export const Table = <T,>(props: TableProps<T>) => {
   // The widths the grips gave columns, by index; a column keeps its default until then.
   const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
   const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
+  // In a small table with widths the last column takes the rest of the row, but never less than the floor the table
+  // names: its own `min`, else the narrowest `min` of the others. Where the columns before it take more, the table grows
+  // and scrolls sideways, so the last column never stands at 0 px with its words gone (break-ui of #4291 with #4210).
+  const restFloor = () => {
+    if (!sized() || grid()) return undefined;
+    const last = props.columns.at(-1);
+    const others = props.columns.slice(0, -1);
+    const mins = others.map((column) => column.width?.min).filter((min): min is number => min !== undefined);
+    const floor = last?.width?.min ?? (mins.length > 0 ? Math.min(...mins) : undefined);
+    if (floor === undefined) return undefined;
+    return others.reduce((sum, _, index) => sum + (columnWidth(index) ?? 0), floor);
+  };
   const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
@@ -779,6 +791,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
+          style={custom({ "--k2-table-min": restFloor() === undefined ? undefined : `${restFloor()}px` })}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
         >
