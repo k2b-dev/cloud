@@ -396,6 +396,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* the place of a split at the top, as wide as it: a split's own rule asks it (see `Pane side`) */
+  container: k2-host / inline-size;
 }
 .k2-ui .k2-ws-main > * {
   flex: none;
@@ -657,6 +659,11 @@
 }
 .k2-ui .k2-scroll > .k2-split {
   flex: 1 0 auto;
+}
+/* A main column with its context column (`Pane side`): the reach of a grip (its `::after`) stays inside its line, so
+   the split, which scrolls where the context gives way, never grows by it and ends at its content. */
+.k2-ui .k2-split[data-context] > .k2-seam {
+  overflow-y: clip;
 }
 
 /* ── Bar: fixed height by place, line below, places start and end ──────────────────────────────────────────── */
@@ -3433,10 +3440,15 @@
 .k2-ui .k2-bar[data-status-row] > .k2-bar-start {
   flex: 1 1 0;
 }
-/* the lead gives way before a control is cut or covered; with controls that fold it keeps about a word down to 320 px */
+/* The lead gives way before a control is cut or covered. The lead and the figures share the room before the filters,
+   each up to its own width, so what one does not need goes to the other: a short lead leaves the figures all the rest
+   (the row's room without filters); a long lead is cut with "…" while short figures keep their width; where both are
+   long, the lead keeps 40 % and the later figures fold. In a row narrower than 600 px, where the controls fold, the
+   lead keeps 60 %, about a word beside two folded controls. */
 .k2-ui .k2-bar-start > .k2-status-lead {
-  flex: 0 1 auto;
+  flex: 2 1 0;
   min-width: 0;
+  max-width: max-content;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -3455,11 +3467,12 @@
 /* The key figures stand on one line that hides what wraps: where not all fit before the filters, the later ones wrap
    out of sight, whole figure by whole figure, and none runs under a control (#4149). The empty first item, one line
    high, lets even the first figure go whole instead of being cut; its gap and the row's make the 16 px after the
-   lead. The filters keep their room, and so does the lead: the figures start from no width and take what is left. */
+   lead. The filters keep their room; the lead and the figures share the rest (see the lead above). */
 .k2-ui .k2-bar-start > .k2-status-facts {
   display: flex;
   flex-wrap: wrap;
-  flex: 1 1 0;
+  flex: 3 1 0;
+  max-width: max-content;
   column-gap: 8px;
   min-width: 0;
   height: 1lh;
@@ -3468,6 +3481,42 @@
 .k2-ui .k2-status-facts::before {
   content: "";
   height: 1lh;
+}
+/* Chips of the statement (an exception in a tinted chip, rule 2): after the lead, one line that hides what wraps, so
+   a chip that does not fit goes whole, the later ones first. They keep their width while the lead is cut and the
+   figures share what is left, and stay on the phone; they give way only where about a word of the lead would no
+   longer fit beside them (see the lead below). The empty first item lets even the first chip go whole. */
+.k2-ui .k2-bar-start > .k2-status-marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 0 1 auto;
+  column-gap: 4px;
+  min-width: 0;
+  height: 24px;
+  overflow: hidden;
+}
+/* Beside chips the lead starts from about a word (4.5 em, or its own width where it is shorter: `max-width` holds it
+   to that) and never shrinks below it, so the chips are what gives way; never more than half the row's start, so the
+   lead never pushes into the controls of a very narrow row. */
+.k2-ui .k2-bar-start:has(> .k2-status-marks) > .k2-status-lead {
+  flex-shrink: 0;
+  flex-basis: min(4.5em, 50%);
+}
+.k2-ui .k2-status-marks::before {
+  content: "";
+  height: 24px;
+  margin-inline-end: -4px;
+}
+/* a narrow row (below 600 px, where the controls fold): the lead keeps 60 % where both are long, about a word beside two
+   folded controls */
+@container k2-status (max-width: 599px) {
+  .k2-ui .k2-bar-start > .k2-status-lead {
+    flex-grow: 3;
+  }
+  .k2-ui .k2-bar-start > .k2-status-facts {
+    flex-grow: 2;
+  }
 }
 .k2-ui .k2-bar[data-status-row] > .k2-bar-end {
   flex: none;
@@ -3985,6 +4034,13 @@
   flex: none;
   color: var(--k2-subtle);
 }
+/* the value set now through an entry's submenu or panel: at the end, in the app's colour (as a filter's set bound) */
+.k2-ui .k2-mi-meta[data-set] {
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+  color: var(--k2-app-text);
+  font-weight: 600;
+}
 /* the pointer, the keys and an open submenu mark the same entry with the same fill */
 .k2-ui .k2-mi:is([data-highlighted], [data-open]) {
   background: var(--k2-n100);
@@ -4028,6 +4084,61 @@
   height: 1px;
   background: var(--k2-line);
   margin: 4px -4px;
+}
+/* On the phone a menu behind a button is a sheet (as the dialog is): the whole width at the bottom, its top corners
+   round, entries of 44 px for a finger. Core places the sheet; a context menu stays at the pointer. */
+.k2-ui .k2-menu[data-presentation="sheet"]:not([data-nested]) {
+  min-width: 0;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi {
+  height: 44px;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-msep {
+  margin: 4px -8px;
+}
+/* A submenu is the sheet's next step: core shows it in its parent's place, under its entry, which turns into the way
+   back ("‹ Später anzeigen"); the step itself is no second surface. */
+.k2-ui .k2-menu[data-presentation="sheet"][data-nested] {
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi[data-open] {
+  background: none;
+  font-weight: 600;
+  color: var(--k2-text);
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi[data-open] > .k2-mi-lead {
+  display: none;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] .k2-mi[data-open] > .k2-icon:last-child {
+  order: -1;
+  transform: rotate(180deg);
+}
+/* On the phone a menu entry's panel (a calendar) is a popover's sheet (below); its calendar stands in the middle */
+.k2-ui .k2-pop.k2-dpop[data-presentation="sheet"] {
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  align-items: center;
+}
+/* the head of a panel's sheet: its name, which leads back to the entries ("‹ Datum und Uhrzeit …") */
+.k2-ui .k2-pop[data-presentation="sheet"] > .k2-panel-back {
+  align-self: stretch;
+  width: auto;
+  height: 44px;
+  margin: 0 8px;
+  font-weight: 600;
+  color: var(--k2-text);
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
@@ -4091,6 +4202,10 @@
   width: auto;
   padding: 8px;
   gap: 0;
+}
+/* as a sheet on the phone it reaches the edges: its head stands on the text edge of the menu sheet beside it */
+.k2-ui .k2-pop.k2-dpop[data-presentation="sheet"] {
+  padding-inline: 0;
 }
 .k2-ui .k2-dpick {
   display: flex;
@@ -4658,8 +4773,9 @@
    What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
    fields of a row, cells and the way of steps stand one under the other, and no column of a table is dragged. What
    is about touch and the page (rows of 60 px, the phone bar, columns as pages, the text edge) stays with the window. */
+/* a pane is also the place (`k2-host`) of a split inside it, as wide as that split (see `Pane side`) */
 .k2-ui .k2-pane {
-  container: k2-pane / inline-size;
+  container: k2-pane k2-host / inline-size;
 }
 @container k2-pane (max-width: 479px) {
   /* an entry of a digest puts its date, title, state and text one under the other: beside each other the text would
@@ -5467,22 +5583,23 @@
   padding: 0 var(--k2-edge);
   border-radius: 0;
 }
-.k2-ui .k2-fsheet-pick {
+/* a calendar in a sheet, the filter sheet's or a menu entry's: centred, days of 44 px for a finger */
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) {
   display: flex;
   justify-content: center;
   padding: 0 var(--k2-edge) 8px;
 }
-.k2-ui .k2-fsheet-pick .k2-dpick {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) .k2-dpick {
   width: 308px;
 }
-.k2-ui .k2-fsheet-pick .k2-cal-row {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) .k2-cal-row {
   grid-template-columns: repeat(7, 44px);
 }
-.k2-ui .k2-fsheet-pick :is(.k2-cal-day, .k2-cal-h > .k2-btn) {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) :is(.k2-cal-day, .k2-cal-h > .k2-btn) {
   width: 44px;
   height: 44px;
 }
-.k2-ui .k2-fsheet-pick .k2-cal-h {
+.k2-ui :is(.k2-fsheet-pick, .k2-dpop[data-presentation="sheet"]) .k2-cal-h {
   height: 44px;
 }
 

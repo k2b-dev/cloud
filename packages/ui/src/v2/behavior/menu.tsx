@@ -55,6 +55,8 @@ export type MenuLevelParts = {
    * here. Returns the function that lets go.
    */
   onChoice: (group: string, choose: (value: string) => void) => () => void;
+  /** Closes the whole menu, as choosing an entry does; for a panel that picks something. */
+  close: () => void;
 };
 
 /** The receivers of a menu's choices, by the name of their radio group; one for a menu and its submenus. */
@@ -117,11 +119,17 @@ const levelParts = (handle: MenuHandle, choices: Choices): MenuLevelParts => {
         if (choices.get(group) === choose) choices.delete(group);
       };
     },
+    close: () => handle.api.action(undefined),
   };
 };
 
 /** A menu with submenus, check items and an optional context area. */
-export function useMenuLevels(options: () => OverlayOptions = () => ({})): MenuLevelParts {
+export function useMenuLevels(
+  options: () => OverlayOptions & {
+    /** `sheet`: from the bottom of the screen, a submenu shows in its parent's place; `popover` by default. */
+    presentation?: "popover" | "sheet";
+  } = () => ({}),
+): MenuLevelParts {
   // A pending item announces that it is waiting; core's own text is English only.
   const t = useBehaviorMessages();
   const choices: Choices = new Map();

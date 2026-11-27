@@ -67,8 +67,24 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
-- `side`: the info column of a record; quieter sections, a `more` link
-  becomes a row.
+- `side`: the context column (the info column of a record, what a form
+  feeds, a chart beside a table); quieter sections, a `more` link becomes a
+  row. In a `Pane.Split` of exactly one main column and this context column
+  after it, the context stands beside only where the split holds both at
+  their default widths (400 px without a `width`). With less it gives way
+  to the end of the main column, at its full width, and the split scrolls
+  in one piece: the main column is never squeezed and nothing hides; it
+  needs no room of the workspace, so the sidebar never becomes a drawer for
+  it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
+  main column that needs it (a table: beside only on a large screen). In
+  any other split (a list, its reader and an info column) it stands beside
+  as every column does.
+- A detail that grows on a large screen is the same part: under the
+  detail's one `head` (and what spans both, such as a hero band), a
+  `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
+  side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
+  from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
+  and in reading order below that.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -456,13 +472,23 @@ lines instead of cutting a thing.
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
-  where it does not fit before the filters), `loading` (results
+  first where it does not fit, its whole words as a hint on hover),
+  `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
-  the row never refreshes), `facts: { before?, value?, after? }[]` (where
-  they do not fit before the filters, the later ones give way whole, so the
-  filters keep their words; they go on the phone; put what must stay in
-  `lead`),
+  the row never refreshes), `facts: { before?, value?, after? }[]` (they
+  share the room before the filters with the lead, each up to its own width:
+  beside a short lead they take the rest, beside a long lead they keep their
+  width and the lead is cut; where both are long the lead keeps 40 % (60 %
+  below 600 px, where the controls fold) and the later figures give way
+  whole, so the filters keep their words; they go on the phone; put what must
+  stay in `lead`),
+  `marks` (tinted chips of the statement, an exception such as
+  `<Chip status="bad">1 ohne Zugriff</Chip>`: after the lead, they keep their
+  width while the lead is cut, stay on the phone, and give way whole only
+  where about a word of the lead no longer fits; a chip that must never leave
+  belongs in `lead`; chips only, no buttons, as a chip that gave way still
+  takes the focus; `cond && <Chip/>` is fine, `false` draws nothing),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
@@ -527,13 +553,23 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
+  `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
+  beside the entry such as a `DatePicker`: a dialog of its own over the
+  menu, with its own keys and focus, that calls `close` once it picked;
+  Escape closes it first), and `current` (the value set through that
+  submenu or panel, such as a reminder's time: at the end in the app's
+  colour and part of the entry's name; it takes the place of `meta`); or
+  `"separator"` between groups; or a section `{ title, items }` under a
+  quiet heading. A section with `choice` and `onChoose` is one choice
+  (reply kind, sender, order): its entries are options (`value`, else
+  `label`), the chosen one carries the tick, choosing another closes the
+  menu and calls `onChoose`, choosing the ticked one only closes it. A
+  choice whose options say enough by themselves may have the `title` ""
+  (no heading). Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
+  its button; there is no `align`. On the phone it is a sheet from the
+  bottom with entries of 44 px; a submenu is the sheet's next step under
+  its entry, which leads back, and a panel is a sheet of its own.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
   the element. It adds no wrapper, so a `Row` stays a child of its `List`.
