@@ -939,7 +939,8 @@ export default function NoteDetails(props: NoteDetailsProps) {
       ? "photo"
       : fileIcons.getFileIcon({ name: attachment.filename, type: "file", mimeType: attachment.mimeType }).replace(/^ti-/, "");
   const headingRow = (item: TocItem) =>
-    // k2b-ui gap: a Row has no indent; a sub-heading names its depth with a leading dash instead.
+    // k2b-ui gap: Row level (Y2) – until `Row level` lands, a sub-heading names its depth with a leading dash; then the
+    // row takes `level={item.level - outlineBase() + 1}` inside its List and the dash goes.
     `${item.level - outlineBase() > 0 ? "– ".repeat(Math.min(2, item.level - outlineBase())) : ""}${item.text || t().untitled}`;
   const scrollToHeading = (id: string) => window.dispatchEvent(new CustomEvent(TOC_SCROLL_EVENT, { detail: { id } }));
 
@@ -1058,8 +1059,6 @@ export default function NoteDetails(props: NoteDetailsProps) {
           />
         </Section>
 
-        {/* k2b-ui gap: the comment thread and its composer (rich, from @k2b/editor) keep their v1 drawing until the v2
-          composer lands; they stand here unchanged. */}
         <NoteCommentsSection
           notebookId={props.notebookId}
           noteId={noteId()}

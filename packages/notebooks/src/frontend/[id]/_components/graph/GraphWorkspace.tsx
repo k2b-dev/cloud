@@ -137,8 +137,8 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                   items={GRAPH_DISPLAY_REGISTRY.map((entry) => ({
                     label: entry.label(t()),
                     icon: entry.icon.replace(/^ti ti-/, ""),
-                    // k2b-ui gap: Tabs cannot mark a device default before the browser knows the width, so no tab is
-                    // current until then; the display itself is the same on both sides.
+                    // k2b-ui gap: #4389 (Z2, Tabs `defaultOn`) – until it lands, no tab is current before the browser knows
+                    // the width; then Netz takes defaultOn "wide" and Umgebung "phone". The display is the same on both sides.
                     current: g.display() === entry.id,
                     onClick: () => g.update({ display: entry.id }),
                   }))}

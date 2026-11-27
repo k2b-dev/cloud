@@ -691,7 +691,7 @@ test(`${browserName}: the server render and mounted defaults share controls and 
         expect((await frame(page)).boxes).toEqual(before.boxes);
         const initial = await page.evaluate(() => window.notebookGraphFixture!);
         expect(initial.clientFrame.boxes).toEqual(initial.serverFrame.boxes);
-        // k2b-ui gap: the device default's tab (and Umgebung's depth) show once the browser knows the width
+        // k2b-ui gap: #4389 (Z2) – the device default's tab (and Umgebung's depth) show once the browser knows the width
         const mounted = await frame(page);
         expect(mounted.checked?.trim()).toBe(query ? undefined : viewport.width < 768 ? "Neighborhood" : "Network");
       } finally {

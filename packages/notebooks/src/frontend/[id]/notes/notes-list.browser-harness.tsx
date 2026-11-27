@@ -32,7 +32,7 @@ render(
         items={items}
         figures={
           sample === "empty"
-            ? { days: Array.from({ length: 30 }, () => 0), changes: 0, people: 0, notes: 0, newNotes: 0, latest: null }
+            ? { days: Array.from({ length: 30 }, () => 0), changes: 0, people: 0, notes: 0, newNotes: 0 }
             : sample === "worst"
               ? worstFigures()
               : {

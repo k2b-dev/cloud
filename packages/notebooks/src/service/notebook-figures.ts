@@ -1,6 +1,5 @@
 import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
-import type { NotebookActivityActor } from "../lib/activity-actions";
 
 /**
  * The key figures of one notebook for the head of its workspace screens: how much was changed in the last days and by
@@ -26,8 +25,6 @@ export type NotesFigures = {
   notes: number;
   /** Notes created in the window. */
   newNotes: number;
-  /** The last change: who, when and which note. */
-  latest: { actor: NotebookActivityActor; at: string; note: { shortId: string; title: string } | null } | null;
 };
 
 export const notesFigures = async (params: { notebookId: string; timeZone: string; now: Date }): Promise<NotesFigures> => {
@@ -39,13 +36,6 @@ export const notesFigures = async (params: { notebookId: string; timeZone: strin
       people: number;
       notes: number;
       new_notes: number;
-      latest_kind: NotebookActivityActor["kind"] | null;
-      latest_actor_id: string | null;
-      latest_name: string | null;
-      latest_avatar_hash: string | null;
-      latest_at: Date | null;
-      latest_note_short_id: string | null;
-      latest_note_title: string | null;
     }[]
   >`
     WITH window_days AS (
@@ -72,28 +62,7 @@ export const notesFigures = async (params: { notebookId: string; timeZone: strin
       (SELECT COUNT(DISTINCT (recent.actor_kind, recent.actor_id))::int FROM recent WHERE recent.actor_kind <> 'system') AS people,
       (SELECT COUNT(*)::int FROM notebooks.notes n WHERE n.notebook_id = ${params.notebookId}::uuid) AS notes,
       (SELECT COUNT(*)::int FROM notebooks.notes n, since
-        WHERE n.notebook_id = ${params.notebookId}::uuid AND n.created_at >= since.at) AS new_notes,
-      latest.actor_kind AS latest_kind,
-      latest.actor_id AS latest_actor_id,
-      COALESCE(NULLIF(actor_user.display_name, ''), actor_user.uid, actor_service.name) AS latest_name,
-      actor_user.avatar_hash AS latest_avatar_hash,
-      latest.last_occurred_at AS latest_at,
-      note.short_id AS latest_note_short_id,
-      note.title AS latest_note_title
-    FROM (SELECT 1) AS one
-    LEFT JOIN LATERAL (
-      SELECT a.actor_kind, a.actor_id, a.note_id, a.last_occurred_at
-      FROM notebooks.activity_events a
-      WHERE a.notebook_id = ${params.notebookId}::uuid
-        AND a.last_occurred_at <= ${params.now}::timestamptz
-        AND a.action = ANY(${toPgTextArray(CHANGES)}::text[])
-      ORDER BY a.last_occurred_at DESC, a.id DESC
-      LIMIT 1
-    ) latest ON true
-    LEFT JOIN notebooks.notes note ON note.id = latest.note_id
-    LEFT JOIN auth.users actor_user ON latest.actor_kind = 'user' AND actor_user.id = latest.actor_id
-    LEFT JOIN auth.service_accounts actor_service
-      ON latest.actor_kind = 'service_account' AND actor_service.id = latest.actor_id
+        WHERE n.notebook_id = ${params.notebookId}::uuid AND n.created_at >= since.at) AS new_notes
   `;
   if (!row) throw new Error("Notebook figures returned no row");
   return {
@@ -102,22 +71,6 @@ export const notesFigures = async (params: { notebookId: string; timeZone: strin
     people: row.people,
     notes: row.notes,
     newNotes: row.new_notes,
-    latest:
-      row.latest_kind && row.latest_at
-        ? {
-            actor: {
-              kind: row.latest_kind,
-              id: row.latest_actor_id,
-              displayName: row.latest_name ?? (row.latest_kind === "system" ? "System" : ""),
-              avatarHash: row.latest_avatar_hash,
-            },
-            at: row.latest_at.toISOString(),
-            note:
-              row.latest_note_short_id && row.latest_note_title !== null
-                ? { shortId: row.latest_note_short_id, title: row.latest_note_title }
-                : null,
-          }
-        : null,
   };
 };
 

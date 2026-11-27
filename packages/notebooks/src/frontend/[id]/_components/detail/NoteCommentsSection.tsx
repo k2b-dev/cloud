@@ -385,7 +385,8 @@ export default function NoteCommentsSection(props: Props) {
                 <Show
                   when={isEditing()}
                   fallback={
-                    // k2b-ui gap: Prose renders no images or tables, which a comment's Markdown may hold; it shows them as text.
+                    // k2b-ui gap: #4382 (G) – until `Prose compact` lands, a comment's images and tables show as text; then
+                    // this Prose takes `compact` (an image its words, a table one line per row).
                     <Prose markdown={comment.content} />
                   }
                 >
