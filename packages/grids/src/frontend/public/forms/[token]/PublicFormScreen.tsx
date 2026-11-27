@@ -9,12 +9,18 @@ import PublicFormSubmit from "../../../_components/forms/PublicFormSubmit.island
 export function PublicFormScreen(props: ComponentProps<typeof PublicFormSubmit>) {
   const title = () => props.form.config.title ?? props.form.name;
   return (
-    <Workspace head={<Bar start={<RecordHead name={title()} />} />}>
+    <Workspace>
       <Pane label={title()}>
+        {/* k2b-ui slot (#4278 measure): until it lands, the form stands in a centred reading column of 640 px with its
+            title, like the shared document */}
         <Canvas label={title()}>
+          <div class="mx-auto w-full max-w-[640px] py-6">
+            <Bar start={<RecordHead name={title()} />} />
+          </div>
           {/* the v1 form keeps the text edge of the page: 20 px, 16 px on a phone (textEdge) */}
-          <div class="p-4 md:p-5">
-            <PublicFormSubmit {...props} showTitle={false} />
+          <div class="mx-auto w-full max-w-[640px] px-4 pb-6 md:px-5">
+            {/* bare: the v2 page is the frame, so the form draws no card of its own (no box in a box) */}
+            <PublicFormSubmit {...props} showTitle={false} surface="bare" />
           </div>
         </Canvas>
       </Pane>

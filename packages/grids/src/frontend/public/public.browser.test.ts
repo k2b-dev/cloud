@@ -111,6 +111,10 @@ const open = async (view: View, address: string) => {
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
     if (url.pathname === "/plex.css") return route.fulfill({ contentType: "text/css", body: plex.css });
     if (url.pathname.startsWith("/fonts/")) return route.fulfill({ path: join(plex.dir, url.pathname.slice("/fonts/".length)) });
+    if (url.pathname === "/api/grids/forms/public/frm_test/submit" && route.request().method() === "POST") {
+      submissions.push(route.request().postDataJSON());
+      return route.fulfill({ status: submitAnswer.status, json: submitAnswer.json });
+    }
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
   await tab.goto(`${origin}${address}`);
@@ -118,6 +122,10 @@ const open = async (view: View, address: string) => {
   await settled(tab);
   return { context, tab, errors };
 };
+
+/** What the form's submit answers, and what the page sent to it. */
+let submitAnswer: { status: number; json: unknown } = { status: 200, json: {} };
+const submissions: unknown[] = [];
 
 const shoot = async (tab: Page, name: string) => {
   if (shots) await tab.screenshot({ path: join(shots, `${name}.png`) });
@@ -149,4 +157,28 @@ describe("the public pages of Grids on v2", () => {
         }
       }
     }, 90_000);
+
+  test("the form sends nothing while a required field is empty, says what the server refused, and thanks once it is in", async () => {
+    submissions.length = 0;
+    const { context, tab, errors } = await open(views[0]!, "/share/grids/forms/frm_test");
+    try {
+      const send = tab.getByRole("button", { name: "Absenden" });
+      await send.click();
+      expect(submissions).toHaveLength(0);
+      await tab.getByRole("textbox", { name: /^Name/ }).fill("Jonas Kern");
+      submitAnswer = { status: 422, json: { message: "Diese Anzahl ist nicht verfügbar." } };
+      await send.click();
+      await tab.getByText("Diese Anzahl ist nicht verfügbar.").waitFor();
+      expect(submissions).toHaveLength(1);
+      submitAnswer = { status: 200, json: {} };
+      await send.click();
+      await tab.getByText("Danke, Ihre Anfrage ist angekommen.").waitFor();
+      expect(submissions).toHaveLength(2);
+      // the refused request is the one error the browser reports
+      expect(errors.filter((error) => !error.includes("422"))).toEqual([]);
+    } finally {
+      submitAnswer = { status: 200, json: {} };
+      await context.close();
+    }
+  }, 60_000);
 });

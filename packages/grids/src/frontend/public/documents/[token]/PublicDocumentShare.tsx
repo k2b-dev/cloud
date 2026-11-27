@@ -1,5 +1,4 @@
-import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Facts, Pane, RecordHead, Section, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Canvas, Empty, Facts, Pane, RecordHead, Section, useLocale, Workspace } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
 import { resolveGridsMessages } from "../../../messages";
 
@@ -37,35 +36,44 @@ export function PublicDocumentShare(props: {
   const available = () => Boolean(props.filename && props.expiresAt && props.expiresAtLabel && props.downloadHref);
 
   return (
-    <Workspace
-      head={
-        <Bar
-          start={<RecordHead name={available() ? props.filename! : t().linkUnavailable} />}
-          end={
-            <Show when={available()}>
-              {/* a plain link: the answer is an attachment, so the browser saves it and the page stays */}
-              <Button variant="primary" icon="download" href={props.downloadHref} keep>
-                {t().downloadFile}
-              </Button>
-            </Show>
-          }
-        />
-      }
-    >
+    // on the phone the download floats; from 768 px it stands at the end of the head
+    <Workspace primary={available() ? { label: t().downloadFile, icon: "download", href: props.downloadHref } : undefined}>
       <Pane label={available() ? props.filename! : t().linkUnavailable}>
-        <Show when={available()} fallback={<Empty icon="link-off" text={t().documentLinkUnavailable} />}>
-          {/* each fact once: the format is the section's sign, how long the link lasts one line with its date */}
-          <Section icon={FILE_ICONS[fileKind(props.mimeType) ?? ""] ?? "file"} title={t().sharedThroughGrids}>
-            <Facts
-              items={[
-                {
-                  label: t().availableUntilLabel,
-                  value: `${props.expiresAtLabel} (${remainingTime(props.expiresAt ?? "", locale())})`,
-                },
-              ]}
+        {/* k2b-ui slots (#4278 measure, #4360 object head): until both land, the page stands in a centred reading
+            column of 640 px, so a single file never sits alone at the left edge of a wide screen */}
+        <Canvas label={available() ? props.filename! : t().linkUnavailable}>
+          <div class="mx-auto w-full max-w-[640px] py-6">
+            <Bar
+              start={<RecordHead name={available() ? props.filename! : t().linkUnavailable} />}
+              end={
+                <Show when={available()}>
+                  {/* a plain link: the answer is an attachment, so the browser saves it and the page stays (k2b-ui
+                      slot: a download attribute on Button) */}
+                  <span class="hidden md:inline-flex">
+                    <Button variant="primary" icon="download" href={props.downloadHref}>
+                      {t().downloadFile}
+                    </Button>
+                  </span>
+                </Show>
+              }
             />
-          </Section>
-        </Show>
+            <Show when={available()} fallback={<Empty icon="link-off" text={t().documentLinkUnavailable} />}>
+              {/* each fact once: the format is the section's sign; the file's whole name stands here, since the head
+                  cuts it (until #4346 lets it take two lines); how long the link lasts is one line with its date */}
+              <Section icon={FILE_ICONS[fileKind(props.mimeType) ?? ""] ?? "file"} title={t().sharedThroughGrids}>
+                <Facts
+                  items={[
+                    { label: t().fileLabel, value: props.filename! },
+                    {
+                      label: t().availableUntilLabel,
+                      value: `${props.expiresAtLabel} (${remainingTime(props.expiresAt ?? "", locale())})`,
+                    },
+                  ]}
+                />
+              </Section>
+            </Show>
+          </div>
+        </Canvas>
       </Pane>
     </Workspace>
   );

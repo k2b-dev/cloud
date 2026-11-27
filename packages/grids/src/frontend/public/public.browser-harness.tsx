@@ -1,5 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import { appColorStyle } from "../../../../cloud/src/ssr/app-color";
 import { PublicDocumentShare } from "./documents/[token]/PublicDocumentShare";
 import { PublicFormScreen, PublicFormUnavailable } from "./forms/[token]/PublicFormScreen";
 
@@ -38,7 +39,8 @@ const fields = [
 render(
   () => (
     <LocaleProvider locale="de">
-      <main class="k2-ui minimal-layout-main">
+      {/* the app's colour, as the layout sets it for Grids (accent #008f4c) */}
+      <main class="k2-ui minimal-layout-main" style={`--app-accent:#008f4c;${appColorStyle("#008f4c")}`}>
         {location.pathname.includes("/documents/gone") ? (
           <PublicDocumentShare />
         ) : location.pathname.includes("/documents/") ? (
@@ -62,6 +64,7 @@ render(
               config: {
                 title: worst ? "Ausleihe-von-Messgeräten-und-Werkzeugen-für-Außeneinsätze-der-Werkstatt-Nord" : "Geräteausleihe",
                 description: "Wir melden uns innerhalb eines Werktags.",
+                successMessage: "Danke, Ihre Anfrage ist angekommen.",
                 fields: fields.map((each) => ({ kind: "user_input" as const, fieldId: each.id })),
               },
             }}
