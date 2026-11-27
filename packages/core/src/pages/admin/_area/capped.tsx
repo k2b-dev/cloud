@@ -1,6 +1,21 @@
+import { i18n } from "@k2b/stdlib";
 import { Text, useLocale } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import { areaListMessages } from "./messages";
+
+/** Words of a list in Core's admin areas that shows only its first rows. */
+const areaListMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      shownOf: ({ shown, total }: { shown: string; total: string }) => `${shown} of ${total}`,
+      narrowSearch: "Narrow the search",
+    },
+    de: {
+      shownOf: ({ shown, total }) => `${shown} von ${total}`,
+      narrowSearch: "Suche eingrenzen",
+    },
+  },
+});
 
 // k2b-ui gap: virtual Table (MW, #4211). Until it lands, a list that can grow without bound renders its first rows and
 // a search reaches the rest.
