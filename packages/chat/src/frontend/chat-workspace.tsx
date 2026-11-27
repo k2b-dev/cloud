@@ -3793,7 +3793,12 @@ export function ChatWorkspaceView(
                       ]
                     : []),
                 ];
-          return { close: { label: v2t().closeInfo, onClick: () => closeInfo() }, menu };
+          // On the phone the info is the page; its way back names the chat it returns to.
+          return {
+            close: { label: v2t().closeInfo, onClick: () => closeInfo() },
+            back: { label: current.title, onClick: () => closeInfo() },
+            menu,
+          };
         }}
         infoContent={() => infoView(V2.ChatInfoPaneV2)}
       />

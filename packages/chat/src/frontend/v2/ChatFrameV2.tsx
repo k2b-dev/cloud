@@ -68,7 +68,7 @@ export type ChatFrameV2Props = {
   };
   detail: Accessor<ChatDetailV2 | null>;
   /** The open chat's info beside it, while the address asks for it. */
-  info: Accessor<{ close: Action; menu: readonly MenuEntry[] } | null>;
+  info: Accessor<{ close: Action; back: Action; menu: readonly MenuEntry[] } | null>;
   /** The info itself, made once while it stands. */
   infoContent: () => JSX.Element;
 };
@@ -120,6 +120,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
       <Workspace
         sidebarLabel={v2().sidebarWidth}
         // The chat keeps room to read: where list, chat and sidebar do not fit (a tablet), the sidebar is a drawer.
+        // The chat, or its info while open, keeps room to read: where it does not fit, the sidebar becomes a drawer.
         detail={520}
         detailEmpty={{ icon: "messages", text: v2().noneOpen }}
         // On the phone the main action floats over the list only; in an open chat it would cover the composer.
@@ -176,8 +177,13 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
               const fallback = untrack(() => props.detail())!;
               const content = untrack(() => fallback.content());
               return (
+                // While its info is open, the info is the detail: on the phone it is the page and the chat gives way,
+                // and beside the chat on a wide screen.
                 <Pane
-                  detail
+                  detail={!props.info()}
+                  // Beside its info the chat keeps a reading width of its own; where list, chat and info do not fit
+                  // with the sidebar, the sidebar becomes a drawer.
+                  width={props.info() ? { min: 440, default: 560 } : undefined}
                   label={detail().label}
                   back={detail().back}
                   head={
@@ -219,12 +225,14 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
           </Show>
           <Show when={props.detail() ? props.info() : null}>
             {(info) => (
-              // k2b-ui gap (Z2, #4308): on the phone only the pane in front should stand; the info is the page there.
+              // The info is the detail while it is open: beside the chat on a wide screen, the page on the phone, with its
+              // way back to the chat.
               <Pane
                 detail
+                side
                 label={v2().infoPane}
-                width={{ min: 320, default: 360 }}
-                back={info().close}
+                width={{ min: 360, default: 520 }}
+                back={info().back}
                 head={
                   <Bar
                     start={<Text type="lead">{v2().info}</Text>}
