@@ -554,7 +554,10 @@ lines instead of cutting a thing.
   actions without room go whole into a "…" menu from the end, right after the
   last one in sight; the way out stays at the end of the bar).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
-  head `Bar start` instead of `Tabs`. The last item is the page itself. On
+  head `Bar start` instead of `Tabs`. The last item is the page itself;
+  without room the places before it shorten to their own width or 12
+  characters first, and the page last. Places without room even then go
+  into a "…" menu ("Weitere Orte"): the middle ones first, then all. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
