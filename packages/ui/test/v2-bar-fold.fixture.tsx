@@ -14,6 +14,8 @@ import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 // - "reader": Mail's reader in small: a long subject, the primary "Erledigt", four actions, a menu with words
 //   ("Später") and the head's own "…".
 // - "tabs": four tabs, two actions, the primary and a menu with a symbol of its own ("Filter") at the very end.
+// - "history": Notebooks' version history: a fixed label "Versionsverlauf" and a long note title in the start, two
+//   actions at the end. The title takes the shortage; the label stays whole.
 
 declare global {
   interface Window {
@@ -170,6 +172,32 @@ export function Fixture() {
         >
           <Pane label="Entwurf">
             <Text>Der Entwurf.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="history">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <>
+                  <Text type="row">Versionsverlauf</Text>
+                  <Text type="row" weight="strong">
+                    Wochenplan Lager Nord mit allen Lieferungen bis Ende Dezember
+                  </Text>
+                </>
+              }
+              end={
+                <>
+                  <Button keep icon="restore" label="Wiederherstellen" onClick={deed("Wiederherstellen")} />
+                  <Button keep icon="x" label="Schließen" onClick={deed("Schließen")} />
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Version">
+            <Text>Eine frühere Version.</Text>
           </Pane>
         </Workspace>
       </div>

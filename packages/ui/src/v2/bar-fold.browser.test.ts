@@ -220,6 +220,22 @@ test("Mail's reader: its own '…' takes the folded actions; a menu with a symbo
   });
 });
 
+test("390 px: inside the start the last words take the shortage; a fixed label and a button before them stay whole", async () => {
+  const whole = (page: Page, bar: string, selector: string) =>
+    page.locator(`${bar} > .k2-bar-start > ${selector}`).evaluate((element) => {
+      const label = element.querySelector(".k2-btn-label") ?? element;
+      return label.scrollWidth <= label.clientWidth + 0.5;
+    });
+  for (const live of [false, true])
+    await withPage(390, live, async (page) => {
+      // Notebooks' version history: "Versionsverlauf" whole, the note title shortened
+      expect([live, await whole(page, head("history"), ".k2-text:first-child")]).toEqual([live, true]);
+      expect([live, await whole(page, head("history"), ".k2-text:last-child")]).toEqual([live, false]);
+      // the notebook head: the title gives first, "1.000 Kommentare" stays whole
+      expect([live, await whole(page, head("book"), ".k2-btn")]).toEqual([live, true]);
+    });
+});
+
 test("a plain '…' before the primary takes the folded actions: no second '…', nothing new after the primary", async () => {
   await withPage(390, true, async (page) => {
     const names = (await seen(page, head("before"))).map((control) => control.name);
@@ -354,7 +370,7 @@ test("every 8 px from 320 to 1440: each end ends inside its bar's content edge, 
       await page.setViewportSize({ width, height: 1000 });
       await frames(page);
       await frames(page);
-      for (const which of ["record", "book", "menu", "before", "reader", "tabs"]) {
+      for (const which of ["record", "book", "menu", "before", "history", "reader", "tabs"]) {
         const { start, end, content } = await edges(page, head(which));
         if (!end) continue;
         if (end.right > content + 0.5) wrong.push(`${which} at ${width}: the end ends ${Math.round(end.right - content)} px beyond`);
