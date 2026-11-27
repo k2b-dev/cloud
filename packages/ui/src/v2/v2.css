@@ -4484,16 +4484,19 @@
     height: auto;
     min-height: var(--k2-h-status);
     row-gap: 8px;
-    padding-block: 8px;
+    /* one line stays 52 px with its line below: a control of 36 with equal air above and below */
+    padding-block: calc((var(--k2-h-status) - 1px - var(--k2-h-control)) / 2);
   }
   .k2-ui .k2-bar[data-status-row] > .k2-bar-start:has(+ .k2-bar-end) {
     flex: 1 1 auto;
     min-height: var(--k2-h-control);
   }
+  /* in its own line the end starts on the text edge, under the statement, not at the far side */
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end {
     flex-wrap: wrap;
     row-gap: 8px;
     max-width: 100%;
+    margin-left: 0;
   }
   /* tabs that share a head with actions stand closer */
   .k2-ui .k2-bar-start > .k2-tabs-nav,

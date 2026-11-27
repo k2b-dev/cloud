@@ -464,8 +464,8 @@ lines instead of cutting a thing.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
-  they keep only their symbols, the words stay their names; leave on the
-  phone),
+  they keep only their symbols, the words stay their names; on the phone
+  they stay, beside the lead or in a second line below it),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the

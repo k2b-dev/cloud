@@ -490,9 +490,10 @@ export type StatusRowProps = {
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
-   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
-   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
-   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   * Filters or a segment at the end; on the phone they stay, beside the lead or in a second line below it. They keep
+   * their words while the lead gives way; in a row narrower than 600 px a button with a symbol keeps only the symbol,
+   * and its words stay its name. Give each one a symbol, so it can fold; a toggle is a `Button pressed` with an
+   * `icon`, which folds, not a switch.
    */
   filters?: JSX.Element;
   /**

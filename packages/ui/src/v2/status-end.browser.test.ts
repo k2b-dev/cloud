@@ -6,6 +6,7 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/bro
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-status-end.client";
 import { measureV2Layout } from "./testing";
+import { textEdge } from "./tokens";
 
 // The end of a status row stays reachable on the phone (test/v2-status-end.client.tsx, Assistant's "My apps"): its
 // filter chips and its action to create stand whole and inside the row, in a second line where the first has no room;
@@ -50,6 +51,11 @@ const statusRow = () => {
   const leadStyle = getComputedStyle(lead);
   return {
     height: Math.round(box.height),
+    // where the end stands: its start from the row's edge, and whether it has a line of its own below the statement
+    end: (() => {
+      const end = row.querySelector<HTMLElement>(".k2-bar-end")!.getBoundingClientRect();
+      return { left: Math.round(end.left - box.left), ownLine: end.top >= lead.getBoundingClientRect().bottom - 0.5 };
+    })(),
     lead: { fair: lead.scrollWidth <= lead.clientWidth + 0.5 || leadStyle.textOverflow === "ellipsis" },
     controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => {
       const rect = button.getBoundingClientRect();
@@ -73,10 +79,26 @@ for (const width of [390, 1440])
       expect(found.lead.fair).toBe(true);
       // a wide screen keeps the one line of 52 px; the phone may take a second line for the end
       if (width === 1440) expect(found.height).toBe(52);
-      else expect(found.height).toBeGreaterThanOrEqual(52);
+      else {
+        // the end has no room beside the statement: it takes a second line that starts on the text edge of 16 px
+        expect(found.end).toEqual({ left: textEdge.phone, ownLine: true });
+        expect(found.height).toBeGreaterThan(52);
+      }
       // the action to create works from the phone too
       await page.getByRole("button", { name: "Neue App" }).click();
       const layout = await measureV2Layout(page, { root: '[data-k2-part="StatusRow"]' });
       expect([...layout.cut, ...layout.edge]).toEqual([]);
     });
   });
+
+// An end that fits beside the statement keeps the row in its one line of exactly 52 px on the phone, too.
+test("at 390 px a short statement and one action stand in the row's one line of 52 px", async () => {
+  await withPage(390, async (page) => {
+    await page.evaluate(() => window.__k2Short?.());
+    await settled(page);
+    const found = await page.evaluate(statusRow);
+    expect(found.controls.map((control) => control.name)).toEqual(["Neue App"]);
+    for (const control of found.controls) expect(control).toEqual({ ...control, seen: true, whole: true, inside: true });
+    expect([found.height, found.end.ownLine]).toEqual([52, false]);
+  });
+});
