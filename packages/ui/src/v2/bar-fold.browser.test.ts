@@ -412,8 +412,7 @@ test("every 8 px from 320 to 1440: each end ends inside its bar's content edge, 
     const wrong: string[] = [];
     for (let width = 320; width <= 1440; width += 8) {
       await page.setViewportSize({ width, height: 1000 });
-      await frames(page);
-      await frames(page);
+      await settled(page);
       for (const which of ["record", "book", "menu", "before", "long", "closes", "changes", "history", "reader", "tabs"]) {
         const { start, end, content } = await edges(page, head(which));
         if (!end) continue;

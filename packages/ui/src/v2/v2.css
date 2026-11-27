@@ -711,8 +711,11 @@
    its open tab; it gives way down to that and never to nothing. `width` gives the least (the flex minimum is the
    smaller of it and the start's content), `flex-basis: content` its whole width. A button in it ("1.000 Kommentare")
    shortens its words with "…" too. The start gives way before the end does: weights, not a factor below 1 (factors
-   that add up to less than 1 take only that part of the missing room). */
-.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start {
+   that add up to less than 1 take only that part of the missing room). A record's head (`RecordHead`) keeps its own
+   way and takes none of this: its name gives way with "…" to its last pixel beside its actions, which never fold, and
+   on the phone the head wraps (bar-fold.ts leaves it too). `:where()` keeps the specificity, so the rules of a bar
+   being measured still win. */
+.k2-ui .k2-bar[data-k2-part="Bar"]:where(:not(:has(> .k2-bar-start > .k2-record-name))) > .k2-bar-start {
   flex: 0 1000 content;
   width: var(--k2-start-least);
   min-width: auto;
@@ -746,14 +749,12 @@
    least. So the server's page is the live one wherever nothing folds. Only where even the least does not leave the
    end its room does the end cut, from its start, so the parts at its end stay whole, until the fold takes over.
    4 px inside the cut keep the rings of its buttons. */
-.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-end {
+.k2-ui .k2-bar[data-k2-part="Bar"]:where(:not(:has(> .k2-bar-start > .k2-record-name))) > .k2-bar-end {
   margin-right: -4px;
   padding-inline: 4px;
   overflow: clip;
-}
-/* always from its start: an end that fits has no room to spare, and one that cuts (nothing left to fold) keeps the
-   parts at its end, a closing × among them, the same before and after the page is alive */
-.k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-end {
+  /* always from its start: an end that fits has no room to spare, and one that cuts (nothing left to fold) keeps the
+     parts at its end, a closing × among them, the same before and after the page is alive */
   justify-content: flex-end;
 }
 .k2-ui .k2-bar:not([data-k2-measuring]) > .k2-bar-end > [data-k2-folded] {

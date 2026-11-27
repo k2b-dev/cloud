@@ -84,6 +84,9 @@ const measure = (entry: Watched): Found => {
   const end = bar.querySelector<HTMLElement>(":scope > .k2-bar-end");
   if (!end) return { folded: [], host: undefined };
   const style = getComputedStyle(bar);
+  // A bar that wraps (a line of things in a narrow column) has the room of its lines; a record's head (`RecordHead`)
+  // keeps its own way: its name gives way beside its actions, and on the phone it wraps.
+  if (style.flexWrap !== "nowrap" || start?.querySelector(".k2-record-name")) return { folded: [], host: undefined };
   const room = bar.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
   const gap = Number.parseFloat(style.columnGap) || 0;
   const endStyle = getComputedStyle(end);
