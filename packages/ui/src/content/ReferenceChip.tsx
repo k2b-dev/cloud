@@ -1,4 +1,5 @@
 import { type JSX, Show } from "solid-js";
+import { cssColor } from "../internal/color";
 import { Avatar } from "../surfaces/Avatar";
 
 /** The visible length of a chip; longer titles are cut in the middle. */
@@ -78,7 +79,7 @@ export function ReferenceChip(props: ReferenceChipProps): JSX.Element {
   const cut = () => visible() !== full();
   const gone = () => props.kind !== "person" && props.kind !== "time" && props.gone === true;
   const href = () => (gone() || props.kind === "time" ? undefined : props.href);
-  const accent = () => (props.kind === "object" || props.kind === "place" ? props.accent : undefined);
+  const accent = () => (props.kind === "object" || props.kind === "place" ? cssColor(props.accent) : undefined);
   const icon = () => (props.kind === "time" ? "ti ti-clock" : props.kind === "object" || props.kind === "place" ? props.icon : undefined);
 
   const content = () => (
