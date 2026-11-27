@@ -82,11 +82,11 @@ const expectA = (found: Awaited<ReturnType<typeof shape>>) => {
 
 const title = typeRoles.title;
 
-test("every head: no symbol, a calm title of 15 px at 600 (in B the column's label at 14 px), the count quiet beside it", async () => {
+test("every head: no symbol, a calm title of 15 px at 600 (also in B), the count quiet beside it", async () => {
   for (const [which, width, font] of [
     ["detail", 1440, `${title.size}px/${title.lineHeight}px ${title.weight}`],
     ["form", 390, `${title.size}px/${title.lineHeight}px ${title.weight}`],
-    ["form", 1440, `${typeRoles.body.size}px/${typeRoles.body.lineHeight}px 600`],
+    ["form", 1440, `${title.size}px/${title.lineHeight}px ${title.weight}`],
   ] as const)
     await withPage(which, width, async (page) => {
       const found = await shape(page);

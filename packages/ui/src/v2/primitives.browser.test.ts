@@ -367,12 +367,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // A section's head actions keep their name everywhere. On the phone, beside a second button, an action with a LEADING
-  // symbol shows only the symbol and keeps its words as its name and hint; a trailing chevron ("forward", "menu") is no
-  // reason to hide them. A section's only button keeps its words.
+  // A section's head actions keep their words in sight everywhere (taste rule 5: never a symbol without its verb); on
+  // the phone two of them stand under the summary instead.
   for (const width of [1440, 390])
     test(
-      `${width} px: section head actions keep their names; only a leading symbol may stand for the words`,
+      `${width} px: section head actions keep their names and their words in sight`,
       async () => {
         const page = await open("headActions", { width });
         try {
@@ -383,9 +382,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
               return { words: label.textContent, shown: label.getBoundingClientRect().width > 1, title: button.getAttribute("title") };
             }),
           );
-          const phone = width === 390;
           expect(found).toEqual([
-            { words: "Filtern", shown: !phone, title: "Filtern" },
+            { words: "Filtern", shown: true, title: "Filtern" },
             { words: "Weiter", shown: true, title: null },
             { words: "Rohdaten anzeigen", shown: true, title: null },
           ]);
@@ -530,7 +528,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     );
 
   test(
-    "a table column is exactly its default wide; cut text never widens it, rows without wrap are 40 px",
+    "a table column is exactly its default wide; cut text never widens it, rows without wrap are 44 px",
     async () => {
       const page = await open("table");
       try {
@@ -557,7 +555,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         expect(table.heads.at(-1)!).toBeGreaterThanOrEqual(120);
         expect(table.cut).toBe(true);
         expect(table.wrapLines).toBe(3);
-        expect(table.cells[1]).toBe(heights.row);
+        expect(table.cells[1]).toBe(heights.cell);
       } finally {
         await page.close();
       }
@@ -960,7 +958,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
   );
 
   test(
-    "rule 9: no line under a section head or between its entries, none inside a group; one line at the end of a section",
+    "rule 9: no line under a section head, the hair between its entries, none inside a group; one line at the end of a section",
     async () => {
       const page = await open("structure");
       try {
@@ -975,12 +973,19 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           };
           const inside = (selector: string) => [...document.querySelectorAll(selector)].filter(drawn).map((element) => element.className);
           return {
-            sectionRows: inside(".k2-sec > .k2-row, .k2-sec .k2-sh"),
+            head: inside(".k2-sec .k2-sh"),
+            // each row after the first draws the hair above itself, and no row draws a line under itself
+            sectionRows: [...document.querySelectorAll(".k2-sec > .k2-row")].map((row) => {
+              const style = getComputedStyle(row);
+              return [row.previousElementSibling?.matches(".k2-row") ?? false, style.borderTopWidth, style.borderBottomWidth];
+            }),
             groupInside: inside(".k2-group *"),
             sectionEnd: getComputedStyle(document.querySelector(".k2-pane:not([data-side]) .k2-sec")!).borderBottomWidth,
           };
         });
-        expect(lines.sectionRows).toEqual([]);
+        expect(lines.head).toEqual([]);
+        expect(lines.sectionRows.length).toBeGreaterThan(1);
+        for (const [afterRow, top, bottom] of lines.sectionRows) expect([top, bottom]).toEqual([afterRow ? "1px" : "0px", "0px"]);
         expect(lines.groupInside).toEqual([]);
         expect(lines.sectionEnd).toBe("1px");
       } finally {
@@ -1049,7 +1054,6 @@ describe("v2 section heads on the phone", () => {
           const label = button.querySelector(".k2-btn-label")!.getBoundingClientRect();
           return { label: label.width > 1 && label.height > 1, inHead: button.closest(".k2-sh") !== null };
         });
-        // a section with two buttons shows their symbols only (see "section head actions keep their names")
         expect(shape).toEqual({ label: true, inHead: true });
       } finally {
         await page.close();
