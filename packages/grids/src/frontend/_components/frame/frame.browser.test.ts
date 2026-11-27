@@ -589,7 +589,9 @@ describe("the query of a base on v2", () => {
     try {
       const sources = await tab.locator("[aria-label=Quellen] [data-k2-part=Row]").count();
       const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
-      console.info(`grids query huge: ${await elements(tab)} elements, ${sources} sources, ${rows} rows in the page, ready ${readyMs} ms`);
+      console.info(
+        `grids query huge: ${await elements(tab)} elements, ${sources} sources, ${rows} rows in the page, ready ${readyMs} ms; ${await timing(tab, "huge")}`,
+      );
       expect(sources).toBeLessThanOrEqual(60);
       expect(rows).toBeLessThanOrEqual(60);
       expect(errors).toEqual([]);
