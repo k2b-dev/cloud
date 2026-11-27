@@ -85,6 +85,37 @@ test("an address with a short start, cut in the middle, stays inside its row and
   });
 });
 
+// #4223 (DP): the middle cut of a tile's title held a long name without an extension inside its box, so the title
+// never cut itself with "…". Only words with an end to keep are cut in the middle; a name is cut at its end.
+test("a tile's long name without an extension is cut at its end, a long file name in the middle, both whole on hover", async () => {
+  await withPage(
+    320,
+    async (page) => {
+      const titles = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".k2-tile-title")).map((element) => ({
+          lines: Math.round(element.getBoundingClientRect().height / 20),
+          wider: element.scrollWidth > element.clientWidth,
+          middle: element.querySelector(".k2-midcut") !== null,
+          // a cut name says all of its words on hover, cut at its end or in the middle
+          hover: element.querySelector("[title]")?.getAttribute("title") ?? null,
+          end: element.querySelector(".k2-midcut > span:last-child")?.textContent ?? null,
+        })),
+      );
+      expect(titles).toEqual([
+        {
+          lines: 1,
+          wider: true,
+          middle: false,
+          end: null,
+          hover: "Lager Nord mit einem sehr langen Namen, der auf der Karte ausblendet",
+        },
+        { lines: 1, wider: false, middle: true, end: "nal_v3.pdf", hover: "Angebot_Holzwerkstatt_Lindqvist_Kueche_final_v3.pdf" },
+      ]);
+    },
+    "tiles",
+  );
+});
+
 for (const width of [1024, 220])
   test(`an amount among a row's marks is never cut at ${width} px: it shows whole or leaves whole`, async () => {
     await withPage(width, async (page) => {

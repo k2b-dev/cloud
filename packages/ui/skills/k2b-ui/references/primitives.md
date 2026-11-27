@@ -57,7 +57,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
   limits, Enter back to the default) move the width; a reload starts at the
-  default again. The sidebar's grip works the same.
+  default again. The sidebar's grip works the same. A grip shows only under the
+  pointer, on keyboard focus and while dragged (on touch screens it stays).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -153,7 +154,9 @@ moves.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`measure` (its head, sentence and rows keep the reading measure of `Prose`,
+720 px of text, so a short list in a wide pane stays together; its line
+still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
@@ -229,7 +232,8 @@ A `Row`:
   `action` or `end`.
 - A line of three is cut with "…" and says its words on hover. An address
   or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
-  the middle, so the domain or extension stays readable.
+  the middle, so the domain or extension stays readable; words without
+  one stay plain and are cut at their end.
 - `action` (one framed button at the end; under the text on the phone; its
   name is its words and then the row's title, "Ansehen Angebot Küche", so
   rows with the same deed are told apart: name nothing yourself; on the
@@ -258,7 +262,7 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -448,12 +452,17 @@ lines instead of cutting a thing.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+- `Nav`: `title`, `icon`, `logo?` (an image address that stands in the
+  icon's place, such as an installation's own logo), `groups: { label?,
+  action?, items }[]`, `foot`.
   The groups scroll between the title and the foot; a group of more than 40
   entries keeps only the entries in view in the page.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
-  An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
+  An item: `label`, `icon`, `href` or `onClick`, `count` (quiet),
+  `unread` (a number that calls for attention: a filled figure after the
+  quiet count, "99+" above 99, read out as "3 ungelesen"; nothing at 0),
+  `current`,
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
@@ -497,7 +506,8 @@ lines instead of cutting a thing.
   head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
-- `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
+- `Notice`: `tone` `note`, `ai`, `bad`, `warn`, `info` (a plain fact of
+  the app itself, such as a new version); `title`, `meta`, `icon`,
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
   now, and the sentence says why), `primary` (the one thing to do, such as
   "Neu laden": a framed button after one quiet text button at most; it is
@@ -506,6 +516,23 @@ lines instead of cutting a thing.
   one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
   Use it for errors with a way out instead of "try again"
   buttons of your own.
+- `NoticeStack`: children are `Notice`s of a state of the whole app that
+  lasts ("Offline", a new version). They float at the bottom, above the
+  safe area and, on a page with a `TabBar`, above the bar from the server's
+  page on; the panes keep the room they cover free at their end (measured
+  in the browser: a notice the server renders gets it once the page comes
+  alive). On the phone each deed is a framed button of at least 44 px in
+  the end column. Give each notice a deed that hides it.
+- `TabBar`: `label`, `items: { label, icon, href, onNavigate?, current?,
+  unread? }[]`; the places of an installed app on the phone, at the bottom
+  edge with the safe area. Up to five stand in the bar; with more, four
+  and "Mehr", which opens a sheet with the others and their counts and is
+  the current tab while one of them is open (Escape and a place that opens in
+  place close the sheet; the focus returns to "Mehr"). From
+  768 px it leaves and the app's `Nav` holds the places. `hidden` (or the
+  `hidden` attribute on `.k2-tabbar`) steps it aside for a screen of its own,
+  such as one chat with its composer at the bottom edge; floating notices
+  then stand above the safe area alone.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
@@ -530,7 +557,7 @@ lines instead of cutting a thing.
 
 - `Dialog`: `title`, `open` and `onOpenChange` (the screen keeps the open
   state), `foot` (the buttons, the main one last: the dialog's own one
-  primary), children (fields, a notice, text; they scroll). 480 px in the
+  primary; none for a dialog that only lists places to go), children (fields, a notice, text; they scroll). 480 px in the
   middle; below 768 px a sheet from the bottom that a swipe down closes.
   The first field takes the focus (on the sheet the first control that is
   no text field), else the first action of the foot; focus stays inside,

@@ -34,7 +34,8 @@ Every state keeps these rules:
 ### Notice
 
 - Something a person must know or do while the page works on: a device that does not answer, a conflict, a waiting approval.
-- It names the deed ("Schlüssel prüfen"); `tone` says what it is: `bad`, `warn`, `note` or `ai`.
+- It names the deed ("Schlüssel prüfen"); `tone` says what it is: `bad`, `warn`, `note`, `ai`, or `info` for a plain fact of the app itself, such as a new version.
+- A state of the whole app that lasts, such as "Offline" or a new version, floats in a `NoticeStack` instead, with a way to hide it.
 
 ## Parts
 
@@ -63,6 +64,12 @@ Data that failed to load once, with "Erneut versuchen" in the language of the pa
 A band with a sign, a sentence and its consequence, and at most two deeds; a deed that cannot be taken now is `disabled`, and the sentence says why. A person's note and an AI summary keep their line breaks; a long one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen" over the end of the last one, so nothing moves when the page comes alive.
 
 <Props of="Notice" />
+
+### NoticeStack
+
+Notices that float at the bottom, above the safe area and, on a page with a `TabBar`, above the bar (from the server's page on, without a prop), until their state ends or the person hides them. Nothing on the page moves when one comes or goes: the panes keep the room the stack covers free at their end, so their last row stays reachable. The browser measures that room, so a notice the server renders gets it once the page comes alive. On the phone each deed is a framed button of at least 44 px in the end column.
+
+<Props of="NoticeStack" />
 
 ## Not in v2 yet
 
