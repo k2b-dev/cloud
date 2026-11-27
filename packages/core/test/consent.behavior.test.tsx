@@ -29,7 +29,10 @@ describe("explicit first-login acceptance", () => {
   const mount = async () => {
     const dom = createDomTestHarness();
     const { default: Consent } = await import("../src/pages/auth/ConsentForm.island");
-    const dispose = render(() => createComponent(Consent, { userId: "user-1", version: "a".repeat(64), redirectTo: "/app/contacts" }), dom.root);
+    const dispose = render(
+      () => createComponent(Consent, { userId: "user-1", version: "a".repeat(64), redirectTo: "/app/contacts" }),
+      dom.root,
+    );
     cleanup = () => {
       dispose();
       dom.cleanup();
