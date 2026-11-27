@@ -388,6 +388,54 @@ export const dropOrphanedFieldIndexes = async (db?: SQL): Promise<number> => {
   return progress.changed;
 };
 
+/**
+ * Record indexes that came after an installation had records: built here, in the background and `CONCURRENTLY`, never
+ * in the migration's transaction, so an update never pauses record writes while one builds. A read that wants one
+ * answers correctly without it (only slower), and a failed build is dropped and tried again by the next batch.
+ */
+export const RECORD_BACKGROUND_INDEXES = {
+  // the new records per day of a table (its head's series) read a range, not every live record of the table
+  idx_grids_records_table_created_live: "ON grids.records USING btree (table_id, created_at) WHERE (deleted_at IS NULL)",
+} as const;
+
+const ensureRecordBackgroundIndexesOnConnection = async (db: SQL): Promise<IndexMaintenanceProgress> => {
+  const valid = new Set(
+    (
+      await db<Array<{ name: string }>>`
+        SELECT c.relname::text AS name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_index i ON i.indexrelid = c.oid
+        WHERE n.nspname = 'grids'
+          AND i.indisvalid = TRUE
+          AND c.relname = ANY(${sql.array(Object.keys(RECORD_BACKGROUND_INDEXES), "TEXT")}::text[])
+      `
+    ).map((index) => index.name),
+  );
+  let changed = 0;
+  for (const [name, definition] of Object.entries(RECORD_BACKGROUND_INDEXES)) {
+    if (valid.has(name)) continue;
+    // an interrupted build leaves an invalid index behind; it is dropped and built again
+    await db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS grids.${name}`).catch(() => undefined);
+    try {
+      await db.unsafe(`CREATE INDEX CONCURRENTLY ${name} ${definition}`);
+      log.info("Created record index in the background", { idx: name });
+      changed += 1;
+    } catch (error) {
+      log.error("Failed to create record index; the next maintenance batch tries again", { idx: name, error: String(error) });
+      await db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS grids.${name}`).catch(() => undefined);
+    }
+  }
+  return { changed, hasMore: false };
+};
+
+/** Builds the missing record indexes now, without the maintenance lease (for a test or a one-off). */
+export const ensureRecordBackgroundIndexes = async (db?: SQL): Promise<number> =>
+  (db
+    ? await ensureRecordBackgroundIndexesOnConnection(db)
+    : await withIndexMaintenanceConnection(sql, ensureRecordBackgroundIndexesOnConnection)
+  ).changed;
+
 export const FIELD_INDEX_MAINTENANCE_LOCK = "grids:field-index-maintenance:v2";
 
 type FieldIndexMaintenanceBatchResult = {
@@ -409,9 +457,13 @@ export const runFieldIndexMaintenanceBatch = async (
 ): Promise<FieldIndexMaintenanceBatchResult> => {
   const result = await withMaintenanceLease(maintenanceLocks(), FIELD_INDEX_MAINTENANCE_LOCK, FIELD_INDEX_MAINTENANCE_LEASE_MS, () =>
     withIndexMaintenanceConnection(sql, async (connection) => {
+      const records = await ensureRecordBackgroundIndexesOnConnection(connection);
       const orphaned = await dropOrphanedFieldIndexesOnConnection(connection, Math.max(1, options.maxOrphans ?? 16));
       const missing = await ensureMissingFieldSortIndexesOnConnection(connection, Math.max(1, options.maxFields ?? 4));
-      return { changed: orphaned.changed + missing.changed, hasMore: orphaned.hasMore || missing.hasMore };
+      return {
+        changed: records.changed + orphaned.changed + missing.changed,
+        hasMore: orphaned.hasMore || missing.hasMore,
+      };
     }),
   );
   return result ? { claimed: true, ...result } : { claimed: false, changed: 0, hasMore: true };

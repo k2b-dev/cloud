@@ -7,6 +7,7 @@ import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import { ensureRecordBackgroundIndexes } from "../service/field-indexes";
 import { getRecordCreatedSeries, RECORD_SERIES_DAYS } from "../service/record-created-series";
 import { PublicRecordCreatedSeriesSchema, recordsRoutes } from "./records";
 
@@ -146,6 +147,56 @@ describe("a table's new records per day", () => {
     } finally {
       await meter.close();
     }
+  });
+
+  postgresTest("answer the same before and after their index, which builds without pausing record writes", async () => {
+    const indexValid = async () =>
+      (
+        await sql<Array<{ valid: boolean }>>`
+          SELECT i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname = 'idx_grids_records_table_created_live'`
+      )[0]?.valid === true;
+    await sql`DROP INDEX CONCURRENTLY IF EXISTS grids.idx_grids_records_table_created_live`;
+    expect(await indexValid()).toBe(false);
+    const before = await getRecordCreatedSeries(fixture.tableId, { days: 7, timeZone: "Europe/Berlin", now: NOW });
+
+    // a writer holds an open transaction: the build waits for it instead of locking the records
+    const holder = await sql.reserve();
+    const extra: string[] = [];
+    let build: Promise<number> | undefined;
+    try {
+      const held = uuid();
+      extra.push(held);
+      await holder`BEGIN`;
+      await holder`INSERT INTO grids.records (id, short_id, table_id, data, created_at)
+        VALUES (${held}::uuid, ${testShortId()}, ${fixture.otherTableId}::uuid, '{}'::jsonb, now())`;
+      build = ensureRecordBackgroundIndexes();
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const [progress] = await sql<Array<{ building: number }>>`
+          SELECT count(*)::int AS building FROM pg_stat_progress_create_index p
+          JOIN pg_class c ON c.oid = p.index_relid WHERE c.relname = 'idx_grids_records_table_created_live'`;
+        if ((progress?.building ?? 0) > 0) break;
+        await Bun.sleep(25);
+      }
+      // while it builds, another writer inserts within two seconds
+      const written = uuid();
+      extra.push(written);
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '2s'`;
+        await tx`INSERT INTO grids.records (id, short_id, table_id, data, created_at)
+          VALUES (${written}::uuid, ${testShortId()}, ${fixture.otherTableId}::uuid, '{}'::jsonb, now())`;
+      });
+      await holder`COMMIT`;
+    } finally {
+      holder.release();
+    }
+    expect(await build).toBe(1);
+    expect(await indexValid()).toBe(true);
+    expect(await getRecordCreatedSeries(fixture.tableId, { days: 7, timeZone: "Europe/Berlin", now: NOW })).toEqual(before);
+    // a second batch finds it and builds nothing
+    expect(await ensureRecordBackgroundIndexes()).toBe(0);
+    await sql`DELETE FROM grids.records WHERE id = ANY(${sql.array(extra, "UUID")})`;
   });
 
   postgresTest("answer a reader of the base, not a stranger, and only for a stored table", async () => {
