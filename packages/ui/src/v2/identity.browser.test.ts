@@ -248,15 +248,27 @@ test("a stack in a narrow column shows the faces it holds whole and counts the r
       );
       // 4, 8 and 30 people: the count belongs to the faces that stand, one count each, whole and inside the cell; 2 and
       // 3 people all show, without a count
-      expect(found.map((stack) => stack.counts)).toEqual([1, 1, 1, 0, 0]);
+      expect(found.map((stack) => stack.counts)).toEqual([1, 1, 1, 0, 0, 1]);
       expect(found.slice(0, 3).map((stack) => Number(stack.text?.slice(1)) + stack.faces)).toEqual([4, 8, 30]);
-      expect(found.slice(3).map((stack) => stack.faces)).toEqual([2, 3]);
+      expect(found.slice(3, 5).map((stack) => stack.faces)).toEqual([2, 3]);
+      // a total beyond the faces it holds (12.345 members, three faces): "99+" in the room of three signs, whole in its
+      // 90 px; the name says how many exactly
+      expect(found[5]!.text).toBe("99+");
       for (const stack of found) {
         expect(stack.faces).toBeGreaterThanOrEqual(1);
         expect(stack.whole).toBe(true);
         expect(stack.inside).toBe(true);
       }
     }, width);
+});
+
+test("a stack with a total is named by its people and how many more there are (W5 Pulse)", async () => {
+  await withPage(async (page) => {
+    const stack = page.locator(".k2-table tr", { hasText: "Verein" }).locator(".k2-avs");
+    expect(await stack.getAttribute("aria-label")).toBe("Felix Thal 1, Jonas Kern 2, Mira Solberg 3 und 12.342 weitere");
+    // "99+" shows; the hint under the pointer says how many exactly
+    expect(await stack.getAttribute("title")).toBe("Felix Thal 1, Jonas Kern 2, Mira Solberg 3 und 12.342 weitere");
+  });
 });
 
 test("a stack whose people all show ends at its last face, faces overlap at most a quarter with a ring, initials from first and last name (W3, review A)", async () => {

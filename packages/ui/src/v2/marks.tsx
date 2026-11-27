@@ -1,5 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { personColor } from "../surfaces/person-color";
 import { colorStyle, safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
@@ -125,6 +126,11 @@ export type AvatarStackProps = {
   people: readonly Person[];
   /** How many show before "+n" takes the rest: 3 when not set. */
   max?: number;
+  /**
+   * How many people there are in all, where `people` holds only the first of them (12.345 members, three faces): "+n"
+   * counts the rest ("99+" beyond 99, in the room of three signs), and the stack's name ends "und 12.342 weitere".
+   */
+  total?: number;
   /** A name for the whole stack, for assistive technology; without one the names of all the people. */
   label?: string;
 };
@@ -134,16 +140,28 @@ export type AvatarStackProps = {
  * one picture with one name; the avatars in it are decoration. 20 px everywhere, each over the one before by 2 px.
  */
 const AvatarStack = (props: AvatarStackProps) => {
+  const t = useControlMessages();
+  const locale = useLocale();
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  // everyone the stack stands for: the people it holds, or more where `total` says so
+  const count = () => Math.max(props.total ?? 0, props.people.length);
   // at most five faces; fewer when the place is narrow (the stylesheet decides by the stack's own width)
   const shown = () => props.people.slice(0, Math.min(5, Math.max(1, props.max ?? 3)));
   // "+n" for each number of faces the place may leave visible: the stylesheet shows the one that matches, so the count
   // is always right and always whole, from the server's first render on
   const counts = () =>
     shown()
-      .map((_, index) => ({ visible: index + 1, rest: props.people.length - (index + 1) }))
+      .map((_, index) => ({ visible: index + 1, rest: count() - (index + 1) }))
       .filter((count) => count.rest > 0);
   // everyone shows: the stack needs no room for a count while its faces fit (the stylesheet works out its width)
-  const all = () => props.people.length <= shown().length;
+  const all = () => count() <= shown().length;
+  const names = () => props.people.map((person) => person.name).join(", ");
+  const label = () =>
+    props.label ??
+    (count() > props.people.length ? t().andOthers({ names: names(), count: number(count() - props.people.length) }) : names());
+  // the count keeps the three signs it has room for, also in a column of 90 px: beyond 99 it reads "99+", and the
+  // stack's name (and its hint under the pointer) says how many exactly
+  const many = () => count() - 1 > 99;
   return (
     <span
       class="k2-avs"
@@ -151,14 +169,15 @@ const AvatarStack = (props: AvatarStackProps) => {
       data-k={String(shown().length)}
       data-all={all() ? "" : undefined}
       role="img"
-      aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
+      aria-label={label()}
+      title={many() ? label() : undefined}
       style={custom({ "--k2-avs-n": String(shown().length), "--k2-avs-rest": all() ? "0" : "1" })}
     >
       <For each={shown()}>{(person, index) => <Face {...person} decorative place={index() + 1} />}</For>
       <For each={counts()}>
         {(count) => (
           <span class="k2-avs-rest" data-visible={String(count.visible)} aria-hidden="true">
-            {`+${count.rest}`}
+            {count.rest > 99 ? "99+" : `+${count.rest}`}
           </span>
         )}
       </For>

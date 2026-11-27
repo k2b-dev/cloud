@@ -368,10 +368,13 @@ lines instead of cutting a thing.
   its name). The place sets the size: 20 in the sidebar and in a sentence,
   24 leading a row or a cell, 32 there in a list or table that shows
   pictures of its things (`image` or `kind`), 36 on a card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
-- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
-  other with a ring and "+n"; one picture with every name. In a narrow
-  place (a 90 px column) it shows the faces it holds whole and counts the
-  rest; the count is always right and never cut, from the first render.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `total`, `label`. People
+  over each other with a ring and "+n"; one picture with every name. In a
+  narrow place (a 90 px column) it shows the faces it holds whole and counts
+  the rest; the count is always right and never cut, from the first render.
+  `total` is how many there are in all where `people` holds only the first
+  (12.345 members, three faces): "+n" counts the rest, "99+" beyond 99, and
+  the name ends "und 12.342 weitere". Show a large total as words beside it.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
   never only the title of the data, `color` (the data colour of its thing;
