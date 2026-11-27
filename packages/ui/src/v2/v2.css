@@ -4724,6 +4724,15 @@
     box-shadow: var(--k2-float);
     z-index: 4;
   }
+  /* the page leaves room under its end for the floating main action (16 + 48 + 16 px), so the last row stays readable
+     when scrolled to the end: the outermost pane of a workspace with that action ends in a spacer, and so does the
+     last pane of a split that stands in its place */
+  .k2-ui .k2-ws:has(> .k2-fab) > .k2-ws-main > .k2-pane > .k2-scroll::after,
+  .k2-ui .k2-ws:has(> .k2-fab) > .k2-ws-main > .k2-split > .k2-pane:not(:has(~ .k2-pane)) > .k2-scroll::after {
+    content: "";
+    flex: none;
+    height: 80px;
+  }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;
