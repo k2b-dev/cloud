@@ -1,21 +1,12 @@
-import { AiModelIcon } from "@k2b/cloud/ai/ui";
-import { type AiModel, type AiProvider, aiProviderMark } from "@k2b/cloud/shared";
-import { Button, NoticeCard, SegmentedControl, StatusBadge, TextInput, toast, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import type { AiModel, AiProvider } from "@k2b/cloud/shared";
+import { Bar, Button, Facts, Field, Inline, Input, Mark, Menu, Notice, Pane, Section, Text, useLocale, useToast } from "@k2b/ui/v2";
+import { createSignal, onMount, Show } from "solid-js";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { ConflictNotice } from "./conflict";
-import { openAiDelete } from "./delete";
-import { setAiDetailControls } from "./detail-controls";
+import { providerMark } from "./marks";
 import { aiAreaMessages } from "./messages";
-import {
-  aiProviderState,
-  aiProviderStateLabel,
-  aiProviderStateTone,
-  aiProviderTypeInfo,
-  aiProviderTypeLabel,
-  formatAiTime,
-} from "./presentation";
-import { BoundaryHelp, HeaderRows } from "./provider-dialogs";
+import { aiProviderState, aiProviderTypeInfo, aiProviderTypeLabel } from "./presentation";
+import { BoundaryField, HeaderRows } from "./provider-dialogs";
 import { AiProviderNotice } from "./provider-notice";
 import { AiProviderDetailSchema } from "./read-shapes";
 
@@ -27,10 +18,18 @@ const draftOf = (provider: AiProvider): Draft => ({
   dataBoundary: provider.dataBoundary,
 });
 
-/** A4: the provider's connection. Every model of the provider uses it. */
-export default function AiConnectionDetail(props: { provider: AiProvider & { models: AiModel[] } }) {
+/**
+ * A4: the provider's connection, which every model of the provider uses: name, address, key, data boundary and extra
+ * headers, saved with "Speichern" in the head; testing, switching off and deleting wait behind "…".
+ */
+export default function ConnectionDetail(props: {
+  provider: AiProvider & { models: AiModel[] };
+  back: { label: string; href: string };
+  onDelete: () => void;
+}) {
   const locale = useLocale();
   const t = () => aiAreaMessages.resolve([locale()]).t;
+  const toast = useToast();
   const [base, setBase] = createSignal<AiProvider>(props.provider);
   const [draft, setDraft] = createSignal(draftOf(props.provider));
   const [key, setKey] = createSignal("");
@@ -40,7 +39,7 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
   const [testing, setTesting] = createSignal(false);
   const [error, setError] = createSignal("");
   const [conflict, setConflict] = createSignal<AiAdminConflict<AiProvider> | null>(null);
-  let keyField: HTMLDivElement | undefined;
+  let keyField: HTMLInputElement | HTMLTextAreaElement | undefined;
 
   const info = () => aiProviderTypeInfo(base().type);
   const state = () => aiProviderState(base());
@@ -83,13 +82,12 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
           }),
           t().saveFailed,
         );
-      toast.success(t().saved);
+      toast(t().saved, { status: "ok" });
       reloadAiArea();
     } catch (failure) {
-      const conflict = asAiConflict(failure, AiProviderDetailSchema);
-      if (conflict) setConflict(conflict);
+      const found = asAiConflict(failure, AiProviderDetailSchema);
+      if (found) setConflict(found);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
-    } finally {
       setSaving(false);
     }
   };
@@ -101,7 +99,7 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
         await aiAdminApi.providers[":id"].test.$post({ param: { id: base().id } }),
         t().loadFailed,
       );
-      if (result.status === "ok") toast.success(t().testOkPlain({ time: `${Math.round(result.latencyMs ?? 0)} ms` }));
+      if (result.status === "ok") toast(t().testOkPlain({ time: `${Math.round(result.latencyMs ?? 0)} ms` }), { status: "ok" });
       reloadAiArea();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : t().loadFailed);
@@ -121,30 +119,63 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
       );
       reloadAiArea();
     } catch (failure) {
-      const conflict = asAiConflict(failure, AiProviderDetailSchema);
-      if (conflict) setConflict(conflict);
+      const found = asAiConflict(failure, AiProviderDetailSchema);
+      if (found) setConflict(found);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
-    } finally {
       setSaving(false);
     }
   };
 
-  // The head island reads these controls; the effect keeps them current with the form.
-  createEffect(() =>
-    setAiDetailControls({
-      test: { label: t().testConn, busy: testing(), disabled: !base().enabled || dirty(), run: () => void test() },
-      save: { dirty: dirty() && !conflict(), saving: saving(), run: () => void save() },
-    }),
-  );
-  onCleanup(() => setAiDetailControls(null));
   onMount(() => {
-    if (new URLSearchParams(window.location.search).get("focus") === "key") keyField?.querySelector("input")?.focus();
+    if (new URLSearchParams(window.location.search).get("focus") === "key") keyField?.focus();
   });
-
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
   return (
-    <div class="grid gap-4 px-2 pb-8">
+    <Pane
+      detail
+      label={t().connection}
+      back={props.back}
+      scrollKey="admin-ai-connection"
+      head={
+        <Bar
+          start={
+            // k2b-ui gap: tinted object head (ObjectHead, #4360)
+            <Inline>
+              <Mark {...providerMark(base())} />
+              <Text type="body">{t().connectionOf({ p: base().label })}</Text>
+            </Inline>
+          }
+          end={
+            <>
+              <Menu
+                label={t().moreActions}
+                items={[
+                  {
+                    label: t().testConn,
+                    icon: "plug-connected",
+                    disabled: !base().enabled || dirty() || saving() || testing(),
+                    onClick: () => void test(),
+                  },
+                  { label: base().enabled ? t().disable : t().enable, icon: "power", disabled: saving(), onClick: () => void toggle() },
+                  { label: t().deleteProvider, icon: "trash", danger: true, disabled: saving(), onClick: props.onDelete },
+                ]}
+              />
+              <Button
+                variant="primary"
+                icon="check"
+                keep
+                busy={saving()}
+                disabled={!dirty() || Boolean(conflict())}
+                onClick={() => void save()}
+              >
+                {t().save}
+              </Button>
+            </>
+          }
+        />
+      }
+    >
       <AiProviderNotice
         providerId={base().id}
         providerLabel={base().label}
@@ -190,108 +221,75 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
           />
         )}
       </Show>
-      <p class="flex items-center gap-1.5 text-sm text-(--k2b-text-secondary)">
-        <StatusBadge tone={aiProviderStateTone(state())} variant="dot" label="" />
-        {[
-          aiProviderStateLabel(t(), state()),
-          t().nModels({ p: props.provider.models.length }),
-          base().statusCheckedAt ? t().checkedAt({ p: formatAiTime(locale(), base().statusCheckedAt) }) : "",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
-      <fieldset class="grid gap-5" disabled={saving()}>
-        <div class="grid gap-1.5">
-          <span class="text-sm font-medium">{t().type}</span>
-          <span class="inline-flex items-center gap-2 text-sm">
-            <AiModelIcon
-              icon={{ kind: "mark", ...aiProviderMark({ id: base().type, label: aiProviderTypeLabel(t(), base().type) }) }}
-              size="xs"
-            />
-            {aiProviderTypeLabel(t(), base().type)}
-          </span>
-          <p class="text-xs text-(--k2b-text-muted)">{t().typeFixed}</p>
-        </div>
-        <TextInput label={t().name} value={() => draft().label} onValueChange={(label) => update({ label })} required />
-        <TextInput
-          label={t().baseUrl}
-          type="url"
-          monospace
-          value={() => draft().baseUrl}
-          onValueChange={(baseUrl) => update({ baseUrl })}
-          placeholder={info().urlPlaceholder ?? t().providerDefaultUrl}
-          description={info().url === "required" ? t().urlRequired : t().urlOptional}
-          required={info().url === "required"}
-          error={() => (state() === "unreachable" && !fieldsDirty() ? t().testFailNet : undefined)}
-        />
-        <Show when={info().key !== "none"}>
-          <div ref={keyField}>
-            <TextInput
-              label={t().apiKey}
-              password
-              autocomplete="off"
-              value={key}
-              onValueChange={setKey}
-              placeholder={base().credentialSet ? t().keyKeep : "sk-…"}
-              description={base().credentialSet ? t().keyStoredPlain : t().keyNone}
-              error={() => (state() === "badkey" && !key() ? t().keyRejected : undefined)}
-            />
-          </div>
-        </Show>
-        <div class="grid gap-1.5">
-          <span class="text-sm font-medium">{t().dataBoundary}</span>
-          <Show
-            when={base().dataBoundary !== "restricted"}
-            fallback={
-              <>
-                <span class="inline-flex items-center gap-2 text-sm">
-                  <i class="ti ti-shield-off text-(--k2b-warning-text)" aria-hidden="true" />
-                  {t().boundaryRestricted}
-                </span>
-                <p class="text-xs text-(--k2b-warning-text)">{t().boundaryHelpRestricted}</p>
-                <p class="text-xs text-(--k2b-text-muted)">{t().boundaryFixed}</p>
-              </>
-            }
-          >
-            <span class="inline-flex">
-              <SegmentedControl
-                ariaLabel={t().dataBoundary}
-                value={() => draft().dataBoundary}
-                onValueChange={(dataBoundary) => update({ dataBoundary })}
-                disabled={saving()}
-                options={[
-                  { value: "hosted", label: t().hosted, icon: "ti ti-world" },
-                  { value: "private", label: t().private, icon: "ti ti-lock" },
-                ]}
-              />
-            </span>
-            <BoundaryHelp t={t()} boundary={draft().dataBoundary} options={["hosted", "private"]} />
-          </Show>
-        </div>
-        <Show when={info().headers}>
-          <HeaderRows t={t()} headers={headers()} onChange={setHeaders} disabled={saving()} />
-        </Show>
-      </fieldset>
       <Show when={error()}>
-        <NoticeCard tone="danger" title={t().saveFailed} detail={error()} role="alert" />
+        <Notice tone="bad" title={t().saveFailed}>
+          {error()}
+        </Notice>
       </Show>
-      <div class="mt-4 flex flex-wrap gap-2">
-        <Button type="button" variant="ghost" size="sm" disabled={saving()} onClick={() => void toggle()}>
-          {base().enabled ? t().disable : t().enable}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          class="text-(--k2b-danger-text)"
-          disabled={saving()}
-          data-ai-action="delete-provider"
-          onClick={() => openAiDelete({ kind: "provider", provider: base() })}
+      <Section icon="plug-connected" title={t().connection}>
+        <Facts items={[{ label: t().type, value: aiProviderTypeLabel(t(), base().type), hint: t().typeFixed }]} />
+        <Field label={t().name} required>
+          <Input value={draft().label} disabled={saving()} onInput={(label) => update({ label })} />
+        </Field>
+        <Field
+          label={t().baseUrl}
+          required={info().url === "required"}
+          hint={info().url === "required" ? t().urlRequired : t().urlOptional}
+          error={state() === "unreachable" && !fieldsDirty() ? t().testFailNet : undefined}
         >
-          <i class="ti ti-trash" aria-hidden="true" />
-          {t().deleteProvider}
-        </Button>
-      </div>
-    </div>
+          <Input
+            type="url"
+            value={draft().baseUrl}
+            spellcheck={false}
+            autocapitalize="off"
+            placeholder={info().urlPlaceholder ?? t().providerDefaultUrl}
+            disabled={saving()}
+            onInput={(baseUrl) => update({ baseUrl })}
+          />
+        </Field>
+        <Show when={info().key !== "none"}>
+          <Field
+            label={t().apiKey}
+            hint={base().credentialSet ? t().keyStoredPlain : t().keyNone}
+            error={state() === "badkey" && !key() ? t().keyRejected : undefined}
+          >
+            <Input
+              ref={(element) => {
+                keyField = element;
+              }}
+              type="password"
+              autocomplete="off"
+              value={key()}
+              placeholder={base().credentialSet ? t().keyKeep : "sk-…"}
+              disabled={saving()}
+              onInput={setKey}
+            />
+          </Field>
+        </Show>
+      </Section>
+      <Section icon="shield" title={t().dataBoundary}>
+        <Show
+          when={base().dataBoundary !== "restricted"}
+          fallback={
+            <Notice tone="warn" icon="shield-off" title={t().boundaryRestricted}>
+              {`${t().boundaryHelpRestricted} ${t().boundaryFixed}`}
+            </Notice>
+          }
+        >
+          <BoundaryField
+            t={t()}
+            value={draft().dataBoundary}
+            options={["hosted", "private"]}
+            disabled={saving()}
+            onChange={(dataBoundary) => update({ dataBoundary })}
+          />
+        </Show>
+      </Section>
+      <Show when={info().headers}>
+        <Section icon="list-details" title={t().extraHeaders}>
+          <HeaderRows t={t()} headers={headers()} onChange={setHeaders} disabled={saving()} />
+        </Section>
+      </Show>
+    </Pane>
   );
 }

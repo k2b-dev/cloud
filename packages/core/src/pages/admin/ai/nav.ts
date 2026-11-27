@@ -11,7 +11,12 @@ export { aiSectionLabel };
  * The admin bar with the AI sections one level in under its entry, the open one current. A broken provider marks
  * "Providers", a class without any model "Model classes"; the overview the page reads anyway says so, nothing more.
  */
-export const aiNav = (c: Parameters<typeof adminNavigation>[0], locale: string, current: AiAreaSection, overview?: AiAdminOverview | null) => {
+export const aiNav = (
+  c: Parameters<typeof adminNavigation>[0],
+  locale: string,
+  current: AiAreaSection,
+  overview?: AiAdminOverview | null,
+) => {
   const broken = overview?.providers.some((provider) => {
     const state = aiProviderState(provider);
     return state === "badkey" || state === "unreachable";

@@ -17,6 +17,8 @@ export type AiAreaQuery = {
   slot?: AiModelSlot;
   /** In `budgets`: a rule's scope, `new`, `brake` or `people`. */
   rule?: string;
+  /** In `providers`: a dialog the address opens once (adding a provider, or models right after a provider was saved). */
+  o?: "provider" | "models";
 };
 
 export const AI_AREA_PATH = "/admin/ai";
@@ -37,6 +39,7 @@ export const parseAiAreaQuery = (query: Record<string, string | undefined>): AiA
       sec,
       ...(query.p ? { p: query.p } : {}),
       ...(query.p && query.pane === "conn" ? { pane: "conn" } : query.p && query.m ? { m: query.m } : {}),
+      ...(query.o === "provider" || (query.o === "models" && query.p) ? { o: query.o } : {}),
     };
   if (sec === "classes") return { sec, ...(slot ? { slot } : {}) };
   if (sec === "budgets") return { sec, ...(query.rule ? { rule: query.rule } : {}) };

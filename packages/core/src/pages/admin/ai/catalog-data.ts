@@ -59,7 +59,7 @@ export const loadAiProviders = async (index: AiCatalogIndex, overview: AiAdminOv
     overview,
     models: index.models,
     variants: index.variants,
-    open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn" },
+    open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn", dialog: query.o ?? null },
     provider: provider === failed ? null : provider,
     model: model === failed ? null : model,
     usage,

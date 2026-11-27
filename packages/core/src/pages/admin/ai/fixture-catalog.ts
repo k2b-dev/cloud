@@ -38,7 +38,8 @@ const worst = (catalog: AiFixtureCatalog): AiFixtureCatalog => {
     { ...catalog.providers[3]!, id: "emoji", label: "🚀 Rakete", enabled: false },
     ...catalog.providers.slice(4),
   ];
-  const many = Array.from({ length: 60 }, (_, index) => ({
+  // a provider list that keeps growing (OpenRouter offers hundreds): 1,000 models on the first provider
+  const many = Array.from({ length: 1000 }, (_, index) => ({
     ...catalog.models[0]!,
     id: `bulk-${index}`,
     label: index % 7 === 0 ? "Sehr langer Modellname mit vielen Wörtern und einer Versionsnummer 2026-11-27-preview" : `Modell ${index}`,
@@ -83,7 +84,14 @@ export const catalogFor = (state: string): AiFixtureCatalog => {
       capabilities: ["vision"],
       maxOutputTokens: null,
     });
-    catalog.variants.push({ ...catalog.variants[0]!, id: "clef", modelId: "clef", slug: "standard", label: "Standard", reasoningEffort: null });
+    catalog.variants.push({
+      ...catalog.variants[0]!,
+      id: "clef",
+      modelId: "clef",
+      slug: "standard",
+      label: "Standard",
+      reasoningEffort: null,
+    });
   }
   const cortecs = catalog.providers.find((entry) => entry.id === "cortecs")!;
   if (state === "unreachable") Object.assign(cortecs, { status: "unreachable", statusMessage: "Keine Antwort nach 10 s." });
@@ -165,7 +173,7 @@ export const providersFixture = (input: AiFixtureInput): AiProvidersData => {
     overview,
     models: index.models,
     variants: index.variants,
-    open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn" },
+    open: { p: query.p ?? null, m: query.m ?? null, connection: query.pane === "conn", dialog: query.o ?? null },
     provider: failed ? null : provider,
     model: failed || input.state === "detailempty" ? null : model,
     usage: model ? aiFixtureUsage(model.id) : null,
@@ -201,12 +209,18 @@ export const budgetsFixture = (input: AiFixtureInput): AiBudgetsData => {
                 grants: [
                   {
                     principal: { type: "group" as const, groupId: "33333333-3333-4333-8333-333333333333" },
-                    displayName: worstCase ? "Arbeitsgruppe für maschinelles Lernen und angewandte Sprachverarbeitung" : "Gruppe Entwicklung",
+                    displayName: worstCase
+                      ? "Arbeitsgruppe für maschinelles Lernen und angewandte Sprachverarbeitung"
+                      : "Gruppe Entwicklung",
                     limit: worstCase ? 9_999_999.99 : 30,
                   },
                   ...(worstCase
                     ? [
-                        { principal: { type: "user" as const, userId: "55555555-5555-4555-8555-555555555555" }, displayName: "Ö", limit: null },
+                        {
+                          principal: { type: "user" as const, userId: "55555555-5555-4555-8555-555555555555" },
+                          displayName: "Ö",
+                          limit: null,
+                        },
                         {
                           principal: { type: "user" as const, userId: "66666666-6666-4666-8666-666666666666" },
                           displayName: "山田太郎",
@@ -227,7 +241,10 @@ export const budgetsFixture = (input: AiFixtureInput): AiBudgetsData => {
             cost: worstCase ? 1_234_567.891 : 184.62,
             accounts: worstCase ? 98_765 : 37,
             unknown: worstCase ? 3 : 0,
-            days: [3.1, 4.8, 2.2, 6.4, 5.9, 7.7, 1.2, 0.8, 6.1, 8.4, 9.3, 7.2, 5.5, 2.1, 1.4, 6.8, 8.9, 10.2, 9.6, 7.1, 2.4, 1.9, 7.4, 8.8, 9.9, 11.3, 8.2, 3.6, 2.7, 6.2],
+            days: [
+              3.1, 4.8, 2.2, 6.4, 5.9, 7.7, 1.2, 0.8, 6.1, 8.4, 9.3, 7.2, 5.5, 2.1, 1.4, 6.8, 8.9, 10.2, 9.6, 7.1, 2.4, 1.9, 7.4, 8.8, 9.9,
+              11.3, 8.2, 3.6, 2.7, 6.2,
+            ],
           },
     models: catalog.models
       .filter((entry) => (entry.kind === "chat" || entry.kind === "decision") && entry.enabled)
@@ -251,7 +268,8 @@ export const createCatalogApi = () => {
   const api: AiFixtureApi = async (request, url, state) => {
     if (url.pathname === "/api/admin/core/ai-quotas/background")
       return Response.json({ used: 12.4, reserved: 0, unknown: 0, stoppedAt: state === "worst" ? "2026-10-27T16:00:00.000Z" : null });
-    if (url.pathname.startsWith("/api/admin/core/ai-quotas") && request.method === "GET") return Response.json({ enabled: true, revision: 5, rules: [] });
+    if (url.pathname.startsWith("/api/admin/core/ai-quotas") && request.method === "GET")
+      return Response.json({ enabled: true, revision: 5, rules: [] });
     if (!url.pathname.startsWith("/api/admin/core/ai/")) return undefined;
     const path = url.pathname.replace("/api/admin/core/ai", "");
     if (state === "saving" && request.method !== "GET") return new Promise<Response>(() => {});
