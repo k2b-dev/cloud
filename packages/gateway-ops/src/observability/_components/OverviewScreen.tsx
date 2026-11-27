@@ -44,6 +44,8 @@ export type OverviewScreenProps = {
   cells: KeyCell[];
   charts: { chart: OpsChart; icon: string; empty: string; href: string; linkLabel: string }[];
   routes: { rows: FailingRoute[]; error: string | null; href: string };
+  /** The three services of the infrastructure record, each with its state; none when it did not answer in time. */
+  services: { key: string; label: string; icon: string; href: string; status: "ok" | "warn" | "bad" | undefined }[];
 };
 
 /** A signal's sign: its symbol in the colour of its weight. Unread sources stay grey, as nothing is known. */
@@ -67,6 +69,19 @@ export default function OverviewScreen(props: OverviewScreenProps) {
       <Chip status="bad">{t().needsAttentionLabel}</Chip>
     ) : signal.severity === "warning" ? (
       <Chip status="warn">{t().warning}</Chip>
+    ) : (
+      <Chip icon="database-off">{t().unavailable}</Chip>
+    );
+  // a service's state in a word; red and amber only where something needs a look
+  const serviceState = (status: OverviewScreenProps["services"][number]["status"]) =>
+    status === "bad" ? (
+      <Chip status="bad">{t().needsAttentionLabel}</Chip>
+    ) : status === "warn" ? (
+      <Chip status="warn">{t().needsReview}</Chip>
+    ) : status === "ok" ? (
+      <Text type="meta" muted>
+        {t().healthy}
+      </Text>
     ) : (
       <Chip icon="database-off">{t().unavailable}</Chip>
     );
@@ -116,6 +131,14 @@ export default function OverviewScreen(props: OverviewScreenProps) {
               </For>
             </List>
           </Show>
+        </Section>
+        {/* the three services at a glance; each opens its area of the infrastructure record */}
+        <Section icon="server-2" title={t().infrastructure}>
+          <List label={t().infrastructure}>
+            <For each={props.services}>
+              {(service) => <Row icon={service.icon} lines={[service.label]} end={serviceState(service.status)} href={service.href} />}
+            </For>
+          </List>
         </Section>
         <For each={props.charts}>
           {(entry) => (

@@ -109,6 +109,11 @@ export const OverviewScreenFixture = (props: { search: string; locale?: string; 
         state={state}
         verdict={{ label: verdict.label, description: verdict.description }}
         signals={signals}
+        services={[
+          { key: "postgres", label: "Postgres", icon: "database", href: "/admin/observability/infrastructure/postgres", status: quiet ? "ok" : "warn" },
+          { key: "valkey", label: "Valkey", icon: "database", href: "/admin/observability/infrastructure/valkey", status: worst ? "bad" : "ok" },
+          { key: "nats", label: "NATS", icon: "topology-star-3", href: "/admin/observability/infrastructure/nats", status: worst ? undefined : "ok" },
+        ]}
         cells={[
           {
             icon: "apps",

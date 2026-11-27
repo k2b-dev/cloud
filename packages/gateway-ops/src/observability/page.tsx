@@ -8,9 +8,11 @@ import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
 import { observabilityAdminNav } from "./_components/admin-nav";
 import type { KeyCell } from "./_components/KeyCells";
+import { INFRA_HREF } from "./_components/InfrastructureTabs";
 import { readAttention } from "./_components/ObservabilityArea";
 import OverviewScreen from "./_components/OverviewScreen.island";
 import { opsCharts } from "./_components/ops-chart";
+import { readInfraStates } from "./infrastructure/sections";
 import { buildOverviewSignals, overviewQuery, overviewVerdict } from "./overview";
 import { TELEMETRY_RANGES } from "./telemetry/contracts";
 import { getTelemetryOverview, getTelemetryTimeseries, listTelemetryRoutes } from "./telemetry/service";
@@ -38,7 +40,7 @@ export default ssr<AuthContext>(async (c) => {
   // jobs keep no six-hour window: the next longer one
   const jobsWindow: TraceWindow = range === "6h" ? "12h" : range;
 
-  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats, apps, attention] = await Promise.all([
+  const [health, telemetry, telemetryTimeseries, failingRoutes, logSummary, logTimeseries, jobStats, apps, attention, infra] = await Promise.all([
     settled(() => buildGatewayHealth(), null),
     settled(() => getTelemetryOverview({ range }), null),
     settled(() => getTelemetryTimeseries({ range }), []),
@@ -48,6 +50,8 @@ export default ssr<AuthContext>(async (c) => {
     settled(() => trace.stats({ filter: { window: jobsWindow } }), null),
     listApps().catch(() => []),
     readAttention(),
+    // the three services' states, shared by the area's pages for 30 s, so a call does not probe them each time
+    readInfraStates(),
   ]);
 
   const offlineApps = health.value?.apps.filter((app) => app.status !== "ok") ?? [];
@@ -178,6 +182,11 @@ export default ssr<AuthContext>(async (c) => {
         cells={cells}
         charts={charts}
         routes={routes}
+        services={[
+          { key: "postgres", label: "Postgres", icon: "database", href: INFRA_HREF.postgres, status: infra.postgres },
+          { key: "valkey", label: "Valkey", icon: "database", href: INFRA_HREF.valkey, status: infra.valkey },
+          { key: "nats", label: "NATS", icon: "topology-star-3", href: INFRA_HREF.nats, status: infra.nats },
+        ]}
       />
     </AdminLayout>
   );
