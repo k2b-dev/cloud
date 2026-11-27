@@ -41,7 +41,10 @@ type ButtonBase = {
   pressed?: boolean;
   /** `submit` sends the form the button stands in; `button` by default. */
   type?: "button" | "submit";
-  /** Stays in a head on the phone, where the other actions move into the menu. */
+  /**
+   * @deprecated Every control of a head stays on the phone now; only `floats` leaves it. `keep` changes nothing and
+   * goes with the next breaking release.
+   */
   keep?: boolean;
   /**
    * The page's main action in its head that `Workspace`'s `primary` repeats: on the phone the floating button stands
