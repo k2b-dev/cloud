@@ -130,8 +130,8 @@ export default function NoteWorkspace(props: NoteWorkspaceProps) {
           {(view) => (
             <Pane.Split>
               <Pane label={view().editor.noteTitle || t().untitled}>
-                {/* k2b-ui gap: a Canvas cannot fill its pane; the editor keeps its own scroller, so the app's stylesheet
-                    lets this one Canvas take the pane's height (app.css, `.notebook-document-surface`). */}
+                {/* k2b-ui gap: #4356 (Canvas height="fill") – until it lands, the app's stylesheet lets this one Canvas
+                    take the pane's height (app.css, `.notebook-document-surface`); the editor keeps its own scroller. */}
                 <Canvas label={t().editorSurface}>
                   <div
                     class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"
