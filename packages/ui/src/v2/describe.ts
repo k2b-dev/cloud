@@ -173,9 +173,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `RecordHead ${quote(element.textContent)}${ids.length ? ` ids: ${ids.join(" · ")}` : ""}`;
     }
     if (name === "Path")
-      return `Path: ${kidsMatching(element, "a, span, b, button")
-        .map((step) => (step.tagName === "BUTTON" ? "…" : clip(step.textContent ?? "", 24)))
-        .join(" › ")}`;
+      return `Path: ${[...element.querySelectorAll("a, b")].map((step) => clip(step.textContent ?? "", 24)).join(" › ")}`;
     if (name === "Steps")
       return `Steps ${quote(element.getAttribute("aria-label"))}: ${[...element.querySelectorAll(".k2-step")]
         .map((step) => `${clip(step.querySelector(".k2-step-label")?.textContent ?? "", 20)} ${step.getAttribute("data-state")}`)

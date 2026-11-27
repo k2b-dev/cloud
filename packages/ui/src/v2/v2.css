@@ -2414,19 +2414,13 @@
   row-gap: 8px;
 }
 /* A bar in the flow of a column or in a pane's status place (not a head or a status row, which have their own narrow
-   forms): its things and its end flow as one line that wraps, the end after the last thing when it has room there and
-   on a line of its own when not, so it never runs under them (the deeds of an open file beside its size). One line
-   stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a second line
-   makes it higher. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) {
+   forms) with such a line: its things and its end flow as one line that wraps, the end after the last thing when it
+   has room there. One line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line
+   below), only a second line makes it higher. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]):has(> .k2-bar-start > .k2-inline) {
   height: auto;
   min-height: var(--k2-h-bar);
   padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
-  flex-wrap: wrap;
-  row-gap: 8px;
-}
-/* its deeds wrap too where the column is narrower than they are, so none is cut */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-sec-body, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start {
   flex-wrap: wrap;
   row-gap: 8px;
 }
@@ -4639,31 +4633,10 @@
   text-overflow: ellipsis;
   font-weight: 600;
 }
-.k2-ui .k2-path > .k2-icon,
-.k2-ui .k2-path > .k2-btn {
-  flex: none;
-}
 .k2-ui .k2-path > .k2-icon {
   flex: none;
   font-size: 14px;
   color: var(--k2-n400);
-}
-/* a path or a title with a chip after it (a folder's sharing, a draft's state): the words give way, the chip is read
-   whole (W1b #4206). A title cuts its own words; a path shortens its places itself, so nothing around it clips the
-   focus ring of its links. */
-.k2-ui .k2-bar-start > .k2-inline > .k2-path {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-.k2-ui .k2-bar-start > .k2-inline:has(> .k2-path) {
-  overflow: visible;
-}
-.k2-ui .k2-bar-start > .k2-inline > .k2-text {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 /* A folded place and the chevron before it keep no room and make no overflow; their scrollWidth still says how wide
    they would be. "…" is laid out the same way while it holds nothing (`data-fold="0"`), and while it holds every place
