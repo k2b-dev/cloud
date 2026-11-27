@@ -451,11 +451,11 @@ export const Path = (props: PathProps) => {
       const places = [...nav.querySelectorAll<HTMLElement>(":scope > .k2-path-step")];
       const current = nav.querySelector<HTMLElement>(":scope > b");
       if (places.length === 0 || !current) return setLevel(0);
-      // each place at its least (its own width or 12 characters), the page at the start's least, which it keeps also
-      // with a shorter name (`--k2-start-least`, the same least the bar's fold gives the start)
+      // each place at its least (its own width or 12 characters), the page at its own or the start's least
+      // (`--k2-start-least`, the same least the bar's fold gives the start)
       const cap = width("12ch", places[0]!);
       const least = places.map((place) => Math.min(place.scrollWidth, cap));
-      const page = width("var(--k2-start-least)", current);
+      const page = Math.min(current.scrollWidth, width("var(--k2-start-least)", current));
       const more = nav.querySelector<HTMLElement>(":scope > .k2-path-fold")?.scrollWidth ?? 0;
       const chevron = current.previousElementSibling instanceof HTMLElement ? current.previousElementSibling.offsetWidth : 0;
       const step = chevron + 2 * (Number.parseFloat(getComputedStyle(nav).columnGap) || 0);

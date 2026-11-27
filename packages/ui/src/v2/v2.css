@@ -2926,8 +2926,8 @@
    first, against the path laid out at its least (below), and only then does the path give way. Once the bar is
    fitted (or where it has no end, so nothing folds), the path takes the room the end leaves, never while it is
    measured. The places before the page shorten first, each to its least (its
-   own width or 12 characters); then the page, down to `--k2-start-least` and never below; only the server's page,
-   where nothing folds yet, cuts places further. Folded places stay in the page, out of the flow, out of sight and out
+   own width or 12 characters), while the page stands whole; then the page, down to `--k2-start-least` and never
+   below; only the server's page, where nothing folds yet, cuts places further. Folded places stay in the page, out of the flow, out of sight and out
    of the tab order, so the path can measure what they would need. */
 .k2-ui .k2-bar:is([data-k2-fitted], :not(:has(> .k2-bar-end))):not([data-k2-measuring]) > .k2-bar-start:has(> .k2-path) {
   flex: 1 1 0;
@@ -2946,10 +2946,11 @@
 .k2-ui .k2-bar-start > .k2-path {
   flex: 1 1 0;
 }
-/* a place starts at its least (12 characters, never more than its own width) and grows to its own width while there
-   is room; it shrinks below its least only after the page has given way to its own */
+/* A place and the page start at their least (12 characters, the page `--k2-start-least`, never more than their own
+   width). Room goes to the page first, until it stands whole, then to the places. The page never goes below its
+   least; a place does, only on the server's page, where nothing folds yet. */
 .k2-ui .k2-path-step {
-  flex: 1000 1 12ch;
+  flex: 1 1 12ch;
   max-width: max-content;
   min-width: 0;
   overflow: hidden;
@@ -2957,11 +2958,10 @@
   color: var(--k2-subtle);
   text-decoration: none;
 }
-/* the page gives way before any place goes below its least (a thousand times faster), and never below
-   `--k2-start-least`: a shorter name keeps that room after it, where nothing follows */
 .k2-ui .k2-path > b {
-  flex: 0 1000 auto;
-  min-width: var(--k2-start-least);
+  flex: 1000 0 var(--k2-start-least);
+  max-width: max-content;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 600;
@@ -3005,7 +3005,8 @@
   width: 1em;
 }
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > b {
-  width: var(--k2-start-least);
+  width: max-content;
+  max-width: var(--k2-start-least);
 }
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :is(.k2-path-fold, .k2-icon:has(+ .k2-path-fold)) {
   display: none;
