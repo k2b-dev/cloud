@@ -2176,6 +2176,119 @@ for (const which of ["oauth-b", "pulse-b"] as const)
       );
     });
 
+// what the study shows ships (parity review of v3, 27.11.): the head's tabs and search, the kinds beside a client's
+// name, letter marks, a line of use per client, the detail's history in a section, the people of a group at its end,
+// "Alle trennen" in the head of its section; Pulse with its bases in the sidebar, its tabs, the values of the last hour
+// above their fetches, and who an alarm told
+test("identity B OAuth at 1440 shows what the study shows: tabs and search in the head, kinds, letter marks, lines of use, a history in the detail", async () => {
+  await withPage(
+    "oauth-b",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const list = document.querySelector<HTMLElement>(".k2-pane:not([data-detail])")!;
+        const detail = document.querySelector<HTMLElement>(".k2-pane[data-detail]")!;
+        const tabs = [...list.querySelectorAll("[data-slot='head'] .k2-tab")].filter((tab) => tab.getClientRects().length > 0);
+        const history = detail.querySelector<HTMLElement>(".k2-sec > .k2-hero-trend")!;
+        const text = (element: Element) => element.getBoundingClientRect();
+        const group = [...detail.querySelectorAll(".k2-row")].find((row) => row.textContent?.includes("Buchhaltung"))!;
+        const connected = [...detail.querySelectorAll(".k2-sec")].find((section) => section.getAttribute("aria-label") === "Verbunden")!;
+        return {
+          tabs: tabs.map((tab) => tab.textContent?.replace(/\s+/g, " ").trim()),
+          search: list.querySelectorAll("[data-slot='head'] button[aria-label='Clients suchen']").length,
+          kinds: [...list.querySelectorAll(".k2-table tbody td:first-child .k2-chip")].map((chip) => chip.textContent),
+          letters: list.querySelectorAll(".k2-table tbody td:first-child .k2-mk-initial").length,
+          lines: list.querySelectorAll(".k2-table .k2-spark[data-kind='line']").length,
+          history: [
+            history.querySelectorAll("rect").length,
+            Math.round(text(history.querySelector(".k2-hero-draw")!).left - text(detail).left),
+            Math.round(text(detail).right - text(history.querySelector(".k2-hero-draw")!).right),
+          ],
+          groupStack: [group.querySelectorAll(".k2-row-end .k2-avs").length, group.querySelector(".k2-row-meta")?.textContent],
+          trennen: connected.querySelector(".k2-sh")?.textContent?.includes("Alle trennen"),
+          edge: Number.parseFloat(getComputedStyle(history).paddingLeft),
+        };
+      });
+      expect(found.tabs.length).toBe(2);
+      expect(found.tabs[0]).toContain("Clients");
+      expect(found.search).toBe(1);
+      expect(found.kinds).toEqual(["Selbst registriert", "Gerät", "Selbst registriert", "Dienstkonto"]);
+      expect(found.letters).toBe(9);
+      expect(found.lines).toBe(8);
+      // 30 days of bars from text edge to text edge of the detail
+      expect(found.history).toEqual([30, found.edge, found.edge]);
+      expect(found.groupStack).toEqual([1, "Gruppe · 5 Personen"]);
+      expect(found.trennen).toBe(true);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    1440,
+  );
+});
+
+test("identity B Pulse at 1440 shows what the study shows: bases in the sidebar, tabs, the last hour above its fetches, who an alarm told", async () => {
+  await withPage(
+    "pulse-b",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const list = document.querySelector<HTMLElement>(".k2-pane:not([data-detail])")!;
+        const detail = document.querySelector<HTMLElement>(".k2-pane[data-detail]")!;
+        const history = detail.querySelector<HTMLElement>(".k2-sec > .k2-hero-trend")!;
+        const area = history.querySelector(".k2-hero-draw")!.getBoundingClientRect();
+        const ticks = history.querySelector(".k2-ticks")!;
+        const alarm = detail.querySelector(".k2-row[data-states]")!;
+        return {
+          bases: document.querySelectorAll(".k2-nav a, .k2-nav [href]").length >= 8,
+          // every view stands as a tab or, where the head lacks room, in its menu "Mehr"
+          tabs: [...list.querySelectorAll("[data-slot='head'] .k2-tabs > .k2-tab")].map((tab) =>
+            [...tab.childNodes]
+              .map((part) => part.textContent?.trim())
+              .filter(Boolean)
+              .join(" "),
+          ),
+          more: list.querySelectorAll("[data-slot='head'] button[aria-label='Quellen suchen']").length,
+          history: [
+            history.querySelectorAll(".k2-hero-line, .k2-hero-cut").length,
+            ticks.querySelectorAll(":scope > i").length,
+            ticks.querySelectorAll(":scope > i[data-s='bad']").length,
+            // the ticks stand under the area, on its width
+            ticks.getBoundingClientRect().top >= area.bottom,
+            [...history.querySelector(".k2-hero-cap")!.children].map((word) => word.textContent).join(" "),
+          ],
+          told: [alarm.querySelectorAll(".k2-avs").length, alarm.textContent?.includes("per Mail benachrichtigt")],
+        };
+      });
+      expect(found.bases).toBe(true);
+      expect(found.tabs).toEqual(["Quellen 8", "SQL", "Abfragen 14", "Alarme 6"]);
+      expect(found.more).toBe(1);
+      expect(found.history).toEqual([2, 60, 3, true, "09:43 Abrufe 10:42"]);
+      expect(found.told).toEqual([1, true]);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    1440,
+  );
+});
+
+test("identity B Pulse at 390: the last fetches keep time, result and duration whole on one line, the × before a failure", async () => {
+  await withPage(
+    "pulse-b",
+    async (page) => {
+      const lines = await page.evaluate(() =>
+        [
+          ...document.querySelectorAll<HTMLElement>(".k2-pane[data-detail] .k2-sec[aria-label='Letzte Abrufe'] tbody td"),
+          // nothing of a result cut: no part of its cell is wider than its box
+        ].map(
+          (cell) => [cell, ...cell.querySelectorAll<HTMLElement>("*")].filter((part) => part.scrollWidth > part.clientWidth + 1).length,
+        ),
+      );
+      // five fetches of time, result and duration
+      expect(lines.length).toBe(15);
+      expect(lines.filter(Boolean)).toEqual([]);
+    },
+    390,
+  );
+});
+
 for (const width of [1440, 390])
   test(`identity B at ${width}: the open thing has a head on the owner's tint, a sign of 40, its name in 18, three facts, a problem red in place, its deeds in reach`, async () => {
     await withPage(
@@ -2439,7 +2552,7 @@ for (const width of [1440, 1024, 800, 390])
 
 // the contrast of two computed colours, from rgb() or color(srgb …) as color-mix() leaves them: a part's colour, its
 // background or its fill, against the surface or the background of the place it stands in
-const contrastIn = (page: Page, pairs: [string, "color" | "background" | "fill", string][]) =>
+const contrastIn = (page: Page, pairs: [string, "color" | "background" | "fill" | "stroke", string][]) =>
   page.evaluate((list) => {
     const channels = (color: string) => {
       const srgb = color.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/);
@@ -2461,7 +2574,8 @@ const contrastIn = (page: Page, pairs: [string, "color" | "background" | "fill",
     return list.map(([selector, part, against]) => {
       const element = document.querySelector(selector)!;
       const style = getComputedStyle(element);
-      const fore = part === "background" ? style.backgroundColor : part === "fill" ? style.fill : style.color;
+      const fore =
+        part === "background" ? style.backgroundColor : part === "fill" ? style.fill : part === "stroke" ? style.stroke : style.color;
       const back =
         against === "surface"
           ? getComputedStyle(document.body).getPropertyValue("--k2-surface").trim() || "rgb(255, 255, 255)"
@@ -2482,15 +2596,18 @@ for (const color of ["eab308", "f59e0b", "06b6d4", "84cc16", "0a0a0a", "fafafa",
         async (page) => {
           if (theme === "dark") await page.evaluate(() => document.body.setAttribute("data-theme", "dark"));
           await settled(page);
-          const [figure, name, now, soft, softOnTint] = await contrastIn(page, [
+          const [figure, name, now, soft, softOnTint, sparkLine, sectionLine] = await contrastIn(page, [
             ["[data-k2-type='figure']", "color", "surface"],
             [".k2-table tr[aria-current] > td:first-child", "color", "td"],
             [".k2-hero-draw > rect[data-tone='now']", "fill", "surface"],
             [".k2-table tbody tr:not([aria-current]) .k2-ticks > i[data-s='ok']", "background", "surface"],
             [".k2-table tbody tr[aria-current] .k2-ticks > i[data-s='ok']", "background", "td"],
+            // a spark as a line, and the line of a history alone in a section
+            [".k2-spark[data-kind='line'] > path", "stroke", "surface"],
+            [".k2-sec .k2-hero-line", "stroke", "surface"],
           ]);
-          const measured = { figure, name, now, soft, softOnTint };
-          const need = { figure: 4.5, name: 4.5, now: 3, soft: 3, softOnTint: 3 };
+          const measured = { figure, name, now, soft, softOnTint, sparkLine, sectionLine };
+          const need = { figure: 4.5, name: 4.5, now: 3, soft: 3, softOnTint: 3, sparkLine: 3, sectionLine: 3 };
           const short = Object.entries(measured).filter(([part, ratio]) => ratio! < need[part as keyof typeof need]);
           expect({ color, theme, short }).toEqual({ color, theme, short: [] });
         },
@@ -2535,7 +2652,7 @@ test("facts keep a long key whole: it wraps in its column of 116 px instead of e
           width: Math.round(label.getBoundingClientRect().width),
         })),
       );
-      expect(found.map((label) => label.whole)).toEqual([true, true]);
+      expect(found.map((label) => label.whole)).toEqual([true, true, true]);
       expect(found[0]!.width).toBeLessThanOrEqual(116);
     },
     1440,

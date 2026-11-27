@@ -71,6 +71,12 @@ The one figure of a screen with its real history and its exceptions, right under
 
 <Props of="Hero HeroTrend HeroException" />
 
+### Trend
+
+A history alone in a section of a detail, such as the values per minute of the last hour: the drawing of a hero's trend from text edge to text edge with its words under it. Under an area, `ticks` stand one per check of the same time, so where the values stop and why read as one picture.
+
+<Props of="Trend" />
+
 ### ObjectHead
 
 The head of an open thing on the tint of its app: sign, name, meta, deeds, three key facts and a problem in place.

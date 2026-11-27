@@ -99,7 +99,7 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
 
-### Hero, ObjectHead, Ticks (identity B)
+### Hero, Trend, ObjectHead, Ticks (identity B)
 
 `Hero`: the one figure of a screen right under its head, in the figure type
 (30/34, 600, tabular, once per screen) and the owner's colour: `figure`,
@@ -110,7 +110,10 @@ status | icon, count, word, who }`, one line of "● number word who").
 `ObjectHead` as the `head` of an open thing: `mark` (40 px), `name` (18),
 `meta`, `actions` (in the phone's bar there), up to three `facts` and a
 `problem` (`{ title, text }`, red in place), on the owner's tint. `Ticks`
-(below) draws a hero's history as `trend` `ticks`. `Dot` (`status`): a good state is a neutral dot and word. Rows of
+(below) draws a hero's history as `trend` `ticks`. `Trend` (the same
+`kind`, `values`, `label`, `start`, `caption`, `end`, and under an area
+`ticks` of `{ slots, label }`): a history alone in a section of a detail,
+from text edge to text edge. `Dot` (`status`): a good state is a neutral dot and word. Rows of
 a table or list part by a very quiet line; the strong hairline parts two
 things (head from content, list from detail, groups).
 
@@ -377,9 +380,10 @@ lines instead of cutting a thing.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
   never only the title of the data, `color` (the data colour of its thing;
-  without it the owner's, else the app's). A few bars of a short history,
-  the history soft and the last in the full ink; beside a number, never
-  instead of it.
+  without it the owner's, else the app's), `kind` (`bars`, or `line`: one
+  soft line of 80 px where the shape over a month matters, such as use over
+  30 days). A few bars of a short history, the history soft and the last in
+  the full ink; beside a number, never instead of it.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
   `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour

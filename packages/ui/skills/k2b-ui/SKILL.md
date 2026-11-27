@@ -192,7 +192,7 @@ Dense is not busy: show more, never the same thing twice (design pass 26.11.).
   `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
   `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
-  `RecordHead`, `ObjectHead`, `Hero`, `FilterBar`, `ListOrder`, `Lookup`.
+  `RecordHead`, `ObjectHead`, `Hero`, `Trend`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
   `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),

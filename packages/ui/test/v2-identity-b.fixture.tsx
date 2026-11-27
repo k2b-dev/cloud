@@ -2,10 +2,12 @@ import {
   Avatar,
   Bar,
   Button,
+  Chip,
   Digest,
   Dot,
   Facts,
   Hero,
+  Icon,
   List,
   Menu,
   Nav,
@@ -15,9 +17,11 @@ import {
   Section,
   Spark,
   Table,
+  Tabs,
   Text,
   type TickState,
   Ticks,
+  Trend,
   Workspace,
 } from "../src/v2";
 
@@ -61,7 +65,8 @@ const adminNav = (
 type Client = {
   id: string;
   name: string;
-  icon: string;
+  /** Its sign: the first letter on its colour, as the study draws them; a symbol only where the client has one. */
+  icon?: string;
   color: string;
   kind: string;
   people: readonly { name: string }[];
@@ -71,99 +76,95 @@ type Client = {
   stale?: boolean;
 };
 
+// use per day over 30 days: the week shows in it, quiet at the weekend; `from` the first day it was used
+const weekdays = (peak: number, from = 0) =>
+  Array.from({ length: 30 }, (_, day) => (day < from ? 0 : Math.round(peak * [1, 0.95, 1, 0.9, 0.85, 0.35, 0.25][day % 7]!)));
+
 const clients: readonly Client[] = [
   {
     id: "wiki",
     name: "Wiki",
-    icon: "book",
     color: "#0369a1",
     kind: "Vertraulich",
     people: [people.ms, people.jb],
     connected: 58,
-    usage: [40, 42, 45, 44, 48, 50, 49, 52, 54, 55, 57, 58],
+    usage: weekdays(58),
     last: "vor 3 Min",
   },
   {
     id: "cli",
     name: "Cloud CLI",
-    icon: "terminal",
+    icon: "cloud",
     color: "#111827",
     kind: "Öffentlich",
     people: [people.jk, people.ft],
     connected: 41,
-    usage: [30, 31, 33, 34, 35, 36, 37, 38, 39, 40, 40, 41],
+    usage: weekdays(41),
     last: "vor 2 Min",
   },
   {
     id: "zeit",
     name: "Zeiterfassung",
-    icon: "clock",
     color: "#15803d",
     kind: "Vertraulich",
     people: [people.ft, people.sy],
     connected: 31,
-    usage: [28, 29, 29, 30, 30, 31, 30, 31, 31, 31, 31, 31],
+    usage: weekdays(31),
     last: "vor 9 Min",
   },
   {
     id: "paperless",
     name: "Paperless",
-    icon: "file-invoice",
     color: "#0f766e",
     kind: "Vertraulich",
     people: [people.ar, people.jb],
     connected: 6,
-    usage: [1, 2, 2, 3, 2, 4, 3, 5, 4, 6, 5, 6],
+    usage: weekdays(6),
     last: "vor 1 Std",
   },
   {
     id: "claude",
     name: "Claude Code",
-    icon: "terminal-2",
     color: "#c2410c",
     kind: "Selbst registriert",
     people: [people.to, people.lh],
     connected: 4,
-    usage: [0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 3, 4],
+    usage: weekdays(4, 23),
     last: "vor 12 Min",
   },
   {
     id: "grafana",
     name: "Grafana",
-    icon: "chart-area",
     color: "#7c3aed",
     kind: "Vertraulich",
     people: [people.ms, people.sy],
     connected: 31,
-    usage: [20, 22, 25, 24, 26, 28, 27, 29, 30, 30, 31, 31],
+    usage: weekdays(31),
     last: "gerade eben",
   },
   {
     id: "nextcloud",
     name: "Nextcloud",
-    icon: "cloud",
     color: "#1d4ed8",
     kind: "Vertraulich",
     people: [people.jk, people.ft],
     connected: 97,
-    usage: [80, 82, 85, 88, 90, 91, 93, 94, 95, 96, 96, 97],
+    usage: weekdays(97),
     last: "gerade eben",
   },
   {
     id: "drucker",
     name: "Drucker-Terminal",
-    icon: "printer",
     color: "#b45309",
     kind: "Gerät",
     people: [people.sy, people.ft],
     connected: 4,
-    usage: [2, 2, 3, 3, 3, 4, 4, 4, 3, 4, 4, 4],
+    usage: weekdays(4),
     last: "heute, 07:12",
   },
   {
     id: "inspector",
     name: "MCP Inspector",
-    icon: "bug",
     color: "#475569",
     kind: "Selbst registriert",
     people: [],
@@ -174,7 +175,6 @@ const clients: readonly Client[] = [
   {
     id: "backup",
     name: "Backup-Dienst",
-    icon: "cloud-upload",
     color: "#15803d",
     kind: "Dienstkonto",
     people: [],
@@ -182,6 +182,14 @@ const clients: readonly Client[] = [
     last: "heute, 06:30",
   },
 ];
+
+const clientMark = (client: Client) =>
+  client.icon ? { icon: client.icon, color: client.color } : { initial: client.name, color: client.color };
+// the kinds that differ from a usual client stand beside its name
+const kinds = new Set(["Gerät", "Selbst registriert", "Dienstkonto"]);
+
+// people who used the client per day, 30 days (the detail's history)
+const peoplePerDay = [4, 5, 6, 6, 5, 0, 2, 5, 6, 6, 5, 4, 0, 5, 6, 6, 6, 4, 2, 0, 5, 6, 5, 5, 6, 0, 0, 0, 4, 5];
 
 // new connections per day, 30 days, from refresh_token_families.created_at (README: derivable)
 const newConnections = [3, 1, 4, 2, 0, 5, 3, 2, 6, 1, 0, 2, 4, 3, 7, 2, 1, 0, 3, 5, 2, 4, 1, 3, 6, 2, 0, 4, 3, 5];
@@ -207,14 +215,21 @@ export const OAuthScreen = (props: { list?: boolean }) => (
         head={
           <Bar
             start={
-              <Text type="body" weight="strong">
-                OAuth-Clients
-              </Text>
+              <Tabs
+                label="OAuth"
+                items={[
+                  { label: "Clients", icon: "key", count: 10, current: true },
+                  { label: "Endpunkte", icon: "arrows-exchange", href: "#endpunkte" },
+                ]}
+              />
             }
             end={
-              <Button variant="primary" icon="plus">
-                Neuer Client
-              </Button>
+              <>
+                <Button variant="ghost" icon="search" label="Clients suchen" />
+                <Button variant="primary" icon="plus">
+                  Neuer Client
+                </Button>
+              </>
             }
           />
         }
@@ -245,8 +260,17 @@ export const OAuthScreen = (props: { list?: boolean }) => (
           columns={[
             {
               title: "Client",
-              cell: (client) => client.name,
-              mark: (client) => ({ icon: client.icon, color: client.color }),
+              // the name and its kind beside it stay whole: "Claude Code  Selbst registriert"
+              width: { min: 240, default: 290 },
+              cell: (client) =>
+                kinds.has(client.kind) ? (
+                  <>
+                    {client.name} <Chip>{client.kind}</Chip>
+                  </>
+                ) : (
+                  client.name
+                ),
+              mark: clientMark,
             },
             {
               title: "Verbunden",
@@ -266,7 +290,11 @@ export const OAuthScreen = (props: { list?: boolean }) => (
               width: { min: 100, default: 100 },
               cell: (client) =>
                 client.usage ? (
-                  <Spark values={client.usage} label={`${client.name}: genutzt an ${client.usage.filter(Boolean).length} von 12 Tagen`} />
+                  <Spark
+                    kind="line"
+                    values={client.usage}
+                    label={`${client.name}: genutzt an ${client.usage.filter(Boolean).length} von 30 Tagen`}
+                  />
                 ) : (
                   <Text type="meta" muted>
                     {client.id === "backup" ? "täglich 06:30" : "keine Nutzung"}
@@ -274,14 +302,14 @@ export const OAuthScreen = (props: { list?: boolean }) => (
                 ),
               drop: true,
             },
-            { title: "Zuletzt", width: { min: 132, default: 132 }, cell: lastCell, drop: true },
+            { title: "Zuletzt", width: { min: 122, default: 122 }, cell: lastCell, drop: true },
           ]}
           phone={(client) => ({
             lines: [
               client.name,
               `${client.kind} · ${client.connected ? `${client.connected} verbunden` : "niemand verbunden"} · ${client.last}`,
             ],
-            mark: { icon: client.icon, color: client.color },
+            mark: clientMark(client),
           })}
         />
       </Pane>
@@ -293,7 +321,7 @@ export const OAuthScreen = (props: { list?: boolean }) => (
           back={{ label: "OAuth-Clients", href: "#oauth" }}
           head={
             <ObjectHead
-              mark={{ icon: "file-invoice", color: "#0f766e" }}
+              mark={{ initial: "Paperless", color: "#0f766e" }}
               name="Paperless"
               meta="Belegablage der Buchhaltung · vertraulich"
               actions={
@@ -311,14 +339,29 @@ export const OAuthScreen = (props: { list?: boolean }) => (
             />
           }
         >
+          <Section title="Personen je Tag" count="30 Tage">
+            <Trend
+              kind="bars"
+              values={peoplePerDay}
+              label="Personen je Tag, letzte 30 Tage: heute 5, an 6 Tagen niemand"
+              start="27.10."
+              caption="10.11."
+              end="heute"
+            />
+          </Section>
           <Section title="Zugriff">
             <Facts items={[{ label: "Wer darf", value: "Ausgewählte Personen und Gruppen" }]} />
             <List label="Zugriff">
-              <Row avatar={people.ar} lines={["Ada Renz"]} time="verbunden" />
-              <Row mark={{ icon: "users", color: "#475569" }} lines={["Buchhaltung", "Gruppe · 5 Personen"]} />
+              <Row avatar={people.ar} lines={["Ada Renz"]} meta="Person" time="verbunden" />
+              <Row
+                mark={{ icon: "users", color: "#475569" }}
+                lines={["Buchhaltung"]}
+                meta="Gruppe · 5 Personen"
+                end={<Avatar.Stack people={[people.jb, people.to, people.lh]} max={3} total={5} label="Buchhaltung: 5 Personen" />}
+              />
             </List>
           </Section>
-          <Section title="Verbunden" count={6} more={{ label: "Alle trennen" }}>
+          <Section title="Verbunden" count={6} actions={[{ label: "Alle trennen" }]}>
             <List label="Verbunden">
               {/* since when, when last, and the one deed of a connection: take it away */}
               {[
@@ -426,8 +469,34 @@ const today: TickState[] = [
   ...Array.from({ length: 26 }, (): TickState => "none"),
 ];
 
+const pulseNav = (
+  <Nav
+    title="Pulse"
+    icon="activity"
+    groups={[
+      { items: [{ label: "Alle Basen", icon: "layout-grid", count: 7, href: "#basen" }] },
+      {
+        label: "Basen",
+        items: [
+          { label: "Betrieb Werkstatt Nord", icon: "building-factory-2", color: PULSE, href: "#nord", current: true, dot: "bad" },
+          { label: "Webshop", icon: "shopping-cart", color: "#15803d", href: "#webshop" },
+          { label: "Solaranlage Lager", icon: "solar-panel", color: "#c2410c", href: "#solar" },
+          { label: "Fuhrpark", icon: "truck", color: "#be123c", href: "#fuhrpark" },
+          { label: "WLAN Campus", icon: "wifi", color: "#0f766e", href: "#wlan" },
+          { label: "Druckerflotte", icon: "printer", color: "#475569", href: "#drucker" },
+          { label: "Archiv 2025", icon: "archive", color: "#475569", href: "#archiv" },
+        ],
+      },
+    ]}
+  />
+);
+
+// the values per minute of the last hour (09:43 to 10:42): steady, then nothing from 10:40; one fetch per minute
+const perMinute = [...Array.from({ length: 57 }, (_, minute) => 1430 + ((minute * 37) % 23)), 0, 0, 0];
+const fetchesPerMinute: TickState[] = [...Array.from({ length: 57 }, (): TickState => "ok"), "bad", "bad", "bad"];
+
 export const PulseScreen = (props: { list?: boolean }) => (
-  <Workspace>
+  <Workspace sidebar={pulseNav}>
     <Pane.Split>
       <Pane
         label="Quellen"
@@ -436,14 +505,24 @@ export const PulseScreen = (props: { list?: boolean }) => (
         head={
           <Bar
             start={
-              <Text type="body" weight="strong">
-                Betrieb Werkstatt Nord
-              </Text>
+              <Tabs
+                label="Betrieb Werkstatt Nord"
+                items={[
+                  { label: "Quellen", icon: "plug", count: 8, current: true },
+                  { label: "SQL", icon: "code", href: "#sql" },
+                  { label: "Abfragen", icon: "bookmark", count: 14, href: "#abfragen" },
+                  { label: "Alarme", icon: "bell", count: 6, href: "#alarme" },
+                ]}
+              />
             }
             end={
-              <Button variant="primary" icon="plus">
-                Neue Quelle
-              </Button>
+              <>
+                <Button variant="ghost" icon="search" label="Quellen suchen" />
+                <Button variant="primary" icon="plus">
+                  Neue Quelle
+                </Button>
+                <Menu items={[{ label: "Base umbenennen" }, { label: "Base archivieren" }]} />
+              </>
             }
           />
         }
@@ -524,16 +603,34 @@ export const PulseScreen = (props: { list?: boolean }) => (
             />
           }
         >
+          <Section title="Werte je Minute" count="letzte Stunde">
+            <Trend
+              kind="area"
+              values={perMinute}
+              failedFrom={57}
+              label="Werte je Minute, letzte Stunde: gleichmäßig um 1.440, seit 10:40 keine"
+              ticks={{ slots: fetchesPerMinute, label: "Abrufe der letzten Stunde: 57 erfolgreich, die letzten 3 fehlgeschlagen" }}
+              start="09:43"
+              caption="Abrufe"
+              end="10:42"
+            />
+          </Section>
           <Section title="Alarme" count={2}>
             <List label="Alarme">
               <Row
                 mark={{ icon: "bell-ringing", color: "#b91c1c" }}
-                lines={["Drucker Halle 2 liefert nicht", "ausgelöst 10:41 · per Mail an Felix Thal und Lena Hartwig"]}
+                lines={["Drucker Halle 2 liefert nicht", "ausgelöst 10:41 · keine Werte seit 2 Min"]}
+                states={
+                  <Text type="meta" muted>
+                    <Avatar.Stack people={[people.ft, people.lh]} label="Felix Thal und Lena Hartwig" /> per Mail benachrichtigt
+                  </Text>
+                }
               />
               <Row mark={{ icon: "bell", color: "#475569" }} lines={["Toner unter 10 %", "ruhig · zuletzt ausgelöst 18.11."]} />
             </List>
           </Section>
           <Section title="Letzte Abrufe">
+            {/* k2b-ui gap: a quiet log list (times in mono, no column head), as the study draws it; G builds Table mono */}
             <Table
               label="Letzte Abrufe"
               rows={[
@@ -541,21 +638,24 @@ export const PulseScreen = (props: { list?: boolean }) => (
                 { at: "10:41:00", what: "Zeitüberschreitung", took: "15,0 s" },
                 { at: "10:40:00", what: "Zeitüberschreitung", took: "15,0 s" },
                 { at: "10:39:00", what: "86 Metriken", took: "588 ms" },
+                { at: "10:38:00", what: "86 Metriken", took: "604 ms" },
               ]}
               columns={[
-                { title: "Zeit", cell: (fetch) => fetch.at },
+                // time and duration as wide as they need: the result takes the rest and stays on one line
+                { title: "Zeit", width: { min: 88, default: 88 }, cell: (fetch) => fetch.at },
                 {
                   title: "Ergebnis",
+                  width: { min: 172, default: 172 },
                   cell: (fetch) =>
                     fetch.what === "Zeitüberschreitung" ? (
                       <Text type="row" tone="bad">
-                        {fetch.what}
+                        <Icon name="x" /> {fetch.what}
                       </Text>
                     ) : (
                       fetch.what
                     ),
                 },
-                { title: "Dauer", align: "end", cell: (fetch) => fetch.took },
+                { title: "Dauer", align: "end", width: { min: 80, default: 80 }, cell: (fetch) => fetch.took },
               ]}
             />
           </Section>
@@ -697,8 +797,13 @@ export const OwnerScreen = (props: { color: string }) => (
           items={[
             { label: "http.response.status_code", value: "200" },
             { label: "Letzte Anmeldung", value: "heute, 09:42" },
+            // a line of use in the owner's soft colour (Spark kind line)
+            { label: "Nutzung", value: <Spark kind="line" values={[3, 5, 4, 6, 5, 7, 8]} label="Nutzung je Tag: von 3 auf 8 gestiegen" /> },
           ]}
         />
+        <Section title="Werte je Minute">
+          <Trend kind="area" values={[5, 6, 5, 7, 6, 0]} failedFrom={5} label="Werte je Minute: seit der letzten Minute keine" />
+        </Section>
       </Pane>
     </Pane.Split>
   </Workspace>

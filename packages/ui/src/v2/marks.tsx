@@ -312,14 +312,49 @@ export type SparkProps = {
   label: string;
   /** The data colour of the thing the history belongs to; without it the colour of the owner, else of the app. */
   color?: string;
+  /**
+   * `bars` (the default): a few bars, the last in full colour, such as changes per day of a week. `line`: one soft
+   * line of 80 px, such as use over 30 days, where the shape matters more than one day.
+   */
+  kind?: "bars" | "line";
 };
 
 /**
  * A few small bars of a short history, such as changes per day: in the colour of the thing it stands beside (its
  * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number.
  */
+const LINE_WIDTH = 80;
+const LINE_HEIGHT = 20;
+
 export const Spark = (props: SparkProps) => {
   const top = () => Math.max(...props.values, 0);
+  // a line shows the shape between its lowest and highest value, 2 px kept above and below for its stroke; a history
+  // of one value, or of equal values, is a flat line in the middle
+  const low = () => Math.min(...props.values);
+  const line = () =>
+    props.values
+      .map((value, index) => {
+        const x = props.values.length > 1 ? (index / (props.values.length - 1)) * LINE_WIDTH : index * LINE_WIDTH;
+        const span = top() - low();
+        const y = span > 0 ? LINE_HEIGHT - 2 - ((value - low()) / span) * (LINE_HEIGHT - 4) : LINE_HEIGHT / 2;
+        return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join("") + (props.values.length === 1 ? `H${LINE_WIDTH}` : "");
+  if (props.kind === "line")
+    return (
+      <svg
+        class="k2-spark"
+        data-k2-part="Spark"
+        data-kind="line"
+        role="img"
+        aria-label={props.label}
+        viewBox={`0 0 ${LINE_WIDTH} ${LINE_HEIGHT}`}
+        preserveAspectRatio="none"
+        style={custom({ "--k2-c": props.color })}
+      >
+        <path d={line()} vector-effect="non-scaling-stroke" />
+      </svg>
+    );
   return (
     <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label} style={custom({ "--k2-c": props.color })}>
       <For each={props.values}>

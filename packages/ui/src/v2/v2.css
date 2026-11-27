@@ -846,6 +846,10 @@
   display: block;
   width: 100%;
 }
+/* a history alone in a section: from text edge to text edge, its ticks and words under it */
+.k2-ui .k2-sec > .k2-hero-trend {
+  padding: 4px var(--k2-edge) 8px;
+}
 /* no history yet: the place of the drawing keeps its 56 px and says so, quietly, so a later history moves nothing */
 .k2-ui .k2-hero-none {
   display: flex;
@@ -1164,6 +1168,10 @@
   .k2-ui .k2-spark > i {
     forced-color-adjust: none;
     background: CanvasText;
+  }
+  .k2-ui .k2-spark[data-kind="line"] > path {
+    forced-color-adjust: none;
+    stroke: CanvasText;
   }
   .k2-ui .k2-hero-draw {
     forced-color-adjust: none;
@@ -3220,6 +3228,18 @@
 .k2-ui .k2-spark > i:last-child {
   background: var(--k2-c-ink, var(--k2-app-text));
 }
+/* as a line: the whole history in the soft colour (3:1 on the surface), 80 px wide, such as use over 30 days */
+.k2-ui .k2-spark[data-kind="line"] {
+  width: 80px;
+  overflow: visible;
+}
+.k2-ui .k2-spark[data-kind="line"] > path {
+  fill: none;
+  stroke: var(--k2-c-soft, var(--k2-app-soft, var(--k2-app-text)));
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
 /* dark: the same foregrounds, worked out against the dark surface */
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-mk,
 .k2-ui.dark .k2-mk,
@@ -3235,6 +3255,11 @@
 .k2-ui.dark .k2-spark > i:last-child,
 .k2-ui[data-theme="dark"] .k2-spark > i:last-child {
   background: var(--k2-c-ink-dark, var(--k2-app-text));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark[data-kind="line"] > path,
+.k2-ui.dark .k2-spark[data-kind="line"] > path,
+.k2-ui[data-theme="dark"] .k2-spark[data-kind="line"] > path {
+  stroke: var(--k2-c-soft-dark, var(--k2-app-soft, var(--k2-app-text)));
 }
 
 /* ── Preview: the large picture of the open thing at the top of its detail, 4:3 from text edge to text edge ──── */

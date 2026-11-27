@@ -43,6 +43,16 @@ export type HeroException = {
   who?: string;
 };
 
+/**
+ * A history on its own, such as the values per minute of the last hour in a detail's section: the drawing of a
+ * `Hero`'s trend from text edge to text edge, with its words under it. Under an area, `ticks` stand one per check of
+ * the same time, a failure red, so where the values stop and why read as one picture.
+ */
+export type TrendProps = HeroTrend & {
+  /** Under an area: one tick per check of the same time, such as the fetches of the last hour, with its own sentence. */
+  ticks?: { slots: readonly TickState[]; label: string };
+};
+
 export type HeroProps = {
   /** The one figure that counts today, such as "178" or "41.380"; in the figure type, once per screen. */
   figure: string;
@@ -128,6 +138,34 @@ const Area = (props: { values: readonly number[]; label: string; failedFrom?: nu
   );
 };
 
+/** A history with its words under it: in a `Hero` beside the figure, or alone in a section of a detail. */
+export const Trend = (props: TrendProps) => (
+  <div class="k2-hero-trend" data-k2-part="Trend">
+    {(() => {
+      // no history yet: its place keeps the drawing's height and says so
+      if (props.values.length < (props.kind === "area" ? 2 : 1))
+        return (
+          <span class="k2-hero-none" data-kind={props.kind} role="img" aria-label={props.empty ?? props.label}>
+            {props.empty}
+          </span>
+        );
+      if (props.kind === "bars") return <Bars values={props.values} label={props.label} />;
+      if (props.kind === "area") return <Area values={props.values} label={props.label} failedFrom={props.failedFrom} />;
+      return <Ticks slots={props.values} label={props.label} stretch />;
+    })()}
+    <Show when={props.kind === "area" ? props.ticks : undefined}>
+      {(ticks) => <Ticks slots={ticks().slots} label={ticks().label} stretch />}
+    </Show>
+    <Show when={props.start || props.caption || props.end}>
+      <span class="k2-hero-cap">
+        <span>{props.start}</span>
+        <span class="k2-hero-what">{props.caption}</span>
+        <span>{props.end}</span>
+      </span>
+    </Show>
+  </div>
+);
+
 /**
  * The one figure of a screen, right under its head: the number or statement that counts today in the colour of the
  * app the thing belongs to, its real history beside it, and what falls out of line below as one line (identity B).
@@ -144,32 +182,7 @@ export const Hero = (props: HeroProps) => (
         <span class="k2-hero-meta">{props.meta}</span>
       </Show>
     </div>
-    <Show when={props.trend}>
-      {(trend) => (
-        <div class="k2-hero-trend">
-          {(() => {
-            const shown = trend();
-            // no history yet: its place keeps the drawing's height and says so
-            if (shown.values.length < (shown.kind === "area" ? 2 : 1))
-              return (
-                <span class="k2-hero-none" data-kind={shown.kind} role="img" aria-label={shown.empty ?? shown.label}>
-                  {shown.empty}
-                </span>
-              );
-            if (shown.kind === "bars") return <Bars values={shown.values} label={shown.label} />;
-            if (shown.kind === "area") return <Area values={shown.values} label={shown.label} failedFrom={shown.failedFrom} />;
-            return <Ticks slots={shown.values} label={shown.label} stretch />;
-          })()}
-          <Show when={trend().start || trend().caption || trend().end}>
-            <span class="k2-hero-cap">
-              <span>{trend().start}</span>
-              <span class="k2-hero-what">{trend().caption}</span>
-              <span>{trend().end}</span>
-            </span>
-          </Show>
-        </div>
-      )}
-    </Show>
+    <Show when={props.trend}>{(trend) => <Trend {...trend()} />}</Show>
     <Show when={props.exceptions?.length}>
       {/* its quiet line on the text edges is part of the hero's drawing, no divider: the layout rules leave it be */}
       <ul class="k2-hero-ex" data-k2-figure="">

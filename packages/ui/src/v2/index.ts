@@ -95,7 +95,16 @@ export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
-export { Hero, type HeroException, type HeroProps, type HeroTrend, ObjectHead, type ObjectHeadProps } from "./identity";
+export {
+  Hero,
+  type HeroException,
+  type HeroProps,
+  type HeroTrend,
+  ObjectHead,
+  type ObjectHeadProps,
+  Trend,
+  type TrendProps,
+} from "./identity";
 // Layer 1: the primitives.
 export {
   Band,
