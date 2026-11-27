@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { ADMIN_ACTIVITY_DAYS, adminActivity, adminSummary, adminWriters } from "./notebooks";
@@ -102,4 +103,17 @@ postgresTest("names who wrote in a notebook in the last 30 days, most changes fi
   ]);
   expect(writers[0]?.lastAt).toBe("2026-11-26T09:00:00.000Z");
   expect(await adminWriters({ notebookId: never, timeZone, now })).toEqual([]);
+});
+
+postgresTest("each read of the administration is one statement; an empty page reads nothing", async () => {
+  const meter = await meterSql();
+  try {
+    // the hero and its exceptions, a page of rows, an open notebook's writers
+    expect(await meter.during(() => adminSummary({ search: tag, timeZone, now }))).toHaveLength(1);
+    expect(await meter.during(() => adminActivity({ notebookIds: [busy, old, never], timeZone, now }))).toHaveLength(1);
+    expect(await meter.during(() => adminWriters({ notebookId: busy, timeZone, now }))).toHaveLength(1);
+    expect(await meter.during(() => adminActivity({ notebookIds: [], timeZone, now }))).toEqual([]);
+  } finally {
+    await meter.close();
+  }
 });
