@@ -3,7 +3,7 @@ import { PwaLayout } from "@k2b/cloud/ssr";
 import type { Context } from "hono";
 import { accepts } from "hono/accepts";
 import { type OverviewView, OverviewViewSchema } from "@/overview-contracts";
-import { loadOverviewWork } from "@/service/overview";
+import { loadOverviewWork, loadReachableSpaces } from "@/service/overview";
 import { ssr } from "../config";
 import { listOf, type PwaList, parseSpaceListFilter, spaceAddress } from "./paths";
 import SpacesPwa from "./SpacesPwa.island";
@@ -44,9 +44,12 @@ const render = async <E extends AuthContext>(c: Context<E>, options: { task?: Pw
   const list = listOf(url, viewOf);
   const dateConfig = getDateConfig(c);
   // "My tasks" is read on every page: the title's switcher counts it, and the list is there at once after switching.
-  const work = await loadOverviewWork({ userId: user.id, view: list.kind === "mine" ? list.view : "mine", dateConfig });
+  // The reachable Spaces are read once for both the work and the switcher's Space list.
+  const spaces = loadReachableSpaces(user.id);
+  const spaceIds = (await spaces).map((space) => space.id);
+  const work = await loadOverviewWork({ userId: user.id, view: list.kind === "mine" ? list.view : "mine", dateConfig, spaceIds });
   const [entries, space] = await Promise.all([
-    loadPwaSpaceEntries({ userId: user.id, cookieHeader: c.req.header("Cookie"), myWorkCount: work.counts.mine }),
+    loadPwaSpaceEntries({ userId: user.id, cookieHeader: c.req.header("Cookie"), myWorkCount: work.counts.mine, spaces }),
     options.space ?? Promise.resolve(undefined),
   ]);
   const title = options.task?.title ?? (list.kind === "space" ? (space?.name ?? "Spaces") : "Spaces");

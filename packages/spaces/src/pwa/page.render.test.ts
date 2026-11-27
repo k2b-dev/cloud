@@ -168,6 +168,7 @@ const pageSpy = spyOn(pwaSpace, "loadPwaGroupPage").mockImplementation(async ({ 
 );
 const taskSpy = spyOn(pwaTask, "loadPwaTask").mockImplementation(async ({ taskShortId }) => (taskShortId === task.shortId ? task : null));
 const loadSpy = spyOn(overview, "loadOverviewWork").mockImplementation(async ({ view }) => ({ view, counts, items: work[view] }));
+const reachSpy = spyOn(overview, "loadReachableSpaces").mockResolvedValue([]);
 const tokenSpy = spyOn(session, "getToken").mockReturnValue(null);
 const sessionSpy = spyOn(session, "authenticateRequest").mockResolvedValue(null);
 const spies = [
@@ -176,6 +177,7 @@ const spies = [
   pageSpy,
   taskSpy,
   loadSpy,
+  reachSpy,
   tokenSpy,
   sessionSpy,
   stubRailSnapshot(),

@@ -2,7 +2,7 @@ import type { AccessSubject } from "@k2b/cloud/contracts";
 import { hasPermission, type RequestActor } from "@k2b/cloud/server";
 import type { DateContext } from "@k2b/stdlib";
 import { z } from "zod";
-import type { ItemFilter, SpaceItem, SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
+import type { ItemFilter, Space, SpaceItem, SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
 import { getActorsSpacePermissions } from "@/service/access";
 import { spacesService } from "@/service/index";
 import { loadSpacesSidebar } from "@/service/overview";
@@ -261,9 +261,11 @@ export async function loadPwaSpaceEntries(params: {
   userId: string;
   cookieHeader?: string;
   myWorkCount: number;
+  /** The Spaces the reader reaches, when the request read them already. */
+  spaces?: Promise<Space[]>;
 }): Promise<PwaSpaceEntry[]> {
   const [sidebar, writable] = await Promise.all([
-    loadSpacesSidebar({ userId: params.userId, cookieHeader: params.cookieHeader, myWorkCount: params.myWorkCount }),
+    loadSpacesSidebar({ userId: params.userId, cookieHeader: params.cookieHeader, myWorkCount: params.myWorkCount, spaces: params.spaces }),
     spacesService.space.list({ subject: { type: "user", userId: params.userId }, requiredLevel: "write" }),
   ]);
   const writableIds = new Set((await spacesPublicResources.projectSpaces(writable.items)).map((space) => space.id));
