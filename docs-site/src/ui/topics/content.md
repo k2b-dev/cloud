@@ -66,6 +66,12 @@ One tick per time slot, such as the scrapes of the last 30 minutes: ok in the so
 
 <Props of="Ticks" />
 
+### Heat
+
+A year of days as a picture, such as the mails a mailbox received: one column per week with the newest at the end of the writing direction, one row per weekday, each day in a tone of one colour by its count. The four tones split the days with a count into quarters, so one busy day does not leave the rest pale. It takes 53 weeks from one bounded aggregate (one entry per day) and `today` from the server, so the first paint needs no measuring. It fits its place by layout alone: the days shrink and never cut the newest weeks, up to 12 px each. The arrows walk the days, and each day says its count and date to a screen reader and in the line below the picture. Put a line that sums it up above it, such as "1.284 Mails in den letzten 12 Monaten", as the `hero` of a `Workspace`'s `detailEmpty`.
+
+<Props of="Heat HeatDay" />
+
 ### Disclosure
 
 Something that opens in place, such as the answer to a question. Its content is made only while it is open: a closed answer is not in the page, so the browser's find in page does not reach it.

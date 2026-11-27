@@ -32,6 +32,8 @@ The working surface of an app: one per screen.
 - `detail` (`true` or the detail's minimum, default 400) when a detail opens
   beside the columns; `detailEmpty={{ icon, text }}` stands in its place while
   none is open, so nothing moves when it opens. Keep the list's `width`.
+  `detailEmpty.hero` stands above its sentence: a picture of the place as a
+  whole, such as a `Heat` with a line that sums it up.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
@@ -312,7 +314,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress, Ticks
+### Icon, Avatar, Chip, Progress, Ticks, Heat
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -334,6 +336,14 @@ lines instead of cutting a thing.
   keeps the strip at its start). Ok is soft, a failure red and taller, a
   slot without data a low stub; 140 × 20 px in a table cell. The one column
   of a list that shows its data over time; never decoration.
+- `Heat`: `days` (`{ date, count }` per day, at most the 53 weeks shown, from
+  one bounded aggregate), `today` (a date key from the server: the last day,
+  marked), `label` ("Mails pro Tag"), `unit` (a count in the app's words:
+  ``(count) => `${count} Mails` ``), `color` (data colour; default the app). One
+  column per week, newest at the end of the writing direction; four tones
+  by quarters of the days with a count. Fits its place, days up to 12 px,
+  never cuts the newest weeks. The arrows walk the days; each says count and
+  date. Over it a line that sums it up, as a `detailEmpty` `hero`.
 
 ## Controls
 

@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-/** The words of DatePicker and DateInput; month and weekday names come from the locale itself. */
+/** The words of DatePicker, DateInput and Heat; month and weekday names come from the locale itself. */
 const dateMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -18,6 +18,9 @@ const dateMessages = i18n.define({
       unreadable: "Not a date. Type it as on the calendar, such as 24.11.2026.",
       empty: "Empty",
       timeUnreadable: ({ example }: { example: string }) => `Not a time. Write it like ${example}.`,
+      heatDay: ({ what, day }: { what: string; day: string }) => `${what} on ${day}`,
+      heatLess: "Less",
+      heatMore: "More",
     },
     de: {
       calendar: "Kalender",
@@ -32,6 +35,9 @@ const dateMessages = i18n.define({
       unreadable: "Kein Datum. Schreib es wie im Kalender, etwa 24.11.2026.",
       empty: "leer",
       timeUnreadable: ({ example }: { example: string }) => `Keine Uhrzeit. Schreib sie wie ${example}.`,
+      heatDay: ({ what, day }: { what: string; day: string }) => `${what} am ${day}`,
+      heatLess: "weniger",
+      heatMore: "mehr",
     },
   },
 });

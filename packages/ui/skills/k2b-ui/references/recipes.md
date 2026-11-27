@@ -187,6 +187,9 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
   with a `Field` and `<Input multiline />`, followed by a `Bar` whose `end`
   holds "Senden" as a default button (the page's primary stays "Neue
   Nachricht").
+- State `closed`: no message is open. `detailEmpty` has a `hero`: a `Text`
+  that sums up the year ("… Mails in den letzten 12 Monaten") over a
+  `Heat` of the mails received per day.
 
 ## table.tsx: a table with a status row
 

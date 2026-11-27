@@ -2137,6 +2137,151 @@
   }
 }
 
+/* Heat: a year of days, one column per week and one row per weekday. The days share the width by layout alone (no
+   measuring): they shrink with their place and never cut the newest weeks, and grow up to 12 px with 2 px between. */
+.k2-ui .k2-heat {
+  --k2-heat-days: 3em;
+  --k2-heat-mix-1: 22%;
+  --k2-heat-mix-2: 45%;
+  --k2-heat-mix-3: 70%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: calc(var(--k2-heat-days) + 53 * 14px);
+  margin-inline: var(--k2-edge);
+  container: k2-heat / inline-size;
+  font: var(--k2-t-meta);
+  color: var(--k2-muted);
+}
+/* dark: the soft tones mix in more of the colour, so they still stand apart from the dark surface */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-heat,
+.k2-ui.dark .k2-heat,
+.k2-ui[data-theme="dark"] .k2-heat {
+  --k2-heat-mix-1: 32%;
+  --k2-heat-mix-2: 55%;
+  --k2-heat-mix-3: 78%;
+}
+.k2-ui :is(.k2-heat-months, .k2-heat-row) {
+  display: grid;
+  grid-template-columns: var(--k2-heat-days) repeat(53, minmax(0, 1fr));
+  column-gap: 2px;
+}
+.k2-ui .k2-heat-months {
+  height: 16px;
+}
+/* a month's name stands over the week of its first day, and never runs into the next month */
+.k2-ui .k2-heat-months > span {
+  grid-column: var(--k2-heat-at);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.k2-ui .k2-heat-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* the weekday names take no height of their own: small days keep their rows close */
+.k2-ui .k2-heat-day {
+  display: flex;
+  align-items: center;
+  height: 0;
+  align-self: center;
+  overflow: visible;
+  white-space: nowrap;
+  color: transparent;
+}
+.k2-ui .k2-heat-day[data-shown] {
+  color: inherit;
+}
+/* small days (a narrow place) keep every other name of those shown, so no two names touch */
+@container k2-heat (width < 560px) {
+  .k2-ui .k2-heat-day[data-shown="room"] {
+    color: transparent;
+  }
+  .k2-ui .k2-heat-months > [data-shown="room"] {
+    visibility: hidden;
+  }
+}
+.k2-ui .k2-heat-row > [data-heat-day],
+.k2-ui .k2-heat-scale > i {
+  aspect-ratio: 1;
+  border-radius: 20%;
+  background: var(--k2-n100);
+}
+.k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="1"] {
+  background: color-mix(in srgb, var(--k2-c, var(--k2-app, var(--k2-blue))) var(--k2-heat-mix-1), var(--k2-surface));
+}
+.k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="2"] {
+  background: color-mix(in srgb, var(--k2-c, var(--k2-app, var(--k2-blue))) var(--k2-heat-mix-2), var(--k2-surface));
+}
+.k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="3"] {
+  background: color-mix(in srgb, var(--k2-c, var(--k2-app, var(--k2-blue))) var(--k2-heat-mix-3), var(--k2-surface));
+}
+.k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="4"] {
+  background: var(--k2-c, var(--k2-app, var(--k2-blue)));
+}
+/* today wears a ring in the colour of the text */
+.k2-ui .k2-heat-row > [aria-current="date"] {
+  outline: 1px solid var(--k2-text);
+  outline-offset: 1px;
+}
+.k2-ui .k2-heat-row > [data-heat-day]:focus-visible {
+  outline: 2px solid var(--k2-blue);
+  outline-offset: 1px;
+}
+/* below the picture: what the pointer or the focus stands on, and the scale from less to more */
+.k2-ui .k2-heat-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 16px;
+}
+.k2-ui .k2-heat-read {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-heat-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.k2-ui .k2-heat-scale > i {
+  width: 10px;
+}
+.k2-ui .k2-heat-scale > span {
+  padding-inline: 2px;
+}
+/* forced colours replace backgrounds: the days draw in the text colour, stronger by count; a quiet day is an edge */
+@media (forced-colors: active) {
+  .k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i) {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="0"] {
+    background: Canvas;
+    outline: 1px solid GrayText;
+    outline-offset: -1px;
+  }
+  .k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="1"] {
+    opacity: 0.3;
+  }
+  .k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="2"] {
+    opacity: 0.55;
+  }
+  .k2-ui .k2-heat :is([data-heat-day], .k2-heat-scale > i)[data-tone="3"] {
+    opacity: 0.8;
+  }
+  .k2-ui .k2-heat-row > [aria-current="date"],
+  .k2-ui .k2-heat-row > [data-heat-day]:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+}
+
 /* the bar sits in the line of its words, on their middle; the words may wrap under it on a narrow column */
 .k2-ui .k2-progress {
   display: inline;
@@ -4844,6 +4989,19 @@
   max-width: 560px;
   padding: 32px var(--k2-edge);
   font: var(--k2-t-row);
+}
+/* a picture of the place as a whole above the sentence of an empty detail, such as a Heat with its sum */
+.k2-ui .k2-detail-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 32px;
+}
+.k2-ui .k2-detail-hero > :not(.k2-heat) {
+  margin-inline: var(--k2-edge);
+}
+.k2-ui .k2-detail-hero + .k2-state {
+  padding-top: 24px;
 }
 .k2-ui .k2-state-text {
   overflow-wrap: anywhere;

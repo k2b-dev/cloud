@@ -162,9 +162,10 @@ export type WorkspaceProps = {
   /**
    * What stands in the detail's place while none is open, such as `{ icon: "mail", text: "Keine Nachricht
    * ausgewählt" }`; "Nothing selected" in the language of the page when not set. Not on the phone, where the list is
-   * the page.
+   * the page. `hero` stands above the sentence: a picture of the place as a whole, such as a `Heat` of the mails
+   * received per day with a line that sums it up.
    */
-  detailEmpty?: { icon: string; text: string };
+  detailEmpty?: { icon: string; text: string; hero?: JSX.Element };
   /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
@@ -186,7 +187,9 @@ type Column = { readonly need: number; readonly detail: boolean; readonly away?:
  * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
  * at the top also learns what stands in the place of a declared detail while none is open.
  */
-type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+/** What stands in a declared detail's place while none is open. */
+type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
+type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
 const ColumnsContext = createContext<Columns | undefined>();
 
 /**
@@ -208,6 +211,7 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  const emptyHero = resolveChildren(() => props.detailEmpty?.hero);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -218,7 +222,7 @@ export const Workspace = (props: WorkspaceProps) => {
   const empty = () =>
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
-      : (props.detailEmpty ?? { icon: "click", text: t().nothingSelected });
+      : { icon: props.detailEmpty?.icon ?? "click", text: props.detailEmpty?.text ?? t().nothingSelected, hero: emptyHero() };
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.
@@ -583,7 +587,7 @@ Pane.Split = (props: {
  */
 const SplitBody = (props: {
   entries: readonly SplitEntry[];
-  empty: { icon: string; text: string } | undefined;
+  empty: DetailEmpty | undefined;
   /** One main column and one context column after it (see `Pane side`). */
   contextual: boolean;
   children: JSX.Element;
@@ -686,6 +690,9 @@ const SplitBody = (props: {
           {(empty) => (
             <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
               <div class="k2-scroll">
+                <Show when={empty().hero}>
+                  <div class="k2-detail-hero">{empty().hero}</div>
+                </Show>
                 <Empty icon={empty().icon} text={empty().text} />
               </div>
             </section>
