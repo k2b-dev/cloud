@@ -268,6 +268,19 @@ const reset = () => {
 const open = async (width = 1440) => {
   reset();
   const context = await browser.newContext({ viewport: { width, height: 900 } });
+  // Shared drafts bound an external edit's body diff by wall-clock time. Each document freezes its clock at load, so
+  // load on the runner cannot reject an edit. Tests that assert an edit stall every clock read meanwhile to prove it.
+  await context.addInitScript(() => {
+    const frozen = Date.now();
+    let stall = false;
+    Date.now = () => {
+      if (stall) for (const end = performance.now() + 20; performance.now() < end; );
+      return frozen;
+    };
+    window.stallClockReads = (on) => {
+      stall = on;
+    };
+  });
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   const errors = pageErrors(page);
@@ -420,8 +433,10 @@ for (const width of [1440, 390])
       expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
       await page.reload();
       await page.waitForFunction(() => window.mailSharedFixture?.state()?.ready);
+      await page.evaluate(() => window.stallClockReads?.(true));
       await page.getByRole("button", { name: "Vorschlag übernehmen", exact: true }).click();
       await page.waitForFunction((body) => window.mailSharedFixture.content().body === body, proposal);
+      await page.evaluate(() => window.stallClockReads?.(false));
       expect(await page.evaluate(() => window.mailSharedFixture.state()?.rejectedEdit)).toBeNull();
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
