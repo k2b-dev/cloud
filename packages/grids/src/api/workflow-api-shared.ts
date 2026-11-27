@@ -313,6 +313,7 @@ export const toPublicWorkflowStats = async (stats: GridsWorkflowRunStats, load: 
     p99DurationMs: stats.p99DurationMs,
     lastRunAt: stats.lastRunAt,
     failedLast24h: stats.failedLast24h,
+    series: stats.series,
     byWorkflow: stats.byWorkflow.map((item) => ({
       workflowId: requiredPublicId(maps, "workflow", item.workflowId),
       total: item.total,

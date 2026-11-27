@@ -409,7 +409,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "Canvas": {
-        const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
+        const height = element.hasAttribute("data-fill")
+          ? "fills its pane"
+          : (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
       }
       case "Field": {

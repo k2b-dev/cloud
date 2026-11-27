@@ -123,10 +123,22 @@ The only place for own drawing and own CSS (a map, a chart). `label`
 (required), `height` in px. It must stand directly in a primitive
 (`<Band><Canvas …/></Band>` or directly in a `Pane`), never as a
 component's root and never in a plain element. A `Chart` of `@k2b/ui`
-fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
+fills it (`style={{ height: "100%" }}`) with `v2.css` alone. A `Calendar`
+of `@k2b/ui` in a `Canvas` lies flat: no edge or corners of its own, never a
+card in the screen; write no CSS for that. While the
 drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
-moves.
+moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
+of another page). Directly in its `Pane`, it takes the height left under
+head and status by layout alone, from the first render (never measure it
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it. The pane asks only for
+the drawing's 240 px, never for what the drawing holds: one drawing that
+asks for no height of its own (a chat column) takes the whole height, and
+what is taller (its history) scrolls inside it, the composer stays in sight.
+No absolute positioning is needed. A fill `Canvas` holds one child, the
+drawing: a second child stands in a row of its own under it and is cut away.
 
 ## Structure
 
@@ -266,7 +278,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress
+### Icon, Avatar, Chip, Progress, Ticks
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -279,6 +291,15 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
+  the writing direction; at most 60 in a table cell, more are cut at its
+  end), `label` (always "what, period: what happened", such as
+  "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen"),
+  `color` (the data colour of what it belongs to; default the app),
+  `stretch` (in a detail: slots 2 px apart grow up to 12 px, a wider place
+  keeps the strip at its start). Ok is soft, a failure red and taller, a
+  slot without data a low stub; 140 × 20 px in a table cell. The one column
+  of a list that shows its data over time; never decoration.
 
 ## Controls
 
