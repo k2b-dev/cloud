@@ -121,37 +121,63 @@ const open = async (width = 1440, path = "/app/notebooks"): Promise<Page> => {
   await settled(page);
   return page;
 };
-const row = (page: Page, name: string) =>
-  page.locator('[data-k2-part="List"] [data-k2-part="Row"]').filter({ hasText: name }).getByRole("button");
-/** A way to start as a card, while none is open: its name is the card's link. */
+/** A way to start as a card: its name is the card's link. */
 const card = (page: Page, name: string) => page.locator('[data-k2-part="Tiles"] .k2-tile').filter({ hasText: name }).getByRole("link");
-const detail = (page: Page) => page.locator('[data-k2-part="Pane"][data-detail]');
-/** Wide screens: a card opens its way beside the list, and its one main action opens the dialog. */
+const dialogOf = (page: Page) => page.getByRole("dialog", { name: "Neues Notizbuch" });
+/** A card opens the new-notebook dialog on its way to start. */
 const start = async (page: Page, name: string) => {
   await card(page, name).click();
-  await detail(page).locator('[data-slot="head"]').getByText(name).first().waitFor();
-  await detail(page).getByRole("button", { name: "Erstellen" }).click();
+  await dialogOf(page).waitFor();
 };
+const box = (page: Page, selector: string) =>
+  page
+    .locator(selector)
+    .first()
+    .evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    });
 
-for (const width of [1440, 1024, 390]) {
-  test(`${width}: without a notebook the page offers the ways to start as cards with a preview, a clean v2 workspace`, async () => {
+for (const width of [1440, 1920, 1024, 390]) {
+  test(`${width}: without a notebook the page is one question and four cards in its middle, no nav, a clean v2 page`, async () => {
     const page = await open(width);
     try {
       const outline = await describeV2Page(page, "#root");
       expect(outline.includes("Problems (") ? outline : "").toBe("");
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      // a blank notebook, then each template with what it holds and its first pages; the cards are the actions, so
-      // no head and no floating action repeat them
+      // no sidebar, no switcher, no head: only the question and the ways to start
+      expect(await page.locator(".k2-ws-side, [data-k2-part='Nav'], .k2-ws-main > [data-slot='head'], .k2-fab").count()).toBe(0);
+      expect(await page.getByText("Womit soll dein erstes Notizbuch beginnen?").isVisible()).toBe(true);
+      // the blank notebook, then three templates; each with how many pages it makes and the first of them
       const cards = page.locator('[data-k2-part="Tiles"] .k2-tile');
-      expect(await cards.count()).toBe(3);
-      expect(await cards.nth(1).innerText()).toContain("Protokolle mit Aufgaben und Beschlüssen");
-      expect(await cards.nth(1).innerText()).toMatch(/\d+ Seiten/);
-      expect(await page.locator('.k2-ws-main > [data-slot="head"]').count()).toBe(0);
-      expect(await page.locator(".k2-fab").count()).toBe(0);
-      // none is open yet: no list beside an empty detail, the cards take the page
-      expect(await detail(page).count()).toBe(0);
-      expect(await page.locator('[data-k2-part="List"]').count()).toBe(0);
+      expect(await cards.allInnerTexts()).toEqual([
+        expect.stringContaining("Leeres Notizbuch"),
+        expect.stringContaining("Tagebuch"),
+        expect.stringContaining("Rezepte und Vorräte"),
+        expect.stringContaining("Leseliste"),
+      ]);
+      expect(await cards.nth(1).innerText()).toContain("6 Seiten");
+      expect(await cards.nth(1).innerText()).toContain("Tagebuch · Eingang · 2026");
+      expect(await cards.nth(0).innerText()).toContain("1 Seite");
+      // the fourth template waits in the dialog
+      expect(await cards.filter({ hasText: "Gartentagebuch" }).count()).toBe(0);
+      const pane = await box(page, '[data-k2-part="Pane"] > .k2-scroll');
+      const tiles = await box(page, '[data-k2-part="Tiles"]');
+      const tops = await cards.evaluateAll((all) => all.map((element) => Math.round(element.getBoundingClientRect().top)));
+      if (width >= 1440) {
+        // four in one row, in the middle of the page across and in height
+        expect(new Set(tops).size).toBe(1);
+        expect(Math.abs(tiles.left - pane.left - (pane.right - tiles.right))).toBeLessThanOrEqual(1);
+        const question = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
+        expect(Math.abs(question.top - pane.top - (pane.bottom - tiles.bottom))).toBeLessThanOrEqual(1);
+      }
+      if (width < 768) {
+        // the phone: from the top, the cards under each other
+        expect(new Set(tops).size).toBe(4);
+        const question = await box(page, '[data-k2-part="Pane"] > .k2-scroll > .k2-text');
+        expect(question.top - pane.top).toBeLessThan(40);
+      }
     } finally {
       await page.close();
     }
@@ -159,19 +185,17 @@ for (const width of [1440, 1024, 390]) {
 }
 
 // break-ui: the longest names and descriptions, an emoji, an address, one letter, Japanese, Arabic and Vietnamese pages,
-// a template with 63 pages and one with none, no template at all, and one; the list and an open way to start
+// a template with 63 pages and one with none, no template at all, and one; the cards and the open dialog
 const samples = [
   ["worst", "/app/notebooks?data=worst"],
   ["worst in English", "/app/notebooks?data=worst&lang=en"],
-  ["worst, 63 pages open", "/app/notebooks?data=worst&template=daily"],
-  ["worst, long names open", "/app/notebooks?data=worst&template=handover"],
-  ["worst, no pages open", "/app/notebooks?data=worst&template=j"],
+  ["worst, long names in the dialog", "/app/notebooks?data=worst&new=handover"],
   ["no template", "/app/notebooks?data=empty"],
   ["one template", "/app/notebooks?data=one"],
 ] as const;
 for (const [sample, path] of samples)
   for (const width of [390, 1440])
-    test(`break-ui ${sample} at ${width}: the workspace keeps the v2 rules and the page never scrolls sideways`, async () => {
+    test(`break-ui ${sample} at ${width}: the page keeps the v2 rules and never scrolls sideways`, async () => {
       const page = await open(width, path);
       try {
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
@@ -183,18 +207,18 @@ for (const [sample, path] of samples)
       }
     }, 60_000);
 
-test("the blank row makes a notebook after asking its name, and opens it", async () => {
+test("the blank card makes a notebook after asking its name, and opens it", async () => {
   const page = await open();
   try {
     await start(page, "Leeres Notizbuch");
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
-    await dialog.waitFor();
-    // without a name nothing is made
-    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    const dialog = dialogOf(page);
+    // a blank notebook has no name to offer: without one nothing is made
+    expect(await dialog.getByRole("textbox", { name: "Name" }).inputValue()).toBe("");
+    await dialog.getByRole("button", { name: "Anlegen" }).click();
     await dialog.getByText("Gib dem Notizbuch einen Namen.").waitFor();
     expect(created).toEqual([]);
     await dialog.getByRole("textbox", { name: "Name" }).fill("Inventur 2027");
-    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByRole("button", { name: "Anlegen" }).click();
     await page.waitForURL((url) => url.pathname === "/app/notebooks/newbook");
     expect(created).toEqual([{ path: "/api/notebooks", body: { name: "Inventur 2027" } }]);
   } finally {
@@ -206,13 +230,13 @@ test("a name or description longer than the server keeps says so in the dialog a
   const page = await open();
   try {
     await start(page, "Leeres Notizbuch");
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
+    const dialog = dialogOf(page);
     await dialog.getByRole("textbox", { name: "Name" }).fill("Ü".repeat(101));
-    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByRole("button", { name: "Anlegen" }).click();
     await dialog.getByText("Der Name darf höchstens 100 Zeichen haben.").waitFor();
     await dialog.getByRole("textbox", { name: "Name" }).fill("Inventur 2027");
     await dialog.getByRole("textbox", { name: "Beschreibung" }).fill("a".repeat(501));
-    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByRole("button", { name: "Anlegen" }).click();
     await dialog.getByText("Die Beschreibung darf höchstens 500 Zeichen haben.").waitFor();
     expect(created).toEqual([]);
   } finally {
@@ -220,16 +244,36 @@ test("a name or description longer than the server keeps says so in the dialog a
   }
 }, 60_000);
 
-test("a template's row opens the dialog on that template, which keeps its name when none is given", async () => {
+test("a template's card opens the dialog on that template with its name filled in, which one click makes", async () => {
   const page = await open();
   try {
-    await start(page, "Handbuch");
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
-    await dialog.waitFor();
-    expect(await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").isVisible()).toBe(true);
-    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await start(page, "Rezepte und Vorräte");
+    const dialog = dialogOf(page);
+    expect(await dialog.getByText("Rezepte, Vorratsbestand, Einkaufsliste und Anregungen für den Einstieg.").isVisible()).toBe(true);
+    expect(await dialog.getByRole("textbox", { name: "Name" }).inputValue()).toBe("Rezepte und Vorräte");
+    await dialog.getByRole("button", { name: "Anlegen" }).click();
     await page.waitForURL((url) => url.pathname === "/app/notebooks/fromtemplate");
-    expect(created).toEqual([{ path: "/api/notebooks/templates/handbook", body: {} }]);
+    expect(created).toEqual([{ path: "/api/notebooks/templates/recipe-collector", body: { name: "Rezepte und Vorräte" } }]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("the template's name follows the chosen template until the person writes one of their own", async () => {
+  const page = await open();
+  try {
+    await start(page, "Tagebuch");
+    const dialog = dialogOf(page);
+    const name = dialog.getByRole("textbox", { name: "Name" });
+    expect(await name.inputValue()).toBe("Tagebuch");
+    // the fourth template, which has no card, is a choice in the dialog
+    await dialog.getByRole("combobox").click();
+    await page.getByRole("option", { name: "Gartentagebuch" }).click();
+    expect(await name.inputValue()).toBe("Gartentagebuch");
+    await name.fill("Balkon 2027");
+    await dialog.getByRole("combobox").click();
+    await page.getByRole("option", { name: "Leseliste" }).click();
+    expect(await name.inputValue()).toBe("Balkon 2027");
   } finally {
     await page.close();
   }
@@ -244,9 +288,9 @@ for (const [answer, says] of [
     const page = await open();
     try {
       server.creation = answer;
-      await start(page, "Besprechungen");
-      const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
-      await dialog.getByRole("button", { name: "Erstellen" }).click();
+      await start(page, "Leseliste");
+      const dialog = dialogOf(page);
+      await dialog.getByRole("button", { name: "Anlegen" }).click();
       await dialog.getByText(says).waitFor();
       expect(new URL(page.url()).pathname).toBe("/app/notebooks");
       await dialog.getByRole("button", { name: "Abbrechen" }).click();
@@ -256,108 +300,71 @@ for (const [answer, says] of [
     }
   }, 60_000);
 
-test("a way to start opens beside the list, stays in the address, and comes back on reload", async () => {
+test("the open dialog stands in the address: a reload shows it again, back closes it, closing returns to the cards", async () => {
   const page = await open();
   try {
-    await card(page, "Handbuch").click();
-    await detail(page).getByText("Annahme prüfen").waitFor();
-    // the open row is the current one, and its pages name the page they stand under
-    expect(await row(page, "Handbuch").locator("xpath=..").getAttribute("data-current")).toBe("");
-    expect(new URL(page.url()).searchParams.get("template")).toBe("handbook");
-    // another row replaces the open one in place
-    await row(page, "Besprechungen").click();
-    await detail(page).locator('[data-slot="head"]').getByText("Besprechungen").first().waitFor();
-    expect(new URL(page.url()).searchParams.get("template")).toBe("meeting");
+    await start(page, "Leseliste");
+    expect(new URL(page.url()).searchParams.get("new")).toBe("reading-list");
     await page.reload();
-    await detail(page).locator('[data-slot="head"]').getByText("Besprechungen").first().waitFor();
-    // back returns to the cards the way was opened from
+    await dialogOf(page).getByText("Bücher, Leseliste, Notizen, Zitate und Bewertungen.").waitFor();
+    // after a reload the dialog came with the address: closing it removes it from the address in place
+    await dialogOf(page).getByRole("button", { name: "Abbrechen" }).click();
+    await dialogOf(page).waitFor({ state: "hidden" });
+    expect(new URL(page.url()).searchParams.has("new")).toBe(false);
+    // opened from a card, back closes it, and closing it goes back, so back never reopens it
+    await start(page, "Tagebuch");
     await page.goBack();
-    await card(page, "Handbuch").waitFor();
-    expect(await detail(page).count()).toBe(0);
-    expect(created).toEqual([]);
-  } finally {
-    await page.close();
-  }
-}, 60_000);
-
-test("the keyboard alone reaches each way to start, and Enter opens the dialog", async () => {
-  const page = await open(390);
-  try {
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
-    const focusOn = async (name: string) => {
-      for (let step = 0; step < 20; step += 1) {
-        if (await card(page, name).evaluate((element) => element === document.activeElement)) return;
-        await page.keyboard.press("Tab");
-      }
-      throw new Error(`Tab never reached ${name}`);
-    };
-    await focusOn("Leeres Notizbuch");
-    await page.keyboard.press("Enter");
-    await dialog.getByRole("textbox", { name: "Name" }).waitFor();
+    await dialogOf(page).waitFor({ state: "hidden" });
+    expect(new URL(page.url()).searchParams.has("new")).toBe(false);
+    await start(page, "Tagebuch");
     await page.keyboard.press("Escape");
-    await dialog.waitFor({ state: "hidden" });
-    // a card's name is a link, so Enter opens it (Space comes with the tile's own action, k2b-ui gap #4314)
-    await focusOn("Handbuch");
-    await page.keyboard.press("Enter");
-    await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
+    await dialogOf(page).waitFor({ state: "hidden" });
+    await page.waitForURL((url) => !url.searchParams.has("new"));
+    await card(page, "Tagebuch").waitFor();
     expect(created).toEqual([]);
   } finally {
     await page.close();
   }
 }, 60_000);
 
-test("on a wide screen the keyboard opens a way to start beside the list", async () => {
-  const page = await open(1440);
-  try {
-    await card(page, "Handbuch").focus();
-    await page.keyboard.press("Enter");
-    await detail(page).locator('[data-slot="head"]').getByText("Handbuch").first().waitFor();
-    await detail(page).getByRole("button", { name: "Erstellen" }).focus();
-    await page.keyboard.press("Space");
-    await page.getByRole("dialog", { name: "Neues Notizbuch" }).waitFor();
-  } finally {
-    await page.close();
-  }
-}, 60_000);
-
-test("on the phone a way to start opens the dialog right away", async () => {
-  const page = await open(390);
-  try {
-    await card(page, "Handbuch").click();
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
-    await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
-    await dialog.getByRole("button", { name: "Erstellen" }).click();
-    await page.waitForURL((url) => url.pathname === "/app/notebooks/fromtemplate");
-    expect(created).toEqual([{ path: "/api/notebooks/templates/handbook", body: {} }]);
-  } finally {
-    await page.close();
-  }
-}, 60_000);
-
-test("on the phone a shared address opens the way to start as a page, with its way back and its main action", async () => {
-  const page = await open(390, "/app/notebooks?template=handbook");
-  try {
-    await detail(page).getByText("Annahme prüfen").waitFor();
-    expect(await page.getByRole("link", { name: "Notizbücher" }).getAttribute("href")).toBe("/app/notebooks");
-    await detail(page).getByRole("button", { name: "Erstellen" }).click();
-    await page.getByRole("dialog", { name: "Neues Notizbuch" }).getByText("Kapitel, Abläufe und Ansprechpersonen").waitFor();
-  } finally {
-    await page.close();
-  }
-}, 60_000);
+for (const width of [390, 1440])
+  test(`${width}: the keyboard alone reaches each way to start, and Enter opens the dialog`, async () => {
+    const page = await open(width);
+    try {
+      const dialog = dialogOf(page);
+      const focusOn = async (name: string) => {
+        for (let step = 0; step < 20; step += 1) {
+          if (await card(page, name).evaluate((element) => element === document.activeElement)) return;
+          await page.keyboard.press("Tab");
+        }
+        throw new Error(`Tab never reached ${name}`);
+      };
+      await focusOn("Leeres Notizbuch");
+      await page.keyboard.press("Enter");
+      await dialog.getByRole("textbox", { name: "Name" }).waitFor();
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
+      await focusOn("Leseliste");
+      await page.keyboard.press("Enter");
+      await dialog.getByText("Bücher, Leseliste, Notizen, Zitate und Bewertungen.").waitFor();
+      expect(created).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 
 test("the switcher of a page that is not v2 opens the same dialog, which loads the templates and makes one", async () => {
   const page = await open(1440, "/app/notebooks?switcher");
   try {
     await page.getByRole("button", { name: "Notizbuch aus Vorlage" }).click();
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
+    const dialog = dialogOf(page);
     await dialog.waitFor();
     // a v2 dialog in a v2 scope of its own: it is drawn, not a bare element
     expect(await dialog.evaluate((element) => getComputedStyle(element).borderRadius !== "0px")).toBe(true);
     expect(await dialog.getByText("Protokolle mit Aufgaben und Beschlüssen").isVisible()).toBe(true);
-    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByRole("button", { name: "Anlegen" }).click();
     await page.waitForURL((url) => url.pathname === "/app/notebooks/fromtemplate");
-    expect(created).toEqual([{ path: "/api/notebooks/templates/meeting", body: {} }]);
+    expect(created).toEqual([{ path: "/api/notebooks/templates/meeting", body: { name: "Besprechungen" } }]);
   } finally {
     await page.close();
   }
@@ -368,9 +375,9 @@ test("templates that come as something other than a list say so, and nothing can
   try {
     server.templates = "object";
     await page.getByRole("button", { name: "Notizbuch aus Vorlage" }).click();
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
+    const dialog = dialogOf(page);
     await dialog.getByText("Die Vorlagen konnten nicht geladen werden.").waitFor();
-    expect(await dialog.getByRole("button", { name: "Erstellen" }).isDisabled()).toBe(true);
+    expect(await dialog.getByRole("button", { name: "Anlegen" }).isDisabled()).toBe(true);
     await dialog.getByRole("button", { name: "Abbrechen" }).click();
     await dialog.waitFor({ state: "hidden" });
     expect(created).toEqual([]);

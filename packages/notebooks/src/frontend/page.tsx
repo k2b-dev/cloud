@@ -18,6 +18,10 @@ const lastReached = async (userId: string, shortId: string | null) => {
 const firstReached = async (userId: string) =>
   (await notebooksService.notebook.list({ userId, pagination: { page: 1, perPage: 1 } })).items[0]?.shortId ?? null;
 
+/** The templates a first start offers as cards, in this order: a diary, recipes, a reading list. */
+const START_ORDER = ["daily-notes", "recipe-collector", "reading-list"];
+const rank = (id: string) => (START_ORDER.includes(id) ? START_ORDER.indexOf(id) : START_ORDER.length);
+
 /**
  * Notebooks opens a notebook: the one this person used last while they still reach it, else the first they reach.
  * There is no overview page (the maintainer: it added nothing). Only a person without any notebook sees a page here,
@@ -35,13 +39,15 @@ export default ssr<AuthContext>(async (c) => {
     query.delete("recent");
     return c.redirect(`/app/notebooks/${target}${query.size > 0 ? `?${query}` : ""}`);
   }
-  // the ways to start with the pages each makes; the open one comes from the address, so a reload shows the same
+  // the ways to start with the pages each makes, the three most useful first (they stand as cards; the rest stay in
+  // the dialog's choice); the open dialog comes from the address, so a reload shows the same
   const locale = getLocale(c);
   const templates = notebooksService.template
     .list(locale)
-    .map((template) => ({ ...template, pages: notebooksService.template.outline(template.id, locale) ?? [] }));
+    .map((template) => ({ ...template, pages: notebooksService.template.outline(template.id, locale) ?? [] }))
+    .sort((a, b) => rank(a.id) - rank(b.id));
   const blankPages = notebooksService.template.welcomeOutline();
-  const open = c.req.query("template") ?? null;
+  const open = c.req.query("new") ?? null;
   return () => (
     <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
       <NotebooksStart templates={templates} blankPages={blankPages} open={open} />

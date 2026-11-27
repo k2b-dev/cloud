@@ -123,21 +123,17 @@ test("Notebooks opens the first notebook when the one used last is gone, no long
   }
 });
 
-test("the address names the open way to start, so a reload shows its pages", async () => {
+// A modal dialog opens in the top layer, which only the browser has: the server sends the page under it, the same with
+// and without `?new=`, and the island opens the dialog the address names (the browser test reloads it).
+test("the address of an open dialog sends the same page under it, so the dialog opens over the cards", async () => {
   list.mockResolvedValue({ items: [], total: 0, page: 1, perPage: 1, hasNext: false });
-  const [first] = notebooksService.template.list("de");
-  const response = await openNotebooks(undefined, `?template=${first?.id}`);
-  const html = await response.text();
-  const [detail] = await selectHtml(html, '[data-k2-part="Pane"][data-detail]');
-  const pages = notebooksService.template.outline(first?.id ?? "", "de") ?? [];
-  expect(pages.length).toBeGreaterThan(0);
-  expect(detail?.text).toContain(first?.name ?? "-");
-  for (const page of pages.slice(0, 3)) expect(detail?.text).toContain(page.title);
-  // its one main action stands in its head
-  expect(await selectHtml(html, '[data-k2-part="Pane"][data-detail] [data-slot="head"] button')).toHaveLength(1);
+  const cards = async (query: string) =>
+    (await selectHtml(await (await openNotebooks(undefined, query)).text(), '[data-k2-part="Tiles"] .k2-tile')).map((card) => card.text);
+  expect(await cards("?new=reading-list")).toEqual(await cards(""));
+  expect(await cards("?new=nothing")).toEqual(await cards(""));
 });
 
-test("without a notebook, Notebooks offers the ways to start as cards, read from the notebooks alone", async () => {
+test("without a notebook, Notebooks is one question and four cards in a centred page, read from the notebooks alone", async () => {
   list.mockResolvedValue({ items: [], total: 0, page: 1, perPage: 1, hasNext: false });
   const recent = spyOn(notebooksService.note, "recentForUser");
   const activity = spyOn(notebooksService.activity, "list");
@@ -146,26 +142,26 @@ test("without a notebook, Notebooks offers the ways to start as cards, read from
   expect(response.status).toBe(200);
   const html = await response.text();
   expect(await selectHtml(html, "[data-k2-workspace]")).toHaveLength(1);
-  // the hero is the statement, with what a notebook is for, said once and not again in the rows
-  const [hero] = await selectHtml(html, '[data-k2-part="Band"]');
-  expect(hero?.text).toContain("Erstes Notizbuch anlegen");
-  const purpose = "Ein Notizbuch sammelt Notizen zu einem Thema, mit eigenem Zugriff und eigenen Einstellungen.";
-  expect(html.split(purpose)).toHaveLength(2);
-  // a blank notebook first, then every template with what it holds and how many pages it makes, each a card that opens
-  // it (a real link, so it works before the page is live)
-  const ways = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile');
-  const templates = notebooksService.template.list("de");
+  // the page stands in the middle from the server's first render, without a sidebar, a head or a floating action
+  expect(await selectHtml(html, '[data-k2-part="Pane"][data-center]')).toHaveLength(1);
+  expect(await selectHtml(html, ".k2-ws-side, [data-k2-part='Nav'], .k2-ws-main > [data-slot='head'], .k2-fab")).toHaveLength(0);
+  expect(html).toContain("Womit soll dein erstes Notizbuch beginnen?");
+  // the blank notebook, then the diary, the recipes and the reading list, each with its page count, sharing one row;
+  // each card is a real link to its dialog, so it works before the page is live
+  const ways = await selectHtml(html, '[data-k2-part="Tiles"][data-per-row] .k2-tile');
   expect(ways.map((card) => card.text.trim().split(/\d+ Seiten?/)[0])).toEqual([
-    "Leeres NotizbuchLeer, mit einer Willkommensseite",
-    ...templates.map((template) => `${template.name}${template.description}`),
+    "Leeres Notizbuch",
+    "Tagebuch",
+    "Rezepte und Vorräte",
+    "Leseliste",
   ]);
-  expect(await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile a[href^="/app/notebooks?template="]')).toHaveLength(templates.length + 1);
-  // none is open yet: no list beside an empty detail, the cards take the page
-  expect(await selectHtml(html, '[data-k2-part="Pane"][data-detail]')).toHaveLength(0);
-  expect(await selectHtml(html, '[data-k2-part="List"]')).toHaveLength(0);
-  // no workspace head that only repeats the rows, and no floating action that repeats "Leeres Notizbuch"
-  expect(await selectHtml(html, '[data-k2-ws-main] > [data-slot="head"], .k2-ws-main > [data-slot="head"]')).toHaveLength(0);
-  expect(await selectHtml(html, ".k2-fab")).toHaveLength(0);
+  const links = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile a[href^="/app/notebooks?new="]');
+  expect(links.map((link) => link.attributes.href)).toEqual([
+    "/app/notebooks?new=blank",
+    "/app/notebooks?new=daily-notes",
+    "/app/notebooks?new=recipe-collector",
+    "/app/notebooks?new=reading-list",
+  ]);
   expect(recent).not.toHaveBeenCalled();
   expect(activity).not.toHaveBeenCalled();
 });

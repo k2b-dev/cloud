@@ -43,16 +43,20 @@ export default function NewNotebookDialog(props: {
   const [failed, setFailed] = createSignal<string | null>(null);
   const [nameError, setNameError] = createSignal<string | undefined>();
   const [descriptionError, setDescriptionError] = createSignal<string | undefined>();
-  // a new start opens empty, on the template it was opened for
+  // whether the person wrote a name of their own: until then the name is the chosen template's
+  let named = false;
+  // a new start opens on the template it was opened for, with its name ready to keep or change
   createEffect(() => {
     const source = props.source;
     if (!source) return;
-    setName("");
+    const chosen = source.kind === "template" ? (source.templateId ?? props.templates[0]?.id ?? "") : "";
+    named = false;
+    setName(props.templates.find((candidate) => candidate.id === chosen)?.name ?? "");
     setDescription("");
     setFailed(null);
     setNameError(undefined);
     setDescriptionError(undefined);
-    setTemplateId(source.kind === "template" ? (source.templateId ?? props.templates[0]?.id ?? "") : "");
+    setTemplateId(chosen);
   });
   const fromTemplate = () => props.source?.kind === "template";
   const template = () => props.templates.find((candidate) => candidate.id === templateId());
@@ -135,6 +139,7 @@ export default function NewNotebookDialog(props: {
                 // the request in flight makes the template it was sent for
                 if (busy()) return;
                 setTemplateId(value);
+                if (!named) setName(template()?.name ?? "");
                 setFailed(null);
               }}
             />
@@ -147,6 +152,7 @@ export default function NewNotebookDialog(props: {
           placeholder={template()?.name ?? t().notebookName}
           disabled={busy()}
           onInput={(value) => {
+            named = true;
             setName(value);
             setNameError(undefined);
             setFailed(null);

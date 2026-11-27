@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import { openNewNotebookDialog } from "../../create-notebook-dialog";
 import NotebooksStart, { type StartPage, type StartTemplate } from "./NotebooksStart";
 
-// Test harness only (never shipped). `?data=` picks the templates: the demo pair (default), `worst` (the longest real
+// Test harness only (never shipped). `?data=` picks the templates: the four built-in ones (default), `worst` (the longest real
 // built-in names and descriptions in both languages plus a plausible longer one from a future language, with Japanese,
 // Arabic and Vietnamese pages, an address and a one-letter template without pages), `empty` (no
 // template at all) or `one`; `?lang=en` renders in English.
@@ -12,20 +12,42 @@ const pages = (...titles: string[]): StartPage[] =>
     const [parent, own] = title.includes(" › ") ? title.split(" › ") : [null, title];
     return { title: own ?? title, parent };
   });
+// the built-in templates as German Notebooks offers them, in the start page's order (diary, recipes, reading list first)
 const demo: StartTemplate[] = [
   {
-    id: "meeting",
-    name: "Besprechungen",
-    description: "Protokolle mit Aufgaben und Beschlüssen",
-    icon: "ti ti-users",
-    pages: pages("Besprechungen", "Offene Aufgaben", "Beschlüsse", "2027", "2027 › KW 02 Teamrunde", "2027 › KW 04 Teamrunde"),
+    id: "daily-notes",
+    name: "Tagebuch",
+    description: "Tägliche Notizen, Posteingang, Gewohnheiten, Aufgaben und Wochenrückblicke.",
+    icon: "ti ti-calendar-stats",
+    pages: pages("Tagebuch", "Eingang", "2026", "2026 › 11 November", "11 November › 2026-11-26", "11 November › 2026-11-27"),
   },
   {
-    id: "handbook",
-    name: "Handbuch",
-    description: "Kapitel, Abläufe und Ansprechpersonen",
-    icon: "ti ti-book",
-    pages: pages("Handbuch", "Wareneingang", "Wareneingang › Annahme prüfen", "Versand", "Ansprechpersonen"),
+    id: "recipe-collector",
+    name: "Rezepte und Vorräte",
+    description: "Rezepte, Vorratsbestand, Einkaufsliste und Anregungen für den Einstieg.",
+    icon: "ti ti-tools-kitchen-2",
+    pages: pages(
+      "Küchenübersicht",
+      "Vorräte",
+      "Rezepte",
+      "Obazda mit Radi und Brezn",
+      "Käsespätzle mit Röstzwiebeln",
+      "Fränkische Blaue Zipfel",
+    ),
+  },
+  {
+    id: "reading-list",
+    name: "Leseliste",
+    description: "Bücher, Leseliste, Notizen, Zitate und Bewertungen.",
+    icon: "ti ti-books",
+    pages: pages("Leseübersicht", "Bücher", "The Creative Act", "Braiding Sweetgrass"),
+  },
+  {
+    id: "garden-planner",
+    name: "Gartentagebuch",
+    description: "Aussaatzeiten, Beete, Ernten und saisonale Gartenarbeiten.",
+    icon: "ti ti-plant-2",
+    pages: pages("Gartenübersicht", "Pflanzen", "Beete und heimische Hecke", "Ernte"),
   },
 ];
 const blankPages = pages("Welcome!");
@@ -90,7 +112,7 @@ if (root) {
     render(
       () => (
         <LocaleProvider locale={lang}>
-          <NotebooksStart templates={templates} blankPages={blankPages} open={url.searchParams.get("template")} />
+          <NotebooksStart templates={templates} blankPages={blankPages} open={url.searchParams.get("new")} />
         </LocaleProvider>
       ),
       root,
