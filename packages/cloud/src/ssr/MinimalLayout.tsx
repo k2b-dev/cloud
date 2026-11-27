@@ -3,6 +3,7 @@ import type { JSX } from "solid-js/jsx-runtime";
 import { getLocale } from "../server/locale";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
+import { resolveCurrentApp } from "./app-appearance";
 import type { MinimalLayoutContext } from "./layout-context";
 import MinimalLayoutPreferences from "./MinimalLayoutPreferences.island";
 import { profilePreferencesMessages } from "./profile-preferences-messages";
@@ -34,8 +35,15 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
   const cookie = props.c.req.raw.headers.get("Cookie") ?? "";
   const theme = readThemePreferenceFromCookieHeader(cookie);
   const locale = getLocale(props.c);
-  // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`).
-  if (props.ui === "v2") props.c.get("page").appUi = "v2";
+  // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`), from the app that owns the
+  // address, as in Layout. A page without the runtime middleware knows no apps and keeps v2's own colour.
+  if (props.ui === "v2") {
+    const page = props.c.get("page");
+    const app = resolveCurrentApp(props.c.get("runtime")?.apps ?? [], new URL(props.c.req.raw.url).pathname);
+    page.appAccent = app?.appearance?.accent;
+    page.appPrimary = app?.appearance?.primary;
+    page.appUi = "v2";
+  }
   const content = () => (props.ui === "v2" ? <main class="k2-ui minimal-layout-main">{props.children}</main> : props.children);
 
   if (props.preferences === false) {

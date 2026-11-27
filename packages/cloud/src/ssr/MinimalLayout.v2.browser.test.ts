@@ -21,7 +21,7 @@ const { default: MinimalLayout } = await import("./MinimalLayout");
 const recipe = await import("../../../ui/skills/k2b-ui/recipes/public-page");
 type Context = Parameters<typeof MinimalLayout>[0]["c"];
 
-const legalApp = { id: "legal-probe", legalLinks: [{ label: "Imprint", href: "/impressum" }] };
+const legalApp = { id: "legal-probe", routes: [], legalLinks: [{ label: "Imprint", href: "/impressum" }] };
 const render = (kiosk: boolean) => {
   const page: { appUi?: "v2" } = {};
   const context = {
