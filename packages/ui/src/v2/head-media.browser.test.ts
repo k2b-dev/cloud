@@ -125,7 +125,7 @@ test("at the length limit of the address the phone's 'Ansicht' locks a sort that
   );
 });
 
-test("menu entries in their data colour: a dot or the symbol, readable on the menu in light and dark, neutral without a colour", async () => {
+test("menu entries in their data colour: a dot or the symbol, readable on the menu in light and dark, a neutral dot for what is no colour", async () => {
   await withPage("areas", async (page) => {
     for (const theme of ["light", "dark"] as const) {
       await page.evaluate((next) => document.body.setAttribute("data-theme", next), theme);
@@ -152,7 +152,15 @@ test("menu entries in their data colour: a dot or the symbol, readable on the me
           return {
             label: entry.querySelector(".k2-mi-label")!.textContent,
             mark: mark ? (mark.classList.contains("k2-mi-dot") ? "dot" : "icon") : "none",
-            contrast: mark ? Math.round(ratio(rgb(getComputedStyle(mark).color), surface) * 10) / 10 : 0,
+            // a dot is drawn by its ground, a symbol by its colour
+            contrast: mark
+              ? Math.round(
+                  ratio(
+                    rgb(mark.classList.contains("k2-mi-dot") ? getComputedStyle(mark).backgroundColor : getComputedStyle(mark).color),
+                    surface,
+                  ) * 10,
+                ) / 10
+              : 0,
             style: lead.getAttribute("style") ?? "",
             colored: lead.hasAttribute("data-color"),
           };
@@ -163,12 +171,12 @@ test("menu entries in their data colour: a dot or the symbol, readable on the me
         ["Kunden", "dot"],
         ["Einkauf", "icon"],
         ["Archiv", "dot"],
-        ["Ohne Farbe", "none"],
+        ["Ohne Farbe", "dot"],
       ]);
       // a hex colour keeps 3:1 on the menu, also the pale one
       for (const entry of found.slice(0, 3))
         expect({ theme, entry: entry.label, ok: entry.contrast >= 3 }).toEqual({ theme, entry: entry.label, ok: true });
-      // a value that is no colour reaches no style and stays neutral: no dot, no colour
+      // a value that is no colour reaches no style and stays neutral: a neutral dot, no colour of its own
       expect(found[4]!.style).not.toContain("position");
       expect(found[4]!.style).not.toContain("#008f4c");
       expect(found[4]!.colored).toBe(false);
@@ -318,9 +326,9 @@ test("a selection folds its deeds before the next frame is drawn, so no frame sh
 });
 
 // four deeds with long words and the size of the selection in a column that cannot hold them all: the last deeds go
-// into "Mehr" before any word is cut, and each deed stays reachable once (W1b #4206 r5: "In d…" at 1440)
+// whole into the bar's "…" before any word is cut, and each deed stays reachable once (W1b #4206 r5: "In d…" at 1440)
 for (const column of [900, 760, 640])
-  test(`a selection in a column of ${column} px folds its deeds into "Mehr" before a word is cut`, async () => {
+  test(`a selection in a column of ${column} px folds its deeds into "…" before a word is cut`, async () => {
     await withPage("selection-four", async (page) => {
       await page.evaluate((width) => {
         document.getElementById("root")!.style.width = `${width}px`;
@@ -329,8 +337,8 @@ for (const column of [900, 760, 640])
       await page.waitForTimeout(50);
       const bar = await page.locator(".k2-bar[data-selecting]").evaluate((element) => {
         const edge = element.getBoundingClientRect();
-        const parts = [...element.querySelectorAll<HTMLElement>(".k2-bar-start > *, .k2-status-actions > *")].filter(
-          (part) => part.getClientRects().length > 0 && !part.matches(".k2-status-actions"),
+        const parts = [...element.querySelectorAll<HTMLElement>(".k2-bar-start > *, .k2-bar-end > *")].filter(
+          (part) => part.getClientRects().length > 0,
         );
         return {
           // nothing runs out of the bar, and no word in it is cut
@@ -339,9 +347,9 @@ for (const column of [900, 760, 640])
             .flatMap((part) => [part, ...part.querySelectorAll<HTMLElement>(".k2-btn-label")])
             .filter((part) => part.scrollWidth > part.clientWidth + 1 && getComputedStyle(part).clipPath === "none")
             .map((part) => part.textContent),
-          shown: [...element.querySelectorAll(".k2-status-actions > .k2-btn:not([data-menu])")].map(
-            (button) => button.getAttribute("title") ?? button.textContent?.trim(),
-          ),
+          shown: [...element.querySelectorAll<HTMLElement>(".k2-bar-end > .k2-btn")]
+            .filter((button) => button.getClientRects().length > 0)
+            .map((button) => button.getAttribute("title") ?? button.textContent?.trim()),
         };
       });
       expect(bar.inside).toBe(true);
@@ -349,14 +357,14 @@ for (const column of [900, 760, 640])
       const all = ["Teilen", "Herunterladen", "In den Ordner verschieben", "In den Papierkorb"];
       expect(all.slice(0, bar.shown.length)).toEqual(bar.shown);
       if (bar.shown.length < all.length) {
-        await page.locator(".k2-status-actions .k2-btn[data-menu]").click();
+        await page.locator(".k2-bar[data-selecting] .k2-bar-fold .k2-btn").click();
         await settled(page);
         expect(await page.getByRole("menu").getByRole("menuitem").allTextContents()).toEqual(all.slice(bar.shown.length));
       }
     });
   });
 
-test("a selection with six deeds shows three and 'Mehr' with the rest in their order, its count in 14 px 600, and nothing leaves its bar (Files v3)", async () => {
+test("a selection with six deeds shows those that fit in their order and the rest in its '…', its count in 14 px 600, and nothing leaves its bar (Files v3)", async () => {
   for (const width of [1440, 1024, 390])
     await withPage(
       "selection",
@@ -365,11 +373,13 @@ test("a selection with six deeds shows three and 'Mehr' with the rest in their o
           const bar = document.querySelector(".k2-bar[data-selecting]")!;
           const box = bar.getBoundingClientRect();
           const lead = getComputedStyle(bar.querySelector(".k2-status-lead")!);
-          const deeds = [...bar.querySelectorAll<HTMLElement>(".k2-status-actions > .k2-btn")].map((button) => ({
-            name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
-            rect: button.getBoundingClientRect(),
-          }));
-          const floating = getComputedStyle(bar.querySelector(".k2-status-actions")!).position === "fixed";
+          const deeds = [...bar.querySelectorAll<HTMLElement>(".k2-bar-end > .k2-btn")]
+            .filter((button) => button.getClientRects().length > 0)
+            .map((button) => ({
+              name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
+              rect: button.getBoundingClientRect(),
+            }));
+          const floating = getComputedStyle(bar.querySelector(".k2-bar-end")!).position === "fixed";
           return {
             count: [lead.fontSize, lead.fontWeight],
             deeds: deeds.map((deed) => deed.name),
@@ -387,22 +397,18 @@ test("a selection with six deeds shows three and 'Mehr' with the rest in their o
               getComputedStyle(document.querySelector(".k2-split")!).marginBottom,
             ]),
           ).toEqual(["0px", "0px", "80px"]);
-        expect(found.deeds.slice(0, 3)).toEqual(["Teilen", "Verschieben", "Als ZIP laden"]);
-        expect(found.deeds.length).toBe(4);
-        expect(found.deeds[3]).toBe("Mehr");
-        // where the bar shows symbols alone, "Mehr" names itself on hover as the deeds beside it do (review r8)
-        expect(await page.locator(".k2-status-actions > .k2-btn[data-menu]").getAttribute("title")).toBe("Mehr");
+        const all = ["Teilen", "Verschieben", "Als ZIP laden", "Löschen", "In Ordner kopieren", "PDFs zusammenführen"];
+        // the deeds that fit stand in their order, the way out (×) last; the rest wait in the bar's "…" in their order
+        const shown = found.deeds.filter((name) => name !== "Auswahl aufheben" && all.includes(name ?? ""));
+        expect(shown).toEqual(all.slice(0, shown.length));
         expect(found.inside).toBe(true);
-        // "Mehr" holds the rest in their order
-        await page.locator(".k2-status-actions > .k2-btn[data-menu]").click();
-        await settled(page);
-        expect(await page.getByRole("menu").getByRole("menuitem").allTextContents()).toEqual([
-          "Löschen",
-          "In Ordner kopieren",
-          "PDFs zusammenführen",
-        ]);
-        await page.keyboard.press("Escape");
-        await settled(page);
+        if (shown.length < all.length) {
+          await page.locator(".k2-bar[data-selecting] .k2-bar-fold .k2-btn").click();
+          await settled(page);
+          expect(await page.getByRole("menu").getByRole("menuitem").allTextContents()).toEqual(all.slice(shown.length));
+          await page.keyboard.press("Escape");
+          await settled(page);
+        }
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },
@@ -506,10 +512,11 @@ test("on the phone the actions of a selection float at the bottom, symbol over w
   await withPage(
     "selecting",
     async (page) => {
-      const bar = await rect(page, ".k2-status-actions");
+      const bar = await rect(page, ".k2-bar[data-selecting] > .k2-bar-end");
       expect(Math.round(900 - bar.bottom)).toBe(16);
+      // the deeds with their words (the way out × floats with them, its words a hint)
       const labels = await page
-        .locator(".k2-status-actions .k2-btn-label")
+        .locator(".k2-bar[data-selecting] > .k2-bar-end > .k2-btn:not([data-k2-folded]) .k2-btn-label")
         .evaluateAll((elements) =>
           elements.map((element) => ({ text: element.textContent, visible: element.getBoundingClientRect().width > 1 })),
         );
@@ -654,7 +661,7 @@ test("on the phone the floating actions of a selection cover nothing of the list
               (scroller) => getComputedStyle(scroller).overflowY !== "visible",
             );
             for (const scroller of scrollers) scroller.scrollTop = end ? scroller.scrollHeight : 0;
-            const bar = document.querySelector(".k2-status-actions")!.getBoundingClientRect();
+            const bar = document.querySelector(".k2-bar[data-selecting] > .k2-bar-end")!.getBoundingClientRect();
             // what each column shows: its box, cut by every column around it that scrolls
             const shown = scrollers.map((scroller) =>
               Math.min(...scrollers.filter((other) => other.contains(scroller)).map((other) => other.getBoundingClientRect().bottom)),

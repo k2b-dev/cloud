@@ -7,6 +7,10 @@ const repositoryRoot = resolve(import.meta.dir, "../../../../../../..");
 
 const text = (parts: NotePreviewPart[]): string => parts.map((part) => (typeof part === "string" ? part : text(part.children))).join("");
 const lines = (markdown: string, mode: "rich" | "source" = "rich") => notePreviewLines(markdown, mode).map((line) => text(line.parts));
+const styleOf = (parts: NotePreviewPart[]): string[] =>
+  parts.flatMap((part) =>
+    typeof part === "string" ? [] : [...(part.attributes?.style ? [part.attributes.style] : []), ...styleOf(part.children)],
+  );
 const classes = (parts: NotePreviewPart[]): string[] =>
   parts.flatMap((part) => (typeof part === "string" ? [] : [part.className, ...classes(part.children)]));
 
@@ -238,4 +242,15 @@ test("many styled spans on one line render in linear time and keep their parts",
 test("a long note that starts with front matter has no preview", () => {
   const prose = "Ordinary prose.\n\n";
   expect(notePreviewLines(`---\ntitle: Plan\n---\n${prose.repeat(40_000)}`, "rich")).toEqual([]);
+});
+
+test("a comment's colour reaches the passage and its dot only as a colour", () => {
+  const styles = (color: string) =>
+    notePreviewLines("A commented passage\n\nMore", "rich", NOTE_PREVIEW_BUDGET, [
+      { id: "a", from: 2, to: 11, color, label: "Ada", orphan: false },
+      { id: "b", from: 13, to: 13, color, label: "Ada", orphan: true },
+    ]).flatMap((line) => styleOf(line.parts));
+  expect(styles("#7c3aed")).toEqual(["--annotation-color: #7c3aed", "--annotation-color: #7c3aed"]);
+  for (const color of ["#7c3aed;position:fixed;inset:0", "red;background:url(https://example.org/x.png)"])
+    expect(styles(color)).toEqual(["--annotation-color: transparent", "--annotation-color: transparent"]);
 });

@@ -1,5 +1,6 @@
 import { For, type JSX, Show, splitProps } from "solid-js";
 import { IconButton } from "../actions/Button";
+import { cssColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import type { FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
@@ -275,7 +276,7 @@ export function ColorInput(props: ColorInputProps): JSX.Element {
         <button
           type="button"
           class="k2b-color-input__swatch"
-          style={{ "background-color": currentColor() }}
+          style={{ "background-color": cssColor(currentColor()) }}
           disabled={props.disabled}
           {...fieldControlAria(meta, props)}
           onClick={() => picker?.click()}
@@ -308,7 +309,7 @@ export function ColorInput(props: ColorInputProps): JSX.Element {
           <span
             class="k2b-color-input__swatch"
             data-transparent={isTransparent() ? "true" : undefined}
-            style={isTransparent() ? undefined : { "background-color": currentColor() }}
+            style={isTransparent() ? undefined : { "background-color": cssColor(currentColor()) }}
           />
           <code>{isTransparent() ? "transparent" : currentColor().toUpperCase()}</code>
         </button>

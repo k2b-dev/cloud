@@ -1,4 +1,5 @@
 import {
+  type ChildrenReturn,
   createComputed,
   createEffect,
   createMemo,
@@ -16,12 +17,14 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { watchFold } from "./bar-fold";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
-import { MarkCheck } from "./controls";
+import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
-import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
+import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
@@ -93,8 +96,27 @@ export type NavGroup = {
    * Postfach" and "Gelöschte Postfächer"; `label` names the button.
    */
   action?: Action | { label: string; items: readonly MenuEntry[] };
-  /** The entries of the group. */
-  items: readonly NavItem[];
+} & (
+  | {
+      /** The entries of the group. */
+      items: readonly NavItem[];
+      tree?: undefined;
+    }
+  | {
+      /** Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`. */
+      tree: NavTree;
+      items?: undefined;
+    }
+);
+
+/** The search of the sidebar under the app's name, such as Chat's search of its conversations. */
+export type NavSearch = {
+  /** The field's name, and its placeholder. */
+  label: string;
+  value: string;
+  onInput: (value: string) => void;
+  /** Keys in the field, such as arrows into the results. */
+  onKeyDown?: (event: KeyboardEvent) => void;
 };
 
 export type NavProps = {
@@ -102,8 +124,27 @@ export type NavProps = {
   title: string;
   /** A Tabler icon beside the app's name. */
   icon: string;
+  /** The search under the name. */
+  search?: NavSearch;
+  /**
+   * The main action under the name (and the search), across the column, such as "Neuer Chat". The sidebar is away on
+   * the phone; there the `Workspace`'s `primary` floats, so pass the same action to both.
+   */
+  primary?: Action;
   /** The app's places in groups, each with an optional heading and deed. */
   groups: readonly NavGroup[];
+  /**
+   * The app's own rows after the groups, such as Chat's conversations as a `List` of `Row`s: they reach the column's
+   * edges and scroll on their own above the foot, as a tree does. Made once, like the other parts of a frame, so new
+   * groups or counts keep the list, its rows and its scroll. A long list is virtualized by the app.
+   */
+  list?: JSX.Element;
+  /**
+   * `"page"`: on the phone the `list`, under the `search`, is the page while no pane is open beside it; an open pane
+   * is the page in its place. The title, the groups and the foot are in the platform's menu there, and the main
+   * action floats (`Workspace` `primary`). Without it the list stays in the sidebar, away on the phone.
+   */
+  phone?: "page";
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
   /**
@@ -229,60 +270,96 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
-/** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
-export const Nav = (props: NavProps) => (
-  <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
-    <div class="k2-nav-title">
-      <Icon name={props.icon} />
-      {props.title}
-    </div>
-    <Index each={props.groups}>
-      {(group) => (
-        <>
-          <Show when={group().label}>
-            <div class="k2-nav-label">
-              {group().label}
-              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-            </div>
-          </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
-        </>
-      )}
-    </Index>
-    <Show when={props.quota}>
-      {(quota) => {
-        const share = () => (quota().of > 0 ? Math.max(0, Math.min(1, quota().value / quota().of)) : 0);
-        return (
-          <div
-            class="k2-nav-quota"
-            data-k2-part="Nav.Quota"
-            data-status={share() >= 0.9 ? "bad" : share() >= 0.75 ? "warn" : undefined}
-            role="meter"
-            aria-label={quota().label}
-            aria-valuemin={0}
-            aria-valuemax={quota().of}
-            aria-valuenow={quota().value}
-            aria-valuetext={quota().text}
-          >
-            <span class="k2-nav-quota-line">
-              <span>{quota().label}</span>
-              <span>{quota().text}</span>
-            </span>
-            <span class="k2-nav-quota-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
-              <i />
-            </span>
-          </div>
-        );
-      }}
-    </Show>
-    <Show when={props.foot?.length}>
-      <div class="k2-nav-foot">
-        <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+/**
+ * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
+ * entries at the foot.
+ */
+export const Nav = (props: NavProps) => {
+  // A part passed as JSX is made once, here, and read from here (as `Workspace` does with its parts).
+  const list = resolveChildren(() => props.list);
+  return (
+    <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
+      <div class="k2-nav-title">
+        <Icon name={props.icon} />
+        {props.title}
       </div>
-    </Show>
-  </nav>
-);
+      <Show when={props.search}>
+        {(search) => (
+          <div class="k2-nav-search">
+            <Input
+              type="search"
+              icon="search"
+              label={search().label}
+              placeholder={search().label}
+              value={search().value}
+              onInput={(value) => search().onInput(value)}
+              onKeyDown={(event) => search().onKeyDown?.(event)}
+            />
+          </div>
+        )}
+      </Show>
+      <Show when={props.primary}>
+        {(primary) => (
+          <div class="k2-nav-primary">
+            <ActionButton action={primary()} variant="primary" />
+          </div>
+        )}
+      </Show>
+      <Index each={props.groups}>
+        {(group) => (
+          <>
+            <Show when={group().label}>
+              <div class="k2-nav-label">
+                {group().label}
+                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              </div>
+            </Show>
+            <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+              {(tree) => <NavTreeView {...tree()} />}
+            </Show>
+          </>
+        )}
+      </Index>
+      <Show when={list()}>
+        <div class="k2-nav-list" data-phone={props.phone}>
+          {list()}
+        </div>
+      </Show>
+      <Show when={props.quota}>
+        {(quota) => {
+          const share = () => (quota().of > 0 ? Math.max(0, Math.min(1, quota().value / quota().of)) : 0);
+          return (
+            <div
+              class="k2-nav-quota"
+              data-k2-part="Nav.Quota"
+              data-status={share() >= 0.9 ? "bad" : share() >= 0.75 ? "warn" : undefined}
+              role="meter"
+              aria-label={quota().label}
+              aria-valuemin={0}
+              aria-valuemax={quota().of}
+              aria-valuenow={quota().value}
+              aria-valuetext={quota().text}
+            >
+              <span class="k2-nav-quota-line">
+                <span>{quota().label}</span>
+                <span>{quota().text}</span>
+              </span>
+              <span class="k2-nav-quota-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
+                <i />
+              </span>
+            </div>
+          );
+        }}
+      </Show>
+      <Show when={props.foot?.length}>
+        <div class="k2-nav-foot">
+          <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+        </div>
+      </Show>
+    </nav>
+  );
+};
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -376,6 +453,18 @@ export const Tabs = (props: TabsProps) => {
       const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
       const first = tabs[0]?.offsetTop ?? 0;
       const index = tabs.findIndex((tab) => tab.offsetTop > first + 1);
+      // the "Mehr" that holds the hidden tabs takes their room itself: where every tab fits in the room it and its gap
+      // take, all of them show and it goes (otherwise it keeps itself, once a bar's end gave the room back)
+      const more = row?.parentElement?.querySelector<HTMLElement>(":scope > .k2-tab[data-k2-more]");
+      if (index >= 0 && more && row) {
+        const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+        const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
+        const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
+        if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
+          setFit(Number.POSITIVE_INFINITY);
+          return;
+        }
+      }
       setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
@@ -442,7 +531,8 @@ export const Tabs = (props: TabsProps) => {
         )}
       </Index>
       <Show when={withMenu().length === 0 && more().length > 0}>
-        <MenuTab items={more()} current={hidden().some((tab) => tab.current)}>
+        {/* marked, so a bar that measures its start's whole width leaves it out (see `Bar`) */}
+        <MenuTab items={more()} current={hidden().some((tab) => tab.current)} more>
           <TabFace tab={{ label: t().more, count: `+${more().length}` }} />
         </MenuTab>
       </Show>
@@ -531,6 +621,8 @@ export type StatusRowProps = {
   /**
    * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
    * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   * The whole statement stays as a hint on hover, always, also where it is not cut: one plain `title`, the same in the
+   * server's markup, with nothing measured in the browser.
    */
   lead: string;
   /**
@@ -541,11 +633,22 @@ export type StatusRowProps = {
    */
   loading?: boolean;
   /**
-   * Key figures after the lead. They give way only where they do not fit before the filters, the later ones first and
-   * whole, so the filters keep their words and no figure runs under them; without filters they keep the row's room.
-   * On the phone they go. Put what must stay in `lead`.
+   * Key figures after the lead. They share the room before the filters with the lead, each up to its own width:
+   * beside a short lead they take all the rest (without filters, the row's room); beside a long lead they keep their
+   * width and the lead is cut with "…"; where both are long the lead keeps 40 % (60 % in a row below 600 px) and the
+   * later figures give way, whole, so the filters keep their words and no figure runs under them. On the phone they
+   * go. Put what must stay in `lead`.
    */
   facts?: readonly StatusFact[];
+  /**
+   * Tinted chips that belong to the statement, such as an exception: `<Chip status="bad">1 ohne Zugriff</Chip>`
+   * (rule 2). They stand after the lead, keep their width while the lead is cut with "…", stay on the phone, and give
+   * way whole, the later ones first, only where about a word of the lead would no longer fit beside them. A chip that
+   * must never leave belongs in `lead` itself. Chips only, no buttons or links: a chip that gave way is out of sight
+   * but still in the page, so a control there would still take the focus. `cond && <Chip …/>` is fine: a place that
+   * holds only `false`, `null` or `undefined` draws nothing.
+   */
+  marks?: JSX.Element;
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
@@ -556,60 +659,40 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out. From five actions on the first three stand and the rest wait in "Mehr"; where their
-   * words do not fit, the last ones go there too before a word is cut.
+   * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end,
+   * right after the last one in sight (the bar's fold), and the way out stays at the end of the bar.
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
 
-/** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
-const SELECTION_SHOWN = 3;
-
-/** What of a bar is cut: it runs out of its start, or a word in it (the count, a deed's words) ends in "…". */
-const cutIn = (start: HTMLElement) =>
-  start.scrollWidth > start.clientWidth + 1 ||
-  [...start.querySelectorAll<HTMLElement>(":scope > .k2-status-lead, .k2-btn-label")].some(
-    (words) => words.scrollWidth > words.clientWidth + 1 && getComputedStyle(words).clipPath === "none",
-  );
+/**
+ * Whether resolved children hold anything to draw: `cond && <Chip/>` passes `false` while the condition is off, and a
+ * place holding only `false`, `null` or `undefined` must draw no group, so nothing moves when it comes or goes.
+ */
+const holdsContent = (resolved: ChildrenReturn) =>
+  resolved.toArray().some((child) => child != null && typeof child !== "boolean" && child !== "");
 
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
-  const overlay = useOverlayMessages();
   const filters = resolveChildren(() => props.filters);
-  // How many deeds of a selection stand with their words: as many as the mockup shows, fewer where they do not fit,
-  // the rest in "Mehr", so no word is cut. Measured in the browser (a selection is made there) when the bar changes
-  // its width or the selection its words, all at once before the next frame is drawn, so no cut word ever shows.
-  const [room, setRoom] = createSignal(Number.POSITIVE_INFINITY);
-  const shown = () => {
-    const actions = props.selection?.actions ?? [];
-    return Math.min(actions.length > SELECTION_SHOWN + 1 ? SELECTION_SHOWN : actions.length, room());
-  };
+  const marks = resolveChildren(() => props.marks);
+  // While entries are selected, the bar's fold watches the row: the actions without room fold into "…" from the end,
+  // and the way out never. None on the server's page.
   let bar: HTMLDivElement | undefined;
-  onMount(() => {
-    if (!bar) return;
-    // outside of Solid's own updates every change reaches the page at once, so each step measures what it changed
-    const fit = () => {
-      setRoom(Number.POSITIVE_INFINITY);
-      const start = bar?.querySelector<HTMLElement>(":scope > .k2-bar-start");
-      const actions = start?.querySelector<HTMLElement>(":scope > .k2-status-actions");
-      // on the phone the deeds float at the bottom, each symbol over its word: nothing to fold
-      if (!props.selection || !start || !actions || getComputedStyle(actions).position === "fixed") return;
-      while (shown() > 0 && cutIn(start)) setRoom(shown() - 1);
-    };
-    const sizes = new ResizeObserver(fit);
-    sizes.observe(bar);
-    createEffect(() => {
-      props.selection?.count;
-      props.selection?.actions.length;
-      // after the words changed on the page, still before it is drawn
-      queueMicrotask(fit);
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const selecting = createMemo(() => props.selection !== undefined);
+  createEffect(() => {
+    if (!bar || !selecting()) return;
+    const fold = watchFold(bar, (entries) => setFolded(entries));
+    onCleanup(() => {
+      fold.stop();
+      setFolded([]);
     });
-    onCleanup(() => sizes.disconnect());
   });
   return (
-    <div ref={bar} class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined} ref={bar}>
       <Show
         when={props.selection}
         fallback={
@@ -618,7 +701,10 @@ export const StatusRow = (props: StatusRowProps) => {
               <Show when={props.select}>
                 {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
               </Show>
-              <span class="k2-status-lead">{props.lead}</span>
+              {/* where the lead is cut with "…", its whole statement stays as a hint on hover */}
+              <span class="k2-status-lead" title={props.lead}>
+                {props.lead}
+              </span>
               {/* the place of the loading mark is there while the row can refresh, so the mark moves nothing */}
               <Show when={props.loading !== undefined}>
                 <span class="k2-status-busy" role="status">
@@ -627,6 +713,9 @@ export const StatusRow = (props: StatusRowProps) => {
                     <span class="k2-hidden-text">{t().loading}</span>
                   </Show>
                 </span>
+              </Show>
+              <Show when={holdsContent(marks)}>
+                <span class="k2-status-marks">{marks()}</span>
               </Show>
               <Show when={props.facts?.length}>
                 <span class="k2-status-facts">
@@ -645,46 +734,36 @@ export const StatusRow = (props: StatusRowProps) => {
                 </span>
               </Show>
             </div>
-            <Show when={filters() !== undefined}>
+            <Show when={holdsContent(filters)}>
               <div class="k2-bar-end">{filters()}</div>
             </Show>
           </>
         }
       >
         {(selection) => (
-          <div class="k2-bar-start">
-            <Show when={props.select}>
-              {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
-            </Show>
-            <span class="k2-status-lead" aria-live="polite">
-              {selection().count}
-            </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
-                On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
-            <span class="k2-status-actions">
-              <For each={selection().actions.slice(0, shown())}>{(action) => <ActionButton action={action} titled />}</For>
-              <Show when={shown() < selection().actions.length}>
-                <Menu
-                  icon="dots"
-                  titled
-                  items={selection()
-                    .actions.slice(shown())
-                    .map((action) => ({
-                      label: action.label,
-                      icon: action.icon,
-                      meta: action.meta,
-                      href: action.href,
-                      onNavigate: action.onNavigate,
-                      onClick: action.onClick,
-                      disabled: action.disabled,
-                    }))}
-                >
-                  {overlay().more}
-                </Menu>
+          <>
+            <div class="k2-bar-start">
+              <Show when={props.select}>
+                {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
               </Show>
-            </span>
-            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
-          </div>
+              <span class="k2-status-lead" aria-live="polite">
+                {selection().count}
+              </span>
+            </div>
+            {/* the actions fold from the end into "…" where they have no room (the bar's fold), the way out never; in a
+                narrow column they keep only their symbols first, the way out its ×; the words stay their names */}
+            <div class="k2-bar-end">
+              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+              <Show when={folded().length > 0}>
+                <span class="k2-bar-fold">
+                  <Menu items={folded()} />
+                </span>
+              </Show>
+              <span class="k2-status-clear" data-closes="">
+                <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
+              </span>
+            </div>
+          </>
         )}
       </Show>
     </div>

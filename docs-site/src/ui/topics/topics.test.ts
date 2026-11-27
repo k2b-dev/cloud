@@ -68,7 +68,7 @@ describe("topic pages", () => {
   test("Lists and tables is finished and is the reference page", () => {
     const topic = topics.find((candidate) => candidate.slug === "lists-and-tables");
     expect(topic?.parsed.front.status).toBeUndefined();
-    expect(topic?.parts).toEqual(["List", "Row", "Table", "StatusRow", "Pane.Split", "Empty · Loading · Failed"]);
+    expect(topic?.parts).toEqual(["List", "Row", "Table", "Trees", "StatusRow", "Pane.Split", "Empty · Loading · Failed"]);
   });
 
   test("a wrong shape is named", () => {
@@ -143,9 +143,13 @@ describe("generated props", () => {
   test("a union of props shows its variants as alternatives, each required only within its variant", () => {
     const prose = v2Props.Prose;
     if (!prose) throw new Error("Prose has no generated props");
-    expect(prose.rows).toEqual([]);
+    // what both variants take stands once, before them, and is never required
+    expect(prose.rows.map((row) => `${row.name}${row.required ? "!" : ""}`)).toEqual(["compact"]);
     expect(prose.groups.map((group) => group.title)).toEqual(["With `markdown`", "Or with `children`"]);
+    expect(prose.groups.flatMap((group) => group.rows.map((row) => row.name))).not.toContain("compact");
     const twin = propsMarkdown(prose);
+    expect(twin).toContain("| `compact` |");
+    expect(twin.indexOf("| `compact` |")).toBeLessThan(twin.indexOf("With `markdown`:"));
     expect(twin).toContain("With `markdown`:");
     expect(twin).toContain("Or with `children`:");
     expect(twin).toContain("| `markdown` (required in this variant) |");

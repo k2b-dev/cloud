@@ -281,7 +281,7 @@ export const AreasMenuScreen = () => (
   </Workspace>
 );
 
-// A selection with six deeds in a column beside a side column: the first three stand, the rest wait in "Mehr".
+// A selection with six deeds in a column beside a side column: those that fit stand, the rest wait in the bar's "…".
 // `four`: four deeds with long words and the size of the selection, as Files shows them (W1b #4206 r5)
 export const SelectionScreen = (props: { four?: boolean }) => (
   <Workspace>

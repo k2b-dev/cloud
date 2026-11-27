@@ -3,6 +3,7 @@ import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
 import { colorStyle, safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
+import { Icon } from "./icon";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
@@ -10,7 +11,9 @@ import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
   const entries = Object.entries(values).flatMap(([key, value]): [string, string][] => {
     if (value === undefined) return [];
-    // a data colour is validated and brings its readable foregrounds; anything else is the primitive's own number
+    // a data colour comes from data: only a real colour passes (`colorStyle` validates it with `safeColor` and adds its
+    // readable foregrounds), else the primitive stays neutral; anything else is the primitive's own number and never
+    // ends its declaration
     if (key === "--k2-c") return Object.entries(colorStyle(value) ?? {});
     return safeValue(value) ? [[key, value]] : [];
   });
@@ -19,26 +22,7 @@ export const custom = (values: Record<string, string | undefined>): JSX.CSSPrope
 
 // ── Marks ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type IconProps = {
-  /** A Tabler icon name without the `ti-` prefix, such as `package`. */
-  name: string;
-  /** A name for assistive technology; without one the icon is decoration. */
-  label?: string;
-  tone?: Status | "ai" | "app" | "muted" | "subtle";
-};
-
-/** A Tabler icon. Its size comes from its place: 16 px in rows and bars, 20 px on a tile, 14 px among marks. */
-export const Icon = (props: IconProps) => (
-  <i
-    class={`ti ti-${props.name} k2-icon`}
-    data-k2-part="Icon"
-    data-name={props.name}
-    data-tone={props.tone}
-    role="img"
-    aria-label={props.label}
-    aria-hidden={props.label ? undefined : "true"}
-  />
-);
+export { Icon, type IconProps } from "./icon";
 
 export type AvatarProps = Person & {
   /**
@@ -320,6 +304,12 @@ export type ChipProps = {
     | {
         /** A state with a dot and a word: ok, waiting or wrong. */
         status: Status;
+        /**
+         * The state as its dot and its word only, without the tinted round: for a column of states in a dense table or
+         * list, where a chip on every line is too loud. The colour stays on the dot; the word, in the ink of the text,
+         * carries the meaning.
+         */
+        quiet?: boolean;
         yours?: never;
         tag?: never;
         amount?: never;
@@ -327,6 +317,7 @@ export type ChipProps = {
       }
     | {
         status?: never;
+        quiet?: never;
         /** "You are next" in the blue of selection; with `dot` a state that is being worked on ("in Arbeit"). */
         yours: true;
         dot?: boolean;
@@ -336,6 +327,7 @@ export type ChipProps = {
       }
     | {
         status?: never;
+        quiet?: never;
         yours?: never;
         /** A tag in its data colour. */
         tag: true;
@@ -345,14 +337,15 @@ export type ChipProps = {
       }
     | {
         status?: never;
+        quiet?: never;
         yours?: never;
         tag?: never;
         /** An amount of money that goes out (we pay) or comes in. */
         amount: "out" | "in";
         ai?: never;
       }
-    | { status?: never; yours?: never; tag?: never; amount?: never /** Something Gustav proposes, in plum. */; ai: true }
-    | { status?: never; yours?: never; tag?: never; amount?: never; ai?: never }
+    | { status?: never; quiet?: never; yours?: never; tag?: never; amount?: never /** Something Gustav proposes, in plum. */; ai: true }
+    | { status?: never; quiet?: never; yours?: never; tag?: never; amount?: never; ai?: never }
   );
 
 /** A round mark that shows a state, a tag, an amount or a count. Never a colour without a word. */
@@ -383,6 +376,7 @@ export const Chip = (props: ChipProps) => {
       class="k2-chip"
       data-k2-part="Chip"
       data-status={props.status}
+      data-quiet={props.status && "quiet" in props && props.quiet ? "" : undefined}
       data-kind={kind()}
       aria-pressed={props.onClick && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       data-pressed={props.pressed ? "" : undefined}
@@ -428,6 +422,49 @@ export const Chip = (props: ChipProps) => {
 /** A small round dot of a state (internal: a row marks "unread" with it, the sidebar "new"). */
 export const Dot = (props: { status?: Status | "app"; label?: string }) => (
   <span class="k2-dot" data-status={props.status} role="img" aria-label={props.label} aria-hidden={props.label ? undefined : "true"} />
+);
+
+/** The state of one time slot of `Ticks`: it went well, it failed, or there is no data for it. */
+export type TickState = "ok" | "bad" | "none";
+
+export type TicksProps = {
+  /**
+   * One state per time slot, oldest first, such as one per minute of the last 30 minutes. They read in the writing
+   * direction: the oldest at the start (on the right in a page written right to left). In a table cell at most 60
+   * slots: the cell's 140 px hold no more, and a strip with more is cut at its end.
+   */
+  slots: readonly TickState[];
+  /**
+   * What the ticks say, in one sentence a person who cannot see them gets the same from, always in the same form:
+   * what, over which time, then what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen
+   * fehlgeschlagen".
+   */
+  label: string;
+  /** The data colour of what the ticks belong to; without it the colour of the app. Failures stay red. */
+  color?: string;
+  /**
+   * The ticks take the room between the text edges of their place, such as a detail: 2 px apart, each slot up to 12 px
+   * wide, the strip at the start where the place is wider; without it 140 px, the width of a table cell.
+   */
+  stretch?: boolean;
+};
+
+/**
+ * One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a
+ * failure red and taller, a slot without data a low stub. 20 px high; the one column of a list that shows its data
+ * over time.
+ */
+export const Ticks = (props: TicksProps) => (
+  <span
+    class="k2-ticks"
+    data-k2-part="Ticks"
+    data-stretch={props.stretch ? "" : undefined}
+    role="img"
+    aria-label={props.label}
+    style={custom({ "--k2-c": props.color })}
+  >
+    <For each={props.slots}>{(state) => <i data-s={state} />}</For>
+  </span>
 );
 
 export type ProgressProps = {

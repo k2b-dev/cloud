@@ -12,6 +12,10 @@
 
 // The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
 export { useLocale } from "../intl/locale";
+// The bare address of a display form such as `"Berg, Anna" <anna@example.org>`, as an address field reads it.
+export { addressOf } from "./addresses";
+// News for assistive technology that the page shows nowhere as it happens (a run that changed its state).
+export { announce } from "./announce";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -23,6 +27,7 @@ export {
   type NavGroup,
   type NavItem,
   type NavProps,
+  type NavSearch,
   Notice,
   type NoticeProps,
   Path,
@@ -59,6 +64,7 @@ export {
   Table,
   type TableGroup,
   type TableProps,
+  type TableTree,
   Text,
   type TextProps,
 } from "./content";
@@ -66,6 +72,7 @@ export {
   Check,
   type CheckProps,
   Choice,
+  type ChoiceOption,
   type ChoiceProps,
   CodeInput,
   type CodeInputProps,
@@ -93,8 +100,12 @@ export {
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
+// the error fallback of every island: a module of its own, which loads no other part
+export { Failed, type FailedProps } from "./failed";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+// A year of days as a picture: what happened per day, in tones of one colour.
+export { Heat, type HeatDay, type HeatProps } from "./heat";
 // Layer 1: the primitives.
 export {
   Band,
@@ -132,13 +143,17 @@ export {
   type ProgressProps,
   Spark,
   type SparkProps,
+  type TickState,
+  Ticks,
+  type TicksProps,
 } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
+export type { NavTree, NavTreeNode } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
-export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
+export { Empty, type EmptyProps, Loading, type LoadingProps } from "./states";
 export { Disclosure, type DisclosureProps, Group, type GroupProps, Section, type SectionProps } from "./structure";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";

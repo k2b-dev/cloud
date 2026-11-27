@@ -65,6 +65,7 @@ test("a filter the declaration does not allow is refused, not ignored", async ()
         "/?level=fatal",
         "/?time=last-2y",
         "/?colour=red",
+        `/?request=${"x".repeat(129)}`,
         `/?source=${Array.from({ length: 21 }, (_, i) => `s${i}`).join(",")}`,
       ]) {
         const response = await routes.request(path);
