@@ -15,6 +15,9 @@ import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 //   ("Später") and the head's own "…".
 // - "tabs": four tabs, two actions, the primary and a menu with a symbol of its own ("Filter") at the very end.
 // - "long": a long start (a path's words) beside an end that fits and folds nothing: the server's page is the live one.
+// - "closes": a long title beside a primary with words and a closing button, which folds nothing (one button into a
+//   "…" as wide gains no room): where the end has to cut, it cuts from its start, the same before and after load.
+// - "changes": a label of 16ch and more ("Änderungsverlauf") beside a title: the title keeps a few letters.
 // - "history": Notebooks' version history: a fixed label "Versionsverlauf" and a long note title in the start, two
 //   actions at the end. The title takes the shortage; the label stays whole.
 
@@ -191,6 +194,52 @@ export function Fixture() {
         >
           <Pane label="Ordner">
             <Text>Der Ordner.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="closes">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Text type="row" weight="strong">
+                  Angebot an Lackfabrik Nordhaus für die Fronten der Küche
+                </Text>
+              }
+              end={
+                <>
+                  <Button keep variant="primary" icon="check" onClick={deed("Speichern")}>
+                    Speichern
+                  </Button>
+                  <Button keep icon="x" label="Schließen" onClick={deed("Schließen")} />
+                </>
+              }
+            />
+          }
+        >
+          <Pane label="Angebot bearbeiten">
+            <Text>Das Angebot.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="changes">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <>
+                  <Text type="row">Änderungsverlauf</Text>
+                  <Text type="row" weight="strong">
+                    Angebot an Lackfabrik Nordhaus
+                  </Text>
+                </>
+              }
+              end={<Button keep icon="x" label="Schließen" onClick={deed("Schließen")} />}
+            />
+          }
+        >
+          <Pane label="Änderungen">
+            <Text>Die Änderungen.</Text>
           </Pane>
         </Workspace>
       </div>

@@ -111,29 +111,60 @@ test("390 px, alive: the start stays whole, the last actions are in '…' in the
   });
 });
 
-test("a long start beside an end that fits and folds nothing: the server's page is the live one (±1 px)", async () => {
-  const rects = (page: Page) =>
+test("a long start beside an end that folds nothing: the server's page is the live one (±1 px), also where the end cuts", async () => {
+  // "long": one button that fits; "closes": a primary with words and a closing button, which fold nothing and, at 240
+  // px, beside the start's least, have to be cut from the start of the end
+  const rects = (page: Page, bar: string) =>
     page.evaluate((bar) => {
       const element = document.querySelector(bar)!;
-      return [":scope > .k2-bar-start", ":scope > .k2-bar-start > .k2-text", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].map(
-        (selector) => {
-          const box = element.querySelector(selector)!.getBoundingClientRect();
-          return [box.left, box.top, box.width, box.height];
-        },
+      return [":scope > .k2-bar-start", ":scope > .k2-bar-start > *", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].flatMap(
+        (selector) =>
+          [...element.querySelectorAll(selector)].map((found) => {
+            const box = found.getBoundingClientRect();
+            return [box.left, box.top, box.width, box.height];
+          }),
       );
-    }, head("long"));
-  for (const width of [390, 1024]) {
-    let sent: number[][] = [];
+    }, bar);
+  for (const width of [240, 320, 390, 1024]) {
+    const sent: Record<string, number[][]> = {};
     await withPage(width, false, async (page) => {
-      sent = await rects(page);
+      for (const which of ["long", "closes"]) sent[which] = await rects(page, head(which));
     });
     await withPage(width, true, async (page) => {
-      expect(await page.locator(`${head("long")} .k2-bar-fold`).count()).toBe(0);
-      const live = await rects(page);
-      const apart = live.flatMap((box, at) => box.map((value, side) => Math.abs(value - sent[at]![side]!))).filter((gap) => gap > 1);
-      expect([width, apart]).toEqual([width, []]);
+      for (const which of ["long", "closes"]) {
+        expect([which, width, await page.locator(`${head(which)} .k2-bar-fold`).count()]).toEqual([which, width, 0]);
+        const live = await rects(page, head(which));
+        const apart = live
+          .flatMap((box, at) => box.map((value, side) => Math.abs(value - sent[which]![at]![side]!)))
+          .filter((gap) => gap > 1);
+        expect([which, width, live.length, apart]).toEqual([which, width, sent[which]!.length, []]);
+      }
+      // the closing button, which never folds, stays in sight at the end
+      const close = await page.locator(head("closes")).getByRole("button", { name: "Schließen" }).boundingBox();
+      const end = await edges(page, head("closes"));
+      expect([width, close !== null && close.x + close.width <= end.end!.right + 0.5]).toEqual([width, true]);
     });
   }
+});
+
+test("a quiet label of 16ch and more beside the title: the title keeps a few letters, the label shortens too", async () => {
+  for (const live of [false, true])
+    await withPage(240, live, async (page) => {
+      const widths = await page.locator(`${head("changes")} > .k2-bar-start`).evaluate((start) =>
+        [...start.querySelectorAll<HTMLElement>(":scope > .k2-text")].map((text) => {
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;width:3ch";
+          text.append(probe);
+          const three = probe.getBoundingClientRect().width;
+          probe.remove();
+          return { width: text.getBoundingClientRect().width, cut: text.scrollWidth > text.clientWidth + 0.5, three };
+        }),
+      );
+      const [label, title] = widths;
+      // the title keeps at least a few letters; once it stands at that floor (4ch), the label is the one that shortens
+      const atFloor = title!.width <= (title!.three / 3) * 4 + 1;
+      expect([live, title!.width >= title!.three, !atFloor || label!.cut]).toEqual([live, true, true]);
+    });
 });
 
 test("390 px: the start gives way only after the end folded everything, down to its least and never to nothing", async () => {
@@ -294,9 +325,9 @@ test("tabs that gave way to a button come back whole when it gives the room back
     await primary.evaluate((button) => {
       (button as HTMLElement).style.minWidth = "";
     });
-    await frames(page);
-    await frames(page);
-    await frames(page);
+    await page.waitForFunction(
+      () => ![...document.querySelectorAll('[data-case="record"] .k2-tab')].some((tab) => tab.textContent?.startsWith("Mehr")),
+    );
     const after = await names();
     expect([after.slice(0, 3), after.some((name) => name.startsWith("Mehr"))]).toEqual([tabs, false]);
   });
@@ -376,20 +407,41 @@ test("1440 px: a head that fits folds nothing and has no '…', on the server's 
   });
 });
 
-test("every 8 px from 320 to 1440: each end ends inside its bar's content edge, beside its start", async () => {
+test("every 8 px from 320 to 1440: each end ends inside its bar's content edge, beside its start, and cuts no button", async () => {
   await withPage(320, true, async (page) => {
     const wrong: string[] = [];
     for (let width = 320; width <= 1440; width += 8) {
       await page.setViewportSize({ width, height: 1000 });
       await frames(page);
       await frames(page);
-      for (const which of ["record", "book", "menu", "before", "long", "history", "reader", "tabs"]) {
+      for (const which of ["record", "book", "menu", "before", "long", "closes", "changes", "history", "reader", "tabs"]) {
         const { start, end, content } = await edges(page, head(which));
         if (!end) continue;
         if (end.right > content + 0.5) wrong.push(`${which} at ${width}: the end ends ${Math.round(end.right - content)} px beyond`);
         if (start && start.right > end.left + 0.5) wrong.push(`${which} at ${width}: the start runs under the end`);
+        // A button the end cuts is half of one; that is the decided case only where the start stands at its least
+        // (`--k2-start-least`) and nothing is left to fold.
+        const cut = await page.evaluate((bar) => {
+          const element = document.querySelector(bar)!;
+          const endBox = element.querySelector(":scope > .k2-bar-end")!.getBoundingClientRect();
+          const start = element.querySelector<HTMLElement>(":scope > .k2-bar-start");
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;width:var(--k2-start-least)";
+          start?.append(probe);
+          const least = probe.getBoundingClientRect().width;
+          probe.remove();
+          const atLeast = start ? start.getBoundingClientRect().width <= least + 1 : false;
+          const clipped = [...element.querySelectorAll<HTMLElement>(":scope > .k2-bar-end .k2-btn")]
+            .filter((button) => button.checkVisibility())
+            .some((button) => {
+              const box = button.getBoundingClientRect();
+              return box.left < endBox.left - 0.5 || box.right > endBox.right + 0.5;
+            });
+          return clipped && !atLeast;
+        }, head(which));
+        if (cut) wrong.push(`${which} at ${width}: the end cuts a button while its start is above its least`);
       }
     }
     expect(wrong).toEqual([]);
   });
-}, 60_000);
+}, 90_000);
