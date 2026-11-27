@@ -3122,6 +3122,7 @@
 /* a long value before the change ends in "…" in its place, never over a neighbour */
 .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip {
   display: block;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3177,7 +3178,7 @@
   .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action {
     margin-inline-start: auto;
   }
-  /* the deed's words end on the value's edge */
+  /* the deed's words end on the edge of the line, not on its press area */
   .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn {
     margin-inline-end: -6px;
   }

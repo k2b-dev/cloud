@@ -64,7 +64,7 @@ Names one control with a label, a hint or an error, and "optional" or a unit, or
 
 ### Setting
 
-One setting of a settings page: the name alone on the left, the control in a column of 300 px beside it, the help and "geändert · vorher …" under the control; one column on the phone.
+One setting of a settings page: the name alone on the left, the control in a column of 300 px beside it and the help under the control; "geändert · vorher …" under the name and its deed beside the value, on a narrow pane both on a line kept under the value, so a change moves nothing. One column on the phone.
 
 <Props of="Setting" />
 

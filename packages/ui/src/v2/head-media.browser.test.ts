@@ -529,7 +529,7 @@ test("a setting keeps 240 px for its name beside its value, goes to one column b
           [...document.querySelectorAll<HTMLElement>("[data-k2-part='Setting']")].map((setting) => {
             const label = setting.querySelector<HTMLElement>(".k2-field-label")!;
             const control = setting
-              .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action)")!
+              .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-end)")!
               .getBoundingClientRect();
             const box = label.getBoundingClientRect();
             const beside = control.left > box.right - 1 && control.top < box.bottom;
@@ -742,9 +742,9 @@ for (const width of [1440, 700, 390, 320])
         const places = await changedPlaces(page);
         expect(places.length).toBe(4);
         expect(places.filter((place) => !place.after || !place.inside || !place.apart)).toEqual([]);
-        // the values of the settings stand in one line down the page (on the phone a short one at the name's end)
-        const lefts = new Set(before.settings.slice(1).map((setting) => setting.control.split(",")[0]));
-        expect(lefts.size).toBe(1);
+        // beside the names the values of all settings stand in one line down the page, a short one too (on the phone a
+        // short one stands at the end of its name's line instead)
+        if (width >= 640) expect(new Set(before.settings.map((setting) => setting.control.split(",")[0])).size).toBe(1);
         // and it goes again as it came
         await page.evaluate(() => window.__k2SettingChange?.(false));
         await settled(page);
@@ -765,15 +765,23 @@ for (const width of [700, 390])
           const setting = page.locator("[data-k2-part='Setting']", { hasText: name }).first();
           await setting.locator(".k2-field-action button").focus();
           await page.keyboard.press("Shift+Tab");
-          const inValue = await setting.evaluate(
-            (element) =>
-              !!document.activeElement && element.contains(document.activeElement) && !document.activeElement.closest(".k2-field-end"),
-          );
+          const value = await setting.evaluate((element) => {
+            const focused = document.activeElement;
+            if (!focused || !element.contains(focused) || focused.closest(".k2-field-action")) return null;
+            const box = focused.getBoundingClientRect();
+            return { top: box.top, bottom: box.bottom, right: box.right, middle: box.top + box.height / 2 };
+          });
           await page.keyboard.press("Tab");
-          const onDeed = await setting.evaluate(
-            (element) => !!document.activeElement?.closest(".k2-field-action") && element.contains(document.activeElement),
-          );
-          expect({ name, inValue, onDeed }).toEqual({ name, inValue: true, onDeed: true });
+          const deed = await setting.evaluate((element) => {
+            const focused = document.activeElement;
+            if (!focused?.closest(".k2-field-action") || !element.contains(focused)) return null;
+            const box = focused.getBoundingClientRect();
+            return { top: box.top, left: box.left, middle: box.top + box.height / 2 };
+          });
+          // the deed the key reaches next stands after the value as the eye reads: on its line after it, or under it
+          const after =
+            !!value && !!deed && (deed.top >= value.bottom - 0.5 || (Math.abs(deed.middle - value.middle) < 2 && deed.left >= value.right));
+          expect({ name, value: !!value, deed: !!deed, after }).toEqual({ name, value: true, deed: true, after: true });
         }
       },
       width,
@@ -1294,26 +1302,31 @@ test("describe reports a hidden primary action on the desktop even while a detai
   );
 });
 
-test("a setting's name stands alone in its column beside the middle of its value; its help and what it was stand under the value (CLEAR AND DENSE f)", async () => {
+test("a setting's name stands alone in its column beside the middle of its value; its help stands under the value and what it was under the name, beside the help (CLEAR AND DENSE f)", async () => {
   await withPage("settings", async (page) => {
     const found = await page.evaluate(() =>
       [...document.querySelectorAll("[data-k2-part='Setting']")].map((setting) => {
         const box = (selector: string) => setting.querySelector(selector)?.getBoundingClientRect();
         const label = box(":scope > .k2-field-label")!;
         const hint = box(":scope > .k2-field-message");
-        const control = box(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action)")!;
-        const was = box(":scope > .k2-field-was");
+        const control = box(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-end)")!;
+        const was = box(":scope > .k2-field-end > .k2-field-was");
         return {
           name: setting.querySelector(".k2-field-label")!.textContent,
           middle: Math.abs((label.top + label.bottom) / 2 - (control.top + control.bottom) / 2) <= 2 && label.right <= control.left,
           // the one line of help starts under the value, on its edge
           help: hint ? hint.top >= control.bottom - 0.5 && Math.abs(hint.left - control.left) <= 1 : true,
-          was: was ? was.top >= (hint ?? control).bottom - 0.5 : true,
+          // "geändert" under the name on its edge, on the help's line
+          was: was
+            ? was.top >= control.bottom - 0.5 && Math.abs(was.left - label.left) <= 1 && (!hint || Math.abs(was.top - control.bottom) <= 1)
+            : null,
         };
       }),
     );
-    expect(found.filter((setting) => !setting.middle || !setting.help || !setting.was)).toEqual([]);
+    expect(found.filter((setting) => !setting.middle || !setting.help || setting.was === false)).toEqual([]);
     expect(found.length).toBeGreaterThan(3);
+    // the recipe's changed setting shows it, so the place is measured, not skipped
+    expect(found.filter((setting) => setting.was === true).length).toBe(1);
   });
 });
 

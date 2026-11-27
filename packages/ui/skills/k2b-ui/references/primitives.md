@@ -362,18 +362,19 @@ lines instead of cutting a thing.
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
 - `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
-  change says "geändert · vorher 12 Std." under its control), `action`
-  (one quiet deed after the value, such as "Auf Standard zurücksetzen"
-  while the value differs from its default), one control as child. One
-  setting of a settings page: the name (13, 500) alone in a column of 240
-  px, beside the middle of the control in a column of 300 px; the one line
-  of help and what it was under the control. One column, the hint under
-  the name, when its pane is narrower than 640 px (800 px with an
-  `action`; by the pane, not the window). `compact` (a number with its unit, a short
-  selection) and a `Check` keep the value beside the name also there. A
-  column of settings ends above the phone's floating main action. Never
-  stack `Field`s
-  as a settings page.
+  change says "geändert · vorher 12 Std."), `action` (one quiet deed after
+  the value, such as "Auf Standard zurücksetzen" while the value differs
+  from its default), one control as child. One setting of a settings page:
+  the name (13, 500) alone in a column of 240 px, beside the middle of the
+  control in a column of 300 px; the one line of help under the control,
+  "geändert" under the name and the deed beside the value. Below 800 px of
+  pane both stand on a line kept under the value ("geändert" at its start,
+  the deed at its end); below 640 px the value goes under the name and its
+  hint (by the pane, not the window). Their places are kept, so a change
+  moves nothing, and Tab reaches the deed after the value. `compact` (a
+  number with its unit, a short selection) and a `Check` keep the value
+  beside the name also on the phone. A column of settings ends above the
+  phone's floating main action. Never stack `Field`s as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
