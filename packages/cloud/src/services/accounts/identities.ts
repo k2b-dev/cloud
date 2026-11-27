@@ -61,6 +61,7 @@ const page = <T extends { id: string }>(rows: T[]): AccountIdentityPage<T> => ({
   items: rows.slice(0, PAGE_SIZE),
   nextCursor: rows.length > PAGE_SIZE ? rows[PAGE_SIZE - 1]!.id : null,
 });
+const groupIdSchema = z.uuid();
 const cursor = (after?: string): string | null => {
   if (after !== undefined && !cursorSchema.safeParse(after).success) throw new AccountIdentityError("invalid_cursor", 400);
   return after ?? null;
@@ -306,6 +307,39 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
         AND ${buildMemberGroupScopeCondition({ userId: row.id, groupProvider: sql`g.provider` })}
       `),
       );
+    },
+    /**
+     * How many people belong to each of the given groups, members of nested groups of the same provider counted once;
+     * an expired account does not count.
+     * Only groups the actor belongs to themselves are counted; any other group is left out, so a count never tells
+     * about a group the actor is not in. Counts only, no names. At most `PAGE_SIZE` groups per call.
+     */
+    async groupMemberCounts(actor: RequestActor, groupIds: readonly string[]): Promise<{ groupId: string; members: number }[]> {
+      const { row, state } = await requireUser(actor);
+      if (groupIds.length > PAGE_SIZE) throw new AccountIdentityError("too_many_groups", 400);
+      if (!groupIds.every((id) => groupIdSchema.safeParse(id).success)) throw new AccountIdentityError("invalid_group_id", 400);
+      const ids = [...new Set(groupIds)];
+      if (!ids.length) return [];
+      const rows = await db()<{ group_id: string; members: number }[]>`
+        WITH RECURSIVE wanted AS (
+          SELECT g.id AS root_id, g.id AS group_id, g.provider
+          FROM auth.groups g
+          WHERE g.id = ANY(${ids}::uuid[])
+            AND (g.provider = 'local' OR ${state.freeipaEnabled})
+            AND ${buildMemberGroupScopeCondition({ userId: row.id, groupProvider: sql`g.provider` })}
+          UNION
+          SELECT w.root_id, gg.child_group_id, w.provider
+          FROM wanted w
+          JOIN auth.group_groups_v2 gg ON gg.parent_group_id = w.group_id
+          JOIN auth.groups child ON child.id = gg.child_group_id
+          WHERE child.provider = w.provider
+        )
+        SELECT w.root_id AS group_id, count(DISTINCT ug.user_id)::integer AS members
+        FROM wanted w JOIN auth.user_groups_v2 ug ON ug.group_id = w.group_id
+        JOIN auth.users u ON u.id = ug.user_id AND (u.account_expires IS NULL OR u.account_expires > now())
+        GROUP BY w.root_id
+      `;
+      return rows.map((value) => ({ groupId: value.group_id, members: value.members }));
     },
     inventory,
   };
