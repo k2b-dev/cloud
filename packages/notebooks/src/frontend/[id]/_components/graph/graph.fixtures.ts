@@ -266,3 +266,69 @@ export function bigGraph(): NoteGraph {
   links.push(["t10", "r0"], ["t11", "r2"], ["t11", "t10"], ["t7", "r4"], ["t5", "r1"], ["t8", "r3"]);
   return toGraph(rows, links, Object.fromEntries(rows.map((row, index) => [row.id, index.toString(36).padStart(6, "0")])));
 }
+
+/**
+ * The worst realistic notebook for the graph and its list: 1,000 notes in nine areas (more areas than colours), titles
+ * at the 200-character limit, an address without a break, one letter, no title, emoji, Japanese, Arabic and
+ * Vietnamese, a page that 400 notes link to, and notes without a link.
+ */
+export function worstGraph(): NoteGraph {
+  const random = seededRandom(11);
+  const long =
+    "Verfahrensanweisung zur Annahme, Prüfung und Einlagerung temperaturgeführter Gefahrstoffe im Außenlager Halle 7 einschließlich Dokumentation der Chargenrückverfolgung und Freigabe durch die Qualitätssicherung";
+  const areas = [
+    "Qualitätsmanagement und Dokumentation nach DIN EN ISO 9001:2015 für alle Standorte",
+    "https://wiki.northwind-industries-holdings.example.com/logistik/wareneingang",
+    "Q",
+    "🚚 Versand & Touren ✅",
+    "倉庫管理の手順と安全規則",
+    "دليل المستودع",
+    "Quy trình nhập kho và kiểm tra chất lượng",
+    "",
+    "Archiv",
+  ];
+  const special = [
+    long.slice(0, 200),
+    "https://wiki.northwind-industries-holdings.example.com/logistik/wareneingang/annahme-pruefen",
+    "Q",
+    "",
+    "🚚🚚🚚 Touren KW 47 ✅",
+    "倉庫内のフォークリフト安全講習",
+    "تعليمات السلامة للرافعات الشوكية",
+    "Hướng dẫn sử dụng máy quét mã vạch",
+    "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+  ];
+  const rows: Row[] = [{ id: "hub", title: "Übersicht", parent: null, upd: NOW - 2 * HOUR }];
+  const links: Link[] = [];
+  const all: string[] = [];
+  areas.forEach((area, ai) => {
+    const rid = `a${ai}`;
+    rows.push({ id: rid, title: area, parent: null, upd: NOW - (ai + 1) * 30 * HOUR });
+    links.push(["hub", rid]);
+    for (let ni = 0; ni < 110; ni++) {
+      const id = `n${ai}_${ni}`;
+      const title = ni < special.length ? special[(ni + ai) % special.length]! : `${area.slice(0, 24) || "Notiz"} ${ni + 1}`;
+      rows.push({ id, title, parent: rid, upd: NOW - Math.round(random() * 9000) * HOUR });
+      all.push(id);
+    }
+  });
+  // up to 1,000 notes: the rest of the slots stay unlinked at the top level
+  while (rows.length < 1000) rows.push({ id: `u${rows.length}`, title: `Lose Notiz ${rows.length}`, parent: null, upd: NOW - 400 * HOUR });
+  for (const [index, id] of all.entries()) {
+    // 400 notes link to the overview, most notes link to one or two others, every 13th to none
+    if (index % 13 === 0) continue;
+    if (index < 400) links.push([id, "hub"]);
+    links.push([id, all[Math.floor(random() * all.length)]!]);
+    if (random() < 0.3) links.push([id, all[Math.floor(random() * all.length)]!]);
+  }
+  return toGraph(rows, links, Object.fromEntries(rows.map((row, index) => [row.id, `w${index.toString(36).padStart(5, "0")}`])));
+}
+
+/** The smallest graph with a figure: two notes, one link, and one note without a link (every count at 1). */
+export function oneLinkGraph(): NoteGraph {
+  const rows = parseTree(`
+start|Start|2
+ regal|Regalplan|5
+ tor|Torbelegung|9`);
+  return toGraph(rows, [["regal", "tor"]], Object.fromEntries(rows.map((row) => [row.id, row.id.padEnd(6, "0")])));
+}

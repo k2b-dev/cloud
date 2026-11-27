@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import { createComponent } from "solid-js";
@@ -71,8 +72,11 @@ export async function startGraphServer() {
       return output.outputs[0]!.text();
     }),
   );
-  const css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  // the shipped page-head order and cascade: Cloud, the app, then v2
+  const v2Css = await Bun.file(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css"))).text();
+  const css = ["@layer properties, theme, base, components, utilities;", ...outputs, v2Css].join("\n");
   const uiDist = resolve(ui, "dist");
+  let bookName: string | null = null;
   return Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -84,13 +88,34 @@ export async function startGraphServer() {
         const file = Bun.file(resolve(uiDist, url.pathname.slice(4)));
         return (await file.exists()) ? new Response(file) : new Response("Not found", { status: 404 });
       }
-      // The live Book update fails, so its notice shows.
+      // A test names the notebook the next live Book update brings; without a name the update fails, so its notice shows.
+      if (url.pathname === "/__fixture/book-name") {
+        bookName = url.searchParams.get("name");
+        return new Response(null, { status: 204 });
+      }
+      const book = /^\/api\/notebooks\/(\w{6})\/book$/.exec(url.pathname);
+      if (book && bookName) {
+        const href = url.searchParams.get("href") ?? "";
+        return Response.json({
+          href,
+          html: null,
+          title: null,
+          notebookName: bookName,
+          selectedNoteId: /\/notes\/(\w{6})/.exec(href)?.[1] ?? null,
+          hasNotes: true,
+          tags: [],
+          canWrite: false,
+          locked: false,
+          historyIncomplete: false,
+          cursor: null,
+        });
+      }
       if (url.pathname.startsWith("/api/")) return new Response("Unavailable", { status: 503 });
       const dark = url.searchParams.get("theme") === "dark";
       const lang = url.searchParams.get("lang") === "de" ? "de" : "en";
       const page = (body: string, script = "") =>
         new Response(
-          `<!doctype html><html lang="${lang}"${dark ? ' class="dark"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0;--app-accent:#eab308"><div id="root" style="height:100dvh;display:flex;flex-direction:column">${body}</div>${script}</body></html>`,
+          `<!doctype html><html lang="${lang}"${dark ? ' class="dark"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0;--app-accent:#eab308"><div id="root" class="k2-ui" style="height:100dvh;display:flex;flex-direction:column">${body}</div>${script}</body></html>`,
           { headers: { "content-type": "text/html; charset=utf-8" } },
         );
       const note = /^\/app\/notebooks\/(\w{6})\/notes\/(\w{6})$/.exec(url.pathname);

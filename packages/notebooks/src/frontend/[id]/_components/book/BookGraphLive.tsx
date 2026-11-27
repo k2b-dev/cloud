@@ -1,5 +1,5 @@
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -72,10 +72,49 @@ export default function BookGraphLive(props: Props) {
       window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
     });
   });
-  // Over the graph, not in its flow, so the notice moves nothing when it appears. It starts below the graph's two
-  // toolbar rows, so it never covers Close, the search or the filters.
+  // Over the page, not in its flow, so the notice moves nothing when it appears: centred over the graph's pane and below
+  // whatever heads the pane has (the pane head may be absent, a phone's heads are different), measured while it shows.
+  const [place, setPlace] = createSignal<{ top: number; left: number; width: number } | null>(null);
+  const pane = () => document.querySelector<HTMLElement>('[data-k2-workspace] [data-k2-part="Pane"]');
+  const measure = () => {
+    // the pane's last part is its content, under its head and status
+    const content = (pane()?.lastElementChild ?? pane())?.getBoundingClientRect();
+    setPlace(content ? { top: content.top, left: content.left, width: content.width } : null);
+  };
+  createEffect(() => {
+    if (!failed()) return;
+    // The pane moves or resizes with the window and the sidebar's grip; its content changes with the list and the
+    // drawing, which can bring or take the pane's head; and the workspace can put a new pane in its place. The
+    // workspace is watched, and a new pane is followed; other changes inside it (the drawing's labels) cost a compare.
+    const sizes = new ResizeObserver(measure);
+    let observed: HTMLElement | null = null;
+    const follow = (changes: readonly MutationRecord[] = []) => {
+      const next = pane();
+      if (next !== observed) {
+        sizes.disconnect();
+        observed = next;
+        if (next) sizes.observe(next);
+      } else if (!changes.some((change) => change.target === observed)) return;
+      measure();
+    };
+    const workspace = document.querySelector<HTMLElement>("[data-k2-workspace]");
+    const parts = new MutationObserver(follow);
+    if (workspace) parts.observe(workspace, { childList: true, subtree: true });
+    follow();
+    measure();
+    window.addEventListener("resize", measure);
+    onCleanup(() => {
+      sizes.disconnect();
+      parts.disconnect();
+      window.removeEventListener("resize", measure);
+    });
+  });
+  const style = () => {
+    const at = place();
+    return at ? { top: `${at.top + 12}px`, left: `${at.left}px`, width: `${at.width}px` } : { top: "0", left: "0", right: "0" };
+  };
   return (
-    <div aria-live="polite" class="notebook-graph-live-notice pointer-events-none absolute inset-x-0 z-20 flex justify-center px-12">
+    <div aria-live="polite" class="notebook-graph-live-notice pointer-events-none fixed z-20 flex justify-center px-12" style={style()}>
       <Show when={failed()}>
         <NoticeCard role="alert" tone="danger" title={t().updateLoadFailed} class="pointer-events-auto max-w-md">
           <Button variant="secondary" size="xs" loading={retrying()} onClick={retry}>

@@ -1,10 +1,9 @@
-import { AppWorkspace } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
-import NotebookGraph from "../graph/NotebookGraph.island";
+import BookGraphWorkspace from "../graph/BookGraphWorkspace.island";
 import type { GraphViewState } from "../graph/view-state";
-import BookNavigator, { type BookNavigatorProps } from "./BookNavigator.island";
+import type { BookNavigatorProps } from "./BookNavigatorBody";
 
 export type BookGraphFixtureProps = { navigator: BookNavigatorProps; graph: NoteGraph | null; view: GraphViewState; now: string };
 type Box = { x: number; width: number; height: number };
@@ -14,36 +13,33 @@ declare global {
   }
 }
 
+/** Book's graph, or (without a graph) the Book page it opens from, both on v2 as the page shows them. */
 export function BookGraphFixture(props: BookGraphFixtureProps) {
-  return (
-    <div class="notebook-book-shell">
-      <AppWorkspace mobileSurface="flush" class="notebook-book-workspace">
-        {createComponent(BookNavigator, props.navigator)}
-        <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={false}>
-            {props.graph ? (
-              createComponent(NotebookGraph, {
-                notebookId: props.navigator.notebookId,
-                notebookName: props.navigator.notebookName,
-                selectedNoteId: props.navigator.selectedNoteId,
-                graph: props.graph,
-                from: "book",
-                backHref: props.navigator.graphBack,
-                view: props.view,
-                now: props.now,
-                timeZone: "Europe/Berlin",
-              })
-            ) : (
-              <article id="notebook-book-content" class="notebook-book-content">
-                <h1>Glossary</h1>
-                <p>Terms used by our team.</p>
-              </article>
-            )}
-          </AppWorkspace.Main>
-        </AppWorkspace.Content>
-      </AppWorkspace>
-    </div>
-  );
+  return props.graph
+    ? createComponent(BookGraphWorkspace, {
+        navigator: props.navigator,
+        notebookId: props.navigator.notebookId,
+        notebookName: props.navigator.notebookName,
+        selectedNoteId: props.navigator.selectedNoteId,
+        graph: props.graph,
+        from: "book",
+        backHref: props.navigator.graphBack,
+        view: props.view,
+        now: props.now,
+        timeZone: "Europe/Berlin",
+      })
+    : // the Book page it opens from: until Book itself runs on v2, the same v2 shell without a graph, Links not current
+      createComponent(BookGraphWorkspace, {
+        navigator: { ...props.navigator, current: undefined },
+        notebookId: props.navigator.notebookId,
+        notebookName: props.navigator.notebookName,
+        selectedNoteId: props.navigator.selectedNoteId,
+        graph: null,
+        from: "book",
+        view: props.view,
+        now: props.now,
+        timeZone: "Europe/Berlin",
+      });
 }
 
 if (typeof document !== "undefined") {

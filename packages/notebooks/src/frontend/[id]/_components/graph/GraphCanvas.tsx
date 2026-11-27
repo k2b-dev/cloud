@@ -20,6 +20,8 @@ import { type GraphModel, type GraphModelEdge, type GraphNote, matchesQuery } fr
 export type GraphZoomControls = { zoom: (factor: number) => void; fit: () => void };
 
 export type GraphDisplayProps = {
+  /** A large notebook's graph holds the pages around one page: how many pages the notebook has. */
+  scopeTotal?: number;
   model: GraphModel;
   notes: readonly GraphNote[];
   edges: readonly GraphModelEdge[];
@@ -632,7 +634,14 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   const idleText = () => {
     const query = props.query.trim();
     if (!positions()) return t().graphArranging({ count: shownNotes().length });
-    if (!query) return t().graphNoteCount({ notes: shownNotes().length, links: drawnEdges().length });
+    if (!query) {
+      const count = props.scopeTotal
+        ? t().graphNoteCountScoped({ notes: shownNotes().length, total: props.scopeTotal, links: drawnEdges().length })
+        : t().graphNoteCount({ notes: shownNotes().length, links: drawnEdges().length });
+      // the exception of the drawn notes: those without a link (the filter "Nur unverknüpfte" shows them)
+      const unlinked = shownNotes().filter((note) => note.orphan).length;
+      return unlinked ? `${count} · ${t().graphUnlinkedCount({ count: unlinked })}` : count;
+    }
     if (queryHits())
       return props.neighborhood && filteredHits() > queryHits()
         ? t().graphNeighborhoodSearchHits({ query, count: queryHits(), total: filteredHits() })

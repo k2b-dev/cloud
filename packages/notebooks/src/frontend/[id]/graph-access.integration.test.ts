@@ -74,11 +74,11 @@ suite("Notebook graph read access on SSR and REST", () => {
       const response = await app.request(`/app/notebooks/${a.shortId}?mode=graph&note=${a1.shortId}`, { headers: headers(reader) });
       expect(response.status).toBe(200);
       const html = await response.text();
-      expect(html).toContain("notebook-book-workspace");
+      expect(html).toContain('data-file="BookGraphWorkspace.island.tsx"');
       expect(html).not.toContain(b1.title);
       expect(html).not.toContain(b1.shortId);
       expect(html).not.toContain("Body must stay out of the graph.");
-      const [island] = await selectHtml(html, 'solid-island[data-file="NotebookGraph.island.tsx"]');
+      const [island] = await selectHtml(html, 'solid-island[data-file="BookGraphWorkspace.island.tsx"]');
       expect(island).toBeDefined();
       const serialized = island!.attributes["data-props"]!;
       const props = fromJSON<{ graph: NoteGraph; selectedNoteId: string; from: string }>(

@@ -418,39 +418,19 @@ const renderNotebookWithNotes = async (
   return response.text();
 };
 
-test("a hidden navigation is server-rendered without the note tree", async () => {
-  // A cookie from the former Navigator layout renders the one sidebar.
-  const html = await renderNotebookWithNotes({ sidebarMode: "navigator", navigationHidden: true });
-  const [sidebar, ...others] = await select(html, "aside.k2b-app-workspace__sidebar");
-
-  expect(others).toEqual([]);
-  expect(sidebar?.attributes.id).toBe("notebook-navigation");
-  expect(sidebar?.attributes.hidden).toBeDefined();
-  expect(sidebar?.text).toBe("");
-  expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
-  expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
-  expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
-  // The graph's own toolbar holds the workspace's navigation button, so neither the sidebar nor a head adds one.
-  expect(await select(html, ".k2b-app-workspace__head")).toEqual([]);
-  expect(
-    (await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => [
-      button.attributes["aria-label"],
-      button.attributes["data-app-workspace-sidebar-toggle"],
-    ]),
-  ).toEqual([["Navigation", ""]]);
-});
-
-test("a visible navigation is server-rendered with its one sidebar and note tree, also for a former Navigator layout", async () => {
-  for (const preferences of [{}, { sidebarMode: "navigator" }]) {
+test("the graph is one v2 workspace whose sidebar holds the note tree, also for a former Navigator layout", async () => {
+  // Hiding the navigation belongs to the v2 frame (lane Z2); until then a hidden navigation shows as well.
+  for (const preferences of [{}, { sidebarMode: "navigator" }, { sidebarMode: "navigator", navigationHidden: true }]) {
     const html = await renderNotebookWithNotes(preferences);
-    const [sidebar] = await select(html, "aside.k2b-app-workspace__sidebar");
-    expect(sidebar?.attributes.hidden).toBeUndefined();
-    expect(sidebar?.text).toContain("Private folder");
-    expect(sidebar?.text).toContain("Notizen durchsuchen");
-    expect(sidebar?.text).toContain("Favoriten");
-    expect(sidebar?.text).toContain("Zuletzt");
-    expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toHaveLength(1);
-    // No second column lists the notes again.
+    const workspaces = await select(html, "[data-k2-workspace]");
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]?.text).toContain("Private folder");
+    expect(workspaces[0]?.text).toContain("Notizen durchsuchen");
+    expect(workspaces[0]?.text).toContain("Favoriten");
+    expect(workspaces[0]?.text).toContain("Zuletzt");
+    // the v1 frame is gone: no second sidebar, no v1 head, and no column that lists the notes again
+    expect(await select(html, "aside.k2b-app-workspace__sidebar")).toEqual([]);
+    expect(await select(html, ".k2b-app-workspace__head")).toEqual([]);
     expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
   }
 });
@@ -780,15 +760,16 @@ const renderLinkedNotebook = async (
 };
 
 for (const [locale, line] of [
-  ["en", "This notebook has 20,000 pages. The graph shows the 1 around “Welcome”"],
-  ["de", "Dieses Notizbuch hat 20.000 Seiten. Der Graph zeigt die 1 rund um „Welcome“"],
+  ["en", "1 of 20,000 notes"],
+  ["de", "1 von 20.000 Notizen"],
 ]) {
-  test(`a large notebook's graph says from its first paint that it shows the pages around one page (${locale})`, async () => {
-    const html = await renderLinkedNotebook("write", "graph", locale, "write", { around: "note01", total: 20_000 });
-    const [scope] = await select(html, ".notebook-graph__scope");
-    expect(scope?.attributes.role).toBe("note");
-    expect(scope?.text).toContain(line);
-    expect(await select(await renderLinkedNotebook("write", "graph", locale), ".notebook-graph__scope")).toHaveLength(0);
+  test(`a large notebook's graph list says in the server's markup that it holds the pages around one page (${locale})`, async () => {
+    const html = await renderLinkedNotebook("write", "graph&list=1", locale, "write", { around: "note01", total: 20_000 });
+    // the server renders the count in the head, so it is there before the island and nothing moves when the island renders
+    const [head] = await select(html, '[data-k2-workspace] [data-k2-part="Bar"]');
+    expect(head?.text).toContain(line);
+    const whole = await renderLinkedNotebook("write", "graph", locale);
+    expect((await select(whole, '[data-k2-workspace] [data-k2-part="Bar"]'))[0]?.text).not.toContain(line!.slice(0, 20));
   });
 }
 
@@ -798,10 +779,10 @@ for (const [locale, label] of [
 ]) {
   test(`reader graph renders the Book navigation and origin (${locale})`, async () => {
     const html = await renderLinkedNotebook("read", "graph", locale);
-    expect(html).toContain("notebook-book-workspace");
+    expect(html).toContain('data-file="BookGraphWorkspace.island.tsx"');
     expect(html).not.toContain("Private note body.");
     expect(html).not.toContain("notebook-book-content");
-    const rows = await select(html, ".notebook-book-workspace .notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+    const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
     expect(rows).toHaveLength(1);
     expect(rows[0]?.text.trim()).toBe(label!);
     expect(rows[0]?.attributes["aria-current"]).toBe("page");
@@ -815,7 +796,8 @@ for (const [locale, label] of [
     expect(await select(html, '[role="tree"] [aria-current="page"]')).toEqual([]);
     // Like Book, the reading graph follows revoked access and ended sessions.
     expect(await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]')).toHaveLength(1);
-    expect(await select(html, 'solid-island[data-file="BookGraphLive.island.tsx"]')).toHaveLength(1);
+    // its live notice stands over the drawing inside the graph's island
+    expect(await select(html, 'solid-island[data-file="BookGraphWorkspace.island.tsx"]')).toHaveLength(1);
   });
 
   test(`reader Book note has a Links footer that is not current (${locale})`, async () => {
@@ -833,7 +815,7 @@ for (const [locale, label] of [
 
 test("writer graph marks Links current in the workspace footer and phone navigation", async () => {
   const html = await renderLinkedNotebook("write", "graph");
-  expect(html).not.toContain("notebook-book-workspace");
+  expect(html).not.toContain('data-file="BookGraphWorkspace.island.tsx"');
   const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
   expect(rows.map((item) => item.text.trim())).toEqual(["Links", "Attachments", "Settings"]);
   expect(rows[0]?.attributes["aria-current"]).toBe("page");
@@ -850,14 +832,16 @@ test("writer graph marks Links current in the workspace footer and phone navigat
 
 test("writer graph from Book keeps Write pointed at the selected note", async () => {
   const html = await renderLinkedNotebook("write", "graph&from=book");
-  expect(html).toContain("notebook-book-workspace");
-  expect((await select(html, '#notebook-navigation a[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe("Write");
+  expect(html).toContain('data-file="BookGraphWorkspace.island.tsx"');
+  expect((await select(html, '.k2b-app-workspace__sidebar-item[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe(
+    "Write",
+  );
   expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe("/app/notebooks/book01/notes/note01?mode=book");
 });
 
 test.each(["write", "readonly"] as const)("writer graph preserves %s origin over the Book default", async (mode) => {
   const html = await renderLinkedNotebook("write", `graph&from=${mode}`, "en", "book");
-  expect(html).not.toContain("notebook-book-workspace");
+  expect(html).not.toContain('data-file="BookGraphWorkspace.island.tsx"');
   const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
   expect(rows[0]?.text.trim()).toBe("Links");
   expect(rows[0]?.attributes.href).toBe(
@@ -871,15 +855,15 @@ test.each(["write", "readonly"] as const)("writer graph preserves %s origin over
 test("an empty notebook's graph still offers Close back to the notebook", async () => {
   const html = await renderEmptyNotebook("graph");
   expect(html).toContain("Dieses Notizbuch hat noch keine Notizen.");
-  // The graph toolbar renders Close twice: a back chevron on phones and a close button from md up.
+  // one × in the workspace head, which stays on the phone
   const close = await select(html, 'a[aria-label="Graph schließen"]');
-  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01", "/app/notebooks/book01"]);
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01"]);
 });
 
 test("an empty graph preserves the Read-only origin when closing to the notebook", async () => {
   const html = await renderEmptyNotebook("graph&from=readonly");
   const close = await select(html, 'a[aria-label="Graph schließen"]');
-  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly", "/app/notebooks/book01?mode=readonly"]);
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly"]);
 });
 
 for (const permission of ["write", "read"] as const) {
@@ -912,14 +896,15 @@ test.each(["note02", "other1"])(
       "graph",
       `&display=neighborhood&note=${queryNote}`,
     );
-    const [island] = await select(html, 'solid-island[data-file="NotebookGraph.island.tsx"]');
+    const [island] = await select(html, 'solid-island[data-file="NotebookGraphWorkspace.island.tsx"]');
     expect(island).toBeDefined();
     const props = islandProps(island?.attributes["data-props"]);
     expect(props.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note01");
     expect(props.view).toMatchObject({ display: "neighborhood", depth: 2, sort: null });
     expect(props.timeZone).toBe("UTC");
-    const [title] = await select(html, ".notebook-graph__title small");
-    expect(title?.text).toContain(`von „${queryNote === "note02" ? "Team notes" : "Private folder"}“`);
+    // Close leads back to the note the graph was opened from
+    const [close] = await select(html, 'a[aria-label="Graph schließen"]');
+    expect(close?.attributes.href).toContain(`/notes/${queryNote === "note02" ? "note02" : "note01"}`);
     expect(html).not.toContain("Foreign note");
   },
 );
