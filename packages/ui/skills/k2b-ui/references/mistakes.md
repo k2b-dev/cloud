@@ -82,7 +82,8 @@ One filled action per surface: the page, and each open dialog or sheet
 
 Head actions hide on the phone. Give `Workspace` the same action as
 `primary`; it floats there, and mark the head's button `floats`. A head
-button that must stay gets `keep`.
+button that must stay gets `keep`. An open detail on the phone is a page of its own: the
+list's main action does not float over it, and the check says nothing there.
 
 ### `2 primary buttons ("Neu", "Neu")` (outline at 390 px)
 

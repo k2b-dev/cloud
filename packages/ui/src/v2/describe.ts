@@ -549,8 +549,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const surface = surfaceOf(button);
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
+  // On the phone an open detail is a page of its own, and the list's main action does not float over it on purpose.
+  const detailIsPage = [...root.querySelectorAll(".k2-pane[data-detail]")].some((pane) => !hidden(pane));
   if (
     options.layout &&
+    !detailIsPage &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )

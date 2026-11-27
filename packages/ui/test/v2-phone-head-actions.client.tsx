@@ -3,14 +3,15 @@ import { Bar, Button, Input, Menu, Pane, Path, Text, Workspace } from "../src/v2
 
 // A head as the Assistant draws it, in the shapes a page has (src/v2/phone-head-actions.browser.test.ts): a chat, whose
 // head holds where it stands, the search, its menu "…" and "Neuer Chat"; a list, whose head holds where it stands, the
-// search and the main action that the workspace repeats as the floating button on the phone; and a bare head without a
-// start, only the search and the menu "…".
+// search and the main action that the workspace repeats as the floating button on the phone; a bare head without a
+// start, only the search and the menu "…"; a list with an open detail (on the phone the detail is the page, and no
+// main action floats over it); and a list whose head has a main action but the workspace none ("nofab").
 
 declare global {
   interface Window {
     __k2Mounted?: boolean;
     /** Set before the fixture mounts: the shape of the page. */
-    __k2HeadKind?: "chat" | "list" | "bare";
+    __k2HeadKind?: "chat" | "list" | "bare" | "detail" | "nofab";
     /** What the head's search sent with Enter. */
     __k2Searched?: string;
     /** What the chat's menu opened. */
@@ -41,7 +42,7 @@ render(
                   if (event.key === "Enter") window.__k2Searched = (event.currentTarget as HTMLInputElement).value;
                 }}
               />
-              {kind !== "list" ? (
+              {kind === "chat" || kind === "bare" ? (
                 <Menu
                   label="Aktionen des Chats"
                   items={[{ label: "In diesem Chat", icon: "layout-list", onClick: () => (window.__k2Opened = "context") }]}
@@ -58,9 +59,20 @@ render(
       }
       primary={kind === "list" ? { label: "Neuer Chat", icon: "plus" } : undefined}
     >
-      <Pane label="Inhalt">
-        <Text>Die erste Zeile des Inhalts.</Text>
-      </Pane>
+      {kind === "detail" ? (
+        <Pane.Split>
+          <Pane label="Liste" width={{ min: 280, default: 360 }}>
+            <Text>Die Liste.</Text>
+          </Pane>
+          <Pane label="Angebot Küche Lindqvist" detail back={{ label: "Liste", href: "#liste" }}>
+            <Text>Das offene Angebot.</Text>
+          </Pane>
+        </Pane.Split>
+      ) : (
+        <Pane label="Inhalt">
+          <Text>Die erste Zeile des Inhalts.</Text>
+        </Pane>
+      )}
     </Workspace>
   ),
   document.getElementById("root")!,

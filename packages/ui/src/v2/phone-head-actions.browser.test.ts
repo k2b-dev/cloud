@@ -24,7 +24,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (kind: "chat" | "list" | "bare", width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (kind: "chat" | "list" | "bare" | "detail" | "nofab", width: number, run: (page: Page) => Promise<void>) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -94,6 +94,19 @@ test("390: the host's bar still reaches the folded search of a head that gave wa
     await page.keyboard.type("Angebot");
     await page.keyboard.press("Enter");
     expect(await page.evaluate(() => window.__k2Searched)).toBe("Angebot");
+  });
+}, 30_000);
+
+test("390: an open detail is the page, the list's main action does not float over it, and the check says nothing", async () => {
+  await withPage("detail", 390, async (page) => {
+    expect(await page.locator(".k2-fab").count()).toBe(0);
+    expect(await describeV2Page(page)).not.toContain("the primary action is hidden at this width");
+  });
+}, 30_000);
+
+test("390: a list whose main action has no floating twin still gets the check's finding", async () => {
+  await withPage("nofab", 390, async (page) => {
+    expect(await describeV2Page(page)).toContain("the primary action is hidden at this width");
   });
 }, 30_000);
 
