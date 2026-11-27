@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { cssColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
@@ -486,7 +487,10 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
                     inputRef?.select();
                   }}
                 >
-                  <Show when={option.color} fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}>
+                  <Show
+                    when={cssColor(option.color)}
+                    fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+                  >
                     {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
                   </Show>
                   <span>

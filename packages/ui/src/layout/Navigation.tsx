@@ -2,6 +2,7 @@ import { documentNavigate, Link, swapPage } from "@k2b/ssr/nav";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { Dropdown } from "../actions/Dropdown";
+import { cssColor } from "../internal/color";
 import type { NavigationController, NavigationItem } from "./navigation-model";
 import { AppWorkspaceSidebarSwitcher } from "./SidebarSwitcher";
 import { useWorkspaceMessages } from "./workspace-messages";
@@ -59,7 +60,7 @@ export default function Navigation(props: NavigationProps) {
                 </Show>
               </span>
               <Show when={item().color}>
-                <span class="k2b-navigation__color" style={{ "background-color": item().color }} />
+                <span class="k2b-navigation__color" style={{ "background-color": cssColor(item().color) }} />
               </Show>
               <Show when={item().badge !== undefined}>
                 <span class="k2b-navigation__badge">{item().badge}</span>
