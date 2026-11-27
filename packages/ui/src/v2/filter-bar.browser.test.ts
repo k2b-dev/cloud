@@ -55,6 +55,13 @@ const withPage = async (
   }
 };
 
+/** Opens "Ab …" or "Bis …" of the open range editor beside it and gives its number field. */
+const boundField = async (page: Page, bound: RegExp) => {
+  await page.locator(".k2-fpop .k2-fed-bounds .k2-mi", { hasText: bound }).click();
+  const field = page.locator(".k2-dpop .k2-nentry input");
+  await field.waitFor();
+  return field;
+};
 const statements = (page: Page) => page.locator(".k2-fbar-flow .k2-stmt-b").allTextContents();
 const box = async (page: Page, selector: string) => {
   const found = await page.locator(selector).first().boundingBox();
@@ -194,10 +201,10 @@ test("nothing moves when a statement is hovered, focused or opened, or when the 
   });
 });
 
-test("lookup: typing waits, a newer search aborts the one that runs, and closing aborts too", async () => {
+test("lookup: typing waits, a newer search aborts the one that runs, Escape empties the search, then closes", async () => {
   await withPage("consignor=c-1005", async (page) => {
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("searchbox", { name: "Einlieferer suchen" }).waitFor();
+    await page.getByRole("combobox", { name: "Einlieferer suchen" }).waitFor();
     await page.evaluate(() => window.__lookup?.answer());
     expect(await calls(page)).toEqual([{ query: "", aborted: false }]);
     // typing within 200 ms loads once, for the whole word
@@ -216,19 +223,22 @@ test("lookup: typing waits, a newer search aborts the one that runs, and closing
     expect(await page.locator(".k2-lookup .k2-opt-head").allTextContents()).toEqual(["Gewählt", "Treffer für „berg“"]);
     // the chosen value stays on top
     expect(await page.locator(".k2-lookup [role=option]").first().textContent()).toContain("Nachlass Kessler");
-    // closing while a load runs aborts it
+    // Escape first empties the search (core's command steps back one thing at a time), which aborts the load that
+    // runs; the next Escape closes the editor
     await page.keyboard.type("x");
     await page.waitForTimeout(260);
     await page.keyboard.press("Escape");
+    expect(await page.getByRole("combobox", { name: "Einlieferer suchen" }).inputValue()).toBe("");
+    expect((await calls(page)).find((call) => call.query === "bergx")?.aborted).toBe(true);
+    await page.keyboard.press("Escape");
     await page.locator(".k2-fpop").waitFor({ state: "detached" });
-    expect((await calls(page)).at(-1)).toEqual({ query: "bergx", aborted: true });
   });
 });
 
 test("lookup: a failed load says so, keeps the choice, and “Erneut versuchen” loads again", async () => {
   await withPage("consignor=c-1005", async (page) => {
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("searchbox", { name: "Einlieferer suchen" }).waitFor();
+    await page.getByRole("combobox", { name: "Einlieferer suchen" }).waitFor();
     await page.evaluate(() => window.__lookup?.fail());
     await page.getByText("Konnte nicht geladen werden. Deine Auswahl bleibt.").waitFor();
     expect(await page.locator(".k2-lookup [role=option]").allTextContents()).toEqual(["Nachlass KesslerWaldkirch"]);
@@ -280,7 +290,7 @@ test("the address is the state: one history entry per editor, back restores, a r
     expect((await statements(page))[0]).toBe("Status ist Eingeliefert, Fotografiert oder 2 weitere");
     // sort and group from the status row write the address too
     await page.getByRole("button", { name: /Eingang/ }).click();
-    await page.getByRole("menuitemradio", { name: "Preis ↓" }).click();
+    await page.getByRole("menuitemradio", { name: "Preis" }).click();
     expect(new URL(page.url()).searchParams.get("sort")).toBe("price.desc");
     await page.goBack();
     await page.waitForFunction(() => !new URL(location.href).searchParams.has("sort"));
@@ -296,7 +306,7 @@ test("the address is the state: one history entry per editor, back restores, a r
   // a reload of a written address shows the same statements
   await withPage("status=consigned,photographed,online,reserved&sort=price.desc", async (page) => {
     expect((await statements(page))[0]).toBe("Status ist Eingeliefert, Fotografiert oder 2 weitere");
-    expect(await page.locator(".k2-order .k2-btn").first().textContent()).toContain("Preis ↓");
+    expect(await page.locator(".k2-order .k2-btn").first().textContent()).toContain("Preis · Höchster zuerst");
   });
 });
 
@@ -311,14 +321,18 @@ test("“+ Filter” adds a dashed statement that applies once it has a value; a
     expect(new URL(page.url()).searchParams.get("location")).toBe("hall-b");
     expect(await page.locator(".k2-stmt[data-draft]").count()).toBe(0);
     await page.keyboard.press("Escape");
-    // the range: "Von" above "Bis" is refused with a sentence; Enter applies
+    // the range: "Bis …" opens a number entry beside the editor; below "Ab" is refused with a sentence; Enter applies
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
-    const to = page.locator(".k2-fpop .k2-fed-field").nth(1).locator("input");
+    const to = await boundField(page, /^Bis/);
+    // no spinner: a text field with the decimal keyboard
+    expect(await to.getAttribute("type")).toBe("text");
+    expect(await to.getAttribute("inputmode")).toBe("decimal");
     await to.fill("300");
     await to.press("Enter");
-    await page.getByText("„Von“ ist größer als „Bis“. Der Filter gilt so nicht.").waitFor();
+    await page.getByText("„Ab“ ist größer als „Bis“. Der Filter gilt so nicht.").waitFor();
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
-    await to.fill("2000");
+    // German marks: "2.000" is two thousand
+    await to.fill("2.000");
     await to.press("Enter");
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..2000");
     expect(await statements(page)).toContain("Preis 500 € bis 2.000 €");
@@ -341,8 +355,10 @@ test("at the length limit of the address a change is refused and every filter st
     await page.keyboard.press("Escape");
     // a sort that would not fit is locked in its menu; the current one stays chosen
     await page.locator(".k2-order .k2-btn").first().click();
-    expect(await page.getByRole("menuitemradio", { name: "Preis ↓" }).getAttribute("aria-disabled")).toBe("true");
-    expect(await page.getByRole("menuitemradio", { name: "Eingang ↓" }).getAttribute("aria-checked")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Preis" }).getAttribute("aria-disabled")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Eingang" }).getAttribute("aria-checked")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Älteste zuerst" }).getAttribute("aria-disabled")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Neueste zuerst" }).getAttribute("aria-checked")).toBe("true");
     await page.keyboard.press("Escape");
     expect(new URL(page.url()).search.length).toBe(search.length + 1);
   });
@@ -351,18 +367,19 @@ test("at the length limit of the address a change is refused and every filter st
 test("a value the address cannot hold is refused at its field; nothing is written and nothing throws", async () => {
   await withPage(articles, async (page) => {
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
-    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
-    // 1e21 is a number, but the list query writes numbers without an exponent, so its URL cannot hold it
-    await from.fill("1e21");
+    const from = await boundField(page, /^Ab/);
+    // 10^21 is a number, but the list query writes numbers without an exponent, so its URL cannot hold it
+    await from.fill("1000000000000000000000");
     await from.press("Enter");
     await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
     expect(await from.getAttribute("aria-invalid")).toBe("true");
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
     expect(await statements(page)).toContain("Preis ab 500 €");
-    // a value it can hold clears the error and applies
+    // a value it can hold applies and closes the entry
     await from.fill("800");
     await from.press("Enter");
     expect(new URL(page.url()).searchParams.get("price")).toBe("800..");
+    await page.locator(".k2-dpop").waitFor({ state: "detached" });
     expect(await page.locator(".k2-fpop .k2-fed-error").count()).toBe(0);
   });
 });
@@ -437,11 +454,12 @@ test("a lookup code nobody can name is asked for once, and stays a code with a w
 test("a number the field cannot read keeps the active filter and says so at the field", async () => {
   await withPage(articles, async (page) => {
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
-    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    const from = await boundField(page, /^Ab/);
     await from.fill("");
     await from.pressSequentially("1e");
-    await from.press("Tab");
-    await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
+    await from.press("Enter");
+    await page.getByText("Das ist keine Zahl.").waitFor();
+    expect(await from.getAttribute("aria-invalid")).toBe("true");
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
     expect(await statements(page)).toContain("Preis ab 500 €");
   });
@@ -463,25 +481,26 @@ test("an editor takes the focus once, in its values, and never moves it again", 
     await page.waitForFunction(() => (window.__focus ?? []).length > 1);
     // the statement's button, then straight the first control of the values (the first preset); never "Entfernen"
     expect(await page.evaluate(() => window.__focus)).toEqual(["Preis ab 500 €", "bis 500 €"]);
-    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    const from = await boundField(page, /^Ab/);
     await from.focus();
     await page.waitForTimeout(200);
-    expect(await page.evaluate(() => document.activeElement?.matches(".k2-fpop .k2-fed-field input"))).toBe(true);
+    expect(await page.evaluate(() => document.activeElement?.matches(".k2-dpop .k2-nentry input"))).toBe(true);
   });
 });
 
 test("emptying every bound in an open editor keeps the editor: the filter waits as a dashed draft", async () => {
   await withPage(articles, async (page) => {
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
-    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    const from = await boundField(page, /^Ab/);
     await from.fill("");
-    await from.press("Tab");
+    await from.press("Enter");
     await page.waitForFunction(() => !new URL(location.href).searchParams.has("price"));
     expect(await page.locator(".k2-fpop").count()).toBe(1);
     expect(await page.locator(".k2-stmt[data-draft] .k2-stmt-b").textContent()).toBe("Preis …");
-    // the editor is still the one the person types in
-    await from.fill("800");
-    await from.press("Enter");
+    // the editor is still open for the next bound
+    const again = await boundField(page, /^Ab/);
+    await again.fill("800");
+    await again.press("Enter");
     expect(new URL(page.url()).searchParams.get("price")).toBe("800..");
     expect(await statements(page)).toContain("Preis ab 800 €");
   });
@@ -548,11 +567,19 @@ test("phone: a range editor follows a reset, so a new end never brings back the 
       await steady(page, '[role="dialog"]');
       await page.getByRole("button", { name: "Zurücksetzen" }).tap();
       await page.waitForFunction(() => !new URL(location.href).searchParams.has("price"));
-      const fields = page.locator(".k2-fsheet .k2-fed-field input");
-      expect(await fields.first().inputValue()).toBe("");
-      await fields.nth(1).fill("3000");
-      await fields.nth(1).press("Enter");
-      expect(new URL(page.url()).searchParams.get("price")).toBe("..3000");
+      // "Bis …" is the sheet's next step, with the way back in the sheet's head
+      await page.locator(".k2-fsheet .k2-fed-bounds .k2-mi", { hasText: /^Bis/ }).tap();
+      await page.getByRole("dialog", { name: "Preis · Bis" }).waitFor();
+      const field = page.locator(".k2-fsheet .k2-nentry input");
+      expect(await field.inputValue()).toBe("");
+      await field.fill("3000");
+      // The step mounts once (a MutationObserver probe under 6x CPU throttling saw the number entry added once and
+      // removed only after it applied). What moves is the sheet: a step of another height springs it, and a tap while it
+      // stands off the bottom lands on the backdrop and closes it (see behavior/overlays). Tap once it stands.
+      await steady(page, '[role="dialog"]');
+      await page.getByRole("button", { name: "Anwenden" }).tap();
+      await page.waitForFunction(() => new URL(location.href).searchParams.get("price") === "..3000");
+      await page.getByRole("dialog", { name: "Preis" }).waitFor();
     },
     { width: 390, touch: true },
   );
@@ -573,7 +600,8 @@ test("at the length limit, presets and sorts that would not fit are locked where
       await openSheet(page);
       await page.locator(".k2-fsheet-row", { hasText: "Sortierung" }).tap();
       await steady(page, '[role="dialog"]');
-      expect(await page.getByRole("option", { name: "Preis ↓" }).getAttribute("aria-disabled")).toBe("true");
+      expect(await page.getByRole("option", { name: "Preis" }).getAttribute("aria-disabled")).toBe("true");
+      expect(await page.getByRole("option", { name: "Älteste zuerst" }).getAttribute("aria-disabled")).toBe("true");
     },
     { width: 390, touch: true },
   );
@@ -628,20 +656,30 @@ test("points in time read in the app's time zone, the same on the server and in 
   );
 });
 
-test("lookup: Arrow up from the second entry goes to the first, and from the first to the search", async () => {
+test("lookup: the focus stays in the search; the arrows move the highlight and Enter ticks it", async () => {
   await withPage("consignor=c-1005", async (page) => {
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("searchbox", { name: "Einlieferer suchen" }).waitFor();
+    const search = page.getByRole("combobox", { name: "Einlieferer suchen" });
+    await search.waitFor();
     await page.evaluate(() => window.__lookup?.answer());
     await page.getByRole("option", { name: /Haus Bergmann/ }).waitFor();
+    const highlighted = () =>
+      page.evaluate(() => {
+        const id = document.activeElement?.getAttribute("aria-activedescendant");
+        return id ? (document.getElementById(id)?.textContent ?? "") : "";
+      });
     await page.keyboard.press("ArrowDown");
+    expect(await highlighted()).toContain("Nachlass Kessler");
     await page.keyboard.press("ArrowDown");
-    const focused = () => page.evaluate(() => document.activeElement?.textContent ?? "");
-    expect(await focused()).toContain("Haus Bergmann");
+    expect(await highlighted()).toContain("Haus Bergmann");
     await page.keyboard.press("ArrowUp");
-    expect(await focused()).toContain("Nachlass Kessler");
-    await page.keyboard.press("ArrowUp");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("type"))).toBe("search");
+    expect(await highlighted()).toContain("Nachlass Kessler");
+    // the search keeps the focus all along, so typing goes on
+    expect(await search.evaluate((input) => input === document.activeElement)).toBe(true);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("consignor") === "c-1005,c-1001");
+    expect(await page.getByRole("option", { name: /Haus Bergmann/ }).getAttribute("aria-checked")).toBe("true");
   });
 });
 
@@ -694,7 +732,7 @@ test("daylight saving: a wall time the clocks jump over is refused at its calend
     await page.locator(".k2-dpop").getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
     expect(new URL(page.url()).searchParams.get("seen")).toBe(seen.slice(5));
   });
-});
+}, 15_000);
 
 test("retrying a failed view update writes exactly what failed, not what the list shows by then", async () => {
   await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {

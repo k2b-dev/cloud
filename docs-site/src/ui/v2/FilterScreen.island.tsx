@@ -149,7 +149,10 @@ const articleQuery = defineListQuery({
   },
   search: { label: "Nummer oder Titel" },
   sort: {
-    options: { price: { label: "Preis", directions: ["desc", "asc"] }, received: { label: "Eingang", directions: ["desc", "asc"] } },
+    options: {
+      price: { label: "Preis", kind: "number", directions: ["desc", "asc"] },
+      received: { label: "Eingang", kind: "date", directions: ["desc", "asc"] },
+    },
     default: { field: "received", direction: "desc" },
   },
   group: { status: { label: "Status" }, location: { label: "Lagerort" } },
@@ -474,7 +477,10 @@ const peopleQuery = defineListQuery({
   },
   search: { label: "Name oder E-Mail" },
   sort: {
-    options: { name: { label: "Name", directions: ["asc", "desc"] }, active: { label: "Zuletzt aktiv", directions: ["desc", "asc"] } },
+    options: {
+      name: { label: "Name", kind: "text", directions: ["asc", "desc"] },
+      active: { label: "Zuletzt aktiv", kind: "date", directions: ["desc", "asc"] },
+    },
     default: { field: "name", direction: "asc" },
   },
   group: { groups: { label: "Gruppe" } },

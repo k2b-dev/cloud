@@ -4,7 +4,7 @@ import { useLocale } from "../intl/locale";
 import { useListbox } from "./behavior/lists";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
-import { Field, Input } from "./controls";
+import { Choice, Field, Input } from "./controls";
 import { DatePicker } from "./date-picker";
 import { type FilterMessages, useFilterMessages } from "./filter-messages";
 import type {
@@ -16,11 +16,14 @@ import type {
   NumberRange,
   PeriodValue,
   SavedListView,
+  SortDirection,
+  SortOption,
   ViewStore,
 } from "./list-query";
 import { Lookup } from "./lookup";
 import { Icon } from "./marks";
 import { Menu, type MenuEntry, type MenuItem } from "./menu";
+import { readNumber, showNumber } from "./number-text";
 import { Dialog } from "./overlays";
 import { useToast } from "./toast";
 
@@ -38,6 +41,9 @@ const isPeriod = (value: unknown): value is PeriodValue =>
 const periodValue = (value: unknown): PeriodValue | undefined => (isPeriod(value) ? value : undefined);
 const periodOf = (definition: ListQueryField): Extract<ListQueryField, { kind: "dateRange" | "timeRange" }> | undefined =>
   definition.kind === "dateRange" || definition.kind === "timeRange" ? definition : undefined;
+const rangeValue = (value: unknown): NumberRange | undefined => (isRange(value) ? value : undefined);
+const rangeOf = (definition: ListQueryField): Extract<ListQueryField, { kind: "numberRange" }> | undefined =>
+  definition.kind === "numberRange" ? definition : undefined;
 const codes = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : typeof value === "string" ? [value] : [];
 
@@ -739,12 +745,12 @@ const Statement = (props: {
 
 /**
  * The first control of an editor's values, where its focus goes when it opens: the search of a lookup, the option that
- * holds a list's tab stop, else the first preset, field or option; never "Entfernen" in the head.
+ * holds a list's tab stop, else the first field, option or bound ("Ab …"); never "Entfernen" in the head.
  */
 const firstValue = (root: HTMLElement | undefined): HTMLElement | null =>
   root?.querySelector<HTMLElement>(".k2-lookup-search input") ??
   root?.querySelector<HTMLElement>('[role="option"][tabindex="0"]') ??
-  root?.querySelector<HTMLElement>('.k2-fed-presets .k2-btn, .k2-fed-field input, [role="option"]') ??
+  root?.querySelector<HTMLElement>('.k2-fed-field input, [role="option"], .k2-fed-bounds > .k2-mi') ??
   null;
 
 // ── Editors ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -766,7 +772,10 @@ type EditorProps = {
   onRemove?: () => void;
   /** In the phone sheet: no head of its own (the sheet names the field). */
   bare?: boolean;
-  /** In the phone sheet: "Von …" and "Bis …" of a period open their calendar as the sheet's next step. */
+  /**
+   * In the phone sheet: "Von …" and "Bis …" of a period open their calendar, "Ab …" and "Bis …" of a number range
+   * their number entry, as the sheet's next step.
+   */
   onBound?: (bound: Bound) => void;
 };
 
@@ -838,23 +847,34 @@ const EditorBody = (props: EditorProps) => {
           label={definition.label}
           value={codes(props.value)}
           known={[...props.names.values()]}
+          // names are kept only from an answer that still counts: a search a newer one aborted renames nothing
           load={async (query, context) => {
             const result = await definition.load(query, context);
-            props.onNames(result.items);
+            if (!context.signal.aborted) props.onNames(result.items);
             return result;
           }}
           resolve={async (values, context) => {
             const found = await definition.resolve(values, context);
-            props.onNames(found);
+            if (!context.signal.aborted) props.onNames(found);
             return found;
           }}
           limit={definition.limit}
           minChars={definition.minChars}
+          failure={definition.failure}
+          multiple={definition.multiple}
           onChange={(next) => props.onChange(definition.multiple ? next : next.at(-1))}
         />
       );
     case "numberRange":
-      return <RangeEditor definition={definition} value={isRange(props.value) ? props.value : undefined} onChange={props.onChange} />;
+      return (
+        <RangeEditor
+          definition={definition}
+          value={isRange(props.value) ? props.value : undefined}
+          possible={props.possible}
+          onChange={props.onChange}
+          onBound={props.onBound}
+        />
+      );
     case "dateRange":
     case "timeRange":
       return (
@@ -886,7 +906,10 @@ const EditorBody = (props: EditorProps) => {
   }
 };
 
-/** Fixed values: the ui-sdk listbox, several (checks) or one (a tick), with counts at the end when the app gives them. */
+/**
+ * Fixed values: the ui-sdk listbox, several (a box first) or one (a tick at the row's end), with counts before the end
+ * when the app gives them.
+ */
 const Options = (props: {
   label: string;
   options: readonly ListQueryOption[];
@@ -922,16 +945,8 @@ const Options = (props: {
                 aria-describedby={locked(option.value) ? hint : undefined}
                 data-zero={props.counts?.[option.value] === 0 ? "" : undefined}
               >
-                <Show
-                  when={props.multiple}
-                  fallback={
-                    <span class="k2-opt-tick" aria-hidden="true">
-                      <Show when={on()}>
-                        <Icon name="check" />
-                      </Show>
-                    </span>
-                  }
-                >
+                {/* several: the box first; one: the tick at the end of the row, where Menu and Select put it */}
+                <Show when={props.multiple}>
                   <span class="k2-check" data-checked={on() ? "" : undefined} aria-hidden="true">
                     <Show when={on()}>
                       <Icon name="check" />
@@ -941,6 +956,13 @@ const Options = (props: {
                 <span class="k2-opt-label">{option.label}</span>
                 <Show when={props.counts?.[option.value] !== undefined}>
                   <span class="k2-opt-count">{props.counts?.[option.value]}</span>
+                </Show>
+                <Show when={!props.multiple}>
+                  <span class="k2-opt-tick" aria-hidden="true">
+                    <Show when={on()}>
+                      <Icon name="check" />
+                    </Show>
+                  </span>
                 </Show>
               </list.Item>
             );
@@ -992,106 +1014,205 @@ const EditField = (props: {
   </label>
 );
 
-const RangeEditor = (props: {
-  definition: Extract<ListQueryField, { kind: "numberRange" }>;
-  value?: NumberRange;
-  onChange: (value: unknown) => boolean;
-}) => {
+type RangeField = Extract<ListQueryField, { kind: "numberRange" }>;
+
+/** The address text of a range, which names a preset as an option of the list ("500..2000"). */
+const rangeCode = (range: NumberRange) => `${range.min ?? ""}..${range.max ?? ""}`;
+
+/** A range in words with the app's unit: "bis 500 €", "500 € bis 2.000 €", "ab 2.000 €". */
+const useRangeWords = (unit: () => string | undefined) => {
   const t = useFilterMessages();
   const format = useFormats(() => "UTC");
-  const [min, setMin] = createSignal(props.value?.min?.toString() ?? "");
-  const [max, setMax] = createSignal(props.value?.max?.toString() ?? "");
+  const amount = (value: number) => `${format().number(value)}${unit() ? ` ${unit()}` : ""}`;
+  const range = (value: NumberRange) => {
+    if (value.min !== undefined && value.max !== undefined) return t().between({ min: amount(value.min), max: amount(value.max) });
+    if (value.min !== undefined) return `${t().from} ${amount(value.min)}`;
+    return value.max !== undefined ? `${t().upTo} ${amount(value.max)}` : "";
+  };
+  return { amount, range };
+};
+
+/**
+ * One bound of a number range: a text field that reads and shows numbers in the locale of `@k2b/ui` ("1.500" is one
+ * thousand five hundred in German), with the unit at its end and no spinner. Enter or "Anwenden" applies; an empty
+ * field takes the bound out. What does not apply says why under the field, which stays open.
+ */
+const NumberEntry = (props: {
+  label: string;
+  value?: number;
+  unit?: string;
+  /** Applies the bound; an error text when it does not apply. */
+  onApply: (value: number | undefined) => string | undefined;
+  /** The phone sheet: the keyboard waits for a tap, as everywhere in the sheet. */
+  sheet?: boolean;
+}) => {
+  const t = useFilterMessages();
+  const locale = useLocale();
+  const shown = (value: number | undefined) => (value === undefined ? "" : showNumber(value, locale()));
+  const [text, setText] = createSignal(shown(props.value));
+  const [error, setError] = createSignal<string>();
+  const apply = () => {
+    const read = readNumber(text(), locale());
+    if ("refused" in read) return setError(read.refused === "inexact" ? t().tooManyDigits : t().notANumber);
+    const refused = props.onApply(read.value ?? undefined);
+    setError(refused);
+    if (!refused) setText(shown(read.value ?? undefined));
+  };
+  return (
+    <div class="k2-nentry" data-k2-part="NumberEntry">
+      <label class="k2-fed-field">
+        <span class="k2-fed-label">{props.label}</span>
+        <span class="k2-input" data-invalid={error() ? "" : undefined}>
+          <input
+            // the field takes the focus as its popover opens, unless the person already went on to another field
+            ref={(input) =>
+              !props.sheet &&
+              setTimeout(() => {
+                const now = document.activeElement;
+                if (input.isConnected && !(now instanceof HTMLInputElement || now instanceof HTMLTextAreaElement))
+                  input.focus({ preventScroll: true });
+              })
+            }
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            spellcheck={false}
+            value={text()}
+            aria-invalid={error() ? "true" : undefined}
+            onInput={(event) => {
+              setText(event.currentTarget.value);
+              setError(undefined);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.isComposing) return;
+              event.preventDefault();
+              apply();
+            }}
+          />
+          <Show when={props.unit}>
+            <span class="k2-fed-unit">{props.unit}</span>
+          </Show>
+        </span>
+      </label>
+      <Show when={error()}>
+        {(message) => (
+          <p class="k2-fed-error" role="alert">
+            {message()}
+          </p>
+        )}
+      </Show>
+      <div class="k2-dpick-foot">
+        <span class="k2-dpick-end">
+          <Button variant="primary" onClick={apply}>
+            {t().apply}
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+};
+
+/** The range after one bound was set (`undefined` takes it out), or why it cannot be. */
+const rangeWith = (
+  value: NumberRange | undefined,
+  bound: Bound,
+  amount: number | undefined,
+): { value?: NumberRange } | { error: "invalid" } => {
+  const next = { min: bound === "from" ? amount : value?.min, max: bound === "to" ? amount : value?.max };
+  if (next.min !== undefined && next.max !== undefined && next.min > next.max) return { error: "invalid" };
+  return { value: next.min === undefined && next.max === undefined ? undefined : next };
+};
+
+/** The number entry of one bound, applied through the address; `onDone` once it applied. */
+const RangeBound = (props: {
+  definition: RangeField;
+  value?: NumberRange;
+  bound: Bound;
+  onChange: (value: unknown) => boolean;
+  onDone: () => void;
+  sheet?: boolean;
+}) => {
+  const t = useFilterMessages();
+  return (
+    <NumberEntry
+      label={`${props.definition.label} ${props.bound === "from" ? t().from : t().upTo}`}
+      value={props.bound === "from" ? props.value?.min : props.value?.max}
+      unit={props.definition.unit}
+      sheet={props.sheet}
+      onApply={(amount) => {
+        const next = rangeWith(props.value, props.bound, amount);
+        if ("error" in next) return t().amountInvalid;
+        if (!props.onChange(next.value)) return t().valueRejected;
+        props.onDone();
+        return undefined;
+      }}
+    />
+  );
+};
+
+/**
+ * A number range, in the pattern of a period: the presets as a list with one tick, then "Ab …" and "Bis …" with their
+ * value, each opening a small number entry beside the editor like a submenu (on the phone the sheet's next step).
+ */
+const RangeEditor = (props: {
+  definition: RangeField;
+  value?: NumberRange;
+  possible: (value: unknown) => boolean;
+  onChange: (value: unknown) => boolean;
+  onBound?: (bound: Bound) => void;
+}) => {
+  const t = useFilterMessages();
+  const words = useRangeWords(() => props.definition.unit);
   const [rejected, setRejected] = createSignal(false);
-  // The fields follow the filter when it changes elsewhere (Zurücksetzen, back, a preset); what is typed and not yet
-  // applied stays until then.
   createEffect(
     on(
-      () => `${props.value?.min ?? ""}..${props.value?.max ?? ""}`,
-      () => {
-        setMin(props.value?.min?.toString() ?? "");
-        setMax(props.value?.max?.toString() ?? "");
-        setRejected(false);
-      },
+      () => (props.value ? rangeCode(props.value) : ""),
+      () => setRejected(false),
       { defer: true },
     ),
   );
-  const number = (text: string) => (text.trim() === "" ? undefined : Number(text.replace(",", ".")));
-  const invalid = () => {
-    const low = number(min());
-    const high = number(max());
-    return low !== undefined && high !== undefined && low > high;
-  };
-  const commit = () => {
-    setRejected(false);
-    if (invalid()) return;
-    const low = number(min());
-    const high = number(max());
-    const unreadable = (value: number | undefined) => value !== undefined && !Number.isFinite(value);
-    if (unreadable(low) || unreadable(high)) {
-      setRejected(true);
-      return;
-    }
-    setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { min: low, max: high }));
-  };
-  const unit = () => (props.definition.unit ? ` ${props.definition.unit}` : "");
-  const presetLabel = (range: NumberRange) => {
-    const show = (amount: number) => `${format().number(amount)}${unit()}`;
-    if (range.min !== undefined && range.max !== undefined) return t().between({ min: show(range.min), max: show(range.max) });
-    if (range.min !== undefined) return `${t().from} ${show(range.min)}`;
-    return range.max !== undefined ? `${t().upTo} ${show(range.max)}` : "";
+  const presets = () => props.definition.presets.map((range) => ({ value: rangeCode(range), label: words.range(range), range }));
+  const shown = (bound: Bound) => {
+    const amount = bound === "from" ? props.value?.min : props.value?.max;
+    return amount === undefined ? undefined : words.amount(amount);
   };
   return (
-    <div class="k2-fed-body">
-      <Show when={props.definition.presets.length > 0}>
-        <div class="k2-fed-presets">
-          <For each={props.definition.presets}>
-            {(range) => (
-              <Button
-                pressed={props.value?.min === range.min && props.value?.max === range.max}
-                onClick={() => {
-                  setMin(range.min?.toString() ?? "");
-                  setMax(range.max?.toString() ?? "");
-                  setRejected(!props.onChange(range));
-                }}
-              >
-                {presetLabel(range)}
-              </Button>
-            )}
-          </For>
-        </div>
+    <div class="k2-fed-body" data-flush="">
+      <Show when={presets().length > 0}>
+        <Options
+          label={props.definition.label}
+          options={presets()}
+          multiple={false}
+          value={props.value ? [rangeCode(props.value)] : []}
+          possible={(code) => {
+            const preset = presets().find((entry) => entry.value === code);
+            return preset !== undefined && props.possible(preset.range);
+          }}
+          onChange={(next) => {
+            const preset = presets().find((entry) => entry.value === next[0]);
+            if (preset) setRejected(!props.onChange(preset.range));
+          }}
+        />
+        <div class="k2-fed-sub">{t().customAmount}</div>
       </Show>
-      <div class="k2-fed-range">
-        <EditField
-          label={t().from_}
-          type="number"
-          value={min()}
-          unit={props.definition.unit}
-          invalid={invalid() || rejected()}
-          onCommit={(text, unreadable) => {
-            if (unreadable) return setRejected(true);
-            setMin(text);
-            commit();
-          }}
-        />
-        <span class="k2-fed-dash" aria-hidden="true">
-          –
-        </span>
-        <EditField
-          label={t().to}
-          type="number"
-          value={max()}
-          unit={props.definition.unit}
-          invalid={invalid() || rejected()}
-          onCommit={(text, unreadable) => {
-            if (unreadable) return setRejected(true);
-            setMax(text);
-            commit();
-          }}
-        />
+      <div class="k2-fed-bounds" role="group" aria-label={t().customAmount}>
+        <For each={["from", "to"] as const}>
+          {(bound) => (
+            <BoundEntry
+              label={bound === "from" ? t().atLeast : t().atMost}
+              shown={shown(bound)}
+              onStep={props.onBound && (() => props.onBound?.(bound))}
+            >
+              {(close) => (
+                <RangeBound definition={props.definition} value={props.value} bound={bound} onChange={props.onChange} onDone={close} />
+              )}
+            </BoundEntry>
+          )}
+        </For>
       </div>
-      <Show when={invalid() || rejected()}>
+      <Show when={rejected()}>
         <p class="k2-fed-error" role="alert">
-          {invalid() ? t().rangeInvalid : t().valueRejected}
+          {t().valueRejected}
         </p>
       </Show>
     </div>
@@ -1326,9 +1447,30 @@ const TextEditor = (props: { label: string; value: string; onChange: (value: unk
 
 type OrderWords = { sort?: string; group?: string };
 
-const directionWord = (direction: "asc" | "desc") => (direction === "desc" ? "↓" : "↑");
+const bothDirections: readonly SortDirection[] = ["asc", "desc"];
 
-/** The sort and the grouping in words: "Preis ↓", "Lagerort"; a fixed sort says its own words. */
+/** A direction in words, by what the sort orders: "Neueste zuerst", "Höchster zuerst", "A–Z"; the app's words first. */
+const directionWords = (option: SortOption | undefined, direction: SortDirection, t: FilterMessages): string => {
+  const own = option?.labels?.[direction];
+  if (own) return own;
+  const descending = direction === "desc";
+  switch (option?.kind) {
+    case "date":
+      return descending ? t.newestFirst : t.oldestFirst;
+    case "number":
+      return descending ? t.highestFirst : t.lowestFirst;
+    case "text":
+      return descending ? t.zToA : t.aToZ;
+    default:
+      return descending ? t.descending : t.ascending;
+  }
+};
+
+const sortOptions = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+): Readonly<Record<string, SortOption>> => (query.sort.fixed ? {} : query.sort.options);
+
+/** The sort and the grouping in words: "Preis · Höchster zuerst", "Lagerort"; a fixed sort says its own words. */
 const orderWords = <F extends Fields, S extends string, G extends string>(
   query: ListQuery<F, S, G>,
   state: ListQueryState<F, S, G>,
@@ -1336,23 +1478,46 @@ const orderWords = <F extends Fields, S extends string, G extends string>(
 ): OrderWords => {
   const sort = query.sort;
   const groups: Readonly<Record<string, { label: string }>> = query.group ?? {};
-  const options: Readonly<Record<string, { label: string }>> = sort.fixed ? {} : sort.options;
+  const option = sortOptions(query)[state.sort.field];
   const sortLabel = sort.fixed
     ? sort.fixed.label
-    : `${options[state.sort.field]?.label ?? state.sort.field} ${directionWord(state.sort.direction)}`;
+    : t.orderWords({ field: option?.label ?? state.sort.field, order: directionWords(option, state.sort.direction, t) });
   return { sort: sortLabel, group: state.group !== undefined ? (groups[state.group]?.label ?? state.group) : undefined };
 };
 
-/** The entries of the sort menu: each field in each of its directions. */
-const sortEntries = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>, t: FilterMessages) => {
-  if (query.sort.fixed) return [];
-  const options: Readonly<Record<string, { label: string; directions?: readonly ("asc" | "desc")[] }>> = query.sort.options;
-  return Object.entries(options).flatMap(([key, option]) =>
-    (option.directions ?? (["asc", "desc"] as const)).map((direction) => ({
-      value: `${key}.${direction}`,
-      label: `${option.label} ${directionWord(direction)}`,
-    })),
-  );
+/** The address text of the sort a choice gives. */
+const sortOf = (entries: readonly { value: string; sort: string }[], value: string) =>
+  entries.find((entry) => entry.value === value)?.sort ?? "";
+
+/**
+ * The two choices of a sort: what it sorts by (the fields) and its order in words (the directions of the field shown).
+ * Picking another field keeps the order shown when that field offers it, else takes the field's first direction.
+ */
+const sortChoices = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+  state: ListQueryState<F, S, G>,
+  t: FilterMessages,
+) => {
+  const options = sortOptions(query);
+  const directionsOf = (key: string) => options[key]?.directions ?? bothDirections;
+  const fields = Object.entries(options).map(([key, option]) => {
+    // the field shown keeps its order; another field starts with the first of its declared directions (an app that
+    // says `["desc", "asc"]` means newest first), and without a declaration it keeps the order shown
+    const direction =
+      key === state.sort.field
+        ? state.sort.direction
+        : option.directions
+          ? (option.directions[0] ?? state.sort.direction)
+          : state.sort.direction;
+    return { value: key, label: option.label, sort: `${key}.${direction}` };
+  });
+  const current = options[state.sort.field];
+  const orders = directionsOf(state.sort.field).map((direction) => ({
+    value: direction,
+    label: directionWords(current, direction, t),
+    sort: `${state.sort.field}.${direction}`,
+  }));
+  return { fields, orders, field: state.sort.field, direction: state.sort.direction };
 };
 
 const groupEntries = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>, t: FilterMessages) => {
@@ -1368,9 +1533,10 @@ export type ListOrderProps<F extends Fields, S extends string, G extends string>
 };
 
 /**
- * The sort and the grouping of a list in words, for the `filters` place of its `StatusRow`: "⇅ Preis ↓ ▾" and "Nach
- * Lagerort ▾", each a menu with one choice. A fixed sort is text. On the phone they leave with the status row's
- * filters and stand in the filter bar instead.
+ * The sort and the grouping of a list in words, for the `filters` place of its `StatusRow`: "⇅ Preis · Höchster
+ * zuerst ▾" and "Nach Lagerort ▾". The sort's menu has two choices, "Sortieren nach" (the fields) and "Reihenfolge"
+ * (the order in words, by the field's `kind` or its own `labels`); the grouping's menu has one. A fixed sort is text.
+ * On the phone they leave with the status row's filters and stand in the filter bar instead.
  */
 export const ListOrder = <F extends Fields, S extends string, G extends string>(props: ListOrderProps<F, S, G>) => {
   const t = useFilterMessages();
@@ -1386,6 +1552,8 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
   };
   const words = () => orderWords(props.query, props.state, t());
   const groups = () => groupEntries(props.query, t());
+  const choices = () => sortChoices(props.query, props.state, t());
+  const fits = (sort: string) => follow(props.query, props.state, (params) => params.set("sort", sort)) !== undefined;
   return (
     <span class="k2-order" data-k2-part="ListOrder">
       <Show
@@ -1402,14 +1570,19 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
           label={t().sort}
           items={[
             {
-              title: t().sort,
-              choice: `${props.state.sort.field}.${props.state.sort.direction}`,
-              onChoose: (value) => change((params) => params.set("sort", value)),
-              items: sortEntries(props.query, t()).map((entry) => ({
-                label: entry.label,
-                value: entry.value,
-                disabled: !follow(props.query, props.state, (params) => params.set("sort", entry.value)),
-              })),
+              title: t().sortBy,
+              choice: choices().field,
+              onChoose: (value) => {
+                const sort = choices().fields.find((entry) => entry.value === value)?.sort;
+                if (sort) change((params) => params.set("sort", sort));
+              },
+              items: choices().fields.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
+            },
+            {
+              title: t().order,
+              choice: choices().direction,
+              onChoose: (value) => change((params) => params.set("sort", `${choices().field}.${value}`)),
+              items: choices().orders.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
             },
           ]}
         >
@@ -1652,34 +1825,22 @@ const SaveDialog = (props: {
         />
       </Field>
       <Show when={props.mode === "new" && props.stores.length > 1}>
-        <div class="k2-fsave-scopes" role="radiogroup" aria-label={t().whoSees}>
-          <span class="k2-fed-label">{t().whoSees}</span>
-          <For each={props.stores}>
-            {(candidate) => {
-              const words = () => scopeWords(candidate.scope, t());
-              return (
-                <label class="k2-choice" data-disabled={candidate.writable ? undefined : ""}>
-                  <span class="k2-mark">
-                    <input
-                      class="k2-mark-input"
-                      type="radio"
-                      name="k2-view-scope"
-                      value={candidate.scope}
-                      checked={scope() === candidate.scope}
-                      disabled={!candidate.writable}
-                      onChange={() => setScope(candidate.scope)}
-                    />
-                    <span class="k2-radio" data-checked={scope() === candidate.scope ? "" : undefined} data-k2-mark="" />
-                  </span>
-                  <span class="k2-choice-text">
-                    {words().label}
-                    <span class="k2-fsave-hint">{candidate.writable ? words().hint : `${words().hint} ${t().notAllowed}.`}</span>
-                  </span>
-                </label>
-              );
-            }}
-          </For>
-        </div>
+        <Field label={t().whoSees}>
+          <Choice
+            name="k2-view-scope"
+            value={scope()}
+            onChange={(value) => setScope(props.stores.find((candidate) => candidate.scope === value)?.scope)}
+            options={props.stores.map((candidate) => {
+              const words = scopeWords(candidate.scope, t());
+              return {
+                value: candidate.scope,
+                label: words.label,
+                hint: candidate.writable ? words.hint : `${words.hint} ${t().notAllowed}.`,
+                disabled: !candidate.writable,
+              };
+            })}
+          />
+        </Field>
       </Show>
       <Show when={props.mode === "new"}>
         <dl class="k2-fsave-sum">
@@ -1740,9 +1901,14 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
     return key !== undefined && definition ? { key, definition } : undefined;
   };
   const words = () => orderWords(props.query, props.state, t());
+  const choices = () => sortChoices(props.query, props.state, t());
   const title = () => {
     const current = field();
-    if (current && props.place?.bound) return `${current.definition.label} · ${props.place.bound === "from" ? t().from_ : t().to}`;
+    const bound = props.place?.bound;
+    if (current && bound) {
+      const words = current.definition.kind === "numberRange" ? [t().atLeast, t().atMost] : [t().from_, t().to];
+      return `${current.definition.label} · ${bound === "from" ? words[0] : words[1]}`;
+    }
     return (
       current?.definition.label ?? (props.place?.display === "sort" ? t().sort : props.place?.display === "group" ? t().group : t().filters)
     );
@@ -1788,6 +1954,12 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
       title={title()}
       open={props.open}
       onOpenChange={(open) => !open && props.onClose()}
+      // from a bound's calendar back to its period, from a field back to the list
+      back={
+        props.place?.field !== undefined || props.place?.display !== undefined
+          ? () => props.onPlace(props.place?.bound ? { field: props.place.field } : {})
+          : undefined
+      }
       foot={
         <>
           <Button disabled={!props.changed} onClick={props.onReset}>
@@ -1839,22 +2011,13 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
             </>
           }
         >
-          <div class="k2-fsheet-back">
-            {/* from a bound's calendar back to its period, from a field back to the list */}
-            <Button
-              variant="ghost"
-              icon="chevron-left"
-              label={t().back}
-              onClick={() => props.onPlace(props.place?.bound ? { field: props.place.field } : {})}
-            />
-          </div>
           <Show when={field()}>
             {(current) => (
               <Show
                 when={(() => {
-                  const period = periodOf(current().definition);
+                  const definition = current().definition;
                   const bound = props.place?.bound;
-                  return period && bound ? { period, bound } : undefined;
+                  return bound && (periodOf(definition) || definition.kind === "numberRange") ? { definition, bound } : undefined;
                 })()}
                 fallback={
                   <Editor
@@ -1874,27 +2037,56 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               >
                 {(step) => (
                   <div class="k2-fsheet-pick">
-                    <BoundPicker
-                      sheet
-                      definition={step().period}
-                      value={periodValue(filters()[current().key])}
-                      bound={step().bound}
-                      timeZone={props.timeZone}
-                      onChange={(value) => props.onField(current().key, value)}
-                      onDone={() => props.onPlace({ field: current().key })}
-                    />
+                    <Show
+                      when={periodOf(step().definition)}
+                      fallback={
+                        <Show when={rangeOf(step().definition)}>
+                          {(range) => (
+                            <RangeBound
+                              sheet
+                              definition={range()}
+                              value={rangeValue(filters()[current().key])}
+                              bound={step().bound}
+                              onChange={(value) => props.onField(current().key, value)}
+                              onDone={() => props.onPlace({ field: current().key })}
+                            />
+                          )}
+                        </Show>
+                      }
+                    >
+                      {(period) => (
+                        <BoundPicker
+                          sheet
+                          definition={period()}
+                          value={periodValue(filters()[current().key])}
+                          bound={step().bound}
+                          timeZone={props.timeZone}
+                          onChange={(value) => props.onField(current().key, value)}
+                          onDone={() => props.onPlace({ field: current().key })}
+                        />
+                      )}
+                    </Show>
                   </div>
                 )}
               </Show>
             )}
           </Show>
           <Show when={props.place?.display === "sort"}>
+            <div class="k2-fsheet-sec">{t().sortBy}</div>
             <Single
-              label={t().sort}
-              options={sortEntries(props.query, t())}
-              value={`${props.state.sort.field}.${props.state.sort.direction}`}
-              possible={(value) => props.canEdit((params) => params.set("sort", value))}
-              onChange={props.onSort}
+              label={t().sortBy}
+              options={choices().fields}
+              value={choices().field}
+              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().fields, value)))}
+              onChange={(value) => props.onSort(sortOf(choices().fields, value))}
+            />
+            <div class="k2-fsheet-sec">{t().order}</div>
+            <Single
+              label={t().order}
+              options={choices().orders}
+              value={choices().direction}
+              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().orders, value)))}
+              onChange={(value) => props.onSort(sortOf(choices().orders, value))}
             />
           </Show>
           <Show when={props.place?.display === "group"}>

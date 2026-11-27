@@ -98,9 +98,10 @@ describe("Example on Lists and tables", () => {
       const bar = await box(".ui-example__bar");
       const below = await page.locator("figure.ui-example#list-detail").boundingBox();
 
-      // Preview and Code are v2 Tabs (they switch views), named as one group; the values are segmented controls
-      const tabs = example.getByRole("navigation", { name: /preview or code/ });
-      expect(await tabs.getByRole("button", { name: "Preview" }).getAttribute("aria-current")).toBe("page");
+      // Preview and Code are v2 Tabs that switch in place (a tab list, #4163), named as one group; the values are
+      // segmented controls
+      const tabs = example.getByRole("tablist", { name: /preview or code/ });
+      expect(await tabs.getByRole("tab", { name: "Preview" }).getAttribute("aria-selected")).toBe("true");
       expect(await example.getByRole("radiogroup", { name: "State" }).count()).toBe(1);
       expect(await example.getByRole("radiogroup", { name: "Width" }).count()).toBe(1);
 
@@ -120,10 +121,10 @@ describe("Example on Lists and tables", () => {
       expect((scale?.y ?? 0) >= (view?.y ?? 0) + (view?.height ?? 0)).toBe(true);
 
       // the code: the whole recipe in the same place and size as the screen; the toolbar keeps its height
-      await tabs.getByRole("button", { name: "Code" }).click();
+      await tabs.getByRole("tab", { name: "Code" }).click();
       await example.locator(".ui-example__code").waitFor();
       await settled(page);
-      expect(await tabs.getByRole("button", { name: "Code" }).getAttribute("aria-current")).toBe("page");
+      expect(await tabs.getByRole("tab", { name: "Code" }).getAttribute("aria-selected")).toBe("true");
       expect(await example.locator(".ui-example__stage").isHidden()).toBe(true);
       expect(await example.locator(".ui-example__code").innerText()).toContain("export const states");
       expect(await box(".ui-example__code")).toEqual(view);
@@ -131,7 +132,7 @@ describe("Example on Lists and tables", () => {
       expect(await page.locator("figure.ui-example#list-detail").boundingBox()).toEqual(below);
 
       // back to the screen, then the width: 390 stands 1:1 as a phone
-      await tabs.getByRole("button", { name: "Preview" }).click();
+      await tabs.getByRole("tab", { name: "Preview" }).click();
       await example.getByRole("radio", { name: "390" }).click();
       await page.locator("figure.ui-example#table[data-phone]").waitFor();
       await settled(page);

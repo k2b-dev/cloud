@@ -230,7 +230,7 @@
   overflow-wrap: anywhere;
 }
 .k2-ui > .k2-text,
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-dialog-body, .k2-pop-body) > .k2-text {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-dialog-body, .k2-pop-body, .k2-tabpanel) > .k2-text {
   display: block;
   padding-inline: var(--k2-edge);
 }
@@ -1777,7 +1777,7 @@
 .k2-ui .k2-inline > * {
   flex: none;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body, .k2-tabpanel) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
 /* A line of things that has no room wraps, in a column of any width, so no chip or action is cut in half (or lost);
@@ -2172,12 +2172,18 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* a quiet line under an option's words: what choosing it means, or why it cannot be chosen */
+.k2-ui .k2-choice-hint {
+  display: block;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
 .k2-ui .k2-choices {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body, .k2-tabpanel) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
 }
 .k2-ui .k2-input {
@@ -2276,7 +2282,7 @@
   row-gap: 4px;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body, .k2-tabpanel) > .k2-field {
   padding: 0 var(--k2-edge);
 }
 /* a form reads down one column of a fixed width: its fields never run across a wide pane (settings stand as rows) */
@@ -2284,7 +2290,7 @@
   max-width: 600px;
 }
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body, .k2-tabpanel) > .k2-input {
   margin-inline: var(--k2-edge);
 }
 .k2-ui .k2-field-label {
@@ -2981,16 +2987,26 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
-.k2-ui .k2-tab[aria-current] {
+.k2-ui .k2-tab:is([aria-current], [aria-selected="true"]) {
   color: var(--k2-text);
   border-bottom-color: var(--k2-app, var(--k2-blue));
 }
-.k2-ui .k2-tab[aria-current] > .k2-icon {
+.k2-ui .k2-tab:is([aria-current], [aria-selected="true"]) > .k2-icon {
   color: var(--k2-app-text);
 }
 .k2-ui .k2-tab:focus-visible {
   outline: none;
   box-shadow: inset 0 -2px 0 var(--k2-blue);
+}
+/* the panel of tabs that switch in place: no box of its own; its focus (Tab after the tab list) shows as a ring */
+.k2-ui .k2-tabpanel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  outline: none;
+}
+.k2-ui .k2-tabpanel:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
 }
 
 /* Path: where the page stands, in the start of its head */
@@ -3487,6 +3503,10 @@
   width: var(--k2-h-control-small);
   height: var(--k2-h-control-small);
   margin-right: -10px;
+}
+/* "‹" one step back stands before the title, its arrow on the text edge, close to the title: "‹ Preis" is one head */
+.k2-ui .k2-dialog > [data-slot="head"] .k2-btn[data-back] {
+  margin: 0 -10px 0 -6px;
 }
 /* On a small touch screen the dialog is a sheet (core's presentation "auto"): the whole width at the bottom, its top
    corners round, as high as its content up to most of the screen; a swipe down closes it. */
@@ -4667,6 +4687,41 @@
   padding: 0;
   gap: 0;
 }
+/* LookupSelect: core's select list with a search field on top, at least as wide as its field and never narrower than
+   a filter's editor; what the list says (loading, failed, nothing found) and "Auswahl entfernen" follow the matches.
+   On a small touch screen the same list is a sheet from the bottom, its top corners round. */
+.k2-ui .k2-menu.k2-lpick {
+  min-width: max(300px, var(--anchor-width, 300px));
+  max-height: min(420px, var(--available-height, 420px));
+}
+.k2-ui .k2-lpick > .k2-lookup-search {
+  flex: none;
+  margin: 4px 4px 8px;
+}
+.k2-ui .k2-lpick-state {
+  padding: 4px 8px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-lpick-state[data-quiet] {
+  display: none;
+}
+.k2-ui .k2-lpick-clear {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+/* core's sheet driver places the list (its top, inside a viewport that scrolls it into view): no position here */
+.k2-ui .k2-menu[data-presentation="sheet"] {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  /* the sheet keeps its height while the matches load and change, so it never jumps or snaps anew */
+  min-height: min(420px, calc(100dvh - 48px));
+  margin: 0;
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom));
+}
 .k2-ui .k2-fed {
   display: flex;
   flex-direction: column;
@@ -4710,7 +4765,7 @@
   padding-inline: 0;
   gap: 0;
 }
-.k2-ui .k2-fed-body[data-flush] > :is(.k2-fed-range, .k2-fed-error) {
+.k2-ui .k2-fed-body[data-flush] > .k2-fed-error {
   margin: 0 12px 8px;
 }
 .k2-ui .k2-fed-sub {
@@ -4740,27 +4795,17 @@
   color: var(--k2-app-text);
   font-weight: 600;
 }
-.k2-ui .k2-fed-presets {
+/* The number entry of "Ab …" or "Bis …": a text field that reads the locale's numbers (no spinner), the unit at its
+   end, "Anwenden" under it; inside the popover beside the editor it is the popover's whole content */
+.k2-ui .k2-nentry {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
+  width: 200px;
+  max-width: 100%;
 }
-.k2-ui .k2-fed-presets > .k2-btn {
-  height: var(--k2-h-control-small);
-  padding: 0 10px;
-  font: var(--k2-t-meta);
-  font-weight: 500;
-}
-.k2-ui .k2-fed-range {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr);
-  gap: 0 6px;
-  align-items: end;
-}
-.k2-ui .k2-fed-dash {
-  text-align: center;
-  color: var(--k2-subtle);
-  padding-bottom: 8px;
+.k2-ui .k2-nentry .k2-fed-field > .k2-input > input {
+  font-variant-numeric: tabular-nums;
 }
 .k2-ui .k2-fed-field {
   display: flex;
@@ -4798,7 +4843,7 @@
   padding: 4px 12px 0;
 }
 
-/* Options of an editor and a lookup: rows of 32 px, the check (or tick) first, a count at the end */
+/* Options of an editor and a lookup: rows of 32 px; several have their box first, one choice its tick at the end */
 .k2-ui .k2-opts,
 .k2-ui .k2-lookup-list {
   display: flex;
@@ -4985,18 +5030,7 @@
   }
 }
 
-/* The dialog that saves a view: the scopes as radio rows with a hint, and what the view shows as a quiet summary */
-.k2-ui .k2-fsave-scopes {
-  padding-inline: var(--k2-edge);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.k2-ui .k2-fsave-hint {
-  display: block;
-  font: var(--k2-t-meta);
-  color: var(--k2-subtle);
-}
+/* The dialog that saves a view: what the view shows as a quiet summary (the scopes are a Choice with hints) */
 .k2-ui .k2-fsave-sum {
   padding-inline: var(--k2-edge);
   display: grid;
@@ -5067,9 +5101,6 @@
   color: var(--k2-app-text);
   font-weight: 600;
 }
-.k2-ui .k2-fsheet-back {
-  padding: 0 calc(var(--k2-edge) - 8px) 4px;
-}
 .k2-ui .k2-fsheet .k2-fed {
   padding-bottom: 8px;
 }
@@ -5106,6 +5137,9 @@
 }
 .k2-ui .k2-fsheet-pick .k2-dpick {
   width: 308px;
+}
+.k2-ui .k2-fsheet-pick .k2-nentry {
+  width: 100%;
 }
 .k2-ui .k2-fsheet-pick .k2-cal-row {
   grid-template-columns: repeat(7, 44px);

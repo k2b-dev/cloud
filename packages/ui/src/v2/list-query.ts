@@ -115,6 +115,8 @@ export type LookupField<M extends boolean = boolean, R = unknown> = FieldCommon 
   readonly limit: number;
   /** Characters before `load` runs. Default 0: an empty search shows frequent or recent values. */
   readonly minChars: number;
+  /** The sentence a failed load shows, from the app's catalog for what its server answered (see `Lookup`). */
+  readonly failure?: (error: unknown) => string | undefined;
   readonly required: R;
 };
 
@@ -236,6 +238,7 @@ export const field = {
         readonly resolve: LookupField["resolve"];
         readonly limit?: number;
         readonly minChars?: number;
+        readonly failure?: LookupField["failure"];
       },
   ): NoInfer<LookupField<M, R>> {
     return {
@@ -246,6 +249,7 @@ export const field = {
       resolve: spec.resolve,
       limit: spec.limit ?? 8,
       minChars: spec.minChars ?? 0,
+      ...(spec.failure ? { failure: spec.failure } : {}),
       required: spec.required as R,
     };
   },
@@ -289,12 +293,28 @@ const common = (spec: { readonly label: string; readonly op?: string; readonly c
 // Declaration and state
 // ---------------------------------------------------------------------------------------------------------------
 
+/**
+ * What a sort orders, which names its two directions in words: `date` "Neueste zuerst" / "Älteste zuerst", `number`
+ * "Höchster zuerst" / "Niedrigster zuerst", `text` "A–Z" / "Z–A". Without it the words are "Aufsteigend" / "Absteigend".
+ */
+export type SortKind = "text" | "number" | "date";
+
 /** One sort the person may choose. */
 export type SortOption = {
   /** Final display text, such as "Price". */
   readonly label: string;
-  /** Directions offered, the first one is used when the sort is picked. Default `["asc", "desc"]`. */
+  /**
+   * Directions offered; picking this sort takes the first one (`["desc", "asc"]`: newest or highest first). Without
+   * it both are offered and picking this sort keeps the direction shown.
+   */
   readonly directions?: readonly SortDirection[];
+  /** What the sort orders; it gives the words of its directions (see {@link SortKind}). */
+  readonly kind?: SortKind;
+  /**
+   * The app's own words for a direction, from its catalog, where the words of `kind` do not fit ("Größte zuerst" for
+   * a file size). They also stand in the sort's button: "Preis · Höchster zuerst".
+   */
+  readonly labels?: { readonly [D in SortDirection]?: string };
 };
 
 /** The sort of the state. */

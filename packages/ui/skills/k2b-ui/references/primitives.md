@@ -335,9 +335,26 @@ lines instead of cutting a thing.
   phone keyboard, such as `numeric` for a code), `spellcheck` and
   `autocapitalize` (`false` and `off` for names, codes and keys). Never set
   them through `ref` after hydration.
+  `type="number"` is a text field with the decimal keyboard and no spinner
+  that reads and shows the locale's numbers ("1.500,5" in German); `value`
+  and `onInput` carry the plain number ("1500.5"), the form sends it, and
+  `min`/`max` stop a send outside them. A fixed set of sizes (an interval,
+  "7 / 30 / 90 Tage") is a `Select`, not a number.
 - `Select`: `options` (strings or `{ value, label, disabled }`), `value`,
   `onChange`, `placeholder`, `disabled` (a grey well, the value still
-  shown, while it cannot be changed).
+  shown, while it cannot be changed). The chosen option has its tick at the
+  end of its row, as everywhere one choice is marked (a menu, a filter's
+  options); several choices have their box first.
+- `LookupSelect`: one value (or `multiple`) from many that load while the
+  person types, such as a customer or a person: `value`, `onChange`,
+  `load` (with `signal` and `limit`), `known` (names the server resolved,
+  so the first picture shows names), `resolve?`, `placeholder`, `limit?`,
+  `minChars?`, `disabled`. Closed it reads like a `Select`; open it is the
+  select's list with a search on top (a sheet on a small touch screen); an
+  optional single one offers "Auswahl entfernen". In a `Field` it takes the
+  label, name, hint, error and `required`; the form gets each chosen code,
+  nothing while disabled. Never a `Select` with a few of many entries, never
+  free text for a person.
 - `TagsInput`: several short values as chips in one field (domains,
   server addresses): `value`, `onChange`, `suggestions` (values to pick
   while typing; any other text is taken on Enter), `placeholder`,
@@ -411,7 +428,13 @@ lines instead of cutting a thing.
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
+  before the menu tab. Tabs with `href` change the address and are a
+  navigation (`aria-current`); tabs without any `href` switch a panel in
+  place ("Vorschau | Code") and are the WAI-ARIA tabs (a tab list,
+  `aria-selected`, one tab stop that the arrows, Home and End move, opening
+  as they go), with the same look. Give them `panel` (an id) and put the
+  open tab's content in `<Tabs.Panel id>`, which the open tab names. A
+  choice of a value is never tabs; that is `Select` or `Choice`.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
   where it does not fit before the filters), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
@@ -453,8 +476,10 @@ lines instead of cutting a thing.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
-  `limit?`, `minChars?`; values that load while the person types, in a
-  filter (the bar opens it) or in a form.
+  `limit?`, `minChars?`, `multiple?`; the panel of values that load while
+  the person types, which `FilterBar` opens: the search keeps the focus, the
+  arrows move the highlight, Enter or a press ticks. In a form use
+  `LookupSelect`.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";

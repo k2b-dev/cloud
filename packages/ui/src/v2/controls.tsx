@@ -1,10 +1,12 @@
 import {
   createContext,
+  createEffect,
   createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -26,6 +28,8 @@ import { useControlMessages } from "./control-messages";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
 import { Icon } from "./marks";
+import { useNumberMessages } from "./number-messages";
+import { readNumber, readPlain, showNumber } from "./number-text";
 import { textEdge } from "./tokens";
 import type { Action } from "./types";
 
@@ -34,6 +38,8 @@ type FieldIds = {
   control: string;
   /** The id of the label line. */
   label: string;
+  /** The words of the label line, for a control that names a part of its own after it (a search "Kunde suchen"). */
+  text: string;
   invalid: boolean;
   required: boolean;
   name?: string;
@@ -91,6 +97,9 @@ export const Field = (props: FieldProps) => {
       value={{
         control,
         label,
+        get text() {
+          return props.label;
+        },
         get invalid() {
           return !!props.error;
         },
@@ -183,7 +192,8 @@ Field.Row = (props: {
   </div>
 );
 
-const useField = () => useContext(FieldContext);
+/** The field a control stands in, if any (internal: the controls of v2 and `LookupSelect`). */
+export const useField = () => useContext(FieldContext);
 
 type InputBase = {
   /** The text in the field. */
@@ -197,7 +207,10 @@ type InputBase = {
    * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
    * page's search in a bar of its own (`data-k2-host-search` on the v2 scope, as the Cloud shell's phone bar does),
    * the folded search leaves the head and the order of the Tab key on the phone, and the host focuses it; a head with
-   * a path then opens it over the content's first row.
+   * a path then opens it over the content's first row. A `number` is a text field with the decimal keyboard and no
+   * spinner that reads and shows numbers in the locale of @k2b/ui ("1.500,5" in German): `value` and `onInput` carry
+   * the plain number ("1500.5"), "" when empty, or the text as typed when it is no number, and a form sends the plain
+   * number. `min` and `max` stop a form that is sent outside them, with a short message at the field.
    */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
@@ -312,6 +325,7 @@ const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: 
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
+  const number = useNumberText(props);
   let input: HTMLInputElement | undefined;
   const hosted = useHostedHeadSearch(
     () => input,
@@ -368,22 +382,52 @@ export const Input = (props: InputProps) => {
       <Show
         when={props.multiline}
         fallback={
-          <input
-            {...shared()}
-            ref={(element) => {
-              input = element;
-              forwardRef(props.ref, element);
-            }}
-            tabIndex={hosted() ? -1 : undefined}
-            type={props.type ?? "text"}
-            min={props.min}
-            max={props.max}
-            onInput={(event) => props.onInput?.(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              props.onKeyDown?.(event);
-              if (props.type === "search") foldHeadSearch(event);
-            }}
-          />
+          <Show
+            when={props.type === "number"}
+            fallback={
+              <input
+                {...shared()}
+                ref={(element) => {
+                  input = element;
+                  forwardRef(props.ref, element);
+                }}
+                tabIndex={hosted() ? -1 : undefined}
+                type={props.type ?? "text"}
+                min={props.min}
+                max={props.max}
+                onInput={(event) => props.onInput?.(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  props.onKeyDown?.(event);
+                  if (props.type === "search") foldHeadSearch(event);
+                }}
+              />
+            }
+          >
+            {/* what the person reads and types has no name; the form gets the plain number from the hidden field */}
+            <input
+              id={field?.control}
+              placeholder={props.placeholder}
+              aria-label={field ? undefined : props.label}
+              aria-invalid={field?.invalid ? "true" : undefined}
+              aria-describedby={field?.described}
+              required={field?.required || undefined}
+              disabled={props.disabled}
+              value={number.text()}
+              ref={(element) => {
+                number.bind(element);
+                forwardRef(props.ref, element);
+              }}
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              onInput={(event) => number.input(event.currentTarget.value)}
+              onBlur={() => number.settle()}
+              onKeyDown={(event) => props.onKeyDown?.(event)}
+            />
+            <Show when={props.name ?? field?.name}>
+              {(name) => <input type="hidden" name={name()} value={number.plain()} disabled={props.disabled} />}
+            </Show>
+          </Show>
         }
       >
         {/* A textarea's value is its text: the server sends it there, so the first render already shows it; in the browser
@@ -403,6 +447,91 @@ export const Input = (props: InputProps) => {
       </Show>
     </Dynamic>
   );
+};
+
+/**
+ * The text of a number field and the plain number it stands for, read and shown by core in the locale
+ * (`number-text`). The plain number is kept apart from what is shown: typed text is read into it, a value the app
+ * sets is kept as given. What is shown follows in the locale's form where it can be shown exactly. The field's
+ * validity (a number, exact, within `min`/`max`) follows text, value, bounds and locale; a form's reset puts text,
+ * plain number and the app's value back to the value the field started with.
+ */
+// ui-sdk gap: number-input clamps on commit; a number field here keeps what is out of range and marks it invalid, so
+// only core's reading and showing of numbers (behavior/number) is used, not its number-input.
+const useNumberText = (props: InputProps) => {
+  const locale = useLocale();
+  const said = useNumberMessages();
+  /** What a plain value shows: in the locale's form where that is exact, else the value as it is (it is refused). */
+  const show = (value: string) => {
+    const read = readPlain(value);
+    return "refused" in read || read.value === null ? value : showNumber(read.value, locale());
+  };
+  const initial = props.value ?? "";
+  const [text, setText] = createSignal(show(initial));
+  const [plain, setPlain] = createSignal(initial);
+  createEffect(
+    on(
+      () => props.value ?? "",
+      (value) => {
+        if (value === plain()) return;
+        setPlain(value);
+        setText(show(value));
+      },
+      { defer: true },
+    ),
+  );
+  /** Why the field refuses its value, in words; "" when it is fine. */
+  const problem = () => {
+    const typed = readNumber(text(), locale());
+    const given = readPlain(plain());
+    const refused = "refused" in typed ? typed.refused : "refused" in given ? given.refused : undefined;
+    if (refused === "inexact") return said().numberInexact;
+    if (refused === "invalid") return said().numberInvalid;
+    const amount = "refused" in given ? null : given.value;
+    if (amount === null) return "";
+    if (props.min !== undefined && amount < props.min) return said().numberMin({ min: showNumber(props.min, locale()) });
+    if (props.max !== undefined && amount > props.max) return said().numberMax({ max: showNumber(props.max, locale()) });
+    return "";
+  };
+  let element: HTMLInputElement | undefined;
+  createRenderEffect(() => {
+    const message = problem();
+    element?.setCustomValidity(message);
+  });
+  const take = (value: string) => {
+    setText(value);
+    const read = readNumber(value, locale());
+    // text that is no exact number is handed on as typed, so the app sees what is there and the field says why
+    setPlain("refused" in read ? value : read.plain);
+    props.onInput?.(plain());
+  };
+  return {
+    text,
+    plain,
+    bind: (input: HTMLInputElement) => {
+      element = input;
+      input.setCustomValidity(problem());
+      // A form's reset: the field, what it sends and the app's value go back to where the field started. The reset
+      // event comes before the browser empties the field, so this runs in the next task, after it. The form is found
+      // at the time of the reset: a field can come into a form after it was made.
+      const reset = (event: Event) => {
+        if (!input.form || event.target !== input.form) return;
+        setTimeout(() => {
+          input.value = show(initial);
+          take(input.value);
+        });
+      };
+      onMount(() => {
+        document.addEventListener("reset", reset, true);
+        onCleanup(() => document.removeEventListener("reset", reset, true));
+      });
+    },
+    input: take,
+    settle: () => {
+      const read = readNumber(text(), locale());
+      if (!("refused" in read) && read.value !== null) setText(showNumber(read.value, locale()));
+    },
+  };
 };
 
 export type SelectOption = {
@@ -437,7 +566,8 @@ export type SelectProps = {
 
 /**
  * One value from a list: the round field shows it with a chevron, and the list opens below it with the keyboard,
- * typeahead and a check at the chosen option (the behaviour layer on the ui-sdk core). The list is at least as wide as
+ * typeahead and a tick at the end of the chosen option's row, where a menu and a filter put it (the behaviour layer on
+ * the ui-sdk core). The list is at least as wide as
  * its field. The value reaches a form through core's form input: sent under the field's name, validated when the
  * field is required, put back by the form's reset, with a `change` event.
  */
@@ -493,10 +623,13 @@ export const Select = (props: SelectProps) => {
         collisionPadding={8}
         option={(item: ChoiceItem) => (
           <select.Item class="k2-mi" value={item.value} label={item.label} disabled={item.disabled}>
-            {item.label}
-            <select.ItemIndicator item={item.value} class="k2-mi-meta">
-              <Icon name="check" />
-            </select.ItemIndicator>
+            <span class="k2-mi-label">{item.label}</span>
+            {/* one choice: the tick at the end of the row, as in a menu and a filter's options */}
+            <span class="k2-mi-tick">
+              <select.ItemIndicator item={item.value}>
+                <Icon name="check" />
+              </select.ItemIndicator>
+            </span>
           </select.Item>
         )}
       />
@@ -1352,8 +1485,11 @@ export const MarkCheck = (
 export type ChoiceProps = {
   /** The name the choice is sent under in a form. */
   name: string;
-  /** The few options, all visible: words, or a value with its words. */
-  options: readonly (string | { value: string; label: string })[];
+  /**
+   * The options; one may carry a quiet `hint` under its words (what choosing it means) and be `disabled` alone (it
+   * stays readable, with the reason in its hint).
+   */
+  options: readonly (string | { value: string; label: string; hint?: string; disabled?: boolean })[];
   /** The chosen value. */
   value?: string;
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
@@ -1381,7 +1517,10 @@ export const Choice = (props: ChoiceProps) => {
 const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
-  const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
+  const options = () =>
+    props.options.map((option): { value: string; label: string; hint?: string; disabled?: boolean } =>
+      typeof option === "string" ? { value: option, label: option } : option,
+    );
   const [own, setOwn] = createSignal(props.value);
   const value = () => (props.onChange ? props.value : own());
   return (
@@ -1396,7 +1535,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
     >
       <For each={options()}>
         {(option) => (
-          <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
+          <label class="k2-choice" data-disabled={props.disabled || option.disabled ? "" : undefined}>
             <span class="k2-mark">
               <input
                 class="k2-mark-input"
@@ -1405,15 +1544,25 @@ const ChoiceGroup = (props: ChoiceProps) => {
                 value={option.value}
                 checked={option.value === value()}
                 required={field?.required || undefined}
-                disabled={props.disabled}
-                onChange={() => {
+                disabled={props.disabled || option.disabled}
+                onChange={(event) => {
                   setOwn(option.value);
                   props.onChange?.(option.value);
+                  // The page holds the value: when it refuses the press or decides later (after a confirm), the
+                  // browser's radio would keep the pressed option. Every radio shows the page's value again; a value
+                  // the page sets later checks its radio through the binding above.
+                  const group = event.currentTarget.closest('[role="radiogroup"]');
+                  for (const radio of group?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []) {
+                    radio.checked = radio.value === value();
+                  }
                 }}
               />
               <span class="k2-radio" data-checked={option.value === value() ? "" : undefined} data-k2-mark="" />
             </span>
-            <span class="k2-choice-text">{option.label}</span>
+            <span class="k2-choice-text">
+              {option.label}
+              <Show when={option.hint}>{(hint) => <span class="k2-choice-hint">{hint()}</span>}</Show>
+            </span>
           </label>
         )}
       </For>

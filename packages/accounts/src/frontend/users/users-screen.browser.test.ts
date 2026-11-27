@@ -252,7 +252,7 @@ describe("the user list on v2", () => {
       expect(await tab.locator(".k2-fbar-flow .k2-stmt-b").allTextContents()).toEqual(["Gruppe ist Verkauf"]);
       expect(await names(tab)).toEqual(expectedNames(`member-of=${FIXTURE_GROUPS.sales.id}`));
       await tab.locator(".k2-stmt-b").first().click();
-      await tab.getByRole("searchbox", { name: /Gruppe/ }).fill("lag");
+      await tab.getByRole("combobox", { name: /Gruppe/ }).fill("lag");
       // "Lager" already stands in the list before the search; press it once the matches for "lag" have replaced the
       // list, not while the lookup renders them (a WebKit run pressed the outgoing entry)
       await tab.getByText("Treffer für „lag“").waitFor();
