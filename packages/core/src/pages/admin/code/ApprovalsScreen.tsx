@@ -5,7 +5,7 @@ import { type JSX, Show } from "solid-js";
 import type { CodeAdminApproval, CodeAdminApprovalDetail, CodeAdminDecided, CodeAdminSummary } from "../../../code/admin";
 import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
-import { approvalReason, automationMark, type CodeScreenBase, type Loaded, ok, ownerAppLabel, ownerLabel } from "./data";
+import { approvalReason, automationMark, type CodeScreenBase, type Loaded, ok, ownerLabel } from "./data";
 import { LoadFailed, Missing, useCodeText } from "./parts";
 import {
   type CodeReviewProps,
@@ -179,27 +179,25 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
             .join(" · "),
         ],
       })}
+      // the columns fit beside the admin bar at 1024; the last one takes what is left on a larger screen
       columns={[
         {
           title: t().automation,
-          width: { min: 160, default: open ? 200 : 220 },
-          // the automation in the colour of the app it belongs to (the content shows whose it is)
+          width: { min: 160, default: 200 },
+          // the automation in the colour of the app it belongs to (the content shows whose it is), with its version
           mark: (entry) => automationMark(entry.owner ?? { kind: "app", appId: "" }, props.apps),
-          cell: (entry) => entry.title,
+          cell: (entry): JSX.Element => (
+            <>
+              {entry.title}{" "}
+              <Text type="meta" muted>
+                {entry.stat.first ? rt().versionFirst({ n: entry.number }) : rt().version({ n: entry.number })}
+              </Text>
+            </>
+          ),
         },
-        ...(open
-          ? []
-          : [
-              {
-                title: t().version,
-                width: { min: 72, default: 120 },
-                cell: (entry: CodeAdminApproval) =>
-                  entry.stat.first ? rt().versionFirst({ n: entry.number }) : rt().version({ n: entry.number }),
-              },
-            ]),
         {
           title: t().submitter,
-          width: { min: 120, default: open ? 140 : 150 },
+          width: { min: 120, default: 140 },
           drop: true,
           avatar: (entry) => ({ name: entry.author.name ?? t().unknownAuthor }),
           cell: (entry) => entry.author.name ?? t().unknownAuthor,
@@ -209,22 +207,9 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
           : [
               {
                 title: t().belongsTo,
-                width: { min: 130, default: 170 },
+                width: { min: 120, default: 150 },
                 drop: true,
                 cell: (entry: CodeAdminApproval) => ownerOf(entry),
-              },
-              {
-                title: t().asksFor,
-                width: { min: 130, default: 150 },
-                drop: true,
-                cell: (entry: CodeAdminApproval): JSX.Element =>
-                  entry.reason ? (
-                    <Text>
-                      <Icon name={reasonIcon(entry.reason.row)} /> {t().rowLabel({ row: entry.reason.row })}
-                    </Text>
-                  ) : (
-                    ""
-                  ),
               },
             ]),
         {
@@ -233,7 +218,24 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
           drop: true,
           cell: (entry: CodeAdminApproval) => ago(entry.submittedAt),
         },
-        ...(open ? [] : [{ title: t().whatIsNew, drop: true, cell: (entry: CodeAdminApproval) => entry.mainChange ?? "" }]),
+        ...(open
+          ? []
+          : [
+              {
+                // what the version asks the admin for: the sign of its policy row and the change in words
+                title: t().asksFor,
+                drop: true,
+                cell: (entry: CodeAdminApproval): JSX.Element => (
+                  <Text>
+                    <Icon
+                      name={reasonIcon(entry.reason?.row ?? "")}
+                      label={entry.reason ? t().rowLabel({ row: entry.reason.row }) : undefined}
+                    />{" "}
+                    {entry.mainChange ?? (entry.reason ? t().rowLabel({ row: entry.reason.row }) : "")}
+                  </Text>
+                ),
+              },
+            ]),
       ]}
     />
   );
@@ -263,29 +265,29 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
       columns={[
         {
           title: t().automation,
-          width: { min: 160, default: open ? 200 : 260 },
+          width: { min: 160, default: 200 },
           mark: (entry) => automationMark(entry.owner, props.apps),
-          cell: (entry) => entry.title,
+          cell: (entry): JSX.Element => (
+            <>
+              {entry.title}{" "}
+              <Text type="meta" muted>
+                {rt().version({ n: entry.number })}
+              </Text>
+            </>
+          ),
         },
         ...(open
           ? []
           : [
-              { title: t().version, width: { min: 72, default: 96 }, cell: (entry: CodeAdminDecided) => rt().version({ n: entry.number }) },
               {
                 title: t().submitter,
-                width: { min: 120, default: 170 },
+                width: { min: 120, default: 140 },
                 drop: true,
                 avatar: (entry: CodeAdminDecided) => ({ name: entry.author.name ?? t().unknownAuthor }),
                 cell: (entry: CodeAdminDecided) => entry.author.name ?? t().unknownAuthor,
               },
-              {
-                title: t().app,
-                width: { min: 110, default: 140 },
-                drop: true,
-                cell: (entry: CodeAdminDecided) => ownerAppLabel(t(), entry.owner, props.apps),
-              },
             ]),
-        { title: t().decision, width: { min: 180, default: 260 }, drop: true, cell: outcome },
+        { title: t().decision, width: { min: 180, default: 240 }, drop: true, cell: outcome },
         { title: t().decidedAt, drop: true, cell: (entry) => ago(entry.decidedAt) },
       ]}
     />

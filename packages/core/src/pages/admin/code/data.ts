@@ -76,12 +76,6 @@ export function ownerLabel(t: CodeAdminMessages, owner: CodeOwner, ownerName: st
   return ownerName ?? t.ownerHidden({ app: apps[appId]?.name ?? t.ownerUnknown });
 }
 
-/** The app column: the app the automation belongs to, or "Personal". */
-export const ownerAppLabel = (t: CodeAdminMessages, owner: CodeOwner, apps: Record<string, CodeApp>): string => {
-  const appId = ownerAppId(owner);
-  return appId ? (apps[appId]?.name ?? appId) : t.personal;
-};
-
 /** The mark of an automation: the Code sign in the colour of the app it belongs to; personal Code in Code's own colour. */
 export const automationMark = (owner: CodeOwner, apps: Record<string, CodeApp>) => {
   const appId = ownerAppId(owner);

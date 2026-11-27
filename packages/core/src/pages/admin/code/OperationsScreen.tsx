@@ -1,4 +1,4 @@
-import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
+import { formatDate, formatDateTime, formatRelative } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { Bar, Button, Cells, Empty, Inline, Notice, Pane, Progress, Section, StatusRow, Table, Text, useLocale } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
@@ -36,9 +36,14 @@ function DatabaseActions(props: { row: UnusedCodeDatabase }) {
   return (
     <Inline>
       <Button variant="text" icon="download" label={t().databaseExport} href={databaseExportHref(props.row.codeId)} />
-      <Button variant="text" icon={remove.action().icon} disabled={remove.action().disabled} onClick={() => remove.action().onClick?.()}>
-        {remove.action().label}
-      </Button>
+      {/* both deeds as named symbols, so the row keeps its columns beside the admin bar at 1024 */}
+      <Button
+        variant="text"
+        icon={remove.action().icon ?? "trash"}
+        label={remove.action().label}
+        disabled={remove.action().disabled}
+        onClick={() => remove.action().onClick?.()}
+      />
     </Inline>
   );
 }
@@ -52,6 +57,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
   const locale = useLocale();
   const when = (iso: string) => formatDateTime(iso, props.dateConfig);
   const ago = (iso: string) => formatRelative(iso, props.dateConfig);
+  const day = (iso: string) => formatDate(iso, props.dateConfig);
   const summary = ok(props.summary) ? props.summary : null;
   const size = (bytes: number | null) =>
     bytes === null ? "–" : `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(bytes / 1048576)} MB`;
@@ -92,19 +98,19 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                 columns={[
                   {
                     title: t().code,
-                    width: { min: 180, default: 260 },
+                    width: { min: 180, default: 220 },
                     mark: (job) => ({ icon: job.kind === "database.delete" ? "database-x" : "trash", color: CODE_COLOR }),
                     cell: (job) => job.title,
                   },
                   {
                     title: t().job,
-                    width: { min: 140, default: 200 },
+                    width: { min: 140, default: 180 },
                     drop: true,
                     cell: (job) => (job.kind === "database.delete" ? t().jobDeleteDatabase : t().jobDelete),
                   },
                   {
                     title: t().state,
-                    width: { min: 130, default: 160 },
+                    width: { min: 130, default: 150 },
                     drop: true,
                     cell: (job) =>
                       job.lastError ? (
@@ -169,22 +175,21 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                 columns={[
                   {
                     title: t().code,
-                    width: { min: 160, default: 220 },
+                    width: { min: 140, default: 180 },
                     mark: () => ({ icon: "database", color: CODE_COLOR }),
                     cell: (row) => row.title,
                   },
-                  { title: t().owner, width: { min: 120, default: 160 }, drop: true, cell: (row) => row.owner },
-                  { title: t().databaseSize, width: { min: 80, default: 96 }, align: "end", drop: true, cell: (row) => size(row.bytes) },
-                  { title: t().unusedSince, width: { min: 130, default: 150 }, drop: true, cell: (row) => when(row.since) },
+                  { title: t().owner, width: { min: 100, default: 120 }, drop: true, cell: (row) => row.owner },
+                  { title: t().databaseSize, width: { min: 64, default: 72 }, align: "end", drop: true, cell: (row) => size(row.bytes) },
                   {
                     title: t().deleteAt,
-                    width: { min: 130, default: 150 },
+                    width: { min: 96, default: 108 },
                     drop: true,
-                    cell: (row) => (row.deleteAt ? when(row.deleteAt) : <Text muted>{t().deletionOff}</Text>),
+                    cell: (row) => (row.deleteAt ? day(row.deleteAt) : <Text muted>{t().deletionOffShort}</Text>),
                   },
                   {
                     title: t().lastAccess,
-                    width: { min: 110, default: 130 },
+                    width: { min: 96, default: 108 },
                     drop: true,
                     cell: (row) => (row.lastAccess ? ago(row.lastAccess) : <Text muted>–</Text>),
                   },
@@ -284,26 +289,26 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                       columns={[
                         {
                           title: t().runner,
-                          width: { min: 120, default: 160 },
+                          width: { min: 120, default: 140 },
                           mark: () => ({ icon: "server-2", color: CODE_COLOR }),
                           cell: (runner) => t().runnerName({ n: current().runners.indexOf(runner) + 1 }),
                         },
                         // k2b-ui gap: a monospace table cell for identifiers; the short instance ID stands as quiet text
                         {
                           title: t().instance,
-                          width: { min: 100, default: 120 },
+                          width: { min: 72, default: 88 },
                           drop: true,
                           cell: (runner) => <Text type="meta">{short(runner.instanceId)}</Text>,
                         },
                         {
                           title: t().places,
-                          width: { min: 200, default: 280 },
+                          width: { min: 180, default: 220 },
                           drop: true,
                           // the places that are taken now, as a bar against all places of this runner
                           cell: (runner) => {
                             const busy = runner.busySlots ?? 0;
                             const total = busy + runner.freeSlots;
-                            return <Progress value={busy} of={total} label={t().slotsBusy({ busy, total })} />;
+                            return <Progress value={busy} of={total} label={t().slotsTaken({ busy, total })} />;
                           },
                         },
                         {

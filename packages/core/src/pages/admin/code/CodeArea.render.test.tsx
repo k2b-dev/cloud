@@ -212,7 +212,7 @@ test("all automations: filters in the address, owner, state and last run per row
   const words = text(list);
   expect(words).toContain("14 Automationen von 7 Besitzern");
   expect(list).toContain('data-k2-part="FilterBar"');
-  for (const value of ["Pausiert: Richtlinie", "info@moebel-beispiel.de", "App Werkstattbuch", "Entwurf", "noch kein Lauf", "Persönlich"])
+  for (const value of ["Pausiert: Richtlinie", "info@moebel-beispiel.de", "App Werkstattbuch", "Entwurf", "noch kein Lauf"])
     expect(words).toContain(value);
   expect(words).not.toContain("m_rechn");
   expect(
@@ -371,19 +371,10 @@ test("limits are settings with their value beside them, grouped; runners show pl
 test("unused databases are a table with size, deadline and access, export and incarnation-bound deletion", () => {
   const html = render({ sec: "databases" });
   const words = text(html);
-  for (const label of [
-    "Datenbanken",
-    "4 ungenutzte Datenbanken",
-    "Ungenutzt seit",
-    "Löschdatum",
-    "Letzter Zugriff",
-    "Größe",
-    "Lea Muster",
-    "4 MB",
-    "Jetzt löschen",
-  ])
+  for (const label of ["Datenbanken", "4 ungenutzte Datenbanken", "Löschdatum", "Letzter Zugriff", "Größe", "Lea Muster", "4 MB"])
     expect(words).toContain(label);
   expect(html).toContain("/api/code/authoring/database/c_rueck/export");
+  expect(html).toContain("Jetzt löschen");
   expect(text(render({ sec: "databases" }, "empty"))).toContain("Keine ungenutzten Datenbanken");
   expect(text(render({ sec: "databases" }, "fail"))).toContain("Erneut versuchen");
 });

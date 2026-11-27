@@ -32,7 +32,7 @@ import { CodePageReportPageSchema } from "../../../code/page-report-contracts";
 import StateWord from "../_area/StateWord";
 import { codeAreaHref } from "./area";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
-import { automationMark, type CodeScreenBase, type Loaded, ok, ownerAppId, ownerAppLabel, ownerLabel, statusText } from "./data";
+import { automationMark, type CodeScreenBase, type Loaded, ok, ownerAppId, ownerLabel, statusText } from "./data";
 import { createDatabaseDelete, databaseExportHref } from "./database";
 import { codeListHref, codeListQuery } from "./list-query";
 import { CodeHead, CodeStatus, LoadFailed, Missing, useCodeText } from "./parts";
@@ -269,7 +269,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
       columns={[
         {
           title: t().automation,
-          width: { min: 160, default: open ? 220 : 280 },
+          width: { min: 160, default: open ? 200 : 240 },
           mark: (code) => automationMark(code.owner, props.apps),
           cell: (code) => code.title,
         },
@@ -278,7 +278,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
           : [
               {
                 title: t().owner,
-                width: { min: 140, default: 210 },
+                width: { min: 140, default: 190 },
                 drop: true,
                 avatar: (code: CodeAdminCode) => ({
                   name: owner(code),
@@ -286,14 +286,8 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
                 }),
                 cell: (code: CodeAdminCode) => owner(code),
               },
-              {
-                title: t().app,
-                width: { min: 110, default: 140 },
-                drop: true,
-                cell: (code: CodeAdminCode) => ownerAppLabel(t(), code.owner, props.apps),
-              },
             ]),
-        { title: t().status, width: { min: 140, default: 180 }, drop: true, cell: (code) => <CodeStatus code={code} /> },
+        { title: t().status, width: { min: 140, default: 160 }, drop: true, cell: (code) => <CodeStatus code={code} /> },
         { title: t().lastRunTitle, drop: true, cell: lastRun },
       ]}
     />
