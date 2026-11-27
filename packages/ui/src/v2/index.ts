@@ -19,6 +19,7 @@ export { announce } from "./announce";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
+  type ActivityEntry,
   Digest,
   type DigestEntry,
   type DigestProps,
@@ -116,6 +117,8 @@ export {
   Pane,
   type PaneProps,
   type Tile,
+  type TileCreate,
+  type TileStat,
   Tiles,
   type TilesProps,
   Workspace,
@@ -125,21 +128,36 @@ export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from ".
 export {
   Avatar,
   type AvatarProps,
+  type AvatarStackProps,
   Chip,
   type ChipProps,
   Icon,
   type IconProps,
+  Mark,
+  type MarkProps,
   Progress,
   type ProgressProps,
   RangeBar,
   type RangeBarProps,
+  Spark,
+  type SparkProps,
   type TickState,
   Ticks,
   type TicksProps,
 } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
-export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
-export type { NavTree, NavTreeNode } from "./nav-tree";
+export {
+  Menu,
+  type MenuContextProps,
+  type MenuEntry,
+  type MenuItem,
+  type MenuPanel,
+  type MenuProps,
+  type MenuSection,
+  type TriggerProps,
+} from "./menu";
+export { menuPanel } from "./menu-panel";
+export { type NavTree, type NavTreeGroup, type NavTreeNode, navTree } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";

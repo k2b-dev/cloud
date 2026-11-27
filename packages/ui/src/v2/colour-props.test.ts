@@ -45,7 +45,10 @@ test("a colour is a hex colour, an oklch() of plain numbers or a custom property
 });
 
 test("custom() drops a colour that is no colour and a value that would end its declaration", () => {
-  expect(custom({ "--k2-c": "#7c3aed", "--k2-p": "42%" })).toEqual({ "--k2-c": "#7c3aed", "--k2-p": "42%" });
+  // a hex colour also brings its readable foregrounds (`colorStyle`), each a hex colour made here, never from data
+  const style = custom({ "--k2-c": "#7c3aed", "--k2-p": "42%" }) ?? {};
+  expect(style).toMatchObject({ "--k2-c": "#7c3aed", "--k2-p": "42%" });
+  for (const [key, value] of Object.entries(style)) if (key.startsWith("--k2-c-")) expect(value).toMatch(/^#[0-9a-f]{6}$/);
   for (const value of unsafe) expect(custom({ "--k2-c": value })).toBeUndefined();
   expect(custom({ "--k2-p": "1%;position:fixed" })).toBeUndefined();
 });
@@ -53,7 +56,7 @@ test("custom() drops a colour that is no colour and a value that would end its d
 const parts: [string, (color: string) => JSX.Element][] = [
   ["Avatar", (color) => createComponent(Avatar, { name: "Ada Renz", color })],
   ["Chip", (color) => createComponent(Chip, { tag: true, color, children: "Lager" })],
-  ["Row", (color) => createComponent(Row, { lines: ["Lager"], icon: "box", color })],
+  ["Row", (color) => createComponent(Row, { lines: ["Lager"], mark: { icon: "box", color } })],
   ["Cells.Cell", (color) => createComponent(Cells.Cell, { icon: "box", label: "Lager", value: "12", color })],
   ["Section", (color) => createComponent(Section, { title: "Lager", icon: "box", color, children: "" })],
 ];

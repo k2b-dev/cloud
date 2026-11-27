@@ -88,44 +88,45 @@ export default function ToolsScreen(props: {
   );
 }
 
-/** The fixed column of a tool page: wide enough for a field and its hint, never stretched over a wide window. */
-const toolColumn = { min: 320, default: 400 };
-
 /**
- * A tool page in two columns, so a wide window holds its parts side by side instead of one form stretched over 1500 px.
- * A generator (password, UUID, text) leads with its result as the page's hero and keeps its options in a side column
- * at a fixed width; a converter (hash, encoding) takes what goes in at a fixed width on the left and shows the result
- * beside it. On the phone the two stand one under the other in this order: the result first for a generator.
+ * A tool page as one block from the top: the result and what goes in stand one under the other in one pane, and the
+ * page ends after them. No column of options beside a result that stays short, so no white half beside or below it.
+ * A generator (password, UUID, colour) leads with its result as the page's hero, its options follow; a converter (hash,
+ * encoding) and a long text lead with what goes in, its result follows. The phone keeps the same order.
  *
- * k2b-ui gap: waits #4360 (`Section.Columns`): two sections side by side in one pane that end with their content,
- * without a line between them. `Pane.Split` runs both columns and their seam to the end of the page, so under a short
- * result the column stays white. When #4360 lands, this becomes one `Pane` with `<Section.Columns>` holding the
- * result and the options (each a `Section`), in this order, so the phone keeps the result first.
+ * Each part brings its own `Section`s: what goes in keeps the reading measure (`measure`), so a field never runs over
+ * 1500 px, and so does the result, so a value and its copy stay together; the password keeps the whole width as the
+ * figure of the page.
+ *
+ * k2b-ui gap: waits #4360 (`Section.Columns`): in a wide window the result and the options could stand side by side
+ * in this one block, each ending with its content. When #4360 lands, the two parts go into `<Section.Columns>` in
+ * this order, so the phone keeps the result first.
  */
-export const ToolPanes = (props: {
-  kind: "generator" | "converter";
+export const ToolPane = (props: {
+  /** What stands first: the result (a password, a colour) or what goes in (a text to hash, the options of a long text). */
+  lead: "result" | "input";
   /** The name of the page's scroll position. */
   scrollKey: string;
-  /** What goes in; `head` holds its kinds as tabs, such as symmetric and asymmetric encryption. */
-  input: { label: string; head?: JSX.Element; children: JSX.Element };
-  result: { label: string; status?: JSX.Element; children: JSX.Element };
-}) =>
-  props.kind === "generator" ? (
-    <Pane.Split>
-      <Pane label={props.result.label} scrollKey={props.scrollKey} status={props.result.status}>
-        {props.result.children}
-      </Pane>
-      <Pane side label={props.input.label} head={props.input.head} width={toolColumn} scrollKey={`${props.scrollKey}-options`}>
-        {props.input.children}
-      </Pane>
-    </Pane.Split>
-  ) : (
-    <Pane.Split>
-      <Pane label={props.input.label} head={props.input.head} width={toolColumn} scrollKey={`${props.scrollKey}-input`}>
-        {props.input.children}
-      </Pane>
-      <Pane label={props.result.label} scrollKey={props.scrollKey} status={props.result.status}>
-        {props.result.children}
-      </Pane>
-    </Pane.Split>
-  );
+  /** The name of the pane. */
+  label: string;
+  /** Kinds of the tool as tabs, such as symmetric and asymmetric encryption. */
+  head?: JSX.Element;
+  /** What goes in, as `Section`s with `measure`. */
+  input: JSX.Element;
+  /** The result, as `Section`s. */
+  result: JSX.Element;
+}) => (
+  <Pane label={props.label} head={props.head} scrollKey={props.scrollKey}>
+    {props.lead === "result" ? (
+      <>
+        {props.result}
+        {props.input}
+      </>
+    ) : (
+      <>
+        {props.input}
+        {props.result}
+      </>
+    )}
+  </Pane>
+);
