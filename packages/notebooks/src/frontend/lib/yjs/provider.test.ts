@@ -7,7 +7,7 @@ import { notebooksWorkspace } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
 import { presencePeerId } from "../presence-peer";
 import { reconnectDelayMs } from "../reconnect";
-import { createYjsProvider, type YjsProviderError } from "./provider";
+import { createYjsProvider, MAX_STORAGE_RETRIES, type YjsProviderError } from "./provider";
 
 const NOTE_ID = "Note01";
 const NOTEBOOK_ID = "Book01";
@@ -394,12 +394,38 @@ describe("Yjs provider storage exhaustion", () => {
     const errors: string[] = [];
     const fatal: string[] = [];
     let ready = 0;
-    const timers: Array<() => void> = [];
+    // A fake clock that knows each timer by its id, so a cleared timer leaves it and none runs on its own. Timers are
+    // told apart by when they were scheduled, never by their delay: a capped reconnect delay without jitter is exactly
+    // SHARED_TEXT_ACK_TIMEOUT_MS (#4432).
+    const pending = new Map<number, () => void>();
+    let nextTimer = 1;
+    // No jitter: the capped reconnect delay is then exactly SHARED_TEXT_ACK_TIMEOUT_MS, the case that broke #4432.
+    const random = spyOn(Math, "random").mockReturnValue(0);
     const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
     Object.assign(globalThis, {
-      setTimeout: (fn: () => void, delay: number) =>
-        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+      setTimeout: (run: () => void) => {
+        const id = nextTimer++;
+        pending.set(id, run);
+        return id;
+      },
+      clearTimeout: (id: number) => void pending.delete(id),
     });
+    /** The timers `act` scheduled that are still pending afterwards. */
+    const scheduledBy = (act: () => void) => {
+      const first = nextTimer;
+      act();
+      return [...pending.keys()].filter((id) => id >= first);
+    };
+    /** Runs the one reconnect a close scheduled; it opens the next socket. */
+    const reconnect = (timers: number[]) => {
+      expect(timers).toHaveLength(1);
+      const run = pending.get(timers[0]!)!;
+      pending.delete(timers[0]!);
+      const sockets = FakeWebSocket.instances.length;
+      run();
+      expect(FakeWebSocket.instances).toHaveLength(sockets + 1);
+    };
     try {
       const provider = createYjsProvider({
         doc,
@@ -411,30 +437,32 @@ describe("Yjs provider storage exhaustion", () => {
         onReady: () => ready++,
       });
       provider.connect();
-      const storageClose = (socket: FakeWebSocket) => {
-        socket.open();
-        socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
-        socket.onclose?.({ code: 1012, reason: "STORAGE_EXHAUSTED" });
-      };
+      const storageClose = (socket: FakeWebSocket) =>
+        scheduledBy(() => {
+          socket.open();
+          socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
+          socket.onclose?.({ code: 1012, reason: "STORAGE_EXHAUSTED" });
+        });
       // One success in between resets the budget.
-      storageClose(FakeWebSocket.instances[0]!);
-      timers.shift()!();
+      reconnect(storageClose(FakeWebSocket.instances[0]!));
       const recovered = FakeWebSocket.instances[1]!;
       recovered.open();
       recovered.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
       expect(ready).toBe(1);
-      recovered.onclose?.({ code: 1006, reason: "" });
-      for (let attempt = 0; attempt < 5; attempt++) {
-        timers.shift()!();
-        storageClose(FakeWebSocket.instances.at(-1)!);
+      let next = scheduledBy(() => recovered.onclose?.({ code: 1006, reason: "" }));
+      // The provider's own budget: MAX_STORAGE_RETRIES closes in a row each get a reconnect …
+      for (let attempt = 0; attempt < MAX_STORAGE_RETRIES; attempt++) {
+        reconnect(next);
+        next = storageClose(FakeWebSocket.instances.at(-1)!);
       }
-      expect(errors.filter((code) => code === "STORAGE_EXHAUSTED")).toHaveLength(6);
+      expect(errors.filter((code) => code === "STORAGE_EXHAUSTED")).toHaveLength(MAX_STORAGE_RETRIES + 1);
       expect(fatal).toEqual(["STORAGE_EXHAUSTED"]);
-      // Terminated: no further reconnect is scheduled.
-      expect(timers).toHaveLength(0);
+      // … and the last one ends it: no reconnect is scheduled.
+      expect(next).toEqual([]);
       provider.dispose();
     } finally {
-      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+      Object.assign(globalThis, { setTimeout: originalSetTimeout, clearTimeout: originalClearTimeout });
+      random.mockRestore();
     }
   });
 

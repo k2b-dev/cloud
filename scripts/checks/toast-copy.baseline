@@ -308,9 +308,6 @@ packages/notebooks/src/frontend/[id]/_components/versions/restore-notice.ts | un
 packages/notebooks/src/frontend/_components/AdminNotebooksAppSettings.island.tsx | untitled | t().settingsSaved
 packages/notebooks/src/frontend/lib/attachment-preview.tsx | untitled | t.previewAttachmentFailed
 packages/oauth/src/frontend/_components/ClientActions.island.tsx | untitled | t().copyClientIdFailed
-packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().deleted
-packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().updated
-packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().verifyUrlCopyFailed
 packages/pulse/src/frontend/PulseOverview.island.tsx | untitled | t().retryFailed
 packages/pulse/src/frontend/PulseOverview.island.tsx | untitled | t().retryStarted
 packages/pulse/src/frontend/PulseWorkspace.island.tsx | untitled | label

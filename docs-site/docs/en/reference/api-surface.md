@@ -29,6 +29,9 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/shared` | Supported, portable | Shared helpers, including `previewSourceKind` and `PreviewVariant` for [file previews](/en/docs/platform/previews) |
+| `@k2b/cloud/shared/account-display` | Supported, portable | `groupDisplayName` and the other account names of `@k2b/cloud/shared`, alone: an island carries only them |
+| `@k2b/cloud/shared/format` | Supported, portable | `formatNumber`, `formatDateTime` and the other formatters of `@k2b/cloud/shared`, alone |
+| `@k2b/cloud/shared/principal-label` | Supported, portable | `principalLabel` and its messages, alone; the `@k2b/cloud/shared` barrel brings every helper and its libraries |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts, including [`AssistantPlaceSchema`](/en/docs/ai/assistant-places) |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
@@ -548,6 +551,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/code/feat-code.svg` | Supported, asset | The feat/code sign as a favicon or app icon that follows the light or dark color scheme | [Code page](/en/docs/platform/code-page#show-the-featcode-brand) |
 | `@k2b/cloud/access/members` | Supported | `accessMemberEntries` turns a resource's `AccessMember` list into `DetailAccess` rows in the words of the access dialog, without loading the access dialog's controls | [Detail panels](/en/docs/frontend/detail-panels) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists; `codeSharing` for a Code's editors and readers; `ServiceAccountSection` with `AccessRowFrame`, `AccessRowControls`, `AccessLevelMenu`, `serviceAccountLine` and `serviceAccountLevels` for the access dialog's Service accounts section beside additional grant fields; `ServiceAccountLookup` for the add button and handle field alone | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager), [Code with access](/en/docs/identity/authorization#code-with-access) |
+| `@k2b/cloud/access/v2` | Provisional, SolidJS | `openAccessDialog` with `AccessDialogProps` and `ResourceApiKeys` with `ResourceApiKeysProps` for pages built with `@k2b/ui/v2` | [Edit access in a dialog](/en/docs/identity/authorization#edit-access-in-a-dialog) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/browser/code-secrets` | Supported, browser | `writeSecret`, `secretCheck`, `valueAllowed`, `SecretListSchema`, `SecretSetSchema`: private editor writes and metadata, shared with the Code page | [Code secrets](/en/docs/platform/code-secrets#ask-for-private-entry-in-gustav) |
 | `@k2b/cloud/browser/code-runs` | Supported, browser | `readCodeRunEntries`, `followCodeRun`: authorized entries and live updates for one Code run, separate from its display | [Run entries](/en/docs/platform/code-runs#read-one-run-and-its-entries) |
@@ -608,7 +612,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/contracts/code-runs` | Supported, browser and server | Browser-safe run-entry input and snapshot schemas | [Run entries](/en/docs/platform/code-runs#read-one-run-and-its-entries) |
 | `@k2b/cloud/contracts/notifications` | Supported | Browser-safe notification contracts | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/contracts/geo-snapshot` | Supported, browser and server | Validate map snapshot manifests and image bounds | [Saved maps](/en/docs/platform/saved-map-documents) |
-| `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel | — |
+| `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel on the server, and the named module in an island, which then carries only its own schemas | — |
 | `@k2b/cloud/config/*` | Advanced | Named configuration modules; prefer the barrel | — |
 
 Every app-facing specialized row has a guide. `Platform-owned` and `Advanced`

@@ -11,6 +11,10 @@ Use it for schedules that need timezone-aware placement, all-day and timed
 events, or direct manipulation. Keep date and view state in the URL when the
 calendar is a primary application surface.
 
+On a v1 page the calendar is a card with its own edge and rounded corners. In
+a v2 screen, put it in a `Canvas`: there it lies flat, without an edge or
+corners of its own, so the lines of the structure around it stand once.
+
 ## Import
 
 ```tsx
@@ -141,7 +145,12 @@ stops beside the hour gutter, not under it.
 
 Limit the switcher with `views`, or leave it out with `viewSwitcher={false}`
 when the page shows the views elsewhere, such as tabs in its head; the view
-commands stay. `getDateHref`, `getViewHref`, and
+commands stay. Below a 40 rem wide head, such as on a phone, the head is one
+row: the arrows, the title, which ends in "…" before anything moves to a
+second row, Today, and the views as a menu that names the view on screen
+("Week ▾"), never a segmented control. The button opens its list through
+`popovertarget`, and the views in it are the switcher's links, so the server's page
+switches views before any script runs. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after mount.
 
@@ -322,7 +331,8 @@ and the visible hours.
   there, and in the week view the arrow keys reach the chips after the
   waking hours.
 - **The day view** is one scroll through the loaded days with each day's
-  heading on top while the day is in view. Each day keeps one line for its
+  heading on top while the day is in view; the calendar's head names the month
+  of the day on top, so the date stands once, in that heading. Each day keeps one line for its
   all-day entries, also while it has none, so an entry that loads later moves
   nothing; more entries add lines. Runs of empty days merge into one
   row, "Nothing planned", that opens them; today, the day of `date`, and a day
@@ -346,8 +356,8 @@ and the visible hours.
   loads off screen moves nothing, and neither does an entry that arrives for an
   empty row. It opens at the start of the week of `date`, or on a phone
   at that day within its week.
-- **Entries.** Timed events are bands as long as they last, side by side when
-  they overlap, with their time; the running one fills up with the time that
+- **Entries.** Timed events are bands as long as they last, filled in their
+  color with a 3 px edge at their start, with their time; the running one fills up with the time that
   passed, draws its edge twice as strong, and says what is left, such as
   "27 min left". A past entry keeps its edge and mutes its text. `display:
   "marker"` draws a deadline with a time as a dashed line with a pill, red with
@@ -357,6 +367,24 @@ and the visible hours.
   event, a timed event that runs past the start hour of a later date, and a
   date-only marker sit in the all-day row; in the week view a long event is one bar per week with a torn
   edge and, where it has room, "from 20" and "until 27".
+- **Crowded hours.** At most two bands stand side by side at any time, on
+  every screen, so the server's picture stays. The entries that find no place
+  collapse into a "+n" at the end of the column where the first of them
+  starts; "+n" closer than its own height joins the one above, and a band that
+  a "+n" reaches leaves it room. Its name starts with what it shows, such as
+  "+2 more events from 10:15"; it opens a list of a color dot, the start time
+  and the title of each, named without the "+", towards the days, and Escape
+  or a second press closes it. On a phone's week a later band lies over the
+  earlier one, indented by 1 rem with a line of the page between them; the
+  earlier band's title and time end above it, and bands that start closer than
+  a title line stay side by side.
+- **Titles and times.** A band's title takes whole lines, at most two, with
+  the time below it when a line of it fits too. Two lines end with "…" once;
+  a long word is hyphenated in the page's language. One line is one line of
+  text cut by its letters with "…"; when the time finds no line below such a
+  title, it stands beside it as far as there is room. The time is its start, "–end" and what is
+  left of a running entry, each whole: a narrow band shows the start alone and
+  never cuts a time inside its digits.
 - **Checkboxes.** An event with `checked` shows a small ring in its edge color
   in the line of its title, outlined while open and filled with a check once
   done; it never lies on the entry's edge, and checking it moves nothing. On a
@@ -654,10 +682,9 @@ Defaults: `view="month"`, week starts Monday unless overridden, `visibleStartHou
 value into `data` under the camelCase name of the attribute you read:
 
 ```ts
-// before
-{ id, title, start, dataSpaceItemId: itemId }
-// after: the entry still carries data-space-item-id="…"
-{ id, title, start, data: { spaceItemId: itemId } }
+const before = { id, title, start, dataSpaceItemId: itemId };
+// the entry still carries data-space-item-id="…"
+const after = { id, title, start, data: { spaceItemId: itemId } };
 ```
 
 Read it back from `event.data?.spaceItemId` in callbacks. Selectors such as

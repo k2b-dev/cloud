@@ -12,6 +12,21 @@ const app = (id: string, routes: string[]): AppRegistryEntry => ({
   startedAt: 0,
 });
 
+test("withdrawing an unknown application removes only its routes after registry withdrawal", () => {
+  const retired = app("retired-app", ["/app/retired-app", "/public/retired-app"]);
+  const providers = [app("core", ["/", "/api/capabilities"]), app("mail", ["/app/mail", "/api/mail"])];
+  const before = buildAppRoutesDetailed([...providers, retired]);
+  expect(before.warnings).toEqual([]);
+  expect(before.routes.filter((route) => route.appId === "retired-app").map((route) => route.prefix)).toEqual([
+    "/app/retired-app",
+    "/public/retired-app",
+  ]);
+  const after = buildAppRoutesDetailed(providers);
+  expect(after.warnings).toEqual([]);
+  expect(after.routes).toEqual(before.routes.filter((route) => route.appId !== "retired-app"));
+  expect(after.routes.some((route) => route.prefix === "/api/capabilities" && route.appId === "core")).toBe(true);
+});
+
 describe("reserved /pwa prefix", () => {
   test("routes the shell, Core's identity endpoints and each app's own part", () => {
     const { routes, warnings } = buildAppRoutesDetailed([
@@ -78,4 +93,16 @@ describe("reserved /pwa prefix", () => {
     expect(routes.map(({ prefix, appId }) => [prefix, appId])).toEqual([["/app/contacts", "contacts"]]);
     expect(warnings.map(({ appId, prefix, reason }) => [appId, prefix, reason])).toEqual([["spaces", "/app/contacts", "reserved_prefix"]]);
   });
+});
+
+test("an unknown application lease can route until withdrawal without affecting platform Help", () => {
+  const core = app("core", ["/", "/api/help", "/help"]);
+  const retired = app("retired-app", ["/retired-app", "/api/retired-app", "/admin/retired-app", "/public/retired-app"]);
+  const before = buildAppRoutesDetailed([core, retired]);
+  expect(before.warnings).toEqual([]);
+  expect(before.routes.filter((route) => route.appId === "retired-app")).toHaveLength(4);
+  const after = buildAppRoutesDetailed([core]);
+  expect(after.warnings).toEqual([]);
+  expect(after.routes).toEqual(before.routes.filter((route) => route.appId === "core"));
+  expect(after.routes.map((route) => route.prefix)).toContain("/api/help");
 });

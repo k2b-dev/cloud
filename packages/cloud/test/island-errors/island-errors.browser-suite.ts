@@ -116,10 +116,25 @@ describe(`island error fallback in ${browserName}`, () => {
       await next(page, 4);
       await showsRevision(page, "steady", 4);
 
-      // Once the data is fine again, "Try again" remounts the island, which loads the current revision.
+      // Once the data is fine again, "Retry" remounts the island, which loads the current revision.
       flakyBroken = false;
-      await alert.getByRole("button", { name: "Try again" }).click();
+      // on this v1 page the island's own element carries the v2 scope while the notice stands, and only then
+      const scoped = () =>
+        page.evaluate(() =>
+          document
+            .querySelector('[role="alert"], section[data-feed="flaky"]')
+            ?.closest("solid-island, solid-client")
+            ?.classList.contains("k2-ui"),
+        );
+      expect(await scoped()).toBe(true);
+      // by the keyboard, as WebKit does not focus a button that the pointer presses
+      const retry = alert.getByRole("button", { name: "Retry" });
+      await retry.focus();
+      await page.keyboard.press("Enter");
       await showsRevision(page, "flaky", 4);
+      // the focus was on Retry, which left: it goes on to what the island renders again, not to the page
+      await page.waitForFunction(() => document.activeElement?.closest('section[data-feed="flaky"]') !== null);
+      expect(await scoped()).toBe(false);
       expect(await page.getByRole("alert").count()).toBe(0);
       expect(reported).toHaveLength(1);
     } finally {

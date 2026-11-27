@@ -5,6 +5,8 @@ export type SegmentOption<T extends string = string> = {
   value: T;
   label: JSX.Element;
   icon?: string;
+  /** A hint on hover, such as the option's name where a narrow place shows only its icon. */
+  title?: string;
   disabled?: boolean;
 };
 
@@ -16,6 +18,8 @@ export type SegmentedControlProps<T extends string = string> = {
   ariaLabel?: string;
   label?: string;
   size?: "sm" | "md";
+  /** Fill the available width and give every option the same share. Without it the control is as wide as its options. */
+  stretch?: boolean;
   class?: string;
 };
 
@@ -59,6 +63,7 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
     <div
       class={`k2b-segmented-control ${props.class ?? ""}`}
       data-size={props.size ?? "md"}
+      data-stretch={props.stretch ? "" : undefined}
       role="radiogroup"
       aria-label={props.ariaLabel ?? props.label ?? messages().options}
       aria-orientation="horizontal"
@@ -73,6 +78,7 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
             type="button"
             role="radio"
             class="k2b-segmented-control__option"
+            title={option.title}
             aria-checked={currentValue() === option.value}
             data-selected={currentValue() === option.value ? "true" : undefined}
             disabled={props.disabled || option.disabled}

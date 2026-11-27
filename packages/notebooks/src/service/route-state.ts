@@ -29,7 +29,9 @@ export type SelectedNoteRouteState = {
   tocItems: TocItem[];
   taskProgress: TaskProgress;
   namedBlocks: NamedBlockSummary[];
+  /** The first page of the notes that link here (`NOTE_LINKS_PAGE`); `backlinksTotal` counts them all. */
   backlinks: Backlink[];
+  backlinksTotal: number;
   relations: NoteDetailRelations;
   panelAttachments: PublicAttachment[];
 };
@@ -40,8 +42,11 @@ export type NoteDetailRelations = {
   tags: string[];
 };
 
-/** Links the panel lists for a note, the most one page of note links returns. */
-const OUTGOING_LINKS_LIMIT = 100;
+/**
+ * Links the panel lists for a note in each direction: the most one page of the API returns (`PaginationQuerySchema`'s
+ * `per_page` maximum). The panel loads further backlinks page by page.
+ */
+export const NOTE_LINKS_PAGE = 100;
 
 export type EditableNoteRouteData = {
   href: string;
@@ -69,6 +74,7 @@ export type EditableNoteRouteData = {
     taskProgress: TaskProgress;
     attachments: PublicAttachment[];
     backlinks: Backlink[];
+    backlinksTotal: number;
     relations: NoteDetailRelations;
     namedBlocks: NamedBlockSummary[];
   };
@@ -120,12 +126,13 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
       noteId: note.id,
       userId: params.userId,
       bypassAccess: params.bypassAccess,
+      limit: NOTE_LINKS_PAGE,
     }),
     notebooksService.note.outgoingLinks.list({
       noteId: note.id,
       userId: params.userId,
       bypassAccess: params.bypassAccess,
-      limit: OUTGOING_LINKS_LIMIT,
+      limit: NOTE_LINKS_PAGE,
     }),
     notebooksService.activity.noteAuthors({ noteId: note.id }),
   ]);
@@ -137,7 +144,8 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
     tocItems,
     taskProgress,
     namedBlocks,
-    backlinks,
+    backlinks: backlinks.items,
+    backlinksTotal: backlinks.total,
     relations: {
       outgoing,
       tags: extractTags(note.contentMd),
@@ -238,6 +246,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
         taskProgress: state.taskProgress,
         attachments: state.panelAttachments,
         backlinks: state.backlinks,
+        backlinksTotal: state.backlinksTotal,
         relations: state.relations,
         namedBlocks: state.namedBlocks,
       },

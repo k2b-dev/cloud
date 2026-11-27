@@ -14,7 +14,6 @@ const request = (path: string, authenticated = false) =>
 const protectedPages = [
   "/admin",
   "/admin/base/places",
-  "/admin/faq",
   "/admin/contacts",
   "/admin/grids",
   "/admin/notebooks",
@@ -28,20 +27,9 @@ const protectedPages = [
   "/admin/observability/gateway",
   "/admin/observability",
   "/me",
-  ...[
-    "accounts",
-    "assistant",
-    "capabilities",
-    "contacts",
-    "dashboard",
-    "grids",
-    "mail",
-    "notebooks",
-    "pulse",
-    "spaces",
-    "venue",
-    "weather",
-  ].map((app) => `/app/${app}`),
+  ...["accounts", "assistant", "contacts", "dashboard", "grids", "mail", "notebooks", "pulse", "spaces", "venue", "weather"].map(
+    (app) => `/app/${app}`,
+  ),
   "/tools/document-markdown",
   "/tools/markdown-pdf",
   "/oauth/consent",
@@ -52,7 +40,6 @@ const pagePrefixes = [
     "accounts",
     "api-docs",
     "assistant",
-    "capabilities",
     "contacts",
     "dashboard",
     "grids",
@@ -63,21 +50,9 @@ const pagePrefixes = [
     "venue",
     "weather",
   ].map((app) => `/app/${app}`),
-  ...[
-    "faq",
-    "contacts",
-    "grids",
-    "notebooks",
-    "mail",
-    "spaces",
-    "weather",
-    "ipa-hosts",
-    "proxy-auth",
-    "oauth",
-    "gateway",
-    "observability",
-  ].map((app) => `/admin/${app}`),
-  "/faq",
+  ...["contacts", "grids", "notebooks", "mail", "spaces", "weather", "ipa-hosts", "proxy-auth", "oauth", "gateway", "observability"].map(
+    (app) => `/admin/${app}`,
+  ),
   "/tools",
   "/share/grids",
   "/apps",
@@ -90,7 +65,6 @@ const missingResources = [
   "/app/accounts/users/00000000-0000-0000-0000-000000000000",
   "/app/assistant?project=not-a-real-id",
   "/app/assistant?conversation=not-a-real-id",
-  "/app/capabilities/not-a-real-app",
   "/app/contacts/not-a-real-id",
   "/app/grids/not-a-real-id",
   "/app/grids/not-a-real-id/query-reference",
@@ -128,7 +102,7 @@ describe.skipIf(!origin)("live Cloud document boundaries", () => {
       expect(await response.text()).toContain("k2b-not-found");
     }, 20_000);
 
-  for (const path of ["/faq", "/tools", "/app/api-docs"])
+  for (const path of ["/tools", "/app/api-docs"])
     test(`public ${path} remains public`, async () => {
       const response = await request(path);
       expect(response.status).toBe(200);
@@ -159,12 +133,6 @@ describe.skipIf(!origin)("live Cloud document boundaries", () => {
       expect(response.status).toBe(404);
       expect(response.headers.get("content-type")).not.toContain("text/html");
     }, 20_000);
-
-  test("FAQ API authentication remains JSON", async () => {
-    const response = await request("/api/faq");
-    expect(response.status).toBe(401);
-    expect(response.headers.get("content-type")).toContain("application/json");
-  }, 20_000);
 
   for (const path of missingResources)
     test.skipIf(!adminToken)(

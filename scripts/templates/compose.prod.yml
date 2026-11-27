@@ -138,10 +138,6 @@ services:
     security_opt: [no-new-privileges:true]
     image: ghcr.io/k2b-dev/cloud-app-assistant:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
-  app-capabilities:
-    <<: *app-defaults
-    image: ghcr.io/k2b-dev/cloud-app-capabilities:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
-
   # Chat is unreleased: its image is built and published, but a plain `up`
   # leaves it out. `--profile unreleased` or naming the service starts it,
   # which is for test installations only. Do not start it.
@@ -157,10 +153,6 @@ services:
   app-dashboard:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-dashboard:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
-
-  app-faq:
-    <<: *app-defaults
-    image: ghcr.io/k2b-dev/cloud-app-faq:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-filesv2:
     <<: *app-defaults
