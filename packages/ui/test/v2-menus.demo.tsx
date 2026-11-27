@@ -11,6 +11,8 @@ declare global {
     __deeds?: string[];
     /** A view more under "Weitere": the app builds its tabs again while their menu may be open. */
     __moreViews?: () => void;
+    /** Gives the head menu's entries (deed, toggle, link) a description, or takes it away, while the menu is open. */
+    __k2Describe?: (on: boolean) => void;
     /** Where the last Escape went: to the page, or taken by something on it (the toast test). */
     __escape?: "none" | "page" | "taken";
   }
@@ -33,10 +35,22 @@ export function Demo() {
   if (typeof window !== "undefined") window.__moreViews = () => setViews([...views(), `Ansicht ${views().length + 1}`]);
   // the open reply of Mail: one choice for the kind of reply and one for the sender
   const [kind, setKind] = createSignal("reply");
+  // descriptions that come and go while the menu is open; the link entry joins with the first one and stays
+  const [described, setDescribed] = createSignal(false);
+  const [linked, setLinked] = createSignal(false);
+  if (typeof window !== "undefined")
+    window.__k2Describe = (on) => {
+      if (on) setLinked(true);
+      setDescribed(on);
+    };
+  const says = (text: string) => (described() ? text : undefined);
   const [sender, setSender] = createSignal("anna@werkstatt.example");
   const toast = useToast();
   const head = (): MenuEntry[] => [
-    { label: "Als Vorlage speichern", icon: "template", onClick: did("template") },
+    { label: "Als Vorlage speichern", icon: "template", description: says("Felder und Positionen ohne Kunde"), onClick: did("template") },
+    ...(linked()
+      ? [{ label: "Im Archiv ansehen", icon: "archive", href: "#archiv", description: says("Ältere Fassungen dieses Auftrags") }]
+      : []),
     { label: "Auftrag duplizieren", icon: "copy", meta: "⌘ D", onClick: did("duplicate") },
     {
       label: "Verschieben nach",
@@ -51,6 +65,7 @@ export function Demo() {
     ...(openOnly() ? [] : [{ label: "Alle zeigen", icon: "list", onClick: did("show-all") }]),
     {
       label: "Nur offene zeigen",
+      description: says("Erledigte Aufträge ausblenden"),
       checked: openOnly(),
       onClick: () => {
         const next = !openOnly();
@@ -129,7 +144,10 @@ export function Demo() {
                       setSender(value);
                       did(`sender:${value}`)();
                     },
-                    items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
+                    items: [
+                      { label: "anna@werkstatt.example", description: "Persönlich, mit deiner Signatur" },
+                      { label: "info@werkstatt.example", description: "Für das Team, Antworten gehen an alle" },
+                    ],
                   },
                   { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
                 ]}
