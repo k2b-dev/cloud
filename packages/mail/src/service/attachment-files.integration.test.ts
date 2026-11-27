@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, FileProviderListData, User } from "@k2b/cloud/contracts";
 import { FileProviderListInputSchema } from "@k2b/cloud/contracts";
+import { backgroundWork } from "@k2b/cloud/services";
 import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { unwrap } from "@k2b/stdlib";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
@@ -513,7 +514,7 @@ suite("Mail attachments as a file-provider source", () => {
     await sql`DELETE FROM mail.attachment_files WHERE mailbox_id IN (${mailbox.id}::uuid, ${other.id}::uuid)`;
     await sql`DELETE FROM mail.attachment_files_backfill`;
     const first = await backfillAttachmentFiles();
-    expect(first.completed).toBe(true);
+    expect(first?.completed).toBe(true);
     expect(await snapshot()).toEqual(before);
     expect(inDateOrder(await items(reader, { parent: aliceMarch }))).toEqual(aliceFiles);
     // A finished backfill is one read; a reset one runs again over indexed rows without adding any.
@@ -530,5 +531,34 @@ suite("Mail attachments as a file-provider source", () => {
     await backfillAttachmentFiles();
     const resumed = await snapshot();
     expect(resumed.map((row) => row.attachment_id)).toEqual(ids.filter((id) => id > middle));
+  });
+
+  test("the backfill stops in maintenance „Ruhe“ before its next batch and keeps its cursor", async () => {
+    await sql`DELETE FROM mail.attachment_files_backfill`;
+    const paused = spyOn(backgroundWork, "paused").mockReturnValue(true);
+    try {
+      expect(await backfillAttachmentFiles()).toBeNull();
+      expect(await sql`SELECT 1 FROM mail.attachment_files_backfill`).toHaveLength(0);
+    } finally {
+      paused.mockRestore();
+    }
+    expect((await backfillAttachmentFiles())?.completed).toBe(true);
+  });
+
+  test("a sender whose address outgrows a readable ID gets a bounded one that still opens their files", async () => {
+    const long: Address = { name: "", address: `${"ü".repeat(300)}@example.test` };
+    await receive(other, "long-sender", {
+      from: long,
+      date: "2026-03-15T09:00:00.000Z",
+      parts: [{ filename: "long.txt", type: "text/plain", bytes: 100, disposition: "attachment" }],
+    });
+    const senders = unwrap(await list(owner, { parent: `${other.shortId}/2026/03` })).items;
+    // The name is cut to the contract's 255 characters; the ID is the address's hash.
+    const folder = senders.find((entry) => entry.id.includes("/h:"));
+    expect(folder?.id).toMatch(new RegExp(`^${other.shortId}/2026/03/h:[0-9a-f]{32}$`));
+    expect(folder?.name).toHaveLength(255);
+    expect(long.address.startsWith(folder!.name.slice(0, 200))).toBe(true);
+    expect(await items(owner, { parent: folder!.id })).toEqual(["long.txt"]);
+    expect(senders.every((entry) => entry.id.length <= 2048)).toBe(true);
   });
 });

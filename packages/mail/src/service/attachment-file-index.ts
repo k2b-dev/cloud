@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { logger, startRuntimeInterval } from "@k2b/cloud/services";
+import { backgroundWork, logger, startRuntimeInterval } from "@k2b/cloud/services";
 import { MIN_LIST_IMAGE_BYTES } from "../attachment-preview-policy";
 
 type SqlClient = typeof sql;
@@ -92,13 +92,17 @@ export type AttachmentFileBackfill = { afterId: string; indexed: number; complet
 /**
  * Indexes the attachments stored before the index existed, one batch per transaction in attachment order. The cursor
  * commits with each batch, so a crash or another process resumes after finished work, and rows ingest already wrote
- * stay as they are. A batch holds its attachments `FOR KEY SHARE`: one that hydration replaces meanwhile drops out of
- * the batch instead of failing it, and its replacement indexes itself.
+ * stay as they are. A batch holds its attachments `FOR KEY SHARE SKIP LOCKED`: only a delete locks an attachment row,
+ * so a skipped one is on its way out (hydration's replacement indexes itself), and the batch never waits on, or
+ * deadlocks with, a cascade that locks a message's attachments in another order. In maintenance „Ruhe“ it stops between
+ * batches and answers `null` before the first; the next run resumes from the cursor.
  */
-export const backfillAttachmentFiles = async (signal?: AbortSignal): Promise<AttachmentFileBackfill> => {
+export const backfillAttachmentFiles = async (signal?: AbortSignal): Promise<AttachmentFileBackfill | null> => {
+  let progress: AttachmentFileBackfill | null = null;
   for (;;) {
     signal?.throwIfAborted();
-    const progress = await sql.begin(async (tx): Promise<AttachmentFileBackfill> => {
+    if (backgroundWork.paused()) return progress;
+    progress = await sql.begin(async (tx): Promise<AttachmentFileBackfill> => {
       await tx`SET LOCAL lock_timeout = '10s'`;
       await tx`INSERT INTO mail.attachment_files_backfill (singleton) VALUES (true) ON CONFLICT DO NOTHING`;
       const [marker] = await tx<{ after_id: string; indexed: string | number; completed_at: Date | null }[]>`
@@ -109,7 +113,7 @@ export const backfillAttachmentFiles = async (signal?: AbortSignal): Promise<Att
       const [batch] = await tx<{ last_id: string | null; scanned: number; indexed: number }[]>`
         WITH batch AS (
           SELECT id FROM mail.attachments WHERE id > ${marker.after_id}::uuid ORDER BY id LIMIT ${ATTACHMENT_FILES_BACKFILL_BATCH}
-          FOR KEY SHARE
+          FOR KEY SHARE SKIP LOCKED
         ), indexed AS (
           ${insertAttachmentFiles(tx, sql`SELECT id FROM batch`)}
         )
@@ -142,7 +146,7 @@ export const startAttachmentFileBackfill = (): void => {
     intervalMs: BACKFILL_INTERVAL_MS,
     run: async (signal) => {
       const progress = await backfillAttachmentFiles(signal);
-      log.debug("Mail attachment file index is complete", progress);
+      if (progress?.completed) log.debug("Mail attachment file index is complete", progress);
     },
     onError: (error) => log.warn("Mail attachment file backfill paused; the next run resumes it", { error: String(error) }),
   });

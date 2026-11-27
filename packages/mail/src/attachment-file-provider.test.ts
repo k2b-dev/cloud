@@ -31,7 +31,7 @@ describe("Mail as a source of the file chooser", () => {
   });
 
   test("names stay within the contract by the chooser's cleaning rule", () => {
-    expect(providerName("invoice‮fdp.exe", "file")).toBe("invoicefdp.exe");
+    expect(providerName("invoice\u202Efdp.exe", "file")).toBe("invoicefdp.exe");
     expect(providerName("a/b\\c\u0000.pdf", "file")).toBe("abc.pdf");
     expect(providerName("  ", "Unnamed attachment")).toBe("Unnamed attachment");
     expect(providerName(null, "Unnamed attachment")).toBe("Unnamed attachment");

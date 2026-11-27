@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import type { FileProviderEntry, FileProviderListData } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -15,14 +16,17 @@ type SqlFragment = Bun.SQL.Query<unknown>;
  * which `attachment.content.read` opens with the same access rule.
  */
 const MAILBOX = "[0-9A-Za-z]{6}";
-const FOLDER = new RegExp(`^(${MAILBOX})(?:/([1-9]\\d{3})(?:/(0[1-9]|1[0-2])(?:/(-|e:[^/]{1,1024}))?)?)?$`);
+// A sender's address is header text of up to 320 characters; encoded, it can outgrow the contract's 2,048-character IDs.
+// Short ones stay readable in the ID, longer ones go by their MD5, which the files query compares within the month.
+const SENDER_IN_ID = 512;
+const FOLDER = new RegExp(`^(${MAILBOX})(?:/((?!0000)\\d{4})(?:/(0[1-9]|1[0-2])(?:/(-|e:[^/]{1,${SENDER_IN_ID}}|h:[0-9a-f]{32}))?)?)?$`);
 const UNKNOWN_SENDER = "-";
 
 type Folder =
   | { level: "mailbox"; mailbox: string }
   | { level: "year"; mailbox: string; year: number }
   | { level: "month"; mailbox: string; year: number; month: number }
-  | { level: "sender"; mailbox: string; year: number; month: number; sender: string };
+  | { level: "sender"; mailbox: string; year: number; month: number; sender: { email: string } | { hash: string } };
 
 const parseFolder = (id: string): Folder | null => {
   const match = FOLDER.exec(id);
@@ -31,25 +35,31 @@ const parseFolder = (id: string): Folder | null => {
   if (!year) return { level: "mailbox", mailbox };
   if (!month) return { level: "year", mailbox, year: Number(year) };
   if (!sender) return { level: "month", mailbox, year: Number(year), month: Number(month) };
-  if (sender === UNKNOWN_SENDER) return { level: "sender", mailbox, year: Number(year), month: Number(month), sender: "" };
+  const at = { level: "sender" as const, mailbox, year: Number(year), month: Number(month) };
+  if (sender === UNKNOWN_SENDER) return { ...at, sender: { email: "" } };
+  if (sender.startsWith("h:")) return { ...at, sender: { hash: sender.slice(2) } };
   try {
-    return { level: "sender", mailbox, year: Number(year), month: Number(month), sender: decodeURIComponent(sender.slice(2)) };
+    return { ...at, sender: { email: decodeURIComponent(sender.slice(2)) } };
   } catch {
     return null;
   }
 };
 
 const pad = (value: number) => String(value).padStart(2, "0");
-const yearId = (mailbox: string, year: number) => `${mailbox}/${year}`;
+const yearId = (mailbox: string, year: number) => `${mailbox}/${String(year).padStart(4, "0")}`;
 const monthId = (mailbox: string, year: number, month: number) => `${yearId(mailbox, year)}/${pad(month)}`;
-const senderId = (mailbox: string, year: number, month: number, sender: string) =>
-  `${monthId(mailbox, year, month)}/${sender ? `e:${encodeURIComponent(sender)}` : UNKNOWN_SENDER}`;
+const senderKey = (sender: string) => {
+  if (!sender) return UNKNOWN_SENDER;
+  const encoded = encodeURIComponent(sender);
+  return encoded.length <= SENDER_IN_ID ? `e:${encoded}` : `h:${createHash("md5").update(sender, "utf8").digest("hex")}`;
+};
+const senderId = (mailbox: string, year: number, month: number, sender: string) => `${monthId(mailbox, year, month)}/${senderKey(sender)}`;
 
 /**
  * The chooser cleans every name again; the provider keeps names inside the contract by the same rule: no control
  * characters, path separators or bidi controls, at most 255 characters with the extension kept, never empty.
  */
-const UNSAFE_NAME_CHARACTERS = /[\u0000-\u001f\u007f-\u009f/\\؜‎‏‪-‮⁦-⁩]/g;
+const UNSAFE_NAME_CHARACTERS = /[\u0000-\u001f\u007f-\u009f/\\\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 export const providerName = (value: string | null, fallback: string): string => {
   const cleaned = (value ?? "").replace(UNSAFE_NAME_CHARACTERS, "").trim();
   if (cleaned === "" || cleaned === "." || cleaned === "..") return fallback;
@@ -343,7 +353,7 @@ const listFiles = async (
     JOIN mail.attachments a ON a.id = f.attachment_id
     WHERE f.mailbox_id = ${mailboxId}::uuid
       AND f.month = make_date(${folder.year}::int, ${folder.month}::int, 1)
-      AND f.sender_email = ${folder.sender}
+      AND ${"hash" in folder.sender ? sql`md5(f.sender_email) = ${folder.sender.hash}` : sql`f.sender_email = ${folder.sender.email}`}
       AND ${contains(sql`COALESCE(f.filename, '')`, query)}
       AND (${cursor.data?.at ?? null}::timestamptz IS NULL
         OR (f.internal_date, f.attachment_id) < (${cursor.data?.at ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid))
