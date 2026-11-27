@@ -383,7 +383,8 @@ for (const [width, height] of [
       expect(await back.isVisible()).toBe(true);
       await back.click();
       await page.waitForURL(new RegExp(`/c/${place}/t/general`));
-      await cards.first().waitFor();
+      // back in the stream, all three cards stand again, not only the discussion that was open
+      await page.waitForFunction(() => document.querySelectorAll(".chat-discussion").length === 3);
       // reload keeps the discussion that the address names
       await page.goBack();
       await page.waitForURL(new RegExp(`/c/${place}/t/${threads[1]}`));
