@@ -250,6 +250,23 @@ for (const width of [550, 450, 400])
     });
   });
 
+// who shares a file: a team (a mark) and a person in one section start their names on one edge (W1b #4206 r5)
+for (const width of [1440, 390])
+  test(`at ${width} px a team and a person in the sharing of a file start their names on one edge`, async () => {
+    await withPage(
+      "list",
+      async (page) => {
+        const edges = await page
+          .locator(".k2-sec", { hasText: "Freigabe" })
+          .locator(":scope > .k2-row .k2-row-title")
+          .evaluateAll((titles) => titles.map((title) => Math.round(title.getBoundingClientRect().left)));
+        expect(edges.length).toBe(2);
+        expect(new Set(edges).size).toBe(1);
+      },
+      width,
+    );
+  });
+
 // one line between groups: the last row of a group and the head of the next never draw two lines at one edge, in the
 // table and in its phone rows (Valentin 26.11., NO DOUBLE LINES)
 for (const width of [1440, 1024, 390])

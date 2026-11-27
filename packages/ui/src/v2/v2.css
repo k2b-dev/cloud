@@ -2307,7 +2307,8 @@
   min-height: var(--k2-h-row-mark);
   padding-block: 6px;
 }
-.k2-ui :is(.k2-list:has(> .k2-row > .k2-row-lead > .k2-mk[data-preview]), .k2-row:has(> .k2-row-lead > .k2-mk[data-preview])) {
+.k2-ui :is(.k2-list, .k2-sec):has(> .k2-row > .k2-row-lead > .k2-mk[data-preview]),
+.k2-ui .k2-row:has(> .k2-row-lead > .k2-mk[data-preview]) {
   --k2-lead: 32px;
   --k2-lead-icon: 18px;
 }
@@ -2326,12 +2327,12 @@
 .k2-ui .k2-row[data-mark] {
   column-gap: 12px;
 }
-/* a person among things (an owner in a list of files): in a list whose rows lead with marks the person takes the
-   marks' size, so every name starts on one edge (12 px after every lead) */
-.k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead {
+/* a person among things (an owner in a list of files, who shares a file beside a team): in a list or section whose
+   rows lead with marks the person takes the marks' size, so every name starts on one edge (12 px after every lead) */
+.k2-ui :is(.k2-list, .k2-sec):has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead {
   width: var(--k2-lead, 24px);
 }
-.k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
+.k2-ui :is(.k2-list, .k2-sec):has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
   width: var(--k2-lead, 24px);
   height: var(--k2-lead, 24px);
 }
@@ -5237,11 +5238,11 @@
     font-size: 22px;
   }
   /* a person among things takes the marks' 40 here too */
-  .k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead,
-  .k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
+  .k2-ui :is(.k2-list, .k2-sec):has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead,
+  .k2-ui :is(.k2-list, .k2-sec):has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
     width: 40px;
   }
-  .k2-ui .k2-list:has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
+  .k2-ui :is(.k2-list, .k2-sec):has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead > .k2-av {
     height: 40px;
   }
 }
