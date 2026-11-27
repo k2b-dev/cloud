@@ -223,9 +223,13 @@ export default function NotebookDetailPanel(props: Props) {
   const [historyIncomplete, setHistoryIncomplete] = createSignal(props.historyIncomplete);
   const [backlinks, setBacklinks] = createSignal<Backlink[]>(props.backlinks);
   const [backlinksTotal, setBacklinksTotal] = createSignal(props.backlinksTotal);
+  // The server sent page 1; the next one is counted by page, not by the loaded rows: an edit while reading can move a
+  // backlink between pages, and the deduplicated list is then shorter than the pages it came from.
+  const [backlinksNextPage, setBacklinksNextPage] = createSignal(2);
+  const [backlinksHasNext, setBacklinksHasNext] = createSignal(props.backlinks.length < props.backlinksTotal);
   const [backlinksLoading, setBacklinksLoading] = createSignal(false);
   const [backlinksFailed, setBacklinksFailed] = createSignal(false);
-  /** The next page of backlinks after the loaded ones, appended; a note opened meanwhile keeps its own list. */
+  /** The next page of backlinks, appended; a note opened meanwhile keeps its own list and its own loading state. */
   const loadMoreBacklinks = async () => {
     const forNote = noteId();
     setBacklinksLoading(true);
@@ -233,17 +237,19 @@ export default function NotebookDetailPanel(props: Props) {
     try {
       const response = await apiClient[":id"].notes[":noteId"].backlinks.$get({
         param: { id: props.notebookId, noteId: forNote },
-        query: { page: String(Math.floor(backlinks().length / BACKLINKS_PAGE) + 1), per_page: String(BACKLINKS_PAGE) },
+        query: { page: String(backlinksNextPage()), per_page: String(BACKLINKS_PAGE) },
       });
       if (!response.ok) throw new Error(`backlinks ${response.status}`);
       const page = await response.json();
       if (noteId() !== forNote) return;
       setBacklinks((loaded) => [...loaded, ...page.data.filter((next) => !loaded.some((known) => known.noteId === next.noteId))]);
       setBacklinksTotal(page.pagination.total);
+      setBacklinksHasNext(page.pagination.has_next);
+      setBacklinksNextPage((next) => next + 1);
     } catch {
       if (noteId() === forNote) setBacklinksFailed(true);
     } finally {
-      setBacklinksLoading(false);
+      if (noteId() === forNote) setBacklinksLoading(false);
     }
   };
   const [relations, setRelations] = createSignal<NoteDetailRelations>(props.relations);
@@ -599,6 +605,9 @@ export default function NotebookDetailPanel(props: Props) {
       setTasks(detail.taskProgress);
       setBacklinks(detail.backlinks);
       setBacklinksTotal(detail.backlinksTotal);
+      setBacklinksNextPage(2);
+      setBacklinksHasNext(detail.backlinks.length < detail.backlinksTotal);
+      setBacklinksLoading(false);
       setBacklinksFailed(false);
       setRelations(detail.relations);
       setActivityExpanded(false);
@@ -1183,18 +1192,18 @@ export default function NotebookDetailPanel(props: Props) {
 
           <DetailLinks
             incoming={backlinks().map(linkItem)}
+            incomingTotal={backlinksTotal()}
             outgoing={relations().outgoing.map(linkItem)}
-            footer={
+            // A failed page keeps the loaded rows and says so with Retry, in the section's own error row.
+            state={backlinksFailed() ? "error" : "ready"}
+            onRetry={() => void loadMoreBacklinks()}
+            incomingMore={
               // A note linked from many holds one page; the rest load here, a page at a time (#4417).
-              <Show when={backlinks().length < backlinksTotal()}>
+              <Show when={backlinksHasNext() && !backlinksFailed()}>
                 <DetailPanel.Action
                   type="button"
                   leading={<i class={`ti ${backlinksLoading() ? "ti-loader-2 k2b-spin" : "ti-dots"}`} aria-hidden="true" />}
-                  title={
-                    backlinksFailed()
-                      ? t().moreBacklinksFailed
-                      : t().moreBacklinks({ shown: formatCount(backlinks().length), total: formatCount(backlinksTotal()) })
-                  }
+                  title={t().moreBacklinks({ shown: formatCount(backlinks().length), total: formatCount(backlinksTotal()) })}
                   disabled={backlinksLoading()}
                   onClick={() => void loadMoreBacklinks()}
                 />

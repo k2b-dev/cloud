@@ -160,7 +160,9 @@ type BacklinkRow = {
  * backlink only appears if the requester can read where it's coming from, with the total of all such notes. One
  * bounded statement: the page (at most `limit`, from `offset`) and the total come together, so a note linked from
  * thousands of notes costs the same as one linked from a few (#4417). Only a page past the end asks for the total
- * again.
+ * again. The order follows `updated_at`, so a source edited while someone pages through the list moves to the top:
+ * a later page can then repeat a backlink (callers drop it by id) or skip one until the list is read again. For this
+ * list that is acceptable; it needs no snapshot.
  *
  * `bypassAccess: true` skips the access filter — used for global admins so the backlinks panel reflects the full link
  * graph for them.

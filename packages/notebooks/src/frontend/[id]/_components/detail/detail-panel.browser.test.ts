@@ -192,27 +192,107 @@ const access = titled("Zugriff");
 const presence = "section.k2b-section:has(.k2b-detail-presence)";
 const contents = 'section.k2b-section:has(.k2b-section__title:text-is("Inhalt"))';
 
-test("a note linked from many holds one page of backlinks and loads the rest a page at a time", async () => {
+/** The links section's "more" row, opening the section first when it stands closed under "Mehr zu dieser Notiz". */
+const moreBacklinks = async (page: Page) => {
+  const more = page.getByRole("button", { name: /^Weitere Verweise laden/ });
+  if (!(await more.isVisible()))
+    await page
+      .getByRole("button", { name: /^Verknüpfungen/, expanded: false })
+      .first()
+      .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
+  await more.waitFor();
+  return more;
+};
+const loadedBacklinks = (page: Page) => page.getByText(/^Lieferschein \d+$/).count();
+/** Answers the panel's backlinks request like the API: one page of the 250 "Lieferschein" notes, `shift` moving them. */
+const backlinksPage = (page: number, perPage: number, shift = 0) => {
+  const first = (page - 1) * perPage + 1 - shift;
+  const data = Array.from({ length: Math.max(0, Math.min(perPage, 251 - first)) }, (_, index) => ({
+    noteId: `l${String(first + index).padStart(4, "0")}`,
+    title: `Lieferschein ${first + index}`,
+    notebookId: "book01",
+    notebookName: "Handbuch Logistik",
+    updatedAt: "2026-10-16T19:00:00.000Z",
+  }));
+  return {
+    data,
+    pagination: { page, per_page: perPage, total: 250, total_pages: Math.ceil(250 / perPage), has_next: page * perPage < 250 },
+  };
+};
+
+test("a note linked from many counts all its backlinks, holds one page and loads the rest a page at a time", async () => {
   const { page } = await open(1440, false, "linked");
   try {
-    const more = page.getByRole("button", { name: /^Weitere Verweise laden/ });
-    // the links section may stand closed under "Mehr zu dieser Notiz"; open it if so
-    if (!(await more.isVisible()))
-      await page
-        .getByRole("button", { name: /^Verknüpfungen/, expanded: false })
-        .first()
-        .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
-    // the server sent one page and the total; nothing beyond the page is in the panel
-    await page.getByText("Verlinkt von 100", { exact: true }).waitFor();
-    expect(await more.textContent()).toContain("100 von 250");
-    await more.click();
-    await page.getByText("Verlinkt von 200", { exact: true }).waitFor();
-    expect(await more.textContent()).toContain("200 von 250");
-    await more.click();
+    const more = await moreBacklinks(page);
+    // the section counts every backlink, the panel holds the server's first page
     await page.getByText("Verlinkt von 250", { exact: true }).waitFor();
-    // every backlink is loaded, so the way to more leaves
+    expect(await more.textContent()).toContain("100 von 250");
+    // the more row stands in the "Verlinkt von" group, before what the note links to
+    expect(
+      await more.evaluate((element) => {
+        const group = element.closest(".k2b-detail-section-group");
+        return group?.querySelector(".k2b-detail-section-label")?.textContent ?? "";
+      }),
+    ).toBe("Verlinkt von 250");
+    await more.click();
+    await page.waitForFunction(() => document.body.textContent?.includes("200 von 250"));
+    // loaded rows show at once: the group opened
+    expect(await loadedBacklinks(page)).toBe(200);
+    await more.click();
     await more.waitFor({ state: "detached" });
+    expect(await loadedBacklinks(page)).toBe(250);
   } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("a backlink that moves between pages while reading neither repeats nor stops the loading", async () => {
+  const { page } = await open(1440, false, "linked");
+  const asked: number[] = [];
+  try {
+    // one source was edited after page 1 came: it moved to the top, so every later page starts one row earlier
+    await page.route("**/api/notebooks/book01/notes/note01/backlinks?*", async (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      asked.push(Number(query.get("page")));
+      await route.fulfill({ json: backlinksPage(Number(query.get("page")), Number(query.get("per_page")), 1) });
+    });
+    const more = await moreBacklinks(page);
+    await more.click();
+    await page.waitForFunction(() => document.body.textContent?.includes("199 von 250"));
+    await more.click();
+    // the next page is page 3, not page 2 again, and the server's has_next ends the loading
+    await more.waitFor({ state: "detached" });
+    expect(asked).toEqual([2, 3]);
+    // the repeated row (Lieferschein 100) shows once, and every backlink is there
+    expect(await loadedBacklinks(page)).toBe(250);
+    expect(await page.getByText("Lieferschein 100", { exact: true }).count()).toBe(1);
+    await page.getByText("Verlinkt von 250", { exact: true }).waitFor();
+  } finally {
+    await page.unrouteAll({ behavior: "wait" });
+    await page.close();
+  }
+}, 60_000);
+
+test("a backlinks page that fails keeps the loaded ones and says so with Retry", async () => {
+  const { page } = await open(1440, false, "linked");
+  let fail = true;
+  try {
+    await page.route("**/api/notebooks/book01/notes/note01/backlinks?*", async (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      if (fail) return route.fulfill({ status: 503, json: { error: { message: "Fixture unavailable" } } });
+      await route.fulfill({ json: backlinksPage(Number(query.get("page")), Number(query.get("per_page"))) });
+    });
+    const more = await moreBacklinks(page);
+    await more.click();
+    const alert = page.getByRole("alert").filter({ hasText: "Nicht alle Verknüpfungen konnten geladen werden" });
+    await alert.waitFor();
+    expect(await loadedBacklinks(page)).toBe(5);
+    fail = false;
+    await alert.getByRole("button", { name: "Erneut versuchen" }).click();
+    await page.waitForFunction(() => document.body.textContent?.includes("200 von 250"));
+    expect(await page.getByRole("alert").filter({ hasText: "Nicht alle Verknüpfungen" }).count()).toBe(0);
+  } finally {
+    await page.unrouteAll({ behavior: "wait" });
     await page.close();
   }
 }, 60_000);
