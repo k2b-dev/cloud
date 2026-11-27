@@ -24,6 +24,14 @@ export function createMailConversationLinks(props: {
   /** Only people with mailbox-wide access see what the conversation is linked with. */
   enabled: () => boolean;
   canWrite: () => boolean;
+  /**
+   * Asks for the item to link in the reader's own dialog (Mail's v2 pilot); v1's search by default. Resolves with
+   * the item's id, `null` when the person closed the dialog.
+   */
+  pick?: (
+    text: { title: string; label: string; confirm: string },
+    load: (query: string, signal: AbortSignal) => Promise<{ value: string; label: string; meta?: string }[]>,
+  ) => Promise<string | null>;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailMailboxViewMessages.resolve([locale()]).t);
@@ -90,36 +98,50 @@ export function createMailConversationLinks(props: {
     const conversationId = props.conversationId();
     if (!conversationId) return;
     const linked = new Set(items().map((item) => item.id));
-    const selected = await prompts.search<{ id: string }>(
-      async ({ query: text, abortSignal }) => {
-        const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].spaces.items.$get(
-          { param: { mailboxId, conversationId }, query: { query: text } },
-          { init: { signal: abortSignal } },
-        );
-        if (!response.ok) throw new Error(await readApiError(response, t().couldNotSearchSpaces));
-        return (await response.json())
-          .filter((item) => !linked.has(item.ref.id))
-          .map((item) => ({
-            id: item.ref.id,
-            value: { id: item.ref.id },
+    /** The writable tasks and events of Spaces that match, without those linked already. */
+    const search = async (text: string, signal: AbortSignal) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].spaces.items.$get(
+        { param: { mailboxId, conversationId }, query: { query: text } },
+        { init: { signal } },
+      );
+      if (!response.ok) throw new Error(await readApiError(response, t().couldNotSearchSpaces));
+      return (await response.json()).filter((item) => !linked.has(item.ref.id));
+    };
+    const pick = props.pick;
+    const itemId = pick
+      ? await pick({ title: t().linkSpaceItem, label: t().searchTasksAndEvents, confirm: t().linkSpaceItem }, async (text, signal) =>
+          (await search(text, signal)).map((item) => ({
+            value: item.ref.id,
             label: item.title,
-            desc: item.metadata?.[0]?.value,
-            icon: item.icon ?? "ti ti-checkbox",
-          }));
-      },
-      {
-        title: t().linkSpaceItem,
-        icon: "ti ti-link",
-        placeholder: t().searchTasksAndEvents,
-        minQueryLength: 0,
-        noResultsText: t().noWritableSpaceItems,
-        size: "small",
-      },
-    );
-    if (!selected?.value || !mounted || props.mailboxId() !== mailboxId || props.conversationId() !== conversationId) return;
+            ...(item.metadata?.[0]?.value ? { meta: item.metadata[0].value } : {}),
+          })),
+        )
+      : (
+          await prompts.search<{ id: string }>(
+            async ({ query: text, abortSignal }) =>
+              (
+                await search(text, abortSignal)
+              ).map((item) => ({
+                id: item.ref.id,
+                value: { id: item.ref.id },
+                label: item.title,
+                desc: item.metadata?.[0]?.value,
+                icon: item.icon ?? "ti ti-checkbox",
+              })),
+            {
+              title: t().linkSpaceItem,
+              icon: "ti ti-link",
+              placeholder: t().searchTasksAndEvents,
+              minQueryLength: 0,
+              noResultsText: t().noWritableSpaceItems,
+              size: "small",
+            },
+          )
+        )?.value?.id;
+    if (!itemId || !mounted || props.mailboxId() !== mailboxId || props.conversationId() !== conversationId) return;
     const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].spaces.link.$post({
       param: { mailboxId, conversationId },
-      json: { itemId: selected.value.id },
+      json: { itemId },
     });
     if (!response.ok) return void toast.error(await readApiError(response, t().couldNotLinkSpaceItem));
     await refresh();

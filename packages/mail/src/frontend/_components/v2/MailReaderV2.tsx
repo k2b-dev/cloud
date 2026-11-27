@@ -1,7 +1,7 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
-import { prompts, toast, useLocale } from "@k2b/ui";
-import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Menu, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
+import { toast, useLocale } from "@k2b/ui";
+import { Avatar, Band, Bar, Button, Canvas, Chip, confirm, Inline, Menu, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, on, Show } from "solid-js";
 import type { DraftDerivationKind, SenderIdentity } from "../../../contracts";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
@@ -21,6 +21,7 @@ import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
 import { mailReaderMessages } from "../mail-reader-messages";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "../mail-sender-identity-status";
 import { createMailV2Reply, type MailV2Session } from "./MailReplyV2";
+import { tellMailV2 } from "./mail-v2-dialogs";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import type { MailV2Text } from "./mail-v2-messages";
 import { createMailV2ReaderMenus } from "./mail-v2-reader-menus";
@@ -242,8 +243,8 @@ export default function MailReaderV2(props: {
     const mailboxId = data().mailbox.id;
     const status = mailSenderIdentityStatusMessages.resolve([locale()]).t;
     const detail = senderUnavailableDetail(data().identities, locale());
-    if (!c().canAdmin()) return void (await prompts.error(`${detail} ${status.askAdmin}`, { title: status.cannotSend }));
-    const open = await prompts.confirm(detail, { title: status.cannotSend, confirmText: status.openSenderSettings });
+    if (!c().canAdmin()) return void (await tellMailV2(locale(), status.cannotSend, `${detail} ${status.askAdmin}`));
+    const open = await confirm({ title: status.cannotSend, description: detail, confirm: status.openSenderSettings });
     if (open && mailboxId === data().mailbox.id) void c().openSettings("delivery");
   };
   // "Use as new" of a message: one draft seed at a time, a failure says why (v1's, shared).

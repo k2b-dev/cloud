@@ -161,9 +161,9 @@ const savedViewNames: Record<string, string> = { "Priority view": "Wichtig", "Te
 
 /** The fixture's mailbox as the v2 mockup shows it: "Kontakt" with its folders, ten conversations, the first one open. */
 export const mailV2Data = (url: URL, now: number): MailboxPageData => {
-  // The mailbox sends as "Kontakt", so the reply names its sender.
+  // The mailbox sends as "Kontakt", so the reply names its sender; `?sender=none` leaves it without one.
   const source = new URL(url);
-  source.searchParams.set("identity", "1");
+  if (url.searchParams.get("sender") !== "none") source.searchParams.set("identity", "1");
   const base = mailboxData(source);
   const data = {
     ...base,

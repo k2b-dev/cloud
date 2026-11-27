@@ -8,7 +8,16 @@ import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { createRetryToasts } from "./mail-feedback";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
-type SummaryEdit = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; summary: string };
+type SummaryEdit = {
+  mailboxId: string;
+  conversationId: string;
+  expectedSummaryRevision: number;
+  summary: string;
+  /** Saved from the reader's own dialog, which shows a refusal at its field and stays open: no Retry beside it. */
+  inDialog?: boolean;
+  /** Runs once the server stored the summary, before the view is brought up to date (the dialog closes then). */
+  onStored?: () => void;
+};
 
 /**
  * A person writes the open conversation's summary: the form, the save and the update of the view. A failed save keeps
@@ -21,6 +30,16 @@ export function createMailSummaryEdit(props: {
   summary: () => ConversationContentSummary | null;
   /** Shows the saved summary in the view; read when a save succeeds. */
   onSaved: () => (conversationId: string, summary: ConversationContentSummary) => Promise<void>;
+  /**
+   * Asks for the text in the reader's own dialog (Mail's v2 pilot); v1's form by default. The dialog saves through
+   * `save` ("" removes the summary) and stays open while `save` answers with the server's reason for refusing, so the
+   * typed text is never lost; it resolves once saved or closed.
+   */
+  ask?: (
+    text: { title: string; label: string; hint: string; confirm: string; cancel: string },
+    value: string,
+    save: (typed: string) => Promise<string | null>,
+  ) => Promise<unknown>;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
@@ -44,7 +63,7 @@ export function createMailSummaryEdit(props: {
         });
       const current = mutations.create<{ refreshError: Error | null; refresh: () => Promise<void> }, SummaryEdit, { edit: SummaryEdit }>({
         onBefore: (edit) => ({ edit }),
-        mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary }, { abortSignal }) => {
+        mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary, onStored }, { abortSignal }) => {
           if (!active) throw new DOMException("Mailbox changed", "AbortError");
           const onSaved = props.onSaved();
           const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].summary.$put(
@@ -54,6 +73,7 @@ export function createMailSummaryEdit(props: {
           if (!response.ok) throw new Error(await readApiError(response, t().updateSummaryFailed));
           const updated = await response.json();
           abortSignal.throwIfAborted();
+          onStored?.();
           const refresh = () => onSaved(conversationId, updated);
           return { refreshError: await captureMailWorkspaceRefreshError(refresh), refresh };
         },
@@ -62,9 +82,12 @@ export function createMailSummaryEdit(props: {
           if (refreshError) reportRefreshFailure(refreshError, refresh);
           else announce(t().summarySaved);
         },
-        // The form has closed, so Retry sends the captured text again instead of losing it.
-        onError: (error, context) =>
-          retryToasts(error.message, { retryLabel: t().retry, retry: () => context && current.mutate(context.edit) }),
+        // The form has closed, so Retry sends the captured text again instead of losing it. The reader's own dialog
+        // is still open with the text and shows the reason at its field.
+        onError: (error, context) => {
+          if (context?.edit.inDialog) return;
+          retryToasts(error.message, { retryLabel: t().retry, retry: () => context && current.mutate(context.edit) });
+        },
       });
       onCleanup(() => {
         active = false;
@@ -79,6 +102,49 @@ export function createMailSummaryEdit(props: {
     const conversationId = props.conversationId();
     const current = props.summary();
     if (!conversationId || !current || instance.loading()) return;
+    // Another mailbox or conversation opened while the form was open: its summary is not this one.
+    const gone = () => disposed || instance !== save() || conversationId !== props.conversationId();
+    const ask = props.ask;
+    if (ask) {
+      await ask(
+        {
+          title: current.summary ? t().editSummary : t().createSummary,
+          label: t().summary,
+          hint: t().summaryDescription,
+          confirm: current.summary ? t().saveSummary : t().createSummary,
+          cancel: t().cancel,
+        },
+        current.summary ?? "",
+        // The dialog closes once the server stored the text; bringing the view up to date runs on after it, and a
+        // failure there reaches the person as the Retry toast of a stale view.
+        (typed) =>
+          new Promise<string | null>((answer) => {
+            if (gone()) return answer(null);
+            void instance
+              .mutate({
+                mailboxId: props.mailboxId(),
+                conversationId,
+                expectedSummaryRevision: current.summaryRevision,
+                summary: typed,
+                inDialog: true,
+                onStored: () => answer(null),
+              })
+              .then((outcome) => answer(outcome === "error" ? (instance.error()?.message ?? t().updateSummaryFailed) : null));
+          }),
+      );
+      return;
+    }
+    const typed = await askInForm(current);
+    if (typed === null || gone()) return;
+    await instance.mutate({
+      mailboxId: props.mailboxId(),
+      conversationId,
+      expectedSummaryRevision: current.summaryRevision,
+      summary: typed,
+    });
+  };
+  /** v1's form for the summary. */
+  const askInForm = async (current: ConversationContentSummary): Promise<string | null> => {
     const values = await prompts.form({
       title: current.summary ? t().editSummary : t().createSummary,
       icon: "ti ti-notes",
@@ -97,14 +163,7 @@ export function createMailSummaryEdit(props: {
       },
       confirmText: current.summary ? t().saveSummary : t().createSummary,
     });
-    // Another mailbox or conversation opened while the form was open: its summary is not this one.
-    if (!values || disposed || instance !== save() || conversationId !== props.conversationId()) return;
-    await instance.mutate({
-      mailboxId: props.mailboxId(),
-      conversationId,
-      expectedSummaryRevision: current.summaryRevision,
-      summary: String(values.summary ?? ""),
-    });
+    return values ? String(values.summary ?? "") : null;
   };
   return { edit, saving, abort: () => save().abort() };
 }

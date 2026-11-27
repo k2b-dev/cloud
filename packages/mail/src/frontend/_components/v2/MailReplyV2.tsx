@@ -1,6 +1,6 @@
 import { Composer } from "@k2b/editor/composer";
 import type { DateContext } from "@k2b/stdlib";
-import { prompts, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
 import { Button, Icon, Text } from "@k2b/ui/v2";
 import { type Accessor, createEffect, createMemo, createResource, createSignal, on, Show } from "solid-js";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
@@ -13,6 +13,7 @@ import type { MailReplyMode } from "../mail-reply-box";
 import type { MailReplyFrame } from "../mail-reply-frame";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "../mail-sender-identity-status";
 import { MailReplyFrameV2 } from "./MailReplyFrameV2";
+import { tellMailV2 } from "./mail-v2-dialogs";
 import type { MailV2Text } from "./mail-v2-messages";
 import { loadMailV2Signature } from "./mail-v2-signature";
 
@@ -93,9 +94,11 @@ export function createMailV2Reply(props: {
   });
   const explainSenderUnavailable = async () => {
     const status = mailSenderIdentityStatusMessages.resolve([locale()]).t;
-    await prompts.error(`${senderUnavailableDetail(identities(), locale())} ${c().canAdmin() ? "" : status.askAdmin}`.trim(), {
-      title: status.cannotSend,
-    });
+    await tellMailV2(
+      locale(),
+      status.cannotSend,
+      `${senderUnavailableDetail(identities(), locale())} ${c().canAdmin() ? "" : status.askAdmin}`.trim(),
+    );
   };
   const toLabel = () => recipients().join(", ");
   const frame: MailReplyFrame = {
