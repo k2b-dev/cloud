@@ -22,6 +22,7 @@ type Case =
   | "grid"
   | "selecting"
   | "settings"
+  | "setting-change"
   | "states"
   | "canvas"
   | "cells"
@@ -681,6 +682,103 @@ test("a setting stands with its value beside its name, and an unsaved change say
     390,
   );
 });
+
+// What a setting shows while changed ("geändert · vorher …" and its deed) has its place kept: it coming moves no name,
+// no value and no setting after it, at every layout (review r10/r11: the deed came above the value below a pane of
+// 800 px, "geändert" moved the value by 26 px and added a row, and at 320 px it lay under the deed).
+const settingBoxes = (page: Page) =>
+  page.evaluate(() => {
+    const round = (box: DOMRect) => [box.left, box.top, box.width, box.height].map((value) => Math.round(value * 2) / 2).join(",");
+    const settings = [...document.querySelectorAll<HTMLElement>("[data-k2-part='Setting']")];
+    return {
+      settings: settings.map((setting) => ({
+        setting: round(setting.getBoundingClientRect()),
+        label: round(setting.querySelector(":scope > .k2-field-label")!.getBoundingClientRect()),
+        control: round(setting.querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-end)")!.getBoundingClientRect()),
+        message: setting.querySelector(":scope > .k2-field-message")
+          ? round(setting.querySelector(":scope > .k2-field-message")!.getBoundingClientRect())
+          : "",
+      })),
+      after: round(document.querySelectorAll(".k2-sec")[1]!.getBoundingClientRect()),
+    };
+  });
+
+const changedPlaces = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-k2-part='Setting']:has(.k2-field-end)")].map((setting) => {
+      const box = (element: Element | null) => element?.getBoundingClientRect();
+      const own = setting.getBoundingClientRect();
+      const label = box(setting.querySelector(":scope > .k2-field-label"))!;
+      const control = box(setting.querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-end)"))!;
+      const message = box(setting.querySelector(":scope > .k2-field-message"));
+      const chip = box(setting.querySelector(".k2-field-was > .k2-chip"))!;
+      const deed = box(setting.querySelector(".k2-field-action button"))!;
+      const apart = (a: DOMRect, b: DOMRect) =>
+        a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5;
+      const inside = (a: DOMRect) =>
+        a.left >= own.left - 0.5 && a.right <= own.right + 0.5 && a.top >= own.top - 0.5 && a.bottom <= own.bottom + 0.5;
+      const others = [label, control, ...(message ? [message] : [])];
+      return {
+        name: setting.querySelector(".k2-field-label")!.textContent,
+        // the deed comes after the value as the eye reads: on the value's line after it, or under it
+        after:
+          deed.top >= control.bottom - 0.5 ||
+          (Math.abs(deed.top + deed.height / 2 - (control.top + control.height / 2)) < 2 && deed.left >= control.right),
+        inside: inside(chip) && inside(deed),
+        apart: apart(chip, deed) && others.every((other) => apart(chip, other) && apart(deed, other)),
+      };
+    }),
+  );
+
+for (const width of [1440, 700, 390, 320])
+  test(`a setting's change moves nothing, and "geändert" and its deed stand apart after the value at ${width} px`, async () => {
+    await withPage(
+      "setting-change",
+      async (page) => {
+        const before = await settingBoxes(page);
+        await page.evaluate(() => window.__k2SettingChange?.(true));
+        await settled(page);
+        expect(await settingBoxes(page)).toEqual(before);
+        const places = await changedPlaces(page);
+        expect(places.length).toBe(4);
+        expect(places.filter((place) => !place.after || !place.inside || !place.apart)).toEqual([]);
+        // the values of the settings stand in one line down the page (on the phone a short one at the name's end)
+        const lefts = new Set(before.settings.slice(1).map((setting) => setting.control.split(",")[0]));
+        expect(lefts.size).toBe(1);
+        // and it goes again as it came
+        await page.evaluate(() => window.__k2SettingChange?.(false));
+        await settled(page);
+        expect(await settingBoxes(page)).toEqual(before);
+      },
+      width,
+    );
+  });
+
+for (const width of [700, 390])
+  test(`the Tab key reaches a setting's value and then its deed, as the eye reads them, at ${width} px (WCAG 2.4.3)`, async () => {
+    await withPage(
+      "setting-change",
+      async (page) => {
+        await page.evaluate(() => window.__k2SettingChange?.(true));
+        await settled(page);
+        for (const name of ["Angemeldet bleiben", "Adresse", "Neue Apps fragen"]) {
+          const setting = page.locator("[data-k2-part='Setting']", { hasText: name }).first();
+          await setting.locator(".k2-field-action button").focus();
+          await page.keyboard.press("Shift+Tab");
+          const inValue = await setting.evaluate(
+            (element) =>
+              !!document.activeElement && element.contains(document.activeElement) && !document.activeElement.closest(".k2-field-end"),
+          );
+          await page.keyboard.press("Tab");
+          const onDeed = await setting.evaluate(
+            (element) => !!document.activeElement?.closest(".k2-field-action") && element.contains(document.activeElement),
+          );
+          expect({ name, inValue, onDeed }).toEqual({ name, inValue: true, onDeed: true });
+        }
+      },
+      width,
+    );
+  });
 
 test("the states of an entry stand whole under its lines and wrap; rows without states keep their height", async () => {
   for (const width of [1440, 390])

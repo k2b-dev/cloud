@@ -4,6 +4,7 @@ import {
   Button,
   Canvas,
   Cells,
+  Check,
   Chip,
   Digest,
   Empty,
@@ -20,6 +21,7 @@ import {
   Prose,
   Row,
   Section,
+  Setting,
   StatusRow,
   Text,
   Workspace,
@@ -482,6 +484,63 @@ export const ViewStatementScreen = () => {
         <List label="Dateien">
           <Row lines={["Angebot.pdf"]} />
         </List>
+      </Pane>
+    </Workspace>
+  );
+};
+
+declare global {
+  interface Window {
+    /** Shows or hides what every setting of `SettingChangeScreen` shows while changed: "geändert" and its deed. */
+    __k2SettingChange?: (changed: boolean) => void;
+  }
+}
+
+// Settings that change in place (a page that saves as a whole): each kind of setting with and without its help, and a
+// section after them. A test switches "geändert · vorher …" and the deed "Auf Standard zurücksetzen" on for all at
+// once and measures that nothing moved.
+export const SettingChangeScreen = () => {
+  const [changed, setChanged] = createSignal(false);
+  window.__k2SettingChange = setChanged;
+  const reset = () => (changed() ? { label: "Auf Standard zurücksetzen", icon: "arrow-back-up" } : undefined);
+  return (
+    <Workspace>
+      <Pane label="Einstellungen">
+        <Section icon="clock-hour-4" title="Sitzungen">
+          <Setting
+            label="Angemeldet bleiben"
+            hint="Danach muss man sich neu anmelden."
+            was={changed() ? "12 Std." : undefined}
+            action={reset()}
+            compact
+          >
+            <Input type="number" value="8" end={<Text type="meta">Std.</Text>} />
+          </Setting>
+          <Setting
+            label="Adresse"
+            hint="Von hier aus wird die Freigabe angefragt."
+            was={changed() ? "https://alt.example.org" : undefined}
+            action={reset()}
+          >
+            <Input type="url" value="https://cloud.example.org" />
+          </Setting>
+          <Setting label="Datenschutzfolgenabschätzungsverantwortlicher" was={changed() ? "Mira Solberg" : undefined} action={reset()}>
+            <Input value="Ada Renz" />
+          </Setting>
+          <Setting
+            label="Neue Apps fragen"
+            hint="Apps brauchen eine Freigabe vor dem ersten Zugriff."
+            was={changed() ? "Aus" : undefined}
+            action={reset()}
+          >
+            <Check switch label="An" checked />
+          </Setting>
+        </Section>
+        <Section icon="device-mobile-check" title="App-Freigabe">
+          <Setting label="Admins koppeln direkt" hint="Ohne Bestätigung durch die Person.">
+            <Check switch label="Aus" />
+          </Setting>
+        </Section>
       </Pane>
     </Workspace>
   );

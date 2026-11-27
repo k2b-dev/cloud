@@ -3020,7 +3020,7 @@
   white-space: nowrap;
 }
 .k2-ui .k2-field-label > .k2-field-optional {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-weight: 400;
   color: var(--k2-subtle);
 }
@@ -3047,7 +3047,7 @@
 .k2-ui .k2-field-action > .k2-btn {
   position: relative;
   height: 20px;
-  margin-right: -6px;
+  margin-inline-end: -6px;
   padding: 0 6px;
   gap: 4px;
   font: var(--k2-t-meta);
@@ -3070,13 +3070,15 @@
   color: var(--k2-bad);
 }
 /* Setting: a narrow column with the name (13, 500) alone, the control in a column of 300 px beside it, so the names and
-   the values of a settings page each stand in one line and are read at a glance; the one line of help and "geändert ·
-   vorher …" under the control, where they may take the rest of the row (CLEAR AND DENSE f). No line between settings:
-   a section separates them from the next topic. */
+   the values of a settings page each stand in one line and are read at a glance; the one line of help under the control
+   (CLEAR AND DENSE f). No line between settings: a section separates them from the next topic. What a setting shows
+   while it is changed ("geändert · vorher …", "Auf Standard zurücksetzen") has its place kept, so it coming or going
+   moves nothing: on a wide row "geändert" under the name beside the help (the line under the value keeps a chip's
+   24 px) and the deed after the value on its line. */
 .k2-ui .k2-field[data-setting] {
   grid-template-columns: minmax(0, 240px) minmax(0, 300px) minmax(0, 1fr);
-  grid-template-rows: auto auto auto;
-  grid-template-areas: "label control ." ". message message" ". was was";
+  grid-template-rows: auto minmax(24px, auto);
+  grid-template-areas: "label control action" "was message message";
   column-gap: 24px;
   row-gap: 0;
   align-items: center;
@@ -3091,46 +3093,60 @@
   font-weight: 500;
   color: var(--k2-text);
   white-space: normal;
+  /* a long compound breaks inside its column instead of running into the value or being cut */
+  overflow: visible;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 .k2-ui .k2-field[data-setting] > .k2-field-message {
   grid-area: message;
   align-self: start;
   padding-top: 4px;
 }
-.k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+.k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-end) {
   grid-area: control;
   min-width: 0;
 }
-.k2-ui .k2-field[data-setting] > .k2-field-was {
+/* on a wide row the end's two parts take their own places */
+.k2-ui .k2-field[data-setting] > .k2-field-end {
+  display: contents;
+}
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was {
   grid-area: was;
-  padding-top: 4px;
+  align-self: start;
+  justify-self: start;
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
 }
-/* a deed of the setting (such as "Auf Standard zurücksetzen") after the value: the name's and the value's columns keep
-   their widths, so the deed coming or going moves nothing */
-.k2-ui .k2-field[data-setting][data-action] {
-  grid-template-areas: "label control action" ". message message" ". was was";
+/* a long value before the change ends in "…" in its place, never over a neighbour */
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 24px;
 }
-.k2-ui .k2-field[data-setting] > .k2-field-action {
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action {
   grid-area: action;
   align-self: center;
   justify-self: start;
-  display: flex;
-  align-items: center;
-  height: 20px;
+  flex: none;
 }
-.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn {
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn {
   position: relative;
   height: 20px;
+  margin-inline-end: 0;
   padding: 0 6px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn > .k2-icon {
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn > .k2-icon {
   font-size: 14px;
 }
 /* the press area reaches the grip of a control while the button draws 20 px */
-.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn::after {
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn::after {
   content: "";
   position: absolute;
   inset: -12px -4px;
@@ -3138,66 +3154,60 @@
 .k2-ui .k2-sec > .k2-field[data-setting] + .k2-field[data-setting] {
   margin-top: 0;
 }
-/* By the width of its pane, not of the window: below 640 px of pane the name would get less than its 240 px beside the
-   300 px column (a settings pane beside a sidebar and a side column), so the value goes under it. */
+/* By the width of its pane, not of the window. Below 800 px of pane the deed has no room after the value (about 170 px
+   beside the name's 240 and the value's 300), so every setting keeps a line of 24 px under its value and help for what it
+   shows while changed: "geändert" at its start, the deed at its end. The same for every setting, with a deed or
+   without, so the names and values of a page keep one line and the deed coming moves nothing. */
+@container k2-pane (max-width: 799.98px) {
+  .k2-ui .k2-field[data-setting] {
+    grid-template-rows: auto auto minmax(28px, auto);
+    grid-template-areas: "label control ." ". message message" ". end end";
+  }
+  .k2-ui .k2-field[data-setting] > .k2-field-end {
+    grid-area: end;
+    align-self: end;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was {
+    flex: 0 1 auto;
+  }
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action {
+    margin-inline-start: auto;
+  }
+  /* the deed's words end on the value's edge */
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn {
+    margin-inline-end: -6px;
+  }
+}
+/* Below 640 px of pane the name would get less than its 240 px beside the 300 px column (a settings pane beside a
+   sidebar and a side column), so the value goes under the name and its help. */
 @container k2-pane (max-width: 639.98px) {
   .k2-ui .k2-field[data-setting] {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    grid-template-areas: "label" "message" "control" "was";
+    grid-template-rows: auto auto auto minmax(24px, auto);
+    grid-template-areas: "label" "message" "control" "end";
     row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting] > :is(.k2-field-label, .k2-field-action) {
+  .k2-ui .k2-field[data-setting] > .k2-field-label {
     align-self: start;
   }
   .k2-ui .k2-field[data-setting] > .k2-field-message {
     padding-top: 0;
   }
-}
-/* A setting with a deed needs the deed's room too ("Auf Standard zurücksetzen", about 170 px): below 800 px of pane its
-   name would get less than its room, so the deed stays at the end of the name's line and the value goes under it. */
-@container k2-pane (max-width: 799.98px) {
-  .k2-ui .k2-field[data-setting][data-action] {
+  /* A short control (a switch, a box, a number with its unit, a short selection) stays beside the name: the name and
+     its hint on the left, the control at the end of the name's line; a short field takes 128 px there. */
+  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)) {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: none;
-    grid-template-areas: "label action" "message message" "control control" "was was";
-    row-gap: 4px;
+    grid-template-rows: auto auto minmax(24px, auto);
+    grid-template-areas: "label control" "message control" "end end";
   }
-  .k2-ui .k2-field[data-setting][data-action] > :is(.k2-field-label, .k2-field-action) {
-    align-self: start;
-  }
-  .k2-ui .k2-field[data-setting][data-action] > .k2-field-message {
-    padding-top: 0;
-  }
-}
-
-/* A short control (a switch, a box, a number with its unit, a short selection) stays beside the name where the
-   settings stand one under the other: the name and its hint on the left, the control at the end of the name's line;
-   a short field takes 128 px there. */
-@container k2-pane (max-width: 639.98px) {
-  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)):not([data-action]) {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "label control" "message control" "was was";
-  }
-  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)):not([data-action]) > .k2-field-label {
+  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)) > .k2-field-label {
     align-self: end;
   }
-  .k2-ui .k2-field[data-setting][data-compact]:not([data-action]) > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-    width: 128px;
-  }
-}
-@container k2-pane (max-width: 799.98px) {
-  .k2-ui .k2-field[data-setting][data-action]:is([data-compact], :has(> .k2-choice)) {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "label control" "message control" "action was";
-  }
-  .k2-ui .k2-field[data-setting][data-action]:is([data-compact], :has(> .k2-choice)) > .k2-field-label {
-    align-self: end;
-  }
-  .k2-ui .k2-field[data-setting][data-action]:is([data-compact], :has(> .k2-choice)) > .k2-field-action {
-    justify-self: start;
-  }
-  .k2-ui .k2-field[data-setting][data-action][data-compact] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+  .k2-ui .k2-field[data-setting][data-compact] > :not(.k2-field-label, .k2-field-message, .k2-field-end) {
     width: 128px;
   }
 }

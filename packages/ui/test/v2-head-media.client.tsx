@@ -13,6 +13,7 @@ import {
   ProseCodeScreen,
   RowStatesScreen,
   SelectionScreen,
+  SettingChangeScreen,
   StructureScreen,
   ViewStatementScreen,
 } from "./v2-row-states.fixture";
@@ -29,6 +30,7 @@ declare global {
       | "grid"
       | "selecting"
       | "settings"
+      | "setting-change"
       | "states"
       | "canvas"
       | "cells"
@@ -59,6 +61,8 @@ render(
     <LocaleProvider locale="de">
       {which === "settings" ? (
         <SigninSettings />
+      ) : which === "setting-change" ? (
+        <SettingChangeScreen />
       ) : which === "states" ? (
         <RowStatesScreen />
       ) : which === "prose" ? (
