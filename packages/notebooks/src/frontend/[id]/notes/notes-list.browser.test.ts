@@ -81,13 +81,18 @@ type View = { width: number; height: number; touch: boolean };
 const wide: View = { width: 1440, height: 900, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
 
-const page = (sample: string, permission: string) =>
+// `hostSearch` marks the v2 scope as the Cloud shell does on a signed-in page: its phone bar then owns the head's search.
+const page = (sample: string, permission: string, hostSearch = false) =>
   `<!doctype html><html lang="de" class="light" data-sample="${sample}" data-permission="${permission}"><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui"><main class="k2-ui" id="root"></main><script src="/harness.js"></script></body></html>`;
+  `<body class="k2b-ui"><main class="k2-ui" id="root"${hostSearch ? " data-k2-host-search" : ""}></main><script src="/harness.js"></script></body></html>`;
 
-const open = async (view: View, address: string, options: { sample?: string; permission?: "read" | "write" } = {}) => {
+const open = async (
+  view: View,
+  address: string,
+  options: { sample?: string; permission?: "read" | "write"; hostSearch?: boolean } = {},
+) => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -106,7 +111,7 @@ const open = async (view: View, address: string, options: { sample?: string; per
       pages.push(url.search);
       return route.fulfill({
         contentType: "text/html; charset=utf-8",
-        body: page(options.sample ?? "normal", options.permission ?? "write"),
+        body: page(options.sample ?? "normal", options.permission ?? "write", options.hostSearch),
       });
     }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
@@ -140,6 +145,8 @@ describe("the notes list on v2", () => {
       expect(await titles(tab)).toHaveLength(10);
       await expectOutlineClean(tab);
       await shoot(tab, "light-1440");
+      // said once: unfiltered, the hero counts the notes and the filter bar does not
+      expect(await tab.locator(".k2-fbar-results").count()).toBe(0);
       await tab.getByRole("button", { name: "Filter", exact: true }).click();
       await tab.getByRole("menuitem", { name: /Tag/ }).click();
       await tab.getByRole("option", { name: /#logistik/ }).click();
@@ -147,6 +154,8 @@ describe("the notes list on v2", () => {
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("tag") === "logistik");
       await tab.waitForFunction(() => document.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]').length === 2);
       expect(await titles(tab)).toEqual(["Tourenplanung KW 48", "Retouren Oktober"]);
+      // a filter's result is counted in the bar
+      expect(await tab.locator(".k2-fbar-results").textContent()).toBe("2 Notizen");
       await tab.reload();
       await settled(tab);
       expect(await titles(tab)).toEqual(["Tourenplanung KW 48", "Retouren Oktober"]);
@@ -221,14 +230,36 @@ describe("the notes list on v2", () => {
     }
   }, 60_000);
 
+  test("on a phone in the Cloud shell the head shows no search of its own; the shell's bar reaches the same field", async () => {
+    const { context, tab, errors } = await open(phone, PATH, { hostSearch: true });
+    try {
+      const field = tab.locator('[data-slot="head"] [data-k2-part="Input"][data-search] input');
+      // one search place: the folded field takes no room and draws nothing in the head
+      const box = await field.boundingBox();
+      expect(box === null || (box.width <= 1 && box.height <= 1)).toBe(true);
+      // the shell's phone bar focuses this field (`openPageSearch`), and it opens over the head
+      await field.focus();
+      const open = await field.boundingBox();
+      expect(open?.width ?? 0).toBeGreaterThan(100);
+      await field.fill("Stand 4B");
+      await field.press("Enter");
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Stand 4B");
+      await tab.waitForFunction(() => document.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]').length === 1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("on a wide screen the notebook's figures lead, and each row shows who changed the note; the worst case fits", async () => {
     const { context, tab, errors } = await open(wide, PATH, { sample: "worst" });
     try {
       await expectOutlineClean(tab);
       await shoot(tab, "worst-light-1440");
-      // the hero: the changes of 30 days with their real trend, then the notes and the last change
+      // the hero: the changes of 30 days with their real trend, then the notes (the last change would only repeat
+      // the first row)
       const cells = tab.locator('[data-k2-part="Cells.Cell"]');
-      expect(await cells.count()).toBe(3);
+      expect(await cells.count()).toBe(2);
       expect(await cells.first().locator('[data-k2-part="Spark"] i').count()).toBe(30);
       // the data column: a stack of faces with every name, also for eight people
       const stack = tab.locator('[data-k2-part="Table"] [data-k2-part="Avatar.Stack"]').first();
