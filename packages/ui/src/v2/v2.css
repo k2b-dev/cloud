@@ -3668,6 +3668,8 @@
   min-width: 0;
 }
 .k2-ui .k2-path {
+  /* the least of the whole path, set from its words by `Path` (its own inline value wins) */
+  --k2-path-least: initial;
   position: relative;
   display: flex;
   align-items: center;

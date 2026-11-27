@@ -613,7 +613,14 @@ export const Path = (props: PathProps) => {
       .filter((_, index) => folds(index))
       .map((item) => (item.href !== undefined ? { label: item.label, href: item.href } : { label: item.label, disabled: true }));
   return (
-    <nav ref={nav} class="k2-path" data-k2-part="Path" data-fold={level()} aria-label={props.label} style={custom({ "--k2-path-least": least() })}>
+    <nav
+      ref={nav}
+      class="k2-path"
+      data-k2-part="Path"
+      data-fold={level()}
+      aria-label={props.label}
+      style={custom({ "--k2-path-least": least() })}
+    >
       <For each={props.items}>
         {(item, index) => {
           const away = () => folds(index());
