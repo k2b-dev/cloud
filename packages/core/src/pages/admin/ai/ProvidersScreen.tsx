@@ -5,6 +5,7 @@ import {
   Button,
   Cells,
   Chip,
+  type Column,
   Empty,
   Facts,
   Failed,
@@ -163,15 +164,20 @@ export default function ProvidersScreen(props: { nav: NavProps; data: AiProvider
           cell: (entry) => <ProviderState t={t()} state={aiProviderState(entry)} />,
         },
         { title: t().colModels, width: { min: 72, default: 88 }, align: "end", cell: (entry) => String(entry.modelCount) },
-        // which classes and tools this provider's models fill: what breaks when it breaks
-        { title: t().colUse, width: { min: 160, default: 260 }, drop: true, cell: (entry) => providerUse(entry.id) },
-        {
-          title: t().dataBoundary,
-          width: { min: 120, default: 140 },
-          drop: true,
-          cell: (entry) => (entry.dataBoundary === "restricted" ? <Chip icon="shield-off">{t().boundaryRestrictedShort}</Chip> : ""),
-        },
-        { title: t().type, drop: true, cell: (entry) => aiProviderTypeLabel(t(), entry.type) },
+        // beside an open provider only the columns that fit stay; its detail says the rest
+        ...(summary()
+          ? []
+          : ([
+              // which classes and tools this provider's models fill: what breaks when it breaks
+              { title: t().colUse, width: { min: 160, default: 260 }, drop: true, cell: (entry) => providerUse(entry.id) },
+              {
+                title: t().dataBoundary,
+                width: { min: 120, default: 140 },
+                drop: true,
+                cell: (entry) => (entry.dataBoundary === "restricted" ? <Chip icon="shield-off">{t().boundaryRestrictedShort}</Chip> : ""),
+              },
+              { title: t().type, drop: true, cell: (entry) => aiProviderTypeLabel(t(), entry.type) },
+            ] satisfies Column<ProviderRow>[])),
       ]}
     />
   );
