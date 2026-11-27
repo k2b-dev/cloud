@@ -477,7 +477,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         problems.push(`loose text ${quote(node.textContent, 30)} in Band: put it in <Text>`);
       if (node.nodeType !== 1) continue;
       const child = node as Element;
-      if (ownedChild(child)) continue;
+      // the rule a primitive makes for itself (a split's context column): part of that primitive, not the screen's
+      if (ownedChild(child) || child.matches("style[data-k2-rule]")) continue;
       problems.push(
         `plain <${child.tagName.toLowerCase()}> in ${where} ${quote(child.textContent, 30)}: no primitive owns it; use Band, Section, Group, List, Table, Notice or Text`,
       );
