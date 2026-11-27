@@ -152,7 +152,8 @@ export default function BasesOverview(props: BasesOverviewProps) {
           {
             title: t().name,
             // k2b-ui slot (#4391): an explicit grow on this column; until then the date stands right after the numbers
-            width: { min: 200, default: 400 },
+            // 360: beside the Cloud rail and the 360 px side column the table still fits at 1024
+            width: { min: 200, default: 360 },
             cell: (base) => (
               <Inline>
                 <Mark {...kindMark("base")} />
