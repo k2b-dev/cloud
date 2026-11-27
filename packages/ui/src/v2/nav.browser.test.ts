@@ -243,3 +243,25 @@ test("a closed fold that holds the open entry carries the open entry's tint", as
     expect(await tint()).not.toBe(open);
   });
 });
+
+// Assistant (W7): an entry whose work is running (a chat that answers, a sync) had no state but the dots ok, warn and
+// bad. A running entry turns a small spinner in the dot's place, of the dot's width, and says "Läuft".
+test("an entry that runs turns a spinner in the place of its dot and says so", async () => {
+  expect(markup).toMatch(/role="img"[^>]*aria-label="Läuft"|aria-label="Läuft"[^>]*role="img"/);
+  await withPage(async (page) => {
+    const entry = page.getByRole("button", { name: "Lieferanten Läuft" });
+    await entry.waitFor();
+    const mark = await entry.evaluate((element) => {
+      const running = element.querySelector(".k2-ni-running")!;
+      const dot = document.querySelector(".k2-ni .k2-dot[data-status]")!;
+      const turning = running.querySelector(".k2-icon")!;
+      return {
+        width: Math.round(running.getBoundingClientRect().width),
+        dot: Math.round(dot.getBoundingClientRect().width),
+        turns: getComputedStyle(turning).animationName,
+      };
+    });
+    expect(mark.width).toBe(mark.dot);
+    expect(mark.turns).toBe("k2-spin");
+  });
+});

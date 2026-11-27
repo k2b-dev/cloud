@@ -368,7 +368,8 @@ export type PaneProps = {
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
    * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
-   * it, the × gives way on the phone, so the detail has one way back there.
+   * it, the × gives way on the phone, so the detail has one way back there. A pane without a `head` (an editor, whose
+   * name stood in the workspace's head) names itself after the way back by its `label`: "‹ Werkstatt  Notizen.md".
    */
   back?: Action;
   /** The side column of a record (the info column): quieter sections. */
@@ -447,6 +448,15 @@ export const Pane = (props: PaneProps) => {
           <div class="k2-pane-back" data-k2-part="Back">
             {/* a long name is cut with "…"; the whole name is the hint under the pointer */}
             <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" titled />
+            {/* the workspace's head gives way here: a pane without a head of its own names what stands open */}
+            <Show when={!head() && props.label}>
+              {(label) => (
+                // the page's name for assistive technology too: it heads the pane as its title would
+                <span class="k2-pane-back-name" role="heading" aria-level={2}>
+                  {label()}
+                </span>
+              )}
+            </Show>
           </div>
         )}
       </Show>
@@ -724,8 +734,16 @@ export const Tiles = (props: TilesProps) => (
 export type CanvasProps = {
   /** What the drawing shows, for assistive technology. */
   label: string;
-  /** The height of the drawing in px; the width comes from its place. */
-  height?: number;
+  /**
+   * The height of the drawing in px; the width comes from its place. `"fill"`: the drawing is the whole pane (an
+   * editor, a frame of another page, a map that is the page). It stands directly in its `Pane` and takes the height
+   * the pane has left under what stands above it, from the first render on, so nothing is measured and nothing moves;
+   * it scrolls itself, and below 240 px the pane scrolls instead. It asks its pane for those 240 px only, never for
+   * what the drawing holds: one drawing that asks for no height of its own takes the whole height, and what is taller
+   * scrolls inside it. Give it one child, the drawing: a second child stands in a row of its own under the first and
+   * is cut away.
+   */
+  height?: number | "fill";
   /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
@@ -743,7 +761,8 @@ export const Canvas = (props: CanvasProps) => (
     role="group"
     aria-label={props.label}
     data-height={props.height !== undefined ? "" : undefined}
-    style={custom({ "--k2-canvas-h": props.height !== undefined ? `${props.height}px` : undefined })}
+    data-fill={props.height === "fill" ? "" : undefined}
+    style={custom({ "--k2-canvas-h": typeof props.height === "number" ? `${props.height}px` : undefined })}
   >
     {props.children}
   </div>
