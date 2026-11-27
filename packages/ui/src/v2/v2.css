@@ -33,6 +33,10 @@
   /* the one hairline, the edge of a control, a grip at rest */
   --k2-line: var(--k2-n200);
   --k2-hairline: 1px solid var(--k2-line);
+  /* Line weights (identity B): the hairline above parts two things (a head from its content, a list from its detail,
+     groups); between the rows of one table or list stands a very quiet one, so the eye reads the parts first. */
+  --k2-line-subtle: var(--k2-n100);
+  --k2-hairline-subtle: 1px solid var(--k2-line-subtle);
   --k2-line-control: var(--k2-n300);
   --k2-grip: #8a8a94;
 
@@ -66,6 +70,8 @@
   --k2-bad-tint: #fef2f2;
   --k2-bad: #b91c1c;
   --k2-bad-dot: #ef4444;
+  /* the quiet line under a problem, a deeper red than the problem itself (the study's #7f1d1d) */
+  --k2-bad-deep: #7f1d1d;
   --k2-ai: #8e1b6f;
   --k2-ai-tint: #fcf3f8;
   /* the fill of the assistant's own primary action (white words on it, 7.7:1, in both themes) */
@@ -88,6 +94,7 @@
   --k2-h-tabs: 44px;
   --k2-h-bar: 40px;
   --k2-h-columns: 36px;
+  --k2-h-table-head: 34px;
   --k2-h-row: 40px;
   --k2-h-row-mark: 44px;
   --k2-h-row2: 52px;
@@ -127,6 +134,8 @@
   --k2-t-row: 400 13px/20px var(--k2-font);
   --k2-t-body: 400 14px/20px var(--k2-font);
   --k2-t-lead: 600 18px/24px var(--k2-font);
+  /* the one figure of a screen, in its hero (identity B): a fifth size, once per screen */
+  --k2-t-figure: 600 30px/34px var(--k2-font);
 
   font: var(--k2-t-row);
   color: var(--k2-text);
@@ -170,6 +179,7 @@
   --k2-bad-tint: #450a0a;
   --k2-bad: #fca5a5;
   --k2-bad-dot: #ef4444;
+  --k2-bad-deep: #fecaca;
   --k2-ai: #f0abdc;
   --k2-ai-tint: #3a0f2e;
   --k2-ai-fill: #8e1b6f;
@@ -198,7 +208,7 @@
   }
 }
 
-/* Type: four roles, three weights. Meta is quiet by itself. */
+/* Type: four roles and the hero's figure (once per screen), three weights. Meta is quiet by itself. */
 .k2-ui .k2-t-meta {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
@@ -211,6 +221,10 @@
 }
 .k2-ui .k2-t-lead {
   font: var(--k2-t-lead);
+}
+.k2-ui .k2-t-figure {
+  font: var(--k2-t-figure);
+  letter-spacing: -0.015em;
 }
 .k2-ui .k2-strong {
   font-weight: 600;
@@ -266,6 +280,7 @@
   --k2-c-ink-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
+  --k2-ohead-deeds: initial;
   --k2-ws-side: initial;
   --k2-ws-side-min: initial;
   --k2-ws-toggle: initial;
@@ -566,6 +581,11 @@
   padding: 0 var(--k2-edge);
   border-bottom: var(--k2-hairline);
 }
+/* above the tinted head of an open thing the way back stands on the same tint, without a line between them */
+.k2-ui .k2-pane[data-k2-ohead] > .k2-pane-back {
+  background: var(--k2-app-tint);
+  border-bottom-color: transparent;
+}
 /* a long name of the list (a search, a folder deep down) is cut at its end with "…": the button never leaves its bar
    and never runs under what stands beside it; the whole name stays its accessible name and its hint */
 .k2-ui .k2-pane-back > .k2-btn[data-variant="text"] {
@@ -751,6 +771,447 @@
 }
 .k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
   border-block: 0;
+}
+
+/* ── Identity B: the owner's colour, the hero, the head of an open thing, ticks ─────────────────────────────── */
+/* The colour of the app a thing belongs to (`Pane owner`) holds for its content: hero, drawings, the open row and the
+   head of the open thing; the shell keeps the colour of the app one is in. A custom property mixes where it is
+   declared, so the tint is made again in the owner's scope. Its ink (4.5:1), the strong mark of its data (3:1) and the
+   soft colour of its data (3:1), all against its tint, are worked out for a hex colour and set on the scope
+   (`ownerStyle`); another colour falls back to the mix, and data to the ink, never to a colour nobody checked; a colour
+   that is none (`var(--missing)`) leaves the tint of v2. */
+.k2-ui [data-k2-owner] {
+  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
+  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 7%, var(--k2-surface));
+  --k2-app-text: var(--k2-owner-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
+  --k2-app-tint: var(--k2-app-tint-mix, var(--k2-blue-tint));
+  --k2-app-line: var(--k2-owner-line, var(--k2-app-text));
+  --k2-app-soft: var(--k2-owner-soft, var(--k2-app-text));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-k2-owner],
+.k2-ui.dark [data-k2-owner],
+.k2-ui[data-theme="dark"] [data-k2-owner] {
+  --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
+  /* 18 % in dark, as Y's rows (#4355): the quiet text of a tinted row keeps 4.5:1 */
+  --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 18%, var(--k2-surface));
+  --k2-app-text: var(--k2-owner-ink-dark, var(--k2-app-ink-mix, var(--k2-blue-ink)));
+  --k2-app-line: var(--k2-owner-line-dark, var(--k2-app-text));
+  --k2-app-soft: var(--k2-owner-soft-dark, var(--k2-app-text));
+}
+/* The hero: the figure and its history side by side, what falls out of line in one line under them, one line below. */
+.k2-ui .k2-hero {
+  display: grid;
+  /* the history keeps 200 px: a long label wraps before it squeezes the drawing */
+  grid-template-columns: auto minmax(200px, 1fr);
+  grid-template-areas: "figure trend" "ex ex";
+  gap: 14px 32px;
+  align-items: end;
+  padding: 18px var(--k2-edge) 14px;
+  border-bottom: var(--k2-hairline);
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-hero-figure {
+  grid-area: figure;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.k2-ui .k2-hero-n {
+  font: var(--k2-t-figure);
+  /* after the shorthand, which sets the variant back */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+  color: var(--k2-app-text);
+  white-space: nowrap;
+}
+.k2-ui .k2-hero-label {
+  font: var(--k2-t-body);
+  font-weight: 500;
+  color: var(--k2-text-2);
+}
+.k2-ui .k2-hero-meta {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-hero-trend {
+  grid-area: trend;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.k2-ui .k2-hero-draw {
+  display: block;
+  width: 100%;
+}
+/* a history alone in a section: from text edge to text edge, its ticks and words under it */
+.k2-ui .k2-sec > .k2-hero-trend {
+  padding: 4px var(--k2-edge) 8px;
+}
+/* no history yet: the place of the drawing keeps its 56 px and says so, quietly, so a later history moves nothing */
+.k2-ui .k2-hero-none {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-hero-none[data-kind="ticks"] {
+  height: 44px;
+}
+.k2-ui .k2-hero-draw > rect {
+  fill: var(--k2-app-soft, var(--k2-app-text));
+}
+/* the bar of now and the line of an area in the owner's strong mark (3:1 on the surface and on its tint) */
+.k2-ui .k2-hero-draw > rect[data-tone="now"] {
+  fill: var(--k2-app-line, var(--k2-app-text));
+}
+.k2-ui .k2-hero-draw > rect[data-tone="none"] {
+  fill: var(--k2-n200);
+}
+.k2-ui .k2-hero-draw > .k2-hero-failed {
+  fill: var(--k2-bad-tint);
+}
+/* where it began to fail: a dashed red line across the drawing */
+.k2-ui .k2-hero-draw > .k2-hero-cut {
+  stroke: var(--k2-bad-dot);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.k2-ui .k2-hero-fill {
+  fill: var(--k2-app, var(--k2-blue));
+  fill-opacity: 0.12;
+}
+.k2-ui .k2-hero-line {
+  fill: none;
+  stroke: var(--k2-app-line, var(--k2-app-text));
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.k2-ui .k2-hero-cap {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  white-space: nowrap;
+}
+.k2-ui .k2-hero-cap > .k2-hero-what {
+  color: var(--k2-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-hero-ex {
+  grid-area: ex;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  /* its quiet line stands on the text edges, part of the hero's drawing rather than a divider (the study's band) */
+  margin: 0;
+  padding: 12px 0 0;
+  list-style: none;
+  border-top: var(--k2-hairline-subtle);
+  min-width: 0;
+}
+.k2-ui .k2-hero-ex > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--k2-text-2);
+  max-width: 100%;
+  min-width: 0;
+}
+.k2-ui .k2-hero-ex > li > .k2-icon {
+  font-size: 15px;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-hero-ex > li > b {
+  font-weight: 600;
+}
+.k2-ui .k2-hero-ex > li > .k2-hero-meta {
+  margin-left: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The head of an open thing: the owner's tint as its ground, a sign of 40, the name in 18, three key facts. */
+.k2-ui .k2-ohead {
+  background: var(--k2-app-tint);
+  padding: 14px 12px 16px var(--k2-edge);
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-ohead-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.k2-ui .k2-ohead-top > .k2-mk {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+.k2-ui .k2-ohead-top > .k2-mk > .k2-icon {
+  font-size: 22px;
+}
+.k2-ui .k2-ohead-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-ohead-name {
+  margin: 0;
+  font: var(--k2-t-lead);
+  color: var(--k2-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-ohead-meta {
+  font: var(--k2-t-meta);
+  color: var(--k2-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* its deeds small (28) and 6 px apart, as the study's head (`btn sm`) */
+.k2-ui .k2-ohead-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.k2-ui .k2-ohead-end > .k2-btn {
+  height: var(--k2-h-control-small);
+  padding: 0 10px;
+}
+.k2-ui .k2-ohead-end > .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  padding: 0;
+}
+.k2-ui .k2-ohead-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 14px 0 0;
+}
+.k2-ui .k2-ohead-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.k2-ui .k2-ohead-facts dt {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-ohead-facts dd {
+  margin: 0;
+  font: var(--k2-t-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--k2-text);
+  white-space: nowrap;
+}
+.k2-ui .k2-ohead-problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  font: var(--k2-t-row);
+  font-weight: 500;
+  color: var(--k2-bad);
+}
+.k2-ui .k2-ohead-problem > .k2-icon {
+  font-size: 17px;
+  margin-top: 1px;
+}
+.k2-ui .k2-ohead-why {
+  display: block;
+  font: var(--k2-t-meta);
+  color: var(--k2-bad-deep);
+}
+/* ── Ticks: one tick per time slot, ok soft in the colour of what it belongs to, a failure red and taller ──── */
+/* The slots read in the writing direction: the oldest at the start (left, or right in a page written right to left).
+   More slots than a cell holds (from about 60) never leave it: the strip clips at its 140 px. */
+.k2-ui .k2-ticks {
+  --k2-ticks-mix: 45%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1px;
+  width: 140px;
+  height: 20px;
+  flex: none;
+  vertical-align: middle;
+  overflow: clip;
+}
+/* dark: the soft colour mixes in more of itself, so ok still stands apart from the dark surface */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-ticks,
+.k2-ui.dark .k2-ticks,
+.k2-ui[data-theme="dark"] .k2-ticks {
+  --k2-ticks-mix: 62%;
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-ticks > i[data-s="ok"],
+.k2-ui.dark .k2-ticks > i[data-s="ok"],
+.k2-ui[data-theme="dark"] .k2-ticks > i[data-s="ok"] {
+  background: var(
+    --k2-c-soft-dark,
+    var(
+      --k2-app-soft,
+      color-mix(
+        in srgb,
+        var(--k2-c, var(--k2-app, var(--k2-blue))) calc(var(--k2-ticks-mix) + var(--k2-ticks-lift, 0%)),
+        var(--k2-surface)
+      )
+    )
+  );
+}
+/* across its place between the text edges, such as a detail, as dense as a data picture: 2 px apart, each slot grows
+   with the room up to 12 px; a wider place does not spread it further, the strip keeps that width at the start */
+.k2-ui .k2-ticks[data-stretch] {
+  display: flex;
+  width: auto;
+  margin-inline: var(--k2-edge);
+  justify-content: flex-start;
+  gap: 2px;
+}
+.k2-ui .k2-ticks[data-stretch] > i {
+  flex: 1 1 0;
+  max-width: 12px;
+}
+.k2-ui .k2-ticks > i {
+  flex: 0 1 4px;
+  min-width: 1px;
+  height: 12px;
+  border-radius: 1px;
+}
+/* ok in the checked soft colour: of its own colour (`color`), else of the owner it belongs to (3:1 on the surface and
+   on its tint, `ownerStyle`); the mix only where neither is known */
+.k2-ui .k2-ticks > i[data-s="ok"] {
+  background: var(
+    --k2-c-soft,
+    var(
+      --k2-app-soft,
+      color-mix(
+        in srgb,
+        var(--k2-c, var(--k2-app, var(--k2-blue))) calc(var(--k2-ticks-mix) + var(--k2-ticks-lift, 0%)),
+        var(--k2-surface)
+      )
+    )
+  );
+}
+/* in the selected or open row of a table, ok stands a little darker, on the row's tint */
+.k2-ui .k2-table tr:is([data-selected], [aria-current="true"]) .k2-ticks {
+  --k2-ticks-lift: 10%;
+}
+/* a slot without data keeps its place as a low stub, so the strip shows where nothing happened */
+.k2-ui .k2-ticks > i[data-s="none"] {
+  height: 4px;
+  background: var(--k2-n200);
+}
+/* red only for a failure, and taller, so it reads without its colour too */
+.k2-ui .k2-ticks > i[data-s="bad"] {
+  height: 18px;
+  background: var(--k2-bad);
+}
+/* forced colours replace backgrounds: the ticks draw in system colours, a failure in the text colour */
+@media (forced-colors: active) {
+  .k2-ui .k2-ticks > i {
+    forced-color-adjust: none;
+  }
+  .k2-ui .k2-ticks > i:is([data-s="ok"], [data-s="none"]) {
+    background: GrayText;
+  }
+  .k2-ui .k2-ticks > i[data-s="bad"] {
+    background: CanvasText;
+  }
+}
+
+/* across a hero's drawing the ticks stand as tall as its bars (identity B): ok 38, a failure the whole 44 */
+/* ticks under an area: one slot per value across the drawing's width, so each value stands over the middle of its
+   slot and the cut on the left edge of the first failed one (the area draws in the same slots) */
+.k2-ui .k2-hero-trend[data-under] > .k2-ticks[data-stretch] {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  margin-inline: 0;
+}
+.k2-ui .k2-hero-trend[data-under] > .k2-ticks[data-stretch] > i {
+  min-width: 0;
+  max-width: none;
+  margin-inline-end: 2px;
+}
+/* right to left the time runs from the right: a drawing mirrors as its ticks do */
+.k2-ui .k2-hero-draw:dir(rtl) {
+  scale: -1 1;
+}
+.k2-ui .k2-hero .k2-ticks[data-stretch] {
+  height: 44px;
+  margin-inline: 0;
+  align-items: flex-end;
+}
+.k2-ui .k2-hero .k2-ticks[data-stretch] > i {
+  max-width: none;
+  height: 38px;
+  border-radius: 1.5px;
+}
+.k2-ui .k2-hero .k2-ticks[data-stretch] > i[data-s="bad"] {
+  height: 44px;
+}
+.k2-ui .k2-hero .k2-ticks[data-stretch] > i[data-s="none"] {
+  height: 4px;
+}
+
+/* In a narrow column (under 560 px: a list beside its detail, a pane of 480) the hero stands one under the other as on
+   the phone, so a long figure keeps its whole width and the history its own line. */
+@container k2-pane (max-width: 559.98px) {
+  .k2-ui .k2-hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "figure" "trend" "ex";
+    gap: 12px;
+  }
+}
+
+/* Forced colours drop fills and tints: the data of ticks, sparks and the hero keep their marks in the colours of the
+   system (data in CanvasText, a failure as Mark, none in GrayText), and the open row and the head of the open thing
+   keep a frame in Highlight instead of their tint. */
+@media (forced-colors: active) {
+  .k2-ui .k2-spark > i {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .k2-ui .k2-spark[data-kind="line"] > path {
+    forced-color-adjust: none;
+    stroke: CanvasText;
+  }
+  .k2-ui .k2-hero-draw {
+    forced-color-adjust: none;
+  }
+  .k2-ui .k2-hero-draw > rect,
+  .k2-ui .k2-hero-fill {
+    fill: CanvasText;
+  }
+  .k2-ui .k2-hero-draw > rect[data-tone="none"] {
+    fill: GrayText;
+  }
+  .k2-ui .k2-hero-draw > .k2-hero-failed {
+    fill: Mark;
+  }
+  .k2-ui .k2-hero-line {
+    stroke: CanvasText;
+  }
+  .k2-ui :is(.k2-table tbody tr[aria-current], .k2-row[data-current], .k2-ohead) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 
 /* ── Cells: two to six equal cells with a line between them ───────────────────────────────────────────────────── */
@@ -1428,9 +1889,20 @@
   min-width: 0;
   color: inherit;
 }
+/* between the rows of one list a very quiet line: the strong one parts a list from what is around it (identity B) */
+.k2-ui .k2-list > .k2-row {
+  border-bottom: var(--k2-hairline-subtle);
+}
 /* no line under the last row of a list: the space under it ends the list (look rule 4) */
 .k2-ui .k2-list > .k2-row:last-child {
   border-bottom: 0;
+}
+/* the open row in the tint of the app it belongs to, its name in that app's ink, and no line of its own */
+.k2-ui .k2-list > .k2-row[data-current] {
+  border-bottom-color: transparent;
+}
+.k2-ui .k2-row[data-current] .k2-row-title {
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-row > * {
   min-width: 0;
@@ -1536,6 +2008,12 @@
 }
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
+}
+/* a row of one line with a time and an end: the end stands after the time on that line, in a column of its own */
+.k2-ui .k2-row[data-lines="1"][data-time] > .k2-row-end {
+  grid-area: auto;
+  grid-row: 1;
+  grid-column: -1 / span 1;
 }
 .k2-ui .k2-row-marks {
   grid-area: marks;
@@ -1705,12 +2183,15 @@
 }
 .k2-ui .k2-table th {
   position: relative;
-  height: var(--k2-h-columns);
+  /* identity B: a head of 34 over cells of 10 px padding; rows that lead with a mark are 44 (marks of 24 or 32) */
+  height: var(--k2-h-table-head);
   text-align: left;
   font: var(--k2-t-meta);
   font-weight: 500;
   color: var(--k2-subtle);
-  padding: 0 12px;
+  padding: 0 10px;
+  /* the head of the columns is a quiet band with the strong line under it; the rows part by a very quiet one */
+  background: var(--k2-n50);
   border-bottom: var(--k2-hairline);
   white-space: nowrap;
   overflow: hidden;
@@ -1718,10 +2199,19 @@
 }
 .k2-ui .k2-table td {
   height: var(--k2-h-row);
-  padding: 0 12px;
-  border-bottom: var(--k2-hairline);
+  padding: 0 10px;
+  border-bottom: var(--k2-hairline-subtle);
   vertical-align: middle;
   min-width: 0;
+}
+/* in a table of things what a row says beside its name is quieter than the name, which stands in 500 (identity B);
+   a table of data (Grids, a log) keeps its values in the full ink */
+.k2-ui .k2-table[data-marks] td {
+  color: var(--k2-muted);
+}
+.k2-ui .k2-table[data-marks] td:first-child {
+  color: var(--k2-text);
+  font-weight: 500;
 }
 /* a table whose rows lead with a thing's mark: 44 px rows, as a list's */
 .k2-ui .k2-table[data-marks]:not([data-lines="2"]) td {
@@ -1896,9 +2386,14 @@
 .k2-ui .k2-table[data-grid] tbody tr:not([data-group]):hover > td {
   background: var(--k2-n50);
 }
-/* The open row (`current`) is tinted in every table that knows its rows, not only in a large one. */
+/* The open row (`current`) is tinted in every table that knows its rows, not only in a large one: in the colour of the
+   app it belongs to, its first cell in that app's ink, and without a line of its own. */
 .k2-ui .k2-table tbody tr[aria-current] > td {
   background: var(--k2-app-tint);
+  border-bottom-color: transparent;
+}
+.k2-ui .k2-table tbody tr[aria-current] > td:first-child {
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-table[data-grid] tbody tr[data-selected] > td {
   background: var(--k2-blue-tint);
@@ -1995,6 +2490,13 @@
   min-width: 0;
   font-weight: 600;
 }
+/* a row of the phone form keeps one height: its second line (the meta with "·") ends with "…", the description
+   belongs in the detail (identity B, rule 4) */
+.k2-ui .k2-table-phone .k2-row > .k2-row-l2 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* a person leads a row of the phone form as a small mark, like in the cell (12 px after it, as after every lead) */
 .k2-ui .k2-table-phone .k2-row[data-avatar] > .k2-row-lead {
   width: auto;
@@ -2060,8 +2562,9 @@
    160 px, where a longer label wraps */
 .k2-ui .k2-facts {
   display: grid;
-  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr);
-  gap: 0 8px;
+  /* one label column of 116 and a gap of 16, the same in every list of facts (identity B) */
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 0 16px;
   padding: 0 var(--k2-edge);
   align-items: start;
   min-width: 0;
@@ -2070,13 +2573,12 @@
 .k2-ui .k2-fact-pair {
   display: contents;
 }
+/* a label longer than its 116 px wraps within its column: a key such as "http.response.status_code" stays whole */
+/* a pair is 28 px, its line of 20 and 8 between pairs, as the study's facts */
 .k2-ui .k2-fact-pair > dt {
-  font: var(--k2-t-meta);
-  line-height: 20px;
+  font: var(--k2-t-row);
   color: var(--k2-subtle);
-  padding: 6px 0;
-  max-width: 160px;
-  /* a label longer than its column wraps in it, a word too long for it breaks: never cut, never over its value */
+  padding: 4px 0;
   overflow-wrap: anywhere;
 }
 .k2-ui .k2-fact-pair > dd {
@@ -2084,7 +2586,7 @@
   align-items: start;
   gap: 8px;
   line-height: 20px;
-  padding: 6px 0;
+  padding: 4px 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -2739,10 +3241,27 @@
   width: 4px;
   height: var(--k2-v);
   border-radius: 1px;
-  background: var(--k2-c-soft, var(--k2-app-text));
+  /* the history in the soft colour (of its thing, else of the app it belongs to), now in the full one (identity B) */
+  background: var(--k2-c-soft, var(--k2-app-soft, var(--k2-app-text)));
 }
 .k2-ui .k2-spark > i:last-child {
   background: var(--k2-c-ink, var(--k2-app-text));
+}
+/* as a line: the whole history in the soft colour (3:1 on the surface), 80 px wide, such as use over 30 days */
+.k2-ui .k2-spark[data-kind="line"] {
+  width: 80px;
+  overflow: visible;
+}
+/* right to left the history runs from the right, as the bars of a spark do */
+.k2-ui .k2-spark[data-kind="line"]:dir(rtl) {
+  scale: -1 1;
+}
+.k2-ui .k2-spark[data-kind="line"] > path {
+  fill: none;
+  stroke: var(--k2-c-soft, var(--k2-app-soft, var(--k2-app-text)));
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 /* dark: the same foregrounds, worked out against the dark surface */
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-mk,
@@ -2753,12 +3272,17 @@
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark > i,
 .k2-ui.dark .k2-spark > i,
 .k2-ui[data-theme="dark"] .k2-spark > i {
-  background: var(--k2-c-soft-dark, var(--k2-app-text));
+  background: var(--k2-c-soft-dark, var(--k2-app-soft, var(--k2-app-text)));
 }
 .dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark > i:last-child,
 .k2-ui.dark .k2-spark > i:last-child,
 .k2-ui[data-theme="dark"] .k2-spark > i:last-child {
   background: var(--k2-c-ink-dark, var(--k2-app-text));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark[data-kind="line"] > path,
+.k2-ui.dark .k2-spark[data-kind="line"] > path,
+.k2-ui[data-theme="dark"] .k2-spark[data-kind="line"] > path {
+  stroke: var(--k2-c-soft-dark, var(--k2-app-soft, var(--k2-app-text)));
 }
 
 /* ── Preview: the large picture of the open thing at the top of its detail, 4:3 from text edge to text edge ──── */
@@ -5372,7 +5896,8 @@
     grid-template-areas: "l1" "l2" "time";
     grid-template-columns: minmax(0, 1fr);
   }
-  .k2-ui .k2-row[data-action] > .k2-row-end {
+  /* [data-lines]: the deed keeps its own line under the text, also in a row of one line with a time */
+  .k2-ui .k2-row[data-action][data-lines] > .k2-row-end {
     grid-area: time;
     justify-content: flex-start;
     padding: 8px 0 4px;
@@ -5540,6 +6065,53 @@
   }
   .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-icon {
     font-size: 22px;
+  }
+  /* the hero stands one under the other: the figure, its drawing, what falls out of line */
+  .k2-ui .k2-hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "figure" "trend" "ex";
+    gap: 12px;
+    padding: 14px var(--k2-edge);
+  }
+  .k2-ui .k2-hero-ex {
+    gap: 6px 14px;
+  }
+  /* the head of an open thing keeps its sign, name and facts; its deeds stand in the phone's bar of the detail */
+  .k2-ui .k2-ohead {
+    padding: 4px var(--k2-edge) 16px;
+  }
+  /* the deeds of an open thing stand at the end of the phone's bar above it, the way back at its start: in the order
+     of the page (back, deeds, the head), and never gone */
+  .k2-ui .k2-pane[data-k2-ohead][data-k2-back] {
+    position: relative;
+  }
+  /* the way back keeps clear of them: the room of the deeds the head said it has (each 36 px and 2 px apart) */
+  .k2-ui .k2-pane[data-k2-ohead][data-k2-back] > .k2-pane-back {
+    padding-inline-end: calc(var(--k2-edge) + var(--k2-ohead-deeds, 0) * (var(--k2-h-control) + 2px));
+  }
+  .k2-ui .k2-pane[data-k2-ohead][data-k2-back] > .k2-slot > .k2-ohead .k2-ohead-end {
+    position: absolute;
+    top: 0;
+    right: calc(var(--k2-edge) - 8px);
+    height: var(--k2-h-tabs);
+  }
+  /* there they keep only their symbols, as the head's deeds on the phone; the words stay their names */
+  .k2-ui .k2-pane[data-k2-ohead][data-k2-back] > .k2-slot > .k2-ohead .k2-ohead-end > .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .k2-ui .k2-pane[data-k2-ohead][data-k2-back] > .k2-slot > .k2-ohead .k2-ohead-end > .k2-btn:not([data-menu]):has(> .k2-icon:first-child) {
+    width: var(--k2-h-control);
+    padding: 0;
+    --k2-btn-pad: 0px;
+    --k2-btn-pad-end: 0px;
+  }
+  .k2-ui .k2-ohead-facts {
+    gap: 8px 20px;
   }
   /* a person among things takes the marks' 40 here too */
   .k2-ui :is(.k2-list, .k2-sec):has(> .k2-row[data-mark]) > .k2-row[data-avatar] > .k2-row-lead,

@@ -11,7 +11,8 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-head-media-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Mark, Preview } = await import("./marks");
+const { Mark, Preview, Spark, Ticks } = await import("./marks");
+const { Hero, ObjectHead, Trend } = await import("./identity");
 const { Cells, Tiles } = await import("./layout");
 const { Nav, Path } = await import("./components");
 const { Choice, Input, Select, Setting } = await import("./controls");
@@ -188,4 +189,80 @@ test("a media tile may open by a deed: its title is a button, and the tile is ma
   });
   expect(markup).toMatch(/class="k2-tile"[^>]*data-open=""/);
   expect(markup).toMatch(/<button type="button" class="k2-row-open"[^>]*>Notiz zur Abnahme</);
+});
+
+test("a hero comes whole from the server: the figure in its role, the history named, the exceptions with their who", () => {
+  const markup = html(Hero, {
+    figure: "178",
+    label: "aktive Verbindungen",
+    trend: { kind: "bars", values: [1, 0, 3], label: "Neue Verbindungen je Tag", caption: "je Tag" },
+    exceptions: [{ status: "warn", count: 1, word: "ungenutzt", who: "MCP Inspector" }],
+  });
+  expect(markup).toMatch(/data-k2-type="figure"[^>]*>178</);
+  expect(markup).toContain('aria-label="Neue Verbindungen je Tag"');
+  // who stands quietly after the words, without a "·" (the study's exception line)
+  expect(markup).toContain(">MCP Inspector<");
+  expect(markup).not.toContain("· MCP Inspector");
+  // a failure from the very first value is drawn, one past the last is none
+  const area = (failedFrom: number) =>
+    html(Hero, { figure: "1", label: "Werte", trend: { kind: "area", values: [1, 2, 3], label: "Werte", failedFrom } });
+  expect(area(0)).toContain("k2-hero-failed");
+  expect(area(3)).not.toContain("k2-hero-failed");
+  // an area of one value draws no line: its place stands empty and keeps its height
+  const one = html(Hero, { figure: "1", label: "Werte", trend: { kind: "area", values: [4], label: "Werte", empty: "Noch keine Werte" } });
+  expect(one).toContain('class="k2-hero-none"');
+  expect(one).not.toContain("k2-hero-line");
+});
+
+test("the head of an open thing and the ticks come whole from the server", () => {
+  const head = html(ObjectHead, {
+    mark: { icon: "printer" },
+    name: "Drucker Halle 2",
+    facts: [{ label: "Verbunden", value: "6 von 6" }],
+    problem: { title: "Liefert keine Werte" },
+  });
+  expect(head).toMatch(/<header class="k2-ohead" data-k2-part="ObjectHead">/);
+  expect(head).toContain("<dt>Verbunden</dt>");
+  expect(head).toContain("Liefert keine Werte");
+  const ticks = html(Ticks, { slots: ["ok", "bad", "none"], label: "3 Abrufe" });
+  expect([...ticks.matchAll(/data-s="(\w+)"/g)].map((match) => match[1])).toEqual(["ok", "bad", "none"]);
+});
+
+// a drawing is bounded by what its widest place can show (review r3 of #4360): a spark 23 bars or 40 points of a line,
+// a history 470 values, the newest; so a long series neither grows the page nor the time to draw it
+test("a spark and a history draw only their newest values, fast, however long the series", () => {
+  const long = Array.from({ length: 20_000 }, (_, index) => index % 97);
+  const started = performance.now();
+  const bars = html(Spark, { values: long, label: "lang" });
+  const line = html(Spark, { values: long, label: "lang", kind: "line" });
+  const trend = html(Trend, { kind: "bars", values: long, label: "lang" });
+  const area = html(Trend, {
+    kind: "area",
+    values: long,
+    failedFrom: long.length - 3,
+    label: "lang",
+    ticks: { slots: long.map((_, index) => (index >= long.length - 3 ? "bad" : "ok")), label: "Abrufe" },
+  });
+  const took = performance.now() - started;
+  expect(bars.match(/<i /g)?.length).toBe(23);
+  expect(line.match(/[ML]/g)?.length).toBe(40);
+  expect(trend.match(/<rect /g)?.length).toBe(470);
+  // the area's newest 470 values over the newest 470 ticks, the last three failed
+  expect(/class="k2-hero-line" d="([^"]*)"/.exec(area)?.[1]?.match(/[ML]/g)?.length).toBe(470);
+  expect(area.match(/data-s="bad"/g)?.length).toBe(3);
+  expect(area).toContain('class="k2-hero-cut"');
+  // linear: four drawings of 20.000 values in well under a second (quadratic took seconds each)
+  expect(took).toBeLessThan(1000);
+});
+
+test("a spark line skips what is no number and scales negative values between their lowest and highest", () => {
+  const path = (values: number[]) => /<path d="([^"]*)"/.exec(html(Spark, { values, label: "x", kind: "line" }))?.[1] ?? "";
+  // a gap: the line breaks and goes on, nothing NaN in the path
+  const gap = path([1, 2, Number.NaN, 3, Number.POSITIVE_INFINITY, 4]);
+  expect(gap).not.toContain("NaN");
+  expect(gap.match(/M/g)?.length).toBe(3);
+  // all negative: the highest value at the top (y 2), the lowest at the bottom (y 18)
+  expect(path([-5, -1, -3])).toBe("M0.0,18.0l0,0L40.0,2.0L80.0,10.0");
+  // equal values, also negative ones: a flat line in the middle
+  expect(path([-2, -2, -2])).toBe("M0.0,10.0l0,0L40.0,10.0L80.0,10.0");
 });

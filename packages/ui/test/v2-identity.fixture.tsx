@@ -11,6 +11,8 @@ export const teams = [
   // everyone shows: the stack ends at its last face, without room for a count it does not need (W3)
   { name: "Büro", people: [{ name: "Charles Augustus Montgomery III" }, { name: "🦊 Fuchs Bau" }], orders: 3 },
   { name: "Lager", people: crew(3), orders: 7 },
+  // a club of 12.345 members, of whom the page holds three faces (W5 Pulse): "+n" counts all the rest
+  { name: "Verein", people: crew(3), total: 12345, orders: 0 },
 ];
 
 // Things with a face and people beside what they did: marks by place (sidebar, rows of one and two lines, tiles, a
@@ -172,7 +174,11 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
           rows={teams}
           columns={[
             { title: "Team", width: { min: 140, default: 180 }, cell: (row) => row.name },
-            { title: "Leute", width: { min: 90, default: 90 }, cell: (row) => <Avatar.Stack people={row.people} /> },
+            {
+              title: "Leute",
+              width: { min: 90, default: 90 },
+              cell: (row) => <Avatar.Stack people={row.people} total={"total" in row ? row.total : undefined} />,
+            },
             { title: "Aufträge", width: { min: 80, default: 90 }, align: "end", cell: (row) => String(row.orders) },
           ]}
         />

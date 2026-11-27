@@ -241,7 +241,8 @@ test("facts: the label column takes the longest label, a token is monospace and 
         inside: value.getBoundingClientRect().right <= token!.querySelector("dd")!.getBoundingClientRect().right + 0.5,
       };
     });
-    expect(found).toEqual({ label: 32, mono: true, wordBreak: "break-all", select: "all", inside: true });
+    // a pair of one line is 28 px (its 20 and 8 between pairs, the study's facts)
+    expect(found).toEqual({ label: 28, mono: true, wordBreak: "break-all", select: "all", inside: true });
   });
 });
 

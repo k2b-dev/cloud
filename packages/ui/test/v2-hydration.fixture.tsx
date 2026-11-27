@@ -17,6 +17,7 @@ import {
   ImageInput,
   Input,
   List,
+  ObjectHead,
   Pane,
   Prose,
   Row,
@@ -299,7 +300,24 @@ export function Fixture() {
           <Text muted>Geöffnet: {opened()}</Text>
         </Pane>
         <Show when={side()}>
-          <Pane label="Info" side width={{ min: 240, default: 280 }}>
+          {/* identity B: a pane in the colour of the app its content belongs to, with the tinted head of an open thing
+              (review r2 of #4360): the owner's inks, the head's deeds and the pane's attributes come from the server */}
+          <Pane
+            label="Info"
+            side
+            owner="#0f766e"
+            width={{ min: 240, default: 280 }}
+            head={
+              <ObjectHead
+                mark={{ icon: "printer", color: "#0f766e" }}
+                name="Drucker Halle 2"
+                meta="Werkstatt · Erdgeschoss"
+                actions={<Button icon="pencil" label="Bearbeiten" />}
+                facts={[{ label: "Verbunden", value: "6 von 6" }]}
+                problem={{ title: "Liefert keine Werte", text: "Zeitüberschreitung nach 15 s" }}
+              />
+            }
+          >
             <Section title="Info" />
           </Pane>
         </Show>

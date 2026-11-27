@@ -47,9 +47,13 @@ The working surface of an app: one per screen.
 
 A column that scrolls, with no padding: everything in it reaches both edges.
 
-- `head` (a `Bar` or `Tabs`), `status` (what stays under the head while
-  the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
-  with the state of an open entry above a reader), `label`.
+- `head` (a `Bar` or `Tabs`; an `ObjectHead` on an open thing), `status`
+  (what stays under the head while the column scrolls: a `StatusRow` of 52 px
+  above a list, or a `Bar` of 40 px with the state of an open entry above a
+  reader), `label`.
+- `owner`: the colour of the app the content belongs to where it differs
+  from the app one is in (OAuth's indigo in the administration). Hero,
+  drawings, the open row and the object head take it; the shell keeps its own.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
   limits, Enter back to the default) move the width; a reload starts at the
@@ -94,6 +98,27 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 `Inline` wraps: its things and its `end` flow as one line, one line stays
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
+
+### Hero, Trend, ObjectHead, Ticks (identity B)
+
+`Hero`: the one figure of a screen right under its head, in the figure type
+(30/34, 600, tabular, once per screen) and the owner's colour: `figure`,
+`label`, `meta`, `trend` (`{ kind: "bars" | "area" | "ticks", values,
+label, empty, start, caption, end }`, only from real data; with no values
+yet its place keeps its height and shows `empty`), `exceptions` (`{
+status | icon, count, word, who }`, one line of "● number word who").
+`ObjectHead` as the `head` of an open thing: `mark` (40 px), `name` (18),
+`meta`, `actions` (in the phone's bar there), up to three `facts` and a
+`problem` (`{ title, text }`, red in place), on the owner's tint. `Ticks`
+(below) draws a hero's history as `trend` `ticks`. `Trend` (the same
+`kind`, `values`, `label`, `start`, `caption`, `end`, and under an area
+`ticks` of `{ slots, label }`): a history alone in a section of a detail,
+from text edge to text edge; under an area each value stands over its tick.
+A history draws at most 470 values (1880 px at its widest, 4 px a value),
+a `Spark` 23 bars (a cell of 140 px, 6 px a bar) or 40 points of a line (80 px,
+2 px a point): the newest; more would not be seen. `Dot` (`status`): a good state is a neutral dot and word. Rows of
+a table or list part by a very quiet line; the strong hairline parts two
+things (head from content, list from detail, groups).
 
 ### Band
 
@@ -284,10 +309,9 @@ no rows and nothing loading, the empty state stands in place of the table.
 
 ### Facts
 
-`items: { label, value, hint?, copy?, mono? }[]`: label 12 quiet, value 13, 32 px
-per row; the label column is as wide as the longest label of that list
-(80–160 px), so two `Facts` lists may start their values at different
-edges. On the phone each pair is one line, the label on the left and a short
+`items: { label, value, hint?, copy?, mono? }[]`: label 13 quiet, value 13, 32 px
+per row; one label column of 116 px and a gap of 16 in every list, so all
+values start on one edge (a longer label wraps within it). On the phone each pair is one line, the label on the left and a short
 value at the end; a value longer than the rest of the line goes under its
 label.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
@@ -302,7 +326,7 @@ one.
 
 ### Text
 
-`type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
+`type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24, `figure` 30/34 (the one hero of a screen).
 `weight` (`"strong"` 600, `"medium"` 500 for a state or amount that stands
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
@@ -327,7 +351,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress
+### Icon, Avatar, Chip, Progress, Ticks
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -349,14 +373,20 @@ lines instead of cutting a thing.
   its name). The place sets the size: 20 in the sidebar and in a sentence,
   24 leading a row or a cell, 32 there in a list or table that shows
   pictures of its things (`image` or `kind`), 36 on a card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
-- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
-  other with a ring and "+n"; one picture with every name. In a narrow
-  place (a 90 px column) it shows the faces it holds whole and counts the
-  rest; the count is always right and never cut, from the first render.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `total`, `label`. People
+  over each other with a ring and "+n"; one picture with every name. In a
+  narrow place (a 90 px column) it shows the faces it holds whole and counts
+  the rest; the count is always right and never cut, from the first render.
+  `total` is how many there are in all where `people` holds only the first
+  (12.345 members, three faces): "+n" counts the rest, "99+" beyond 99, and
+  the name ends "und 12.342 weitere". Show a large total as words beside it.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
-  never only the title of the data. A few bars of a short history, the
-  last strongest; beside a number, never instead of it.
+  never only the title of the data, `color` (the data colour of its thing;
+  without it the owner's, else the app's), `kind` (`bars`, or `line`: one
+  soft line of 80 px where the shape over a month matters, such as use over
+  30 days; a value that is no number is a gap). A few bars of a short history, the history soft and the last in
+  the full ink; beside a number, never instead of it.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
   `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
@@ -365,6 +395,15 @@ lines instead of cutting a thing.
 - `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
   the open thing at the top of its detail, 4:3 from text edge to text edge;
   the symbol stands while it loads, fails or is missing.
+- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
+  the writing direction; at most 60 in a table cell, more are cut at its
+  end), `label` (always "what, period: what happened", such as
+  "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen"),
+  `color` (the data colour of what it belongs to; default the app),
+  `stretch` (in a detail: slots 2 px apart grow up to 12 px, a wider place
+  keeps the strip at its start). Ok is soft, a failure red and taller, a
+  slot without data a low stub; 140 × 20 px in a table cell. The one column
+  of a list that shows its data over time; never decoration.
 
 ## Controls
 

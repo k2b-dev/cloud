@@ -69,7 +69,8 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       cells: [".k2-cells", "250,166 1125x117"],
       section: [".k2-sec", "250,283 765x181"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
-      facts: [".k2-facts", "1016,499 359x200"],
+      // facts of 28 a pair (identity B, the study)
+      facts: [".k2-facts", "1016,499 359x184"],
       // the rail of the shell beside the app: its logo and the open app (Kunden)
       railLogo: [".ui-v2-rail__logo", "-44,4 32x32"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
@@ -90,14 +91,14 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
   // last of its column and draws no line under it (look rule 4).
   deliveries: {
     1440: {
-      section: [".k2-sec", "250,101 1125x891"],
+      section: [".k2-sec", "250,101 1125x887"],
       group: [".k2-group", "250,185 1125x252"],
       groupHead: [".k2-gh", "250,185 1125x56"],
       steps: [".k2-steps", "250,285 1125x72"],
       table: [".k2-group .k2-table", "250,622 1125x124"],
       // the inline facts with their end: the part is the line around the list
-      facts: ['[data-k2-part="Facts"]', "250,822 1125x32"],
-      folded: [".k2-group[data-folded]", "250,870 1125x57"],
+      facts: ['[data-k2-part="Facts"]', "250,822 1125x28"],
+      folded: [".k2-group[data-folded]", "250,866 1125x57"],
       railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
@@ -112,15 +113,16 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     },
   },
   keys: { 1440: {}, 390: {} },
-  // tabelle-grids.html; the table is wider than its column and scrolls sideways
+  // tabelle-grids.html; the table is wider than its column and scrolls sideways. The head of its columns is 34 high
+  // since identity B (26.11.), so the rows stand 2 px higher than in the mockup.
   table: {
     1440: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
       status: ['[data-k2-part="StatusRow"]', "250,57 1125x52"],
-      firstHead: ["thead th:nth-child(2)", "294,109 260x36"],
-      group: ["tbody tr[data-group]", "250,145 1724x36"],
-      row: ["tbody tr:nth-child(2)", "250,181 1724x40"],
-      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,181 176x40"],
+      firstHead: ["thead th:nth-child(2)", "294,109 260x34"],
+      group: ["tbody tr[data-group]", "250,143 1724x36"],
+      row: ["tbody tr:nth-child(2)", "250,179 1724x40"],
+      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,179 176x40"],
     },
     // The mockup has no head here (its path gives way to the phone bar). The head keeps its bar for the table's own
     // search as a symbol (#4139), so everything under it starts 56 px lower than in the mockup.

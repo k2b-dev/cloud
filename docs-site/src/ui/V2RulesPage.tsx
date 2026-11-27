@@ -71,7 +71,7 @@ const rules: readonly V2Rule[] = [
   {
     id: "edge",
     title: "One line, one text edge",
-    text: "Every line is 1 px in one colour and runs from edge to edge of its column. Text starts at 20 px, after an icon at 44 px; below 768 px at 16 and 40 px. No container pads its children.",
+    text: "Every line is 1 px and runs from edge to edge of its column, in two weights: a very quiet one between the rows of a table or list, the strong one where two things part (a head from its content, a list from its detail, groups). Text starts at 20 px, after an icon at 44 px; below 768 px at 16 and 40 px. No container pads its children.",
     excerpts: [
       { src: "/assets/ui-v2/line-edge.png", alt: "A row with an icon, text at 44 px; plain text at 20 px", width: 522, height: 95 },
     ],

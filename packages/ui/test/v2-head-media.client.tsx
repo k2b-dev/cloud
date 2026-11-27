@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
+import { IdentityWorstScreen, OAuthScreen, OwnerScreen, PulseScreen, TrendUnderScreen } from "./v2-identity-b.fixture";
 import {
   AgendaTilesScreen,
   AreasMenuScreen,
@@ -60,7 +61,18 @@ declare global {
       | "facts"
       | "dialog-inline"
       | "agenda"
-      | "tiles-current";
+      | "oauth-b"
+      | "oauth-b-list"
+      | "pulse-b"
+      | "pulse-b-list"
+      | "hero-worst"
+      | "hero-bare"
+      | "hero-empty"
+      | "head-worst"
+      | "head-bare"
+      | `owner-${string}`
+      | "tiles-current"
+      | "trend-under";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -91,6 +103,18 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" || which === "selection-four" ? (
         <SelectionScreen four={which === "selection-four"} />
+      ) : which.startsWith("owner-") ? (
+        <OwnerScreen color={`#${which.slice(6)}`} />
+      ) : which === "hero-empty" ? (
+        <IdentityWorstScreen part="hero" empty />
+      ) : which === "hero-worst" || which === "hero-bare" || which === "head-worst" || which === "head-bare" ? (
+        <IdentityWorstScreen part={which.startsWith("hero") ? "hero" : "head"} bare={which.endsWith("bare")} />
+      ) : which === "trend-under" ? (
+        <TrendUnderScreen />
+      ) : which === "oauth-b" || which === "oauth-b-list" ? (
+        <OAuthScreen list={which === "oauth-b-list"} />
+      ) : which === "pulse-b" || which === "pulse-b-list" ? (
+        <PulseScreen list={which === "pulse-b-list"} />
       ) : which === "agenda" ? (
         <AgendaTilesScreen />
       ) : which === "tiles-current" ? (

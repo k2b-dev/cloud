@@ -14,6 +14,11 @@ export const typeRoles = {
   body: { size: 14, lineHeight: 20, weight: 400 },
   /** The one main statement or name. */
   lead: { size: 18, lineHeight: 24, weight: 600 },
+  /**
+   * The hero of a screen, at most once: the figure that matters today, or the title of a page that stands alone, such
+   * as an error page (look rules, identity direction B: the fifth size).
+   */
+  figure: { size: 30, lineHeight: 34, weight: 600 },
 } as const;
 
 export type TypeRole = keyof typeof typeRoles;
@@ -44,8 +49,10 @@ export const heights = {
   tabs: 44,
   bar: 40,
   columns: 36,
+  /** The head of a table's columns (identity B). */
+  tableHead: 34,
   row: 40,
-  /** A row that leads with a thing's mark of 32 px (a file's thumbnail, a folder), in a table or a list. */
+  /** A row of a list or a table that leads with a thing's mark (24, or 32 where the list shows pictures). */
   rowMark: 44,
   row2: 52,
   row3: 72,

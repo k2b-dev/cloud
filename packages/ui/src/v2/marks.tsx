@@ -1,5 +1,6 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { personColor } from "../surfaces/person-color";
 import { colorStyle, safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
@@ -125,6 +126,11 @@ export type AvatarStackProps = {
   people: readonly Person[];
   /** How many show before "+n" takes the rest: 3 when not set. */
   max?: number;
+  /**
+   * How many people there are in all, where `people` holds only the first of them (12.345 members, three faces): "+n"
+   * counts the rest ("99+" beyond 99, in the room of three signs), and the stack's name ends "und 12.342 weitere".
+   */
+  total?: number;
   /** A name for the whole stack, for assistive technology; without one the names of all the people. */
   label?: string;
 };
@@ -134,16 +140,28 @@ export type AvatarStackProps = {
  * one picture with one name; the avatars in it are decoration. 20 px everywhere, each over the one before by 2 px.
  */
 const AvatarStack = (props: AvatarStackProps) => {
+  const t = useControlMessages();
+  const locale = useLocale();
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  // everyone the stack stands for: the people it holds, or more where `total` says so
+  const count = () => Math.max(props.total ?? 0, props.people.length);
   // at most five faces; fewer when the place is narrow (the stylesheet decides by the stack's own width)
   const shown = () => props.people.slice(0, Math.min(5, Math.max(1, props.max ?? 3)));
   // "+n" for each number of faces the place may leave visible: the stylesheet shows the one that matches, so the count
   // is always right and always whole, from the server's first render on
   const counts = () =>
     shown()
-      .map((_, index) => ({ visible: index + 1, rest: props.people.length - (index + 1) }))
+      .map((_, index) => ({ visible: index + 1, rest: count() - (index + 1) }))
       .filter((count) => count.rest > 0);
   // everyone shows: the stack needs no room for a count while its faces fit (the stylesheet works out its width)
-  const all = () => props.people.length <= shown().length;
+  const all = () => count() <= shown().length;
+  const names = () => props.people.map((person) => person.name).join(", ");
+  const label = () =>
+    props.label ??
+    (count() > props.people.length ? t().andOthers({ names: names(), count: number(count() - props.people.length) }) : names());
+  // the count keeps the three signs it has room for, also in a column of 90 px: beyond 99 it reads "99+", and the
+  // stack's name (and its hint under the pointer) says how many exactly
+  const many = () => count() - 1 > 99;
   return (
     <span
       class="k2-avs"
@@ -151,14 +169,15 @@ const AvatarStack = (props: AvatarStackProps) => {
       data-k={String(shown().length)}
       data-all={all() ? "" : undefined}
       role="img"
-      aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
+      aria-label={label()}
+      title={many() ? label() : undefined}
       style={custom({ "--k2-avs-n": String(shown().length), "--k2-avs-rest": all() ? "0" : "1" })}
     >
       <For each={shown()}>{(person, index) => <Face {...person} decorative place={index() + 1} />}</For>
       <For each={counts()}>
         {(count) => (
           <span class="k2-avs-rest" data-visible={String(count.visible)} aria-hidden="true">
-            {`+${count.rest}`}
+            {count.rest > 99 ? "99+" : `+${count.rest}`}
           </span>
         )}
       </For>
@@ -283,7 +302,10 @@ export const Preview = (props: PreviewProps) => {
 };
 
 export type SparkProps = {
-  /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. */
+  /**
+   * The values in their order, oldest first; the last one (today, this hour) stands in full colour. As bars at most 23,
+   * as a line at most 40: the newest (see `Spark`).
+   */
   values: readonly number[];
   /**
    * What the bars say, in one sentence a person who cannot see them gets the same from: the thing, the direction and
@@ -291,22 +313,135 @@ export type SparkProps = {
    * of the data ("Änderungen der letzten 7 Tage"): a rise, a fall and a flat line would then say the same.
    */
   label: string;
+  /** The data colour of the thing the history belongs to; without it the colour of the owner, else of the app. */
+  color?: string;
+  /**
+   * `bars` (the default): a few bars, the last in full colour, such as changes per day of a week. `line`: one soft
+   * line of 80 px, such as use over 30 days, where the shape matters more than one day.
+   */
+  kind?: "bars" | "line";
 };
+
+const LINE_WIDTH = 80;
+const LINE_HEIGHT = 20;
+/**
+ * How many values a spark can show, the newest: as bars 23, as a line 40. A bar is 4 px with 2 px after it, and the
+ * widest place a spark stands is a table cell of 140 px, the cell `Ticks` are made for: (140 + 2) / 6 = 23. A line is
+ * 80 px wide and needs 2 px per value to keep one apart from the next: 40. More would not be seen, only sent.
+ */
+const SPARK_BARS = Math.floor((140 + 2) / 6);
+const SPARK_LINE = LINE_WIDTH / 2;
 
 /**
  * A few small bars of a short history, such as changes per day: in the colour of the thing it stands beside (its
- * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number.
+ * mark's colour), else of the app. 20 px high; only for a trend people glance at, never instead of a number. As bars
+ * at most 23 values, as a line 40: the newest (what its place can show); a value that is no number (NaN, Infinity) is a
+ * gap in a line and a quiet stub as a bar. A longer history is summed up first (per day, per week).
  */
 export const Spark = (props: SparkProps) => {
-  const top = () => Math.max(...props.values, 0);
+  const shown = createMemo(() => {
+    const most = props.kind === "line" ? SPARK_LINE : SPARK_BARS;
+    return props.values.length > most ? props.values.slice(-most) : props.values;
+  });
+  // the lowest and highest value once per drawing, of the values that are numbers
+  const range = createMemo(() => {
+    const finite = shown().filter((value) => Number.isFinite(value));
+    return finite.length ? { low: Math.min(...finite), high: Math.max(...finite) } : undefined;
+  });
+  // a line shows the shape between its lowest and highest value, 2 px kept above and below for its stroke; equal
+  // values are a flat line in the middle, a value that is no number a gap; a history of one value spans the width
+  const line = createMemo(() => {
+    const values = shown();
+    const span = range() ? range()!.high - range()!.low : 0;
+    let open = false;
+    let path = "";
+    values.forEach((value, index) => {
+      if (!Number.isFinite(value)) {
+        open = false;
+        return;
+      }
+      const x = values.length > 1 ? (index / (values.length - 1)) * LINE_WIDTH : 0;
+      const y = span > 0 ? LINE_HEIGHT - 2 - ((value - range()!.low) / span) * (LINE_HEIGHT - 4) : LINE_HEIGHT / 2;
+      // a point alone between two gaps stays a dot
+      path += `${open ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}${open ? "" : "l0,0"}`;
+      open = true;
+    });
+    return values.length === 1 && path ? `${path}H${LINE_WIDTH}` : path;
+  });
+  // bars stand from zero: the highest bar is the highest value of at least zero
+  const top = createMemo(() => Math.max(range()?.high ?? 0, 0));
+  if (props.kind === "line")
+    return (
+      <svg
+        class="k2-spark"
+        data-k2-part="Spark"
+        data-kind="line"
+        role="img"
+        aria-label={props.label}
+        viewBox={`0 0 ${LINE_WIDTH} ${LINE_HEIGHT}`}
+        preserveAspectRatio="none"
+        style={custom({ "--k2-c": props.color })}
+      >
+        <path d={line()} vector-effect="non-scaling-stroke" />
+      </svg>
+    );
   return (
-    <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label}>
-      <For each={props.values}>
-        {(value) => <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((value / top()) * 100)) : 8}%` })} />}
+    <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label} style={custom({ "--k2-c": props.color })}>
+      <For each={shown()}>
+        {(value) => (
+          <i
+            style={custom({
+              "--k2-v": `${top() > 0 && Number.isFinite(value) ? Math.max(8, Math.round((Math.max(value, 0) / top()) * 100)) : 8}%`,
+            })}
+          />
+        )}
       </For>
     </span>
   );
 };
+
+/** The state of one time slot of `Ticks`: it went well, it failed, or there is no data for it. */
+export type TickState = "ok" | "bad" | "none";
+
+export type TicksProps = {
+  /**
+   * One state per time slot, oldest first, such as one per minute of the last 30 minutes. They read in the writing
+   * direction: the oldest at the start (on the right in a page written right to left). In a table cell at most 60
+   * slots: the cell's 140 px hold no more, and a strip with more is cut at its end.
+   */
+  slots: readonly TickState[];
+  /**
+   * What the ticks say, in one sentence a person who cannot see them gets the same from, always in the same form:
+   * what, over which time, then what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen
+   * fehlgeschlagen".
+   */
+  label: string;
+  /** The data colour of what the ticks belong to; without it the colour of the app. Failures stay red. */
+  color?: string;
+  /**
+   * The ticks take the room between the text edges of their place, such as a detail: 2 px apart, each slot up to 12 px
+   * wide, the strip at the start where the place is wider; without it 140 px, the width of a table cell.
+   */
+  stretch?: boolean;
+};
+
+/**
+ * One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a
+ * failure red and taller, a slot without data a low stub. 20 px high; the one column of a list that shows its data
+ * over time.
+ */
+export const Ticks = (props: TicksProps) => (
+  <span
+    class="k2-ticks"
+    data-k2-part="Ticks"
+    data-stretch={props.stretch ? "" : undefined}
+    role="img"
+    aria-label={props.label}
+    style={custom({ "--k2-c": props.color })}
+  >
+    <For each={props.slots}>{(state) => <i data-s={state} />}</For>
+  </span>
+);
 
 export type ChipProps = {
   children: JSX.Element;
@@ -448,7 +583,14 @@ export const Chip = (props: ChipProps) => {
 };
 
 /** A small round dot of a state (internal: a row marks "unread" with it, the sidebar "new"). */
-export const Dot = (props: { status?: Status | "app"; label?: string }) => (
+export type DotProps = {
+  /** The state it shows; without one a neutral dot (what rests). `app`: in the colour of the app. */
+  status?: Status | "app";
+  /** A name for assistive technology; without one the dot is decoration beside its word. */
+  label?: string;
+};
+
+export const Dot = (props: DotProps) => (
   <span class="k2-dot" data-status={props.status} role="img" aria-label={props.label} aria-hidden={props.label ? undefined : "true"} />
 );
 

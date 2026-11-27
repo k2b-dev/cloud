@@ -18,11 +18,13 @@ import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
+import { ownerStyle } from "./colors";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { ConfirmDialog } from "./overlays";
+import { PaneHeadContext } from "./pane-head";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
 import type { Action, OnNavigate, Person, Status, Width } from "./types";
@@ -410,6 +412,12 @@ export type PaneProps = {
   /** The side column of a record (the info column): quieter sections. */
   side?: boolean;
   /**
+   * The colour of the app the content belongs to, where it differs from the app one is in, such as the indigo of
+   * OAuth in the administration (identity B): hero, drawings, the open row and the head of the open thing take it;
+   * the shell keeps the colour of its app. A hex colour or a token; one that is no colour is left out.
+   */
+  owner?: string;
+  /**
    * A name under which the page keeps this column's scroll position, such as "mail-list": back and forward bring
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
    */
@@ -442,8 +450,34 @@ export const Pane = (props: PaneProps) => {
       return props.detail === true;
     },
   });
-  const head = resolveChildren(() => props.head);
+  // the head of an open thing says so while it is made, with the number of its deeds, so the pane can put them into its
+  // phone bar; asked again each time the head is made, so a head that is no longer one leaves nothing behind
+  let objectHead = false;
+  let objectDeeds = 0;
+  const head = resolveChildren(() => {
+    objectHead = false;
+    objectDeeds = 0;
+    return (
+      <PaneHeadContext.Provider
+        value={(deeds) => {
+          objectHead = true;
+          objectDeeds = deeds;
+        }}
+      >
+        {props.head}
+      </PaneHeadContext.Provider>
+    );
+  });
   const status = resolveChildren(() => props.status);
+  // read after the head, which said so while it was made
+  const holdsObjectHead = () => {
+    head();
+    return objectHead;
+  };
+  const headDeeds = () => {
+    head();
+    return objectDeeds;
+  };
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -459,6 +493,8 @@ export const Pane = (props: PaneProps) => {
       });
     });
   });
+  // the owner's colour and its readable inks, only when it is a colour; else the app's colour stands
+  const owner = () => ownerStyle(props.owner);
   return (
     <section
       ref={(element) => {
@@ -472,10 +508,17 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
-      style={custom({
-        "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
-      })}
+      data-k2-owner={owner() ? "" : undefined}
+      data-k2-ohead={holdsObjectHead() ? "" : undefined}
+      data-k2-back={props.back ? "" : undefined}
+      style={{
+        ...custom({
+          "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
+          "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+          "--k2-ohead-deeds": holdsObjectHead() && props.back ? String(headDeeds()) : undefined,
+        }),
+        ...owner(),
+      }}
     >
       {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
       <Show when={props.back}>

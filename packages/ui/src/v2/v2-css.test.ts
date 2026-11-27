@@ -46,8 +46,9 @@ test("the text edge is 20 px, 16 px below 768 px, and 24 px further in after an 
   expect(phone.size).toBe(1);
 });
 
-test("there is one hairline of 1 px, and the radii and heights are the tokens", () => {
+test("there are two weights of hairline, 1 px each, and the radii and heights are the tokens", () => {
   expect(scope.get("--k2-hairline")).toBe("1px solid var(--k2-line)");
+  expect(scope.get("--k2-hairline-subtle")).toBe("1px solid var(--k2-line-subtle)");
   expect(scope.get("--k2-r-mark")).toBe(`${radii.mark}px`);
   expect(scope.get("--k2-r-control")).toBe(`${radii.control}px`);
   expect(scope.get("--k2-r-overlay")).toBe(`${radii.overlay}px`);
@@ -59,6 +60,7 @@ test("there is one hairline of 1 px, and the radii and heights are the tokens", 
     tabs: "tabs",
     bar: "bar",
     columns: "columns",
+    tableHead: "table-head",
     row: "row",
     rowMark: "row-mark",
     row2: "row2",
@@ -148,6 +150,13 @@ const foreignVariables = new Set([
   "--keyboard-inset",
   "--k2-app",
   "--k2-app-ink",
+  // the inks of an owner's colour, worked out for a hex colour and set inline on its pane (`ownerStyle`)
+  "--k2-owner-ink",
+  "--k2-owner-ink-dark",
+  "--k2-owner-line",
+  "--k2-owner-line-dark",
+  "--k2-owner-soft",
+  "--k2-owner-soft-dark",
   "--color-picker-color",
   "--color-area-background",
   "--color-slider-background",

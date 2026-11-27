@@ -67,6 +67,11 @@ export type V2LayoutOptions = {
   figure?: string;
   /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
+  /**
+   * The one figure of a screen (a `Hero`, or `Text type="figure"` such as an error page's title), which may stand in
+   * the figure type (30/34 600), once per page.
+   */
+  heroFigure?: string;
 };
 
 export type V2GripMeasure = {
@@ -98,6 +103,7 @@ export type V2Layout = {
 };
 
 type Limits = {
+  figureType: { size: number; lineHeight: number; weight: number };
   sizes: number[];
   lineHeights: number[];
   weights: number[];
@@ -618,6 +624,7 @@ function measureInPage(options: InPage): DomResult {
 
     // 5. Type roles: every run of text that a person sees.
     const type = new Map<string, number>();
+    const figures = new Set<Element>();
     let texts = 0;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -630,6 +637,16 @@ function measureInPage(options: InPage): DomResult {
       const size = Number.parseFloat(style.fontSize);
       const lineHeight = Number.parseFloat(style.lineHeight);
       const weight = Number(style.fontWeight);
+      const figure = parent.closest(options.heroFigure);
+      if (
+        figure &&
+        size === options.figureType.size &&
+        lineHeight === options.figureType.lineHeight &&
+        weight === options.figureType.weight
+      ) {
+        figures.add(figure);
+        continue;
+      }
       const prose = !!parent.closest(options.prose);
       const sizeOk = options.sizes.includes(size) || (prose && size === 16);
       const lineOk = options.lineHeights.includes(lineHeight) || (prose && lineHeight === 22);
@@ -680,7 +697,10 @@ function measureInPage(options: InPage): DomResult {
       double,
       inside,
       cut,
-      type: [...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
+      type: [
+        ...[...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
+        ...(figures.size > 1 ? [`the figure type stands ${figures.size} times: one figure per screen`] : []),
+      ],
       grip,
       grips,
       pseudo,
@@ -741,7 +761,9 @@ async function gripPixelsInPage(input: { png: string; scale: number; left: numbe
 export async function measureV2Layout(page: Page, options: V2LayoutOptions = {}): Promise<V2Layout> {
   // Fonts, observers and animations first: a measurement of a page that still moves measures a moment, not the page.
   await settled(page);
-  const roles = Object.values(typeRoles);
+  // the figure is no role of running text: it stands once, in a hero or as the title of a page that stands alone
+  const { figure: figureType, ...textRoles } = typeRoles;
+  const roles = Object.values(textRoles);
   const limits: InPage = {
     root: options.root ?? "body",
     columns: options.columns ?? "[data-k2-column]",
@@ -750,6 +772,8 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
     untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
+    heroFigure: options.heroFigure ?? ".k2-t-figure, [data-k2-type='figure']",
+    figureType,
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
     // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
