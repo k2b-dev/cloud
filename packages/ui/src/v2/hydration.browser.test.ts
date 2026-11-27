@@ -216,6 +216,31 @@ test("an entry that opens something holds no control inside a control, and each 
   });
 });
 
+// identity B in a split (review r2 of #4360): the server already sends the owner's colour with its checked inks and the
+// mark of a pane that holds the head of an open thing, with the number of its deeds; the live page keeps them
+test("hydration: a pane's owner and the head of an open thing come from the server and stay after it comes alive", async () => {
+  await withPage(async (page) => {
+    const read = (root: Element | null) => {
+      const pane = root?.querySelector('.k2-pane[aria-label="Info"]');
+      return {
+        owner: pane?.hasAttribute("data-k2-owner"),
+        head: pane?.hasAttribute("data-k2-ohead"),
+        ink: /--k2-owner-ink:\s*#/.test(pane?.getAttribute("style") ?? ""),
+        deeds: pane?.querySelectorAll(".k2-ohead-end > *").length,
+      };
+    };
+    const [sent, live] = await page.evaluate(
+      ([source]) => {
+        const reader = new Function(`return ${source}`)() as (root: Element | null) => unknown;
+        return [reader(window.__k2Sent instanceof Element ? window.__k2Sent : null), reader(document.getElementById("root"))];
+      },
+      [read.toString()],
+    );
+    expect(sent).toEqual({ owner: true, head: true, ink: true, deeds: 1 });
+    expect(live).toEqual(sent);
+  });
+});
+
 test("a pane that comes and goes takes its seam with it", async () => {
   await withPage(async (page) => {
     // the seams between panes: the one after the last pane is hidden and has no grip
