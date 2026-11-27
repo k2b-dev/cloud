@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** The colour names a select option may carry. */
-const SELECT_COLOR_NAMES = ["blue", "cyan", "gray", "green", "orange", "purple", "red", "yellow"] as const;
+export const SELECT_COLOR_NAMES = ["blue", "cyan", "gray", "green", "orange", "purple", "red", "yellow"] as const;
 
 export type SelectColorName = (typeof SELECT_COLOR_NAMES)[number];
 
@@ -18,9 +18,6 @@ export const NAMED_SELECT_COLORS = {
 } as const satisfies Record<SelectColorName, string>;
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-
-/** Why a colour was refused, in the words a person or an agent can act on. */
-export const SELECT_COLOR_RULE = `a select option colour is a hex colour such as #2563eb or one of: ${SELECT_COLOR_NAMES.join(", ")}`;
 
 /**
  * A select option's colour: a hex colour (`#2563eb`, `#25e`) or one of the names above. Writing anything else is
@@ -53,14 +50,14 @@ const selectConfigsOf = (type: string, config: unknown): unknown[] => {
 };
 
 /**
- * The first colour a written field configuration may not hold, as a message for a 400; null when every colour is one.
- * Covers select fields and the select columns of lists.
+ * The first colour a written field configuration may not hold, as JSON for the message of a 400; null when every
+ * colour is one. Covers select fields and the select columns of lists.
  */
 export const invalidSelectColor = (type: string, config: unknown): string | null => {
   for (const select of selectConfigsOf(type, config))
     for (const option of isRecord(select) ? listOf(select.options) : []) {
       const color = isRecord(option) ? option.color : undefined;
-      if (color !== undefined && !SelectColorSchema.safeParse(color).success) return `${SELECT_COLOR_RULE}, not ${JSON.stringify(color)}`;
+      if (color !== undefined && !SelectColorSchema.safeParse(color).success) return JSON.stringify(color);
     }
   return null;
 };

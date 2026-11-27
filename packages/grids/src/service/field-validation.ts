@@ -6,7 +6,7 @@ export { materializeFieldDefault } from "../field-defaults";
 import { sql } from "@k2b/cloud";
 import { getFieldType, getRecordWritableFieldType } from "../field-types";
 import { ObjectListConfigSchema, objectListInputValue } from "../field-types/object-list";
-import { invalidSelectColor } from "../field-types/select-colors";
+import { invalidSelectColor, SELECT_COLOR_NAMES } from "../field-types/select-colors";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
 import { getGridsCrudMessages } from "./crud-messages";
@@ -19,7 +19,10 @@ export const validateFieldConfig = (type: string, config: Record<string, unknown
   if (!fieldType) return fail(err.badInput(messages.unknownFieldType({ type })));
   // reading drops a colour that is none; writing one is refused, with the colours that are allowed
   const color = invalidSelectColor(type, config);
-  if (color) return fail(err.badInput(messages.invalidFieldConfig({ type, detail: color })));
+  if (color) {
+    const detail = messages.invalidSelectColor({ value: color, names: SELECT_COLOR_NAMES.join(", ") });
+    return fail(err.badInput(messages.invalidFieldConfig({ type, detail })));
+  }
   const parsed = fieldType.configSchema.safeParse(config);
   if (!parsed.success) {
     // Surface the first issue's message so users see WHY the config was

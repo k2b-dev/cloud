@@ -660,9 +660,9 @@ describe("classic resource route contracts", () => {
           config: { options: [{ id: "open", label: "Open", color }] },
         });
         const fieldCount = await count("fields", "table_id", fixture.tableId);
-        const refused = await app.request(path, jsonRequest(fixture.tokens.admin, select("red; background: url(https://x.test/a)")));
+        const refused = await app.request(path, jsonRequest(fixture.tokens.admin, select("not-a-colour")));
         expect(refused.status).toBe(400);
-        expect(await refused.text()).toContain("a select option colour is a hex colour such as #2563eb or one of: blue");
+        expect(await refused.text()).toContain("A select option colour is a hex colour such as #2563eb or one of: blue");
         expect(await count("fields", "table_id", fixture.tableId)).toBe(fieldCount);
 
         expect((await app.request(path, jsonRequest(fixture.tokens.admin, select("#2563eb")))).status).toBe(201);

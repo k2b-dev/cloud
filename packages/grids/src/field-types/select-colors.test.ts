@@ -14,7 +14,7 @@ const list = (color: unknown) => ({
 describe("select option colours", () => {
   test("are a hex colour or one of the names", () => {
     for (const color of ["#2563eb", "#25E", "blue", "yellow"]) expect(SelectColorSchema.safeParse(color).success).toBe(true);
-    for (const color of ["Blue", "#2563eb80", "rgb(0 0 255)", "red; background: url(x)", "var(--x)", "", 12])
+    for (const color of ["Blue", "#2563eb80", "rgb(0 0 255)", "red blue", "var(--x)", "", 12])
       expect(SelectColorSchema.safeParse(color).success).toBe(false);
   });
 
@@ -27,16 +27,20 @@ describe("select option colours", () => {
         ],
       }),
     ).toBeNull();
-    expect(invalidSelectColor("select", { options: [{ id: "a", label: "A", color: "url(x)" }] })).toContain('not "url(x)"');
+    expect(invalidSelectColor("select", { options: [{ id: "a", label: "A", color: "url(x)" }] })).toBe('"url(x)"');
     expect(invalidSelectColor("object_list", list("green"))).toBeNull();
-    expect(invalidSelectColor("object_list", list("expression(x)"))).toContain("hex colour");
+    expect(invalidSelectColor("object_list", list("not-a-colour"))).toBe('"not-a-colour"');
     expect(invalidSelectColor("text", { color: "anything" })).toBeNull();
   });
 
   test("a field configuration with a colour that is none is refused with the colours that are allowed", () => {
     const refused = validateFieldConfig("select", { options: [{ id: "a", label: "A", color: "url(x)" }] });
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.error.message).toContain("#2563eb or one of: blue, cyan, gray, green, orange, purple, red, yellow");
+    if (!refused.ok)
+      expect(refused.error.message).toContain('#2563eb or one of: blue, cyan, gray, green, orange, purple, red, yellow, not "url(x)"');
+    const german = validateFieldConfig("select", { options: [{ id: "a", label: "A", color: "url(x)" }] }, "de");
+    if (!german.ok) expect(german.error.message).toContain("Die Farbe einer Auswahloption ist eine Hex-Farbe");
+    expect(german.ok).toBe(false);
     expect(validateFieldConfig("object_list", list("url(x)")).ok).toBe(false);
     expect(validateFieldConfig("select", { options: [{ id: "a", label: "A", color: "red" }] }).ok).toBe(true);
   });
@@ -98,11 +102,14 @@ test("every colour a person or agent can write to Grids is a hex colour or a nam
   ];
   const found: string[] = [];
   const loose: string[] = [];
+  // a schema the walk cannot read is named here, never passed over in silence
+  const skipped: string[] = [];
   for (const [name, schema] of schemas) {
     let json: unknown;
     try {
       json = z.toJSONSchema(schema, { io: "input", unrepresentable: "any" });
     } catch {
+      skipped.push(name);
       continue;
     }
     for (const property of colourProperties(json)) {
@@ -113,4 +120,5 @@ test("every colour a person or agent can write to Grids is a hex colour or a nam
   // the select option colour is found, so the walk reaches it
   expect(found.some((entry) => entry.startsWith("field select:"))).toBe(true);
   expect(loose).toEqual([]);
+  expect(skipped).toEqual([]);
 });
