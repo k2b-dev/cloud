@@ -450,22 +450,33 @@ export const Pane = (props: PaneProps) => {
       return props.detail === true;
     },
   });
-  // the head of an open thing says so while it is made, so the pane can put its deeds into its phone bar
+  // the head of an open thing says so while it is made, with the number of its deeds, so the pane can put them into its
+  // phone bar; asked again each time the head is made, so a head that is no longer one leaves nothing behind
   let objectHead = false;
-  const head = resolveChildren(() => (
-    <PaneHeadContext.Provider
-      value={() => {
-        objectHead = true;
-      }}
-    >
-      {props.head}
-    </PaneHeadContext.Provider>
-  ));
+  let objectDeeds = 0;
+  const head = resolveChildren(() => {
+    objectHead = false;
+    objectDeeds = 0;
+    return (
+      <PaneHeadContext.Provider
+        value={(deeds) => {
+          objectHead = true;
+          objectDeeds = deeds;
+        }}
+      >
+        {props.head}
+      </PaneHeadContext.Provider>
+    );
+  });
   const status = resolveChildren(() => props.status);
   // read after the head, which said so while it was made
   const holdsObjectHead = () => {
     head();
     return objectHead;
+  };
+  const headDeeds = () => {
+    head();
+    return objectDeeds;
   };
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
@@ -504,6 +515,7 @@ export const Pane = (props: PaneProps) => {
         ...custom({
           "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
           "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+          "--k2-ohead-deeds": holdsObjectHead() && props.back ? String(headDeeds()) : undefined,
         }),
         ...owner(),
       }}

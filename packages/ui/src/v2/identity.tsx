@@ -1,4 +1,4 @@
-import { For, type JSX, Show, useContext } from "solid-js";
+import { For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dot, Icon, Mark, type MarkProps, type TickState, Ticks } from "./marks";
 import { PaneHeadContext } from "./pane-head";
 import type { Status } from "./types";
@@ -195,8 +195,10 @@ export type ObjectHeadProps = {
  * `Pane`; the deeds stand at the end of the name's line.
  */
 export const ObjectHead = (props: ObjectHeadProps) => {
-  // the pane learns that it holds the head of an open thing: on the phone its bar takes this head's deeds
-  useContext(PaneHeadContext)?.();
+  // the pane learns that it holds the head of an open thing and how many deeds it has: on the phone its bar takes them
+  const actions = resolveChildren(() => props.actions);
+  const deeds = actions.toArray().filter((deed) => deed !== null && deed !== undefined && deed !== false && deed !== "").length;
+  useContext(PaneHeadContext)?.(deeds);
   return (
     <header class="k2-ohead" data-k2-part="ObjectHead">
       <div class="k2-ohead-top">
@@ -207,8 +209,8 @@ export const ObjectHead = (props: ObjectHeadProps) => {
             <span class="k2-ohead-meta">{props.meta}</span>
           </Show>
         </div>
-        <Show when={props.actions}>
-          <div class="k2-ohead-end">{props.actions}</div>
+        <Show when={deeds > 0}>
+          <div class="k2-ohead-end">{actions()}</div>
         </Show>
       </div>
       <Show when={props.facts?.length}>

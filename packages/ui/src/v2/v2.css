@@ -277,6 +277,7 @@
   --k2-c-ink-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
+  --k2-ohead-deeds: initial;
   --k2-ws-side: initial;
   --k2-ws-side-min: initial;
   --k2-ws-toggle: initial;
@@ -6007,6 +6008,10 @@
      of the page (back, deeds, the head), and never gone */
   .k2-ui .k2-pane[data-k2-ohead][data-k2-back] {
     position: relative;
+  }
+  /* the way back keeps clear of them: the room of the deeds the head said it has (each 36 px and 2 px apart) */
+  .k2-ui .k2-pane[data-k2-ohead][data-k2-back] > .k2-pane-back {
+    padding-inline-end: calc(var(--k2-edge) + var(--k2-ohead-deeds, 0) * (var(--k2-h-control) + 2px));
   }
   .k2-ui .k2-pane[data-k2-ohead][data-k2-back] > .k2-slot > .k2-ohead .k2-ohead-end {
     position: absolute;

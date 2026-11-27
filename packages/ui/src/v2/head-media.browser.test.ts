@@ -2092,6 +2092,31 @@ for (const width of [1440, 390])
     );
   });
 
+// break-ui: a long name of the list on the way back keeps clear of the head's deeds in the phone's bar; it ends with "…"
+// before them instead of running under them (review r2 P2)
+test("identity B on the phone: a long way back ends before the head's deeds in its bar", async () => {
+  await withPage(
+    "oauth-b",
+    async (page) => {
+      await page.evaluate(() => {
+        const label = document.querySelector(".k2-pane[data-detail] > .k2-pane-back .k2-btn-label")!;
+        label.textContent = "OAuth-Clients der Buchhaltung, der Lohnbuchhaltung und der Steuerberatung";
+      });
+      await settled(page);
+      const found = await page.evaluate(() => {
+        const back = document.querySelector(".k2-pane[data-detail] > .k2-pane-back .k2-btn")!.getBoundingClientRect();
+        const deeds = [...document.querySelectorAll(".k2-pane[data-detail] .k2-ohead-end > *")]
+          .filter((deed) => deed.getClientRects().length > 0)
+          .map((deed) => deed.getBoundingClientRect().left);
+        return { deeds: deeds.length, clear: back.right <= Math.min(...deeds) + 0.5 };
+      });
+      expect(found).toEqual({ deeds: found.deeds, clear: true });
+      expect(found.deeds).toBeGreaterThan(0);
+    },
+    390,
+  );
+});
+
 test("identity B: the shell keeps the colour of the app one is in, the content takes its owner's", async () => {
   await withPage(
     "oauth-b",
