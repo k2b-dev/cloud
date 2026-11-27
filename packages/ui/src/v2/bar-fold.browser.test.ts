@@ -179,6 +179,25 @@ test("an entry of '…' follows its button: pressed and disabled change in the o
   });
 });
 
+test("a button that grows while the bar keeps its size (a late font, wider words) folds again: the start stays whole", async () => {
+  await withPage(390, true, async (page) => {
+    const before = (await edges(page, head("record"))).start;
+    // the first kept action grows, as words do when their font arrives: the bar keeps its size, its end does not
+    await page
+      .locator(head("record"))
+      .getByRole("button", { name: "Teilen", exact: true })
+      .evaluate((button) => {
+        (button as HTMLElement).style.minWidth = "120px";
+      });
+    await frames(page);
+    await frames(page);
+    const after = await edges(page, head("record"));
+    const names = (await seen(page, head("record"))).map((control) => control.name);
+    expect([after.start, names.slice(0, 2), names.slice(-2)]).toEqual([before, ["Übersicht", "Dateien"], ["Neu", more]]);
+    expect(after.end!.right <= after.content + 0.5).toBe(true);
+  });
+});
+
 test("a button that folds while it has the focus hands it to '…'", async () => {
   await withPage(1440, true, async (page) => {
     await page.locator(head("record")).getByRole("button", { name: "Archivieren" }).focus();

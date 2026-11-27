@@ -336,6 +336,18 @@ export const Tabs = (props: TabsProps) => {
       const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
       const first = tabs[0]?.offsetTop ?? 0;
       const index = tabs.findIndex((tab) => tab.offsetTop > first + 1);
+      // the "Mehr" that holds the hidden tabs takes their room itself: where every tab fits in the room it and its gap
+      // take, all of them show and it goes (otherwise it keeps itself, once a bar's end gave the room back)
+      const more = row?.parentElement?.querySelector<HTMLElement>(":scope > .k2-tab[data-k2-more]");
+      if (index >= 0 && more && row) {
+        const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+        const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
+        const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
+        if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
+          setFit(Number.POSITIVE_INFINITY);
+          return;
+        }
+      }
       setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
