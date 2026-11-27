@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { loadShellAssets, type ShellAssets } from "@k2b/cloud/ssr/shell-page.test-fixture";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { cloudShellSheets } from "../../../../../scripts/fixtures/cloud-shell-sheets";
-import { loadShellAssets, type ShellAssets } from "../../../../cloud/test/shell-page";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 
 // Hosts on v2, from invented hosts: the screen keeps the v2 layout rules at desktop, tablet and phone width with normal,

@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, BrowserContext, Page, Route } from "playwright";
-import { pageErrors, settled } from "../../ui/test/browser";
+import { pageErrors, settled } from "../../../ui/test/browser";
 
 /**
  * A page of an app as Cloud draws it, for browser tests and design pictures without a running Cloud: the first HTML
