@@ -7,7 +7,8 @@
 
 /* Weather's own drawings, inside its canvases ([data-k2-canvas]) only. Every data colour stands as --wx-c on its part
    (from weather-scale.ts, 3:1 on the surface in light and dark), and these rules paint with it, so forced colours can
-   take over. The radar legend also stands on the v1 wall display, outside a canvas. */
+   take over. The radar legend also stands on the v1 wall display, outside a canvas. --wx-c is the app's own property
+   because @k2b/ui/v2 exports no checked colour path for drawings (#4467). */
 
 /* The phone shows the quieter day and the week as one line per day; from 768 px the full day and the week's table. */
 @media not all and (min-width: 768px) {

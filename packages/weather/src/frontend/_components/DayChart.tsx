@@ -101,6 +101,8 @@ const share = (index: number, count: number) => (count < 2 ? 0 : index / (count 
  * lands first, the day moves onto `Chart` in a follow-up.
  *
  * Colours stand as `--wx-c` on each part and the app stylesheet paints with them, so forced colours can take over.
+ * k2b-ui gap: `@k2b/ui/v2` exports neither `safeColor` nor `custom()`, so a drawing cannot pass a colour through the
+ * checked path (#4467); Weather's colours are its own constants from `weather-scale.ts`.
  */
 export default function DayChart(props: { hours: readonly WeatherHour[]; rain: string; locale: string; compact?: boolean }) {
   const g = () => (props.compact ? PHONE : WIDE);

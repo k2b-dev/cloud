@@ -379,6 +379,8 @@ for (const width of [1440, 390])
       expect(await legend.textContent()).toBe("LeichtMäßigStarkExtrem");
       expect(await legend.locator("[data-wx-swatch]").count()).toBe(8);
       await page.getByText("Deutschland · DWD").waitFor({ state: "attached" });
+      // the section names the week once: its drawing and its table repeat no region of the same name
+      expect(await page.locator('[aria-label="7-Tage-Vorhersage"]').count()).toBe(1);
       // the week shows once: the table on a wide screen, one line per day on the phone
       const bars = page.locator('[data-k2-part="RangeBar"]:visible');
       expect(await bars.count()).toBe(7);

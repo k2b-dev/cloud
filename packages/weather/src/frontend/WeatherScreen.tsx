@@ -258,12 +258,13 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
         <Pane label={t().hourlyForecast}>
           <Section icon="calendar" title={t().sevenDayForecast} summary={w().daily.length > 0 ? undefined : t().noForecast}>
             <Show when={w().daily.length > 0}>
-              <Canvas label={t().sevenDayForecast}>
+              <Canvas label={t().weekDays}>
                 {/* the week on the phone: one line of 44 px per day, without lines between them; the sign in its colour, the
                     day in regular weight, the low, the range on the week's one scale, the high, the rain quiet at the end.
                     From 768 px the table below shows it; the app stylesheet shows one of the two wrappers.
                     k2b-ui gap: a v2 list of one-line rows with an inset hairline or none (owner Y: List inset, after
-                    #4355; #4463). When it lands, these hand-drawn lines go. */}
+                    #4355; #4463). When it lands, these hand-drawn lines go, and the week's table moves out of this
+                    Canvas again: it stands here only so the breakpoint can switch between the two. */}
                 <div class="wx-week-phone" role="list" style={{ padding: "0 var(--k2-edge) 4px" }}>
                   <For each={w().daily}>
                     {(day) => (
@@ -291,8 +292,8 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
                   </For>
                 </div>
                 <div class="wx-week-wide">
+                  {/* the section names the week; the table repeats no name of its own */}
                   <Table
-                    label={t().sevenDayForecast}
                     rows={w().daily}
                     // a narrow column of the wide screen (1024 px) reads the week in two lines: the sign, the day and its range,
                     // the bar under them (the phone has its own one-line days above)
