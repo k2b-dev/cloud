@@ -93,7 +93,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   scrolls, and on the phone it always starts at the top. Only for a page
   with little on it and nothing beside it, such as the first start of an
   app without data: one `Text type="lead"` line and `Tiles perRow={4}` with
-  the ways to start, without a sidebar. No line or box of its own; CSS
+  the ways to start, without a sidebar. The line stands centred over the
+  cards, on the phone at the start. No line or box of its own; CSS
   alone, so the server's first render already stands there.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 

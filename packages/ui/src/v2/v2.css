@@ -685,9 +685,16 @@
 .k2-ui .k2-pane[data-center] > .k2-scroll > :last-child {
   margin-bottom: auto;
 }
+/* its lines of text stand centred over what follows, as a title over the cards; on the phone at the start */
+.k2-ui .k2-pane[data-center] > .k2-scroll > .k2-text {
+  text-align: center;
+}
 @media not all and (min-width: 768px) {
   .k2-ui .k2-pane[data-center] > .k2-scroll > :first-child {
     margin-top: 0;
+  }
+  .k2-ui .k2-pane[data-center] > .k2-scroll > .k2-text {
+    text-align: start;
   }
 }
 /* panes side by side inside content: the list beside its reader, the main column beside its info column */
