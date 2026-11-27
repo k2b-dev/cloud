@@ -153,7 +153,7 @@ test("interruption keeps completed profiles and the active profile's samples in 
       return { metrics, encodings: { js: ["br"], css: ["br"] } };
     },
   });
-  const error = await browsers.measure("https://localhost:4100/faq", "session", 2, results).then(
+  const error = await browsers.measure("https://localhost:4100/fixture", "session", 2, results).then(
     () => undefined,
     (reason: unknown) => reason,
   );

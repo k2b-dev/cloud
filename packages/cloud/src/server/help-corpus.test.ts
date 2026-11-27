@@ -14,7 +14,6 @@ const helpPackages = [
   "contacts",
   "core",
   "dashboard",
-  "faq",
   "filesv2",
   "gateway-ops",
   "grids",

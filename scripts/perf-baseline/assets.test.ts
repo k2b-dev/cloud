@@ -30,9 +30,9 @@ describe("production build asset accounting", () => {
     await mkdir(root, { recursive: true });
     const directory = await mkdtemp(join(root, "assets-"));
     try {
-      const dist = join(directory, "faq", "dist");
+      const dist = join(directory, "fixture", "dist");
       await mkdir(join(dist, "_ssr"), { recursive: true });
-      await mkdir(join(dist, "public", "faq"), { recursive: true });
+      await mkdir(join(dist, "public", "fixture"), { recursive: true });
       const entries = {
         "entry.js": 'import "./shared.js";import("./lazy.js");',
         "shared.js": "export const x = 1;",
@@ -41,11 +41,11 @@ describe("production build asset accounting", () => {
       };
       for (const [file, source] of Object.entries(entries)) await writeFile(join(dist, "_ssr", file), source);
       await writeFile(join(dist, "_ssr", "entry.js.br"), new Uint8Array(5));
-      await writeFile(join(dist, "public", "faq", "app.css"), '@import "./theme.css";body{color:red}');
-      await writeFile(join(dist, "public", "faq", "theme.css"), "body{margin:0}");
+      await writeFile(join(dist, "public", "fixture", "app.css"), '@import "./theme.css";body{color:red}');
+      await writeFile(join(dist, "public", "fixture", "theme.css"), "body{margin:0}");
       const html =
-        '<html><solid-island data-id="entry" data-props="{}"></solid-island><script type="module">const p="/faq/_ssr/123";document.querySelectorAll("solid-island,solid-client").forEach(e=>import(p+"/"+e.dataset.id+".js"));</script><link rel="stylesheet" href="/public/faq/app.css"></html>';
-      const result = await measureStatic(html, "http://127.0.0.1:4100/faq", directory, ["faq"]);
+        '<html><solid-island data-id="entry" data-props="{}"></solid-island><script type="module">const p="/fixture/_ssr/123";document.querySelectorAll("solid-island,solid-client").forEach(e=>import(p+"/"+e.dataset.id+".js"));</script><link rel="stylesheet" href="/public/fixture/app.css"></html>';
+      const result = await measureStatic(html, "http://127.0.0.1:4100/fixture", directory, ["fixture"]);
       expect(result.js.eager.modules).toBe(2);
       expect(result.js.lazy.modules).toBe(1);
       expect(result.js.eager.raw).toBe(Buffer.byteLength(entries["entry.js"] + entries["shared.js"]));
@@ -53,7 +53,7 @@ describe("production build asset accounting", () => {
       expect(result.css.modules).toBe(2);
       expect(result.html.raw).toBe(Buffer.byteLength(html));
       await rm(join(dist, "_ssr", "shared.js"));
-      expect(measureStatic(html, "http://127.0.0.1:4100/faq", directory, ["faq"])).rejects.toThrow();
+      expect(measureStatic(html, "http://127.0.0.1:4100/fixture", directory, ["fixture"])).rejects.toThrow();
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
