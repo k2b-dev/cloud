@@ -172,6 +172,20 @@ export const consume = async (params: {
 };
 
 /**
+ * End the codes of a client that have not issued tokens yet, of one person or of everyone, whether or not they were
+ * already exchanged: a disconnect also stops the sign-ins that are still on their way. Runs in the caller's transaction.
+ */
+export const expireUnissued = async (params: { db: typeof sql; clientId: string; userId: string | null }): Promise<void> => {
+  await params.db`
+    UPDATE oauth.codes
+    SET expires_at = LEAST(expires_at, 'epoch'::timestamptz)
+    WHERE client_id = ${params.clientId}
+      AND (${params.userId}::uuid IS NULL OR user_id = ${params.userId}::uuid)
+      AND authority_issued_at IS NULL
+  `;
+};
+
+/**
  * Cleanup expired and used codes
  */
 export const cleanup = async (): Promise<number> => {

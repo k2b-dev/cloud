@@ -38,7 +38,7 @@ Words in one of the four type roles (meta, row, body, lead); emphasis is a weigh
 
 ### Prose
 
-Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images.
+Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images. A Markdown table reads like a small table: cells 12 px apart on the text edge, the head as a Table head, a line between rows; a column aligned right (`--:`) holds numbers in tabular figures.
 
 <Props of="Prose" />
 
@@ -59,6 +59,12 @@ Like things to press, such as attachments and media files; each opens its file.
 The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is free, and the rules do not measure it.
 
 <Props of="Canvas" />
+
+### Ticks
+
+One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a failure red and taller, a slot without data a low stub. The slots read in the writing direction, oldest first. It is the one column of a list that shows its data over time, 140 × 20 px in a cell, for at most 60 slots; with `stretch` in a detail its slots stand 2 px apart and grow up to 12 px, and a wider place keeps the strip at its start. Its `label` always says what, over which time, and what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen".
+
+<Props of="Ticks" />
 
 ### Disclosure
 
