@@ -37,7 +37,6 @@ import passwordResetPage from "./auth/password-reset/page";
 import helpPanelPage from "./help/panel.page";
 import registeredHelpPage from "./help/registered.page";
 import { makeLegalPage } from "./legal/page-handler";
-import accessPage from "./me/access.page";
 import activityPage from "./me/activity.page";
 import notificationsPage from "./me/notifications.page";
 import { oldAccountAddresses } from "./me/old-addresses";
@@ -103,7 +102,6 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/me/security", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...securityPage)
     .get("/me/activity", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...activityPage)
     .get("/me/security/pair", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...pairDevicePage)
-    .get("/me/access", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...accessPage)
     .get("/me/notifications", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationsPage)
     // Admin pages (admin only)
     .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)

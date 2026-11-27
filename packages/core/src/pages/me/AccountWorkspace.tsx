@@ -6,7 +6,7 @@ import { accountMessages } from "./messages";
 import { ACCOUNT_ACTIVITY_PATH } from "./paths";
 
 /** The areas of the account record, each with its own address. */
-export type AccountTab = "profile" | "security" | "access" | "notifications";
+export type AccountTab = "profile" | "security" | "notifications";
 
 /** The side column of the account record keeps one width on every tab. */
 export const sideWidth = { min: 300, default: 360 };
@@ -44,7 +44,6 @@ export default function AccountWorkspace(props: {
         [
           { id: "profile", href: "/me", label: t().profile, icon: "user" },
           { id: "security", href: "/me/security", label: t().securityAndDevices, icon: "shield-lock" },
-          { id: "access", href: "/me/access", label: t().accessAndGroups, icon: "users-group" },
           { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "bell" },
         ] satisfies { id: AccountTab; href: string; label: string; icon: string }[]
       ).map((area) => ({ label: area.label, icon: area.icon, href: area.href, current: area.id === props.place })),

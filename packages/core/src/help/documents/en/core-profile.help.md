@@ -13,8 +13,8 @@ Your account area combines local Cloud data, optional FreeIPA data, and the acti
 
 :::reference
 - **Profile:** The first row shows how long your account is valid, your passkeys, groups, and API keys. **Profile and contact details** shows email, phone, and address; **Account facts** shows the account type, extra roles, SSH keys, and password expiry when available.
-- **Groups and access:** Shows the groups you manage and the groups you are a member of. **Show inherited** adds the memberships that come through the group hierarchy.
-- **Groups and access → FreeIPA account:** A local account can request FreeIPA access when account requests, the FreeIPA connection, and FreeIPA accounts are all enabled. You can still withdraw a pending request after new requests are turned off.
+- **Profile → Groups:** Shows your first six groups, the ones you manage first. **All my groups** shows every one, including the memberships that come through the group hierarchy.
+- **Profile → FreeIPA account:** A local account can request FreeIPA access when account requests, the FreeIPA connection, and FreeIPA accounts are all enabled. You can still withdraw a pending request after new requests are turned off.
 - **Activity → Open approvals:** Shows your waiting Action requests across apps. You can approve or reject them here. Each request links to the chat that waits for it.
 - **Activity → Sign-ins and changes:** Shows security-relevant account activity for the last 7, 30, or 90 days. **Activity → Deliveries** shows where your notifications went.
 :::

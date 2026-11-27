@@ -2,7 +2,8 @@ import { type AuthContext, getLocale, isAppSessionActor } from "@k2b/cloud/serve
 import { accountsAppService, coreSettings, readAccountCategoryPolicy, serviceAccountCredentials, webauthn } from "@k2b/cloud/services";
 import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
 import { sharedWorkstationIdleSeconds } from "@k2b/cloud/services/session/shared-workstation";
-import { Layout } from "@k2b/cloud/ssr";
+import { canManageAnyGroups, groupDisplayName } from "@k2b/cloud/shared";
+import { getRuntimeContext, hasDedicatedRuntimeRoute, Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { keyboardPlatform } from "@k2b/ui";
 import { ssr } from "../../config";
@@ -10,6 +11,9 @@ import { accountCategoryWords, accountRoles, accountUserView } from "./account-v
 import { type AccountMessages, accountMessages } from "./messages";
 import ProfileScreen from "./ProfileScreen.island";
 import { profileActionsUser } from "./profile-actions-user";
+
+/** The groups the first view of the profile shows; "All groups" shows the rest. */
+const GROUPS_FIRST = 6;
 
 // The page shell starts warning about an expiry 14 days ahead; the notice here only turns
 // urgent from the same point, so an account with a distant expiry reads as a fact.
@@ -36,26 +40,59 @@ const formatAddress = (address: {
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
-  const categoryPolicy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
-  const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
+  // "All groups" adds the ones the person belongs to through another group
+  const allGroups = c.req.query("groups") === "all";
+  // Only a browser session can mark its browser as a shared workstation; the mobile app's phone never is one.
+  const browserSession = !isAppSessionActor(c.get("actor"));
+  // Every read of the first view is independent of the others: one round.
+  const [
+    categoryPolicy,
+    rawAppName,
+    freeIpaEnabledRaw,
+    requestsEnabled,
+    pendingRequest,
+    apiKeys,
+    passkeys,
+    screen,
+    directGroups,
+    everyGroup,
+    idleSeconds,
+  ] = await Promise.all([
+    readAccountCategoryPolicy(),
     coreSettings.get<string>("app.name"),
     coreSettings.get<boolean>("freeipa.enable"),
-  ]);
-  const appName = rawAppName || "Cloud";
-  const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
-  const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
-  const [pendingRequest, apiKeys, passkeys, screen] = await Promise.all([
+    user.provider === "local" ? accountsAppService.accountRequest.isEnabled() : Promise.resolve(false),
     user.provider === "local" ? accountsAppService.accountRequest.getPendingForUser({ userId: user.id }) : Promise.resolve(null),
     serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
     webauthn.listForUser({ userId: user.id }),
     screenPreferences.get(user.id),
+    accountsAppService.user.group.list({ userId: user.id, recursive: false }).then((list) => list.items),
+    allGroups ? accountsAppService.user.group.list({ userId: user.id, recursive: true }).then((list) => list.items) : Promise.resolve(null),
+    browserSession ? sharedWorkstationIdleSeconds() : Promise.resolve(null),
   ]);
-  // Only a browser session can mark its browser as a shared workstation; the mobile app's phone never is one.
-  const sharedWorkstation = isAppSessionActor(c.get("actor"))
-    ? undefined
-    : { userId: user.id, minutes: Math.round((await sharedWorkstationIdleSeconds()) / 60) };
+  const appName = rawAppName || "Cloud";
+  const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
+  const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
+  const sharedWorkstation = idleSeconds === null ? undefined : { userId: user.id, minutes: Math.round(idleSeconds / 60) };
+  // A local account may ask for a FreeIPA account while the installation takes requests, and may always withdraw one.
+  const freeIpaOffered =
+    user.provider === "local" && ((requestsEnabled && freeIpaEnabled && categoryPolicy.freeipa.enabled) || pendingRequest !== null);
+  const managed = canManageAnyGroups(user) ? user.manages : [];
+  // Each group stands once, in the place of its strongest part: managed before member before inherited. The first view
+  // shows the first six; "All groups" (always offered, as only it shows the inherited ones) shows every one.
+  const parted = [
+    ...managed.map((name) => ({ name, part: "managed" as const })),
+    ...directGroups.filter((name) => !managed.includes(name)).map((name) => ({ name, part: "member" as const })),
+    ...(everyGroup ?? [])
+      .filter((name) => !managed.includes(name) && !directGroups.includes(name))
+      .map((name) => ({ name, part: "inherited" as const })),
+  ];
+  const groups = (allGroups ? parted : parted.slice(0, GROUPS_FIRST)).map((group) => ({
+    ...group,
+    label: groupDisplayName(group.name, locale),
+  }));
   const action = c.req.query("action");
   const expiryNotice = user.accountExpires ? accountExpiryNotice(user.accountExpires, t) : null;
   const address = formatAddress(user.ipa?.address ?? { street: null, postalCode: null, city: null, state: null });
@@ -91,8 +128,15 @@ export default ssr<AuthContext>(async (c) => {
               }
             : null
         }
-        pendingRequest={
-          pendingRequest ? t.requestSubmitted({ date: dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) }) : null
+        groups={{
+          items: groups,
+          all: allGroups,
+          accountsUi: hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/app/accounts/groups", "core"),
+        }}
+        freeIpa={
+          freeIpaOffered
+            ? { pendingSince: pendingRequest ? dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) : null }
+            : null
         }
         limitedAccess={user.provider === "ipa" && user.profile === "guest"}
         profileFacts={[
@@ -125,7 +169,7 @@ export default ssr<AuthContext>(async (c) => {
                   meta: lastUse ? t.lastSignIn({ date: dates.formatDateTimeRelative(lastUse, { locale, base: now }) }) : t.neverUsed,
                 }
               : { value: "0", meta: t.noPasskeyYet, status: "warn" },
-          groups: { value: String(user.memberofGroup.length), meta: t.managedCount({ count: user.manages.length }) },
+          groups: { value: String(directGroups.length), meta: t.managedCount({ count: managed.length }) },
           apiKeys: {
             value: String(apiKeys.length),
             meta: nextKeyExpiry

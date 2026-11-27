@@ -30,6 +30,8 @@ export type SectionProps = {
   color?: string;
   /** The title of the section. */
   title: string;
+  /** Its address on the page, so a link can lead to it (`/me#groups`). */
+  id?: string;
   /** A quiet count after the title. */
   count?: number | string;
   /** At most two text buttons in the head; on the phone they keep only their symbol. */
@@ -49,7 +51,7 @@ export type SectionProps = {
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
   return (
-    <section class="k2-sec" data-k2-part="Section" aria-label={props.title}>
+    <section class="k2-sec" data-k2-part="Section" id={props.id} aria-label={props.title}>
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (

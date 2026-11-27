@@ -36,8 +36,8 @@ describe("Core compression boundaries", () => {
   }
 });
 
-test("profile, access and notification settings pages stay eligible for compression", async () => {
-  for (const path of ["/me", "/me/access", "/me/security", "/me/notifications"]) {
+test("profile, security and notification settings pages stay eligible for compression", async () => {
+  for (const path of ["/me", "/me/security", "/me/notifications"]) {
     const response = await pages.request(path);
     expect(response.status).toBeLessThan(500);
     expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");

@@ -13,8 +13,8 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 
 :::reference
 - **Profil:** Die erste Zeile zeigt, wie lange dein Konto gilt, deine Passkeys, Gruppen und API Keys. **Profil und Kontaktdaten** zeigt E-Mail-Adresse, Telefonnummer und Adresse; **Kontodaten** zeigt Kontotyp, zusätzliche Rollen, SSH-Schlüssel und das Ablaufdatum des Passworts, wenn es eines gibt.
-- **Gruppen und Zugriff:** Zeigt die Gruppen, die du verwaltest, und die, in denen du Mitglied bist. **Geerbte anzeigen** ergänzt die Mitgliedschaften aus der Gruppenhierarchie.
-- **Gruppen und Zugriff → FreeIPA-Konto:** Ein lokales Konto kann FreeIPA-Zugang beantragen, wenn Kontoanfragen, die FreeIPA-Verbindung und FreeIPA-Konten erlaubt sind. Einen offenen Antrag kannst du auch dann zurückziehen, wenn neue Anfragen ausgeschaltet sind.
+- **Profil → Gruppen:** Zeigt deine ersten sechs Gruppen, zuerst die, die du verwaltest. **Alle meine Gruppen** zeigt alle, auch die Mitgliedschaften aus der Gruppenhierarchie.
+- **Profil → FreeIPA-Konto:** Ein lokales Konto kann FreeIPA-Zugang beantragen, wenn Kontoanfragen, die FreeIPA-Verbindung und FreeIPA-Konten erlaubt sind. Einen offenen Antrag kannst du auch dann zurückziehen, wenn neue Anfragen ausgeschaltet sind.
 - **Aktivität → Offene Freigaben:** Zeigt deine wartenden Aktionsanfragen aus allen Apps. Du kannst sie hier freigeben oder ablehnen. Jede Anfrage verlinkt den Chat, der auf sie wartet.
 - **Aktivität → Anmeldungen und Änderungen:** Zeigt sicherheitsrelevante Kontoaktivitäten der letzten 7, 30 oder 90 Tage. **Aktivität → Zustellungen** zeigt, wohin deine Benachrichtigungen gingen.
 :::

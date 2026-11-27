@@ -40,7 +40,6 @@ const CORE_CANVAS = appAppearanceStyle({
 const pages = {
   "/me": (await import("./page")).default,
   "/me/security": (await import("./security.page")).default,
-  "/me/access": (await import("./access.page")).default,
   "/me/notifications": (await import("./notifications.page")).default,
   "/me/activity": (await import("./activity.page")).default,
 } as const;
@@ -264,7 +263,7 @@ const open = async (view: View, path: Path, locale: "en" | "de", query = "") => 
 const screens: { path: Path; query?: string; name: string }[] = [
   { path: "/me", name: "profile" },
   { path: "/me/security", name: "security" },
-  { path: "/me/access", name: "access" },
+  { path: "/me", query: "?groups=all", name: "profile-all-groups" },
   { path: "/me/notifications", name: "notifications" },
   { path: "/me/activity", name: "activity-open" },
   { path: "/me/activity", query: "?kind=deliveries", name: "activity-deliveries" },
@@ -297,25 +296,40 @@ describe("account pages on v2", () => {
     expect(findings).toEqual([]);
   }, 240_000);
 
-  test("access memberships omit internal groups from the session projection", async () => {
+  test("the profile's groups omit internal groups from the session projection", async () => {
     user = { ...localUser, memberofGroup: [...localUser.memberofGroup, "internal-fixture-group"] };
-    const html = await content("/me/access", "en");
+    const html = await content("/me", "en");
     expect(html).not.toContain(">internal-fixture-group<");
     expect(html).not.toContain("search=internal-fixture-group");
     expect(html).toContain("team-design");
     expect(services.accountsAppService.user.group.list).toHaveBeenCalledWith({ userId: user.id, recursive: false });
   });
 
+  test("the profile shows the first six groups, and every one with the inherited ones on request", async () => {
+    // eight direct groups, of which the person manages three: those come first
+    const first = await content("/me", "en");
+    const shown = (html: string) => localUser.memberofGroup.concat("inherited-fixture-team").filter((name) => html.includes(`>${name}<`));
+    // the three managed ones, then the first three of the five others
+    expect(shown(first)).toEqual(["team-design", "team-events", "summer-party-2026", "projekt-umzug", "redaktion", "it-support"]);
+    expect(first.indexOf(">team-events<")).toBeLessThan(first.indexOf(">team-design<"));
+    expect(first).toContain('href="/me?groups=all#groups"');
+    // the old address `/me/access` and the figure of the first row lead here
+    expect(first).toContain('id="groups"');
+    const all = await content("/me", "en", "?groups=all");
+    expect(shown(all)).toHaveLength(9);
+    expect(all).toContain('href="/me#groups"');
+  });
+
   test("inherited memberships remain reachable when all direct groups are internal", async () => {
     user = { ...localUser, memberofGroup: ["internal-fixture-group"] };
-    const direct = await content("/me/access", "en");
-    expect(direct).toContain('href="/me/access?groups=all"');
+    const direct = await content("/me", "en");
+    expect(direct).toContain('href="/me?groups=all#groups"');
     expect(direct).not.toContain(">internal-fixture-group<");
     expect(direct).not.toContain(">inherited-fixture-team<");
-    const inherited = await content("/me/access", "en", "?groups=all");
+    const inherited = await content("/me", "en", "?groups=all");
     expect(inherited).toContain(">inherited-fixture-team<");
     expect(inherited).not.toContain(">internal-fixture-group<");
-    expect(inherited).toContain('href="/me/access"');
+    expect(inherited).toContain('href="/me#groups"');
   });
 
   test("every old address of the account leads to its new place with every parameter", async () => {
@@ -326,6 +340,7 @@ describe("account pages on v2", () => {
       expect(response.status).toBe(302);
       return response.headers.get("Location");
     };
+    expect(await target("/me/access?groups=all")).toBe("/me?groups=all#groups");
     expect(await target("/me/developer?create=api-key&reauthenticate=1")).toBe("/me/security?create=api-key&reauthenticate=1");
     expect(await target("/me/app?pair=1")).toBe("/me/security?pair=1");
     expect(await target("/me/approvals?app=mail")).toBe("/me/activity?app=mail");
@@ -350,7 +365,9 @@ describe("account pages on v2", () => {
 
   test("the account's areas and its activity are entries of the sidebar, each with its own address", async () => {
     const html = await content("/me/security", "en");
-    for (const href of ["/me", "/me/access", "/me/notifications", "/me/activity"]) expect(html).toContain(`href="${href}"`);
+    for (const href of ["/me", "/me/notifications", "/me/activity"]) expect(html).toContain(`href="${href}"`);
+    // groups and the FreeIPA request are part of the profile
+    expect(html).not.toContain(`href="/me/access"`);
     // the phones of the mobile app stand there only while the installation offers the app
     expect(html).not.toContain("Phones with the app");
   });
@@ -477,7 +494,7 @@ describe("account pages with the worst case of their data", () => {
     for (const screen of [
       { path: "/me" as const, name: "worst-profile" },
       { path: "/me/security" as const, name: "worst-security" },
-      { path: "/me/access" as const, query: "?groups=all", name: "worst-access" },
+      { path: "/me" as const, query: "?groups=all", name: "worst-profile-all-groups" },
       { path: "/me/activity" as const, query: "?kind=deliveries", name: "worst-deliveries" },
     ])
       for (const view of [desktop, phone]) {

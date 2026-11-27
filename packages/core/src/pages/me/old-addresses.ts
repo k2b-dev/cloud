@@ -8,6 +8,9 @@ import { type ActivityKind, activityHref } from "./activity-query";
  */
 const search = (c: Context) => new URL(c.req.url).search;
 
+/** `/me/access` (groups and the FreeIPA request) is part of the profile now, `?groups=all` included. */
+export const toGroups = (c: Context) => c.redirect(`/me${search(c)}#groups`, 302);
+
 /** `/me/developer` (API keys) and `/me/app` (the phones of the mobile app) are part of "Security & devices" now. */
 export const toSecurity = (c: Context) => c.redirect(`/me/security${search(c)}`, 302);
 
@@ -19,6 +22,7 @@ export const oldAccountAddresses = [
   ["/me/security/activity", toActivity("sign-ins")],
   ["/me/notifications/history", toActivity("deliveries")],
   ["/me/approvals", toActivity("open")],
+  ["/me/access", toGroups],
   ["/me/developer", toSecurity],
   ["/me/app", toSecurity],
 ] as const;
