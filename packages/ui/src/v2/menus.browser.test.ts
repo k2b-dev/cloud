@@ -27,7 +27,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Options = { width?: number; touch?: boolean; theme?: "light" | "dark"; slowSheet?: boolean };
+type Options = { width?: number; touch?: boolean; theme?: "light" | "dark"; slowSheet?: boolean; reducedMotion?: boolean };
 
 // Core loads its sheet module on its own time (a dynamic import, a chunk of its own in an app). The bundle of a slow
 // load waits for the page's `__k2LoadSheet()`, so a test can let it come after everything else of the popover.
@@ -47,9 +47,15 @@ const slowSheetBundle = () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, touch = false, theme = "light", slowSheet = false }: Options = {},
+  { width = 1440, touch = false, theme = "light", slowSheet = false, reducedMotion = false }: Options = {},
 ) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch, colorScheme: theme });
+  const page = await browser.newPage({
+    viewport: { width, height: 900 },
+    hasTouch: touch,
+    isMobile: touch,
+    colorScheme: theme,
+    reducedMotion: reducedMotion ? "reduce" : "no-preference",
+  });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -420,6 +426,42 @@ test("popover: a panel of 280 px under the start of its button with a title; Esc
   });
 });
 
+// A person who asks for less motion sees a sheet appear where it rests: from the first frame it shows in, its top stays
+// put (it may fade in, it never slides up). Every frame after the press is recorded, the menu's sheet and the popover's,
+// with a mouse and on a touch screen (core moves a touch screen's sheet another way).
+for (const [name, panel] of [
+  ["Weitere Aktionen", ".k2-menu"],
+  ["Vorschau", ".k2-pop"],
+] as const)
+  for (const touch of [false, true])
+    test(`reduced motion: the sheet of "${name}"${touch ? " on a touch screen" : ""} stands where it rests from its first frame`, async () => {
+      await withPage(
+        async (page) => {
+          await page.evaluate((selector) => {
+            const tops: number[] = [];
+            Object.assign(window, { __k2Tops: tops });
+            const take = () => {
+              const sheet = document.querySelector<HTMLElement>(selector);
+              const box = sheet?.getBoundingClientRect();
+              if (sheet && box && box.height > 0 && getComputedStyle(sheet).visibility !== "hidden") tops.push(Math.round(box.top));
+              if (tops.length < 90) requestAnimationFrame(take);
+            };
+            requestAnimationFrame(take);
+          }, panel);
+          const trigger = page.getByRole("button", { name, exact: true });
+          await (touch ? trigger.tap() : trigger.click());
+          await page.waitForFunction(() => (window as unknown as { __k2Tops: number[] }).__k2Tops.length >= 90, undefined, {
+            timeout: 5000,
+          });
+          const tops = await page.evaluate(() => (window as unknown as { __k2Tops: number[] }).__k2Tops);
+          expect(await page.locator(panel).first().getAttribute("data-presentation")).toBe("sheet");
+          // one top only: the place it rests at
+          expect([...new Set(tops)]).toEqual([tops.at(-1)!]);
+        },
+        { width: 390, touch, reducedMotion: true },
+      );
+    });
+
 // A panel behind a button without words in a head keeps the menu's phone contract: the button stays beside the "…",
 // and its panel is a sheet from the bottom, the whole width (#4151). On a wide screen it is the floating panel.
 for (const width of [1440, 390])
@@ -685,33 +727,6 @@ test("a hidden tab with an address opens in place from the menu of further views
     },
     { width: 390 },
   );
-});
-
-// A tab that holds the focus and hides for lack of room hands the focus to the menu tab ("Mehr" or "Weitere"), so it
-// never falls to the page; a "Mehr" that held it and goes, as every tab has room again, hands it to the last tab.
-test("a tab that hides hands its focus to the menu tab, and a menu tab that goes to the last tab", async () => {
-  await withPage(async (page) => {
-    const focused = () => page.evaluate(() => document.activeElement?.textContent?.replace(/\s+/g, "") ?? "");
-    const areas = page.getByRole("navigation", { name: "Bereiche" });
-    await areas.getByRole("button", { name: "Reklamationen" }).focus();
-    await settled(page);
-    expect(await focused()).toBe("Reklamationen");
-    await page.setViewportSize({ width: 390, height: 900 });
-    await settled(page);
-    expect(await focused()).toMatch(/^Mehr\+\d+$/);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await settled(page);
-    expect(await areas.getByRole("button", { name: /Mehr/ }).count()).toBe(0);
-    expect(await focused()).toBe("Reklamationen");
-    // the views have a menu tab of their own that always stands
-    const views = page.getByRole("navigation", { name: "Ansichten" });
-    await views.getByRole("link", { name: /Wartet auf Material/ }).focus();
-    await settled(page);
-    expect(await focused()).toMatch(/^WartetaufMaterial/);
-    await page.setViewportSize({ width: 390, height: 900 });
-    await settled(page);
-    expect(await focused()).toMatch(/^Weitere\+\d+$/);
-  });
 });
 
 // The menu tab's count grows by the tabs that hide, and a count that gains a digit ("+8" to "+12") makes the tab

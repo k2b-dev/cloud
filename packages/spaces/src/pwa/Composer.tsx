@@ -4,6 +4,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { Button, DateTimePicker, Dropdown, IconButton, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, on, onMount, Show } from "solid-js";
 import type { ItemTemplateDraft, SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { formatDeadline } from "@/presentation/deadline";
 import { DEADLINE_DEFAULT_TIME, deadlinePresets } from "../frontend/[id]/_components/shared/item-form/date";
 import { type Outgoing, readTemplateDraft } from "./create";
@@ -242,7 +243,7 @@ export default function Composer(props: ComposerProps) {
               <Dropdown.Trigger variant="secondary" size="sm" class="spaces-pwa-composer__chip" data-set="">
                 <span
                   class="spaces-pwa__dot"
-                  style={{ "background-color": props.target?.color ?? "var(--k2b-text-muted)" }}
+                  style={{ "background-color": hexColor(props.target?.color) ?? "var(--k2b-text-muted)" }}
                   aria-hidden="true"
                 />
                 {props.target?.name ?? spaces().find((entry) => entry.shortId === space())?.name ?? t().spaceChip}
@@ -267,7 +268,11 @@ export default function Composer(props: ComposerProps) {
             }))}
         >
           <Dropdown.Trigger variant="secondary" size="sm" class="spaces-pwa-composer__chip" disabled={!props.target}>
-            <span class="spaces-pwa__dot" style={{ "background-color": status()?.color ?? "var(--k2b-text-muted)" }} aria-hidden="true" />
+            <span
+              class="spaces-pwa__dot"
+              style={{ "background-color": hexColor(status()?.color) ?? "var(--k2b-text-muted)" }}
+              aria-hidden="true"
+            />
             {status()?.name ?? t().status}
             <i class="ti ti-chevron-down" aria-hidden="true" />
           </Dropdown.Trigger>

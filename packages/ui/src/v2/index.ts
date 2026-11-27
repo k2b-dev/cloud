@@ -24,6 +24,7 @@ export {
   type NavGroup,
   type NavItem,
   type NavProps,
+  type NavSearch,
   Notice,
   type NoticeProps,
   Path,
@@ -94,8 +95,12 @@ export {
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
+// the error fallback of every island: a module of its own, which loads no other part
+export { Failed, type FailedProps } from "./failed";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+// A year of days as a picture: what happened per day, in tones of one colour.
+export { Heat, type HeatDay, type HeatProps } from "./heat";
 // Layer 1: the primitives.
 export {
   Band,
@@ -134,7 +139,7 @@ export type { NavTree, NavTreeNode } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
-export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
+export { Empty, type EmptyProps, Loading, type LoadingProps } from "./states";
 export { Disclosure, type DisclosureProps, Group, type GroupProps, Section, type SectionProps } from "./structure";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";

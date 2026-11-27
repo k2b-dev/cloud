@@ -510,7 +510,7 @@ const selectionBar = () => {
   const box = row.getBoundingClientRect();
   const inner = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
   const count = row.querySelector<HTMLElement>(".k2-status-lead")!;
-  const buttons = [...row.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].filter(
+  const buttons = [...row.querySelectorAll<HTMLElement>(":is(.k2-bar-start, .k2-bar-end) .k2-btn")].filter(
     (button) => !button.closest("[data-k2-part=Menu]"),
   );
   const named = (button: HTMLElement) => button.textContent?.trim() || button.getAttribute("aria-label") || "";
@@ -524,10 +524,24 @@ const selectionBar = () => {
   const clear = buttons.find((button) => named(button) === "Auswahl aufheben");
   const actions = buttons.filter((button) => button !== more && button !== clear);
   const lastSeen = actions.filter(seen).at(-1);
-  const room = row.querySelector(".k2-status-actions")!.getBoundingClientRect().width;
-  const line = row.querySelector(".k2-status-line")!;
-  const gap = Number.parseFloat(getComputedStyle(line).columnGap);
-  const items = [...line.children].map((item) => item.getBoundingClientRect().width);
+  // what the bar needs for every part at its whole width (the bar's fold measures so too: bar-fold.ts) beyond its room
+  row.setAttribute("data-k2-measuring", "");
+  const end = row.querySelector<HTMLElement>(".k2-bar-end")!;
+  const parts = [...end.children].filter((part) => !part.classList.contains("k2-bar-fold"));
+  const need =
+    row.querySelector(".k2-bar-start")!.getBoundingClientRect().width +
+    parts.reduce((sum, part) => sum + part.getBoundingClientRect().width, 0);
+  row.removeAttribute("data-k2-measuring");
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  const rowStyle = getComputedStyle(row);
+  const endStyle = getComputedStyle(end);
+  const room = row.clientWidth - px(rowStyle.paddingLeft) - px(rowStyle.paddingRight);
+  const spacing =
+    px(rowStyle.columnGap) +
+    px(endStyle.columnGap) * (parts.length - 1) +
+    px(endStyle.paddingLeft) +
+    px(endStyle.paddingRight) +
+    px(endStyle.marginRight);
   return {
     count: {
       whole: count.scrollWidth <= count.clientWidth + 0.5,
@@ -548,7 +562,7 @@ const selectionBar = () => {
       endGap: inner - clear.getBoundingClientRect().right,
     },
     // what all the actions need on one line beyond their room (negative: room to spare)
-    over: items.reduce((sum, width) => sum + width, 0) + gap * (items.length - 1) - room,
+    over: need + spacing - room,
     focused: document.activeElement instanceof HTMLElement ? named(document.activeElement) : "",
   };
 };
@@ -663,16 +677,16 @@ test('the selection bar\'s first frame: the "…" right after the last action, n
               requestAnimationFrame(() => {
                 const row = document.querySelector('[data-k2-part="StatusRow"]')!;
                 const box = row.getBoundingClientRect();
-                const actions = [...row.querySelectorAll<HTMLElement>(".k2-status-action")];
+                const actions = [...row.querySelectorAll<HTMLElement>(".k2-bar-end > .k2-btn")];
                 const inSight = (action: HTMLElement) => {
                   const rect = action.getBoundingClientRect();
                   return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5;
                 };
-                const seen = actions.filter((action) => !action.hasAttribute("data-overflow") && inSight(action));
+                const seen = actions.filter((action) => !action.hasAttribute("data-k2-folded") && inSight(action));
                 const lost = actions
-                  .filter((action) => !action.hasAttribute("data-overflow") && !inSight(action))
+                  .filter((action) => !action.hasAttribute("data-k2-folded") && !inSight(action))
                   .map((action) => action.textContent?.trim() ?? "");
-                const more = row.querySelector(".k2-status-more");
+                const more = row.querySelector(".k2-bar-fold .k2-btn");
                 const last = seen.at(-1) ?? row.querySelector(".k2-status-lead")!;
                 done({ gap: more ? more.getBoundingClientRect().left - last.getBoundingClientRect().right : null, lost });
               });

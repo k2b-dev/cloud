@@ -1,6 +1,7 @@
 import {
   type ChildrenReturn,
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -16,12 +17,13 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { watchFold } from "./bar-fold";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
-import { MarkCheck } from "./controls";
+import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
@@ -101,13 +103,42 @@ export type NavGroup = {
     }
 );
 
+/** The search of the sidebar under the app's name, such as Chat's search of its conversations. */
+export type NavSearch = {
+  /** The field's name, and its placeholder. */
+  label: string;
+  value: string;
+  onInput: (value: string) => void;
+  /** Keys in the field, such as arrows into the results. */
+  onKeyDown?: (event: KeyboardEvent) => void;
+};
+
 export type NavProps = {
   /** The app's name and symbol at the top. */
   title: string;
   /** A Tabler icon beside the app's name. */
   icon: string;
+  /** The search under the name. */
+  search?: NavSearch;
+  /**
+   * The main action under the name (and the search), across the column, such as "Neuer Chat". The sidebar is away on
+   * the phone; there the `Workspace`'s `primary` floats, so pass the same action to both.
+   */
+  primary?: Action;
   /** The app's places in groups, each with an optional heading and deed. */
   groups: readonly NavGroup[];
+  /**
+   * The app's own rows after the groups, such as Chat's conversations as a `List` of `Row`s: they reach the column's
+   * edges and scroll on their own above the foot, as a tree does. Made once, like the other parts of a frame, so new
+   * groups or counts keep the list, its rows and its scroll. A long list is virtualized by the app.
+   */
+  list?: JSX.Element;
+  /**
+   * `"page"`: on the phone the `list`, under the `search`, is the page while no pane is open beside it; an open pane
+   * is the page in its place. The title, the groups and the foot are in the platform's menu there, and the main
+   * action floats (`Workspace` `primary`). Without it the list stays in the sidebar, away on the phone.
+   */
+  phone?: "page";
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
 };
@@ -226,36 +257,70 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
-/** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
-export const Nav = (props: NavProps) => (
-  <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
-    <div class="k2-nav-title">
-      <Icon name={props.icon} />
-      {props.title}
-    </div>
-    <Index each={props.groups}>
-      {(group) => (
-        <>
-          <Show when={group().label}>
-            <div class="k2-nav-label">
-              {group().label}
-              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-            </div>
-          </Show>
-          <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
-            {(tree) => <NavTreeView {...tree()} />}
-          </Show>
-        </>
-      )}
-    </Index>
-    <Show when={props.foot?.length}>
-      <div class="k2-nav-foot">
-        <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+/**
+ * The sidebar of an app: its name, its search and main action, groups of round entries with counts, its own rows, and
+ * entries at the foot.
+ */
+export const Nav = (props: NavProps) => {
+  // A part passed as JSX is made once, here, and read from here (as `Workspace` does with its parts).
+  const list = resolveChildren(() => props.list);
+  return (
+    <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
+      <div class="k2-nav-title">
+        <Icon name={props.icon} />
+        {props.title}
       </div>
-    </Show>
-  </nav>
-);
+      <Show when={props.search}>
+        {(search) => (
+          <div class="k2-nav-search">
+            <Input
+              type="search"
+              icon="search"
+              label={search().label}
+              placeholder={search().label}
+              value={search().value}
+              onInput={(value) => search().onInput(value)}
+              onKeyDown={(event) => search().onKeyDown?.(event)}
+            />
+          </div>
+        )}
+      </Show>
+      <Show when={props.primary}>
+        {(primary) => (
+          <div class="k2-nav-primary">
+            <ActionButton action={primary()} variant="primary" />
+          </div>
+        )}
+      </Show>
+      <Index each={props.groups}>
+        {(group) => (
+          <>
+            <Show when={group().label}>
+              <div class="k2-nav-label">
+                {group().label}
+                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              </div>
+            </Show>
+            <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+              {(tree) => <NavTreeView {...tree()} />}
+            </Show>
+          </>
+        )}
+      </Index>
+      <Show when={list()}>
+        <div class="k2-nav-list" data-phone={props.phone}>
+          {list()}
+        </div>
+      </Show>
+      <Show when={props.foot?.length}>
+        <div class="k2-nav-foot">
+          <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+        </div>
+      </Show>
+    </nav>
+  );
+};
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -326,96 +391,6 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
 };
 
 /**
- * How many items of a line have room, from its start (`Infinity` while all have room); the items after them hide whole
- * and go into a menu after the line (the tabs of a head, the actions of a selection bar). Measured in the browser from
- * the items' own widths, so one width gives one result however it was reached; the server sends every item. When the
- * item that holds the focus hides, the focus goes to the menu, and when the menu that holds it goes, to the last item,
- * so it never falls back to the page.
- */
-const createLineFit = (parts: {
-  /** The line; its element children are the items, in order, each as wide as it needs, hidden ones too. */
-  line: () => HTMLElement | undefined;
-  /** The room of the items while no menu has to stand beside them, and what the menu takes of it when it must. */
-  room: () => { room: number; menu: number };
-  /** The menu the hidden items go into, while it stands. */
-  menu: () => HTMLElement | undefined;
-}) => {
-  const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
-  onMount(() => {
-    const line = parts.line();
-    const around = line?.parentElement;
-    if (!line || !around) return;
-    const focusIn = (element: HTMLElement | undefined) => {
-      const target = element?.matches("button, a[href]") ? element : element?.querySelector<HTMLElement>("button, a[href]");
-      target?.focus();
-    };
-    let alive = true;
-    const measure = (again: boolean) => {
-      const items = [...line.children].filter((child): child is HTMLElement => child instanceof HTMLElement);
-      const gap = Number.parseFloat(getComputedStyle(line).columnGap) || 0;
-      const { room, menu } = parts.room();
-      let used = 0;
-      const ends = items.map((item, index) => {
-        used += item.getBoundingClientRect().width + (index > 0 ? gap : 0);
-        return used;
-      });
-      // never more generous than the browser, which wraps an item that is over by any part of a pixel
-      const next = used <= room + 0.01 ? Number.POSITIVE_INFINITY : ends.filter((end) => end + menu <= room + 0.01).length;
-      const focused = document.activeElement;
-      const hides = focused !== null && items.slice(next).some((item) => item.contains(focused));
-      const menuBefore = parts.menu();
-      const inMenu = focused !== null && menuBefore?.contains(focused) === true;
-      setFit(next);
-      // What the new count draws is in the page once the running update ends (the first measurement runs inside the
-      // mount, where Solid draws it afterwards), so the rest runs in a microtask, still before the frame is drawn.
-      queueMicrotask(() => {
-        if (!alive) return;
-        const menuNow = parts.menu();
-        // A menu that has just come takes its own room, which this measurement could not know yet: measure once more
-        // at once, so the first frame never shows an item that wrapped away and is not in the menu.
-        if (again && !menuBefore && menuNow) {
-          measure(false);
-          return;
-        }
-        if (hides) focusIn(menuNow);
-        // the menu that held the focus has gone, as every item has room again: the focus goes to the last item
-        else if (inMenu && focused && !focused.isConnected) focusIn(items.at(-1));
-      });
-    };
-    // What the measurement changes (the menu comes, its count grows from "+8" to "+12") can change the room again. So
-    // it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a resize
-    // loop); the next frame measures what it changed. An item, the line, the room around it and the menu all count.
-    let frame = 0;
-    const later = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        measure(true);
-      });
-    };
-    measure(true);
-    const sizes = new ResizeObserver(later);
-    const watchAll = () => {
-      for (const element of [line, around, ...line.children, ...around.children]) sizes.observe(element);
-    };
-    const changes = new MutationObserver(() => {
-      watchAll();
-      later();
-    });
-    watchAll();
-    changes.observe(line, { childList: true });
-    changes.observe(around, { childList: true });
-    onCleanup(() => {
-      alive = false;
-      cancelAnimationFrame(frame);
-      sizes.disconnect();
-      changes.disconnect();
-    });
-  });
-  return fit;
-};
-
-/**
  * The views of a head or of an object. In the start of a head bar they share it with the actions and give way to
  * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. Each
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
@@ -429,26 +404,63 @@ export const Tabs = (props: TabsProps) => {
   const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
-  // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows (the
-  // stylesheet already hides what wraps before the script runs). A tab with a menu always stands beside the line; the
-  // menu "More" stands only while tabs hide, so its own room counts only then.
-  let nav: HTMLElement | undefined;
+  // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
+  // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
+  const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
   let row: HTMLDivElement | undefined;
-  const menuTab = () => [...(nav?.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]") ?? [])].at(-1);
-  const fit = createLineFit({
-    line: () => row,
-    room: () => {
-      const line = row?.getBoundingClientRect().width ?? 0;
-      const more = withMenu().length === 0 ? menuTab() : undefined;
-      const takes = more && nav ? more.getBoundingClientRect().width + (Number.parseFloat(getComputedStyle(nav).columnGap) || 0) : 0;
-      return { room: line + takes, menu: takes };
-    },
-    menu: menuTab,
+  onMount(() => {
+    if (!row) return;
+    const measure = () => {
+      const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
+      const first = tabs[0]?.offsetTop ?? 0;
+      const index = tabs.findIndex((tab) => tab.offsetTop > first + 1);
+      // the "Mehr" that holds the hidden tabs takes their room itself: where every tab fits in the room it and its gap
+      // take, all of them show and it goes (otherwise it keeps itself, once a bar's end gave the room back)
+      const more = row?.parentElement?.querySelector<HTMLElement>(":scope > .k2-tab[data-k2-more]");
+      if (index >= 0 && more && row) {
+        const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+        const navGap = Number.parseFloat(getComputedStyle(row.parentElement!).columnGap) || 0;
+        const need = tabs.reduce((sum, tab) => sum + tab.getBoundingClientRect().width, 0) + gap * (tabs.length - 1);
+        if (need <= row.getBoundingClientRect().width + navGap + more.getBoundingClientRect().width) {
+          setFit(Number.POSITIVE_INFINITY);
+          return;
+        }
+      }
+      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
+    };
+    // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
+    // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
+    // resize loop); the next frame measures what it changed.
+    let frame = 0;
+    const later = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    measure();
+    const sizes = new ResizeObserver(later);
+    sizes.observe(row);
+    const watchAll = () => {
+      for (const child of row?.children ?? []) sizes.observe(child);
+    };
+    const parts = new MutationObserver(() => {
+      watchAll();
+      later();
+    });
+    watchAll();
+    parts.observe(row, { childList: true });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+      parts.disconnect();
+    });
   });
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
-    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
+    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
         <Index each={plain()}>
           {(tab, index) => (
@@ -480,7 +492,8 @@ export const Tabs = (props: TabsProps) => {
         )}
       </Index>
       <Show when={withMenu().length === 0 && more().length > 0}>
-        <MenuTab items={more()} current={hidden().some((tab) => tab.current)}>
+        {/* marked, so a bar that measures its start's whole width leaves it out (see `Bar`) */}
+        <MenuTab items={more()} current={hidden().some((tab) => tab.current)} more>
           <TabFace tab={{ label: t().more, count: `+${more().length}` }} />
         </MenuTab>
       </Show>
@@ -576,63 +589,10 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end, in
-   * their order (in a column below 600 px they first keep only their symbols, below 400 px the way out its ×). The "…"
-   * stands right after the last action in sight, the way out always at the end of the bar. Known: the server sends
-   * every action and no "…" (the browser measures, as for tabs), so a bar drawn on the server hides what has no room
-   * and gets its "…" after the page loads; a selection is made in the browser, where the bar comes whole.
+   * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end,
+   * right after the last one in sight (the bar's fold), and the way out stays at the end of the bar.
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
-};
-
-/**
- * The actions of a selection bar, as the tabs of a head give way: the ones without room go whole into a "…" menu from
- * the end, in their order, so none is cut and every one stays reachable. The "…" stands right after the last action
- * in sight; the actions take the room up to the way out, which so always stands at the end of the bar. In a narrow
- * column they keep only their symbols first (the stylesheet), so more stay in the bar. Measured in the browser; the
- * server sends every action on one line that hides what wraps.
- */
-const SelectionActions = (props: { actions: readonly Action[] }) => {
-  let room: HTMLDivElement | undefined;
-  let line: HTMLDivElement | undefined;
-  const menu = () => room?.querySelector<HTMLElement>(":scope > .k2-status-more") ?? undefined;
-  const fit = createLineFit({
-    line: () => line,
-    room: () => {
-      const more = menu();
-      const takes = more && room ? more.getBoundingClientRect().width + (Number.parseFloat(getComputedStyle(room).columnGap) || 0) : 0;
-      return { room: room?.getBoundingClientRect().width ?? 0, menu: takes };
-    },
-    menu,
-  });
-  const hidden = () => props.actions.slice(fit());
-  return (
-    <div class="k2-status-actions" ref={room}>
-      <div class="k2-status-line" ref={line} data-none={fit() === 0 ? "" : undefined}>
-        <Index each={props.actions}>
-          {(action, index) => (
-            <span class="k2-status-action" data-overflow={index >= fit() ? "" : undefined}>
-              <ActionButton action={action()} titled />
-            </span>
-          )}
-        </Index>
-      </div>
-      <Show when={hidden().length > 0}>
-        <span class="k2-status-more">
-          <Menu
-            items={hidden().map((action) => ({
-              label: action.label,
-              icon: action.icon,
-              href: action.href,
-              onNavigate: action.onNavigate,
-              onClick: action.onClick,
-              disabled: action.disabled,
-            }))}
-          />
-        </span>
-      </Show>
-    </div>
-  );
 };
 
 /**
@@ -647,8 +607,21 @@ export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   const marks = resolveChildren(() => props.marks);
+  // While entries are selected, the bar's fold watches the row: the actions without room fold into "…" from the end,
+  // and the way out never. None on the server's page.
+  let bar: HTMLDivElement | undefined;
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const selecting = createMemo(() => props.selection !== undefined);
+  createEffect(() => {
+    if (!bar || !selecting()) return;
+    const fold = watchFold(bar, (entries) => setFolded(entries));
+    onCleanup(() => {
+      fold.stop();
+      setFolded([]);
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined} ref={bar}>
       <Show
         when={props.selection}
         fallback={
@@ -697,16 +670,29 @@ export const StatusRow = (props: StatusRowProps) => {
         }
       >
         {(selection) => (
-          <div class="k2-bar-start">
-            <Show when={props.select}>
-              {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
-            </Show>
-            <span class="k2-status-lead" aria-live="polite">
-              {selection().count}
-            </span>
-            <SelectionActions actions={selection().actions} />
-            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
-          </div>
+          <>
+            <div class="k2-bar-start">
+              <Show when={props.select}>
+                {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
+              </Show>
+              <span class="k2-status-lead" aria-live="polite">
+                {selection().count}
+              </span>
+            </div>
+            {/* the actions fold from the end into "…" where they have no room (the bar's fold), the way out never; in a
+                narrow column they keep only their symbols first, the way out its ×; the words stay their names */}
+            <div class="k2-bar-end">
+              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+              <Show when={folded().length > 0}>
+                <span class="k2-bar-fold">
+                  <Menu items={folded()} />
+                </span>
+              </Show>
+              <span class="k2-status-clear" data-closes="">
+                <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
+              </span>
+            </div>
+          </>
         )}
       </Show>
     </div>
