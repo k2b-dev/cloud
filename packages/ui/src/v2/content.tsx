@@ -631,7 +631,13 @@ export const Table = <T,>(props: TableProps<T>) => {
   const selected = (row: T, index: number) => props.select?.selected.includes(key(row, index)) ?? false;
   // A click anywhere on a row that opens something opens it, unless it was meant for a control in the row.
   const openRow = (event: MouseEvent & { currentTarget: HTMLTableRowElement }) => {
-    if (!(event.target instanceof Element) || event.target.closest("a, button, input, label, select, textarea")) return;
+    // A control opens nothing but itself; nor does a layer of its own that stands in the row's markup (the menu of the
+    // row's "…", a popover, a dialog): a click on one of its items belongs to that item, never to the row's link.
+    if (
+      !(event.target instanceof Element) ||
+      event.target.closest("a, button, input, label, select, textarea, [popover], dialog, [role='dialog'], [role='menu']")
+    )
+      return;
     const open = event.currentTarget.querySelector<HTMLElement>(".k2-row-open");
     if (!open || event.altKey) return;
     // With Ctrl, Cmd or Shift a link opens elsewhere, as on the link itself. A click handed on loses that in WebKit,
