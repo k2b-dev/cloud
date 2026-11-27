@@ -83,6 +83,20 @@ export function Demo() {
           }
         />
         <Bar start={<Path label="Ort und Aktionen" items={deep} />} end={crowded} />
+        <Bar
+          start={
+            <Path
+              label="Kurz und Aktionen"
+              items={[
+                { label: "Spaces", href: "#spaces" },
+                { label: "Werkstatt", href: "#space" },
+                { label: "Projekte", href: "#projekte" },
+                { label: "Küche" },
+              ]}
+            />
+          }
+          end={crowded}
+        />
       </Pane>
     </Workspace>
   );

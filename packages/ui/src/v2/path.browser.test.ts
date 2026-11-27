@@ -99,6 +99,7 @@ for (const width of [390, 1024, 1440])
         "Ort mittel",
         "Ort kurz",
         "Ort und Aktionen",
+        "Kurz und Aktionen",
       ]);
       for (const path of found)
         expect([path.name, path.inside, path.kept, path.over, path.ends]).toEqual([path.name, true, true, false, "ellipsis"]);
@@ -136,7 +137,9 @@ for (const width of [1024, 1440])
       await settled(page);
       const at = () =>
         page.evaluate(() =>
-          ["Ort im Kopf", "Ort tief", "Ort mittel", "Seite lang 5"].map((name) =>
+          // a path beside an end is left out: before the page is alive the bar's fold keeps the start whole and cuts
+          // the end (bar-fold.ts), and once alive the start gives way, so such a path moves unless it fits whole
+          ["Ort tief", "Ort mittel", "Seite lang 5"].map((name) =>
             [...document.querySelectorAll<HTMLElement>(`nav[aria-label="${name}"] > :is(.k2-path-step, b)`)].map((part) => {
               const box = part.getBoundingClientRect();
               return `${name} ${part.textContent?.slice(0, 12)} ${Math.round(box.x)} ${Math.round(box.width)}`;
@@ -178,7 +181,8 @@ const crowded = (page: Page) =>
     current.append(probe);
     const least = probe.offsetWidth;
     probe.remove();
-    const foldable = [...bar.querySelectorAll<HTMLElement>(":scope > .k2-bar-end .k2-btn[data-variant='ghost']")];
+    // the end's own buttons, not the "…" the fold adds
+    const foldable = [...bar.querySelectorAll<HTMLElement>(":scope > .k2-bar-end > .k2-btn[data-variant='ghost']")];
     const room = bar.getBoundingClientRect();
     const end = bar.querySelector<HTMLElement>(":scope > .k2-bar-end")!;
     return {
@@ -207,23 +211,26 @@ for (const width of [390, 800, 1024])
     });
   });
 
-test("1024 px: where nothing folds, the crowded bar's server page and live page are the same", async () => {
+test("1024 px: beside the crowded end nothing folds, and a path that fits whole there stands as the server sent it", async () => {
   const page = await open(1024, true);
   const errors = pageErrors(page);
   try {
     await settled(page);
     const at = () =>
       page.evaluate(() => {
-        const bar = document.querySelector<HTMLElement>('nav[aria-label="Ort und Aktionen"]')!.closest<HTMLElement>(".k2-bar")!;
-        return [...bar.querySelectorAll<HTMLElement>(".k2-path-step, b, .k2-bar-end .k2-btn")].map((part) => {
+        const bar = document.querySelector<HTMLElement>('nav[aria-label="Kurz und Aktionen"]')!.closest<HTMLElement>(".k2-bar")!;
+        return [...bar.querySelectorAll<HTMLElement>(".k2-path-step, b, .k2-bar-end > .k2-btn")].map((part) => {
           const box = part.getBoundingClientRect();
           return `${part.textContent?.slice(0, 10) || part.getAttribute("aria-label")} ${Math.round(box.x)} ${Math.round(box.width)}`;
         });
       });
     const sent = await at();
     await live(page);
-    expect((await crowded(page)).endFolded).toBe(0);
     expect(await at()).toEqual(sent);
+    // the deep path beside the same end: nothing folds, and its page stands whole
+    const deep = await crowded(page);
+    expect([deep.fold, deep.endFolded]).toEqual(["0", 0]);
+    expect((await named(page))["Ort und Aktionen"]?.whole).toBe(true);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
