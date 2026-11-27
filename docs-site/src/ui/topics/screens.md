@@ -10,6 +10,14 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="list-detail" height="560" default="Open" />
 
+## An overview of things
+
+<Example recipe="overview" height="720" default="Bases" />
+
+## The home of one place
+
+<Example recipe="home" height="720" default="Busy" />
+
 ## Table with a status row
 
 <Example recipe="table" height="440" default="Rows" />
