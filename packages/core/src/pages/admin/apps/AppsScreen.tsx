@@ -3,27 +3,11 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import {
-  Bar,
-  Button,
-  Failed,
-  Icon,
-  Inline,
-  Input,
-  Mark,
-  type NavProps,
-  Notice,
-  Pane,
-  StatusRow,
-  Table,
-  Tabs,
-  Text,
-  useToast,
-} from "@k2b/ui/v2";
+import { Bar, Button, Failed, Input, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { adminToasts } from "../_area/toasts";
 import AddApp from "./AddApp";
-import { AppOverview, ErrorsView, EventsView, markIcon, RoutesView, RuntimeView, StatusChip, statusLabel } from "./app-views";
+import { AppOverview, ErrorsView, EventsView, RoutesView, RuntimeView, StatusChip, statusLabel } from "./app-views";
 import Domains from "./Domains";
 import DomainsAdd from "./DomainsAdd";
 import { appsFormat } from "./format";
@@ -76,6 +60,15 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
   };
   const apps = () => (props.data.list.state === "ok" ? props.data.list.apps : []);
   const shown = () => apps().filter((entry) => (!list().problems || hasProblem(entry)) && matchesSearch(entry, list().q, locale()));
+  /** The 24-hour requests and errors over every app, each app counted once from its first provider with numbers. */
+  const traffic = () =>
+    apps().reduce(
+      (sum, entry) => {
+        const measured = entry.numbers.find((item) => item.traffic)?.traffic;
+        return measured ? { requests: sum.requests + measured.requests, errors: sum.errors + measured.errors } : sum;
+      },
+      { requests: 0, errors: 0 },
+    );
   const problemCount = () => apps().filter(hasProblem).length;
   const ctx = () => ({ t: t(), f: f(), locale: locale(), list: list() });
   const [redelivering, setRedelivering] = createSignal<string | null>(null);
@@ -172,14 +165,27 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
       <Pane.Split>
         <Pane
           label={t().apps}
-          width={{ min: 420, default: 620 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={app() ? { min: 420, default: 620 } : undefined}
           scrollKey="admin-apps"
           status={
-            // k2b-ui gap: the hero band (one figure in the owner colour with its real trend) comes with DP; there is no
-            // series of app states over time yet, so the statement stands without a trend
+            // The screen's figure from the 24-hour sums the providers report: requests over every app and their error rate.
+            // There is no series over time, so no trend; k2b-ui gap: the hero band in figure type comes with DP.
             apps().length ? (
               <StatusRow
-                lead={props.data.list.state === "ok" ? t().summary({ total: apps().length, ...countStatuses(apps()) }) : t().apps}
+                lead={
+                  props.data.list.state === "ok" && traffic().requests > 0
+                    ? t().requests24h({
+                        requests: f().number(traffic().requests),
+                        rate: f().percent(traffic().errors / traffic().requests),
+                      })
+                    : t().summary({ total: apps().length, ...countStatuses(apps()) })
+                }
+                facts={
+                  props.data.list.state === "ok" && traffic().requests > 0
+                    ? [{ value: t().summary({ total: apps().length, ...countStatuses(apps()) }) }]
+                    : undefined
+                }
               />
             ) : undefined
           }
@@ -204,6 +210,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       .join(" · ")}. ${t().rejectedHint}`}
                   </Notice>
                 </Show>
+                {/* consumer of the list window #4211 (lane MW): up to 40 rows stay whole, more are windowed once it lands */}
                 <Table
                   label={t().apps}
                   rows={shown()}
@@ -216,15 +223,13 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       : { icon: "filter-off", text: t().noMatch, action: { label: t().showAllApps, href: appsHref({ app: query().app }) } }
                   }
                   phone={(entry) => ({
-                    mark: { icon: markIcon(entry.icon), color: entry.accent ?? undefined },
+                    // slot for #4208 (DP): the app's mark in its colour leads the phone row
                     // a problem state leads the meta line in its colour (identity B, phone); a good one in words
                     lines: [
                       entry.name,
                       <>
                         <Show when={entry.status === "warn" || entry.status === "error"} fallback={statusLabel(t(), entry.status)}>
-                          <Text tone={entry.status === "error" ? "bad" : "warn"}>
-                            <Icon name="point-filled" /> {statusLabel(t(), entry.status)}
-                          </Text>
+                          <Text tone={entry.status === "error" ? "bad" : "warn"}>● {statusLabel(t(), entry.status)}</Text>
                         </Show>
                         {` · ${entry.hints[0] ? problemLine(entry) : routesLine(entry)}`}
                       </>,
@@ -235,12 +240,12 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       title: t().columnApp,
                       width: { min: 160, default: 200 },
                       // the app's own sign in its colour (the content shows whose it is); one line per row, routes in the detail
-                      mark: (entry) => ({ icon: markIcon(entry.icon), color: entry.accent ?? undefined }),
+                      // slot for #4208 (DP): Column mark, the app's icon (markIcon) in its accent colour
                       cell: (entry) => entry.name,
                     },
                     {
                       title: t().columnStatus,
-                      width: { min: 110, default: 120 },
+                      width: { min: 140, default: 150 },
                       cell: (entry) => <StatusChip t={t()} status={entry.status} />,
                     },
                     { title: t().columnProblem, drop: true, cell: problemLine },
@@ -263,11 +268,8 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
             head={
               <Bar
                 start={
-                  // k2b-ui gap: the tinted object head (40 px sign, name 18, three key facts) comes with DP; mark and name stand in
-                  <Inline>
-                    <Mark icon={markIcon(app()!.entry.icon)} color={app()!.entry.accent ?? undefined} />
-                    <Text type="body">{app()!.entry.name}</Text>
-                  </Inline>
+                  // slot for #4208/#4223 (DP): the tinted object head (40 px mark, name 18, three key facts); the name stands in
+                  <Text type="body">{app()!.entry.name}</Text>
                 }
                 end={
                   <>

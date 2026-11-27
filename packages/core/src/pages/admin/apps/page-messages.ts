@@ -15,6 +15,7 @@ export const appsPageMessages = i18n.define({
       problemsTab: "Problems",
       noneOpen: "No app open",
       addApp: "Add app",
+      requests24h: ({ requests, rate }: { requests: string; rate: string }) => `${requests} requests in 24 h · ${rate} errors`,
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [
           i18n.plural(total, "en", { one: "1 app", other: `${total} apps` }),
@@ -276,6 +277,7 @@ export const appsPageMessages = i18n.define({
       problemsTab: "Probleme",
       noneOpen: "Keine App geöffnet",
       addApp: "App hinzufügen",
+      requests24h: ({ requests, rate }: { requests: string; rate: string }) => `${requests} Anfragen in 24 Std. · ${rate} Fehler`,
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [
           total === 1 ? "1 App" : `${total} Apps`,

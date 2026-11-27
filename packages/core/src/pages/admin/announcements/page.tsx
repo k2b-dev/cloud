@@ -34,7 +34,7 @@ export default ssr<AuthContext>(async (c) => {
   const open = requested === "new" || rows.some((row) => row.id === requested) ? requested : null;
   return () => (
     <AdminLayout c={c} ui="v2" title={t.announcements}>
-      <AnnouncementsScreen nav={adminNavigation(c)} rows={rows} open={open} />
+      <AnnouncementsScreen nav={adminNavigation(c)} rows={rows} open={open} timeZone={dates.timeZone ?? "UTC"} />
     </AdminLayout>
   );
 });

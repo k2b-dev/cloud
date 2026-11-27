@@ -1,8 +1,8 @@
-import { type JSX, children as resolveChildren, Show } from "solid-js";
+import { createUniqueId, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { linkOr } from "./link";
-import { Face, Icon } from "./marks";
+import { Avatar, Icon } from "./marks";
 import type { Action, OnNavigate, Person } from "./types";
 
 type ButtonBase = {
@@ -48,6 +48,11 @@ type ButtonBase = {
    * selection). An icon button shows its label as the hint by itself.
    */
   title?: string;
+  /**
+   * The id of what the deed is about, such as the title of its row: assistive technology hears the button's words and
+   * then those ("Ansehen Angebot Küche"), so ten rows with the same deed are told apart. The words stay first.
+   */
+  about?: string;
 };
 
 export type ButtonProps = ButtonBase &
@@ -74,6 +79,9 @@ export const Button = (props: ButtonProps) => {
   // focus a press gave it (a native `disabled` would drop it): it says "disabled" and refuses the click, which also
   // stops a form being sent twice.
   const off = () => props.disabled || props.busy;
+  // with `about`, the name is the button's own (its words, or its label for a symbol) and then what it is about
+  // (made only then, so the ids of every other button and of the page around it stay as they were)
+  const self = props.about ? createUniqueId() : "";
   return (
     // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic
@@ -86,6 +94,8 @@ export const Button = (props: ButtonProps) => {
       aria-busy={props.busy ? "true" : undefined}
       aria-pressed={props.href === undefined && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       aria-label={iconOnly() ? props.label : undefined}
+      id={props.about ? self : undefined}
+      aria-labelledby={props.about ? `${self} ${props.about}` : undefined}
       title={iconOnly() ? props.label : props.title}
       aria-haspopup={props.menu ? "menu" : undefined}
       onClick={(event: MouseEvent & { currentTarget: HTMLElement; target: Element }) => {
@@ -102,7 +112,7 @@ export const Button = (props: ButtonProps) => {
     >
       <>
         <Show when={props.avatar} fallback={<Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>}>
-          {(person) => <Face {...person()} decorative />}
+          {(person) => <Avatar {...person()} decorative />}
         </Show>
         <Show when={!iconOnly()}>
           <span class="k2-btn-label">{label()}</span>
@@ -125,7 +135,13 @@ export const Button = (props: ButtonProps) => {
 };
 
 /** An action as data turned into a button of the given weight; without an icon it always shows its label. */
-export const ActionButton = (props: { action: Action; variant?: ButtonProps["variant"]; iconOnly?: boolean; titled?: boolean }) => (
+export const ActionButton = (props: {
+  action: Action;
+  variant?: ButtonProps["variant"];
+  iconOnly?: boolean;
+  titled?: boolean;
+  about?: string;
+}) => (
   <Show
     when={props.iconOnly && props.action.icon}
     fallback={
@@ -134,6 +150,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         icon={props.action.icon}
         forward={props.action.forward}
         title={props.titled ? props.action.label : undefined}
+        about={props.about}
         href={props.action.href}
         onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}
@@ -148,6 +165,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         variant={props.variant}
         icon={icon()}
         label={props.action.label}
+        about={props.about}
         href={props.action.href}
         onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}

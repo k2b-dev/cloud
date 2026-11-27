@@ -1,6 +1,0 @@
-### Every island grew by 3 KB through the person on a button
-
-- **What happened:** After the identity and head-media primitives (#4208, #4223), the small Cloud island `PwaPartCount` grew from 92,479 B to 95,501 B (98,070 B to 101,100 B on the branch W7 measured), close to its budget of 98,304 B, although it uses none of the new parts.
-- **Root cause:** Every island carries the error fallback `IslandError`, whose `Failed` retries through a `Button`, and a `Button` imported `Avatar` for its `avatar` prop; `Avatar.Stack = …` was a top-level assignment, so the whole stack stayed wherever `Avatar` did, and the face set its colour through `custom()`, which derives six inks for a mark although a face reads only `--k2-c`.
-- **Error class:** A part attached to a component by a top-level assignment, or a shared helper that does more than its caller needs, rides into every bundle that uses the component, also through a deep import such as the retry of an error fallback.
-- **Guard:** The `island-bundles` rule caught it; `Avatar` is now a pure `Object.assign` with its `Stack`, `Button` imports the plain face, and the face validates its colour with `safeColor` alone, so `PwaPartCount` is 93,191 B (the 712 B above main are the colour validation and the grapheme-safe initials it needs).

@@ -1,4 +1,4 @@
-import { Icon, Text } from "@k2b/ui/v2";
+import { Text } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
 
 /**
@@ -8,7 +8,11 @@ import type { JSX } from "solid-js";
 export default function StateWord(props: { muted?: boolean; children: JSX.Element }) {
   return (
     <Text muted={props.muted}>
-      <Icon name="point-filled" /> {props.children}
+      {/* a small grey dot, as the study writes it (the icon font has no filled point) */}
+      <Text type="meta" muted>
+        ●
+      </Text>{" "}
+      {props.children}
     </Text>
   );
 }

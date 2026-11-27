@@ -2,11 +2,13 @@ import { coreClient } from "@k2b/cloud/clients/core";
 import type { AnnouncementEntry } from "@k2b/cloud/contracts";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
+import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
   Choice,
+  DatePicker,
   Dialog,
   Field,
   Input,
@@ -34,6 +36,8 @@ export type AnnouncementsScreenProps = {
   rows: AnnouncementRow[];
   /** The open entry from the address: an id, "new", or none. */
   open: string | null;
+  /** The reader's time zone: the dates are picked and shown in its wall time. */
+  timeZone: string;
 };
 
 type Draft = {
@@ -51,7 +55,73 @@ const toIso = (value: string): string | undefined => {
   const date = new Date(trimmed);
   return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
 };
-const _STATUS = { active: "ok", scheduled: "warn", expired: "bad" } as const;
+
+/**
+ * A point in time of an entry: a button with the moment in the reader's wall time (or what no moment means), which opens
+ * the v2 calendar with its time; "Leeren" takes the moment out. A wall time the clock change skips or repeats is
+ * refused in the dialog, never moved.
+ */
+const MomentField = (props: {
+  name: string;
+  label: string;
+  hint: string;
+  empty: string;
+  value: string;
+  timeZone: string;
+  disabled: boolean;
+  onChange: (iso: string) => void;
+}) => {
+  const locale = useLocale();
+  const t = () => adminMessages.resolve([locale()]).t;
+  const [open, setOpen] = createSignal(false);
+  const [refused, setRefused] = createSignal(false);
+  const instant = () => {
+    const time = props.value ? Date.parse(props.value) : Number.NaN;
+    return Number.isNaN(time) ? null : new Date(time).toISOString();
+  };
+  const shown = () => (instant() ? dates.formatDateTime(instant()!, { locale: locale(), timeZone: props.timeZone }) : props.empty);
+  const wall = () => {
+    const current = instant();
+    return current ? dates.instantToZonedInput(current, props.timeZone) : undefined;
+  };
+  return (
+    <Field name={props.name} label={props.label} hint={props.hint}>
+      <Button icon="calendar-event" disabled={props.disabled} onClick={() => setOpen(true)}>
+        {shown()}
+      </Button>
+      <Dialog
+        title={props.label}
+        open={open()}
+        onOpenChange={(next) => {
+          setOpen(next);
+          setRefused(false);
+        }}
+        foot={<Button onClick={() => setOpen(false)}>{t().cancel}</Button>}
+      >
+        <DatePicker
+          time
+          label={props.label}
+          value={wall()}
+          timeZone={props.timeZone}
+          error={refused() ? t().timeUnclear : undefined}
+          onPick={(picked) => {
+            try {
+              props.onChange(dates.zonedDateTimeToInstant(picked, props.timeZone));
+              setRefused(false);
+              setOpen(false);
+            } catch {
+              setRefused(true);
+            }
+          }}
+          onClear={() => {
+            props.onChange("");
+            setOpen(false);
+          }}
+        />
+      </Dialog>
+    </Field>
+  );
+};
 
 /**
  * Announcements and banners on v2: the list with its key figures, and the open entry beside it as a form that creates,
@@ -146,7 +216,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
       <Pane.Split>
         <Pane
           label={t().announcements}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={props.open && (creating() || entry()) ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-announcements"
           status={
             <StatusRow
@@ -233,24 +304,27 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
                 }}
               />
             </Field>
-            {/* k2b-ui gap: no date and time picker; a point in time is typed as ISO text as before. */}
             <Field.Row>
-              <Field name="publishedAt" label={t().publishDate} hint={t().publishDateDescription} optional={t().optional}>
-                <Input
-                  value={draft().publishedAt}
-                  placeholder="2026-12-01T08:00"
-                  disabled={busy()}
-                  onInput={(value) => change({ publishedAt: value })}
-                />
-              </Field>
-              <Field name="expiresAt" label={t().expiryDate} hint={t().expiryDateDescription} optional={t().optional}>
-                <Input
-                  value={draft().expiresAt}
-                  placeholder={t().noExpiry}
-                  disabled={busy()}
-                  onInput={(value) => change({ expiresAt: value })}
-                />
-              </Field>
+              <MomentField
+                name="publishedAt"
+                label={t().publishDate}
+                hint={t().publishDateDescription}
+                empty={t().publishNow}
+                value={draft().publishedAt}
+                timeZone={props.timeZone}
+                disabled={busy()}
+                onChange={(value) => change({ publishedAt: value })}
+              />
+              <MomentField
+                name="expiresAt"
+                label={t().expiryDate}
+                hint={t().expiryDateDescription}
+                empty={t().noExpiry}
+                value={draft().expiresAt}
+                timeZone={props.timeZone}
+                disabled={busy()}
+                onChange={(value) => change({ expiresAt: value })}
+              />
             </Field.Row>
             <Bar
               start={

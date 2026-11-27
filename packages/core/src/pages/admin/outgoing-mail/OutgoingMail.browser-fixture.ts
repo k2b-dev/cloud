@@ -8,6 +8,7 @@ import { type Context, Hono } from "hono";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellAsset, adminShellRuntime } from "../admin-v2.shell-fixture";
 
 const profile = (key: string, name: string, extra: Partial<AdminMailProfile> = {}): AdminMailProfile => ({
   key,
@@ -30,6 +31,7 @@ const profile = (key: string, name: string, extra: Partial<AdminMailProfile> = {
   updatedAt: "2026-10-01T08:00:00.000Z",
   updatedBy: null,
   appCount: 2,
+  usedLast24h: 312,
   ...extra,
 });
 const app = (appId: string, name: string, extra: Partial<AdminMailApp> = {}): AdminMailApp => ({
@@ -241,7 +243,7 @@ export async function outgoingMailBrowserFixture() {
     if (c.req.query("state") === "worst") data = outgoingMailWorst();
     const locale = localeOf(c);
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", adminShellRuntime());
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "Outgoing mail", theme: "light" });
@@ -344,6 +346,8 @@ export async function outgoingMailBrowserFixture() {
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
+      const shellAsset = adminShellAsset(url.pathname);
+      if (shellAsset) return shellAsset;
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);

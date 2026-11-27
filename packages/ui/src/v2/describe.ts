@@ -38,13 +38,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Row",
     "Table",
     "Facts",
-    "Preview",
     "Notice",
     "Prose",
     "Canvas",
     "Field.Row",
     "Field",
-    "Setting",
     "Disclosure",
     "Toast",
     "Empty",
@@ -145,15 +143,6 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""})`;
     }
     if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}${element.hasAttribute("data-image") ? " picture" : ""}`;
-    if (name === "Avatar.Stack") return `@{${element.getAttribute("aria-label") ?? ""}}`;
-    if (name === "Mark") {
-      const kind = element.querySelector(".k2-mk-kind")?.textContent;
-      return `[${element.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${kind ? ` ${kind}` : ""}${element.hasAttribute("data-image") ? " picture" : ""}]`;
-    }
-    if (name === "Spark") return `spark ${quote(element.getAttribute("aria-label"))}`;
-    if (name === "Preview")
-      return `Preview ${quote(element.getAttribute("aria-label"))}${element.hasAttribute("data-image") ? " picture" : ""}`;
-    if (name === "Nav.Quota") return `quota ${quote(element.getAttribute("aria-label"))}: ${element.getAttribute("aria-valuetext") ?? ""}`;
     if (name === "Icon") return element.getAttribute("aria-label") ? `icon ${quote(element.getAttribute("aria-label"))}` : "";
     if (name === "Text") {
       const type = element.getAttribute("data-type");
@@ -173,9 +162,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `RecordHead ${quote(element.textContent)}${ids.length ? ` ids: ${ids.join(" · ")}` : ""}`;
     }
     if (name === "Path")
-      return `Path: ${kidsMatching(element, "a, span, b, button")
-        .map((step) => (step.tagName === "BUTTON" ? "…" : clip(step.textContent ?? "", 24)))
-        .join(" › ")}`;
+      return `Path: ${[...element.querySelectorAll("a, b")].map((step) => clip(step.textContent ?? "", 24)).join(" › ")}`;
     if (name === "Steps")
       return `Steps ${quote(element.getAttribute("aria-label"))}: ${[...element.querySelectorAll(".k2-step")]
         .map((step) => `${clip(step.querySelector(".k2-step-label")?.textContent ?? "", 20)} ${step.getAttribute("data-state")}`)
@@ -333,8 +320,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Tiles": {
         const tiles = [...element.querySelectorAll(".k2-tile-title")].map((tile) => clip(tile.textContent ?? "", 30));
-        const variant = element.getAttribute("data-variant");
-        return `Tiles${variant ? ` ${variant}` : ""} ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
+        return `Tiles ${tiles.length}: ${tiles.join(", ")}${rest().length ? ` ${rest().join(" ")}` : ""}`;
       }
       case "Section":
       case "Group": {
@@ -358,15 +344,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const time = kid(element, ".k2-row-time")?.textContent;
         const meta = element.querySelector(".k2-row-meta")?.textContent;
         const lead = kid(element, ".k2-row-lead")?.querySelector("[data-k2-part]");
-        const leadWord =
-          lead && part(lead) === "Avatar"
-            ? ` @${lead.getAttribute("aria-label")}`
-            : lead && part(lead) === "Mark"
-              ? ` [${lead.querySelector("[data-name]")?.getAttribute("data-name") ?? "mark"}${lead.hasAttribute("data-image") ? " picture" : ""}]`
-              : "";
+        const leadWord = lead && part(lead) === "Avatar" ? ` @${lead.getAttribute("aria-label")}` : "";
         const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
-        const tail = kidsMatching(element, ".k2-row-end, .k2-row-marks, .k2-row-states").flatMap(words);
+        const tail = kidsMatching(element, ".k2-row-end, .k2-row-marks").flatMap(words);
         return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
       }
       case "Table": {
@@ -416,18 +397,14 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Prose ${quote(text, 50)}${paragraphs.length > 1 ? ` (${paragraphs.length} blocks)` : ""}`;
       }
       case "Canvas": {
-        const height = element.hasAttribute("data-fill")
-          ? "fills its pane"
-          : (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
+        const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");
         return `Canvas ${quote(label)}${height ? ` ${height}` : ""} (free drawing, not measured)`;
       }
-      case "Field":
-      case "Setting": {
+      case "Field": {
         const fieldLabel = kid(element, ".k2-field-label")?.childNodes[0]?.textContent;
         const message = kid(element, ".k2-field-message");
-        const was = kid(element, ".k2-field-was")?.textContent;
         const control = words(element).join(" ");
-        return `${name} ${quote(fieldLabel)}: ${control || "no control"}${message ? ` — ${message.hasAttribute("data-error") ? "error" : "hint"} ${quote(message.textContent)}` : ""}${was ? ` (${was})` : ""}`;
+        return `Field ${quote(fieldLabel)}: ${control || "no control"}${message ? ` — ${message.hasAttribute("data-error") ? "error" : "hint"} ${quote(message.textContent)}` : ""}`;
       }
       case "Field.Row":
         return "Field.Row";
@@ -448,8 +425,6 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
-        if (element.hasAttribute("data-activity"))
-          return `Entry @${kid(kid(element, ".k2-row-lead"), ".k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${text(".k2-row-l2")}`;
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
       }
       default:
@@ -565,10 +540,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const surface = surfaceOf(button);
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
-  // While entries are selected the floating main action gives way to the selection's actions on purpose.
   if (
     options.layout &&
-    !root.querySelector(".k2-bar[data-selecting]") &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )

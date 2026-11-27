@@ -2,13 +2,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { CloudRuntime, User } from "@k2b/cloud/contracts";
+import type { CloudRuntime, RuntimeAppMeta, User } from "@k2b/cloud/contracts";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { checkFixtureSessionOrigin } from "../../../../../../scripts/fixtures/session-origin";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellAsset, adminShellRuntime } from "../admin-v2.shell-fixture";
 import {
   ADMIN_ID,
   FIXTURE_NOW,
@@ -144,10 +145,25 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const state = (c.req.query("state") ?? "normal") as AdminAppsFixtureState;
     c.req.raw.headers.set("x-cloud-locale", locale);
+    // the shell as in a running Cloud: Core's own meta first (it tints the page), then the live apps in the rail
     c.set("runtime", {
-      apps: fixtureApps()
-        .filter((app) => app.live)
-        .map((app) => ({ id: app.id, name: app.name, description: app.description, icon: app.icon, routes: [...app.routes] })),
+      apps: [
+        adminShellRuntime().apps[0]!,
+        ...fixtureApps()
+          .filter((app) => app.live)
+          .map(
+            (app) =>
+              ({
+                id: app.id,
+                name: app.name,
+                description: app.description,
+                icon: app.icon,
+                routes: [...app.routes],
+                nav: { href: app.routes[0] ?? `/${app.id}`, section: "primary" as const },
+                ...(app.accent ? { appearance: { accent: app.accent, background: { from: app.accent, to: app.accent, angle: 135 } } } : {}),
+              }) as RuntimeAppMeta,
+          ),
+      ],
     });
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
@@ -486,6 +502,8 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
       const refused = await checkFixtureSessionOrigin(request);
       if (refused) return refused;
       const url = new URL(request.url);
+      const shellAsset = adminShellAsset(url.pathname);
+      if (shellAsset) return shellAsset;
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);

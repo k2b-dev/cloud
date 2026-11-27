@@ -87,6 +87,8 @@ const TestDialog = (props: { profile: AdminMailProfile | null; onClose: () => vo
 export default function ProfilesScreen(props: { nav: NavProps; profiles: ProfileRow[]; open: string | null }) {
   const locale = useLocale();
   const t = () => outgoingMailMessages.resolve([locale()]).t;
+  /** A count in the figures of the page's language, such as "1.284". */
+  const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const toast = useToast();
   const [testing, setTesting] = createSignal<AdminMailProfile | null>(null);
   const opened = () => (props.open && props.open !== "new" ? props.profiles.find((profile) => profile.key === props.open) : undefined);
@@ -129,12 +131,16 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
       <Pane.Split>
         <Pane
           label={t().profiles}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={creating() || opened() ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-outgoing-mail-profiles"
           status={
-            // k2b-ui gap: the hero band comes with DP. Its figure, the recipients of the last 24 hours, exists per profile in the
-            // mail service (MailProfile.quota) but not in the admin contract yet, so the count of profiles stands in
-            <StatusRow lead={t().profileCount({ count: props.profiles.length })} />
+            // the screen's figure: recipients of the last 24 hours over every profile, from the admin contract (no series
+            // exists, so no trend); k2b-ui gap: the hero band in figure type comes with DP
+            <StatusRow
+              lead={t().recipients24h({ count: count(props.profiles.reduce((sum, row) => sum + row.usedLast24h, 0)) })}
+              facts={[{ value: t().profileCount({ count: props.profiles.length }) }]}
+            />
           }
         >
           <Text muted>{t().profilesDescription}</Text>
@@ -153,12 +159,14 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
               {
                 title: t().profile,
                 width: { min: 180, default: 220 },
-                mark: () => ({ icon: "mail-cog" }),
+                // slot for #4208 (DP): Column mark "mail-cog"
                 // a plain value, so a long name is cut with "…" and says itself on hover
                 cell: (row) => (row.isDefault ? `${row.name} · ${t().defaultBadge}` : row.name),
               },
               // three columns fit beside an open profile; the server, pace and daily limit are in the profile
-              { title: t().sender, width: { min: 160, default: 220 }, drop: true, cell: (row) => row.fromAddress },
+              { title: t().sender, width: { min: 160, default: 200 }, drop: true, cell: (row) => row.fromAddress },
+              // each profile's recipients in 24 hours; no bar, because the daily limit applies per app, not to this sum
+              { title: t().last24h, width: { min: 90, default: 100 }, align: "end", cell: (row) => count(row.usedLast24h) },
               {
                 title: t().state,
                 width: { min: 180, default: 200 },

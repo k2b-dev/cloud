@@ -241,7 +241,8 @@ export default function LogScreen(props: LogScreenProps) {
       <Pane.Split>
         <Pane
           label={t().sendLog}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={record() ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-outgoing-mail-log"
           status={
             <>

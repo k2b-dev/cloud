@@ -81,7 +81,7 @@ export default function NavigationScreen(props: NavigationScreenProps) {
   const index = () => state().entries.findIndex((item) => item.shortcut.id === entry()?.shortcut.id);
 
   /** The sign the shortcut shows in the app bar: the app's icon, or the link's own. */
-  const symbol = (shortcut: RailShortcut) =>
+  const _symbol = (shortcut: RailShortcut) =>
     (shortcut.kind === "app" ? (props.apps.find((app) => app.id === shortcut.appId)?.icon ?? "ti ti-apps") : shortcut.icon)
       .replace(/^ti\s+/, "")
       .replace(/^ti-/, "");
@@ -180,7 +180,8 @@ export default function NavigationScreen(props: NavigationScreenProps) {
       <Pane.Split>
         <Pane
           label={t().title}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={entry() ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-navigation"
           status={<StatusRow lead={t().shortcuts({ count: state().entries.length })} />}
         >
@@ -198,7 +199,7 @@ export default function NavigationScreen(props: NavigationScreenProps) {
                 title: t().name,
                 width: { min: 200, default: 260 },
                 // one line per row (identity rule 4) with the shortcut's own sign; the address is in the open shortcut
-                mark: (row) => ({ icon: symbol(row.shortcut) }),
+                // slot for #4208 (DP): Column mark with the shortcut's own sign (symbol)
                 cell: (row) => label(row.shortcut),
               },
               {

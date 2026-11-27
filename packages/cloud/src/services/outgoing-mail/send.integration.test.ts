@@ -314,19 +314,24 @@ suiteFor(
     expect(await sql`SELECT id FROM outgoing_mail.messages WHERE idempotency_key = 'race'`).toHaveLength(1);
     expect(await sql`SELECT id FROM audit.events WHERE action = 'outgoing_mail.send'`).toHaveLength(4);
   });
-  test("rolling quota remains atomic under ten concurrent calls and profiles report real usage", async () => {
+  test("rolling quota remains atomic under ten concurrent calls, and profiles and the admin list report the same real usage", async () => {
     await configure({ dailyRecipientLimit: 5 });
     const results = await Promise.all(Array.from({ length: 10 }, () => mail.send(input, { signal: stopWaiting })));
     expect(results.filter((result) => result.ok)).toHaveLength(5);
     for (const result of results.filter((result) => !result.ok))
       expect(result).toMatchObject({ error: { code: "quota_exceeded", limit: 5, used: 5, requested: 1 } });
     expect(await mail.profiles()).toMatchObject({ ok: true, data: [{ quota: { dailyRecipients: 5, usedLast24h: 5 } }] });
+    // the admin list reads the same count for the profile, summed over the apps that send through it
+    const adminUsed = async () => (await outgoingMailStore.list()).find((profile) => profile.key === "alerts")?.usedLast24h;
+    expect(await adminUsed()).toBe(5);
     const first = results.find((result) => result.ok)!;
     if (!first.ok) throw new Error("Missing accepted record");
     await outgoingMailLog.cancel(first.data.id, context);
+    expect(await adminUsed()).toBe(4);
     expect((await mail.send(input, { signal: stopWaiting })).ok).toBe(true);
     await sql`UPDATE outgoing_mail.messages SET created_at = now() - INTERVAL '25 hours'`;
     expect(await mail.profiles()).toMatchObject({ ok: true, data: [{ quota: { usedLast24h: 0 } }] });
+    expect(await adminUsed()).toBe(0);
   });
   test("exhausted recipient quota rejects attachments before reading or storing them", async () => {
     await configure({ dailyRecipientLimit: 1 });

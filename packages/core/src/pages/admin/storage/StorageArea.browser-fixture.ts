@@ -15,6 +15,7 @@ import {
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
+import { adminShellRuntime } from "../admin-v2.shell-fixture";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import type { StorageSelection } from "./StorageScreen";
 
@@ -345,7 +346,7 @@ export async function storageAreaBrowserFixture(options: { port?: number } = {})
     const scenario = Object.entries(STORAGE_SCENARIOS).find(([name]) => name === c.req.query("state"));
     if (scenario) items = scenario[1]();
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", adminShellRuntime());
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: locale === "de" ? "Speicher" : "Storage", theme });

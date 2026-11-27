@@ -17,6 +17,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import { adminNavFixture } from "../admin-v2.fixture";
+import { adminShellRuntime } from "../admin-v2.shell-fixture";
 import type { PlacesAndMapsInitial } from "./PlacesAndMaps";
 
 // The Base settings sections under their entry in the admin bar, Places & maps open.
@@ -244,7 +245,7 @@ export async function placesAndMapsBrowserFixture() {
     const scenario = Object.entries(PLACES_AND_MAPS_SCENARIOS).find(([name]) => name === c.req.query("state"));
     state = (scenario?.[1] ?? PLACES_AND_MAPS_SCENARIOS.eingerichtet)();
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", adminShellRuntime());
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     const title = placesAndMapsMessages.resolve([locale]).t.title;
