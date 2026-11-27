@@ -1,6 +1,6 @@
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
-import { type ConcurrentIndex, ensureConcurrentIndexes } from "../services/concurrent-index";
+import { addMissingColumns, type ConcurrentIndex, createIndexIfMissing, ensureConcurrentIndexes } from "../services/concurrent-index";
 import { logger } from "../services/logging";
 
 const log = logger("ai:quotas");
@@ -49,24 +49,30 @@ export async function migrateAiQuotas() {
         ALTER TABLE ai.inference_calls ADD CONSTRAINT inference_calls_kind_check CHECK(kind IN ('chat','background','live-transcription'));
       END IF;
     END $$`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS audio_ms INTEGER`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS credential_id UUID`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS estimated BOOLEAN NOT NULL DEFAULT false`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS cache_read BIGINT CHECK(cache_read IS NULL OR (cache_read>=0 AND cache_read<=input))`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS error TEXT`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS cancelled BOOLEAN NOT NULL DEFAULT false`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS request_started_at TIMESTAMPTZ`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS headers_ms INTEGER`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS first_byte_ms INTEGER`;
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS first_block_ms INTEGER`;
-    // Stable Code attribution survives chat, turn and Code deletion; no Code schema dependency.
-    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS code_id TEXT`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_workflow ON ai.inference_calls(workflow_run_id,started_at)`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_started ON ai.inference_calls(started_at)`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_turn ON ai.inference_calls(turn_id,started_at,id) WHERE kind='chat'`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_compaction_turn ON ai.inference_calls(turn_id) WHERE task='chat-compaction'`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_user ON ai.inference_calls(user_id,started_at)`;
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_service ON ai.inference_calls(service_account_id,started_at)`;
+    // A background build may hold this table (`AI_INFERENCE_TURN_INDEX`); only what is missing takes a lock.
+    await addMissingColumns(db, "ai.inference_calls", {
+      audio_ms: "INTEGER",
+      credential_id: "UUID",
+      estimated: "BOOLEAN NOT NULL DEFAULT false",
+      cache_read: "BIGINT CHECK(cache_read IS NULL OR (cache_read>=0 AND cache_read<=input))",
+      error: "TEXT",
+      cancelled: "BOOLEAN NOT NULL DEFAULT false",
+      request_started_at: "TIMESTAMPTZ",
+      headers_ms: "INTEGER",
+      first_byte_ms: "INTEGER",
+      first_block_ms: "INTEGER",
+      // Stable Code attribution survives chat, turn and Code deletion; no Code schema dependency.
+      code_id: "TEXT",
+    });
+    for (const [name, definition] of [
+      ["inference_calls_workflow", "(workflow_run_id,started_at)"],
+      ["inference_calls_started", "(started_at)"],
+      ["inference_calls_turn", "(turn_id,started_at,id) WHERE kind='chat'"],
+      ["inference_calls_compaction_turn", "(turn_id) WHERE task='chat-compaction'"],
+      ["inference_calls_user", "(user_id,started_at)"],
+      ["inference_calls_service", "(service_account_id,started_at)"],
+    ] as const)
+      await createIndexIfMissing(db, { name, table: "ai.inference_calls", definition });
     await db`CREATE TABLE IF NOT EXISTS ai.cost_resets (
       request_id UUID PRIMARY KEY, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
       service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,

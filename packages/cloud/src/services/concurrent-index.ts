@@ -3,15 +3,20 @@ import { getProcessSync, lazySync } from "../_internal/process-sync";
 import { sql } from "../runtime/clients";
 import type { logger } from "./logging";
 
-/** An index built next to live writes. Queries must work without it; it only makes them faster. */
+/**
+ * An index built next to live writes. Queries must work without it; it only makes them faster. A UNIQUE index that a
+ * transaction relies on is never one of these: it is built before its first use, with a `lock_timeout` and a retry.
+ */
 export type ConcurrentIndex = {
   /** Index name without schema; Postgres creates it in the table's schema. */
   name: string;
   /** Schema-qualified table, e.g. `ai.conversations`. */
   table: string;
-  /** Everything after `ON <table>`: method, columns, order and an optional partial predicate. */
+  /**
+   * Everything after `ON <table>`: method, columns, order and an optional partial predicate. A constant of the code,
+   * never request input; it reaches SQL as written, so a `;` is refused.
+   */
   definition: string;
-  unique?: boolean;
 };
 
 /**
@@ -34,6 +39,13 @@ const LEASE_MS = 60_000;
 
 /** One build per table across every replica of every app: two builds on one table wait for each other. */
 const buildLease = lazySync((sync) => sync.mutex({ id: "cloud:concurrent-index-build", ttlMs: LEASE_MS, retry: { maxAttempts: 1 } }));
+
+const qualifiedTable = (table: string) => {
+  const parts = table.split(".");
+  return parts.length === 2 && parts.every((part) => IDENTIFIER.test(part));
+};
+const validIndex = (index: ConcurrentIndex) =>
+  IDENTIFIER.test(index.name) && qualifiedTable(index.table) && !index.definition.includes(";");
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -62,9 +74,7 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
   if (before.present) await dropIndex(db, index);
   const startedAt = performance.now();
   try {
-    await db
-      .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
-      .simple();
+    await db.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`).simple();
   } catch (error) {
     const after = await readIndex(db, index);
     if (after.valid) return "ready";
@@ -88,6 +98,11 @@ const buildIndex = async (db: SQL, index: ConcurrentIndex, options: ConcurrentIn
  * snapshot wait. A valid index is kept, an invalid leftover of an interrupted build is dropped and built again, and a
  * build that runs elsewhere is left alone. Never throws: a failure is logged and the next attempt continues.
  *
+ * A build holds `SHARE UPDATE EXCLUSIVE` on its table for as long as it runs, so a migration of the same table never
+ * takes a strong lock unconditionally: it adds a column or an index only when the catalog lacks it
+ * (`addMissingColumns`, `createIndexIfMissing`), or the next start of another replica waits behind the build and every
+ * write of the table waits behind that start.
+ *
  * A build waits for every older snapshot, so a long transaction (a nightly dump) can hold it for hours. Startup must
  * never wait for it: start it with `buildConcurrentIndexesInBackground` after the migration. Await this only from work
  * that already runs in the background, such as a sweep that skips while its index is missing.
@@ -101,9 +116,7 @@ export const ensureConcurrentIndexes = async (
 ): Promise<ConcurrentIndexOutcome> => {
   try {
     for (const index of indexes) {
-      if (!IDENTIFIER.test(index.name) || !index.table.split(".").every((part) => IDENTIFIER.test(part)) || !index.table.includes(".")) {
-        throw new Error(`Invalid index name or table: ${index.name} ON ${index.table}`);
-      }
+      if (!validIndex(index)) throw new Error(`Invalid index name, table or definition: ${index.name} ON ${index.table}`);
     }
     const db = options.db ?? sql;
     const states = await Promise.all(indexes.map((index) => readIndex(db, index)));
@@ -170,23 +183,92 @@ const buildTable = async (
 const running = new Set<Promise<ConcurrentIndexOutcome>>();
 
 /**
+ * After `busy` (another build runs here or under another replica's lease), a background build tries again five times
+ * over about ten minutes. Then it stops until the next start; a `failed` build is logged and not retried.
+ */
+const BUSY_RETRY_MS = [30_000, 60_000, 120_000, 180_000, 240_000] as const;
+const pause = (ms: number) =>
+  new Promise<void>((resolve) => {
+    // A pause between bounded attempts, not a loop of its own; it never keeps the process alive.
+    setTimeout(resolve, ms).unref();
+  });
+
+/**
  * Starts `ensureConcurrentIndexes` without waiting for it: the caller (a migration, an app's setup) returns at once and
- * queries run without the indexes until they are valid. Startup never awaits the returned promise.
+ * queries run without the indexes until they are valid. A busy build is retried (`BUSY_RETRY_MS`). Startup never awaits
+ * the returned promise.
  */
 export const buildConcurrentIndexesInBackground = (
   indexes: readonly ConcurrentIndex[],
   options: ConcurrentIndexOptions,
 ): Promise<ConcurrentIndexOutcome> => {
-  const build = ensureConcurrentIndexes(indexes, options);
+  const build = (async () => {
+    let outcome = await ensureConcurrentIndexes(indexes, options);
+    for (const wait of BUSY_RETRY_MS) {
+      if (outcome !== "busy") return outcome;
+      await pause(wait);
+      outcome = await ensureConcurrentIndexes(indexes, options);
+    }
+    if (outcome === "busy") options.log.info(`The ${options.purpose} indexes are still being built elsewhere; the next start continues`);
+    return outcome;
+  })();
   running.add(build);
   void build.finally(() => running.delete(build));
   return build;
 };
 
 /**
- * Waits for the background builds this process started. Only for a process that migrates and then closes its database
- * connections (the integration template builder, one-off scripts); a running app never waits for its builds.
+ * Waits for the background builds this process started, at most `deadlineMs`. Only for a process that migrates and
+ * then closes its database connections (the integration template builder, a test's teardown, one-off scripts); a
+ * running app never waits for its builds. True when none is left.
  */
-export const settleBackgroundIndexBuilds = async (): Promise<void> => {
-  while (running.size > 0) await Promise.allSettled([...running]);
+export const settleBackgroundIndexBuilds = async (deadlineMs = 60_000): Promise<boolean> => {
+  const end = Date.now() + deadlineMs;
+  while (running.size > 0) {
+    const left = end - Date.now();
+    if (left <= 0) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled([...running]),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, left);
+      }),
+    ]);
+    clearTimeout(timer);
+  }
+  return true;
+};
+
+/**
+ * Adds the columns the table lacks, in one statement, and takes no lock at all when every column exists. `columns` maps
+ * each name to its type and constraints, constants of the code. Use it for a table that a background build may hold
+ * (`ensureConcurrentIndexes`); `ADD COLUMN IF NOT EXISTS` alone takes `ACCESS EXCLUSIVE` before it checks.
+ */
+export const addMissingColumns = async (db: SQL, table: string, columns: Readonly<Record<string, string>>): Promise<void> => {
+  if (!qualifiedTable(table) || Object.entries(columns).some(([name, type]) => !IDENTIFIER.test(name) || type.includes(";")))
+    throw new Error(`Invalid columns for ${table}`);
+  const present = new Set(
+    (
+      await db<{ name: string }[]>`SELECT attname AS name FROM pg_catalog.pg_attribute
+        WHERE attrelid = to_regclass(${table}) AND attnum > 0 AND NOT attisdropped`
+    ).map((row) => row.name),
+  );
+  const missing = Object.entries(columns).filter(([name]) => !present.has(name));
+  if (missing.length === 0) return;
+  await db.unsafe(`ALTER TABLE ${table} ${missing.map(([name, type]) => `ADD COLUMN IF NOT EXISTS ${name} ${type}`).join(", ")}`).simple();
+};
+
+/**
+ * Creates an ordinary index in the migration's transaction only when the catalog lacks it. `CREATE INDEX IF NOT EXISTS`
+ * alone waits for the lock of a running concurrent build on the table even when the index exists.
+ */
+export const createIndexIfMissing = async (db: SQL, index: ConcurrentIndex & { unique?: boolean }): Promise<void> => {
+  if (!validIndex(index)) throw new Error(`Invalid index: ${index.name} ON ${index.table}`);
+  const [state] = await db<
+    { present: boolean }[]
+  >`SELECT to_regclass(${`${index.table.split(".")[0]}.${index.name}`}) IS NOT NULL AS present`;
+  if (state?.present) return;
+  await db
+    .unsafe(`CREATE ${index.unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${index.name} ON ${index.table} ${index.definition}`)
+    .simple();
 };
