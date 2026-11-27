@@ -290,7 +290,8 @@ lines instead of cutting a thing.
   is off; not for links or the primary action), `type`, `keep` (stays
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
-  it needs `label`.
+  it needs `label`. With children, `label` is its name only where the
+  words alone do not say enough, and it begins with the words.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
