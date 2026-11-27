@@ -7,6 +7,8 @@ import { PublicDocumentShare } from "./PublicDocumentShare";
 
 export default ssr<AuthContext>(async (c) => {
   const token = c.req.param("token") ?? "";
+  // the page carries the link's download address, so no cache keeps it (found or not), like a missing form
+  c.header("Cache-Control", "private, no-store");
   const locale = getLocale(c);
   const { t } = resolveGridsMessages(locale);
   const resolved = await gridsService.document.resolveDocumentLinkDownload(token);
