@@ -58,6 +58,8 @@ render(
           label="Postfächer"
           rows={entries}
           rowKey={(entry) => entry.id}
+          // the rows open their entry, so the first cell holds the row's link around its line (Mail's admin)
+          open={(entry) => ({ href: `#open=${entry.id}` })}
           phone={(entry) => ({ lines: [entry.name, entry.mail] })}
           columns={[
             {

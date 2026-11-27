@@ -92,6 +92,7 @@ test("the server and the first render show the same sections: folded, open and n
       ["Angeheftet", "true", 3],
       ["Archiviert", "false", 0],
       ["Alle", null, 3],
+      ["Entwürfe", "true", 3],
     ]);
     for (const section of client.filter((section) => section.fold))
       expect(section.fold).toEqual({
@@ -146,5 +147,19 @@ test("the keyboard folds and opens a section; only what stands below the folded 
     await page.keyboard.press("Enter");
     await settled(page);
     expect((await page.evaluate(sections))[1]!.shows).toBe(3);
+  });
+});
+
+// A section told of each change but holding no state starts open and keeps its own: it folds and opens again.
+test("a section with onOpenChange alone starts open and folds and opens by itself", async () => {
+  await withPage(1440, async (page) => {
+    const toggle = page.getByRole("button", { name: "Entwürfe" });
+    await toggle.click();
+    await settled(page);
+    expect((await page.evaluate(sections))[3]!.shows).toBe(0);
+    await toggle.click();
+    await settled(page);
+    expect((await page.evaluate(sections))[3]!.shows).toBe(3);
+    expect(await page.evaluate(() => window.__folds)).toEqual(["Entwürfe:false", "Entwürfe:true"]);
   });
 });

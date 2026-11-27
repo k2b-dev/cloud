@@ -43,8 +43,9 @@ export type SectionProps = {
   children?: JSX.Element;
   /**
    * Whether the section is open. With `onOpenChange` the section can fold: a chevron at the end of its head opens and
-   * closes it (a button that says whether it is open), and the caller holds the state, so it can keep it. Folded, only
-   * the head stands, with the section's line below it.
+   * closes it (a button that says whether it is open), and the caller holds the state, so it can keep it (without
+   * `open` the section starts open and keeps its own state, told by `onOpenChange`). Folded, only the head stands,
+   * with the section's line below it.
    */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -59,7 +60,11 @@ export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
   // a section folds only where the caller holds its state; the others stay as they were, without a toggle or a body
   const fold = props.onOpenChange
-    ? useDisclosure(() => ({ open: props.open ?? true, onOpenChange: (open: boolean) => props.onOpenChange?.(open) }))
+    ? useDisclosure(() => ({
+        // with `open` the caller holds the state; without, the section starts open and keeps its own
+        ...(props.open === undefined ? { defaultOpen: true } : { open: props.open }),
+        onOpenChange: (open: boolean) => props.onOpenChange?.(open),
+      }))
     : undefined;
   const body = () => (
     <>

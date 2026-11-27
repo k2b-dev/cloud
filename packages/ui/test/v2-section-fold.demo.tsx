@@ -44,6 +44,16 @@ export function Demo() {
         <Section title="Alle" count={chats.length} summary="Drei Unterhaltungen oben">
           {rows("Alle")}
         </Section>
+        {/* told of each change, but holding no state: it starts open and keeps its own */}
+        <Section
+          title="Entwürfe"
+          count={chats.length}
+          onOpenChange={(open) => {
+            window.__folds = [...(window.__folds ?? []), `Entwürfe:${open}`];
+          }}
+        >
+          {rows("Entwürfe")}
+        </Section>
       </Pane>
     </Workspace>
   );

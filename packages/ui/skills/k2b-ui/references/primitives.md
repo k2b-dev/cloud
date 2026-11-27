@@ -84,8 +84,7 @@ pane; `Workspace primary` never confirms a dialog.
 
 A bar of fixed height with one line below: `start`, `end`. Height comes
 from the place: 56 as a head, 52 as a status row, 40 inside a pane. Put
-`Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. The `end`
-keeps its room and the `start` gives way, so no action runs over the edge. Text in
+`Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. Text in
 a bar is cut to one line. Inside a pane a bar stands at the top (a line of
 state under the head, as in `mail.tsx`) or directly after the fields it
 serves (the buttons of a form or of a reply), never between entries. A line
