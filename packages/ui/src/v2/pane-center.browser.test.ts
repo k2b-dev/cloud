@@ -86,6 +86,21 @@ for (const width of [1440, 1920])
     });
   });
 
+// W4 (Grids): beside Cloud's rail at 1024 px four cards fell into 3 + 1. Where four do not fit in one row, a row holds
+// half of them: 2 × 2, both rows full; below 240 px they stand one under the other.
+for (const variant of ["plain"] as const)
+  for (const width of [900, 1024])
+    test(`where four ${variant} tiles do not fit in one row at ${width} px, they stand 2 × 2, never 3 + 1`, async () => {
+      await withPage({ width, height: 900 }, 4, async (page) => {
+        const found = await read(page);
+        const rows = new Map<number, number>();
+        for (const tile of found.tile) rows.set(Math.round(tile.top), (rows.get(Math.round(tile.top)) ?? 0) + 1);
+        expect([...rows.values()]).toEqual([2, 2]);
+        for (const tile of found.tile) expect(tile.width).toBeGreaterThanOrEqual(240);
+        expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
+      });
+    });
+
 test("a centred pane whose content is taller than the page starts at the top and scrolls, nothing cut away above", async () => {
   await withPage({ width: 1440, height: 400 }, 40, async (page) => {
     const found = await read(page);
