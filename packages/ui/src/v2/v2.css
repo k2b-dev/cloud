@@ -642,6 +642,10 @@
   min-width: 0;
   flex: none;
 }
+/* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
+.k2-ui .k2-scroll > .k2-bar[data-k2-part="Bar"]:last-child {
+  border-bottom: 0;
+}
 .k2-ui .k2-bar-start,
 .k2-ui .k2-bar-end {
   display: flex;
@@ -748,7 +752,7 @@
   border-block: 0;
 }
 
-/* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
+/* ── Cells: two to six equal cells with a line between them ───────────────────────────────────────────────────── */
 .k2-ui .k2-cells {
   display: grid;
   grid-auto-flow: column;
@@ -757,6 +761,8 @@
   min-width: 0;
 }
 .k2-ui .k2-cell {
+  /* a cell measures itself: its value's type follows its own width, wherever the cells stand */
+  container: k2-cell / inline-size;
   padding: 12px var(--k2-edge);
   min-width: 0;
   display: grid;
@@ -767,6 +773,83 @@
 }
 .k2-ui .k2-cell ~ .k2-cell {
   border-left: var(--k2-hairline);
+}
+/* A cell under 220 px (half a phone, four cells in a pane of 600 px) leaves no room for a big number in 18 px
+   ("12.345.678"): its value takes the cell's whole width under the label, stands in 14 px, still in 600, and breaks
+   between its words (a chip too) instead of being cut. The query measures inside the cell's edges: 2 × 20 px (2 × 16
+   on the phone, where it holds below 212 px). */
+@container k2-cell (max-width: 179.98px) {
+  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meter, .k2-cell-meta) {
+    grid-column: 1 / -1;
+  }
+  .k2-ui .k2-cell > .k2-cell-value {
+    font: var(--k2-t-body);
+    font-weight: 600;
+    white-space: normal;
+  }
+  .k2-ui .k2-cell > .k2-cell-value > .k2-chip {
+    height: auto;
+    min-height: 24px;
+    max-width: 100%;
+    white-space: normal;
+  }
+  /* the history of the value goes under it where the number takes the line */
+  .k2-ui .k2-cell > .k2-cell-value:has(> .k2-spark) {
+    flex-wrap: wrap;
+  }
+}
+/* Key numbers never stand one under the other as tall cells: two stand side by side down to the phone, three while
+   each gets 150 px (below that see the phone's rule: two, then the third as one line across); four stand two by two
+   where a row would give each less than 220 px (a pane under 880 px: beside a side column, a detail, a tablet, the
+   phone), so a big number keeps its 18 px; five and six stand in rows of three. */
+@container k2-pane (max-width: 879.98px) {
+  /* four: two by two */
+  .k2-ui .k2-cells[data-n="4"] {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .k2-ui .k2-cells[data-n="4"] > .k2-cell:is([data-i="1"], [data-i="3"], [data-i="5"]) {
+    border-left: 0;
+  }
+  .k2-ui .k2-cells[data-n="4"] > .k2-cell:is([data-i="3"], [data-i="4"], [data-i="5"], [data-i="6"]) {
+    border-top: var(--k2-hairline);
+  }
+  /* five and six: rows of three */
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="1"], [data-i="4"]) {
+    border-left: 0;
+  }
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="4"], [data-i="5"], [data-i="6"]) {
+    border-top: var(--k2-hairline);
+  }
+}
+/* a value with a limit: a thin bar under it, in the cell's colour, amber from the limit on (rule 3) */
+.k2-ui .k2-cell > .k2-cell-meter {
+  grid-column: 2 / -1;
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n200);
+  overflow: hidden;
+}
+.k2-ui .k2-cell > .k2-cell-meter > i {
+  display: block;
+  height: 100%;
+  width: var(--k2-p);
+  border-radius: var(--k2-r-round);
+  background: var(--k2-c-ink, var(--k2-c, var(--k2-app, var(--k2-blue))));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-cell > .k2-cell-meter > i,
+.k2-ui.dark .k2-cell > .k2-cell-meter > i,
+.k2-ui[data-theme="dark"] .k2-cell > .k2-cell-meter > i {
+  background: var(--k2-c-ink-dark, var(--k2-c, var(--k2-app, var(--k2-blue))));
+}
+.k2-ui .k2-cell > .k2-cell-meter[data-full] > i {
+  background: var(--k2-warn-dot);
 }
 .k2-ui .k2-cell > .k2-icon:first-child {
   color: var(--k2-c, var(--k2-subtle));
@@ -779,8 +862,8 @@
 }
 .k2-ui .k2-cell-value {
   grid-column: 2 / -1;
-  font: var(--k2-t-body);
-  font-weight: 600;
+  /* the cell's statement in the type of a statement (18), as large as the page's lead */
+  font: var(--k2-t-lead);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1103,6 +1186,20 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
+/* sections side by side: two columns where both get 360 px, else one; no line between the columns */
+.k2-ui .k2-sec-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(min(360px, 100%), 40%), 1fr));
+  min-width: 0;
+}
+.k2-ui .k2-sec-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.k2-ui .k2-sec-col > .k2-sec {
+  flex: 1;
+}
 .k2-ui .k2-sh {
   display: flex;
   align-items: center;
@@ -1196,8 +1293,19 @@
 .k2-ui .k2-group + .k2-group {
   margin-top: 12px;
 }
-.k2-ui .k2-sec > .k2-group:last-child {
-  margin-bottom: 12px;
+/* outside a section a group keeps its frame, apart from a line above it (a notice, a bar): never a double line */
+.k2-ui .k2-scroll > .k2-group {
+  margin-block: 12px;
+}
+/* inside a section the section's line is enough: a group draws no frame, stands on the section's edges as its rows
+   do, and one line parts it from the group before (rule 9: lines separate groups). No box in a box. */
+.k2-ui .k2-sec > .k2-group {
+  --k2-edge: inherit;
+  margin: 0;
+  border: 0;
+}
+.k2-ui .k2-sec > .k2-group + .k2-group {
+  border-top: var(--k2-hairline);
 }
 .k2-ui .k2-gh {
   display: grid;
@@ -1206,7 +1314,6 @@
   align-items: center;
   min-height: var(--k2-h-row);
   padding: 8px var(--k2-edge);
-  background: var(--k2-n50);
 }
 .k2-ui .k2-gh[data-meta] {
   min-height: var(--k2-h-head);
@@ -1290,6 +1397,10 @@
   border-bottom: var(--k2-hairline);
   min-width: 0;
   color: inherit;
+}
+/* no line under the last row of a list: the space under it ends the list (look rule 4) */
+.k2-ui .k2-list > .k2-row:last-child {
+  border-bottom: 0;
 }
 .k2-ui .k2-row > * {
   min-width: 0;
@@ -1712,8 +1823,10 @@
   white-space: nowrap;
   background: var(--k2-surface);
 }
+/* no line under the last row: the space under a list ends it (look rule 4, 25.11. "die horizontale Border sollte weg
+   sein"), in a large table as in any other */
 .k2-ui .k2-table[data-grid] tr:last-child td {
-  border-bottom: var(--k2-table-end, var(--k2-hairline));
+  border-bottom: var(--k2-table-end, 0);
 }
 .k2-ui .k2-table[data-grid] :is(th, td)[data-sticky] {
   position: sticky;
@@ -1795,19 +1908,27 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
-.k2-ui .k2-table[data-grid] tr[data-group] > td {
+/* A group head is text, not a band (look rule 4): its name in 600 and its count, standing on the rows it heads. The
+   line under the row before it separates the groups; none stands under the head itself. */
+.k2-ui .k2-table tr[data-group] > td {
   height: var(--k2-h-columns);
-  background: var(--k2-n50);
+  background: transparent;
   padding: 0;
+  vertical-align: bottom;
+  border-bottom: 0;
 }
-.k2-ui .k2-table[data-grid] tr[data-group] > td > .k2-group-row {
+.k2-ui .k2-table tr[data-group] > td > .k2-group-row {
   position: sticky;
   left: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0 var(--k2-edge);
+  padding: 0 var(--k2-edge) 4px;
   font-weight: 600;
+}
+.k2-ui .k2-group-row > .k2-group-row-count {
+  font-weight: 400;
+  color: var(--k2-subtle);
 }
 .k2-ui .k2-group-row > .k2-group-row-meta {
   font-weight: 400;
@@ -1827,13 +1948,22 @@
 .k2-ui .k2-table[data-grid] td .k2-mark {
   vertical-align: middle;
 }
-/* the phone form of a large table: rows of two lines, groups as tinted bars; the table itself leaves */
+/* the phone form of a large table: rows of two lines, group heads as text as in the table; the table itself leaves */
 .k2-ui .k2-table-phone {
   display: none;
 }
-.k2-ui .k2-table-phone .k2-bar {
-  background: var(--k2-n50);
+.k2-ui .k2-table-phone-group {
+  display: flex;
+  align-items: flex-end;
   height: var(--k2-h-columns);
+  padding: 0 var(--k2-edge) 4px;
+}
+.k2-ui .k2-table-phone-group > .k2-group-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
 }
 /* a person leads a row of the phone form as a small mark, like in the cell (12 px after it, as after every lead) */
 .k2-ui .k2-table-phone .k2-row[data-avatar] > .k2-row-lead {
@@ -2026,6 +2156,26 @@
 }
 .k2-ui .k2-prose :where(ol) {
   list-style: decimal;
+}
+/* code in the mono face; a block stands on its own quiet surface, keeps its lines and scrolls sideways. A CodeBlock in
+   prose (`.k2-code`) draws its own lines: these rules leave it alone. */
+.k2-ui .k2-prose :where(code:not(.k2-code code)) {
+  font-family: var(--k2-font-mono);
+  font-size: 13px;
+}
+.k2-ui .k2-prose :where(pre:not(.k2-code pre)) {
+  padding: 12px 16px;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-canvas);
+  color: var(--k2-text);
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+.k2-ui .k2-prose :where(:not(pre) > code:not(.k2-code code)) {
+  padding: 1px 4px;
+  border-radius: var(--k2-r-mark);
+  background: var(--k2-n100);
 }
 
 /* ── Inline: one line of things with a fixed gap ────────────────────────────────────────────────────────────── */
@@ -2929,19 +3079,19 @@
   white-space: nowrap;
 }
 .k2-ui .k2-field-label > .k2-field-optional {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-weight: 400;
   color: var(--k2-subtle);
 }
 /* a field's one deed stands at the end of its label line, in the line's 20 px: the field keeps its height with it */
-.k2-ui .k2-field[data-action] {
+.k2-ui .k2-field[data-action]:not([data-setting]) {
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 8px;
 }
-.k2-ui .k2-field[data-action] > :not(.k2-field-label, .k2-field-action) {
+.k2-ui .k2-field[data-action]:not([data-setting]) > :not(.k2-field-label, .k2-field-action) {
   grid-column: 1 / -1;
 }
-.k2-ui .k2-field[data-action] > .k2-field-label {
+.k2-ui .k2-field[data-action]:not([data-setting]) > .k2-field-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2956,7 +3106,7 @@
 .k2-ui .k2-field-action > .k2-btn {
   position: relative;
   height: 20px;
-  margin-right: -6px;
+  margin-inline-end: -6px;
   padding: 0 6px;
   gap: 4px;
   font: var(--k2-t-meta);
@@ -2978,13 +3128,17 @@
 .k2-ui .k2-field-message[data-error] {
   color: var(--k2-bad);
 }
-/* Setting: the name (13, 500) and its hint on the left, the control in a column of 300 px beside them, so the values
-   of a settings page stand in one line and are read at a glance; "geändert · vorher …" under the control. No line
-   between settings: a section separates them from the next topic. */
+/* Setting: a narrow column with the name (13, 500) alone, the control in a column of 300 px beside it, so the names and
+   the values of a settings page each stand in one line and are read at a glance; the one line of help under the control
+   (CLEAR AND DENSE f). No line between settings: a section separates them from the next topic. A setting that changes
+   in place (`data-changes`: it names `was` or `action`) keeps the place of what it shows while changed ("geändert ·
+   vorher …", "Auf Standard zurücksetzen"), so it coming or going moves nothing: on a wide row "geändert" under the
+   name beside the help (the line under the value keeps a chip's 24 px) and the deed after the value on its line. A
+   setting that cannot change keeps no room for it. */
 .k2-ui .k2-field[data-setting] {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 240px) minmax(0, 300px) minmax(0, 1fr);
   grid-template-rows: auto auto;
-  grid-template-areas: "label control" "message was";
+  grid-template-areas: "label control action" "was message message";
   column-gap: 24px;
   row-gap: 0;
   align-items: center;
@@ -2993,52 +3147,66 @@
 }
 .k2-ui .k2-field[data-setting] > .k2-field-label {
   grid-area: label;
+  /* the name stands beside the middle of the value */
+  align-self: center;
   font: var(--k2-t-row);
   font-weight: 500;
   color: var(--k2-text);
   white-space: normal;
+  /* a long compound breaks inside its column instead of running into the value */
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+.k2-ui .k2-field[data-setting][data-changes] {
+  grid-template-rows: auto minmax(24px, auto);
 }
 .k2-ui .k2-field[data-setting] > .k2-field-message {
   grid-area: message;
   align-self: start;
-}
-.k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-  grid-area: control;
-  grid-row: 1 / span 2;
-  min-width: 0;
-}
-.k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-  grid-row: 1;
-}
-.k2-ui .k2-field[data-setting] > .k2-field-was {
-  grid-area: was;
   padding-top: 4px;
 }
-/* a deed of the setting (such as "Auf Standard zurücksetzen") at the end of the name's line, as in a field: the value's
-   column keeps its 300 px, so the deed coming or going moves nothing */
-.k2-ui .k2-field[data-setting][data-action] {
-  grid-template-columns: minmax(0, 1fr) auto 300px;
-  grid-template-areas: "label action control" "message message was";
+.k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-end) {
+  grid-area: control;
+  min-width: 0;
 }
-.k2-ui .k2-field[data-setting] > .k2-field-action {
-  grid-area: action;
+/* on a wide row the end's two parts take their own places */
+.k2-ui .k2-field[data-setting] > .k2-field-end {
+  display: contents;
+}
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was {
+  grid-area: was;
+  align-self: start;
+  justify-self: start;
   display: flex;
-  align-items: center;
-  height: 20px;
+  min-width: 0;
+  max-width: 100%;
 }
-.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn {
+/* a long value before the change ends in "…" in its place (the chip's own words do), never over a neighbour */
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action {
+  grid-area: action;
+  align-self: center;
+  justify-self: start;
+  flex: none;
+}
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn {
   position: relative;
   height: 20px;
+  margin-inline-end: 0;
   padding: 0 6px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn > .k2-icon {
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn > .k2-icon {
   font-size: 14px;
 }
 /* the press area reaches the grip of a control while the button draws 20 px */
-.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn::after {
+.k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn::after {
   content: "";
   position: absolute;
   inset: -12px -4px;
@@ -3046,29 +3214,81 @@
 .k2-ui .k2-sec > .k2-field[data-setting] + .k2-field[data-setting] {
   margin-top: 0;
 }
-/* By the width of its pane, not of the window: below 600 px of pane the name would get less than its room beside the
-   300 px column (a settings pane beside a sidebar and a side column at 800 px of window), so the value goes under it. */
-@container k2-pane (max-width: 599px) {
-  .k2-ui .k2-field[data-setting] {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "label" "message" "control" "was";
-    row-gap: 4px;
+/* By the width of its pane, not of the window. Below 800 px of pane the deed has no room after the value (about 170 px
+   beside the name's 240 and the value's 300), so a setting that changes in place keeps a line of 24 px under its value
+   and help for what it shows while changed: "geändert" at its start, the deed at its end. The value keeps its column,
+   so the names and values of a page stay in one line and the deed coming moves nothing. */
+@container k2-pane (max-width: 799.98px) {
+  .k2-ui .k2-field[data-setting][data-changes] {
+    grid-template-rows: auto auto minmax(28px, auto);
+    grid-template-areas: "label control ." ". message message" ". end end";
   }
-  .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action),
-  .k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-    grid-row: auto;
+  .k2-ui .k2-field[data-setting] > .k2-field-end {
+    grid-area: end;
+    align-self: end;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was {
+    flex: 0 1 auto;
+  }
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action {
+    margin-inline-start: auto;
+  }
+  /* the deed's words end on the edge of the line, not on its press area */
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-action > .k2-btn {
+    margin-inline-end: -6px;
   }
 }
-/* A setting with a deed needs the deed's room too ("Auf Standard zurücksetzen", about 170 px): below 800 px of pane its
-   name would get less than its room, so the deed stays at the end of the name's line and the value goes under it. */
-@container k2-pane (max-width: 799px) {
-  .k2-ui .k2-field[data-setting][data-action] {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "label action" "message message" "control control" "was was";
+/* Below 640 px of pane the name would get less than its 240 px beside the 300 px column (a settings pane beside a
+   sidebar and a side column), so the value goes under the name and its help. */
+@container k2-pane (max-width: 639.98px) {
+  .k2-ui .k2-field[data-setting] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: "label" "message" "control" "end";
     row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting][data-action] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
-    grid-row: auto;
+  .k2-ui .k2-field[data-setting][data-changes] {
+    grid-template-rows: auto auto auto minmax(24px, auto);
+    grid-template-areas: "label" "message" "control" "end";
+  }
+  .k2-ui .k2-field[data-setting] > .k2-field-label {
+    align-self: start;
+  }
+  .k2-ui .k2-field[data-setting] > .k2-field-message {
+    padding-top: 0;
+  }
+  /* A short control (a switch, a box, a number with its unit, a short selection) stays beside the name: the name and
+     its hint on the left, the control at the end of the name's line; a short field takes 128 px there. */
+  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: none;
+    grid-template-areas: "label control" "message control" "end end";
+  }
+  .k2-ui .k2-field[data-setting][data-changes]:is([data-compact], :has(> .k2-choice)) {
+    grid-template-rows: auto auto minmax(24px, auto);
+  }
+  .k2-ui .k2-field[data-setting]:is([data-compact], :has(> .k2-choice)) > .k2-field-label {
+    align-self: end;
+  }
+  .k2-ui .k2-field[data-setting][data-compact] > :not(.k2-field-label, .k2-field-message, .k2-field-end) {
+    width: 128px;
+  }
+}
+/* On a narrow phone (a pane below 384 px: "geändert · vorher 12 Std." and "Auf Standard zurücksetzen" need about 324 px
+   beside the edges' 40) both do not fit on the kept line: the word "geändert" gives way, read still, and the chip says
+   what it was ("vorher 12 Std.") in the colour of a change. */
+@container k2-pane (max-width: 383.98px) {
+  .k2-ui .k2-field[data-setting] > .k2-field-end > .k2-field-was > .k2-chip .k2-field-was-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
@@ -3934,6 +4154,16 @@
   height: 1lh;
   overflow: hidden;
 }
+/* what is selected, quiet after the count ("12,9 MB · 3 Bilder"); it gives way first where the actions need the room */
+.k2-ui .k2-status-meta {
+  flex: 0 1000 auto;
+  min-width: 0;
+  font: var(--k2-t-row);
+  color: var(--k2-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .k2-ui .k2-status-facts::before {
   content: "";
   height: 1lh;
@@ -4114,6 +4344,10 @@
 }
 .k2-ui .k2-digest > .k2-row[data-activity] > .k2-row-l1 {
   display: block;
+}
+/* without a place the time stands on the sentence's first line, on its baseline */
+.k2-ui .k2-digest > .k2-row[data-activity] > :is(.k2-row-l1, .k2-row-time) {
+  align-self: baseline;
 }
 .k2-ui .k2-digest > .k2-row[data-activity] > .k2-row-l2 {
   font: var(--k2-t-meta);
@@ -4923,6 +5157,15 @@
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;
   }
+  /* the filters and counts of the list above the split belong to the list: they leave with it while a detail is the
+     page, with its way back or without, and so does the floating main action of the list (the detail has its own
+     deeds) */
+  .k2-ui .k2-pane:has(> .k2-scroll > .k2-split > .k2-pane[data-detail]) > [data-slot="status"],
+  .k2-ui
+    .k2-ws:has(> .k2-ws-main > .k2-split > .k2-pane[data-detail], > .k2-ws-main > .k2-pane > .k2-scroll > .k2-split > .k2-pane[data-detail])
+    > .k2-fab {
+    display: none;
+  }
   .k2-ui .k2-pane-back {
     display: flex;
   }
@@ -5170,6 +5413,19 @@
   .k2-ui:has(.k2-bar[data-selecting]) .k2-split:not(.k2-pane > .k2-scroll > .k2-split) {
     margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
+  /* settings are a form: the floating main action ("Speichern") covers none of their fields, so the column of settings
+     that scrolls ends above it (its 48 px, its distance of 16, a gap of 8 and the safe area). Only while the action
+     shows (not while entries are selected or a detail is the page), and only on the column that scrolls: the panes of
+     a split stand one under the other in their outer column here. */
+  .k2-ui:has(.k2-fab):not(:has(.k2-bar[data-selecting], .k2-split > .k2-pane[data-detail]))
+    .k2-pane:not(.k2-split > .k2-pane)
+    > .k2-scroll:has(
+      > .k2-field[data-setting],
+      > .k2-sec > .k2-field[data-setting],
+      > .k2-split > .k2-pane > .k2-scroll > .k2-sec > .k2-field[data-setting]
+    ) {
+    margin-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;
@@ -5277,12 +5533,61 @@
   .k2-ui .k2-cgrip {
     display: none;
   }
-  .k2-ui .k2-cells {
+  /* On the phone key numbers stand two to a row from three on (three need 150 px each to stand side by side with
+     their values whole). An odd last one becomes one line across, its label on the left and its value at the end, so
+     no tall cell stands alone in a row. Each layout draws its own lines. */
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) {
     grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .k2-ui .k2-cell ~ .k2-cell {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="1"], [data-i="3"], [data-i="5"]) {
     border-left: 0;
+  }
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="2"], [data-i="4"], [data-i="6"]) {
+    border-left: var(--k2-hairline);
+  }
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="3"], [data-i="4"], [data-i="5"], [data-i="6"]) {
     border-top: var(--k2-hairline);
+  }
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"],
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] {
+    grid-column: 1 / -1;
+    grid-template-columns: 16px minmax(0, 1fr) auto auto;
+    padding-block: 10px;
+  }
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > .k2-cell-value,
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > .k2-cell-value {
+    grid-row: 1;
+    grid-column: 3;
+    margin-top: 0;
+    text-align: right;
+  }
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > .k2-cell-go,
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > .k2-cell-go {
+    grid-row: 1;
+    grid-column: 4;
+  }
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > :is(.k2-cell-meter, .k2-cell-meta),
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > :is(.k2-cell-meter, .k2-cell-meta) {
+    grid-column: 2 / -1;
+  }
+  /* in a narrow column and on the phone key numbers keep their rows (see above): the value and its line take the
+     cell's whole width under the label with its symbol, so a big number or an amount stays whole */
+  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meter, .k2-cell-meta) {
+    grid-column: 1 / -1;
+  }
+  /* a value longer than its half cell breaks between its words, a chip too, instead of being cut; all values of the
+     block stand in 14 px, so the block keeps one size */
+  .k2-ui .k2-cell > .k2-cell-value {
+    white-space: normal;
+    font: var(--k2-t-body);
+    font-weight: 600;
+  }
+  .k2-ui .k2-cell-value > .k2-chip {
+    height: auto;
+    min-height: 24px;
+    max-width: 100%;
+    white-space: normal;
   }
   .k2-ui .k2-frow {
     grid-auto-flow: row;
@@ -6149,30 +6454,16 @@
     flex: none;
     padding-right: 24px;
   }
-  /* the one menu of how the list shows stays at the end of the strip, also while the statements scroll under it */
+  /* the one menu of how the list shows stands at the end, beside the statements, never over them */
   .k2-ui .k2-fbar-view {
     display: inline-flex;
     flex: none;
-    position: sticky;
-    right: 0;
     margin-left: auto;
-    padding-left: 8px;
-    background: var(--k2-surface);
   }
-  /* with it the strip fades before the menu, not under it: the menu stays whole and the statements run out beside it */
+  /* with it the bar itself does not fade: the statements fade at the end of their own strip (below) */
   .k2-ui .k2-fbar[data-view] {
     -webkit-mask-image: none;
     mask-image: none;
-  }
-  .k2-ui .k2-fbar-view::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 100%;
-    width: 24px;
-    background: linear-gradient(90deg, transparent, var(--k2-surface));
-    pointer-events: none;
   }
   .k2-ui .k2-fbar-flow,
   .k2-ui .k2-fbar[data-tail] > .k2-fbar-flow {
@@ -6182,6 +6473,23 @@
   /* one line that scrolls: the end of the wide bar is hidden here, so nothing wraps */
   .k2-ui .k2-fbar[data-tail] {
     flex-wrap: nowrap;
+  }
+  /* with that menu only the statements scroll, between the filter button and the menu: at rest a statement longer
+     than its room fades out at the end of its own strip, before the menu, and scrolling shows the rest. The strip keeps
+     room for a focus ring (3 px) around. */
+  .k2-ui .k2-fbar[data-view] > .k2-fbar-flow {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    padding: 4px;
+    margin: -4px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  }
+  .k2-ui .k2-fbar[data-view] > .k2-fbar-flow::-webkit-scrollbar {
+    display: none;
   }
   .k2-ui .k2-fbar-flow > :is(.k2-fbar-add, .k2-fbar-reset),
   .k2-ui .k2-fbar-and,

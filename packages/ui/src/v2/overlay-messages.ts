@@ -32,3 +32,5 @@ export const useOverlayMessages = (): (() => OverlayMessages) => {
 };
 
 export const checkOverlayMessages = () => overlayMessages.check();
+/** The words in one language, such as for a check that a German screen shows no English ones. */
+export const resolveOverlayMessages = (locale: string): OverlayMessages => overlayMessages.resolve([locale]).t;

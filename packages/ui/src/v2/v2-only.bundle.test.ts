@@ -22,7 +22,7 @@ const allowed: Record<string, number> = {
   "inputs/date-input.ts": 6_600, // formatDateInput, parseDateInput
   "inputs/date-picker.ts": 450, // dateKey, isCalendarDay, isDateKey
   "surfaces/notice-card-classes.ts": 370, // the notice classes of Markdown's info blocks
-  "surfaces/person-color.ts": 270, // personColor for `Avatar`
+  "surfaces/person-color.ts": 310, // personColor for `Avatar` (its hash mixes all bits, so people seldom share a colour)
 };
 
 test("an island of v2 alone (every export, and useLocale) bundles no v1 module", async () => {

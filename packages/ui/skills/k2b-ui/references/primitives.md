@@ -103,13 +103,22 @@ fields. A message in a thread is one `Band`.
 
 ### Cells and Cells.Cell
 
-2–4 equal cells with a line between; stacked on the phone. A cell:
+2–6 equal cells with a line between, never one tall cell alone in a row:
+two side by side down to the phone, three while each gets 150 px (else two,
+then the third as one line across: label left, value right), four in a row
+or two by two (below a pane of 880 px), five or six in rows of three. A
+cell under 220 px sets its value in 14 px across its width. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
-as orders per day this week), `loading` (a bar lies on value and `meta`;
-what is there keeps its room unseen under it, a value not there yet is one
-line; symbol and label stay, a `trend` keeps its place unseen). Use for the
-key statements of a record or the home of a place.
+as orders per day this week), `meter: { value, of, label? }` (a value with
+a limit, "1,5 von 3 h": a thin bar under it, amber from the limit on),
+`loading` (a bar lies on value and `meta`; what is there keeps its room
+unseen under it, a value not there yet is one line; symbol and label stay,
+a `trend` keeps its place unseen). Use for the key statements of a record
+or the home of a place.
+The cells count themselves in their order to stand in these forms: each
+`Cells.Cell` stays in the same island as its `Cells` (never an island root
+of its own).
 
 ### Tiles
 
@@ -163,6 +172,12 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
+
+### Section.Columns
+
+Sections side by side, such as the groups of a place's home: two columns
+where both get at least 360 px, one below that. Each section keeps its
+head and its one line at the end; no line stands between the columns.
 
 ### Group
 
@@ -246,7 +261,8 @@ A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
 column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
-=> { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
+=> { key, head: () => JSX, meta?, count? }` (a group head as text in 600 with
+its count, no band; no line under it, none under the last row), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
 `aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
 }` (on the phone each row becomes a two-line row instead: `time` top right,
@@ -294,7 +310,9 @@ inline. Emphasis is a weight, never a size.
 ### Prose
 
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
-safe links only) or children.
+safe links only) or children. Code stands in the mono face: a word on a
+quiet tint, a block on its own surface that scrolls sideways; a CodeBlock
+inside keeps its own lines.
 
 ### Inline
 
@@ -356,14 +374,21 @@ lines instead of cutting a thing.
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
 - `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
-  change says "geändert · vorher 12 Std." under its control), `action`
-  (one quiet deed at the end of the name's line, such as "Auf Standard
-  zurücksetzen" while the value differs from its default, as `Field
-  action`), one control as child. One setting of a settings page: the name
-  (13, 500) and its hint on the left, the control in a column of 300 px
-  beside them, no line between settings; one column when its pane is
-  narrower than 600 px (by the pane, not the window). Never stack `Field`s
-  as a settings page.
+  change says "geändert · vorher 12 Std."), `action` (one quiet deed after
+  the value, such as "Auf Standard zurücksetzen" while the value differs
+  from its default), one control as child. One setting of a settings page:
+  the name (13, 500) alone in a column of 240 px, beside the middle of the
+  control in a column of 300 px; the one line of help under the control,
+  "geändert" under the name and the deed beside the value. Below 800 px of
+  pane both stand on a line kept under the value ("geändert" at its start,
+  the deed at its end); below 640 px the value goes under the name and its
+  hint (by the pane, not the window). A setting that names `was` or
+  `action` (as `undefined` while unchanged) keeps their places, so a
+  change moves nothing; one that names neither keeps no room. Tab reaches
+  the deed after the value. `compact` (a
+  number with its unit, a short selection) and a `Check` keep the value
+  beside the name also on the phone. A column of settings ends above the
+  phone's floating main action. Never stack `Field`s as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
@@ -489,11 +514,12 @@ lines instead of cutting a thing.
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
   they keep only their symbols, the words stay their names; leave on the
   phone),
-  `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them; the count stands in 14 px
-  600; from five deeds on the first three stand and the rest wait in
-  "Mehr", and where their words do not fit the last ones go there too
-  before a word is cut, so give the deeds in their order of use).
+  `selection: { count, meta?, actions, clear }` (while rows are selected the
+  row becomes the bar of what can be done with them; `meta` says quietly
+  what is selected after the count, such as "12,9 MB · 3 Bilder"; the count
+  stands in 14 px 600; from five deeds on the first three stand and the rest
+  wait in "Mehr", and where their words do not fit the last ones go there
+  too before a word is cut, so give the deeds in their order of use).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
@@ -520,7 +546,8 @@ lines instead of cutting a thing.
   who did what, `{ person, text, time, place?, href?, onNavigate? }[]`
   (`onNavigate` opens the thing in place, as on rows). The sentence
   names the person in `<Text weight="strong">` and the thing with its
-  `Mark` and name; place and time stand quiet under it. A form or a
+  `Mark` and name; place and time stand quiet under it, and without a
+  place the time stands at the end of the sentence. A form or a
   workflow that did something is a person with its name ("Webformular").
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;

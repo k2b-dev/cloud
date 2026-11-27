@@ -20,7 +20,7 @@ A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so 
 
 ## A settings page
 
-Sign-in of an administration: the state first as key numbers with colour, symbol and word, then the settings by topic. A setting with a value per kind is a table; every other setting is a `Setting` row, with its name and hint on the left and its value in a column beside them, so the values stand in one line and read at a glance. The page saves as a whole: a changed setting says what it was. Switch the state: nothing changed yet.
+Sign-in of an administration: the state first as key numbers with colour, symbol and word, then the settings by topic. A setting with a value per kind is a table; every other setting is a `Setting` row: its name alone on the left, its value in a column beside it and the one line of help under the value, so the names and the values each stand in one line and read at a glance. The page saves as a whole: a changed setting says what it was. Switch the state: nothing changed yet.
 
 <Example recipe="settings-page" height="720" default="Changed" />
 
@@ -64,7 +64,7 @@ Names one control with a label, a hint or an error, and "optional" or a unit, or
 
 ### Setting
 
-One setting of a settings page: name and hint on the left, the control in a column of 300 px beside them, "geändert · vorher …" under it; one column on the phone.
+One setting of a settings page: the name alone on the left, the control in a column of 300 px beside it and the help under the control; "geändert · vorher …" under the name and its deed beside the value, on a narrow pane both on a line kept under the value, so a change moves nothing. One column on the phone.
 
 <Props of="Setting" />
 

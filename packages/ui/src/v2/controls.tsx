@@ -83,31 +83,41 @@ export const Field = (props: FieldProps) => <FieldFrame field={props} />;
 
 export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
   /**
-   * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." beside
-   * its control, so a page that saves as a whole shows what will change.
+   * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." under
+   * its name (beside its help), so a page that saves as a whole shows what will change. A setting that names `was` or
+   * `action`, also as `undefined` while nothing changed, keeps their place (below a pane of 800 px a line under the
+   * value), so they coming or going move nothing; a setting that names neither keeps no room for them.
    */
   was?: string;
   /**
    * One quiet deed for this setting, such as "Auf Standard zurücksetzen" while the value differs from its default: a
-   * text button at the end of the name's line, as `Field action` has it. The value's column keeps its place, so the
-   * deed coming or going moves nothing.
+   * text button after the value, beside it where the row has room and on the kept line under it where the settings
+   * stand one under the other. The deed coming or going moves nothing (name it, as `undefined` while there is none,
+   * as for `was`), and the Tab key reaches it after the value.
    */
   action?: Action;
+  /**
+   * The control is short (a number with its unit, a short selection): it stays beside the name also where the
+   * settings stand one under the other, as a switch or a box does on its own.
+   */
+  compact?: boolean;
 };
 
 /**
- * One setting of a settings page: its name and a quiet hint on the left, the control beside them in a column of
- * 300 px, so the values stand in one line down the page and are read at a glance. On a narrow column the control
- * goes under the name. The control is the same as in a `Field`: `Input`, `Select`, `DateInput`, `Check` or `Choice`.
+ * One setting of a settings page: its name alone on the left, the control beside it in a column of 300 px and the one
+ * line of help under the control, so the names and the values each stand in one line down the page and are read at a
+ * glance. On a narrow pane the control goes under the name. The control is the same as in a `Field`: `Input`,
+ * `Select`, `DateInput`, `Check` or `Choice`.
  */
 export const Setting = (props: SettingProps) => <FieldFrame field={props} setting />;
 
-const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action }; setting?: boolean }) => {
+const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action; compact?: boolean }; setting?: boolean }) => {
   const props = frame.field;
   const t = useSettingMessages();
   const control = createUniqueId();
   const label = createUniqueId();
   const message = createUniqueId();
+  const before = createUniqueId();
   // The control is made first, so the field knows whether it labels one control or names a group of choices; the
   // order is the same on the server and in the browser.
   let grouped = false;
@@ -126,8 +136,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
         get name() {
           return props.name;
         },
+        // the help, then what the value was before an unsaved change
         get described() {
-          return props.error || props.hint ? message : undefined;
+          return [props.error || props.hint ? message : undefined, props.was ? before : undefined].filter(Boolean).join(" ") || undefined;
         },
         group: () => {
           grouped = true;
@@ -159,8 +170,12 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
   );
   const part = frame.setting ? "Setting" : "Field";
   const setting = frame.setting ? "" : undefined;
-  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it. It comes before
-  // the control, as it stands, so Tab reaches the name's deed and then the value (the grid places both)
+  // A setting that names `was` or `action` (even while they are unset) changes in place: it keeps their room, so they
+  // coming or going move nothing. Read once: whether a setting can change is part of the page, not of its state.
+  const changes = frame.setting && ("was" in props || "action" in props) ? "" : undefined;
+  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it. It comes where
+  // it stands, so Tab follows the eye: in a field before the control (on the label's line), in a setting after the
+  // value (beside it, or on the line kept under it)
   const deed = (
     <Show when={props.action}>
       {(action) => (
@@ -170,16 +185,31 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       )}
     </Show>
   );
-  // a changed setting says what it was beside its control (inside the content, so the control keeps its place)
+  // a changed setting says what it was, in a place kept for it, so the control keeps its place
   const was = (
     <Show when={props.was}>
-      {(before) => (
-        <span class="k2-field-was">
-          <Chip yours>{t().changedFrom({ value: before() })}</Chip>
+      {(value) => (
+        <span class="k2-field-was" id={before}>
+          {/* "geändert · vorher 12 Std.": on a very narrow line the word gives way to what it was, read still */}
+          <Chip yours>
+            <span class="k2-field-was-word">{t().changed} · </span>
+            {t().before({ value: value() })}
+          </Chip>
         </span>
       )}
     </Show>
   );
+  // A setting's end after its value: what it was and its deed, in this order. Where the settings stand one under the
+  // other it is the line kept under the value; where the row is wide its two parts take their own places. Made only for
+  // a setting: an element made and not placed would leave the browser's hydration without its node.
+  const end = frame.setting ? (
+    <Show when={props.was || props.action}>
+      <span class="k2-field-end">
+        {was}
+        {deed}
+      </span>
+    </Show>
+  ) : undefined;
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
     <div
@@ -188,15 +218,17 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-setting={setting}
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
+      data-compact={props.compact ? "" : undefined}
+      data-changes={changes}
       role="group"
       aria-labelledby={label}
     >
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
-      {deed}
+      {frame.setting ? undefined : deed}
       {content}
-      {was}
+      {frame.setting ? end : was}
       {messageLine}
     </div>
   ) : named ? (
@@ -206,14 +238,16 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-setting={setting}
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
+      data-compact={props.compact ? "" : undefined}
+      data-changes={changes}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
-      {deed}
+      {frame.setting ? undefined : deed}
       {content}
-      {was}
+      {frame.setting ? end : was}
       {messageLine}
     </div>
   ) : (
@@ -223,13 +257,15 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-setting={setting}
       data-action={props.action ? "" : undefined}
       data-was={props.was ? "" : undefined}
+      data-compact={props.compact ? "" : undefined}
+      data-changes={changes}
     >
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
-      {deed}
+      {frame.setting ? undefined : deed}
       {content}
-      {was}
+      {frame.setting ? end : was}
       {messageLine}
     </div>
   );

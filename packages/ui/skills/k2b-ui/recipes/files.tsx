@@ -72,6 +72,16 @@ const sharing = {
   private: { icon: "lock", label: "Nur ich" },
 };
 
+/** "4,2 MB", "312 KB": the size in bytes, for the sum of a selection. */
+const sizeInBytes = (size: string) => {
+  const match = /^([\d,]+) (KB|MB|GB)$/.exec(size);
+  if (!match) return 0;
+  const unit = { KB: 1e3, MB: 1e6, GB: 1e9 }[match[2] as "KB" | "MB" | "GB"];
+  return Number.parseFloat(match[1]!.replace(",", ".")) * unit;
+};
+const formatSize = (bytes: number) =>
+  bytes >= 1e6 ? `${(bytes / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB` : `${Math.round(bytes / 1e3)} KB`;
+
 type Entry = {
   key: string;
   name: string;
@@ -230,8 +240,9 @@ export const fileQuery = defineListQuery({
   },
 });
 
-// `grid`: the photos and pages as media tiles; `selecting`: three photos chosen in the grid.
-type Props = { grid?: boolean; selected?: readonly string[] };
+// `closed`: the folder without an open file (what is open belongs in the address); `grid`: the photos and pages as
+// media tiles; `selecting`: three photos chosen in the grid.
+type Props = { closed?: boolean; grid?: boolean; selected?: readonly string[] };
 
 export default function Folder(props: Props) {
   const [state, setState] = createSignal<ListQueryStateOf<typeof fileQuery>>(fileQuery.parse("owner=felix,mira").state);
@@ -239,6 +250,28 @@ export default function Folder(props: Props) {
   const [grid, setGrid] = createSignal(props.grid ?? false);
   const toggle = (key: string, on: boolean) => setSelected((now) => (on ? [...now, key] : now.filter((each) => each !== key)));
   const files = entries.filter((entry) => !entry.folder);
+  const folders = entries.filter((entry) => entry.folder);
+  // what is selected, in a quiet word after the count: "12,9 MB · 3 Bilder"
+  const chosen = () => entries.filter((entry) => selected().includes(entry.key));
+  const chosenMeta = () => {
+    const bytes = chosen().reduce((sum, entry) => sum + sizeInBytes(entry.size), 0);
+    const all = chosen().every((entry) => entry.kind === "photo");
+    const one = chosen().length === 1;
+    const count = `${chosen().length} ${all ? (one ? "Bild" : "Bilder") : one ? "Eintrag" : "Einträge"}`;
+    // folders bring no size of their own: then the count alone, never "0 KB"
+    return bytes > 0 ? `${formatSize(bytes)} · ${count}` : count;
+  };
+  const tile = (entry: Entry) => ({
+    key: entry.key,
+    ...type[entry.kind],
+    title: entry.name,
+    image: entry.image,
+    kind: entry.badge,
+    meta: entry.folder ? `${entry.size} · ${entry.changed}` : entry.changed,
+    people: [entry.owner],
+    sign: sharing[entry.sharing],
+    href: `#${entry.key}`,
+  });
   return (
     <Workspace
       sidebar={
@@ -305,6 +338,7 @@ export default function Folder(props: Props) {
               select={{ label: "Alle auswählen", checked: "mixed" }}
               selection={{
                 count: `${selected().length} ausgewählt`,
+                meta: chosenMeta(),
                 actions: [
                   { label: "Teilen", icon: "share" },
                   { label: "Verschieben", icon: "folder-symlink" },
@@ -340,22 +374,15 @@ export default function Folder(props: Props) {
       >
         {grid() ? (
           <Pane label="Dateien">
+            {/* the folders first, with the place to make one, then the files: as the approved mockup */}
             <Tiles
               variant="media"
-              label="Dateien"
+              label="Ordner"
               select={{ selected: selected(), onChange: toggle }}
-              items={files.map((entry) => ({
-                key: entry.key,
-                ...type[entry.kind],
-                title: entry.name,
-                image: entry.image,
-                kind: entry.badge,
-                meta: entry.changed,
-                people: [entry.owner],
-                sign: sharing[entry.sharing],
-                href: `#${entry.key}`,
-              }))}
+              items={folders.map(tile)}
+              create={{ title: "Neuer Ordner", meta: "oder Dateien hierher ziehen", onClick: () => {} }}
             />
+            <Tiles variant="media" label="Dateien" select={{ selected: selected(), onChange: toggle }} items={files.map(tile)} />
           </Pane>
         ) : (
           <Pane.Split>
@@ -365,7 +392,7 @@ export default function Folder(props: Props) {
                 rows={entries}
                 rowKey={(row) => row.key}
                 select={{ selected: selected(), onChange: (keys) => setSelected(keys), all: "Alle Einträge", row: (row) => row.name }}
-                current="front"
+                current={props.closed ? undefined : "front"}
                 open={(row) => ({ href: `#${row.key}` })}
                 group={(row) =>
                   row.folder ? { key: "ordner", head: () => "Ordner", count: "2" } : { key: "dateien", head: () => "Dateien", count: "11" }
@@ -403,58 +430,60 @@ export default function Folder(props: Props) {
                 ]}
               />
             </Pane>
-            <Pane
-              detail
-              label="Ansicht Front Eiche.jpg"
-              width={{ min: 320, default: 380 }}
-              back={{ label: "Küche Lindqvist", href: "#" }}
-              head={
+            {props.closed ? undefined : (
+              <Pane
+                detail
+                label="Ansicht Front Eiche.jpg"
+                width={{ min: 320, default: 380 }}
+                back={{ label: "Küche Lindqvist", href: "#" }}
+                head={
+                  <Bar
+                    start={
+                      <Text type="body" weight="strong">
+                        Ansicht Front Eiche.jpg
+                      </Text>
+                    }
+                    end={
+                      <>
+                        <Button variant="ghost" icon="star" label="Favorit" pressed={false} />
+                        <Button variant="ghost" icon="x" label="Schließen" href="#" />
+                      </>
+                    }
+                  />
+                }
+              >
+                <Preview label="Vorschau von Ansicht Front Eiche.jpg" {...type.photo} image={thumbs.oak} kind="JPG" />
                 <Bar
                   start={
-                    <Text type="body" weight="strong">
-                      Ansicht Front Eiche.jpg
-                    </Text>
-                  }
-                  end={
                     <>
-                      <Button variant="ghost" icon="star" label="Favorit" pressed={false} />
-                      <Button variant="ghost" icon="x" label="Schließen" href="#" />
+                      <Button icon="external-link">Öffnen</Button>
+                      <Button icon="share">Teilen</Button>
+                      <Button icon="download">Laden</Button>
                     </>
                   }
+                  end={<Text type="meta">JPG · 4,2 MB</Text>}
                 />
-              }
-            >
-              <Preview label="Vorschau von Ansicht Front Eiche.jpg" {...type.photo} image={thumbs.oak} kind="JPG" />
-              <Bar
-                start={
-                  <>
-                    <Button icon="external-link">Öffnen</Button>
-                    <Button icon="share">Teilen</Button>
-                    <Button icon="download">Laden</Button>
-                  </>
-                }
-                end={<Text type="meta">JPG · 4,2 MB</Text>}
-              />
-              <Facts
-                items={[
-                  { label: "Geändert", value: "Felix Thal · heute, 09:42" },
-                  { label: "Aufgenommen", value: "24.11.2026 · 4032 × 3024" },
-                  { label: "Ort", value: "Werkstatt › Projekte › Küche Lindqvist" },
-                ]}
-              />
-              <Section icon="share" title="Freigabe" count={2} actions={[{ label: "Verwalten" }]}>
-                <Row mark={{ icon: "users", color: "#c2410c" }} lines={["Team Werkstatt"]} time="Bearbeiten" />
-                <Row
-                  avatar={{ name: "Petra Lindqvist" }}
-                  lines={["Petra Lindqvist · Link", "Ansehen · läuft ab 15.12. · 3× geöffnet"]}
-                  end={<Button variant="ghost" icon="copy" label="Link kopieren" />}
+                <Facts
+                  items={[
+                    { label: "Geändert", value: "Felix Thal · heute, 09:42" },
+                    { label: "Aufgenommen", value: "24.11.2026 · 4032 × 3024" },
+                    { label: "Ort", value: "Werkstatt › Projekte › Küche Lindqvist" },
+                  ]}
                 />
-              </Section>
-              <Section icon="history" title="Versionen" count={3} more={{ label: "Alle Versionen", forward: true }}>
-                <Row avatar={people.felix} lines={["heute, 09:42"]} meta="aktuell" time="4,2 MB" />
-                <Row avatar={people.felix} lines={["gestern, 17:12"]} time="4,0 MB" />
-              </Section>
-            </Pane>
+                <Section icon="share" title="Freigabe" count={2} actions={[{ label: "Verwalten" }]}>
+                  <Row mark={{ icon: "users", color: "#c2410c" }} lines={["Team Werkstatt"]} time="Bearbeiten" />
+                  <Row
+                    avatar={{ name: "Petra Lindqvist" }}
+                    lines={["Petra Lindqvist · Link", "Ansehen · läuft ab 15.12. · 3× geöffnet"]}
+                    end={<Button variant="ghost" icon="copy" label="Link kopieren" />}
+                  />
+                </Section>
+                <Section icon="history" title="Versionen" count={3} more={{ label: "Alle Versionen", forward: true }}>
+                  <Row avatar={people.felix} lines={["heute, 09:42"]} meta="aktuell" time="4,2 MB" />
+                  <Row avatar={people.felix} lines={["gestern, 17:12"]} time="4,0 MB" />
+                </Section>
+              </Pane>
+            )}
           </Pane.Split>
         )}
       </Pane>
@@ -462,8 +491,12 @@ export default function Folder(props: Props) {
   );
 }
 
+// The app the screen belongs to (Dateien): its colour and symbol, for the frame of a host around its pictures.
+export const app = { color: "#1d4ed8", icon: "folders" };
+
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
+  closed: () => <Folder closed />,
   grid: () => <Folder grid />,
   selecting: () => <Folder grid selected={["front", "vorher", "granit"]} />,
 };

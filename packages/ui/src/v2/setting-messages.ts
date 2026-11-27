@@ -6,10 +6,12 @@ const settingMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      changedFrom: ({ value }: { value: string }) => `changed · was ${value}`,
+      changed: "changed",
+      before: ({ value }: { value: string }) => `was ${value}`,
     },
     de: {
-      changedFrom: ({ value }: { value: string }) => `geändert · vorher ${value}`,
+      changed: "geändert",
+      before: ({ value }: { value: string }) => `vorher ${value}`,
     },
   },
 });
@@ -22,3 +24,5 @@ export const useSettingMessages = (): (() => SettingMessages) => {
 };
 
 export const checkSettingMessages = () => settingMessages.check();
+/** The words in one language, such as for a check that a German screen shows no English ones. */
+export const resolveSettingMessages = (locale: string): SettingMessages => settingMessages.resolve([locale]).t;

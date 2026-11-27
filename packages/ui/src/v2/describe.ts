@@ -31,6 +31,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Cells",
     "Tiles",
     "Section",
+    "Section.Columns",
     "Group",
     "List",
     "Digest",
@@ -64,6 +65,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "k2-group-body": "Group",
     "k2-disc-body": "Disclosure",
     "k2-sec": "Section",
+    "k2-sec-cols": "Section.Columns",
+    "k2-sec-col": "Section.Columns",
     "k2-band": "Band",
   };
   // An island of @k2b/ssr (`<solid-island>`, `<solid-client>`) is a wrapper of `display: contents` with no meaning of
@@ -216,7 +219,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `ColorInput ${quote(code?.value ?? code?.getAttribute("value") ?? "", 20)}${swatches ? ` · ${swatches} swatches` : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
     if (name === "ImageInput") {
-      const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");
+      // its button may stand in an island of its own, which the outline looks through
+      const button = kid(kid(element, ".k2-image-end"), ".k2-btn")?.querySelector(".k2-btn-label");
       return `ImageInput ${element.querySelector(".k2-image-preview > img") ? "picture" : "empty"} [${clip(button?.textContent ?? "", 30)}]`;
     }
     if (name === "Progress")
@@ -449,7 +453,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
         if (element.hasAttribute("data-activity"))
-          return `Entry @${kid(kid(element, ".k2-row-lead"), ".k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${text(".k2-row-l2")}`;
+          return `Entry @${kid(kid(element, ".k2-row-lead"), ".k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${clip(kid(element, ".k2-row-l2, .k2-row-time")?.textContent ?? "", 50)}`;
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
       }
       default:
@@ -565,10 +569,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const surface = surfaceOf(button);
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
-  // While entries are selected the floating main action gives way to the selection's actions on purpose.
+  // While entries are selected the floating main action gives way to the selection's actions on purpose, and while a
+  // detail is the page on a phone it gives way to the detail's own deeds.
   if (
     options.layout &&
     !root.querySelector(".k2-bar[data-selecting]") &&
+    // a detail is the page where it shows and the list beside it does not (the phone); on the desktop both show
+    ![...root.querySelectorAll(".k2-split > .k2-pane[data-detail]")].some(
+      (detail) =>
+        !hidden(detail) && [...detail.parentElement!.children].some((pane) => pane !== detail && pane.matches(".k2-pane") && hidden(pane)),
+    ) &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
@@ -578,6 +588,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       problems.push(
         `${primaries.length} primary buttons ${surface === root ? "" : `in ${surfaceName(surface)} `}(${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per ${surface === root ? "page" : "dialog"}; make the others secondary`,
       );
+  // A state is never a colour without a word: a state chip of a number alone ("7") does not say what the number is.
+  for (const chip of root.querySelectorAll(".k2-chip[data-status]"))
+    if (!/\p{L}/u.test(chip.textContent ?? ""))
+      problems.push(`state chip ${quote(chip.textContent, 24)} has no word: say what it counts, such as "7 Anmeldungen"`);
   // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
   if (options.layout) {
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {
@@ -617,8 +631,23 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (control === fab || fab.contains(control) || hidden(control)) return false;
       const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
       if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || (bar && parentOf(bar)?.hasAttribute("data-slot")))) return false;
+      // what a person sees of the control: cut by every column around it that clips (a field scrolled out of view
+      // lies under nothing)
       const other = control.getBoundingClientRect();
-      return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
+      let [top, bottom, left, right] = [other.top, other.bottom, other.left, other.right];
+      for (let box = control.parentElement; box && box !== root.parentElement; box = box.parentElement) {
+        const style = getComputedStyle(box);
+        if (style.overflowY === "visible" && style.overflowX === "visible") continue;
+        const clip = box.getBoundingClientRect();
+        [top, bottom, left, right] = [
+          Math.max(top, clip.top),
+          Math.min(bottom, clip.bottom),
+          Math.max(left, clip.left),
+          Math.min(right, clip.right),
+        ];
+      }
+      if (bottom <= top || right <= left) return false;
+      return right > box.left && left < box.right && bottom > box.top && top < box.bottom;
     });
     if (covered.length)
       problems.push(

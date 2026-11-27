@@ -228,7 +228,7 @@ afterAll(async () => {
 
 // Neighbouring primitives keep their spacing and lines beside up to three empty islands in a row and in an island of
 // their own, and real content between two of a kind still takes it away, as without islands.
-test("groups, fields and cells keep their spacing beside empty islands, and content between them still counts", async () => {
+test("groups, fields and cells keep their spacing and lines beside empty islands, and content between them still counts", async () => {
   const empty = (count: number) => "<solid-island></solid-island>".repeat(count);
   const notice = '<div class="k2-notice">Hinweis</div>';
   for (const count of [0, 1, 2, 3])
@@ -244,11 +244,19 @@ test("groups, fields and cells keep their spacing beside empty islands, and cont
         try {
           const look = await opened.evaluate(() => {
             const style = (id: string) => getComputedStyle(document.getElementById(id)!);
-            return [style("g2").marginTop, style("f2").marginTop, style("c1").borderLeftWidth, style("c2").borderLeftWidth];
+            return [
+              style("g2").marginTop,
+              style("g2").borderTopWidth,
+              style("f2").marginTop,
+              style("c1").borderLeftWidth,
+              style("c2").borderLeftWidth,
+            ];
           });
           const spaced = between ? "0px" : "12px";
+          // groups in a section draw no frame: one line parts two neighbours, none where a notice stands between (#4226)
           expect(look, `${count} empty, ${between ? "a notice between" : "neighbours"}, ${wrapped ? "in an island" : "plain"}`).toEqual([
-            spaced,
+            "0px",
+            between ? "0px" : "1px",
             spaced,
             "0px",
             "1px",
@@ -291,6 +299,17 @@ describe("a small island inside a v2 container keeps the container's layout", ()
         try {
           const expected = await snapshot(plain);
           const outline = await describeV2Page(plain, ".frame");
+          // what assistive technology names: the role and the name of every control, such as the button "Change image"
+          // of an image field (loose text is left out: Playwright joins it with a space around an island's wrapper)
+          const controlsOf = async (opened: Page) =>
+            (await opened.locator(".frame").ariaSnapshot())
+              .split("\n")
+              .map((line) => line.trim())
+              .filter((line) => /^- (button|link|textbox|checkbox|switch|combobox|slider|radio|spinbutton|searchbox|tab)\b/.test(line));
+          const spoken = await controlsOf(plain);
+          expect(spoken.length).toBeGreaterThan(0);
+          if (html.includes('data-k2-part="ImageInput"'))
+            expect(spoken.some((line) => /^- button "(Change|Choose) image"/.test(line))).toBe(true);
           // Without an island, the shipped sheet draws exactly what the source draws.
           const same = await page(shipped, html, width);
           opened.push(same);
@@ -305,6 +324,7 @@ describe("a small island inside a v2 container keeps the container's layout", ()
             if (!islands) continue;
             expect(differences(expected, await snapshot(wrapped)), mode).toEqual([]);
             expect(await describeV2Page(wrapped, ".frame"), mode).toBe(outline);
+            expect(await controlsOf(wrapped), `${mode}: the names of the controls`).toEqual(spoken);
             expect((await measureV2Layout(wrapped, { root: "[data-k2-workspace]" })).problems, mode).toEqual([]);
             // An island that renders nothing changes nothing, wherever it stands.
             const empty = await page(shipped, html, width, { selector, as: "empty" });

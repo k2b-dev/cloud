@@ -556,10 +556,11 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out. From five actions on the first three stand and the rest wait in "Mehr"; where their
-   * words do not fit, the last ones go there too before a word is cut.
+   * actions, and the way out. `meta`: a quiet word on what is selected after the count, such as "12,9 MB · 3 Bilder".
+   * From five actions on the first three stand and the rest wait in "Mehr"; where their words do not fit, the last
+   * ones go there too before a word is cut.
    */
-  selection?: { count: string; actions: readonly Action[]; clear: Action };
+  selection?: { count: string; meta?: string; actions: readonly Action[]; clear: Action };
 };
 
 /** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
@@ -659,6 +660,7 @@ export const StatusRow = (props: StatusRowProps) => {
             <span class="k2-status-lead" aria-live="polite">
               {selection().count}
             </span>
+            <Show when={selection().meta}>{(meta) => <span class="k2-status-meta">{meta()}</span>}</Show>
             {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
                 On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
             <span class="k2-status-actions">
@@ -784,7 +786,7 @@ export type ActivityEntry = {
    * `<Mark icon color />` followed by its name, so it looks the same as in its list.
    */
   text: JSX.Element;
-  /** When, such as "09:42" or "gestern, 16:40". */
+  /** When, such as "09:42" or "gestern, 16:40": at the end of the sentence, or under it after the place. */
   time: string;
   /** Where, quiet before the time, such as the base "Werkstatt". */
   place?: string;
@@ -805,7 +807,7 @@ export type DigestProps =
     }
   | {
       items?: never;
-      /** What people did, newest first: an avatar, a sentence that may wrap, then place and time. */
+      /** What people did, newest first: an avatar, a sentence that may wrap with the time at its end, or place and time under it. */
       activity: readonly ActivityEntry[];
       children?: never;
       /** The name of the list, for assistive technology. */
@@ -838,7 +840,8 @@ export const Digest = (props: DigestProps) => {
                 class="k2-row"
                 data-k2-part="Digest.Entry"
                 data-activity=""
-                data-lines="2"
+                // without a place the time stands at the end of the sentence, as in a row; with one, under it
+                data-lines={entry.place ? "2" : "1"}
                 data-open={entry.href !== undefined ? "" : undefined}
                 role="listitem"
               >
@@ -850,7 +853,9 @@ export const Digest = (props: DigestProps) => {
                     {entry.text}
                   </RowOpen>
                 </span>
-                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
+                <Show when={entry.place} fallback={<span class="k2-row-time">{entry.time}</span>}>
+                  {(place) => <span class="k2-row-l2">{`${place()} · ${entry.time}`}</span>}
+                </Show>
               </div>
             )}
           </For>

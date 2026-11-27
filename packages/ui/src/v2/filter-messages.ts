@@ -175,3 +175,5 @@ export const useFilterMessages = (): (() => FilterMessages) => {
 };
 
 export const checkFilterMessages = () => filterMessages.check();
+/** The words in one language, such as for a check that a German screen shows no English ones. */
+export const resolveFilterMessages = (locale: string): FilterMessages => filterMessages.resolve([locale]).t;

@@ -67,6 +67,12 @@ test("field action: in the 20 px label line, the field keeps its height, a press
     const [label, button] = [await session.locator(".k2-field-label").boundingBox(), await action.boundingBox()];
     expect(button?.height).toBe(20);
     expect(Math.round((button?.y ?? 0) - (label?.y ?? 0))).toBe(0);
+    // the keys follow the eye: the deed on the label's line comes before the value under it (WCAG 2.4.3)
+    await action.focus();
+    await page.keyboard.press("Tab");
+    expect(
+      await session.evaluate((element) => element.contains(document.activeElement) && !document.activeElement?.closest(".k2-field-action")),
+    ).toBe(true);
     await action.focus();
     await page.keyboard.press("Enter");
     expect(await deeds(page)).toEqual(["reset"]);

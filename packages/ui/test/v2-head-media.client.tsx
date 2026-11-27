@@ -5,12 +5,18 @@ import { LocaleProvider } from "../src/intl/locale";
 import {
   AreasMenuScreen,
   CanvasFillScreen,
+  CellsScreen,
   DeepPathScreen,
   EmptyWaysScreen,
+  GroupsScreen,
   InvitationScreen,
   LongAddressScreen,
+  ProseCodeScreen,
   RowStatesScreen,
   SelectionScreen,
+  SettingChangeScreen,
+  StructureScreen,
+  ViewStatementScreen,
 } from "./v2-row-states.fixture";
 
 // The folder and the settings page of the k2b-ui skill in the browser, by the case the page names before this bundle
@@ -21,22 +27,30 @@ declare global {
     __k2Mounted?: boolean;
     __k2Case?:
       | "list"
+      | "closed"
       | "grid"
       | "selecting"
       | "settings"
+      | "setting-change"
       | "states"
       | "canvas"
+      | "cells"
+      | "cells-narrow"
       | "path"
       | "path-chip"
       | "split-canvas"
-      | "split-list-canvas"
       | "split-tall-canvas"
       | "invitation"
       | "selection"
       | "selection-four"
       | "long"
       | "areas"
-      | "empty-ways";
+      | "structure"
+      | "prose"
+      | "groups"
+      | "split-list-canvas"
+      | "empty-ways"
+      | "view-statement";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -51,14 +65,24 @@ render(
     <LocaleProvider locale="de">
       {which === "settings" ? (
         <SigninSettings />
+      ) : which === "setting-change" ? (
+        <SettingChangeScreen />
       ) : which === "states" ? (
         <RowStatesScreen />
+      ) : which === "prose" ? (
+        <ProseCodeScreen />
+      ) : which === "groups" ? (
+        <GroupsScreen />
+      ) : which === "structure" ? (
+        <StructureScreen />
       ) : which === "areas" ? (
         <AreasMenuScreen />
       ) : which === "empty-ways" ? (
         <EmptyWaysScreen />
       ) : which === "selection" || which === "selection-four" ? (
         <SelectionScreen four={which === "selection-four"} />
+      ) : which === "view-statement" ? (
+        <ViewStatementScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (
@@ -67,8 +91,14 @@ render(
         <InvitationScreen />
       ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" || which === "split-tall-canvas" ? (
         <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} tall={which === "split-tall-canvas"} />
+      ) : which === "cells" || which === "cells-narrow" ? (
+        <CellsScreen narrow={which === "cells-narrow"} />
       ) : (
-        <Folder grid={which !== "list"} selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined} />
+        <Folder
+          closed={which === "closed"}
+          grid={which !== "list" && which !== "closed"}
+          selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined}
+        />
       )}
     </LocaleProvider>
   ),

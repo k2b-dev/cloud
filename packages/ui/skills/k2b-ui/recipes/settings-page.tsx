@@ -1,6 +1,6 @@
 // Recipe: a settings page of an administration. The state comes first as key numbers, each with colour, symbol and
 // word; then the settings by topic: a table where one setting has a value per kind, and `Setting` rows with the name
-// and hint on the left and the value beside them, so the page reads at a glance. A side column shows the methods and
+// on the left, the value beside it and its help under the value, so the page reads at a glance. A side column shows the methods and
 // who changed what. The page saves as a whole: a changed setting says what it was.
 import {
   Bar,
@@ -127,13 +127,13 @@ export default function SigninSettings(props: Props) {
             color="#7c3aed"
             label="FreeIPA"
             value={<Chip status="ok">Verbunden</Chip>}
-            meta="ipa.kolb.internal · 18 ms · geprüft 09:40"
+            meta="ipa.example.internal · 18 ms · geprüft 09:40"
             href="#freeipa"
           />
           <Cells.Cell
             icon="alert-triangle"
             label="Fehlgeschlagen, 24 Std."
-            value={<Chip status="warn">7</Chip>}
+            value={<Chip status="warn">7 Anmeldungen</Chip>}
             meta="1 Konto gesperrt · 5 × Passwort falsch"
           />
         </Cells>
@@ -179,11 +179,12 @@ export default function SigninSettings(props: Props) {
                 hint="Danach muss man sich neu anmelden."
                 was={props.saved ? undefined : "12 Std."}
                 action={{ label: "Auf Standard zurücksetzen", icon: "arrow-back-up" }}
+                compact
               >
                 <Input type="number" value="8" end={<Text type="meta">Std.</Text>} />
               </Setting>
-              <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt.">
-                <Input type="number" value="15" end={<Text type="meta">Min. ohne Eingabe</Text>} />
+              <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt." compact>
+                <Input type="number" value="15" end={<Text type="meta">Min.</Text>} />
               </Setting>
             </Section>
             <Section icon="device-mobile-check" title="App-Freigabe" count="6 Geräte gekoppelt">
@@ -191,7 +192,7 @@ export default function SigninSettings(props: Props) {
                 <Check switch label="An" checked />
               </Setting>
               <Setting label="Adresse" hint="Von hier aus wird die Freigabe angefragt.">
-                <Input type="url" value="https://cloud.kolb-antik.de" />
+                <Input type="url" value="https://cloud.example.org" />
               </Setting>
               <Setting label="Admins koppeln direkt" hint="Ohne Bestätigung durch die Person.">
                 <Check switch label="Aus" />
@@ -262,6 +263,9 @@ export default function SigninSettings(props: Props) {
     </Workspace>
   );
 }
+
+// The app the screen belongs to (die Verwaltung): its colour and symbol, for the frame of a host around its pictures.
+export const app = { color: "#0284c7", icon: "adjustments" };
 
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {

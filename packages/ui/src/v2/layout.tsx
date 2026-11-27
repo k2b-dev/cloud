@@ -248,7 +248,7 @@ export const Workspace = (props: WorkspaceProps) => {
   const [side, setSide] = createSignal<number>();
   const sideWidth = () => side() ?? width().default;
   const sideGrip = (): SeamGrip => ({
-    label: props.sidebarLabel ?? "Sidebar",
+    label: props.sidebarLabel ?? t().sidebar,
     width: width(),
     value: sideWidth,
     onChange: setSide,
@@ -662,6 +662,11 @@ export type CellProps = {
   /** A short history beside the value, such as orders per day this week (`Spark`). */
   trend?: SparkProps;
   /**
+   * A value with a limit ("1,5 von 3 h", "38 von 100 GB"): a thin bar under it shows how much of the limit is used, in
+   * the cell's colour, amber from the limit on. `label` names it for assistive technology (the cell's label by default).
+   */
+  meter?: { value: number; of: number; label?: string };
+  /**
    * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
    * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
    * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
@@ -670,23 +675,43 @@ export type CellProps = {
   loading?: boolean;
 };
 
-/** Two to four equal cells side by side with a line between them; one under the other on the phone. */
+// The cells count themselves in the order they render, the same on the server and in the browser: the stylesheet
+// places them by their number and their count, since a sibling count (:nth-child) cannot see through an island's
+// wrapper.
+const CellCount = createContext<() => number>();
+
+/** Two to six equal cells with a line between them, never one tall cell alone in a row (see the stylesheet). */
 export const Cells = (props: {
-  /** Two to four `Cells.Cell`. */
+  /** Two to six `Cells.Cell`: four two by two and five or six in rows of three in a narrow pane; on the phone two to a
+   * row, an odd last one as one line across. */
   children: JSX.Element;
-}) => (
-  <div class="k2-cells" data-k2-part="Cells">
-    {props.children}
-  </div>
-);
+}) => {
+  let count = 0;
+  const cells = resolveChildren(() => {
+    count = 0;
+    return <CellCount.Provider value={() => ++count}>{props.children}</CellCount.Provider>;
+  });
+  // read after the cells, which counted themselves while they were made
+  const counted = () => {
+    cells();
+    return String(count);
+  };
+  return (
+    <div class="k2-cells" data-k2-part="Cells" data-n={counted()}>
+      {cells()}
+    </div>
+  );
+};
 
 Cells.Cell = (props: CellProps) => {
+  const place = useContext(CellCount)?.();
   const meta = resolveChildren(() => props.meta);
   return (
     // a cell that leads somewhere: its label is the link, stretched over the cell, so a value may hold its own controls
     <div
       class="k2-cell"
       data-k2-part="Cells.Cell"
+      data-i={place === undefined ? undefined : String(place)}
       data-open={props.href !== undefined ? "" : undefined}
       aria-busy={props.loading ? "true" : undefined}
       style={custom({ "--k2-c": props.color })}
@@ -704,6 +729,27 @@ Cells.Cell = (props: CellProps) => {
         </Show>
         <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
       </span>
+      {/* a limit of nothing is no limit: no bar */}
+      <Show when={props.meter && props.meter.of > 0 ? props.meter : undefined}>
+        {(meter) => {
+          // the bar and what assistive technology hears stay inside the limit; the cell's words say the value itself
+          const now = () => Math.max(0, Math.min(meter().of, meter().value));
+          return (
+            <span
+              class="k2-cell-meter"
+              role="meter"
+              aria-valuemin={0}
+              aria-valuemax={meter().of}
+              aria-valuenow={now()}
+              aria-valuetext={typeof props.value === "string" ? props.value : undefined}
+              aria-label={meter().label ?? props.label}
+              data-full={meter().value >= meter().of ? "" : undefined}
+            >
+              <i style={custom({ "--k2-p": `${Math.round((now() / meter().of) * 1000) / 10}%` })} />
+            </span>
+          );
+        }}
+      </Show>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">
           <Show when={!props.loading} fallback={<PlaceholderValue said={false}>{meta()}</PlaceholderValue>}>
