@@ -35,6 +35,32 @@ describe("describeV2", () => {
     expect(outline('<span class="k2-chip" data-k2-part="Chip" data-status="warn">7 Anmeldungen</span>')).not.toContain("has no word");
   });
 
+  test("a search inside a form of the page, and a form inside a form, are problems", () => {
+    const wrapped = outline(
+      '<form method="get"><span class="k2-input" data-k2-part="Input" data-search=""><input type="search" aria-label="Suche" /></span></form>',
+    );
+    expect(wrapped).toContain('- a search "Suche" stands inside a <form>: give its Input `send` instead of a form around it');
+    // a search that sends itself is fine on its own
+    expect(
+      outline(
+        '<form method="get" role="search" aria-label="Suche" class="k2-input" data-search=""><input type="search" name="q" /></form>',
+      ),
+    ).not.toContain("<form>");
+    // markup drops an inner form, so the nesting comes from code that builds the page
+    const window = new Window();
+    windows.push(window);
+    const outer = window.document.createElement("form");
+    const inner = window.document.createElement("form");
+    inner.setAttribute("aria-label", "Suche");
+    outer.append(inner);
+    const page = window.document.createElement("div");
+    page.className = "k2-ui";
+    page.append(outer);
+    expect(describeV2(page as unknown as Element)).toContain(
+      '- a <form> "Suche" stands inside another <form>: forms never nest, and the browser drops the inner one',
+    );
+  });
+
   test("outlines the mail fixture part by part", () => {
     const text = fixture("layout");
     expect(text).toContain('Workspace (sidebar, head) primary "Neu"');

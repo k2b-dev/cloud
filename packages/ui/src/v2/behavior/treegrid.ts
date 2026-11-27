@@ -16,6 +16,8 @@ export type TreegridRow = {
   /** It has children, also before they load. */
   branch: boolean;
   expanded: boolean;
+  /** Its children are loading; Left closes it and stops the load. */
+  busy?: boolean;
 };
 
 /** What a key does: move the focus to a row, open or close a branch, or open the row itself (Enter). */
@@ -23,7 +25,8 @@ export type TreegridStep = { focus: string } | { expand: string } | { collapse: 
 
 /**
  * The step for `pressed` on the focused row `key`: Up and Down move one row, Home and End to the first and the last,
- * Right opens a closed branch and enters an open one, Left closes an open branch and goes to the parent otherwise,
+ * Right opens a closed branch and enters an open one, Left closes an open (or loading) branch and goes to the parent
+ * otherwise,
  * Enter opens the row. Other keys, and keys with Ctrl, Alt or Cmd, do nothing here.
  */
 export function treegridStep(
@@ -52,7 +55,7 @@ export function treegridStep(
       return child?.parent === key ? { focus: child.key } : undefined;
     }
     case "ArrowLeft":
-      if (row.branch && row.expanded) return { collapse: key };
+      if (row.branch && (row.expanded || row.busy)) return { collapse: key };
       return row.parent === null ? undefined : { focus: row.parent };
     case "Enter":
       return { open: key };
@@ -60,6 +63,9 @@ export function treegridStep(
       return undefined;
   }
 }
+
+/** Says what went wrong, such as a page of rows that did not load, at once. */
+export const announceText = (text: string) => announce(text, { priority: "assertive" });
 
 /** Says a change of a branch (loading, failed) in the render locale, as the tree of `Nav` does. */
 export const announceBranch = (t: BehaviorMessages, type: "loading" | "load-failed", label: string) =>

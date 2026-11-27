@@ -1,9 +1,10 @@
-import { createComputed, createMemo, For, type JSX, on, onMount, Show, untrack } from "solid-js";
-import { useUiMessages } from "../intl/messages";
+import { createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { type TreeParts, useTree } from "./behavior/lists";
+import { announceText } from "./behavior/treegrid";
 import { Dot, Icon, Mark } from "./marks";
-import { Menu, type MenuEntry } from "./menu";
+import { Menu, type MenuEntry, PointerMenu } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
+import { useTreeMessages } from "./tree-messages";
 import type { OnNavigate, Status } from "./types";
 
 // ── Tree ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -85,34 +86,29 @@ const isBranch = (node: NavTreeNode) => node.branch === true || (node.children?.
 const stop = (event: Event) => event.stopPropagation();
 
 /** A Shift+F10 or the menu key on a place opens its deeds, as a right-click does. */
-const asksForMenu = (event: KeyboardEvent) => event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
+const asksForMenu = (event: KeyboardEvent) => event.shiftKey && event.key === "F10";
 
 const openMenuOf = (item: Element) => item.querySelector<HTMLElement>(":scope > .k2-nt-row > .k2-nt-menu > button")?.click();
 
 /** The "…" of a place: out of the tab order (the tree is one stop; Shift+F10 opens it); its keys and presses stay its own. */
 const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
-  let span: HTMLSpanElement | undefined;
-  // A shortcut for the pointer only: out of the tab order and hidden from assistive technology, which opens the same
-  // menu with Shift+F10 on the tree item. The focus a closing menu gives back to it goes to the tree item instead.
-  onMount(() => {
-    const button = span?.querySelector("button");
-    button?.setAttribute("tabindex", "-1");
-    button?.setAttribute("aria-hidden", "true");
-  });
+  // No Tab stop and hidden from assistive technology (`pointerOnly`, from the first markup on; a tree owns only its
+  // items): the keys open the same menu with Shift+F10 on the tree item, a phone with a long press on the row
+  // (`Menu.Context`). The focus a closing menu gives back to it goes to the tree item instead.
   const back = (event: FocusEvent) => {
     if (event.target instanceof HTMLElement && event.target.matches("button[aria-hidden]"))
       event.target.closest<HTMLElement>('[role="treeitem"]')?.focus();
   };
   return (
-    <span ref={span} class="k2-nt-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop} on:focusin={back}>
-      <Menu label={props.label} items={props.items} />
+    <span class="k2-nt-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop} on:focusin={back}>
+      <PointerMenu label={props.label} items={props.items} />
     </span>
   );
 };
 
 /** The tree of a `Nav` group: places of 32 px, one level 12 px further in, the arrow before the symbol. */
 export const NavTreeView = (props: NavTree) => {
-  const t = useUiMessages();
+  const t = useTreeMessages();
   const overlay = useOverlayMessages();
   const nodes = createMemo(() => {
     const all = new Map<string, NavTreeNode>();
@@ -128,6 +124,8 @@ export const NavTreeView = (props: NavTree) => {
   const way = () => (props.current === undefined ? [] : (treePath(props.items, props.current) ?? []));
   const childrenOf = (parent: string | null) => (parent === null ? props.items : (nodes().get(parent)?.children ?? []));
   let root: HTMLElement | undefined;
+  // the "Weitere laden" entries whose last page failed; they say so and try again on the next press
+  const [failedMore, setFailedMore] = createSignal<readonly string[]>([]);
   const parts: TreeParts = useTree(() => ({
     mode: "none",
     current: props.current ?? null,
@@ -142,11 +140,25 @@ export const NavTreeView = (props: NavTree) => {
       if (key.startsWith(MORE)) {
         const parent = key === moreOf(null) ? null : key.slice(MORE.length);
         const before = childrenOf(parent).length;
-        return props.loadMore?.(parent).then(() => {
-          // the focus goes on to the first place that came, where reading goes on
-          const next = childrenOf(parent)[before];
-          if (next) requestAnimationFrame(() => parts.controller.focus(next.key));
-        });
+        // Whether the person waits on this entry: only then does the focus follow the places that come.
+        const entry = event?.currentTarget instanceof HTMLElement ? event.currentTarget : document.activeElement;
+        const waiting = entry instanceof HTMLElement && entry.matches('[role="treeitem"]') && document.activeElement === entry;
+        const stillWaiting = () => {
+          const active = document.activeElement;
+          return active === entry || active === null || active === document.body;
+        };
+        setFailedMore(failedMore().filter((other) => other !== key));
+        return props.loadMore?.(parent).then(
+          () => {
+            // the focus goes on to the first place that came, where reading goes on
+            const next = childrenOf(parent)[before];
+            if (next && waiting) requestAnimationFrame(() => stillWaiting() && parts.controller.focus(next.key));
+          },
+          () => {
+            setFailedMore([...failedMore(), key]);
+            announceText(t().loadMoreFailed);
+          },
+        );
       }
       const node = nodes().get(key);
       // a place without an address folds open and shut on a press; its arrow does that itself
@@ -175,76 +187,165 @@ export const NavTreeView = (props: NavTree) => {
     }
   });
 
-  const More = (more: { parent: string | null; count: true | number }) => (
-    <parts.Item value={moreOf(more.parent)} label={t().loadMore({ count: undefined })} class="k2-nt-item">
-      <div class="k2-ni k2-nt-row" data-more="">
-        <span class="k2-nt-chev">
-          <Icon name="loader-2" />
-        </span>
-        <parts.Label class="k2-ni-name">{t().loadMore({ count: more.count === true ? undefined : more.count })}</parts.Label>
-      </div>
-    </parts.Item>
-  );
+  const More = (more: { parent: string | null; count: true | number; position: number; size: number }) => {
+    const failed = () => failedMore().includes(moreOf(more.parent));
+    return (
+      <parts.Item
+        value={moreOf(more.parent)}
+        label={t().loadMore({ count: undefined })}
+        class="k2-nt-item"
+        aria-posinset={more.position}
+        aria-setsize={more.size}
+        ref={(element: HTMLElement) => keepPlace(element, () => ({ position: more.position, size: more.size }))}
+        data-failed-more={failed() ? "" : undefined}
+      >
+        <div class="k2-ni k2-nt-row" data-more="">
+          <span class="k2-nt-chev">
+            <Icon name="loader-2" />
+            <Icon name="alert-circle" />
+          </span>
+          <parts.Label class="k2-ni-name">
+            {failed() ? t().loadMoreFailed : t().loadMore({ count: more.count === true ? undefined : more.count })}
+          </parts.Label>
+        </div>
+      </parts.Item>
+    );
+  };
 
-  const level = (list: readonly NavTreeNode[], parent: string | null, more: () => true | number | undefined): JSX.Element => (
-    <>
-      <For each={list}>{(node) => <Entry node={node} />}</For>
-      <Show when={props.loadMore && more()}>{(count) => <More parent={parent} count={count()} />}</Show>
-    </>
-  );
+  // A level that pages says its whole size (the loaded places and those still to come; -1 while nobody knows it), so
+  // its places say it too, and "Weitere laden" stands after the loaded ones.
+  // Places are made once per key: new data for the same place (a page that came, a count that changed) updates it in
+  // place, so its element and the focus in it stay.
+  const level = (list: () => readonly NavTreeNode[], parent: string | null, more: () => true | number | undefined): JSX.Element => {
+    const size = () => {
+      const count = props.loadMore ? more() : undefined;
+      return count === undefined ? undefined : count === true ? -1 : list().length + count;
+    };
+    const keys = createMemo(() => list().map((node) => node.key));
+    return (
+      <>
+        <For each={keys()}>
+          {(key, index) => (
+            <Show when={nodes().get(key)}>
+              {(node) => <Entry node={node()} position={size() === undefined ? undefined : index() + 1} size={size()} />}
+            </Show>
+          )}
+        </For>
+        <Show when={props.loadMore && more()}>
+          {(count) => <More parent={parent} count={count()} position={list().length + 1} size={size() ?? list().length + 1} />}
+        </Show>
+      </>
+    );
+  };
 
-  const Entry = (entry: { node: NavTreeNode }) => (
+  /**
+   * Core counts the places it has rendered for `aria-posinset` and `aria-setsize`; a level that pages knows more, so
+   * its numbers are kept on the element (the server's page has them from the attributes already).
+   */
+  const keepPlace = (element: HTMLElement, place: () => { position?: number; size?: number }) => {
+    const apply = () => {
+      const { position, size } = place();
+      if (size === undefined) return;
+      if (element.getAttribute("aria-setsize") !== String(size)) element.setAttribute("aria-setsize", String(size));
+      if (position !== undefined && element.getAttribute("aria-posinset") !== String(position))
+        element.setAttribute("aria-posinset", String(position));
+    };
+    const watch = new MutationObserver(apply);
+    watch.observe(element, { attributes: true, attributeFilter: ["aria-setsize", "aria-posinset"] });
+    createEffect(apply);
+    onCleanup(() => watch.disconnect());
+  };
+
+  const Entry = (entry: { node: NavTreeNode; position?: number; size?: number }) => (
     <parts.Item
       value={entry.node.key}
       label={entry.node.label}
       branch={isBranch(entry.node)}
       class="k2-nt-item"
+      aria-posinset={entry.position}
+      aria-setsize={entry.size}
+      // its deeds open from Shift+F10 on the place (the "…" is no Tab stop) and a long press on its row; screen readers
+      // that read no key shortcuts hear the menu and the hint
+      aria-keyshortcuts={entry.node.menu ? "Shift+F10" : undefined}
+      aria-haspopup={entry.node.menu ? "menu" : undefined}
+      aria-description={entry.node.menu ? t().deedsHint : undefined}
+      ref={(element: HTMLElement) => keepPlace(element, () => ({ position: entry.position, size: entry.size }))}
       onKeyDown={(event: KeyboardEvent) => {
         if (event.target !== event.currentTarget || !entry.node.menu || !asksForMenu(event)) return;
         event.preventDefault();
         if (event.currentTarget instanceof Element) openMenuOf(event.currentTarget);
       }}
       onContextMenu={(event: MouseEvent) => {
-        // a right-click on this place's row, not on a place nested in it
+        // The menu key (and Shift+F10 where the browser still sends the event) ends in a context menu event on the
+        // focused place itself; the row's Menu.Context only sees those that start on the row. One menu: not twice.
         const item = event.currentTarget;
-        if (!entry.node.menu || !(item instanceof Element) || !(event.target instanceof Element)) return;
-        if (event.target.closest('[role="treeitem"]') !== item) return;
+        if (event.target !== item || !entry.node.menu || !(item instanceof Element)) return;
         event.preventDefault();
+        if (item.querySelector(':scope > .k2-nt-row > .k2-nt-menu > button[aria-expanded="true"]')) return;
         openMenuOf(item);
       }}
     >
-      <div class="k2-ni k2-nt-row" data-k2-part="Nav.Item" data-has-menu={entry.node.menu ? "" : undefined}>
-        <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
-          {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}
-          <parts.Indicator class="k2-nt-chev">
-            <Icon name="chevron-right" />
-            <Icon name="loader-2" />
-            <Icon name="alert-circle" />
-          </parts.Indicator>
-        </Show>
-        <Show when={entry.node.icon}>
-          {(icon) => (
-            <Show when={entry.node.color} fallback={<Icon name={icon()} />}>
-              {(color) => <Mark icon={icon()} color={color()} />}
+      {(() => {
+        const row = (
+          <div
+            class="k2-ni k2-nt-row"
+            data-k2-part="Nav.Item"
+            data-has-menu={entry.node.menu ? "" : undefined}
+            // A menu opened on the row gives the focus back into the row when it closes (to its name); the place takes it.
+            on:focusin={(event: FocusEvent) => {
+              if (!(event.target instanceof Element) || event.target.closest(".k2-nt-menu")) return;
+              event.target.closest<HTMLElement>('[role="treeitem"]')?.focus();
+            }}
+          >
+            <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
+              {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}
+              <parts.Indicator class="k2-nt-chev">
+                <Icon name="chevron-right" />
+                <Icon name="loader-2" />
+                <Icon name="alert-circle" />
+              </parts.Indicator>
             </Show>
-          )}
-        </Show>
-        <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
-          {(href) => (
-            // the tree item is what assistive technology meets (named by this text); Enter on it follows the link
-            <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name" role="none">
-              {entry.node.label}
-            </parts.Link>
-          )}
-        </Show>
-        <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
-        <Show when={entry.node.count !== undefined}>
-          <span class="k2-ni-count">{entry.node.count}</span>
-        </Show>
-        <Show when={entry.node.menu}>{(menu) => <TreeMenu label={overlay().actionsFor({ name: entry.node.label })} items={menu()} />}</Show>
-      </div>
+            <Show when={entry.node.icon}>
+              {(icon) => (
+                <Show when={entry.node.color} fallback={<Icon name={icon()} />}>
+                  {(color) => <Mark icon={icon()} color={color()} />}
+                </Show>
+              )}
+            </Show>
+            <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
+              {(href) => (
+                // the tree item is what assistive technology meets (named by this text); Enter on it follows the link
+                <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name" role="none">
+                  {entry.node.label}
+                </parts.Link>
+              )}
+            </Show>
+            <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
+            <Show when={entry.node.count !== undefined}>
+              <span class="k2-ni-count">{entry.node.count}</span>
+            </Show>
+            <Show when={entry.node.menu}>
+              {(menu) => <TreeMenu label={overlay().actionsFor({ name: entry.node.label })} items={menu()} />}
+            </Show>
+          </div>
+        );
+        // a right-click and a long press on the row open the place's deeds (a phone, also with VoiceOver, has no keys)
+        return (
+          <Show when={entry.node.menu} fallback={row}>
+            {(menu) => <Menu.Context items={menu()}>{row}</Menu.Context>}
+          </Show>
+        );
+      })()}
       <Show when={isBranch(entry.node)}>
-        <parts.Group class="k2-nt-group">{level(entry.node.children ?? [], entry.node.key, () => entry.node.more)}</parts.Group>
+        <parts.Group class="k2-nt-group">
+          {untrack(() =>
+            level(
+              () => entry.node.children ?? [],
+              entry.node.key,
+              () => entry.node.more,
+            ),
+          )}
+        </parts.Group>
       </Show>
     </parts.Item>
   );
@@ -258,7 +359,13 @@ export const NavTreeView = (props: NavTree) => {
       data-k2-part="Nav.Tree"
       aria-label={props.label}
     >
-      {level(props.items, null, () => props.more)}
+      {untrack(() =>
+        level(
+          () => props.items,
+          null,
+          () => props.more,
+        ),
+      )}
     </parts.Root>
   );
 };
