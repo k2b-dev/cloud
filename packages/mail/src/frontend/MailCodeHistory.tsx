@@ -1,22 +1,56 @@
-import { Button, Format, Section, StatusBadge, TextInput, useLocale } from "@k2b/ui";
-import { For, type JSX, Show } from "solid-js";
+import { dates } from "@k2b/stdlib";
+import { Button, ButtonLink, DatePicker, Format, Placeholder, Section, StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import type { AutomationLogItem } from "../contracts";
 import { mailCodeHistoryMessages } from "./mail-code-history-messages";
 
-/** A run of a retired rule; its technical snapshot is read only for the run the address names. */
-export type MailRetiredRun = { id: string; createdAt: string; name: string; state: string; snapshot: unknown };
+/** A run of a retired rule in the runs list. */
+export type MailRetiredRun = { id: string; createdAt: string; name: string; state: string };
+/** The run the address opens: its steps in words (key, state, error text), never its source or payloads. */
+export type MailRetiredRunOpen = MailRetiredRun & {
+  steps: { key: string; state: string; error: string | null }[];
+  /** All steps of the run; past the shown ones the rest is named as a count. */
+  stepCount: number;
+};
 
 /** Serializable data of the step, read once on the server so reload and back show the same day, entry and run. */
 export type MailCodeHistoryData = {
   codeHref: string;
   day: string;
+  /** The address named a day that is not a date: today is shown and the day field says so. */
+  dayInvalid: boolean;
+  /** Today in UTC, the last day the field offers; read on the server so both renders agree. */
+  today: string;
+  /** The cursor of the log page shown, kept when an entry or run opens. */
+  before: string | null;
   items: AutomationLogItem[];
   nextCursor: string | null;
   /** The entry the address names, shown below its row. */
   entry: string | null;
+  /** The cursor of the runs page shown, kept when an entry or run opens. */
+  runAfter: string | null;
+  /** Null when the runs could not be read. */
   runs: { items: MailRetiredRun[]; nextCursor: string | null } | null;
-  /** The run the address names, with its snapshot. */
-  run: MailRetiredRun | null;
+  /** The run the address names with its steps, or the run that could not be read. */
+  run: MailRetiredRunOpen | { id: string; failed: true } | null;
+};
+
+/** The parts of the address that make up the step's state, in the order the address shows them. */
+type HistoryState = { day: string; before?: string | null; entry?: string | null; runAfter?: string | null; run?: string | null };
+
+const stateTones: Record<string, StatusTone> = {
+  queued: "running",
+  running: "running",
+  waiting: "running",
+  planned: "neutral",
+  succeeded: "ok",
+  completed: "ok",
+  terminal: "ok",
+  canceled: "neutral",
+  unsupported: "warning",
+  indeterminate: "warning",
+  needs_attention: "warning",
+  failed: "error",
 };
 
 const tones: Record<AutomationLogItem["outcome"], "ok" | "warning" | "error" | "neutral"> = {
@@ -30,7 +64,7 @@ const tones: Record<AutomationLogItem["outcome"], "ok" | "warning" | "error" | "
 };
 
 /** The address of the step on the Code page with these parts of its state. */
-export const mailCodeHistoryHref = (codeHref: string, state: Record<string, string | undefined>) => {
+export const mailCodeHistoryHref = (codeHref: string, state: HistoryState) => {
   const query = new URLSearchParams({ history: "1" });
   for (const [name, value] of Object.entries(state)) if (value) query.set(name, value);
   return `${codeHref}?${query}`;
@@ -43,7 +77,39 @@ export const mailCodeHistoryHref = (codeHref: string, state: Record<string, stri
 export default function MailCodeHistory(props: { data: MailCodeHistoryData }): JSX.Element {
   const locale = useLocale();
   const t = () => mailCodeHistoryMessages.resolve([locale()]).t;
-  const href = (state: Record<string, string | undefined>) => mailCodeHistoryHref(props.data.codeHref, state);
+  const href = (state: HistoryState) => mailCodeHistoryHref(props.data.codeHref, state);
+  // opening an entry or a run keeps the pages shown, so the opened line stays on the page it was clicked on
+  const current = (): HistoryState => ({
+    day: props.data.day,
+    before: props.data.before,
+    entry: props.data.entry,
+    runAfter: props.data.runAfter,
+    run: props.data.run?.id ?? null,
+  });
+  const [day, setDay] = createSignal<string | null>(props.data.dayInvalid ? null : props.data.day);
+  const heading = () => dates.formatDate(new Date(`${props.data.day}T00:00:00Z`), { locale: locale(), timeZone: "UTC" });
+  const stateLabel = (state: string) => {
+    const words = t();
+    const labels: Record<string, string> = {
+      queued: words.stateQueued,
+      running: words.stateRunning,
+      waiting: words.stateWaiting,
+      planned: words.statePlanned,
+      succeeded: words.stateSucceeded,
+      completed: words.stateCompleted,
+      terminal: words.stateTerminal,
+      canceled: words.stateCanceled,
+      unsupported: words.stateUnsupported,
+      indeterminate: words.stateIndeterminate,
+      needs_attention: words.stateNeedsAttention,
+      failed: words.stateFailed,
+    };
+    return labels[state] ?? state;
+  };
+  const openRun = () => {
+    const run = props.data.run;
+    return run && !("failed" in run) ? run : null;
+  };
   const effects = (item: AutomationLogItem) =>
     item.effects
       .map((effect) => {
@@ -114,10 +180,6 @@ export default function MailCodeHistory(props: { data: MailCodeHistoryData }): J
       failed: words.outcomeFailed,
     }[value];
   };
-  const steps = (run: MailRetiredRun) => {
-    const snapshot = run.snapshot as { steps?: unknown[] } | null;
-    return Array.isArray(snapshot?.steps) ? snapshot.steps.length : 0;
-  };
   return (
     <div class="mail-code-catchup mail-code-history">
       <header class="mail-code-catchup__head">
@@ -131,12 +193,19 @@ export default function MailCodeHistory(props: { data: MailCodeHistoryData }): J
       <div class="mail-code-catchup__stack">
         <form method="get" action={props.data.codeHref} class="mail-code-history__day">
           <input type="hidden" name="history" value="1" />
-          <TextInput name="day" label={t().day} value={props.data.day} placeholder="YYYY-MM-DD" />
-          <Button type="submit" variant="secondary">
+          <input type="hidden" name="day" value={day() ?? ""} />
+          <DatePicker
+            label={t().day}
+            value={day}
+            onValueChange={setDay}
+            max={props.data.today}
+            error={props.data.dayInvalid && !day() ? t().dayInvalid : undefined}
+          />
+          <Button type="submit" variant="secondary" disabled={!day()}>
             {t().show}
           </Button>
         </form>
-        <Section title={t().log({ day: props.data.day })} size="md">
+        <Section title={t().log({ day: heading() })} size="md">
           <Show when={props.data.items.length} fallback={<p class="mail-code-catchup__quiet">{t().empty}</p>}>
             <ul class="mail-code-history__rows">
               <For each={props.data.items}>
@@ -144,7 +213,7 @@ export default function MailCodeHistory(props: { data: MailCodeHistoryData }): J
                   <li class="mail-code-history__row" data-open={props.data.entry === item.id ? "" : undefined}>
                     <a
                       class="mail-code-history__line"
-                      href={href({ day: props.data.day, entry: props.data.entry === item.id ? undefined : item.id })}
+                      href={href({ ...current(), entry: props.data.entry === item.id ? null : item.id })}
                       aria-expanded={props.data.entry === item.id}
                     >
                       <span class="mail-code-history__time">
@@ -185,57 +254,107 @@ export default function MailCodeHistory(props: { data: MailCodeHistoryData }): J
           </Show>
           <Show when={props.data.nextCursor}>
             {(cursor) => (
-              <a class="k2b-text-link" href={href({ day: props.data.day, before: cursor() })}>
+              <a
+                class="k2b-text-link"
+                href={href({ day: props.data.day, before: cursor(), runAfter: props.data.runAfter, run: props.data.run?.id ?? null })}
+              >
                 {t().older}
               </a>
             )}
           </Show>
         </Section>
-        <Show when={props.data.runs}>
-          {(runs) => (
-            <Section title={t().runs} size="md">
-              <Show when={runs().items.length} fallback={<p class="mail-code-catchup__quiet">{t().noRuns}</p>}>
-                <ul class="mail-code-history__rows">
-                  <For each={runs().items}>
-                    {(run) => (
-                      <li class="mail-code-history__row" data-open={props.data.run?.id === run.id ? "" : undefined}>
-                        <a
-                          class="mail-code-history__line"
-                          href={href({ day: props.data.day, run: props.data.run?.id === run.id ? undefined : run.id })}
-                          aria-expanded={props.data.run?.id === run.id}
-                        >
-                          <span class="mail-code-history__time">
-                            <Format.Date value={run.createdAt} />
-                          </span>
-                          <span class="mail-code-history__subject">{run.name}</span>
-                          <StatusBadge tone="neutral" label={run.state} />
-                        </a>
-                        <Show when={props.data.run?.id === run.id && props.data.run}>
-                          {(open) => (
-                            <div class="mail-code-history__detail">
-                              <p class="mail-code-catchup__quiet">{t().steps({ count: steps(open()) })}</p>
-                              <details class="mail-code-history__technical">
-                                <summary>{t().technical}</summary>
-                                <pre>{JSON.stringify(open().snapshot, null, 2)}</pre>
-                              </details>
-                            </div>
-                          )}
-                        </Show>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-              <Show when={runs().nextCursor}>
-                {(cursor) => (
-                  <a class="k2b-text-link" href={href({ day: props.data.day, runAfter: cursor() })}>
-                    {t().moreRuns}
-                  </a>
-                )}
-              </Show>
-            </Section>
-          )}
-        </Show>
+        <Section title={t().runs} size="md">
+          <Show when={props.data.run && "failed" in props.data.run}>
+            <Placeholder
+              variant="compact"
+              state="error"
+              icon="ti ti-alert-triangle"
+              title={t().runFailed}
+              action={
+                <ButtonLink href={href(current())} variant="secondary" size="sm">
+                  {t().tryAgain}
+                </ButtonLink>
+              }
+            />
+          </Show>
+          <Show
+            when={props.data.runs}
+            fallback={
+              <Placeholder
+                variant="compact"
+                state="error"
+                icon="ti ti-alert-triangle"
+                title={t().runsFailed}
+                action={
+                  <ButtonLink href={href(current())} variant="secondary" size="sm">
+                    {t().tryAgain}
+                  </ButtonLink>
+                }
+              />
+            }
+          >
+            {(runs) => (
+              <>
+                <Show when={runs().items.length} fallback={<p class="mail-code-catchup__quiet">{t().noRuns}</p>}>
+                  <ul class="mail-code-history__rows">
+                    <For each={runs().items}>
+                      {(run) => (
+                        <li class="mail-code-history__row" data-open={openRun()?.id === run.id ? "" : undefined}>
+                          <a
+                            class="mail-code-history__line"
+                            data-kind="run"
+                            href={href({ ...current(), run: openRun()?.id === run.id ? null : run.id })}
+                            aria-expanded={openRun()?.id === run.id}
+                          >
+                            <span class="mail-code-history__time">
+                              <Format.DateTime value={run.createdAt} />
+                            </span>
+                            <span class="mail-code-history__subject">{run.name}</span>
+                            <StatusBadge tone={stateTones[run.state] ?? "neutral"} label={stateLabel(run.state)} />
+                          </a>
+                          <Show when={openRun()?.id === run.id && openRun()}>
+                            {(open) => (
+                              <div class="mail-code-history__detail">
+                                <p class="mail-code-history__label">{t().steps({ count: open().stepCount })}</p>
+                                <ul class="mail-code-history__steps">
+                                  <For each={open().steps}>
+                                    {(step) => (
+                                      <li class="mail-code-history__step">
+                                        <span class="mail-code-history__step-key">{step.key}</span>
+                                        <StatusBadge
+                                          tone={stateTones[step.state] ?? "neutral"}
+                                          label={stateLabel(step.state)}
+                                          variant="text"
+                                        />
+                                        <Show when={step.error}>
+                                          {(error) => <span class="mail-code-history__step-error">{error()}</span>}
+                                        </Show>
+                                      </li>
+                                    )}
+                                  </For>
+                                </ul>
+                                <Show when={open().stepCount > open().steps.length}>
+                                  <p class="mail-code-catchup__quiet">{t().moreSteps({ count: open().stepCount - open().steps.length })}</p>
+                                </Show>
+                              </div>
+                            )}
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <Show when={runs().nextCursor}>
+                  {(cursor) => (
+                    <a class="k2b-text-link" href={href({ ...current(), entry: null, runAfter: cursor(), run: null })}>
+                      {t().moreRuns}
+                    </a>
+                  )}
+                </Show>
+              </>
+            )}
+          </Show>
+        </Section>
       </div>
     </div>
   );

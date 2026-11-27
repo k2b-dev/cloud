@@ -7,7 +7,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { mergeConversations } from "./conversations";
 import { retireMailRuleBroker } from "./retired-rule-broker";
-import { readRetiredRuleRuns } from "./retired-rule-runs";
+import { readRetiredRuleRuns, readRetiredRunSteps } from "./retired-rule-runs";
 import { retireMailRules } from "./rule-retirement-migrate";
 
 const suite = suiteFor("database", "nats");
@@ -62,6 +62,10 @@ suite("Mail rule retirement", () => {
       await db`INSERT INTO workflows.run(id,app_id,scope_id,workflow_id,workflow_version_id,event_id,mode,state,authorization_snapshot,idempotency_key,occurred_at)
         VALUES(${runId}::uuid,'mail',${mailboxId},${workflowId}::uuid,${versionId}::uuid,${eventId}::uuid,
           'execute','queued','{"private":"never exposed"}','old-run','2026-11-01T12:00:00Z')`;
+      await db`INSERT INTO workflows.step_outcome(run_id,step_key,source_path,kind,action,mode,state,outcome,execution_generation,effect_output)
+        VALUES(${runId}::uuid,'move','["steps",0]','action','mail.move','execute','failed',
+          '{"state":"failed","error":{"code":"folder_gone","message":"Folder Invoices is gone","retryable":false,"details":{"input":"step payload"}}}',
+          0,'{"output":"effect payload"}')`;
     });
     await migrate();
   });
@@ -178,6 +182,28 @@ suite("Mail rule retirement", () => {
     expect(source).toEqual({ name: "Frozen rule", active: false });
     const [other] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes(short_id,name) VALUES(${newShortId()},'Other') RETURNING id`;
     expect(await readRetiredRuleRuns(reader, other!.id, { run: runId })).toMatchObject({ ok: false, error: { status: 403 } });
+  });
+
+  test("the Code page reads a run's steps from an allowlist: key, state and error text, never source or payloads", async () => {
+    const result = await readRetiredRunSteps(reader, mailboxId, runId);
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        id: runId,
+        createdAt: expect.any(String),
+        name: "Frozen rule",
+        state: "canceled",
+        stepCount: 1,
+        steps: [{ key: "move", state: "failed", error: "Folder Invoices is gone" }],
+      },
+    });
+    for (const hidden of ["retained YAML", "historical", "step payload", "effect payload", "never exposed"])
+      expect(JSON.stringify(result)).not.toContain(hidden);
+    const [other] = await sql<
+      { id: string }[]
+    >`INSERT INTO mail.mailboxes(short_id,name) VALUES(${newShortId()},'Other steps') RETURNING id`;
+    expect(await readRetiredRunSteps(reader, other!.id, runId)).toMatchObject({ ok: false, error: { status: 403 } });
+    expect(await readRetiredRunSteps(reader, mailboxId, crypto.randomUUID())).toMatchObject({ ok: false, error: { status: 404 } });
   });
 
   test("an accepted legacy send refuses retirement and remains available only for reconciliation", async () => {

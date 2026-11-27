@@ -3,15 +3,17 @@ import { sql } from "@k2b/cloud";
 import { accounts } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, testFor } from "../../../../scripts/fixtures/test-infra";
 import historyRoutes from "../api/automation-log";
 import type { MailApiContext } from "../api/public-resource-boundary";
 import { automationLogItemSchema } from "../contracts";
 import { loadMailCodeHistory } from "../frontend/mail-code-history-data";
+import { loadMailSidebarData } from "../frontend/mail-sidebar-data";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { getAutomationLogItem, listAutomationLog } from "./automation-log";
+import { loadMailboxCodePageData } from "./workspace";
 
 const suite = suiteFor("database");
 suite("Retired Mail rule history", () => {
@@ -101,4 +103,29 @@ suite("Retired Mail rule history", () => {
       await meter.close();
     }
   });
+
+  // The counts come from the workspace's cached snapshot (Valkey); without it every load would count the mailbox.
+  testFor("valkey")(
+    "the whole Code page with its history step reads in a fixed number of statements; the next step reuses the counts",
+    async () => {
+      const meter = await meterSql();
+      try {
+        const code = `/app/mail/${mailboxShortId}/code`;
+        // Mail's part of the page: the mailbox with its counts, the sidebar, and the history step the address asks for
+        const page = async (query: string) => {
+          const [mailbox, , history] = await Promise.all([
+            loadMailboxCodePageData(context, mailboxId),
+            loadMailSidebarData(context),
+            loadMailCodeHistory(context, mailboxId, new URL(`https://cloud.test${code}?history=1&${query}`), code),
+          ]);
+          expect(mailbox.ok && history.ok).toBe(true);
+        };
+        const first = await meter.during(() => page("day=2026-11-01"));
+        const next = await meter.during(() => page(`day=2026-11-01&entry=${item.id}`));
+        expect({ first: first.length, next: next.length }).toEqual({ first: 0, next: 0 });
+      } finally {
+        await meter.close();
+      }
+    },
+  );
 });

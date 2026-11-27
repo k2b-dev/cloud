@@ -2955,6 +2955,7 @@
   grid-area: time;
   color: var(--k2b-text-subtle);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .k2b-ui .mail-code-history__who,
 .k2b-ui .mail-code-history__subject {
@@ -2988,11 +2989,35 @@
   font-weight: 600;
   line-height: 1.25rem;
 }
-.k2b-ui .mail-code-history__technical > pre {
-  overflow: auto;
-  max-height: 20rem;
+/* A run line: its date and time on one line, the rule, its state. */
+.k2b-ui .mail-code-history__line[data-kind="run"] {
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  grid-template-areas: "time subject outcome";
+}
+/* An opened run: one line per step with its state, its error text below it. */
+.k2b-ui .mail-code-history__steps {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.k2b-ui .mail-code-history__step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+.k2b-ui .mail-code-history__step-key {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.k2b-ui .mail-code-history__step-error {
+  grid-column: 1 / -1;
+  color: var(--k2b-danger-text);
   font-size: 0.75rem;
-  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 /* On the phone time, rule and outcome share the first row; the subject takes the whole second row. */
 @media (max-width: 47.99rem) {
@@ -3002,6 +3027,12 @@
       "time who outcome"
       "subject subject subject";
     row-gap: 0.125rem;
+  }
+  .k2b-ui .mail-code-history__line[data-kind="run"] {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "time outcome"
+      "subject subject";
   }
   .k2b-ui .mail-code-history__effects,
   .k2b-ui .mail-code-history__detail {

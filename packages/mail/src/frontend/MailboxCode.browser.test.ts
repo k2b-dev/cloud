@@ -208,12 +208,17 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 describe("The retired rules' history on the Code page", () => {
   for (const [name, width] of Object.entries(widths))
     test(`${name} ${width}px: every state fits, one line per entry, nothing raw`, async () => {
-      for (const history of ["tag", "eintrag", "leer", "lauf"]) {
+      for (const history of ["tag", "eintrag", "leer", "lauf", "fehler"]) {
         const page = await load("overview", width, { history });
         try {
           expect({ history, overflow: await overflow(page) }).toEqual({ history, overflow: 0 });
           expect(await page.locator(".mail-code-history").count()).toBe(1);
           expect(await page.locator("pre:visible").count()).toBe(0);
+          // a run's date and time stay on one line
+          const runTimes = await page
+            .locator('.mail-code-history__line[data-kind="run"] .mail-code-history__time')
+            .evaluateAll((times) => times.map((time) => time.getClientRects().length && time.getBoundingClientRect().height));
+          expect({ history, wrapped: runTimes.filter((height) => height > 24) }).toEqual({ history, wrapped: [] });
           await shoot(page, `history-${history}-${width}`);
         } finally {
           await page.context().close();
