@@ -197,7 +197,8 @@ beforeAll(async () => {
   settingsChunkPath = [...assets].find(([path, text]) => path.endsWith(".js") && text.includes("dashboard-widget-settings__reset"))![0];
   const entryPath = new URL(build.outputs.find((output) => output.kind === "entry-point")!.path, "http://harness.test/").pathname;
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
-  const stylesheets = [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")];
+  // as a Cloud page links them: the app's own sheet first, the shared one after it (#4411)
+  const stylesheets = [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")];
   const outputs = await Promise.all(
     stylesheets.map(async (path) => {
       const output = await Bun.build({ entrypoints: [path], plugins: [tailwind] });
