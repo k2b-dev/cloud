@@ -3,8 +3,18 @@
  * Venue's time zone, in the reader's locale, and on a 24-hour clock like the
  * calendar grid and the HH:MM fields.
  */
-const venueFormat = (timeZone: string, locale: string | undefined, options: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat(locale, { ...options, timeZone, hourCycle: "h23" });
+// A list formats the same few zones, languages and shapes for every row; making a formatter is the costly part
+// (WebKit takes about a millisecond each), so each one is made once. The keys come from code, so the map stays small.
+const formats = new Map<string, Intl.DateTimeFormat>();
+const venueFormat = (timeZone: string, locale: string | undefined, options: Intl.DateTimeFormatOptions) => {
+  const key = `${timeZone}|${locale ?? ""}|${JSON.stringify(options)}`;
+  let format = formats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, { ...options, timeZone, hourCycle: "h23" });
+    formats.set(key, format);
+  }
+  return format;
+};
 
 const HOUR_MINUTE = { hour: "2-digit", minute: "2-digit" } as const;
 const DAY = { weekday: "short", day: "numeric", month: "short" } as const;

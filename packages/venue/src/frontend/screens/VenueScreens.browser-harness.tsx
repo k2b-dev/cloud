@@ -52,7 +52,7 @@ const screen = () => {
   const path = location.pathname;
   const params = new URLSearchParams(location.search);
   if (path === "/app/venue") {
-    // as the server answers: a page of at most 100 venues by name, with "more" when another page follows
+    // as the server answers: a page of at most 50 venues by name, with "more" when another page follows
     const listed =
       variant === "worst"
         ? [
@@ -63,7 +63,7 @@ const screen = () => {
           ]
         : params.get("q") === "nichts"
           ? []
-          : venues.slice(0, 100).map((venue) => overviewVenue(venue));
+          : venues.slice(0, 50).map((venue) => overviewVenue(venue));
     const none = { entries: [], total: 0, venues: 0, next: null };
     const shifts =
       variant === "worst" ? worstUpcomingShifts(listed) : variant === "empty" || variant === "noshifts" ? none : fixtureUpcomingShifts();
@@ -71,7 +71,7 @@ const screen = () => {
       <VenueOverviewScreen
         now={FIXTURE_NOW}
         venues={variant === "empty" ? [] : listed}
-        morePages={venues.length > 100}
+        morePages={venues.length > 50}
         page={1}
         shifts={shifts}
         templates={fixtureTemplates}

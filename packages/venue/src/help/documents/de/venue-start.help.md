@@ -6,7 +6,7 @@ description: Grundbegriffe, Einrichtung und öffentliche Seite.
 order: 100
 ---
 
-Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Schichtplan, öffentlichen Inhalten und Feedback von Besuchern. Die Übersicht zeigt deine nächsten Schichten der kommenden 14 Tage über alle deine Standorte, nach Tagen und mit den Personen, die mitarbeiten; ein Klick öffnet die Schicht im Schichtplan ihres Standorts. Darunter listet **Standorte** alle zugänglichen Standorte, 100 je Seite, mit dem Öffnungsstatus nach Öffnungszeiten und Abweichungen. Die Suche oben durchsucht alle.
+Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Schichtplan, öffentlichen Inhalten und Feedback von Besuchern. Die Übersicht zeigt deine nächsten Schichten der kommenden 14 Tage über alle deine Standorte, nach Tagen und mit den Personen, die mitarbeiten; ein Klick öffnet die Schicht im Schichtplan ihres Standorts. Darunter listet **Standorte** alle zugänglichen Standorte, 50 je Seite, mit dem Öffnungsstatus nach Öffnungszeiten und Abweichungen. Die Suche oben durchsucht alle.
 
 ## Überblick {icon="layout-grid"}
 

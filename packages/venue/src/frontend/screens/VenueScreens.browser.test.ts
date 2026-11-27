@@ -628,15 +628,15 @@ describe("Venue on v2", () => {
     expect(found).toEqual([]);
   }, 180_000);
 
-  test("1,000 venues are ready in time, 100 to a page", async () => {
+  test("1,000 venues are ready in time, 50 to a page", async () => {
     const { context, tab, errors, ready } = await open(desktop, "/app/venue", { variant: "huge" });
     try {
       const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
       console.log(`[scale] /app/venue: ready ${ready} ms, ${nodes} elements`);
       expect(ready).toBeLessThan(1500);
-      // the server sends a page of 100 by name; the next page is one link away
+      // the server sends a page of 50 by name; the next page is one link away
       const venues = tab.getByRole("region", { name: "Standorte", exact: true });
-      expect(await venues.locator('[data-k2-part="Row"]').count()).toBe(100);
+      expect(await venues.locator('[data-k2-part="Row"]').count()).toBe(50);
       expect(await venues.getByRole("link", { name: "Weitere Standorte" }).getAttribute("href")).toBe("/app/venue?page=2");
       expect(errors).toEqual([]);
     } finally {

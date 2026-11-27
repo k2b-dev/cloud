@@ -175,16 +175,16 @@ suiteFor("database", "valkey")("Venue page loads", () => {
       expect(page.bytes).toBeLessThan(32_000);
     }
     expect(Object.fromEntries(Object.entries(pages).map(([name, page]) => [name, page.statements.length]))).toEqual(pinned);
-    // the busy member sees a page of 100 venues with the way to the next, and all six shifts with who works along
+    // the busy member sees a page of 50 venues with the way to the next, and all six shifts with who works along
     const busyProps = (pages.busyOverview.result as { props: VenueOverviewProps }).props;
     expect({ venues: busyProps.venues.length, more: busyProps.morePages, first: busyProps.venues[0]?.name }).toEqual({
-      venues: 100,
+      venues: 50,
       more: true,
       first: "Ort 001",
     });
     expect(busyProps.shifts.entries.map((shift) => shift.coworkers)).toEqual(
       Array.from({ length: 6 }, () => ({ names: ["Venue page member"], count: 1 })),
     );
-    console.info(`venue overview: ${pages.overview.bytes} bytes for 1 venue, ${pages.busyOverview.bytes} bytes for 100 of 105 venues`);
+    console.info(`venue overview: ${pages.overview.bytes} bytes for 1 venue, ${pages.busyOverview.bytes} bytes for 50 of 105 venues`);
   }, 60_000);
 });

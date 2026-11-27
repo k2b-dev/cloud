@@ -21,8 +21,8 @@ export type PageData<T> = { kind: "ok"; props: T } | { kind: "redirect"; to: str
 
 const log = logger("venue:workspace");
 
-/** The venues the overview lists per page, by name. */
-export const OVERVIEW_VENUES = 100;
+/** The venues the overview lists per page, by name: as many as its sidebar names. */
+export const OVERVIEW_VENUES = 50;
 /** The next shifts the overview shows, and how far ahead it looks. */
 export const OVERVIEW_SHIFTS = 12;
 export const OVERVIEW_SHIFT_DAYS = 14;

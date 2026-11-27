@@ -32,8 +32,6 @@ import { assignmentSelectionId, scheduleHref } from "../schedule-url";
 import { slugFromName, venueSlugError } from "../venue-slug";
 import { useVenueWords } from "./messages";
 
-/** The venues the sidebar lists by name; the list below holds the page of them. */
-const NAV_VENUES = 50;
 /** How far ahead "Deine nächsten Schichten" looks; the server reads the same window. */
 const SHIFT_DAYS = 14;
 
@@ -138,7 +136,8 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
       ? [
           {
             label: t().yourVenues,
-            items: props.venues.slice(0, NAV_VENUES).map((venue) => ({
+            // the page of venues the list below shows (the server sends at most 50)
+            items: props.venues.map((venue) => ({
               label: venue.name,
               icon: iconName(venue.icon),
               color: venue.accentColor,

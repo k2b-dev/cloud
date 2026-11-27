@@ -6,7 +6,7 @@ description: Core concepts, setup path, and public page basics.
 order: 100
 ---
 
-Venues manages staffed places that need public opening status, shift signup, public page content, and visitor feedback. The Venues overview shows your next shifts of the coming 14 days across all your venues, by day and with who works along; select one to open it in its venue's schedule. Below, **Venues** lists every venue you can access, 100 to a page, with whether it is open now by its opening hours and exceptions. The search in the head looks through all of them.
+Venues manages staffed places that need public opening status, shift signup, public page content, and visitor feedback. The Venues overview shows your next shifts of the coming 14 days across all your venues, by day and with who works along; select one to open it in its venue's schedule. Below, **Venues** lists every venue you can access, 50 to a page, with whether it is open now by its opening hours and exceptions. The search in the head looks through all of them.
 
 ## Overview {icon="layout-grid"}
 
