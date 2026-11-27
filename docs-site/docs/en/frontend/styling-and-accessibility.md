@@ -58,9 +58,8 @@ selection fills.
 Use row-height loading placeholders and distinguish empty, no results, and
 no access without adding a box. Every load error offers **Try again** through
 [empty-state recovery](/en/ui/surfaces/empty-states) with `state="error"` and `onRetry`;
-keep the person's selection. A moved familiar path gets a one-time
-[MovedHint](/en/ui/feedback/moved-hint) at the old place, only for people who may
-use the new path. Mail is the agreed exception and shows no hint there.
+keep the person's selection. A moved familiar path keeps working: its old URL
+redirects to the new place. Do not open a hint that says where something moved.
 
 ## Group content without decorative lines
 
