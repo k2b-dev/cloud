@@ -38,6 +38,8 @@ export async function migrate(db: SQL = sql): Promise<void> {
           outcome IN ('approved','changes_requested','rejected') AND approved=(outcome='approved'));
       END IF;
     END $$`.simple();
+    // Administration › Code lists the latest decisions first.
+    await tx`CREATE INDEX IF NOT EXISTS version_decisions_recent ON code.version_decisions(decided_at DESC,version_id DESC)`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.version_comments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       version_id UUID NOT NULL REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,

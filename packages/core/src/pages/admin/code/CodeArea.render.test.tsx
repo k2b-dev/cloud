@@ -395,6 +395,65 @@ test("break-ui: the worst case renders every section with its long, short, forei
   expect(text(render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 }, "worst"))).toContain("Niederlassung Nord-Ost");
 });
 
+/** The props each island of the picture parses, as the server serializes them into `data-props`, in bytes. */
+const islandBytes = (html: string) =>
+  [...html.matchAll(/data-props="([^"]*)"/g)].reduce(
+    (sum, [, value]) =>
+      sum +
+      Buffer.byteLength((value ?? "").replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
+    0,
+  );
+
+test("each first view hands its island only what it shows, within a measured budget", () => {
+  // The parts `loadCodeArea` reads for each view; the fixture fills every part, the server only these.
+  const views: [string, Record<string, string>, (keyof AreaData)[]][] = [
+    ["approvals", { sec: "approvals" }, ["approvals"]],
+    ["approval open", review, ["approvals", "approval"]],
+    ["decided", { sec: "approvals", tab: "decided" }, ["decided"]],
+    ["automations", { sec: "code" }, ["codes"]],
+    ["automation open", { sec: "code", id: "c_rechn" }, ["codes", "code", "reports"]],
+    ["policy", { sec: "policy" }, ["policy"]],
+    ["groups", { sec: "groups" }, ["policy"]],
+    ["effective", { sec: "effective", id: data.FIXTURE_PEOPLE.lea }, ["effective"]],
+    ["history", { sec: "history" }, ["history"]],
+    ["cleanup", { sec: "cleanup" }, ["cleanup"]],
+    ["databases", { sec: "databases" }, ["databases"]],
+    ["limits", { sec: "limits" }, ["limits"]],
+    ["runners", { sec: "runners" }, ["runners"]],
+  ];
+  const loaded =
+    (parts: (keyof AreaData)[]) =>
+    (area: AreaData): AreaData => {
+      const pick = <K extends keyof AreaData>(key: K): AreaData[K] | null => (parts.includes(key) ? area[key] : null);
+      return {
+        summary: area.summary,
+        approvals: pick("approvals"),
+        decided: pick("decided"),
+        approval: pick("approval"),
+        codes: pick("codes"),
+        code: pick("code"),
+        reports: pick("reports"),
+        policy: pick("policy"),
+        effective: pick("effective"),
+        history: pick("history"),
+        databases: pick("databases"),
+        cleanup: pick("cleanup"),
+        runners: pick("runners"),
+        limits: pick("limits"),
+      };
+    };
+  const sizes = Object.fromEntries(views.map(([name, query, parts]) => [name, islandBytes(render(query, "normal", "de", loaded(parts)))]));
+  // What every screen carries besides its section: the admin bar, the address, the date settings and the apps.
+  const frame = islandBytes(render({ sec: "approvals" }, "normal", "de", loaded([])));
+  console.log(JSON.stringify({ frame, islandBytes: sizes }));
+  // Each list is one bounded page; an open review also carries its diff and source rows, which its tabs switch between.
+  for (const [name, bytes] of Object.entries(sizes))
+    expect({ name, within: bytes > frame && bytes - frame <= (name === "approval open" ? 32_000 : 16_000) }).toEqual({
+      name,
+      within: true,
+    });
+});
+
 test("every text of the area exists in every language", () => {
   expect(codeAdminMessages.check()).toEqual([]);
   expect(codeReviewMessages.check()).toEqual([]);
