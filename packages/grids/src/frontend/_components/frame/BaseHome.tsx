@@ -323,7 +323,10 @@ function HomeList(props: HomeProps) {
     >
       <LiveNotice />
       <Show when={!frame.revoked()}>
-        <Show when={props.activity}>{(activity) => hero(activity())}</Show>
+        {/* a base without a readable table has no records to tell of: no hero that says 0 of 0 */}
+        <Show when={props.activity && Object.keys(props.activity.tables).length > 0 ? props.activity : undefined}>
+          {(activity) => hero(activity())}
+        </Show>
         <Show when={emptyRouteNote()}>{(note) => <Notice tone="note">{note()}</Notice>}</Show>
         <Show
           when={props.tab === "groups"}

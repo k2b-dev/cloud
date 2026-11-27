@@ -144,6 +144,12 @@ describe("Grids base home on v2", () => {
     expect(html).toContain("1,087 runs failed (24 h)");
   });
 
+  test("a base without a readable table shows no hero", () => {
+    const html = renderHome({ activity: { ...activity, total: 0, tables: {}, pendingFinalizations: 0, failedRuns24h: 0, recent: [] } });
+    expect(html).not.toContain("new today");
+    expect(html).not.toContain("Recently changed");
+  });
+
   test("says nothing of activity it was not given", () => {
     const html = renderHome();
     expect(html).not.toContain("new today");
