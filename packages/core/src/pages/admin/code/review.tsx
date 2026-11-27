@@ -474,8 +474,8 @@ export function reviewHeadActions(review: CodeReview): JSX.Element {
         </Show>
       }
     >
-      <Button icon="message-2" keep disabled={review.busy()} onClick={() => review.setDialog(true)}>
-        {t().rejectOrChange}
+      <Button icon="message-2" keep title={t().rejectOrChange} disabled={review.busy()} onClick={() => review.setDialog(true)}>
+        {t().rejectOrChangeShort}
       </Button>
       <Button variant="primary" icon="check" busy={review.busy()} disabled={!review.mayDecide()} onClick={() => void review.approve()}>
         {t().approve({ n: p.number })}

@@ -35,9 +35,7 @@ function DatabaseActions(props: { row: UnusedCodeDatabase }) {
   const remove = createDatabaseDelete(props.row.codeId, { namespace: props.row.namespace, since: props.row.since });
   return (
     <Inline>
-      <Button variant="text" icon="download" href={databaseExportHref(props.row.codeId)}>
-        {t().databaseExport}
-      </Button>
+      <Button variant="text" icon="download" label={t().databaseExport} href={databaseExportHref(props.row.codeId)} />
       <Button variant="text" icon={remove.action().icon} disabled={remove.action().disabled} onClick={() => remove.action().onClick?.()}>
         {remove.action().label}
       </Button>
@@ -57,6 +55,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
   const summary = ok(props.summary) ? props.summary : null;
   const size = (bytes: number | null) =>
     bytes === null ? "–" : `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(bytes / 1048576)} MB`;
+  const num = (n: number) => new Intl.NumberFormat(locale()).format(n);
   const waitText = (ms: number) => (ms < 60_000 ? t().seconds({ n: Math.round(ms / 1000) }) : t().minutes({ n: Math.round(ms / 60_000) }));
 
   const cleanupPane = (): JSX.Element => {
@@ -226,19 +225,19 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                     icon="server-2"
                     color={CODE_COLOR}
                     label={t().instances}
-                    value={none ? <Text tone="bad">0</Text> : String(current().instances)}
+                    value={none ? <Text tone="bad">0</Text> : num(current().instances)}
                     meta={t().runnerUnit({ n: current().instances })}
                   />
                   <Cells.Cell
                     icon="layout-grid"
                     label={t().freeSlots}
                     value={behind ? <Text tone="warn">{t().slotsOf({ free: current().freeSlots, total: slots })}</Text> : t().slotsOf({ free: current().freeSlots, total: slots })}
-                    meta={<Progress value={slots - current().freeSlots} of={slots} label={t().slotsBusy({ busy: slots - current().freeSlots, total: slots })} />}
+                    meta={<Progress value={slots - current().freeSlots} of={slots} label={t().slotsBusyShort({ n: slots - current().freeSlots })} />}
                   />
                   <Cells.Cell
                     icon="clock-pause"
                     label={t().queue}
-                    value={current().queued > 0 && (behind || none) ? <Text tone="warn">{String(current().queued)}</Text> : String(current().queued)}
+                    value={current().queued > 0 && (behind || none) ? <Text tone="warn">{num(current().queued)}</Text> : num(current().queued)}
                     meta={t().runsWaiting({ n: current().queued })}
                   />
                   <Cells.Cell
@@ -272,7 +271,7 @@ export default function OperationsScreen(props: OperationsScreenProps) {
                         { title: t().instance, width: { min: 100, default: 120 }, drop: true, cell: (runner) => <Text type="meta">{short(runner.instanceId)}</Text> },
                         {
                           title: t().places,
-                          width: { min: 160, default: 220 },
+                          width: { min: 200, default: 280 },
                           drop: true,
                           // the places that are taken now, as a bar against all places of this runner
                           cell: (runner) => {

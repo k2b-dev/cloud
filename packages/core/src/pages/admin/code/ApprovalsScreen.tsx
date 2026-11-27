@@ -189,7 +189,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
           : [
               {
                 title: t().version,
-                width: { min: 72, default: 88 },
+                width: { min: 72, default: 120 },
                 cell: (entry: CodeAdminApproval) =>
                   entry.stat.first ? rt().versionFirst({ n: entry.number }) : rt().version({ n: entry.number }),
               },
@@ -284,7 +284,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
                 cell: (entry: CodeAdminDecided) => ownerAppLabel(t(), entry.owner, props.apps),
               },
             ]),
-        { title: t().decision, width: { min: 150, default: 220 }, drop: true, cell: outcome },
+        { title: t().decision, width: { min: 180, default: 260 }, drop: true, cell: outcome },
         { title: t().decidedAt, drop: true, cell: (entry) => ago(entry.decidedAt) },
       ]}
     />
@@ -330,7 +330,7 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
               <Inline>
                 <Mark {...automationMark(detail!.code.owner, props.apps)} />
                 <Text type="body" weight="strong">
-                  {rt().headTitle({ title: p.title, n: p.number })}
+                  {p.title}
                 </Text>
               </Inline>
             }
@@ -345,12 +345,37 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
             }
           />
         }
-        status={<Tabs label={rt().tabsLabel} items={review.tabs()} />}
+        // the views of the review as a bar of their own under the head, on the text edge
+        status={<Bar start={<Tabs label={rt().tabsLabel} items={review.tabs()} />} />}
       >
         <ReviewBody review={review} />
       </Pane>
     );
   };
+  /** The list: the whole width while nothing is open, beside the open review at its own width (rule 5). */
+  const listPane = () => (
+    <Pane
+      label={decidedList ? t().decided : t().approvals}
+      width={open ? { min: 360, default: 480 } : undefined}
+      scrollKey="admin-code-approvals"
+      status={
+        // k2b-ui gap: Hero figure (#4360): "4 Freigaben warten" in type 30 in the Code colour; StatusRow now
+        <StatusRow
+          lead={lead()}
+          facts={[
+            ...(!decidedList && oldest() ? [{ before: t().oldestWaits, value: ago(oldest()!) }] : []),
+            // the admin bar counts waiting approvals and open reports together; the reports are named here
+            ...(summary?.reports ? [{ value: summary.reports, after: t().openReports({ n: summary.reports }) }] : []),
+          ]}
+        />
+      }
+    >
+      {list()}
+      <Show when={!decidedList && ok(props.approvals) && props.approvals.nextCursor}>
+        {(cursor) => <Bar end={<Button href={codeAreaHref({ sec: "approvals", after: cursor() })}>{rt().loadMore}</Button>} />}
+      </Show>
+    </Pane>
+  );
 
   return (
     <AdminWorkspace
@@ -387,32 +412,14 @@ export default function ApprovalsScreen(props: ApprovalsScreenProps) {
         />
       }
     >
-      <Pane.Split>
-        <Pane
-          label={decidedList ? t().decided : t().approvals}
-          width={{ min: 360, default: open ? 480 : 640 }}
-          scrollKey="admin-code-approvals"
-          status={
-            // k2b-ui gap: Hero figure (#4360): "4 Freigaben warten" in type 30 in the Code colour; StatusRow now
-            <StatusRow
-              lead={lead()}
-              facts={[
-                ...(!decidedList && oldest() ? [{ before: t().oldestWaits, value: ago(oldest()!) }] : []),
-                // the admin bar counts waiting approvals and open reports together; the reports are named here
-                ...(summary?.reports ? [{ value: summary.reports, after: t().openReports({ n: summary.reports }) }] : []),
-              ]}
-            />
-          }
-        >
-          {list()}
-          <Show when={!decidedList && ok(props.approvals) && props.approvals.nextCursor}>
-            {(cursor) => (
-              <Bar end={<Button href={codeAreaHref({ sec: "approvals", after: cursor() })}>{rt().loadMore}</Button>} />
-            )}
-          </Show>
-        </Pane>
-        {reviewPane()}
-      </Pane.Split>
+      {open ? (
+        <Pane.Split>
+          {listPane()}
+          {reviewPane()}
+        </Pane.Split>
+      ) : (
+        listPane()
+      )}
       <Show when={review}>{(current) => <ReviewDialog review={current()} />}</Show>
     </AdminWorkspace>
   );

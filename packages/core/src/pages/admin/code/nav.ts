@@ -5,9 +5,9 @@ import { CODE_AREA_SECTIONS, CODE_SECTION_ICON, type CodeAreaSection, codeAreaHr
 import { codeAdminMessages } from "./messages";
 
 /**
- * The admin bar with the sections of Code one level in under its entry, the open one current. Sections with work
- * carry their count right-aligned (approvals, all automations, groups, cleanup); open page reports put a dot on all
- * automations, where each automation lists its own.
+ * The admin bar with the sections of Code one level in under its entry, the open one current. Approvals, groups and
+ * cleanup carry their count right-aligned; open page reports put a dot on all automations, where each automation lists
+ * its own. The number of all automations is no work, so it stays the statement of their list.
  */
 export const codeNav = (
   c: Parameters<typeof adminNavigation>[0],
@@ -30,7 +30,6 @@ export const codeNav = (
   // The admin bar's sections take no count; the counts the page already read join their entries here.
   const counts = new Map<string, number | undefined>([
     [href("approvals"), summary?.approvals],
-    [href("code"), summary?.codes],
     [href("groups"), summary?.groups],
     [href("cleanup"), summary?.cleanup],
   ]);

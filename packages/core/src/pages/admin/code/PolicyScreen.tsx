@@ -121,7 +121,7 @@ export default function PolicyScreen(props: PolicyScreenProps) {
       policy ? (
         <StatusRow
           lead={t().presetInForce({ preset: { off: t().presetOff, admin: t().presetAdmin, open: t().presetOpen, custom: t().presetCustom }[policy.policy.definition.preset] })}
-          facts={policy.updatedByName ? [{ value: policy.updatedByName, after: when(policy.policy.updatedAt) }] : undefined}
+          facts={policy.updatedByName ? [{ value: t().lastChange({ who: policy.updatedByName, when: when(policy.policy.updatedAt) }) }] : undefined}
         />
       ) : undefined
     }>
@@ -145,11 +145,10 @@ export default function PolicyScreen(props: PolicyScreenProps) {
   const groupsPanes = (): JSX.Element => {
     const open = props.query.id;
     const group = policy?.groups.find((entry) => entry.id === open);
-    return (
-      <Pane.Split>
+    const list = () => (
         <Pane
           label={t().groups}
-          width={{ min: 320, default: open ? 420 : 640 }}
+          width={open ? { min: 320, default: 420 } : undefined}
           scrollKey="admin-code-groups"
           status={policy ? <StatusRow lead={t().groupsSub({ n: policy.groups.length })} /> : undefined}
         >
@@ -195,6 +194,11 @@ export default function PolicyScreen(props: PolicyScreenProps) {
             )}
           </Show>
         </Pane>
+    );
+    if (!open || !policy) return list();
+    return (
+      <Pane.Split>
+        {list()}
         <Show when={open && policy}>
           <Pane
             detail
@@ -267,7 +271,7 @@ export default function PolicyScreen(props: PolicyScreenProps) {
                 </Section>
                 <For each={CODE_POLICY_ROW_GROUPS}>
                   {(group) => (
-                    <Section title={t()[group.key]}>
+                    <Section title={group.key === "grpRead" ? t().grpReadSection : t()[group.key]}>
                       <For each={group.rows}>
                         {(rowId) => {
                           const row = byRow.get(rowId);
@@ -307,7 +311,7 @@ export default function PolicyScreen(props: PolicyScreenProps) {
       <>
         <Text weight="strong">{entry.by ?? t().unknownAuthor}</Text>{" "}
         {[
-          ...(entry.preset ? [t().historyPreset({ before: presetLabel(entry.preset.before), after: presetLabel(entry.preset.after) })] : []),
+          ...(entry.preset ? [t().historyPresetChange({ before: presetLabel(entry.preset.before), after: presetLabel(entry.preset.after) })] : []),
           ...entry.changes.map((change) =>
             t().historyChange({
               row: t().historyRow({ row: t().rowLabel({ row: change.row }), group: change.group }),

@@ -22,8 +22,10 @@ import { CODE_LIMIT_KEYS } from "./area";
 import type { CodeAreaData } from "./data";
 
 const h = (seed: string) => seed.repeat(64).slice(0, 64);
-/** Freshness values are relative to now, so screenshots read "4 minutes ago" on any day. */
-const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+/** The moment the tests and pictures freeze their clocks at; freshness values count back from it, so they read "4 minutes ago". */
+export const FIXTURE_NOW = Date.parse("2026-11-01T12:10:00.000Z");
+const ago = (minutes: number) => new Date(FIXTURE_NOW - minutes * 60_000).toISOString();
+
 export const FIXTURE_PEOPLE = {
   ben: "11111111-1111-4111-8111-111111111111",
   lea: "22222222-2222-4222-8222-222222222222",
@@ -880,19 +882,19 @@ export const fixtureRunners = (empty = false): CodeRunnerMetrics =>
             instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60",
             freeSlots: 1,
             busySlots: 3,
-            lastSeenAt: new Date(Date.now() - 8_000).toISOString(),
+            lastSeenAt: new Date(FIXTURE_NOW - 8_000).toISOString(),
           },
           {
             instanceId: "9b4d2f31-6e2c-4d30-8b21-2c3d4e5f6071",
             freeSlots: 0,
             busySlots: 4,
-            lastSeenAt: new Date(Date.now() - 5_000).toISOString(),
+            lastSeenAt: new Date(FIXTURE_NOW - 5_000).toISOString(),
           },
           {
             instanceId: "ac5e3042-7f3d-4e41-9c32-3d4e5f607182",
             freeSlots: 4,
             busySlots: 0,
-            lastSeenAt: new Date(Date.now() - 2_000).toISOString(),
+            lastSeenAt: new Date(FIXTURE_NOW - 2_000).toISOString(),
           },
         ],
         nextCursor: null,
@@ -1226,12 +1228,21 @@ function worstData(data: CodeAreaData, query: Record<string, string | undefined>
   };
 }
 
-/** A page of 1,000 automations: the list stays one line per row and bounded in work. */
+/**
+ * 25,000 automations, 980 waiting approvals and 4,000 cleanup jobs: the server reads every list in pages (20 rows, cleanup
+ * 50), so the page shows the first page with "Load more" and its work stays bounded however large the Cloud grows.
+ */
 function hugeData(data: CodeAreaData): CodeAreaData {
   const base = fixtureCodes();
-  const items = Array.from({ length: 1000 }, (_, index) => {
-    const source = base[index % base.length]!;
-    return { ...source, id: `c_h${String(index).padStart(5, "0")}`, title: `${source.title} ${index + 1}` };
-  });
-  return { ...data, codes: { items, total: 25_000, owners: 640, nextCursor: "eyJ0IjoiSCJ9" } };
+  const page = (start: number) =>
+    Array.from({ length: 20 }, (_, index) => {
+      const source = base[(start + index) % base.length]!;
+      return { ...source, id: `c_h${String(start + index).padStart(5, "0")}`, title: `${source.title} ${start + index + 1}` };
+    });
+  return {
+    ...data,
+    summary: { approvals: 980, reports: 12, codes: 25_000, groups: 40, cleanup: 4_000 },
+    codes: { items: page(0), total: 25_000, owners: 640, nextCursor: "eyJ0IjoiSCJ9" },
+    approvals: { items: fixtureApprovals(), nextCursor: "2026-11-01T11:10:00.123456Z|e0000000-0000-4000-8000-000000000001" },
+  };
 }

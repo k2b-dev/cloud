@@ -254,7 +254,7 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
 
   const table = () => (
     <Table
-      label={t().allCode}
+      label={t().sectionLabel({ s: "code" })}
       rows={codes?.items ?? []}
       rowKey={(code) => code.id}
       current={query.id}
@@ -306,10 +306,10 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
 
   const detailPane = (): JSX.Element => {
     if (!query.id) return undefined;
-    const back = { label: t().allCode, href: listHref };
+    const back = { label: t().sectionLabel({ s: "code" }), href: listHref };
     if (!detail)
       return (
-        <Pane detail label={t().allCode} back={back} head={<Bar end={<Button variant="ghost" icon="x" label={t().close} href={listHref} />} />}>
+        <Pane detail label={t().sectionLabel({ s: "code" })} back={back} head={<Bar end={<Button variant="ghost" icon="x" label={t().close} href={listHref} />} />}>
           <Show when={props.code === "missing"} fallback={<LoadFailed />}>
             <Missing text={t().codeMissing} back={{ sec: "code" }} />
           </Show>
@@ -464,6 +464,61 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
     );
   };
 
+  /** The list: the whole width while nothing is open, beside the open automation at its own width (rule 5). */
+  const listPane = () => (
+    <Pane
+      label={t().sectionLabel({ s: "code" })}
+      width={open ? { min: 360, default: 520 } : undefined}
+      scrollKey="admin-code-list"
+      status={
+        <>
+          <FilterBar
+            query={listQuery()}
+            state={state()}
+            // the bar wrote the address; the server reads the list for it, so the page loads that address
+            onChange={(next) => {
+              setState(next);
+              window.location.replace(codeListHref(next, query.id));
+            }}
+            icons={{ status: "circle-dot", app: "apps" }}
+            results={codes ? t().codeCount({ n: codes.total }) : undefined}
+          />
+          {/* k2b-ui gap: Hero figure (#4360); the count of automations and owners is the statement */}
+          <StatusRow
+            lead={codes ? (codes.total ? t().allSub({ n: codes.total, p: codes.owners }) : t().noneYet) : t().sectionLabel({ s: "code" })}
+            facts={summary?.reports ? [{ value: summary.reports, after: t().openReports({ n: summary.reports }) }] : undefined}
+          />
+        </>
+      }
+    >
+      <Show when={codes} fallback={<LoadFailed />}>
+        <Show
+          when={codes!.items.length || filtered || query.after}
+          fallback={
+            <Empty
+              icon="code"
+              text={t().emptyCodeSub}
+              action={{ label: t().viewPolicy, icon: "table-options", href: codeAreaHref({ sec: "policy" }) }}
+            />
+          }
+        >
+          {table()}
+        </Show>
+        <Show when={codes!.nextCursor}>
+          {(after) => (
+            <Bar
+              end={
+                <Button href={codeAreaHref({ sec: "code", status: query.status, app: query.app, q: query.q, after: after() })}>
+                  {t().loadMore}
+                </Button>
+              }
+            />
+          )}
+        </Show>
+      </Show>
+    </Pane>
+  );
+
   return (
     <AdminWorkspace
       nav={props.nav}
@@ -472,51 +527,14 @@ export default function AutomationsScreen(props: AutomationsScreenProps) {
       detailEmpty={{ icon: "code", text: t().chooseCode }}
       head={<CodeHead section="code" />}
     >
-      <Pane.Split>
-        <Pane
-          label={t().allCode}
-          width={{ min: 360, default: open ? 520 : 640 }}
-          scrollKey="admin-code-list"
-          status={
-            <>
-              <FilterBar
-                query={listQuery()}
-                state={state()}
-                // the bar wrote the address; the server reads the list for it, so the page loads that address
-                onChange={(next) => {
-                  setState(next);
-                  window.location.replace(codeListHref(next, query.id));
-                }}
-                icons={{ status: "circle-dot", app: "apps" }}
-                results={codes ? t().codeCount({ n: codes.total }) : undefined}
-              />
-              {/* k2b-ui gap: Hero figure (#4360); the count of automations and owners is the statement */}
-              <StatusRow
-                lead={codes ? (codes.total ? t().allSub({ n: codes.total, p: codes.owners }) : t().noneYet) : t().allCode}
-                facts={summary?.reports ? [{ value: summary.reports, after: t().openReports({ n: summary.reports }) }] : undefined}
-              />
-            </>
-          }
-        >
-          <Show when={codes} fallback={<LoadFailed />}>
-            <Show when={codes!.items.length || filtered || query.after} fallback={<Empty icon="code" text={t().emptyCodeSub} action={{ label: t().viewPolicy, icon: "table-options", href: codeAreaHref({ sec: "policy" }) }} />}>
-              {table()}
-            </Show>
-            <Show when={codes!.nextCursor}>
-              {(after) => (
-                <Bar
-                  end={
-                    <Button href={codeAreaHref({ sec: "code", status: query.status, app: query.app, q: query.q, after: after() })}>
-                      {t().loadMore}
-                    </Button>
-                  }
-                />
-              )}
-            </Show>
-          </Show>
-        </Pane>
-        {detailPane()}
-      </Pane.Split>
+      {open ? (
+        <Pane.Split>
+          {listPane()}
+          {detailPane()}
+        </Pane.Split>
+      ) : (
+        listPane()
+      )}
     </AdminWorkspace>
   );
 }

@@ -271,7 +271,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       </Show>
       <For each={tableGroups()}>
         {(group) => (
-          <Section title={t()[group.key]}>
+          <Section title={group.key === "grpRead" ? t().grpReadSection : t()[group.key]}>
             <For each={group.rows}>
               {(row) => {
                 const changed = () => changedRows().includes(row);
