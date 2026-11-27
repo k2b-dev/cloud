@@ -81,6 +81,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
 | folders or pages in levels in the sidebar | a `Nav` group with `tree` (`load`, `loadMore` for what opens) | `tree.tsx` |
+| the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | `conversations.tsx` |
 | rows in levels (a folder's content as a tree) | `Table` with `rowKey` and `tree` | `tree.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
