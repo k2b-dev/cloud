@@ -1187,8 +1187,14 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
-/* no line under the last section of a column: the space under it ends the page, as under a list's last row (rule 4) */
-.k2-ui :is(.k2-scroll, .k2-dialog-body) > .k2-sec:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
+/* no line under the last section of a column: the space under it ends the page, as under a list's last row (rule 4);
+   a popover after it, also alone in an island of its own (a menu's island), is no part of the column */
+.k2-ui
+  :is(.k2-scroll, .k2-dialog-body)
+  > .k2-sec:nth-last-child(
+    1 of
+      :not([popover], [data-slot$="-content"], :is(solid-island, solid-client):has(> :is([popover], [data-slot$="-content"]):only-child))
+  ) {
   border-bottom: 0;
 }
 /* sections side by side: two columns where both get 360 px, else one; no line between the columns */

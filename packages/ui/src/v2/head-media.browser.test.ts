@@ -1748,6 +1748,22 @@ test("on the phone the statements end before 'Ansicht' at rest and fade at their
     );
 });
 
+// a menu's island after the last section (an island that holds only its popover) is no part of the column: the last
+// section still draws no line under it (review r10 P3)
+test("the last section of a column draws no line also where an island with only a popover follows it", async () => {
+  await withPage("section-foot", async (page) => {
+    const line = await page.evaluate(() => {
+      const scroll = document.querySelector(".k2-scroll:has(> .k2-sec)")!;
+      const island = document.createElement("solid-island");
+      island.innerHTML = "<div popover>Menü</div>";
+      scroll.append(island);
+      const sections = scroll.querySelectorAll(":scope > .k2-sec");
+      return getComputedStyle(sections[sections.length - 1]!).borderBottomWidth;
+    });
+    expect(line).toBe("0px");
+  });
+});
+
 test("a bar that ends a section draws no line of its own: one line parts it from the next section, never two", async () => {
   for (const width of [1440, 390])
     await withPage(
@@ -1805,8 +1821,9 @@ test("a bar that ends a section draws no line of its own: one line parts it from
               Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) <= 1,
           };
         });
-        // in a row's mark of 32 (40 on the phone) the symbol is 18 (22 on the phone), and the letter takes its size
-        expect(initial).toEqual({ text: "W", size: [initial.symbol, "600"], symbol: width === 390 ? "22px" : "18px", centred: true });
+        // in a row's mark of 24 (a list without pictures; 40 on the phone) the symbol is 15 (22 on the phone), and the
+        // letter takes its size
+        expect(initial).toEqual({ text: "W", size: [initial.symbol, "600"], symbol: width === 390 ? "22px" : "15px", centred: true });
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },
