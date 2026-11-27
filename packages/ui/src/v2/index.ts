@@ -137,6 +137,8 @@ export {
   type MarkProps,
   Progress,
   type ProgressProps,
+  RangeBar,
+  type RangeBarProps,
   Spark,
   type SparkProps,
   type TickState,
