@@ -128,7 +128,9 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
             open={(item) => ({ href: codeHref(item.id) })}
             columns={[
               // B rule 4: one line per row on the desktop; the schedule is a column of its own, not a second line.
-              { title: t().appsColumnName, mark: markOf, cell: (item) => item.title, width: { min: 160, default: 240 } },
+              // k2b-ui gap: #4223 (Column mark): the name leads with Gustav's mark per trigger once a column can carry one;
+              // until then the name stands alone on the desktop (the phone row already shows the mark).
+              { title: t().appsColumnName, cell: (item) => item.title, width: { min: 160, default: 240 } },
               { title: t().appsColumnSchedule, cell: (item) => cardDescription(item, t(), locale()) },
               { title: t().appsColumnState, cell: (item) => state(cardStatus(item)), width: { min: 210, default: 210 } },
               {
