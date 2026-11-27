@@ -421,8 +421,8 @@ describe("a folder of Files on v2", () => {
         return !!left && !!right && right.x >= left.x + left.width - 1 && Math.abs(right.y - left.y) < 2;
       };
       await settled(tab);
-      await shoot(tab, "02-detail-1440");
       expect(await besides()).toBe(false);
+      await shoot(tab, "02-detail-1440");
       await expectClean(tab);
       // … and side by side on a large screen, where the detail grows and the list keeps its width (B)
       await tab.setViewportSize({ width: 1920, height: 1080 });
