@@ -11,6 +11,9 @@ const root = mkdtempSync(resolve(tmpdir(), "gateway-ops-logs-screen-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { LogsScreenFixture } = await import("./logs-screen.fixture");
+const { LONG_REQUEST_ID } = await import("./logs-fixture-data");
+const { default: LogEntryPane } = await import("./LogEntryPane");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const dom = createDomTestHarness();
 dom.cleanup();
@@ -24,7 +27,43 @@ const render = (search: string, state?: "loadfail") => {
   return { html, text: body.textContent?.replace(/\s+/g, " ") ?? "" };
 };
 
+/** The open entry alone, as the detail beside the list renders it. */
+const renderEntry = (entry: { message: string; metadata: Record<string, unknown> | null }) => {
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(LogEntryPane, {
+          selected: { entry: { id: "77", level: "error", source: "mail", createdAt: "2026-11-24T09:43:35.992Z", ...entry }, error: null },
+          timeZone: "Europe/Berlin",
+          closeHref: "/admin/observability/logs",
+          listLabel: "Protokolle",
+          onRequest: () => {},
+        });
+      },
+    }),
+  );
+  return parser.parseFromString(html, "text/html").body;
+};
+
 describe("the log list on the server", () => {
+  test("a request ID longer than the request filter allows is no action, in the row and in the open entry", () => {
+    const { html, text } = render("q=langem");
+    expect(text).toContain(LONG_REQUEST_ID);
+    const list = parser.parseFromString(html, "text/html").body;
+    expect([...list.querySelectorAll("button")].some((button) => button.textContent?.includes(LONG_REQUEST_ID))).toBe(false);
+
+    const long = renderEntry({ message: "Anfrage", metadata: { requestId: LONG_REQUEST_ID } });
+    const action = [...long.querySelectorAll("button")].find((button) => button.textContent?.includes("Nur diese Anfrage zeigen"));
+    expect(action?.hasAttribute("disabled")).toBe(true);
+    expect(long.textContent).toContain("Länger als 128 Zeichen");
+
+    const fitting = renderEntry({ message: "Anfrage", metadata: { requestId: "r".repeat(128) } });
+    const enabled = [...fitting.querySelectorAll("button")].find((button) => button.textContent?.includes("Nur diese Anfrage zeigen"));
+    expect(enabled?.hasAttribute("disabled")).toBe(false);
+    expect(fitting.textContent).not.toContain("Länger als");
+  });
+
   test("the first picture shows the filter statements, the result and the rows of the address", () => {
     const { text } = render("time=last-15m&level=error,warn&source=mail,gateway");
     expect(text).toContain("Zeitraum letzte 15 Minuten");

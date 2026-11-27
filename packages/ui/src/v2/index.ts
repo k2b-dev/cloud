@@ -12,6 +12,8 @@
 
 // The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
 export { useLocale } from "../intl/locale";
+// The bare address of a display form such as `"Berg, Anna" <anna@example.org>`, as an address field reads it.
+export { addressOf } from "./addresses";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -58,6 +60,7 @@ export {
   Table,
   type TableGroup,
   type TableProps,
+  type TableTree,
   Text,
   type TextProps,
 } from "./content";
@@ -65,6 +68,7 @@ export {
   Check,
   type CheckProps,
   Choice,
+  type ChoiceOption,
   type ChoiceProps,
   CodeInput,
   type CodeInputProps,
@@ -78,6 +82,7 @@ export {
   type ImageInputProps,
   Input,
   type InputProps,
+  type InputSend,
   Select,
   type SelectOption,
   type SelectProps,
@@ -110,9 +115,22 @@ export {
   type WorkspaceProps,
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
-export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
+export {
+  Avatar,
+  type AvatarProps,
+  Chip,
+  type ChipProps,
+  Icon,
+  type IconProps,
+  Progress,
+  type ProgressProps,
+  type TickState,
+  Ticks,
+  type TicksProps,
+} from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
+export type { NavTree, NavTreeNode } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";

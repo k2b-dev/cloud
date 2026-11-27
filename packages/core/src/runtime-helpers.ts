@@ -79,6 +79,7 @@ import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
 import { migrate as removeCapabilitiesApp } from "./migrate/core/remove-capabilities-app";
+import { migrate as removeFaqApp } from "./migrate/core/remove-faq-app";
 import { migrate as migrateRoomAccessEvents } from "./migrate/core/room-access-events";
 import { migrate as migrateScreenPreferences } from "./migrate/core/screen-preferences";
 import { migrate as migrateSettings } from "./migrate/core/settings";
@@ -195,6 +196,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "capabilities", run: migrateCloudCapabilities },
     { name: "ai", run: migrateCloudAi },
     { name: "remove-capabilities-app", run: removeCapabilitiesApp },
+    { name: "remove-faq-app", run: removeFaqApp },
   ];
   for (const step of steps) {
     console.log(`[setup] core:${step.name}`);

@@ -268,7 +268,11 @@ nothing moves when people come, go, or a list loads.
   and `disabled` for an item that cannot be opened right now. Pass
   `state="loading"` while links still load after the first paint: a
   placeholder row takes the place of the next links. `"error"` keeps the
-  loaded rows, says that the rest failed, and offers `onRetry`. `footer`
+  loaded rows, says that the rest failed, and offers `onRetry`. When
+  `incoming` holds only the pages loaded so far, `incomingTotal` makes the
+  section's count, "Linked from n" and the summary count all of them, and
+  `incomingMore` (such as "Load more") stands in the "Linked from" group
+  after its rows; rows that arrive later show at once. `footer`
   holds rows after the links, such as "Add link" or "Load more", only for
   people who may use them; it also follows "None yet".
 - **`DetailProperties`** shows facts as label and value rows, closed under
@@ -505,6 +509,8 @@ type DetailLinkItem = {
 type DetailLinksProps = {
   incoming: readonly DetailLinkItem[];
   outgoing: readonly DetailLinkItem[];
+  incomingTotal?: number; // all incoming links when `incoming` holds loaded pages; default incoming.length
+  incomingMore?: JSX.Element; // the row that loads the next page, inside the "Linked from" group
   limit?: number; // per direction, default 5
   title?: string; // default "Links"
   defaultOpen?: boolean; // default true

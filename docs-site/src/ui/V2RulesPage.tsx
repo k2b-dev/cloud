@@ -146,12 +146,13 @@ const rules: readonly V2Rule[] = [
   {
     id: "grip",
     title: "A grip sits centred on its line",
-    text: "A grip is a round pill of 11 × 20 px over its 1 px line. Its centre is the centre of the line within ±0.25 px, at device pixel ratio 1 and 2. On hover, focus and drag only the colour turns blue.",
+    text: "A grip is a round pill of 11 × 20 px over its 1 px line. Its centre is the centre of the line within ±0.25 px, at device pixel ratio 1 and 2. It shows only where it is wanted: under the pointer along its line, on keyboard focus, while pressed or dragged, and on touch screens always; only its opacity changes, so nothing moves. On hover, focus and drag only the colour turns blue.",
     excerpts: [
       // Taken at device pixel ratio 4 and shown twice as large as on screen.
       { src: "/assets/ui-v2/grip.png", alt: "A grip pill centred on the line between list and reader, enlarged", width: 184, height: 160 },
     ],
-    checked: "measureV2Layout measures each grip in the DOM and again in a screenshot, inside the grip only.",
+    checked:
+      "measureV2Layout shows every grip while it measures, then measures each grip in the DOM and again in a screenshot, inside the grip only.",
     code: {
       title: "A browser test",
       language: "ts",
@@ -167,7 +168,7 @@ const rules: readonly V2Rule[] = [
   {
     id: "app-css",
     title: "An app writes no layout CSS",
-    text: "From its first value import of @k2b/ui/v2, directly or through a local module that re-exports it, a screen has no class, style, spread onto a plain element, styling ref, innerHTML or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas, which stands directly in a v2 primitive and never wraps a whole screen.",
+    text: "From its first value import of @k2b/ui/v2, directly or through a local module that re-exports it, a screen has no class, style, spread onto a plain element, styling ref, innerHTML or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas, which stands directly in a v2 primitive and never wraps a whole screen. Markup outside @k2b/ui never writes the class of a primitive's inner part either (v2-part-classes): the shipped v2.css gives such a part no way through an island wrapper.",
     excerpts: [],
     checked: "v2-app-layout-css fails bun run check and the gate. Screens without a v2 import are untouched for now.",
     limits:

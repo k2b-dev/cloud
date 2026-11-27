@@ -1,12 +1,11 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
 import { createSignal, type JSX } from "solid-js";
 import type { CloudResourceRef } from "../contracts/capabilities";
-import { CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind, type ServiceAccountStatus } from "../contracts/shared";
+import type { Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
-import { serviceAccountKindDisplay } from "./service-account-kind";
-import { findTargetServiceAccount } from "./service-account-lookup";
+import { type PrincipalSearchEntry, searchPrincipals } from "./principal-search";
 
 export { principalKey };
 
@@ -77,122 +76,12 @@ export default function PrincipalPicker(props: {
 }) {
   const locale = useLocale(),
     t = () => accessMessages.resolve([locale()]).t;
-  type Entry = {
-    principal: Principal;
-    label: string;
-    icon: string;
-    description?: string;
-    avatarHash?: string | null;
-    serviceAccountKind?: ServiceAccountKind;
-    badge?: string;
-  };
+  type Entry = PrincipalSearchEntry;
   let selectable = new Map<string, Entry>();
   const [lastQuery, setLastQuery] = createSignal("");
   const load = async (search: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
     setLastQuery(search.trim());
-    const entries: Entry[] = [];
-    if (props.allowAuthenticated !== false)
-      entries.push({
-        principal: { type: "authenticated" },
-        label: props.signedIn?.label ?? principalLabel({ principal: { type: "authenticated" } }, locale()),
-        icon: "ti ti-lock-open-2",
-        description: props.signedIn?.description,
-      });
-    if (props.allowPublic)
-      entries.push({
-        principal: { type: "public" },
-        label: principalLabel({ principal: { type: "public" } }, locale()),
-        icon: "ti ti-world",
-      });
-    const handle = search.trim();
-    const target = props.target;
-    // Explicit lookup owns its accepted accounts; directory filters apply to the default lookup only.
-    const acceptsCode =
-      props.allowServiceAccounts !== false && (!props.serviceAccountKinds?.length || props.serviceAccountKinds.includes("code"));
-    const find =
-      props.findServiceAccount ??
-      (target && acceptsCode ? (value: string, abort: AbortSignal) => findTargetServiceAccount(target, value, abort) : undefined);
-    if (find && CODE_ACCOUNT_HANDLE_PATTERN.test(handle)) {
-      const found = await find(handle, signal);
-      if (found) {
-        const kind = found.display.serviceAccountKind ?? "code";
-        const display = serviceAccountKindDisplay(kind, t());
-        entries.push({
-          principal: found.principal,
-          label: found.display.displayName,
-          icon: `ti ${display.icon}`,
-          description: found.description ?? display.label,
-          avatarHash: found.display.avatarHash,
-          serviceAccountKind: kind,
-          badge: t().codeServiceAccount,
-        });
-      }
-    } else if (search.length >= 2) {
-      const url = new URL("/api/accounts/entities", window.location.origin);
-      url.searchParams.set("search", search);
-      const kinds = (props.kinds ?? ["user", "group"]).join(",");
-      url.searchParams.set("kinds", props.allowServiceAccounts !== false ? `${kinds},service_account` : kinds);
-      if (props.allowServiceAccounts !== false && props.serviceAccountKinds?.length) {
-        url.searchParams.set("service_account_kinds", props.serviceAccountKinds.join(","));
-      }
-      if (props.allowServiceAccounts !== false && props.serviceAccountStatus) {
-        url.searchParams.set("service_account_status", props.serviceAccountStatus);
-      }
-      url.searchParams.set("per_page", "10");
-      // With a reason for listed principals, the server must return them too, so they can show greyed.
-      const excluded = props.takenReason ? [] : (props.existing ?? []);
-      const users = excluded.flatMap((p) => (p.type === "user" ? [p.userId] : []));
-      const groups = excluded.flatMap((p) => (p.type === "group" ? [p.groupId] : []));
-      const services = excluded.flatMap((p) => (p.type === "service_account" ? [p.serviceAccountId] : []));
-      if (users.length) url.searchParams.set("exclude_user_ids", users.join(","));
-      if (groups.length) url.searchParams.set("exclude_group_ids", groups.join(","));
-      if (services.length) url.searchParams.set("exclude_service_account_ids", services.join(","));
-      const response = await fetch(url, { signal, credentials: "same-origin" });
-      if (!response.ok) throw new Error(response.statusText);
-      const data: { items: Entity[] } = await response.json();
-      for (const e of data.items) {
-        if (e.kind === "user")
-          entries.push({
-            principal: { type: "user", userId: e.user.id },
-            label: principalLabel(
-              { principal: { type: "user", userId: e.user.id }, displayName: e.user.displayName || e.user.uid },
-              locale(),
-            ),
-            avatarHash: e.user.avatarHash,
-            icon: "ti ti-user",
-            description: e.user.mail ?? e.user.uid,
-          });
-        else if (e.kind === "group")
-          entries.push({
-            principal: { type: "group", groupId: e.group.id },
-            label: principalLabel({ principal: { type: "group", groupId: e.group.id }, displayName: e.group.name }, locale()),
-            icon: "ti ti-users-group",
-            description: e.group.description ?? undefined,
-          });
-        else if (!props.serviceAccountFilter || props.serviceAccountFilter(e.serviceAccount)) {
-          const account = e.serviceAccount;
-          const kind = serviceAccountKindDisplay(account.kind, t());
-          entries.push({
-            principal: { type: "service_account", serviceAccountId: account.id },
-            label: principalLabel(
-              {
-                principal: { type: "service_account", serviceAccountId: account.id },
-                displayName: account.name,
-                serviceAccountKind: account.kind,
-              },
-              locale(),
-            ),
-            // Resource-bound accounts often share a name; their binding tells them apart.
-            description:
-              account.kind === "resource_bound"
-                ? [account.appId, account.resourceType, account.resourceId].filter(Boolean).join(" · ")
-                : kind.label,
-            icon: `ti ${kind.icon}`,
-            serviceAccountKind: account.kind,
-          });
-        }
-      }
-    }
+    const entries = await searchPrincipals(search, props, signal, locale());
     const existing = new Set(props.existing?.map(principalKey));
     const taken = (e: Entry) => (existing.has(principalKey(e.principal)) ? (props.takenReason?.(e.principal) ?? null) : undefined);
     // A principal on the list stays visible when a reason is given, so the search never looks like it missed someone.

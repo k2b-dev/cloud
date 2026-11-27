@@ -423,6 +423,11 @@
   padding: 0.25rem 0.375rem;
 }
 
+/* the row of tools is no box of its own here; inside a v2 screen it scrolls (below) */
+.k2b-ui .k2b-markdown-editor__tools {
+  display: contents;
+}
+
 .k2b-ui .k2b-markdown-editor__tool {
   display: inline-flex;
   width: 1.75rem;
@@ -762,4 +767,73 @@
   .k2b-ui .k2b-autocomplete[data-variant="embedded"] .k2b-autocomplete__gutter {
     font-size: max(1rem, 16px) !important;
   }
+}
+
+/* ── The Markdown editor inside a v2 screen ──────────────────────────────────────────────────────────────────────
+   Below `.k2-ui` the editor's chrome speaks v2, its behaviour unchanged: a toolbar of the v2 bar height (40 px) with
+   icon buttons of the v2 hit area (28 px) and icon size (16 px), the first glyph on the v2 text edge (the button's
+   6 px inset pulled out), the text on the same edge, and the count line in the meta role. A v1 page renders as before. */
+/* One line at every width: the row of tools scrolls sideways where the line is too short (a phone), and save and close
+   stand beside it at the end, never over a tool. The row's box grows by the room of the focus ring on every side, its
+   place stays, so a focused tool shows its whole ring. */
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__toolbar {
+  min-height: var(--k2-h-bar);
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 6px calc(var(--k2-edge) - 6px);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tools {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin: -4px;
+  padding: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding-inline: 4px;
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tools::-webkit-scrollbar {
+  display: none;
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__trailing {
+  flex: none;
+  gap: 2px;
+  margin-inline-start: 4px;
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool {
+  flex: none;
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  border-radius: var(--k2-r-control);
+  color: var(--k2-muted);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool > .ti {
+  font-size: 16px;
+  line-height: 1;
+}
+/* the same states as the toolbar of `@k2b/editor` in v2: a neutral tint under the pointer, the tint of selection for a
+   format that is on */
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool:hover:not(:disabled, [aria-pressed="true"]) {
+  color: var(--k2-text);
+  background: var(--k2-n100);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool[aria-pressed="true"] {
+  color: var(--k2-blue-ink);
+  background: var(--k2-blue-tint);
+}
+/* the focus ring of the shared tokens (the editor draws its rings inside), in the blue of v2 */
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2-blue);
+  outline-offset: var(--k2b-focus-offset);
+}
+.k2-ui .k2b-markdown-editor :is(.k2b-markdown-editor__input, .k2b-markdown-editor__preview) {
+  padding: 10px var(--k2-edge) !important;
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__stats {
+  padding: 4px var(--k2-edge);
+  font: var(--k2-t-meta);
+  letter-spacing: normal;
+  color: var(--k2-subtle);
 }
