@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -79,6 +79,9 @@ const modules = isServer ? undefined : await load();
 const flush = async () => {
   for (let i = 0; i < 30; i++) await Promise.resolve();
 };
+/** The sentences of the v2 toasts on the page that report a failed deed. */
+const failedToasts = () =>
+  [...document.querySelectorAll('.k2-toast[data-type="error"] .k2-toast-text')].map((node) => node.textContent?.trim() ?? "");
 const pending = (kind: string) => {
   const found = [...apiRequests].reverse().find((request) => request.kind === kind && !request.settled);
   if (!found) throw new Error(`no pending ${kind} request; saw ${apiRequests.map((request) => request.kind).join(", ")}`);
@@ -136,11 +139,17 @@ describe("Files history in the workspace", () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
     const dispose = render(() => createComponent(modules!.Workspace, { initial, timeZone: "Europe/Berlin", retentionDays: 365 }), dom.root);
+    let mounted = true;
+    // Unmounts the screen but keeps the page, so whatever a late answer would still show stays visible to the test.
+    const unmount = () => {
+      if (mounted) dispose();
+      mounted = false;
+    };
     cleanup = () => {
-      dispose();
+      unmount();
       dom.cleanup();
     };
-    return dom;
+    return Object.assign(dom, { unmount });
   };
   const button = (root: ParentNode, label: string) =>
     [...root.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a")].find((element) => element.textContent?.trim() === label);
@@ -200,19 +209,8 @@ describe("Files history in the workspace", () => {
           action: "file.overwrite",
           after: { ...raw, source: sourceKind, publicBaseId: home.id, revision: "revision-3" },
         });
-        const { toast } = await import("@k2b/ui");
-        const reported: string[] = [];
-        const report = spyOn(toast, "error").mockImplementation((message: unknown) => {
-          reported.push(String(message));
-          return { dismiss: () => {}, update: () => {} };
-        });
         const source = "/app/filesv2?view=activity";
         const dom = mount(snapshotOf({ source, activity: { filters: {}, page: page([changed]) } }));
-        const close = cleanup;
-        cleanup = () => {
-          close();
-          report.mockRestore();
-        };
         await flush();
         expect(pending("entry-by-id").input).toEqual({ param: { id: `n:${home.id}:${itemId}` } });
         const file: FileEntry = {
@@ -250,7 +248,7 @@ describe("Files history in the workspace", () => {
         });
         pending("version-restore").resolve(Response.json({ code: "revision_conflict", message: "The file changed" }, { status: 409 }));
         await flush();
-        expect(reported).toEqual(["The file changed"]);
+        expect(failedToasts()).toEqual(["The file changed"]);
         expect(apiRequests.some((item) => item.kind === "activity")).toBe(false);
       });
 
@@ -296,68 +294,48 @@ describe("Files history in the workspace", () => {
   // Leaving by a link or by Back now loads the v2 folder page, which ends the lookup with this page; unmount stays here.
   for (const denied of [false, true]) {
     test(`a deferred history target cannot report an obsolete ${denied ? "error" : "result"} after unmount`, async () => {
-      const { toast } = await import("@k2b/ui");
-      const report = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
-      try {
-        const oldPath = "Kunden/Angebote";
-        const targetPath = "Archiv/Angebote";
-        const moved = entry({ action: "item.move", before: gone(`team/${oldPath}`), after: current(`team/${targetPath}`) });
-        const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=${encodeURIComponent(oldPath)}`;
-        const dom = mount(
-          snapshotOf({
-            source,
-            moved: {
-              baseId: home.id,
-              path: oldPath,
-              entry: moved,
-              chain: chain({ endpoint: { baseId: home.id, path: targetPath, itemId: null }, certainty: "verified" }),
-            },
-          }),
-        );
-        await flush();
-        button(dom.root, "Go there")!.click();
-        await flush();
-        const resolving = pending("entry");
-        expect(resolving.signal?.aborted).toBe(false);
-        cleanup();
-        cleanup = () => {};
-        expect(resolving.signal?.aborted).toBe(true);
-        const count = apiRequests.length;
-        // The mock deliberately ignores abort, as a transport or a completed response may do.
-        resolving.resolve(
-          denied
-            ? Response.json({ code: "forbidden", message: "Access changed" }, { status: 403 })
-            : Response.json({ base: home, entry: { name: "Angebote", path: targetPath, directory: true, size: 0, modified: NOW } }),
-        );
-        await flush();
-        expect(apiRequests).toHaveLength(count);
-        expect(report).not.toHaveBeenCalled();
-      } finally {
-        report.mockRestore();
-      }
+      const oldPath = "Kunden/Angebote";
+      const targetPath = "Archiv/Angebote";
+      const moved = entry({ action: "item.move", before: gone(`team/${oldPath}`), after: current(`team/${targetPath}`) });
+      const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=${encodeURIComponent(oldPath)}`;
+      const dom = mount(
+        snapshotOf({
+          source,
+          moved: {
+            baseId: home.id,
+            path: oldPath,
+            entry: moved,
+            chain: chain({ endpoint: { baseId: home.id, path: targetPath, itemId: null }, certainty: "verified" }),
+          },
+        }),
+      );
+      await flush();
+      button(dom.root, "Go there")!.click();
+      await flush();
+      const resolving = pending("entry");
+      expect(resolving.signal?.aborted).toBe(false);
+      dom.unmount();
+      expect(resolving.signal?.aborted).toBe(true);
+      const count = apiRequests.length;
+      // The mock deliberately ignores abort, as a transport or a completed response may do.
+      resolving.resolve(
+        denied
+          ? Response.json({ code: "forbidden", message: "Access changed" }, { status: 403 })
+          : Response.json({ base: home, entry: { name: "Angebote", path: targetPath, directory: true, size: 0, modified: NOW } }),
+      );
+      await flush();
+      expect(apiRequests).toHaveLength(count);
+      expect(failedToasts()).toEqual([]);
     });
   }
 
   test("restoring a trashed hit goes through the recovery endpoint and says why the server refused", async () => {
-    const { toast } = await import("@k2b/ui");
-    const reported: string[] = [];
-    const report = spyOn(toast, "error").mockImplementation((message: unknown) => {
-      reported.push(String(message));
-      return { dismiss: () => {}, update: () => {} };
-    });
-    cleanup = () => report.mockRestore();
     const trashed = entry({
       action: "item.trash",
       before: gone("vertrieb/Kunden/Angebote 2025", { directory: true, publicBaseId: home.id }),
     });
     const source = "/app/filesv2?view=activity&q=Angebote+2025";
-    const unmount = cleanup;
     const dom = mount(snapshotOf({ source, selectedId: null, activity: { filters: { q: "Angebote 2025" }, page: page([trashed]) } }));
-    const close = cleanup;
-    cleanup = () => {
-      close();
-      unmount();
-    };
     await flush();
     const main = () => dom.root.querySelector('[data-k2-part="Pane"]')!;
     expect(pending("recovery").input).toEqual({ param: { activityId: trashed.id } });
@@ -370,7 +348,7 @@ describe("Files history in the workspace", () => {
     expect(pending("restore").input).toEqual({ param: { activityId: trashed.id }, json: {} });
     pending("restore").resolve(Response.json({ code: "forbidden", message: "You may not write to Kunden." }, { status: 403 }));
     await flush();
-    expect(reported).toEqual(["You may not write to Kunden."]);
+    expect(failedToasts()).toEqual(["You may not write to Kunden."]);
     // The trash of the storage the server named stays one step away.
     button(main(), "Show in trash")!.click();
     await flush();

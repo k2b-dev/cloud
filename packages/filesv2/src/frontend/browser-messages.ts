@@ -193,7 +193,6 @@ export const browserMessages = i18n.define({
       opCreated: (name: string) => `“${name}” created`,
       opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} pages from ${files} files`,
       opExtractSummary: (pages: number) => (pages === 1 ? "1 page" : `${pages} pages`),
-      opUndo: "Undo",
       opUndone: "The new file is in the trash.",
       justCreated: "Just created",
       downloadZip: "Download as ZIP",
@@ -373,7 +372,6 @@ export const browserMessages = i18n.define({
       sortAndFilter: "Sort and filter",
       sortDirection: "Order",
       groupFolders: "Group folders",
-      readingDrop: "Reading dropped folders…",
       systemFilesTitle: "Hidden system files",
       systemFilesQuestion: ({ count, examples }: { count: number; examples: string }) =>
         count === 1
@@ -384,6 +382,8 @@ export const browserMessages = i18n.define({
       uploadWithoutSystemFiles: "Upload without system files",
       uploadAll: "Upload all",
       dropTooLarge: "Select at most 10,000 files and folders per upload.",
+      dropUnread: (n: number) => `${n} dropped entries could not be read.`,
+      batchFailed: (n: number) => `${n} entries did not work and stay chosen.`,
       sortName: "Name",
       sortModified: "Date",
       sortSize: "Size",
@@ -428,8 +428,8 @@ export const browserMessages = i18n.define({
       uploadUnavailable: "Uploads wait until the current action or search is finished.",
       hiddenLeftOut: (n: number) =>
         n === 1
-          ? "The browser left out 1 hidden file. Upload it on its own."
-          : `The browser left out ${n} hidden files. Upload them on their own.`,
+          ? "The browser left out 1 hidden file; upload it on its own."
+          : `The browser left out ${n} hidden files; upload them on their own.`,
       share: "Share",
       readOnly: "Read only",
       moreActions: "More actions",
@@ -437,7 +437,6 @@ export const browserMessages = i18n.define({
       contents: "Contents",
       contentsFailed: "The contents of this folder cannot be loaded right now. The folder itself is up to date.",
       moreInFolder: "Open the folder for the rest",
-      versionsFailed: "The versions cannot be loaded right now. The file itself is up to date.",
       moreAboutFile: "More about this file",
       moreAboutFolder: "More about this folder",
       technicalDetails: "Technical details",
@@ -690,7 +689,6 @@ export const browserMessages = i18n.define({
       opCreated: (name: string) => `„${name}“ erstellt`,
       opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} Seiten aus ${files} Dateien`,
       opExtractSummary: (pages: number) => (pages === 1 ? "1 Seite" : `${pages} Seiten`),
-      opUndo: "Rückgängig",
       opUndone: "Die neue Datei liegt im Papierkorb.",
       justCreated: "Gerade erstellt",
       downloadZip: "Als ZIP herunterladen",
@@ -873,7 +871,6 @@ export const browserMessages = i18n.define({
       sortAndFilter: "Sortieren und filtern",
       sortDirection: "Reihenfolge",
       groupFolders: "Ordner gruppieren",
-      readingDrop: "Ordner werden eingelesen…",
       systemFilesTitle: "Versteckte Systemdateien",
       systemFilesQuestion: ({ count, examples }: { count: number; examples: string }) =>
         count === 1
@@ -883,7 +880,9 @@ export const browserMessages = i18n.define({
         "macOS, Windows und Linux legen diese Dateien selbst an, etwa für Vorschaubilder oder Ordneransichten. Eigene Dateien, die mit einem Punkt beginnen, wie .gitignore oder .env, betrifft diese Auswahl nicht.",
       uploadWithoutSystemFiles: "Ohne Systemdateien hochladen",
       uploadAll: "Alle hochladen",
-      dropTooLarge: "Bitte höchstens 10.000 Dateien und Ordner pro Upload auswählen.",
+      dropTooLarge: "Wähle höchstens 10.000 Dateien und Ordner pro Upload.",
+      dropUnread: (n: number) => `${n} abgelegte Einträge ließen sich nicht lesen.`,
+      batchFailed: (n: number) => `${n} Einträge haben nicht geklappt und bleiben ausgewählt.`,
       sortName: "Name",
       sortModified: "Datum",
       sortSize: "Größe",
@@ -928,8 +927,8 @@ export const browserMessages = i18n.define({
       uploadUnavailable: "Uploads warten, bis die laufende Aktion oder Suche beendet ist.",
       hiddenLeftOut: (n: number) =>
         n === 1
-          ? "Der Browser hat 1 versteckte Datei ausgelassen. Lade sie separat hoch."
-          : `Der Browser hat ${n} versteckte Dateien ausgelassen. Lade sie separat hoch.`,
+          ? "Der Browser hat 1 versteckte Datei ausgelassen, lade sie einzeln hoch."
+          : `Der Browser hat ${n} versteckte Dateien ausgelassen, lade sie einzeln hoch.`,
       share: "Teilen",
       readOnly: "Nur lesen",
       moreActions: "Weitere Aktionen",
@@ -937,7 +936,6 @@ export const browserMessages = i18n.define({
       contents: "Inhalt",
       contentsFailed: "Der Inhalt dieses Ordners lässt sich gerade nicht laden. Der Ordner selbst ist aktuell.",
       moreInFolder: "Den Rest zeigt der Ordner",
-      versionsFailed: "Die Versionen lassen sich gerade nicht laden. Die Datei selbst ist aktuell.",
       moreAboutFile: "Mehr zu dieser Datei",
       moreAboutFolder: "Mehr zu diesem Ordner",
       technicalDetails: "Technische Details",

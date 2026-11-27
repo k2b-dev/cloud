@@ -1,5 +1,5 @@
-import { toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Dialog, Failed, Icon, Menu, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Chip, Dialog, Failed, Icon, Menu, type OnNavigate, Pane, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, SharePage, ShareView } from "../contracts";
@@ -33,6 +33,7 @@ export default function SharesPane(props: {
   const p = useSharePasswordMessages();
   const machines = useMachineMessages();
   const locale = useLocale();
+  const toast = useToast();
   const [page, setPage] = createSignal<SharePage | null>(props.initial);
   const [loading, setLoading] = createSignal(false);
   const [busy, setBusy] = createSignal<string | null>(null);
@@ -51,7 +52,7 @@ export default function SharesPane(props: {
       setPage({ items: [...new Map([...before, ...result.items].map((share) => [share.id, share])).values()], next: result.next });
     } catch (error) {
       if (lifetime.signal.aborted) return;
-      if (after) toast.error(error instanceof Error ? error.message : b().loadFailed);
+      if (after) toast(error instanceof Error ? error.message : b().loadFailed, { status: "bad", retry: () => load(after) });
       else setPage(null);
     } finally {
       setLoading(false);
@@ -72,9 +73,10 @@ export default function SharesPane(props: {
       if (!response.ok) await apiFailure(response, b().revokeFailed);
       const updated = await response.json();
       setPage((current) => current && { ...current, items: current.items.map((item) => (item.id === updated.id ? updated : item)) });
-      toast.success(b().revoked);
+      toast(b().revoked, { status: "ok" });
     } catch (error) {
-      if (!lifetime.signal.aborted) toast.error(error instanceof Error ? error.message : b().revokeFailed);
+      if (!lifetime.signal.aborted)
+        toast(error instanceof Error ? error.message : b().revokeFailed, { status: "bad", retry: () => revoke(share) });
     } finally {
       setBusy(null);
     }

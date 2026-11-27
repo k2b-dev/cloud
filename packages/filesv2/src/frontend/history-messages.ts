@@ -345,7 +345,7 @@ export const historyCatalog = i18n.define({
       restoredCopy: "(restored)",
       restored: "Restored {name}.",
       movedBack: "Moved {name} back.",
-      actionFailed: "That did not work. Try again.",
+      actionFailed: "That did not work.",
       chainFailed: "The current place could not be checked.",
 
       movedTitleFolder: "This folder has moved",
@@ -710,7 +710,7 @@ export const historyCatalog = i18n.define({
       restoredCopy: "(wiederhergestellt)",
       restored: "{name} wiederhergestellt.",
       movedBack: "{name} zurückverschoben.",
-      actionFailed: "Das hat nicht geklappt. Versuch es noch einmal.",
+      actionFailed: "Das hat nicht geklappt.",
       chainFailed: "Der aktuelle Ort konnte nicht geprüft werden.",
 
       movedTitleFolder: "Dieser Ordner ist umgezogen",

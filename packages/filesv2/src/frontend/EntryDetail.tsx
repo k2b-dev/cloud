@@ -1,7 +1,7 @@
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { query } from "@k2b/stdlib/solid";
-import { fileKindLabel, formatFileViewSize, toast, useLocale } from "@k2b/ui";
+import { fileKindLabel, formatFileViewSize, useLocale } from "@k2b/ui";
 import {
   Band,
   Bar,
@@ -20,6 +20,7 @@ import {
   Row,
   Section,
   Text,
+  useToast,
 } from "@k2b/ui/v2";
 import { createEffect, createMemo, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
@@ -68,6 +69,7 @@ export type EntryDetailProps = {
 export default function EntryDetail(props: EntryDetailProps) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
+  const toast = useToast();
   const locale = useLocale();
   const cloudId = useCloudIdCopy();
   const source = () => JSON.stringify([props.base.id, props.base.locationKey, props.path, props.listed?.modified]);
@@ -119,7 +121,7 @@ export default function EntryDetail(props: EntryDetailProps) {
       else window.open(lease.url, "_blank", "noopener");
     } catch (error) {
       tab?.close();
-      toast.error(error instanceof Error ? error.message : f().downloadFailed);
+      toast(error instanceof Error ? error.message : f().downloadFailed, { status: "bad", retry: () => openInTab(item) });
     }
   };
   /** The rarer deeds of the entry, behind "…" in the head; open, download and share stand in the action row. */
@@ -218,9 +220,9 @@ export default function EntryDetail(props: EntryDetailProps) {
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
       await details.refresh();
-      toast.success(value ? t().favoriteAdded : t().favoriteRemoved);
+      toast(value ? t().favoriteAdded : t().favoriteRemoved, { status: "ok", undo: () => toggleFavorite(item, !value) });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : f().unavailable);
+      toast(error instanceof Error ? error.message : f().unavailable, { status: "bad", retry: () => toggleFavorite(item, value) });
     }
   }
 }

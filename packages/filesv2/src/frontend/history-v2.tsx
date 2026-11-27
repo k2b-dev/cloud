@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
-import { prompts, toast, useLocale } from "@k2b/ui";
-import { type Action, Mark, type MarkProps, Menu, type MenuEntry, type Person, Row, Text } from "@k2b/ui/v2";
+import { prompts, useLocale } from "@k2b/ui";
+import { type Action, Mark, type MarkProps, Menu, type MenuEntry, type Person, Row, type ShowToast, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, For, Match, Show, Switch } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import type { MarkedEntry } from "../contracts";
@@ -109,6 +109,7 @@ export async function restoreFromTrash(
   entry: ActivityEntry,
   restore: (entry: ActivityEntry, options?: { name: string }) => Promise<RestoreOutcome>,
   h: HistoryMessages,
+  toast: ShowToast,
 ): Promise<void> {
   const name = subjectName(entry) ?? "";
   let outcome = await restore(entry);
@@ -132,31 +133,34 @@ export async function restoreFromTrash(
     if (!values) return;
     outcome = await restore(entry, { name: String(values.name) });
   }
-  toast.success(h.restored.replace("{name}", name));
+  toast(h.restored.replace("{name}", name), { status: "ok" });
 }
 
 /** A row's one deed as a v2 action: it runs once at a time, and a failure says so with the server's words. */
-export function deedOf(action: RowAction | null, h: HistoryMessages, restore: HistoryActions["onRestoreTrash"], onChanged?: () => void) {
+export function deedOf(
+  action: RowAction | null,
+  h: HistoryMessages,
+  toast: ShowToast,
+  restore: HistoryActions["onRestoreTrash"],
+  onChanged?: () => void,
+) {
   if (!action) return undefined;
   const trashed = action.restoresTrash;
-  const run = trashed && restore ? () => restoreFromTrash(trashed, restore, h) : action.run;
+  const run = trashed && restore ? () => restoreFromTrash(trashed, restore, h, toast) : action.run;
   let running = false;
-  const deed: Action = {
-    label: action.label,
-    icon: iconName(action.icon),
-    onClick: async () => {
-      if (running) return;
-      running = true;
-      try {
-        await run();
-        onChanged?.();
-      } catch (error) {
-        toast.error(error instanceof Error && error.message ? error.message : h.actionFailed);
-      } finally {
-        running = false;
-      }
-    },
+  const perform = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await run();
+      onChanged?.();
+    } catch (error) {
+      toast(error instanceof Error && error.message ? error.message : h.actionFailed, { status: "bad", retry: perform });
+    } finally {
+      running = false;
+    }
   };
+  const deed: Action = { label: action.label, icon: iconName(action.icon), onClick: perform };
   return deed;
 }
 
@@ -210,6 +214,7 @@ export type ActivityRowProps = {
  */
 export function ActivityRow(props: ActivityRowProps) {
   const h = useHistoryMessages();
+  const toast = useToast();
   const locale = useLocale();
   const entry = () => props.row.lead;
   const versions = query.create({
@@ -258,7 +263,13 @@ export function ActivityRow(props: ActivityRowProps) {
         ? undefined
         : versions.error()
           ? { label: h().retry, icon: "refresh", onClick: () => void versions.refresh() }
-          : deedOf(rowAction(props.row, h(), actions() ?? {}, { links: true }), h(), props.actions?.onRestoreTrash, props.onChanged)),
+          : deedOf(
+              rowAction(props.row, h(), actions() ?? {}, { links: true }),
+              h(),
+              toast,
+              props.actions?.onRestoreTrash,
+              props.onChanged,
+            )),
   );
   // In "Me" every change is the person's own: there is nobody to write to.
   const more = createMemo(() =>
