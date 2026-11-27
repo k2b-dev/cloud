@@ -17,6 +17,10 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 - A deed under way is `busy`: the button keeps its width, its look and the focus, and takes no second press.
 - A toggle is `pressed`: `true` on, `false` off. Never on a link or on the primary action.
 
+## On the phone
+
+Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
+
 ## Menu or popover?
 
 ### Menu
@@ -30,10 +34,6 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 - The person looks at more about one thing next to the button: a short preview, details.
 - A panel of primitives (`Facts`, `Text`, `Check`) under a title. A filter is not one: a Popover in the head leaves on the phone, so a few filters are a `Menu` with ticked entries, and a list people really filter has a `FilterBar` ([Filter, sort, group](/en/ui/v2/filter-sort-group)).
 - With `tip` it is a short hint on one button instead.
-
-## On the phone
-
-Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
 
 ## Parts
 
@@ -67,7 +67,7 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 ## Not in v2 yet
 
-A head whose controls do not fit beside its title folds the last ones into "…" with #4392. Until then, a phone head keeps few controls: the deeds of a record stand in its "…", not as a row of symbols. Write `// k2b-ui gap: #4392 (bar fold)` at that place.
+A head whose controls do not fit beside its title folds the last ones into "…" with #4392. Until then, write `// k2b-ui gap: #4392 (bar fold)` where a head has more controls than room.
 
 ## Do and don't
 
