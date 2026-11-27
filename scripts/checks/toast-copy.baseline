@@ -19,13 +19,11 @@ packages/assistant/src/frontend/AssistantProjectSettingsDialog.tsx | untitled | 
 packages/assistant/src/frontend/AssistantProjectView.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantProjectView.tsx | untitled | success
 packages/assistant/src/frontend/AssistantProjectsDialog.tsx | untitled | text("Project created")
-packages/assistant/src/frontend/AssistantSidebar.tsx | untitled | text("Could not update chat. Stop the response first or try again.")
 packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text("Skill deleted")
 packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text(enabled ? "Skill enabled for you" : "Skill disabled for you")
 packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text(props.request.skillId ? "Skill saved" : "Skill created")
 packages/assistant/src/frontend/assistant-workspace.tsx | untitled | contextText("Failed to dismiss the suggestion")
 packages/assistant/src/frontend/assistant-workspace.tsx | untitled | t().tabsNotSaved
-packages/assistant/src/frontend/ConversationSidebarPreview.tsx | untitled | text("Could not update pin.")
 packages/assistant/src/frontend/assistant-dictation.tsx | untitled | message
 packages/assistant/src/frontend/assistant-dictation.tsx | untitled | t().alreadyInserted
 packages/assistant/src/frontend/lazy-action.ts | untitled | t.partLoadFailed

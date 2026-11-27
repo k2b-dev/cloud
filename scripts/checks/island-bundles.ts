@@ -30,8 +30,8 @@ const budgets = [
   // first picture: a lazy part of an island cannot keep its server markup until its code arrives (#4419). About 2.7 %
   // headroom.
   { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 3308 },
-  // The panel's own island since the page moved to v2: the same workspace in v1's frame, without v2's.
-  // Measured 2026-11-26 on the test VM: 2,932,794 B (the page's island 3,081,491 B); about 10 % headroom.
+  // The panel's own island: the same workspace in v2's panel frame (`PanelLayout ui="v2"`), without the page's views.
+  // Measured 2026-11-27 on the test VM: 2,976,496 B (the page's island 3,295,391 B); about 7.7 % headroom.
   { file: "packages/assistant/src/frontend/AssistantPanel.island.tsx", kib: 3150 },
   // The Spaces part: "My tasks", a Space as a list per status, one task with its pickers (status, due date, people),
   // and the shared "+" menu of Spaces with its catalog; the quick add field loads when it opens.

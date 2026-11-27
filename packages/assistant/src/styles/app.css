@@ -705,15 +705,6 @@
   color: var(--k2b-text);
 }
 
-/* Chat titles stay regular weight; the active row and an unread answer alone carry emphasis. Unread is weight and
-   dot, never color alone, as in the shared sidebar status. */
-.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item[data-variant] .k2b-app-workspace__sidebar-item-label-text {
-  font-weight: 400;
-}
-.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item--unread[data-variant] .k2b-app-workspace__sidebar-item-label-text {
-  font-weight: 600;
-}
-
 /* Reserve the chat list's shared 0.5rem scroll track in the surrounding inset,
    so rows and the non-scrolling search header share the same content edge. */
 .k2b-ui .assistant-project-chats-scroll {
@@ -733,18 +724,6 @@
   height: min(450px, 60dvh);
 }
 
-/* Keep completion feedback visible even after the pointer leaves the row. */
-.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--saving, .assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
-  opacity: 1;
-}
-.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
-  color: var(--k2b-success-text);
-}
-.k2b-ui .assistant-chat-sidebar-item--leaving {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 150ms ease-out;
-}
 /* One status per chat at the row's end; the label is in the tooltip and for screen readers. In the chat list it has
    the size of the row's icons in a fixed 1rem slot, so a change from running to waiting, failed, or unread moves
    nothing. */
@@ -845,9 +824,6 @@
 @media (any-pointer: coarse) {
   .k2b-ui :is(.assistant-waiting__entry, .assistant-waiting__more) { position: relative; }
   .k2b-ui :is(.assistant-waiting__entry, .assistant-waiting__more)::after { position: absolute; inset: -.5625rem 0; content: ""; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }
 
 /* Queued messages ("Vorgemerkt", Gustav chat Feinschliff v6, 6b). The row lies in the same free end above the field as

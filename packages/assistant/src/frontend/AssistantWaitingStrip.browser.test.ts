@@ -123,7 +123,7 @@ const message = (id: string, seq: number, role: "user" | "assistant", text: stri
 });
 
 /** The server state the routes answer from; a test changes it and tells the page through `window.live`. */
-type State = { locale: Locale; scenario: Scenario };
+type State = { locale: Locale; scenario: Scenario /** The chat has a web page left open beside it. */; tabs?: boolean };
 
 const tools = (locale: Locale) => {
   const fixtures = aiQuestionFixtures(locale);
@@ -256,6 +256,19 @@ const propsOf = (state: State, url: URL) => {
     initialWorkspaceHref: `${url.pathname}${url.search}`,
     initialDetail: detail,
     initialContext: null,
+    initialTabs: state.tabs
+      ? {
+          chatId: id,
+          snapshot: {
+            revision: 1,
+            state: {
+              tabs: [{ id: "web-1", key: JSON.stringify(["web", id, "https://lieferant.example.org/katalog"]), title: "Lieferant" }],
+              layout: null,
+              front: "web-1",
+            },
+          },
+        }
+      : null,
     projects: [],
     initialProject: null,
     initialProjectChats: null,
@@ -333,11 +346,11 @@ afterAll(async () => {
   assets?.stop(true);
 });
 
-type View = { name: string; width: number; height: number; touch: boolean; column?: string };
+type View = { name: string; width: number; height: number; touch: boolean; embedded?: true };
 const desktop: View = { name: "1440", width: 1440, height: 900, touch: false };
 const phone: View = { name: "390", width: 390, height: 844, touch: true };
-// The side panel the Assistant moves into: a 22 rem column at the right edge of a wide screen.
-const panel: View = { name: "panel", width: 1440, height: 900, touch: false, column: "22rem" };
+// The side panel the Assistant moves into: its own page of 22 rem beside a wide screen, so v2 measures the panel itself.
+const panel: View = { name: "panel", width: 352, height: 900, touch: false, embedded: true };
 
 // Longer than the stream's 500 ms reconnect delay, with room for a busy machine.
 const slowDocumentMs = 800;
@@ -374,14 +387,10 @@ const open = async (
       // A chat opened at a message that answers later than the stream's 500 ms reconnect delay, so the stream that
       // the navigation cancelled always opens again while the page waits, and WebKit refuses it.
       if (options.slowMessageDocument && url.searchParams.has("message")) await new Promise((done) => setTimeout(done, slowDocumentMs));
-      // The panel column is the real panel (v1 frame); the page is v2 and its main area is the v2 scope, as Layout ui="v2".
-      const harness = { locale: state.locale, props: { ...propsOf(state, url), ...(view.column ? { embedded: true } : {}) } };
-      const column = view.column
-        ? `display:flex;justify-content:flex-end;height:100vh` // The panel column sits at the right edge.
-        : "display:flex;height:100vh";
-      const inner = view.column
-        ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
-        : `<div id="root" class="k2-ui" style="display:flex;width:100%;height:100vh"></div>`;
+      // The page and the panel are both v2: their main area is the v2 scope, as Layout ui="v2" and PanelLayout ui="v2".
+      const harness = { locale: state.locale, props: { ...propsOf(state, url), ...(view.embedded ? { embedded: true } : {}) } };
+      const column = "display:flex;height:100vh";
+      const inner = `<div id="root" class="k2-ui" style="display:flex;width:100%;height:100vh"></div>`;
       return route.fulfill({
         contentType: "text/html",
         body:
@@ -419,8 +428,10 @@ const open = async (
     if (url.pathname.endsWith("/viewed")) return route.fulfill({ status: 204 });
     if (url.pathname.endsWith("/queue")) return route.fulfill({ json: [] });
     if (url.pathname.endsWith("/dictations")) return route.fulfill({ json: { items: [], nextCursor: null } });
-    // No reading view here, and every chat starts without tabs.
+    // No reading view here, and every chat starts without tabs; a stored web page that asks for its text gets none.
     if (url.pathname === "/api/assistant/workspace/web-reader") return route.fulfill({ json: { available: false } });
+    if (/^\/api\/assistant\/workspace\/conversations\/\w+\/web-reader$/.test(url.pathname))
+      return route.fulfill({ status: 503, json: { message: "unavailable" } });
     if (/^\/api\/assistant\/workspace\/conversations\/\w+\/tabs$/.test(url.pathname))
       return route.fulfill({
         json:
@@ -536,6 +547,25 @@ const moreLabel = (page: Page) =>
     );
 
 describe("Waiting for you", () => {
+  // One pane at a time on the phone and in the panel, as in v1: a stored tab stays behind the chat, still mounted.
+  for (const view of [desktop, phone, panel])
+    test(`at ${view.name} a chat with a stored tab shows ${view === desktop ? "both side by side" : "only the chat"}`, async () => {
+      const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "none", tabs: true });
+      try {
+        const chat = page.locator('[data-k2-part="Pane"][aria-label="Chat"]');
+        const tabs = page.locator('[data-k2-part="Pane"][aria-label="Offene Tabs des Chats"]');
+        await chat.waitFor();
+        await tabs.waitFor({ state: "attached" });
+        expect(await tabs.isVisible()).toBe(view === desktop);
+        const composer = await page.locator(".assistant-chat-composer").boundingBox();
+        expect(composer !== null && composer.y + composer.height <= view.height).toBe(true);
+        expect(errors).toEqual([]);
+        expect(unrouted).toEqual([]);
+      } finally {
+        await close();
+      }
+    }, 60_000);
+
   for (const view of [desktop, phone, panel])
     for (const theme of ["light", "dark"] as const)
       test(`3, 2 and none pending at ${view.name} in ${theme}: one row above the field, no Approve all`, async () => {

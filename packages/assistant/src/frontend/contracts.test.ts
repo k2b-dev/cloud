@@ -37,18 +37,17 @@ describe("Assistant frontend contracts", () => {
   test("keeps Projects and chat context inside the Assistant workspace", async () => {
     const [workspace, sidebar, projectsDialog, project, context, projectSettings] = await Promise.all([
       read("./assistant-workspace.tsx"),
-      read("./AssistantSidebar.tsx"),
+      read("./v2/assistant-nav.ts"),
       read("./AssistantProjectsDialog.tsx"),
       read("./AssistantProjectView.tsx"),
       read("./AssistantChatContext.tsx"),
       read("./AssistantProjectSettingsDialog.tsx"),
     ]);
 
-    expect(sidebar).toContain("AppWorkspace.SidebarSection");
-    expect(sidebar).toContain("title={t().projects}");
-    expect(sidebar).toContain("label={t().createProject}");
+    // The v2 sidebar lists Projects as a group with their deeds, and offers a new one while there is none.
+    expect(sidebar).toContain("label: t().projects");
+    expect(sidebar).toContain("label: t().newProject");
     expect(sidebar).not.toContain("onOpenProjects");
-    expect(sidebar).toContain("t().noProjects");
     expect(projectsDialog).toContain("prompts.form");
     expect(projectsDialog).not.toContain("divide-y");
     expect(projectsDialog).not.toContain("rounded-lg border");

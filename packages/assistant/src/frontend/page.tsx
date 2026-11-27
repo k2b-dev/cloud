@@ -312,7 +312,7 @@ export default ssr<AuthContext>(async (c) => {
   const workspace = () => (embedded ? <AssistantPanel {...islandProps} /> : <AssistantWorkspace {...islandProps} />);
   if (embedded)
     return () => (
-      <PanelLayout c={c} title={t.assistant}>
+      <PanelLayout c={c} ui="v2" title={t.assistant}>
         {workspace()}
       </PanelLayout>
     );

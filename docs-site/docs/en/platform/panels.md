@@ -132,6 +132,20 @@ The embedded provider page follows the host's light or dark theme live, without
 reloading. `AppWorkspace` works inside `PanelLayout` as in `Layout`; its sidebar
 and detail sizes are not saved for the panel page.
 
+`PanelLayout ui="v2"` (provisional, like `@k2b/ui/v2`) is the same contract
+as `Layout ui="v2"` for a provider page built with `@k2b/ui/v2`: the panel
+page is the v2 scope on the v2 surface, `--k2-app` is the provider's accent,
+and `--k2-app-ink` its readable tone in each theme, on the body, so v2
+overlays read them too. The page's island returns one `Workspace`, which
+fills the panel. Its text edge is 16 px at every panel width, as on the
+phone. Use it only on a page whose content is built with `@k2b/ui/v2`.
+
+```tsx
+<PanelLayout c={c} ui="v2" title={t.assistant}>
+  <AssistantPanel data={data} />
+</PanelLayout>
+```
+
 Links stay in the panel only below the declared panel path. A same-origin link
 outside it opens in the app window, so the panel never shows a second Cloud
 shell. Links with a `target`, a `download` attribute, or modifier keys keep
