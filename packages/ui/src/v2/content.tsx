@@ -84,7 +84,13 @@ export const Text = (props: TextProps) => (
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;
 
-export type ProseProps =
+export type ProseProps = {
+  /**
+   * Short text a person wrote, such as a comment: a heading is no larger than the text, and in Markdown a table shows
+   * its rows as lines of text. Images show their words as always; links and inline code stay.
+   */
+  compact?: boolean;
+} & (
   | {
       /**
        * Text in Markdown, such as a message. Raw HTML in it shows as text; links lead only to web pages and mail
@@ -97,7 +103,8 @@ export type ProseProps =
       markdown?: never;
       /** Reading text as elements, when it is not Markdown. */
       children: JSX.Element;
-    };
+    }
+);
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
 export const Prose = (props: ProseProps) => {
@@ -106,7 +113,7 @@ export const Prose = (props: ProseProps) => {
     <Show
       when={props.markdown !== undefined}
       fallback={
-        <div class="k2-prose" data-k2-part="Prose" data-k2-prose="">
+        <div class="k2-prose" data-k2-part="Prose" data-k2-prose="" data-compact={props.compact ? "" : undefined}>
           {props.children}
         </div>
       }
@@ -115,7 +122,13 @@ export const Prose = (props: ProseProps) => {
         class="k2-prose"
         data-k2-part="Prose"
         data-k2-prose=""
-        innerHTML={renderSafeMarkdown(props.markdown ?? "", { locale: locale(), allowImages: false, linkProtocols: proseLinks })}
+        data-compact={props.compact ? "" : undefined}
+        innerHTML={renderSafeMarkdown(props.markdown ?? "", {
+          locale: locale(),
+          allowImages: false,
+          allowTables: !props.compact,
+          linkProtocols: proseLinks,
+        })}
       />
     </Show>
   );
