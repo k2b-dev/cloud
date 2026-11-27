@@ -1,13 +1,23 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
+import { safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
-  const entries = Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined);
+  const entries = Object.entries(values).flatMap(([key, value]): [string, string][] => {
+    if (value === undefined) return [];
+    // a data colour comes from data: only a real colour passes, else the primitive stays neutral; anything else is the
+    // primitive's own number and never ends its declaration
+    if (key === "--k2-c") {
+      const color = safeColor(value);
+      return color === undefined ? [] : [[key, color]];
+    }
+    return safeValue(value) ? [[key, value]] : [];
+  });
   return entries.length ? Object.fromEntries(entries) : undefined;
 };
 
@@ -20,8 +30,9 @@ export type IconProps = {
   label?: string;
   tone?: Status | "ai" | "app" | "muted" | "subtle";
   /**
-   * A data colour by meaning, such as the sun of a weather sign or the rain: a CSS colour that the owner keeps at 3:1
-   * on the surface in both themes. It takes the place of `tone`.
+   * A data colour by meaning, such as the sun of a weather sign or the rain: a hex colour, an `oklch()`, a custom
+   * property of the page or `light-dark()` of two of them, which the owner keeps at 3:1 on the surface in both themes.
+   * It takes the place of `tone`; anything that is no colour is dropped.
    */
   color?: string;
 };
@@ -33,7 +44,8 @@ export const Icon = (props: IconProps) => (
     data-k2-part="Icon"
     data-name={props.name}
     data-tone={props.tone}
-    style={props.color ? { color: props.color } : undefined}
+    data-color={safeColor(props.color) === undefined ? undefined : ""}
+    style={custom({ "--k2-c": props.color })}
     role="img"
     aria-label={props.label}
     aria-hidden={props.label ? undefined : "true"}
@@ -319,47 +331,77 @@ export const Progress = (props: ProgressProps) => {
 };
 
 export type RangeBarProps = {
-  /** Where the range starts and ends, such as a day's low and high. */
+  /** Where the range starts and ends, such as a day's low and high; the order does not matter. */
   from: number;
   to: number;
   /** The one scale the bars of a list share, such as the week's lowest low and highest high. */
   domain: readonly [number, number];
   /**
-   * Colours along the scale by meaning, such as cold to warm: each holds at its value and runs over into the next. The
-   * owner keeps them at 3:1 on the surface in both themes. Without stops the bar is neutral.
+   * Colours along the scale by meaning, such as cold to warm: each holds at its value and runs over into the next. A
+   * colour is a hex colour, an `oklch()`, a custom property of the page or `light-dark()` of two of them, which the
+   * owner keeps at 3:1 on the surface in both themes; a stop that is no colour is dropped. Without stops the bar is
+   * neutral.
    */
   stops?: readonly { at: number; color: string }[];
-  /** The range in words, such as "2,9° bis 9,1°": what assistive technology reads instead of the bar. */
-  label: string;
-};
+} & (
+  | {
+      /** The range in words, such as "2,9° bis 9,1°": what assistive technology reads instead of the bar. */
+      label: string;
+      decorative?: false;
+    }
+  | {
+      /** The range's words stand beside the bar (its low and high as text): the bar is then decoration. */
+      decorative: true;
+      label?: string;
+    }
+);
 
 /**
  * A range on a shared scale: a bar from `from` to `to` on a quiet track, so the rows of a list read at a glance (the
- * week's days by their low and high). With `stops` the bar shows the colours of its part of the scale.
+ * week's days by their low and high). It reads in the writing direction, as `Ticks` do: the scale's start stands at the
+ * line's start. With `stops` the bar shows the colours of its part of the scale. A range outside the scale stops at
+ * its ends; a range that is no number leaves the track empty.
  */
 export const RangeBar = (props: RangeBarProps) => {
-  const span = () => Math.max(Number.EPSILON, props.domain[1] - props.domain[0]);
-  const share = (value: number) => Math.max(0, Math.min(1, (value - props.domain[0]) / span()));
+  const finite = () => [props.from, props.to, props.domain[0], props.domain[1]].every(Number.isFinite) && props.domain[1] > props.domain[0];
+  const clamp = (value: number) => Math.max(props.domain[0], Math.min(props.domain[1], value));
+  // the visible part of the range: its ends held to the scale, so the colours match what is drawn
+  const low = () => clamp(Math.min(props.from, props.to));
+  const high = () => clamp(Math.max(props.from, props.to));
+  const share = (value: number) => (value - props.domain[0]) / (props.domain[1] - props.domain[0]);
   const percent = (value: number) => `${Math.round(value * 1000) / 10}%`;
-  const low = () => Math.min(props.from, props.to);
-  const high = () => Math.max(props.from, props.to);
-  // the stops at their place on the bar itself: a stop outside it still sets the colour at its ends
+  // the stops in the order of the scale, at their place on the bar itself: a stop outside it still sets the colour at
+  // its ends; a stop that is no colour is dropped
   const fill = () => {
-    const stops = props.stops;
-    if (!stops?.length) return undefined;
+    const stops = (props.stops ?? [])
+      .flatMap((stop) => {
+        const color = safeColor(stop.color);
+        return color === undefined || !Number.isFinite(stop.at) ? [] : [{ at: stop.at, color }];
+      })
+      .sort((first, second) => first.at - second.at);
+    if (stops.length === 0) return undefined;
     if (stops.length === 1) return stops[0]!.color;
     const width = Math.max(Number.EPSILON, high() - low());
-    return `linear-gradient(to right, ${stops.map((stop) => `${stop.color} ${percent((stop.at - low()) / width)}`).join(", ")})`;
+    const colors = stops.map((stop) => `${stop.color} ${percent((stop.at - low()) / width)}`).join(", ");
+    return `linear-gradient(var(--k2-range-way, to right), ${colors})`;
   };
   return (
-    <span class="k2-range" data-k2-part="RangeBar" role="img" aria-label={props.label}>
-      <i
-        style={custom({
-          "--k2-range-start": percent(share(low())),
-          "--k2-range-end": percent(1 - share(high())),
-          "--k2-range-fill": fill(),
-        })}
-      />
+    <span
+      class="k2-range"
+      data-k2-part="RangeBar"
+      role="img"
+      aria-label={props.decorative ? undefined : props.label}
+      aria-hidden={props.decorative ? "true" : undefined}
+    >
+      <Show when={finite()}>
+        <i
+          style={custom({
+            "--k2-range-start": percent(share(low())),
+            "--k2-range-end": percent(1 - share(high())),
+            "--k2-range-fill": fill(),
+          })}
+        />
+      </Show>
     </span>
   );
 };
