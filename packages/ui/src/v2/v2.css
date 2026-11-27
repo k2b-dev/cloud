@@ -2944,8 +2944,10 @@
   min-width: 0;
   overflow: hidden;
 }
+/* Beside other content of the start, such as a lead title, the path keeps its own width as its basis: the title, which
+   gives way a thousand times faster down to its floor, takes the shortage first, and only then does the path. */
 .k2-ui .k2-bar-start > .k2-path {
-  flex: 1 1 0;
+  flex: 1 1 auto;
 }
 /* A place and the page start at their least (12 characters, the page `--k2-start-least`, never more than their own
    width). Room goes to the page first, until it stands whole, then to the places. The page never goes below its

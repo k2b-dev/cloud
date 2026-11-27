@@ -1,4 +1,4 @@
-import { Bar, Button, Pane, Path, Workspace } from "../src/v2";
+import { Bar, Button, Pane, Path, Text, Workspace } from "../src/v2";
 
 // Paths that do not fit (Spaces, W3: "Space settin…" was cut before the long Space name): a deep path in the head
 // beside its actions, and in the pane a long Space name before the settings, the same deep path, a page whose own name
@@ -96,6 +96,16 @@ export function Demo() {
             />
           }
           end={<Crowded />}
+        />
+        {/* a long lead title beside a path: the title gives way first, down to its floor */}
+        <Bar
+          start={
+            <>
+              <Text type="lead">Angebot für den Einbauschrank im Flur der Familie Oswald mit Schiebetüren und Beleuchtung</Text>
+              <Path label="Ort neben Titel" items={deep} />
+            </>
+          }
+          end={<Button>Verwalten</Button>}
         />
       </Pane>
     </Workspace>

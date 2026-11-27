@@ -114,6 +114,7 @@ for (const width of [390, 1024, 1440])
         "Ort kurz",
         "Ort und Aktionen",
         "Kurz und Aktionen",
+        "Ort neben Titel",
       ]);
       for (const path of found)
         expect([path.name, path.inside, path.kept, path.over, path.ends]).toEqual([path.name, true, true, false, "ellipsis"]);
@@ -247,6 +248,45 @@ test("1024 px: beside the crowded end nothing folds, and the paths stand as the 
     expect([deep.fold, deep.endFolded]).toEqual(["0", 0]);
     expect((await named(page))["Ort und Aktionen"]?.whole).toBe(true);
     sameWithin(await at(), sent);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("700 px: beside a long lead title the title gives way first, the path keeps its least, and the server's page is the live one", async () => {
+  const page = await open(700, true);
+  const errors = pageErrors(page);
+  try {
+    await settled(page);
+    const at = () =>
+      page.evaluate(() => {
+        const bar = document.querySelector<HTMLElement>('nav[aria-label="Ort neben Titel"]')!.closest<HTMLElement>(".k2-bar")!;
+        return [...bar.querySelectorAll<HTMLElement>(".k2-bar-start > .k2-text, .k2-path-step, b, .k2-bar-end > .k2-btn")].map((part) => {
+          const box = part.getBoundingClientRect();
+          return `${part.textContent?.slice(0, 10)} ${Math.round(box.x)} ${Math.round(box.width)}`;
+        });
+      });
+    const sent = await at();
+    await live(page);
+    sameWithin(await at(), sent);
+    const found = await page.evaluate(() => {
+      const nav = document.querySelector<HTMLElement>('nav[aria-label="Ort neben Titel"]')!;
+      const title = nav.parentElement!.querySelector<HTMLElement>(":scope > .k2-text")!;
+      const current = nav.querySelector<HTMLElement>("b")!;
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;width:var(--k2-start-least)";
+      current.append(probe);
+      const least = Math.min(probe.offsetWidth, current.scrollWidth);
+      probe.remove();
+      return {
+        titleGaveWay: title.getBoundingClientRect().width < title.scrollWidth,
+        page: current.getBoundingClientRect().width,
+        least,
+        inside: current.getBoundingClientRect().right <= nav.getBoundingClientRect().right + 0.5,
+      };
+    });
+    expect([found.titleGaveWay, found.inside, found.page >= found.least - 1]).toEqual([true, true, true]);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
