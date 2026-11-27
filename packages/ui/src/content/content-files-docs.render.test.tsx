@@ -346,7 +346,7 @@ describe("@k2b/ui content behaviour", () => {
       match: () => true,
       // the server markup the compiler would write for <div data-renderer={id}>{id}</div>; this file has no JSX, as Bun
       // would compile it before registerSsrTestPlugin above runs (test-solid-plugins)
-      component: () => ssr(['<div data-renderer="', '">', "</div>"], escape(id, true), escape(id)),
+      component: () => ssr(['<div data-renderer="', '">', "</div>"], escape(id), escape(id)),
     });
     const first = await renderFileView({
       file: { path: "/asset.custom", mediaType: "application/x-custom" },
