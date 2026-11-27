@@ -82,6 +82,9 @@
   --k2-edge: 20px;
   --k2-edge-icon: calc(var(--k2-edge) + 24px);
 
+  /* the least a bar's start keeps of its name (the open item, the path's page) before it gives way no further */
+  --k2-start-least: 16ch;
+
   /* heights by place */
   --k2-h-head: 56px;
   --k2-h-status: 52px;
@@ -657,13 +660,13 @@
   gap: 8px;
 }
 /* ── The fold of a `Bar` (bar-fold.ts) ──
-   The start of a Bar keeps a least: 120 px of its name (or less, where its whole content is narrower), or its open
-   tab; it gives way down to that and never to nothing. `width` gives the least (the flex minimum is the smaller of it
-   and the start's content), `flex-basis: content` its whole width. A button in it ("1.000 Kommentare") shortens its
-   words with "…" too. */
+   The start of a Bar keeps a least: `--k2-start-least` of its name (or less, where its whole content is narrower), or
+   its open tab; it gives way down to that and never to nothing. `width` gives the least (the flex minimum is the
+   smaller of it and the start's content), `flex-basis: content` its whole width. A button in it ("1.000 Kommentare")
+   shortens its words with "…" too. */
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start {
   flex: 0 1 content;
-  width: 120px;
+  width: var(--k2-start-least);
   min-width: auto;
 }
 .k2-ui .k2-bar[data-k2-part="Bar"] > .k2-bar-start > .k2-btn {

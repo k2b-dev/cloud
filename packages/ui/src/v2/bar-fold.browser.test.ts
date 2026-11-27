@@ -128,7 +128,22 @@ test("390 px: the start gives way only after the end folded everything, down to 
     await withPage(390, live, async (page) => {
       const { start, end, content } = await edges(page, head("book"));
       if (!start || !end) throw new Error("no start or end");
-      expect([live, start.width >= 120, start.right <= end.left + 0.5, end.right <= content + 0.5]).toEqual([live, true, true, true]);
+      // the least is the shared token `--k2-start-least` (16ch of the start's own type)
+      const least = await page.locator(`${head("book")} > .k2-bar-start`).evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.cssText = "display:block;width:var(--k2-start-least)";
+        element.append(probe);
+        const width = probe.getBoundingClientRect().width;
+        probe.remove();
+        return width;
+      });
+      expect([live, least > 0, start.width >= Math.floor(least), start.right <= end.left + 0.5, end.right <= content + 0.5]).toEqual([
+        live,
+        true,
+        true,
+        true,
+        true,
+      ]);
       if (live) expect((await seen(page, head("book"))).map((control) => control.name).slice(-1)).toEqual([more]);
     });
 });

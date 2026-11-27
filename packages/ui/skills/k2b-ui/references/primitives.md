@@ -95,8 +95,8 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
 
-The `start` keeps a least: its name at 120 px (or all of it, where it is
-narrower), or its open tab. Where the `end` does not fit beside the whole
+The `start` keeps a least: its name at `--k2-start-least` (16ch, or all
+of it, where it is narrower), or its open tab. Where the `end` does not fit beside the whole
 `start` (six kept actions beside tabs on the phone), the end folds first:
 its buttons that do not fit move into a menu "…" at its end, in their
 order, the last first. If the end ends with an icon-only `Menu`, they are

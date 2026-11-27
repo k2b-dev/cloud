@@ -614,9 +614,9 @@ export type BarProps = {
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
  *
- * The start keeps a least: its name at 120 px (or its whole content, where that is narrower), or its open tab. Where
- * the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first: its buttons
- * that do not fit move into a menu "…" at its end, in their order, the last first. Where the end already ends with a
+ * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
+ * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
+ * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end ends with a
  * menu "…" of its own, they are that menu's first section. The primary action, a closing ×, a menu and a search never
  * fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The browser
  * measures the fold once the page is alive; before that the start keeps its least and the end cuts what has no room,
