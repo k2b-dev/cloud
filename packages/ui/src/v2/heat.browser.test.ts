@@ -155,7 +155,7 @@ test("one Tab stop on today; the arrows walk the days, and the one shared tip sh
     const said = await focused();
     expect(said).toMatch(/^Fr\., 27\. Nov\. · \d+ Mails, \d+ eingehend · \d+ gesendet$/);
     // keyboard focus shows the same tip as the pointer: one tip for the whole picture
-    const tip = page.getByRole("tooltip");
+    const tip = page.locator('[role="tooltip"]');
     await tip.waitFor();
     expect(await page.locator('[role="tooltip"]').count()).toBe(1);
     expect((await tip.innerText()).replace("\n", ", ")).toBe(said!);
@@ -192,7 +192,7 @@ test("one Tab stop on today; the arrows walk the days, and the one shared tip sh
 test("the pointer on a day shows the same one tip; the summary sums the days shown; the hero is made once", async () => {
   await withPage({ width: 1440 }, async (page) => {
     await page.locator('[aria-current="date"]').hover();
-    const tip = page.getByRole("tooltip");
+    const tip = page.locator('[role="tooltip"]');
     await tip.waitFor();
     expect(await tip.innerText()).toMatch(/^Fr\., 27\. Nov\. · \d+ Mails\n\d+ eingehend · \d+ gesendet$/);
     expect(await page.locator(".k2-heat-sum").textContent()).toMatch(/^[\d.]+ Mails in den letzten 12 Monaten · Ø \d+ pro Tag$/);
@@ -211,5 +211,32 @@ test("a new mailbox without mail: every day quiet, nothing cut; a huge one: ever
     );
     expect(counts.every((count) => count > 0)).toBe(true);
     expect(await page.locator('[aria-current="date"]').getAttribute("aria-label")).toMatch(/^Fr\., 27\. Nov\. · \d{1,3}\.\d{3} Mails, /);
+  });
+});
+
+test("new counts keep every day's element: the focus stays on today and its words follow", async () => {
+  await withPage({ width: 1440 }, async (page) => {
+    const today = page.locator('[aria-current="date"]');
+    await today.focus();
+    const before = await today.getAttribute("aria-label");
+    const found = await page.evaluate(() => {
+      const focused = document.activeElement;
+      window.__k2Double!();
+      return { same: document.activeElement === focused, connected: !!focused?.isConnected };
+    });
+    expect(found).toEqual({ same: true, connected: true });
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).not.toBe(before);
+  });
+});
+
+test("the tip only shows what each day already says: no day points at it, and it stays out of assistive technology", async () => {
+  await withPage({ width: 1440 }, async (page) => {
+    const days = page.locator("[data-heat-day]");
+    expect(await page.locator("[data-heat-day][aria-describedby], [data-heat-day][aria-labelledby]").count()).toBe(0);
+    await page.locator('[aria-current="date"]').hover();
+    await page.locator('[role="tooltip"]').waitFor();
+    expect(await page.locator("[data-heat-day][aria-describedby], [data-heat-day][aria-labelledby]").count()).toBe(0);
+    expect(await page.locator('[role="tooltip"]').getAttribute("aria-hidden")).toBe("true");
+    expect(await days.count()).toBe(369);
   });
 });

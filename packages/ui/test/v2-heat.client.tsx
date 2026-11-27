@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { Bar, Heat, type HeatDay, List, Pane, Row, Text, Workspace } from "../src/v2";
 import { addDays } from "../src/v2/behavior/dates";
@@ -12,6 +13,8 @@ declare global {
     __k2Heat?: "usual" | "none" | "huge";
     /** How often the hero was made: once, however often the workspace reads `detailEmpty`. */
     __k2HeroBuilds?: number;
+    /** New counts for the same days, as a live update brings them: every count doubled. */
+    __k2Double?: () => void;
   }
 }
 
@@ -37,6 +40,9 @@ const detail = (date: string) => {
   return `${number.format(incoming)} eingehend · ${number.format(count - incoming)} gesendet`;
 };
 
+const [shownDays, setShownDays] = createSignal(days);
+window.__k2Double = () => setShownDays(days.map((day) => ({ ...day, count: day.count * 2 })));
+
 const root = document.getElementById("root");
 if (!root) throw new Error("heat: #root is missing");
 render(
@@ -51,7 +57,7 @@ render(
           window.__k2HeroBuilds = (window.__k2HeroBuilds ?? 0) + 1;
           return (
             <Heat
-              days={days}
+              days={shownDays()}
               today={today}
               label="Mails pro Tag"
               unit={(count) => `${number.format(count)} Mails`}

@@ -49,7 +49,11 @@ export const Heat = (props: HeatProps) => {
   const t = useDateMessages();
   const weekStartsOn = createMemo(() => firstDayOfWeek(locale()));
   const grid = createMemo(() => heatGrid(props.days, props.today, weekStartsOn()));
-  const months = createMemo(() => heatMonths(grid().rows));
+  // The rows depend on today and the week start only: new counts keep them, so every day keeps its element (and focus).
+  const rows = createMemo(() => grid().rows, undefined, {
+    equals: (before, after) => before[0]?.[0] === after[0]?.[0] && before.every((row, index) => row.length === after[index]?.length),
+  });
+  const months = createMemo(() => heatMonths(rows()));
   const names = createMemo(() => weekdayNames(locale(), "short", weekStartsOn()));
   const longNames = createMemo(() => weekdayNames(locale(), "long", weekStartsOn()));
   const count = (date: string) => grid().days.get(date)?.count ?? 0;
@@ -60,10 +64,11 @@ export const Heat = (props: HeatProps) => {
     });
   // One tip for the whole picture: every day is one of its triggers, and the day that opened it fills it.
   const [shown, setShown] = createSignal<string>();
-  const tip = useTip(() => ({ onPayloadChange: (payload: unknown) => typeof payload === "string" && setShown(payload) }));
+  // Each day says its date and count in its own name, so the tip only shows them and keeps out of assistive technology.
+  const tip = useTip(() => ({ onPayloadChange: (payload: unknown) => typeof payload === "string" && setShown(payload) }), "visual");
   let element: HTMLElement | undefined;
   // One Tab stop: the arrows walk the days (a week to the side, a day up or down), Home and End go to the ends of the
-  // row. The days are kept by their date, so the focus keeps its place when the counts change.
+  // row. The days keep their elements when the counts change (see rows), so the focus keeps its place.
   const walk = (event: KeyboardEvent) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const cell = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-heat-day]") : null;
@@ -119,7 +124,7 @@ export const Heat = (props: HeatProps) => {
         </For>
       </div>
       <div class="k2-heat-grid" role="grid" aria-label={props.label} aria-readonly="true" onKeyDown={walk}>
-        <For each={grid().rows}>
+        <For each={rows()}>
           {(dates, row) => (
             <div class="k2-heat-row" role="row">
               {/* every other weekday shows its short name; each names itself in full to a screen reader */}
@@ -156,7 +161,7 @@ export const Heat = (props: HeatProps) => {
         </span>
       </div>
       <PageLayer from={() => element}>
-        <tip.Popup class="k2-tip" data-k2-part="Popover" side="top" sideOffset={6} collisionPadding={8}>
+        <tip.Popup class="k2-tip" data-k2-part="Popover" side="top" sideOffset={6} collisionPadding={8} aria-hidden="true">
           <Show when={shown()}>
             {(date) => (
               <>

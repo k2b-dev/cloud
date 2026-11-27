@@ -221,11 +221,12 @@ export const Workspace = (props: WorkspaceProps) => {
   };
   // the detail the workspace declares, at its minimum; it counts open or closed
   const declared = () => (props.detail === undefined ? undefined : props.detail === true ? flexibleMin : props.detail);
-  const empty = createMemo(() =>
+  // Read where it is drawn, never ahead: on the server the panes register their columns while they render, after this
+  // line, so a value computed here would not know an open detail yet.
+  const empty = () =>
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
-      : { icon: detailEmpty()?.icon ?? "click", text: detailEmpty()?.text ?? t().nothingSelected, hero: emptyHero() },
-  );
+      : { icon: detailEmpty()?.icon ?? "click", text: detailEmpty()?.text ?? t().nothingSelected, hero: emptyHero() };
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.

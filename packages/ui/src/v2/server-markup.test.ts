@@ -11,7 +11,7 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-server-markup-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Pane } = await import("./layout");
+const { Pane, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
 const { Heat } = await import("./heat");
@@ -30,6 +30,32 @@ test("a split draws no seam for a child that renders nothing, so `{open && <Pane
   const alone = seams(split(undefined));
   expect(alone).toBe(1);
   for (const nothing of [false, true, null, ""]) expect(seams(split(nothing))).toBe(alone);
+});
+
+// The place of a declared detail stands only while no detail is open, on the server as in the browser: an open detail
+// registers itself while it renders, so the server must decide where it draws the place, never ahead (#4445 review).
+test("a workspace draws the empty detail's place only while no detail is open, also on the server", () => {
+  const page = (open: boolean) =>
+    renderToString(() =>
+      createComponent(Workspace, {
+        detail: true,
+        detailEmpty: { icon: "mail", text: "Keine Nachricht ausgewählt" },
+        get children() {
+          return createComponent(Pane.Split, {
+            get children() {
+              return [
+                createComponent(Pane, { label: "Liste", children: createComponent(Text, { children: "Eintrag" }) }),
+                open
+                  ? createComponent(Pane, { label: "Nachricht", detail: true, children: createComponent(Text, { children: "Text" }) })
+                  : undefined,
+              ];
+            },
+          });
+        },
+      }),
+    );
+  expect(page(true)).not.toContain("data-detail-empty");
+  expect(page(false)).toContain("data-detail-empty");
 });
 
 // HTML drops one newline at the start of a textarea's text: the server sends one more, so leading blank lines stay.
