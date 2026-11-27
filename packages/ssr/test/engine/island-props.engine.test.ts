@@ -63,7 +63,9 @@ beforeAll(async () => {
           ? new Response(file, { headers: { "content-type": "text/javascript" } })
           : new Response("missing", { status: 404 });
       }
-      return new Response(page, { headers: { "content-type": "text/html" } });
+      // `/stripped`: the same page after a proxy or optimizer removed its HTML comments.
+      const body = url.pathname === "/stripped" ? page.replace(/<!--[\s\S]*?-->/g, "") : page;
+      return new Response(body, { headers: { "content-type": "text/html" } });
     },
   });
   origin = `http://127.0.0.1:${server.port}`;
@@ -78,6 +80,24 @@ afterAll(async () => {
     } finally {
       if (root) rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+test("a page whose comments a proxy stripped shows the island's error and names the cause", async () => {
+  const tab = await browser.newPage();
+  const errors: string[] = [];
+  tab.on("pageerror", (error) => errors.push(error.message));
+  try {
+    await tab.goto(`${origin}/stripped`);
+    await tab.waitForSelector("solid-island [role=alert][data-ssr-error]");
+    // The island never rendered with missing props: it shows the fallback with Try again instead.
+    expect(await tab.evaluate(() => document.documentElement.dataset.received)).toBeUndefined();
+    expect(await tab.textContent("solid-island [data-ssr-error] button")).toBe("Try again");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("Island props comment missing");
+    expect(errors[0]).toContain("strip HTML comments");
+  } finally {
+    await tab.close();
   }
 });
 

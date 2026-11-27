@@ -74,14 +74,19 @@ test.each(["globalThis.pwned=1", '({label:"old"})', undefined])(
     document.body.innerHTML = `<solid-island data-id="${bundle.id}">${value === undefined ? "" : propsComment(value)}SSR</solid-island>`;
     const element = document.querySelector("solid-island")!;
     let errors = 0;
+    let message = "";
     element.addEventListener("ssr:island-error", (event) => {
       errors++;
+      if (event instanceof CustomEvent && event.detail.error instanceof Error) message = event.detail.error.message;
       event.preventDefault();
     });
     await bundle.load();
     expect(element.querySelector("[role=alert][data-ssr-error]")).not.toBeNull();
     expect(errors).toBe(1);
     expect(Reflect.get(globalThis, "pwned")).toBeUndefined();
+    // A missing comment names its likely cause; malformed text fails in JSON.parse or Seroval.
+    if (value === undefined) expect(message).toContain("props comment missing");
+    else expect(message).not.toContain("props comment missing");
   },
 );
 

@@ -79,6 +79,9 @@ const propsText = (element: HTMLElement): string | undefined => {
   return islands.props.get(element);
 };
 
+const MISSING_PROPS =
+  "[@k2b/ssr] Island props comment missing (<!--ssr-props:…-->): does a proxy or optimizer strip HTML comments from the page?";
+
 const mountElement = <Props extends object>(
   element: HTMLElement,
   Component: Component<Props>,
@@ -125,7 +128,10 @@ const mountElement = <Props extends object>(
           },
           get children() {
             // Props are data: JSON.parse and Seroval fromJSON never evaluate them. Read again here: reset() reruns only this.
-            return createComponent(Component, fromJSON<Props>(JSON.parse(propsText(element) ?? "")));
+            const text = propsText(element);
+            // The transform writes a props comment for every wrapper, also for no props: a missing one was removed.
+            if (text === undefined) throw new Error(MISSING_PROPS);
+            return createComponent(Component, fromJSON<Props>(JSON.parse(text)));
           },
         });
       }, element);
