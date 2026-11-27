@@ -200,6 +200,7 @@ describe("Grids before its first base", () => {
         ]);
         // from 1440 on the four ways stand in one row; below, a card keeps its 240 px and they wrap
         if (view === wide || view === xl) {
+          await settled(tab);
           const tops = await ways.evaluateAll((cards) => cards.map((card) => Math.round(card.getBoundingClientRect().top)));
           expect(new Set(tops).size).toBe(1);
         }
@@ -309,7 +310,7 @@ describe("a base home on v2", () => {
       const button = tab.getByRole("button", { name: "Base wechseln" });
       expect(await button.innerText()).toContain("Werkstatt");
       await button.click();
-      const panel = tab.locator(".k2-switch");
+      const panel = tab.locator(".k2-switcher");
       await panel.waitFor();
       expect(await panel.locator(".k2-mh").allInnerTexts()).toEqual(["Zuletzt geöffnet", "Alle Bases"]);
       expect(await panel.locator('.k2-mi[aria-current="page"]').innerText()).toContain("Werkstatt");
@@ -330,10 +331,10 @@ describe("a base home on v2", () => {
     const { context, tab, errors } = await open(wide, "/app/grids/Bas001", "huge");
     try {
       await tab.getByRole("button", { name: "Base wechseln" }).click();
-      const panel = tab.locator(".k2-switch");
+      const panel = tab.locator(".k2-switcher");
       await panel.waitFor();
       expect(await panel.locator(".k2-mi-label").count()).toBe(22);
-      expect(await panel.locator(".k2-switch-none").innerText()).toBe("980 weitere Bases über die Suche");
+      expect(await panel.locator(".k2-switcher-none").innerText()).toBe("980 weitere Bases über die Suche");
       expect(errors).toEqual([]);
     } finally {
       await context.close();

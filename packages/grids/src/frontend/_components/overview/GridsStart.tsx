@@ -62,12 +62,13 @@ export default function GridsStart(props: GridsStartProps) {
             title: way.name,
             href: withParam(BASES_PAGE_PATH, "new", way.id),
             onNavigate: (event: LinkNavigateEvent) => open(event, way.id),
+            // under the name its main table with its first columns; the tables it makes as its figure
             ...(way.preview
               ? {
+                  meta: `${way.preview.table} · ${way.preview.columns.join(", ")}`,
                   stats: [{ icon: "table", label: t().tableCount({ count: way.preview.tables, formatted: number(way.preview.tables) }) }],
-                  foot: `${way.preview.table} · ${way.preview.columns.join(", ")}`,
                 }
-              : { foot: t().blankBaseFoot }),
+              : { meta: t().blankBaseFoot }),
           }))}
         />
       </Pane>

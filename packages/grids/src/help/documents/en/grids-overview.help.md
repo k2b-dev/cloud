@@ -67,9 +67,13 @@ This order keeps mistakes cheap. A clear table and a few representative records 
 
 ## Find your work in a base {icon="layout-dashboard"}
 
-When you open Grids from the navigation, Grids returns to the base page that you looked at last in this browser, even in another tab. If you can no longer open that base, the overview opens instead.
+When you open Grids from the navigation, Grids returns to the base page that you looked at last in this browser, even in another tab. If you can no longer open that base, the newest base that you can open opens instead. Grids has no page of all bases.
 
-In **Edit mode**, use **New** on the base overview, or the base's **…** menu at the top of the sidebar, to create a table, view, form, document template, workflow, or app. The menu offers only actions that you can use. For a resource that is based on a table, pick the table in its submenu. **View** opens the query editor, where you configure and save the view.
+To switch to another base, use the switcher at the top of the sidebar. It lists the bases that you opened last, then all other bases by name. From eight bases on, it has a search. **New base** and **From a template** create a base.
+
+Before your first base, Grids shows four ways to start: a blank base and three templates. Each template shows its main table with its first columns and how many tables it creates. Select a way to name the base and create it.
+
+In **Edit mode**, use **New** on the base overview to create a table, view, form, document template, workflow, or app. The menu offers only actions that you can use. For a resource that is based on a table, pick the table in its submenu. **View** opens the query editor, where you configure and save the view.
 
 You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. Workflow email templates are in **Settings → Email templates**. Viewing, creating, editing, and deleting them require **Manage** access to the base.
 

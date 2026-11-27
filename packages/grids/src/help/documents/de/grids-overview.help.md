@@ -67,9 +67,13 @@ In dieser Reihenfolge bleiben Fehler günstig. Eine klare Tabelle und einige rep
 
 ## Die Arbeit in einer Base finden {icon="layout-dashboard"}
 
-Öffnest du Grids über die Navigation, kehrt Grids zur Base-Seite zurück, die du in diesem Browser zuletzt angesehen hast, auch in einem anderen Tab. Kannst du diese Base nicht mehr öffnen, erscheint stattdessen die Übersicht.
+Öffnest du Grids über die Navigation, kehrt Grids zur Base-Seite zurück, die du in diesem Browser zuletzt angesehen hast, auch in einem anderen Tab. Kannst du diese Base nicht mehr öffnen, öffnet sich stattdessen die neueste Base, die du öffnen darfst. Eine Seite mit allen Bases gibt es nicht.
 
-Im **Bearbeitungsmodus** erstellst du mit **Neu** auf der Übersicht der Base oder im Menü **…** der Base oben in der Seitenleiste eine Tabelle, Ansicht, ein Formular, eine Dokumentvorlage, einen Workflow oder eine App. Das Menü zeigt nur Aktionen, die du ausführen darfst. Für eine Ressource, die auf einer Tabelle beruht, wählst du die Tabelle im Untermenü. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
+Zu einer anderen Base wechselst du mit dem Umschalter oben in der Seitenleiste. Er zeigt zuerst die Bases, die du zuletzt geöffnet hast, dann alle anderen nach Namen. Ab acht Bases hat er eine Suche. **Neue Base** und **Aus Vorlage** legen eine Base an.
+
+Vor deiner ersten Base zeigt Grids vier Wege zum Start: eine leere Base und drei Vorlagen. Jede Vorlage zeigt ihre Haupttabelle mit den ersten Spalten und wie viele Tabellen sie anlegt. Wähle einen Weg, gib der Base einen Namen und lege sie an.
+
+Im **Bearbeitungsmodus** erstellst du mit **Neu** auf der Übersicht der Base eine Tabelle, Ansicht, ein Formular, eine Dokumentvorlage, einen Workflow oder eine App. Das Menü zeigt nur Aktionen, die du ausführen darfst. Für eine Ressource, die auf einer Tabelle beruht, wählst du die Tabelle im Untermenü. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
 
 **Dokumente** kannst du immer aufklappen. Öffne **Alle Dokumente** oder wähle eine Vorlage aus, um ihre erzeugten Dokumente zu sehen. E-Mail-Vorlagen für Workflows findest du unter **Einstellungen → E-Mail-Vorlagen**. Ansehen, Erstellen, Bearbeiten und Löschen erfordern Zugriff **Verwalten** auf die Base.
 

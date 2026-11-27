@@ -77,8 +77,8 @@ const summarizeTemplate = (template: GridTemplate): TemplateSummary => ({
 
 export const list = (locale?: string): TemplateSummary[] => getTemplates(locale).map(summarizeTemplate);
 
-/** Kinds of field a preview leaves out: they show no words of their own (a file, a computed or looked-up value). */
-const PREVIEW_SKIPS = new Set(["file", "formula", "lookup"]);
+/** Kinds of field a preview leaves out: they tell little of the table (an id, a file, a computed or looked-up value). */
+const PREVIEW_SKIPS = new Set(["id", "file", "formula", "lookup"]);
 
 /** What a start tile shows of a template: the tables it makes, and its main table (most fields) with its first columns. */
 export type TemplatePreview = { tables: number; table: string; columns: string[] };

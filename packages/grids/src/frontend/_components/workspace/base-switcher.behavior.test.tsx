@@ -40,10 +40,10 @@ describe("grids container switcher loader", () => {
     reply = async () => success();
   });
 
-  test("switcher labels match the overview in English and German", async () => {
+  test("switcher labels in English and German; there is no page of all bases", async () => {
     for (const { locale, expected } of [
-      { locale: "en", expected: { switchLabel: "Switch base", actions: ["New base", "All bases"] } },
-      { locale: "de", expected: { switchLabel: "Base wechseln", actions: ["Neue Base", "Alle Bases"] } },
+      { locale: "en", expected: { switchLabel: "Switch base", actions: ["New base"] } },
+      { locale: "de", expected: { switchLabel: "Base wechseln", actions: ["Neue Base"] } },
     ]) {
       dom.document.documentElement.lang = locale;
       const view = await mount(true);
