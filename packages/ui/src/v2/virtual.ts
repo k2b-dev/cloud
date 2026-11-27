@@ -49,14 +49,24 @@ const NEIGHBOURS = 20;
 /** What a person reaches with Tab inside a row. */
 const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
-/** What scrolls the list: a large table's own scroller, else the column's `.k2-scroll`, else the nearest scroller, else the page. */
+const scrolls = (node: HTMLElement) => {
+  const overflow = getComputedStyle(node).overflowY;
+  return overflow === "auto" || overflow === "scroll";
+};
+
+/**
+ * What scrolls the list: the nearest element around it that scrolls up and down now. Which one that is can change with
+ * the width: a main column whose context column gives way under it (`Pane side`) scrolls in one piece with its split,
+ * and its own `.k2-scroll` no longer scrolls. A box that only scrolls sideways (a table's) is passed over. While
+ * nothing scrolls yet: a large table's own scroller, else the column's `.k2-scroll`, else the nearest box that may
+ * scroll, else the page.
+ */
 const scrollerOf = (element: HTMLElement): HTMLElement | null => {
+  for (let node = element.parentElement; node; node = node.parentElement)
+    if (node.scrollHeight > node.clientHeight + 1 && scrolls(node)) return node;
   const column = element.closest<HTMLElement>(".k2-table-scroll[data-grid], .k2-scroll");
-  if (column) return column;
-  for (let node = element.parentElement; node; node = node.parentElement) {
-    const overflow = getComputedStyle(node).overflowY;
-    if (overflow === "auto" || overflow === "scroll") return node;
-  }
+  if (column && scrolls(column)) return column;
+  for (let node = element.parentElement; node; node = node.parentElement) if (scrolls(node)) return node;
   return null;
 };
 
@@ -152,11 +162,17 @@ export const createVirtualWindow = <T>(options: {
 
   const mount = (list: HTMLElement) => {
     if (isServer) return;
-    const scroller = scrollerOf(list);
+    // What scrolls the list can change with the width (a context column that gives way under its main column): it is
+    // found anew before the window or the place someone reads is taken from it.
+    let scroller = scrollerOf(list);
+    const findScroller = () => {
+      scroller = scrollerOf(list);
+    };
     // The first row in view and the one after it (which takes its place when it goes), with their distance to the top.
     let held: { node: Element; top: number }[] = [];
     hold = () => {
       held = [];
+      findScroller();
       if (!scroller || scroller.scrollTop <= 0) return;
       const viewTop = scroller.getBoundingClientRect().top;
       const rows = Array.from(list.children);
@@ -194,6 +210,7 @@ export const createVirtualWindow = <T>(options: {
     };
     update = () => {
       frame = 0;
+      findScroller();
       const top = scrolledIn();
       const height = scroller ? scroller.clientHeight : window.innerHeight;
       const count = keys.length;
@@ -254,6 +271,7 @@ export const createVirtualWindow = <T>(options: {
     reveal = (key) => {
       const index = position.get(key);
       if (index === undefined) return null;
+      findScroller();
       const top = scrolledIn();
       const height = scroller ? scroller.clientHeight : window.innerHeight;
       const from = offsetOf(index);
@@ -293,10 +311,16 @@ export const createVirtualWindow = <T>(options: {
       }
     };
     list.addEventListener("keydown", tabOut);
+    // A new width may also hand the scrolling to another element: the list's own width changes with it.
     const resized = new ResizeObserver(later);
     resized.observe(view);
-    const target: HTMLElement | Window = scroller ?? window;
-    target.addEventListener("scroll", later, { passive: true });
+    resized.observe(list);
+    // Scrolling anything that holds the list moves the window, whichever element scrolls now (scroll events do not
+    // bubble, so the page listens on their way down).
+    const scrolled = (event: Event) => {
+      if (event.target === document || (event.target instanceof Node && event.target.contains(list))) later();
+    };
+    document.addEventListener("scroll", scrolled, { capture: true, passive: true });
     // The focused row stays in the page while it scrolls away (see `placed`).
     const focusIn = (event: FocusEvent) => {
       // the row is the child of the list that holds the focus
@@ -315,7 +339,7 @@ export const createVirtualWindow = <T>(options: {
       cancelAnimationFrame(frame);
       sizesSeen.disconnect();
       resized.disconnect();
-      target.removeEventListener("scroll", later);
+      document.removeEventListener("scroll", scrolled, { capture: true });
       list.removeEventListener("focusin", focusIn);
       list.removeEventListener("focusout", focusOut);
       list.removeEventListener("keydown", tabOut);

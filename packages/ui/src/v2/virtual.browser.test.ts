@@ -367,3 +367,32 @@ test(
   },
   TEST_TIMEOUT,
 );
+
+// W1b (Files, "Alle Ablagen" with #4340): in a main column with its context column under it, the split scrolls, not the
+// column's own scroller, and the window took the whole list (201 rows at 1440 px). The window follows what really scrolls.
+test(
+  "a list in a main column whose context column stands under it keeps only the rows in view, and its window follows the scroll",
+  async () => {
+    await withPage(
+      async (page) => {
+        const shown = () => page.locator('.k2-pane[aria-label="Liste"] [data-k2-part="Row"]').count();
+        // the context stands under the list: the split is what scrolls
+        expect(await page.locator(".k2-split[data-context]").evaluate((split) => split.scrollHeight > split.clientHeight + 1)).toBe(true);
+        expect(await shown()).toBeLessThan(80);
+        await scrollTo(page, ".k2-split[data-context]", 20000);
+        await settled(page);
+        expect(await shown()).toBeLessThan(80);
+        const first = await page.evaluate(() => {
+          const top = document.querySelector(".k2-split[data-context]")!.getBoundingClientRect().top;
+          const row = [...document.querySelectorAll('.k2-pane[aria-label="Liste"] [data-k2-part="Row"]')].find((each) => each.getBoundingClientRect().bottom > top + 1);
+          return Number(row?.getAttribute("aria-posinset") ?? 0);
+        });
+        // the rows in view are the ones far down the list, not the first ones
+        expect(first).toBeGreaterThan(300);
+      },
+      1440,
+      "context",
+    );
+  },
+  TEST_TIMEOUT,
+);
