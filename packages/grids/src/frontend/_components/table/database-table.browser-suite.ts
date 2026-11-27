@@ -100,8 +100,9 @@ describe("Grids table beside Detail", () => {
         expect(shape.right).toBeCloseTo(shape.panelLeft - shape.inset, 1);
         for (const radius of shape.radii) expect(radius).toBeCloseTo(shape.radius, 1);
         for (const [column, expected] of [
-          [4, "12400,00 EUR"],
-          [5, "2026-11-14"],
+          // an amount and a date in the reader's language; a formula date with a chosen ISO format stays ISO
+          [4, "12.400,00\u00a0€"],
+          [5, "14.11.2026"],
           [12, "2026-12-01"],
         ] as const) {
           const value = await page.locator(`tbody tr:first-child td:nth-child(${column})`).evaluate((cell) => {

@@ -19,6 +19,17 @@ describe("formatCell", () => {
     expect(formatCell("2026-05-14T08:30:00.000Z", "date", { includeTime: true }, undefined, berlin, "en")).toBe("05/14/2026, 10:30");
   });
 
+  test("a date with its time and no known time zone reads UTC, whatever the process zone", () => {
+    const before = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      expect(formatCell("2026-05-14T02:30:00.000Z", "date", { includeTime: true }, undefined, undefined, "de")).toBe("14.05.2026, 02:30");
+    } finally {
+      if (before === undefined) delete process.env.TZ;
+      else process.env.TZ = before;
+    }
+  });
+
   test("an explicit ISO date format stays ISO", () => {
     expect(formatCell("2026-05-14", "date", {}, { kind: "date", format: "iso" }, undefined, "de")).toBe("2026-05-14");
   });
@@ -57,7 +68,14 @@ describe("formatCell", () => {
     expect(formatCell("-987654321.5", "number", eur, undefined, undefined, "de")).toBe("-987.654.321,50\u00a0€");
     expect(formatCell("22.6", "number", { decimalPlaces: 2, unit: "EUR" }, undefined, undefined, "de")).toBe("22,60\u00a0€");
     expect(formatCell("12.3400", "number", { unit: "EUR", unitPosition: "prefix" }, undefined, undefined, "en")).toBe("€12.34");
-    // more digits than the currency keeps, or other decimal places, keep the field's digits and its unit as written
+    // an average or a formula's result in a field with the currency's decimal places rounds to them and keeps the sign
+    expect(formatCell(4133.3333333333, "number", eur, undefined, undefined, "de")).toBe("4.133,33\u00a0€");
+    expect(formatCell(0.1 + 0.2, "number", eur, undefined, undefined, "en")).toBe("€0.30");
+    expect(formatCell("2.675", "number", eur, undefined, undefined, "en")).toBe("€2.68");
+    // an amount beyond the safe integer of minor units keeps its digits with the unit as written
+    expect(formatCell("9007199254740993.25", "number", eur, undefined, undefined, "de")).toBe("9.007.199.254.740.993,25 EUR");
+    // with no decimal places, more digits than the currency keeps, or other decimal places, keep the field's digits and
+    // its unit as written
     expect(formatCell("1.2345", "number", { unit: "EUR" }, undefined, undefined, "de")).toBe("1,2345 EUR");
     expect(formatCell("12400", "number", { decimalPlaces: 0, unit: "EUR" }, undefined, undefined, "de")).toBe("12.400 EUR");
     // a unit that is no currency code stays a unit

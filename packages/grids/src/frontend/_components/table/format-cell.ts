@@ -100,7 +100,8 @@ const zonedDateTimeText = (value: string, dateConfig?: DateContext): string => {
 
 /**
  * A date as the reader writes it, short and numeric ("14.11.2026", "11/14/2026"); with its time in the base's time
- * zone ("14.11.2026, 13:53"). A value that is no date stays as it is.
+ * zone ("14.11.2026, 13:53"), UTC when none is known, so server and browser show the same day and time. A value that
+ * is no date stays as it is.
  */
 const formatDateDefault = (
   value: string,
@@ -112,7 +113,7 @@ const formatDateDefault = (
   const instant = new Date(fieldConfig.includeTime ? value : `${day}T00:00:00.000Z`);
   if (Number.isNaN(instant.getTime())) return value;
   if (!fieldConfig.includeTime) return dates.formatDate(instant, { locale, style: "numeric" });
-  const context = { locale, timeZone: dateConfig?.timeZone };
+  const context = { locale, timeZone: dateConfig?.timeZone ?? "UTC" };
   return `${dates.formatDate(instant, { ...context, style: "numeric" })}, ${dates.formatTime(instant, context)}`;
 };
 
@@ -140,8 +141,10 @@ const CURRENCIES = new Set(typeof Intl.supportedValuesOf === "function" ? Intl.s
 
 /**
  * An amount whose unit is a currency code ("EUR") in the reader's form with its sign ("12.400,00 €", "€12,400.00").
- * Null where the field's decimal places are not the currency's own, or the amount has more: those keep their digits
- * and stand with the unit as written.
+ * With the currency's own decimal places, a value with more digits (an average, a formula's result) is rounded to them
+ * as every number of the field is, so one column never mixes "€" and "EUR". Null, so the unit stands as written,
+ * where the field's decimal places are empty or not the currency's own and the amount has more digits, and where the
+ * amount is beyond the safe integer of minor units that the shared money formatter takes.
  */
 const currencyAmount = (amount: string | number, unit: string, precision: number | undefined, locale: string): string | null => {
   if (!CURRENCIES.has(unit)) return null;
@@ -149,7 +152,8 @@ const currencyAmount = (amount: string | number, unit: string, precision: number
   if (precision !== undefined && precision !== digits) return null;
   try {
     const value = new Decimal(typeof amount === "number" ? String(amount) : amount);
-    if (!value.isFinite() || value.decimalPlaces() > digits) return null;
+    if (!value.isFinite() || (precision === undefined && value.decimalPlaces() > digits)) return null;
+    // rounded as formatDecimal rounds (Decimal's toFixed); fromDecimal throws past the safe integer of minor units
     return money.format(money.fromDecimal(value.toFixed(digits), { currency: unit }), { locale });
   } catch {
     return null;

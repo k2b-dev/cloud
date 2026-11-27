@@ -57,6 +57,15 @@ describe("group value formatting", () => {
         locale: "de",
       }),
     ).toBe("14.07.2026");
+    // a chosen date format keeps its form, also for a month bucket
+    expect(
+      formatGroupValue({
+        field: date,
+        spec: { fieldId: date.id, granularity: "month", format: { kind: "date", format: "iso" } } as GroupBySpec,
+        value: "2026-07-01T00:00:00.000Z",
+        locale: "de",
+      }),
+    ).toBe("2026-07-01");
   });
 
   test("keeps default aggregate rounding consistent across both surfaces", () => {

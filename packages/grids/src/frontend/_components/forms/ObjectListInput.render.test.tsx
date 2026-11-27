@@ -40,7 +40,7 @@ describe("ObjectListInput read-first presentation", () => {
     const html = render([{ Amount: "9007199254740993.25" }, { Amount: "0.10" }]);
     expect(html).toContain("<table");
     expect(html).toContain('data-layout="table"');
-    expect(html).toContain("9007199254740993.25");
+    expect(html).toContain("9,007,199,254,740,993.25");
     expect(html).toContain("18,014,398,509,481,986.5");
     expect(html).toContain('aria-label="Amount · Entry 1"');
     expect(html).toContain('aria-label="Amount · Entry 2"');
