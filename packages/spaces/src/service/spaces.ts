@@ -267,14 +267,13 @@ export const listAdmin = async (params: {
       s.ical_token,
       s.created_at,
       s.updated_at,
-      COUNT(sa.access_id)::int AS permission_count
+      -- Counted per row of the page, so the page walks idx_spaces_name_lower in order and stops at its limit.
+      (SELECT COUNT(*)::int FROM spaces.space_access sa WHERE sa.space_id = s.id) AS permission_count
     FROM spaces.spaces s
-    LEFT JOIN spaces.space_access sa ON sa.space_id = s.id
     WHERE (
       ${pattern}::text IS NULL
       OR LOWER(s.name) LIKE ${pattern}
     )
-    GROUP BY s.id, s.name, s.description, s.color, s.ical_token, s.created_at, s.updated_at
     ORDER BY LOWER(s.name) ASC, s.created_at ASC
     LIMIT ${params.pagination.limit}
     OFFSET ${params.pagination.offset}

@@ -118,6 +118,8 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`ALTER TABLE spaces.spaces ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_spaces_short_id ON spaces.spaces(short_id)`.simple();
+  // The administration's page of Spaces in name order.
+  await sql`CREATE INDEX IF NOT EXISTS idx_spaces_name_lower ON spaces.spaces(lower(name), created_at)`.simple();
   console.log("  ✓ spaces.spaces table");
 
   await sql`
