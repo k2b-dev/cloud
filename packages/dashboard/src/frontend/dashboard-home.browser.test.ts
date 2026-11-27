@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { WidgetResponse, WidgetStreamLine } from "@k2b/cloud/contracts";
 import type { Browser, Page } from "playwright";
-import { fixtureAsset, fixtureAssetResponse, LAYER_ORDER, pageCss } from "../../../../scripts/fixtures/page-assets";
+import { fixtureAsset, fixtureAssetResponse, pageCss } from "../../../../scripts/fixtures/page-assets";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 import type { DashboardBoardEntry, DashboardCatalogWidget, DashboardSettings } from "../shared";
 import { builtInWidgets } from "./built-in-widgets.browser-fixture";
@@ -197,6 +197,7 @@ beforeAll(async () => {
   );
   settingsChunkPath = [...assets].find(([path, text]) => path.endsWith(".js") && text.includes("dashboard-widget-settings__reset"))![0];
   const entryPath = new URL(build.outputs.find((output) => output.kind === "entry-point")!.path, "http://harness.test/").pathname;
+  // production links app.css first; this fixture keeps the shared sheet first until #4411, where widget states overflow
   const stylesheets = [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")];
   // The fonts Core serves: text wraps and icons take their height as on a real page.
   const uiDist = resolve(ui, "dist");
@@ -206,7 +207,7 @@ beforeAll(async () => {
     (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/fonts/"),
     icons.replace(/\.\/tabler-icons-[\w-]+\.woff2/, `/${iconFont}`),
   ];
-  const css = fixtureAsset([LAYER_ORDER, ...fonts, await pageCss(stylesheets)].join("\n"), "css");
+  const css = fixtureAsset([...fonts, await pageCss(stylesheets)].join("\n"), "css");
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",

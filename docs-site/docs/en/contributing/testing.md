@@ -604,10 +604,12 @@ const server = Bun.serve({
 });
 ```
 
-- `pageCss(entries)` compiles the stylesheets with Tailwind, minified as the
-  production build ships them, in the order given. An app's `app.css` and the
-  root `styles.css` are joined under the cascade layer order of a Cloud page.
-  The same entries are compiled once per test process.
+- `pageCss(entries)` compiles the stylesheets in the order given, each as the
+  production build ships it: the root `styles.css` as `global.css`, minified,
+  and an app's `app.css` with Cloud's Tailwind plugin, not minified. Pass the
+  app's stylesheet first, as a Cloud page links it; two or more are joined under
+  the cascade layer order of a Cloud page. The same entries are compiled once
+  per module instance, so once per test file under `--isolate`.
 - `pageScript(config)` bundles a harness into one minified file. A build that
   splits into chunks stays a plain `Bun.build`.
 - `fixtureAsset(text, "css" | "js")` returns an address under `/__fixture/`
