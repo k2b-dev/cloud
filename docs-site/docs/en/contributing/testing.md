@@ -1399,7 +1399,7 @@ optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
 rule and its tests check the job list, exact draft and path conditions,
 the red draft gate, skip allowances, event triggers, and concurrency policy.
 
-Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
+Unit tests run in fourteen shards, WebKit tests in twenty-two, and integration tests
 in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1459,7 +1459,8 @@ If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
 script, and together they must run the same files. Cloud runs `src/ssr`,
 `src/ai`, and `src/code` as separate `ssr`, `ai`, and `code` parts; its `rest`
-part excludes these trees,
+part excludes these trees. `@k2b/ui` runs `src/v2` and `src/feedback` with
+`src/actions` as `v2` and `feedback-actions` parts beside its other parts,
 and browser behavior tests keep their separate suite. When splitting a suite,
 the importer cannot divide its old aggregate measurement between new names.
 Derive initial weights from completed file-group timestamps, account for
@@ -1468,7 +1469,9 @@ The next completed run replaces those estimates through the normal importer.
 An integration suite that
 a package runs through its own script splits with `test:integration:list`,
 which turns each listed file into a suite of its own; the runner test fails
-when a single integration suite is weighted above 10 minutes. Commit the
+when a single unit or integration suite is weighted above 10 minutes, two
+thirds of the target. Unit suites that were above it when the rule reached
+unit shards are listed in the runner test until they are split. Commit the
 refreshed weights and adjust the matrix together; keep the 20-minute execution
 budget unchanged. Refresh after browser suites grow or timings drift, even
 when the jobs still pass. An outdated table can balance predicted times while

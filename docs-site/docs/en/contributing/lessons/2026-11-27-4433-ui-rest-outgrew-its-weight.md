@@ -1,0 +1,6 @@
+### A UI test suite outgrew its weight and stopped its shard
+
+- **What happened:** In merge group run 45961046385, unit shard 6 reached its 20-minute budget during `@k2b/ui rest`. The runner stopped the suite, which closed the browser, and the test that was running ("a committed navigation whose load never fires names the open request") reported "Target page, context or browser has been closed". In the green runs before it, the same shard took 17 to 20 minutes.
+- **Root cause:** `@k2b/ui rest` was weighted 692.6 s, but it took 888 to 1067 s, mostly in `src/v2` (up to 481 s), which grew quickly. The planner put 13.7 minutes of weight on the shard, so its real time ran into the budget. The rule that a suite may not exceed two thirds of the shard target covered only integration shards.
+- **Error class:** A CI shard grows toward its job limit.
+- **Guard:** `@k2b/ui` runs `src/v2` and `src/feedback` with `src/actions` as their own parts. Their weights are the file-group maxima of six merge group runs, and unit tests run in fourteen shards. The runner test "CI unit shards cover the selection exactly once and fit the measured budget" now fails for a unit suite above 600 s. The six unit suites that were already above it are listed there until they are split (#4437).

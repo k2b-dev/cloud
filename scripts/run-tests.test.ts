@@ -403,6 +403,16 @@ test("keeps the shared workflow engine in Cloud's isolated CI integration suites
   ]);
 });
 
+/** Unit suites weighted above two thirds of the shard target when the rule reached unit shards; split each and remove it (#4437). */
+const unitSuitesAboveTwoThirds = [
+  "@k2b/cloud rest",
+  "@k2b/cloud ssr",
+  "@k2b/cloud-app-chat",
+  "@k2b/cloud-app-mail rest",
+  "@k2b/cloud-app-notebooks",
+  "@k2b/ui layout-content",
+];
+
 for (const mode of ["unit", "webkit", "integration"] as const) {
   test(`CI ${mode} shards cover the selection exactly once and fit the measured budget`, async () => {
     const matrixJob = z.object({
@@ -456,11 +466,15 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
         expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, observed), 0)).toBeLessThanOrEqual(targetMinutes * 60);
       }
     }
-    if (mode === "integration") {
+    if (mode !== "webkit") {
       // A suite above two thirds of the target leaves a shard no room to balance: Mail as one suite
-      // was weighted 13.6 min, took up to 19 min and stopped its shard at the budget (#2055).
+      // was weighted 13.6 min, took up to 19 min and stopped its shard at the budget (#2055). `@k2b/ui rest`
+      // was weighted 11.5 min, took up to 17.8 min and stopped its shard at the budget (#4433).
+      // The unit suites listed here were above the line before the rule covered unit shards; the list only shrinks.
+      const known = mode === "unit" ? unitSuitesAboveTwoThirds : [];
       const heavy = all.filter((suite) => suiteWeight(suite.name, weights) > ((shardTargetMinutes() * 2) / 3) * 60);
-      expect(heavy.map((suite) => suite.name)).toEqual([]);
+      expect(heavy.map((suite) => suite.name).filter((name) => !known.includes(name))).toEqual([]);
+      expect(known.filter((name) => !heavy.some((suite) => suite.name === name))).toEqual([]);
     }
     expect(workflow.jobs.gate.needs).toContain(mode);
   });

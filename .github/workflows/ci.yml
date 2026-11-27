@@ -201,15 +201,20 @@ jobs:
       # 45498231860 (#4105, slow), with @k2b/cloud SSR, AI and code split into
       # test:part:* suites. The code and rest weights come from the file-group
       # times of @k2b/cloud rest in run 45486435794 (src/code 262.9 s of
-      # 983.6 s, plus 1 s process overhead for the new part). Thirteen shards
-      # need at most 14.65 min (@k2b/cloud-app-notebooks alone; the others
-      # <= 13.80 min); twelve need 15.14 min and miss the 15-min target.
+      # 983.6 s, plus 1 s process overhead for the new part). @k2b/ui rest
+      # took up to 1067.3 s against its 692.6 s weight and stopped shard 6 at
+      # its budget (#4433); its v2, feedback-actions and rest parts carry the
+      # file-group maxima of runs 45954705009, 45957638013, 45958141512,
+      # 45961043118, 45961046385 and 45961274321, plus build and packed check.
+      # Fourteen shards need at most 14.65 min (@k2b/cloud-app-notebooks
+      # alone; the others <= 13.80 min); thirteen need 15.53 min with the
+      # observed timings in scripts/run-tests.test.ts and miss the target.
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
       # strategy.job-total keeps the --shard divisor in sync with the matrix.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:

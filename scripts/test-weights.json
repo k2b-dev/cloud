@@ -575,9 +575,11 @@
     "@k2b/ssr": 35.9,
     "@k2b/stdlib": 18.2,
     "@k2b/ui behavior": 150.9,
+    "@k2b/ui feedback-actions": 329,
     "@k2b/ui layout-content": 828,
-    "@k2b/ui rest": 692.6,
+    "@k2b/ui rest": 298,
     "@k2b/ui styles-inputs-chat": 488,
+    "@k2b/ui v2": 498,
     "@k2b/ui-ssr-fixture": 17.3,
     "workspace root scripts": 61.9,
     "workspace root tests": 107
