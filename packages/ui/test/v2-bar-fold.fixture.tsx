@@ -14,6 +14,7 @@ import { Bar, Button, Menu, Pane, Tabs, Text, Workspace } from "../src/v2";
 // - "reader": Mail's reader in small: a long subject, the primary "Erledigt", four actions, a menu with words
 //   ("Später") and the head's own "…".
 // - "tabs": four tabs, two actions, the primary and a menu with a symbol of its own ("Filter") at the very end.
+// - "long": a long start (a path's words) beside an end that fits and folds nothing: the server's page is the live one.
 // - "history": Notebooks' version history: a fixed label "Versionsverlauf" and a long note title in the start, two
 //   actions at the end. The title takes the shortage; the label stays whole.
 
@@ -172,6 +173,24 @@ export function Fixture() {
         >
           <Pane label="Entwurf">
             <Text>Der Entwurf.</Text>
+          </Pane>
+        </Workspace>
+      </div>
+      <div class="case" data-case="long">
+        <Workspace
+          head={
+            <Bar
+              start={
+                <Text type="row" weight="strong">
+                  Projekte / Kunden / Familie Oswald / Küche Auental / Fronten und Beschläge / Lieferung
+                </Text>
+              }
+              end={<Button keep icon="share" label="Teilen" onClick={deed("Teilen")} />}
+            />
+          }
+        >
+          <Pane label="Ordner">
+            <Text>Der Ordner.</Text>
           </Pane>
         </Workspace>
       </div>

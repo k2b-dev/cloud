@@ -111,17 +111,29 @@ test("390 px, alive: the start stays whole, the last actions are in '…' in the
   });
 });
 
-test("390 px: the server's page already shows the whole start, and at load only buttons turn into '…'", async () => {
-  const starts: unknown[] = [];
-  for (const live of [false, true])
-    await withPage(390, live, async (page) => {
-      const names = (await seen(page, head("record"))).map((control) => control.name);
-      expect([live, names.slice(0, 3)]).toEqual([live, tabs]);
-      const book = (await seen(page, head("book"))).map((control) => control.name);
-      expect([live, book.includes("1.000 Kommentare") || book.some((name) => name.startsWith("1.000"))]).toEqual([live, true]);
-      starts.push([(await edges(page, head("record"))).start, (await edges(page, head("menu"))).start]);
+test("a long start beside an end that fits and folds nothing: the server's page is the live one (±1 px)", async () => {
+  const rects = (page: Page) =>
+    page.evaluate((bar) => {
+      const element = document.querySelector(bar)!;
+      return [":scope > .k2-bar-start", ":scope > .k2-bar-start > .k2-text", ":scope > .k2-bar-end", ":scope > .k2-bar-end .k2-btn"].map(
+        (selector) => {
+          const box = element.querySelector(selector)!.getBoundingClientRect();
+          return [box.left, box.top, box.width, box.height];
+        },
+      );
+    }, head("long"));
+  for (const width of [390, 1024]) {
+    let sent: number[][] = [];
+    await withPage(width, false, async (page) => {
+      sent = await rects(page);
     });
-  expect(starts[1]).toEqual(starts[0]);
+    await withPage(width, true, async (page) => {
+      expect(await page.locator(`${head("long")} .k2-bar-fold`).count()).toBe(0);
+      const live = await rects(page);
+      const apart = live.flatMap((box, at) => box.map((value, side) => Math.abs(value - sent[at]![side]!))).filter((gap) => gap > 1);
+      expect([width, apart]).toEqual([width, []]);
+    });
+  }
 });
 
 test("390 px: the start gives way only after the end folded everything, down to its least and never to nothing", async () => {
@@ -370,7 +382,7 @@ test("every 8 px from 320 to 1440: each end ends inside its bar's content edge, 
       await page.setViewportSize({ width, height: 1000 });
       await frames(page);
       await frames(page);
-      for (const which of ["record", "book", "menu", "before", "history", "reader", "tabs"]) {
+      for (const which of ["record", "book", "menu", "before", "long", "history", "reader", "tabs"]) {
         const { start, end, content } = await edges(page, head(which));
         if (!end) continue;
         if (end.right > content + 0.5) wrong.push(`${which} at ${width}: the end ends ${Math.round(end.right - content)} px beyond`);
