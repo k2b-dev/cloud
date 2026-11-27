@@ -1,4 +1,3 @@
-import type { AiUserPrefs } from "@k2b/cloud/ai";
 import { confirmDiscardIfDirty, useLocale } from "@k2b/ui";
 import { Canvas, Failed, Loading, Pane, Tabs } from "@k2b/ui/v2";
 import { createResource, createSignal, Match, Show, Switch } from "solid-js";
@@ -6,10 +5,10 @@ import { assistantApi } from "../../api/client";
 import {
   ApiAccessPanel,
   ApprovalPreferences,
+  type AssistantPrefsSeed,
   ChatSettings,
   loadOpenAiApiAccess,
   MemorySettings,
-  type OpenAiApiAccess,
   SystemPromptPanel,
 } from "../AssistantPrefsModals";
 import { AssistantSkillEditor, type AssistantSkillEditorRequest, AssistantSkillsSettings } from "../AssistantSkillsSettings";
@@ -22,14 +21,24 @@ import { useAssistantText } from "../ui-copy";
  * content below. The address names the tab (`?prefs=<tab>`), so reload and Back keep it. Unsaved personalization asks
  * before another tab opens, as the dialog asked before it closed.
  */
-export default function AssistantPrefsV2(props: { basePath: string; tab: AssistantPrefsTab; onTab: (tab: AssistantPrefsTab) => void }) {
+export default function AssistantPrefsV2(props: {
+  basePath: string;
+  tab: AssistantPrefsTab;
+  onTab: (tab: AssistantPrefsTab) => void;
+  /** The settings the server read for this page, so its first picture shows them; without them the page reads them. */
+  initial?: AssistantPrefsSeed | null;
+}) {
   const text = useAssistantText();
   const locale = useLocale();
-  const [data, { refetch }] = createResource(async (): Promise<{ prefs: AiUserPrefs; access: OpenAiApiAccess | null }> => {
+  // Each read is one number: 0 while the server's settings stand, so the page reads nothing on its first picture.
+  const [reads, setReads] = createSignal(props.initial ? 0 : 1);
+  const [read] = createResource(reads, async (): Promise<AssistantPrefsSeed> => {
     // The optional tab is known before the tabs show, so the list never shifts; a failed lookup only hides it.
     const [prefs, access] = await Promise.all([assistantApi.getPrefs(), loadOpenAiApiAccess().catch(() => null)]);
     return { prefs, access };
   });
+  const data = () => (reads() === 0 ? (props.initial ?? undefined) : read());
+  const refetch = () => setReads((count) => count + 1);
   const [dirty, setDirty] = createSignal(false);
   const [suggest, setSuggest] = createSignal<boolean>();
   const [skillEditor, setSkillEditor] = createSignal<AssistantSkillEditorRequest>();
@@ -67,10 +76,10 @@ export default function AssistantPrefsV2(props: { basePath: string; tab: Assista
         />
       }
     >
-      <Show when={!data.loading} fallback={<Loading rows={4} lines={2} />}>
+      <Show when={!read.loading} fallback={<Loading rows={4} lines={2} />}>
         <Show when={data()} fallback={<Failed text={text("Failed to load AI preferences")} onRetry={() => void refetch()} />}>
           {(loaded) => (
-            // k2b-ui gap: the settings' fields (label-left rows, switches, the personalization list, the Skill editor)
+            // k2b-ui gap: #4405: the settings' fields (label-left rows, switches, the personalization list, the Skill editor)
             // are v1's shared settings parts; they draw themselves here until v2 has its settings fields (recipe
             // "settings"), which the styling round brings.
             <Canvas label={tabs().find((entry) => entry.id === props.tab)?.label ?? text("Gustav settings")}>

@@ -35,6 +35,8 @@ type AssistantPrefsTab = "personalization" | "chat" | "skills" | "system-prompt"
 
 /** Present only while the operator offers the OpenAI-compatible API. */
 export type OpenAiApiAccess = { baseUrl: string; models: import("@k2b/cloud/ai").AiPeopleModels["options"] };
+/** What Gustav's settings page shows first: the person's settings and, when it is on, the OpenAI-compatible API. */
+export type AssistantPrefsSeed = { prefs: AiUserPrefs; access: OpenAiApiAccess | null };
 
 const readApiError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: unknown } | null;

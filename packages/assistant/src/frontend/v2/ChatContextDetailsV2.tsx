@@ -27,7 +27,7 @@ const MEMORY_HEAD = 48;
 /**
  * A memory as row lines: one up to `MEMORY_WHOLE` letters stands whole; a long one becomes a row of three lines (its head up to the first
  * clause or the last word within `MEMORY_HEAD` letters, then the rest over two lines), each cut with "…".
- * k2b-ui gap: only a Row of three lines cuts its lines; one or two lines wrap without bound, where v1 clamped a memory.
+ * k2b-ui gap: #4408: only a Row of three lines cuts its lines; one or two lines wrap without bound, where v1 clamped a memory.
  */
 export const memoryLines = (content: string): [string] | [string, string, string] => {
   const text = content.trim();

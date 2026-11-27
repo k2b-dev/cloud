@@ -65,6 +65,22 @@ const MODELS = [
     classes: ["balanced"],
   },
 ];
+/** The person's settings and the models a Project can default to, as the server reads them (and its API answers). */
+const PREFS = {
+  userId: "user-mira",
+  memoryEnabled: true,
+  memoryLearningEnabled: true,
+  suggestNextMessage: true,
+  selection: null,
+  updatedAt: FIXTURE_NOW,
+};
+const PEOPLE_MODELS = {
+  status: "ok" as const,
+  selection: null,
+  effectiveDefault: { class: "balanced" as const },
+  classes: [{ class: "balanced" as const, variantId: "standard" }],
+  options: MODELS,
+};
 /** The open chat's context as the server reads it: no files or results yet. */
 const contextOf = (chatId: string) => ({
   chatId,
@@ -99,6 +115,8 @@ type Scene = {
   waiting?: boolean;
   tabs?: boolean;
   archived?: boolean;
+  /** The chats at places could not be listed (null), until the test lets them come back. */
+  placesFailed?: boolean;
   /** The page's clock, when the scene's data has its own day (My apps & automations). */
   now?: string;
 };
@@ -228,7 +246,11 @@ const propsOf = (scene: Scene, url: URL) => {
     initialDoneCount: conversations.filter((conversation) => conversation.isDone).length,
     // The server lists at most 100 open chats and says when more exist (AI_SIDEBAR_CONVERSATIONS_MAX).
     initialMoreConversations: state === "huge",
-    initialPlaceChats: state === "empty" ? { total: 0, items: [] } : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
+    initialPlaceChats: scene.placesFailed
+      ? null
+      : state === "empty"
+        ? { total: 0, items: [] }
+        : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
     initialQuestions: scene.waiting ? FIXTURE_QUESTIONS : { items: [], count: 0 },
     initialConversationId: open?.id ?? null,
     initialArtifactPath: null,
@@ -261,6 +283,9 @@ const propsOf = (scene: Scene, url: URL) => {
     // The settings pages, as the server reads them from the address.
     initialPrefsTab: url.searchParams.get("prefs") ? (url.searchParams.get("prefs") as "personalization") : null,
     initialProjectSettings: url.searchParams.get("settings") === "1",
+    // What the settings pages show first, read on the server (no OpenAI-compatible API here).
+    initialPrefs: url.searchParams.get("prefs") ? { prefs: PREFS, access: null } : null,
+    initialProjectSettingsSeed: url.searchParams.get("settings") === "1" ? { models: PEOPLE_MODELS, access: [] } : null,
     approvals:
       url.searchParams.get("approvals") === "1"
         ? {
@@ -352,6 +377,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
   const posted: { path: string; body: unknown }[] = [];
   let created = 0;
   const sent: string[] = [];
+  let placesFail = Boolean(scene.placesFailed);
   await page.route(`${ORIGIN}/**`, async (route: Route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
@@ -375,17 +401,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
     const conversations = fixtureConversations(scene.state ?? "usual");
     if (method !== "GET") posted.push({ path: url.pathname, body: route.request().postDataJSON() });
     // Gustav's settings: the person's preferences and their personalization, as the server keeps them.
-    if (url.pathname === "/api/ai/prefs" && method === "GET")
-      return route.fulfill({
-        json: {
-          userId: "user-mira",
-          memoryEnabled: true,
-          memoryLearningEnabled: true,
-          suggestNextMessage: true,
-          selection: null,
-          updatedAt: FIXTURE_NOW,
-        },
-      });
+    if (url.pathname === "/api/ai/prefs" && method === "GET") return route.fulfill({ json: PREFS });
     if (url.pathname === "/api/ai/memories" && method === "GET")
       return route.fulfill({
         json:
@@ -416,16 +432,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
     if (url.pathname === "/api/ai/approval-preferences" && method === "GET") return route.fulfill({ json: { approvals: [] } });
     if (url.pathname.endsWith("/skills") && method === "GET") return route.fulfill({ json: { skills: [] } });
     // A Project's settings: the models to choose from, who has access, and the save.
-    if (url.pathname === "/api/ai/models" && method === "GET")
-      return route.fulfill({
-        json: {
-          status: "ok",
-          selection: null,
-          effectiveDefault: { class: "balanced" },
-          classes: [{ class: "balanced", variantId: "standard" }],
-          options: MODELS,
-        },
-      });
+    if (url.pathname === "/api/ai/models" && method === "GET") return route.fulfill({ json: PEOPLE_MODELS });
     if (/^\/api\/ai\/projects\/[^/]+\/access$/.test(url.pathname) && method === "GET") return route.fulfill({ json: { access: [] } });
     if (/^\/api\/ai\/projects\/[^/]+$/.test(url.pathname) && method === "PATCH") {
       const project = fixtureProjects("usual").find((entry) => url.pathname.endsWith(`/${entry.id}`));
@@ -545,7 +552,11 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
             places: { total: FIXTURE_PLACE_CHATS.length, unread: 0, needsAttention: 0 },
             hasArchived: false,
           },
-          placeChats: state === "empty" ? { total: 0, items: [] } : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
+          placeChats: placesFail
+            ? null
+            : state === "empty"
+              ? { total: 0, items: [] }
+              : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
           projects: fixtureProjects(state),
           doneCount: conversations.filter((conversation) => conversation.isDone).length,
           moreConversations: state === "huge",
@@ -573,7 +584,19 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
   await page.waitForSelector('body[data-ready="true"]');
   await page.evaluate(() => document.fonts.ready);
   await settled(page);
-  return { context, page, errors, unanswered, calls, posted, sent, created: () => created };
+  return {
+    context,
+    page,
+    errors,
+    unanswered,
+    calls,
+    posted,
+    sent,
+    created: () => created,
+    recoverPlaces: () => {
+      placesFail = false;
+    },
+  };
 };
 
 /** The rules of v2 on the resting page: no outline problem and no layout finding outside the chat's own drawing. */
@@ -595,98 +618,91 @@ const shoot = async (page: Page, name: string) => {
 };
 
 describe("Assistant on v2", () => {
-  // At 1024 a chat's path and the head's actions share the head: on main's Bar the path does not give way first, so
-  // "Neuer Chat" is cut; #4223 lets the path give way before a button.
   for (const view of [wide, narrow, phone])
     for (const state of ["usual", "worst", "empty"] as const)
-      (view === narrow && state !== "empty" ? test.todo : test)(
-        `${view.name} ${state}: the page keeps the v2 rules and shows no loading on its first picture${view === narrow && state !== "empty" ? " (#4223)" : ""}`,
-        async () => {
-          const { context, page, errors, unanswered } = await open(view, "/app/assistant", { state });
-          try {
-            await shoot(page, `${view.name}-${state}`);
-            expect(await page.locator('[data-k2-part="Loading"]').count()).toBe(0);
-            expect(await layoutProblems(page)).toEqual([]);
-            expect(errors).toEqual([]);
-            expect(unanswered).toEqual([]);
-          } finally {
-            await context.close();
-          }
-        },
-        60_000,
-      );
-
-  // On the phone this waits for #4373: inside Cloud's shell the head with its path gave way with its "…" and "Neuer Chat"
-  // in it; #4373 keeps a head that holds a control, and Gustav's list heads then mark "Neuer Chat" `floats`.
-  for (const view of [phone, narrow, wide, large])
-    (view === phone ? test.todo : test)(
-      `${view.name}: My apps & automations states today's runs, shows the day and one row per app that opens its Code${view === phone ? " (#4373)" : ""}`,
-      async () => {
-        const { context, page, errors, unanswered } = await open(view, "/app/assistant/code", { open: false, now: APPS_NOW });
+      test(`${view.name} ${state}: the page keeps the v2 rules and shows no loading on its first picture`, async () => {
+        const { context, page, errors, unanswered } = await open(view, "/app/assistant", { state });
         try {
-          const pane = page.locator('[data-k2-part="Pane"][aria-label="Meine Apps & Automationen"]');
-          // The phone shows the table as rows of two lines; every width has the links to the Code.
-          await pane.locator('a[href^="/app/assistant/code/c_"]').first().waitFor();
-          await settled(page);
-          await shoot(page, `${view.name}-apps`);
-          expect(await pane.locator('[data-k2-part="StatusRow"]').textContent()).toContain("Läufe heute");
-          if (view === phone) {
-            // On the phone the shell's bar holds the one search; New chat floats as the list's main action.
-            expect(await page.locator(".k2-fab:visible").textContent()).toContain("Neuer Chat");
-            // The head's own search folds to the host's bar: it keeps no room of its own (v2 clips it to 1 px).
-            const field = await page.locator('[data-slot="head"] [data-k2-part="Input"][data-search]').boundingBox();
-            expect(field === null || field.width <= 1).toBe(true);
-          }
-          // One row per app, in the server's order, each a link to its Code (the day line's marks are links too).
-          const rows = await pane.evaluate((root) =>
-            [...root.querySelectorAll<HTMLAnchorElement>('a[href^="/app/assistant/code/c_"]')]
-              .filter((link) => !link.closest(".assistant-apps__today") && link.getClientRects().length > 0)
-              // On the phone the link lies over its row of two lines; the row carries the words.
-              .map((link) => (link.textContent?.trim() || link.parentElement?.textContent?.trim()) ?? ""),
-          );
-          const titles = ["Wochenbericht Vertrieb", "Rückfragen sammeln", "Stoffpreise prüfen", "Angebote nachfassen"];
-          expect(rows).toHaveLength(titles.length);
-          for (const [index, title] of titles.entries()) expect(rows[index]).toContain(title);
-          expect(await layoutProblems(page)).toEqual([]);
+          await shoot(page, `${view.name}-${state}`);
+          expect(await page.locator('[data-k2-part="Loading"]').count()).toBe(0);
+          // At 1024 an open chat's path and the head's actions share the head, and v2's path does not give way
+          // before a button yet, so "Neuer Chat" is cut; #4392 lets a bar's start give way. Its own case below.
+          if (view !== narrow || state === "empty") expect(await layoutProblems(page)).toEqual([]);
           expect(errors).toEqual([]);
           expect(unanswered).toEqual([]);
         } finally {
           await context.close();
         }
-      },
-      60_000,
-    );
+      }, 60_000);
+  for (const state of ["usual", "worst"] as const)
+    test.todo(`1024 ${state}: an open chat's head keeps "Neuer Chat" whole beside its path (#4392)`, async () => {
+      const { context, page } = await open(narrow, "/app/assistant", { state });
+      try {
+        expect(await layoutProblems(page)).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
 
-  // On the phone this waits for #4373: inside Cloud's shell the head with its path gave way with its "…" and "Neuer Chat"
-  // in it; #4373 keeps a head that holds a control, and Gustav's list heads then mark "Neuer Chat" `floats`.
   for (const view of [phone, narrow, wide, large])
-    (view === phone ? test.todo : test)(
-      `${view.name}: a Project shows its head, what it holds, its chats with the composer, and its context${view === phone ? " (#4373)" : ""}`,
-      async () => {
-        const { context, page, errors, unanswered } = await open(view, "/app/assistant?project=Prj03", { open: false });
-        try {
-          const pane = page.locator('[data-k2-part="Pane"][aria-label="Buchhaltung 2026"]');
-          await pane.locator('[data-k2-part="RecordHead"]').waitFor();
-          await settled(page);
-          await shoot(page, `${view.name}-project`);
-          expect(await pane.locator('[data-k2-part="RecordHead"]').textContent()).toBe("Buchhaltung 2026");
-          // What it holds, from the server's read: three chats, two pieces of knowledge, two files, no references.
-          expect((await pane.locator('[data-k2-part="Cells"]').textContent())?.replace(/\s+/g, " ")).toMatch(
-            /Chats\s*3.*Projektwissen\s*2.*Dateien\s*2.*Referenzen\s*0/,
-          );
-          for (const title of ["Rechnung 2026-118 prüfen", "Mahnung an Kunde Berger formulieren", "Steuerberater: Fragen zur Umsatzsteuer"])
-            expect(await pane.getByText(title).count()).toBe(1);
-          expect(await page.getByPlaceholder("Neuen Chat in Buchhaltung 2026 beginnen").count()).toBe(1);
-          if (view !== phone) expect(await page.locator('[data-k2-part="Pane"][aria-label="Projektkontext"]').isVisible()).toBe(true);
-          expect(await layoutProblems(page)).toEqual([]);
-          expect(errors).toEqual([]);
-          expect(unanswered).toEqual([]);
-        } finally {
-          await context.close();
+    test(`${view.name}: My apps & automations states today's runs, shows the day and one row per app that opens its Code`, async () => {
+      const { context, page, errors, unanswered } = await open(view, "/app/assistant/code", { open: false, now: APPS_NOW });
+      try {
+        const pane = page.locator('[data-k2-part="Pane"][aria-label="Meine Apps & Automationen"]');
+        // The phone shows the table as rows of two lines; every width has the links to the Code.
+        await pane.locator('a[href^="/app/assistant/code/c_"]').first().waitFor();
+        await settled(page);
+        await shoot(page, `${view.name}-apps`);
+        expect(await pane.locator('[data-k2-part="StatusRow"]').textContent()).toContain("Läufe heute");
+        if (view === phone) {
+          // On the phone the shell's bar holds the one search; New chat floats as the list's main action.
+          expect(await page.locator(".k2-fab:visible").textContent()).toContain("Neuer Chat");
+          // The head's own search folds to the host's bar: it keeps no room of its own (v2 clips it to 1 px).
+          const field = await page.locator('[data-slot="head"] [data-k2-part="Input"][data-search]').boundingBox();
+          expect(field === null || field.width <= 1).toBe(true);
         }
-      },
-      60_000,
-    );
+        // One row per app, in the server's order, each a link to its Code (the day line's marks are links too).
+        const rows = await pane.evaluate((root) =>
+          [...root.querySelectorAll<HTMLAnchorElement>('a[href^="/app/assistant/code/c_"]')]
+            .filter((link) => !link.closest(".assistant-apps__today") && link.getClientRects().length > 0)
+            // On the phone the link lies over its row of two lines; the row carries the words.
+            .map((link) => (link.textContent?.trim() || link.parentElement?.textContent?.trim()) ?? ""),
+        );
+        const titles = ["Wochenbericht Vertrieb", "Rückfragen sammeln", "Stoffpreise prüfen", "Angebote nachfassen"];
+        expect(rows).toHaveLength(titles.length);
+        for (const [index, title] of titles.entries()) expect(rows[index]).toContain(title);
+        expect(await layoutProblems(page)).toEqual([]);
+        expect(errors).toEqual([]);
+        expect(unanswered).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+  for (const view of [phone, narrow, wide, large])
+    test(`${view.name}: a Project shows its head, what it holds, its chats with the composer, and its context`, async () => {
+      const { context, page, errors, unanswered } = await open(view, "/app/assistant?project=Prj03", { open: false });
+      try {
+        const pane = page.locator('[data-k2-part="Pane"][aria-label="Buchhaltung 2026"]');
+        await pane.locator('[data-k2-part="RecordHead"]').waitFor();
+        await settled(page);
+        await shoot(page, `${view.name}-project`);
+        expect(await pane.locator('[data-k2-part="RecordHead"]').textContent()).toBe("Buchhaltung 2026");
+        // What it holds, from the server's read: three chats, two pieces of knowledge, two files, no references.
+        expect((await pane.locator('[data-k2-part="Cells"]').textContent())?.replace(/\s+/g, " ")).toMatch(
+          /Chats\s*3.*Projektwissen\s*2.*Dateien\s*2.*Referenzen\s*0/,
+        );
+        for (const title of ["Rechnung 2026-118 prüfen", "Mahnung an Kunde Berger formulieren", "Steuerberater: Fragen zur Umsatzsteuer"])
+          expect(await pane.getByText(title).count()).toBe(1);
+        expect(await page.getByPlaceholder("Neuen Chat in Buchhaltung 2026 beginnen").count()).toBe(1);
+        if (view !== phone) expect(await page.locator('[data-k2-part="Pane"][aria-label="Projektkontext"]').isVisible()).toBe(true);
+        expect(await layoutProblems(page)).toEqual([]);
+        expect(errors).toEqual([]);
+        expect(unanswered).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
 
   /** break-ui: every screen with the worst realistic data and with none; each break is named, by screen and width. */
   const SCREENS = [
@@ -701,55 +717,49 @@ describe("Assistant on v2", () => {
     { name: "prefs", address: "/app/assistant?prefs=personalization", pane: "Personalisieren", states: ["worst", "empty"] },
     { name: "project-settings", address: "/app/assistant?project=Prj09&settings=1", pane: "Projekt-Einstellungen", states: ["worst"] },
   ] as const;
-  // On the phone this waits for #4373: inside Cloud's shell the head with its path gave way with its "…" and "Neuer Chat"
-  // in it; #4373 keeps a head that holds a control, and Gustav's list heads then mark "Neuer Chat" `floats`.
   for (const view of [phone, wide])
-    (view === phone ? test.todo : test)(
-      `${view.name} break-ui: every Assistant screen holds its worst and its empty data${view === phone ? " (#4373)" : ""}`,
-      async () => {
-        const breaks: Record<string, string[]> = {};
-        for (const screen of SCREENS)
-          for (const state of screen.states) {
-            // My apps & automations reads its own day; the page clock follows it, as in the apps test.
-            const { context, page, errors, unanswered } = await open(view, screen.address, {
-              state,
-              open: false,
-              ...(screen.name === "apps" ? { now: APPS_NOW } : {}),
-            });
-            try {
-              const pane = page.locator(`[data-k2-part="Pane"][aria-label="${screen.pane}"]`).first();
-              await pane.waitFor({ timeout: 10_000 }).catch(() => undefined);
-              await settled(page);
-              await shoot(page, `${view.name}-break-${screen.name}-${state}`);
-              const found = [
-                ...((await pane.count()) === 0 ? [`no pane "${screen.pane}"`] : []),
-                ...(await layoutProblems(page)),
-                ...errors,
-                ...unanswered.map((entry) => `unanswered ${entry}`),
-              ];
-              if (found.length) breaks[`${screen.name} ${state}`] = found;
-            } finally {
-              await context.close();
-            }
-          }
-        if (view === wide) {
-          // All chats: the worst history of 500 chats, opened from the sidebar.
-          const { context, page, errors, unanswered } = await open(view, "/app/assistant", { state: "worst" });
+    test(`${view.name} break-ui: every Assistant screen holds its worst and its empty data`, async () => {
+      const breaks: Record<string, string[]> = {};
+      for (const screen of SCREENS)
+        for (const state of screen.states) {
+          // My apps & automations reads its own day; the page clock follows it, as in the apps test.
+          const { context, page, errors, unanswered } = await open(view, screen.address, {
+            state,
+            open: false,
+            ...(screen.name === "apps" ? { now: APPS_NOW } : {}),
+          });
           try {
-            await page.locator('[data-k2-part="Nav"]').getByText("Alle Chats", { exact: true }).click();
-            await page.getByRole("dialog", { name: "Alle Chats" }).locator('[data-k2-part="Row"]').first().waitFor();
+            const pane = page.locator(`[data-k2-part="Pane"][aria-label="${screen.pane}"]`).first();
+            await pane.waitFor({ timeout: 10_000 }).catch(() => undefined);
             await settled(page);
-            await shoot(page, `${view.name}-break-all-chats-worst`);
-            const found = [...(await layoutProblems(page)), ...errors, ...unanswered.map((entry) => `unanswered ${entry}`)];
-            if (found.length) breaks["all-chats worst"] = found;
+            await shoot(page, `${view.name}-break-${screen.name}-${state}`);
+            const found = [
+              ...((await pane.count()) === 0 ? [`no pane "${screen.pane}"`] : []),
+              ...(await layoutProblems(page)),
+              ...errors,
+              ...unanswered.map((entry) => `unanswered ${entry}`),
+            ];
+            if (found.length) breaks[`${screen.name} ${state}`] = found;
           } finally {
             await context.close();
           }
         }
-        expect(breaks).toEqual({});
-      },
-      240_000,
-    );
+      if (view === wide) {
+        // All chats: the worst history of 500 chats, opened from the sidebar.
+        const { context, page, errors, unanswered } = await open(view, "/app/assistant", { state: "worst" });
+        try {
+          await page.locator('[data-k2-part="Nav"]').getByText("Alle Chats", { exact: true }).click();
+          await page.getByRole("dialog", { name: "Alle Chats" }).locator('[data-k2-part="Row"]').first().waitFor();
+          await settled(page);
+          await shoot(page, `${view.name}-break-all-chats-worst`);
+          const found = [...(await layoutProblems(page)), ...errors, ...unanswered.map((entry) => `unanswered ${entry}`)];
+          if (found.length) breaks["all-chats worst"] = found;
+        } finally {
+          await context.close();
+        }
+      }
+      expect(breaks).toEqual({});
+    }, 240_000);
 
   test("on the phone the chat fills the screen and its composer stands in view", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant");
@@ -922,10 +932,12 @@ describe("Assistant on v2", () => {
   }, 90_000);
 
   // The stored tab's place under the chat on the phone is Z2's gap (a); its visibility test comes with Z2.
-  test("on the phone a stored tab is no detail on the first picture, and the composer stands in view", async () => {
+  // One pane at a time on the phone, as in v1: the one in front is the detail, and the other one gives way.
+  test("on the phone a stored tab stays behind the chat on the first picture, and the composer stands in view", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant", { tabs: true });
     try {
-      expect(await page.locator('[data-k2-part="Pane"][data-detail]').count()).toBe(0);
+      expect(await page.locator('[data-k2-part="Pane"][aria-label="Chat"]').getAttribute("data-detail")).toBe("");
+      expect(await page.locator('[data-k2-part="Pane"][aria-label="Offene Tabs des Chats"]').isVisible()).toBe(false);
       const composer = await page.locator(".assistant-chat-composer").boundingBox();
       expect(composer && composer.y + composer.height <= phone.height).toBe(true);
       await shoot(page, "390-chat-with-tabs");
@@ -955,19 +967,18 @@ describe("Assistant on v2", () => {
     }
   }, 60_000);
 
-  // Waits for #4373: inside Cloud's shell the chat's head with its "…" gave way on the phone, so "In diesem Chat" could
-  // not be pressed; #4373 keeps a head that holds a control.
-  test.todo("phone: In diesem Chat is the page with exactly one way back, which returns to the chat with the focus (#4373)", async () => {
+  test("phone: In diesem Chat is the page with exactly one way back, which returns to the chat with the focus", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant");
     try {
       await openInThisChat(page);
-      await page.locator('[data-k2-part="Pane"][data-detail]').waitFor();
+      const detail = page.locator('[data-k2-part="Pane"][aria-label="Offene Tabs des Chats"][data-detail]');
+      await detail.waitFor();
+      expect(await page.locator('[data-k2-part="Pane"][aria-label="Chat"]').isVisible()).toBe(false);
       // One way back: the pane's own; v1's "back to the chat" above the tabs stays away.
       const back = page.locator('[data-k2-part="Back"]').filter({ visible: true });
       expect(await back.count()).toBe(1);
       expect(await page.locator(".artifact-mobile-toggle").filter({ visible: true }).count()).toBe(0);
       // Said once: the tab chip names "Kontext"; its content is v2's sections of rows (the chat's Project first).
-      const detail = page.locator('[data-k2-part="Pane"][data-detail]');
       await detail.locator('[data-k2-part="Section"]').first().waitFor();
       // The pane's own heading stays for assistive technology only (1 px), so the eye reads "Kontext" once.
       const seen = await detail.evaluate(
@@ -985,7 +996,8 @@ describe("Assistant on v2", () => {
       expect((await longMemory.boundingBox())?.height ?? 0).toBeLessThanOrEqual(80);
       await shoot(page, "390-in-this-chat");
       await back.getByRole("button").or(back.getByRole("link")).first().click();
-      await page.locator('[data-k2-part="Pane"][data-detail]').waitFor({ state: "detached" });
+      // Back in the chat, the tabs give way: one pane at a time.
+      await page.locator('[data-k2-part="Pane"][aria-label="Offene Tabs des Chats"]').waitFor({ state: "hidden" });
       expect(await page.locator(".assistant-chat-composer").isVisible()).toBe(true);
       await page.waitForFunction(() => document.activeElement !== document.body);
       expect(await page.evaluate(() => document.activeElement?.closest(".assistant-chat-composer") !== null)).toBe(true);
@@ -1012,11 +1024,10 @@ describe("Assistant on v2", () => {
         // Archived chats are restored from their row.
         await dialog.getByRole("searchbox").fill("");
         await dialog.getByRole("button", { name: "Alle Chats" }).click();
-        await page
-          .getByRole("menuitemcheckbox", { name: "Archiviert" })
-          .or(page.getByRole("menuitem", { name: "Archiviert" }))
-          .first()
-          .click();
+        // One choice: the menu marks the chosen filter, and the button names it after the choice.
+        expect(await page.getByRole("menuitemradio", { name: "Alle Chats" }).getAttribute("aria-checked")).toBe("true");
+        await page.getByRole("menuitemradio", { name: "Archiviert" }).click();
+        await dialog.getByRole("button", { name: "Archiviert" }).waitFor();
         await dialog.getByRole("button", { name: "Chat wiederherstellen" }).first().waitFor({ state: "attached" });
         await settled(page);
         await shoot(page, `${view.name}-all-chats-archived`);
@@ -1085,6 +1096,26 @@ describe("Assistant on v2", () => {
       expect(posted.find((entry) => entry.path === "/api/ai/projects/Prj03")?.body).toMatchObject({ name: "Buchhaltung 2027" });
       await until(() => !page.url().includes("settings=1"));
       expect(new URL(page.url()).search).toBe("?project=Prj03");
+      expect(errors).toEqual([]);
+      expect(unanswered).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("chats at places that could not be listed keep their folder with a failure line, and Try again lists them", async () => {
+    const { context, page, errors, unanswered, calls, recoverPlaces } = await open(wide, "/app/assistant", { placesFailed: true });
+    try {
+      const sidebar = page.locator('[data-k2-workspace] [data-k2-part="Nav"]');
+      await sidebar.getByRole("button", { name: /An Orten/ }).click();
+      const failed = sidebar.getByRole("button", { name: "Chats an Orten konnten nicht geladen werden." });
+      await failed.waitFor();
+      recoverPlaces();
+      const reads = calls.filter((call) => call.startsWith("GET /api/assistant/workspace/sidebar")).length;
+      await failed.click();
+      await until(() => calls.filter((call) => call.startsWith("GET /api/assistant/workspace/sidebar")).length > reads);
+      await sidebar.getByText(FIXTURE_PLACE_CHATS[0]!.title).waitFor();
+      expect(await failed.count()).toBe(0);
       expect(errors).toEqual([]);
       expect(unanswered).toEqual([]);
     } finally {

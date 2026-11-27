@@ -5,12 +5,7 @@ import { Dynamic } from "solid-js/web";
 import { assistantMessages } from "./messages";
 
 /** Load only inside a mounted destination; a closed destination never opens again when its import finishes. */
-export function DeferredCodeContent<P extends object>(props: {
-  load: () => Promise<Component<P>>;
-  contentProps: P;
-  /** What stands while the code loads or after it failed, in place of v1's line (v2 draws its own pane). */
-  waiting?: (state: { failed: boolean; retry: () => void }) => JSX.Element;
-}): JSX.Element {
+export function DeferredCodeContent<P extends object>(props: { load: () => Promise<Component<P>>; contentProps: P }): JSX.Element {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const [component, setComponent] = createSignal<Component<P>>();
@@ -27,13 +22,6 @@ export function DeferredCodeContent<P extends object>(props: {
     else setFailed(true);
   };
   onMount(() => void load());
-  const waiting = props.waiting;
-  if (waiting)
-    return (
-      <Show when={component()} fallback={waiting({ failed: failed(), retry: () => void load() })}>
-        {(Content) => <Dynamic component={Content()} {...props.contentProps} />}
-      </Show>
-    );
   return (
     <div class="assistant-deferred-view">
       <Show

@@ -41,7 +41,10 @@ export type AssistantNavOptions = {
   projects: Accessor<AiProject[]>;
   waitingCount: Accessor<number>;
   hasPersonalCode: Accessor<boolean>;
+  /** The chats at places; null when they could not be listed, so the folder says so instead of vanishing. */
   placeChats: Accessor<{ total: number; items: AiConversation[] } | null>;
+  /** Reads the chats at places again after they could not be listed. */
+  retryPlaceChats: () => void;
   /** More open chats exist than the list holds; the last entry leads to the list of every chat. */
   moreConversations: Accessor<boolean>;
   /** The person has any chat at all: open, done, at a place or archived. Without one, "Alle Chats" has nothing to list. */
@@ -56,7 +59,8 @@ export type AssistantNavOptions = {
   showDetails: (conversation: AiConversation) => void | Promise<void>;
   archiveConversation: (conversation: AiConversation) => void | Promise<void>;
   archiveBlocker: (conversation: AiConversation) => AssistantArchiveBlocker;
-  openAllChats: () => void;
+  /** Opens the list of every chat, on one of its views (all by default). */
+  openAllChats: (view?: "all" | "done") => void;
   openPreferences: () => void | Promise<void>;
   onConversationUpdated: (conversation: AiConversation) => void;
 };
@@ -255,7 +259,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
             } satisfies NavItem,
           ]
         : []),
-      ...(entries().allChats ? [{ label: t().allChats, icon: "messages", onClick: options.openAllChats }] : []),
+      ...(entries().allChats ? [{ label: t().allChats, icon: "messages", onClick: () => options.openAllChats() }] : []),
     ];
     const projects: NavGroup = {
       label: t().projects,
@@ -294,22 +298,31 @@ export function createAssistantNav(options: AssistantNavOptions) {
     // What the main list leaves out, folded at its end: the chats at places and the done chats.
     const placeChats = options.placeChats();
     const folded: NavItem[] = [
-      ...(placeChats && placeChats.total > 0
-        ? [{ label: placeT().atPlaces, count: placeChats.total.toLocaleString(locale()), items: placeChats.items.map(chatEntry) }]
-        : []),
+      ...(placeChats === null
+        ? [
+            {
+              label: placeT().atPlaces,
+              dot: "bad" as const,
+              items: [{ label: placeT().placeChatsFailed, icon: "refresh", dot: "bad" as const, onClick: options.retryPlaceChats }],
+            },
+          ]
+        : placeChats.total > 0
+          ? [{ label: placeT().atPlaces, count: placeChats.total.toLocaleString(locale()), items: placeChats.items.map(chatEntry) }]
+          : []),
       ...(options.doneCount() > 0 || doneChats().length > 0
         ? [
             {
               label: text("Done"),
               count: Math.max(options.doneCount(), doneChats().length).toLocaleString(locale()),
-              items: doneChats().map(chatEntry),
+              // The newest done chats, then all of them as the list's own view, as v1's "Done" opened it.
+              items: [...doneChats().map(chatEntry), { label: v2().allDone, icon: "checks", onClick: () => options.openAllChats("done") }],
             },
           ]
         : []),
     ];
     // The sidebar lists a bounded page of open chats; the older ones are one step away in the list of every chat.
     const more: NavGroup[] = entries().moreChats
-      ? [{ items: [{ label: v2().moreChats, icon: "dots", onClick: options.openAllChats }] }]
+      ? [{ items: [{ label: v2().moreChats, icon: "dots", onClick: () => options.openAllChats() }] }]
       : [];
     return [{ items: top }, projects, ...chats, ...more, ...(folded.length > 0 ? [{ items: folded }] : [])];
   });

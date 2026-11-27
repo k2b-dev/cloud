@@ -64,11 +64,11 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
       label={t().myCode}
       status={
         <Show when={o.page()}>
-          {/* k2b-ui gap (DP hero band): the hero is "n runs today" as figure 30 in Gustav's colour with the day line as
+          {/* k2b-ui gap: #4360 (Hero): the hero is "n runs today" as figure 30 in Gustav's colour with the day line as
               its trend; until the band lands, the status row carries the statement and its exceptions. */}
           <StatusRow
+            // The hero and its day line are one region: while the day is read, the day line alone shows it.
             lead={runsToday() === null ? t().myCode : t().appsRunsToday({ count: runsToday() ?? 0 })}
-            loading={o.line() === undefined}
             facts={[{ value: o.counts().all, after: t().appsFactApps }]}
             filters={
               <>
@@ -86,9 +86,12 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
                     {t().appsExceptionPaused({ count: o.counts().paused })}
                   </Chip>
                 </Show>
-                <Button icon="sparkles" onClick={() => props.onCreateInChat()}>
-                  {t().codeCreateInChat}
-                </Button>
+                {/* Without apps the empty state offers it; once is enough. */}
+                <Show when={!o.empty()}>
+                  <Button icon="sparkles" onClick={() => props.onCreateInChat()}>
+                    {t().codeCreateInChat}
+                  </Button>
+                </Show>
               </>
             }
           />
@@ -104,7 +107,7 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
           // The explanations belong to the empty state, not to every day (B: only what counts).
           fallback={<Empty icon="code" text={`${t().codeEmpty} ${t().codeEmptyHint} ${t().codeRunsAsYou}`} action={create()} />}
         >
-          {/* k2b-ui gap: no v2 primitive draws a day of marks on a time axis (lane N extends the state timeline of #4233);
+          {/* k2b-ui gap: #4344: no v2 primitive draws a day of marks on a time axis (it extends the state timeline of #4233);
               v1's day line stands bare here, its runs in Gustav's soft colour, without a legend. */}
           <Canvas label={t().appsToday}>
             <CodeDay

@@ -1,13 +1,15 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { Failed, Loading, Pane } from "@k2b/ui/v2";
 import { createSignal, lazy, Show, Suspense } from "solid-js";
 import { AssistantLiveProvider } from "../assistant-live";
 import { assistantProjectHref } from "../assistant-navigation";
 import type { AssistantWorkspaceParts } from "../assistant-workspace";
-import { AssistantAppsV2, AssistantPrefsV2, AssistantProjectSettingsV2 } from "../code-deferred-views";
 import { lazyAction } from "../lazy-action";
 import { useAssistantText } from "../ui-copy";
+// The page's own views come with its island, so each draws the server's data on the first picture, without a loader.
+import AssistantAppsV2 from "./AssistantAppsV2";
 import AssistantFrameV2 from "./AssistantFrameV2";
+import AssistantPrefsV2 from "./AssistantPrefsV2";
+import AssistantProjectSettingsV2 from "./AssistantProjectSettingsV2";
 import AssistantProjectV2 from "./AssistantProjectV2";
 import AssistantWaitingV2 from "./AssistantWaitingV2";
 import { createAssistantChatDeeds } from "./assistant-chat-deeds";
@@ -50,7 +52,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
     onArchived: w.archiveConversation,
   });
   // All chats is a v2 dialog of this page, loaded when someone opens it.
-  const [allChats, setAllChats] = createSignal(false);
+  const [allChats, setAllChats] = createSignal<"all" | "done" | null>(null);
   const headPath = () => {
     if (w.mainView() === "approvals") return [{ label: w.t().waitingForYou }];
     if (w.mainView() === "code") return [{ label: w.t().myCode, href: w.codeHref }];
@@ -81,6 +83,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
           waitingCount: () => w.waiting().total,
           hasPersonalCode: () => Boolean(w.props.code?.has),
           placeChats: () => w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats ?? null,
+          retryPlaceChats: () => void w.sidebar.refresh(),
           anyChats: () => {
             const counts = w.sidebar.data()?.counts ?? w.props.initialCounts;
             const places = w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats;
@@ -104,7 +107,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
           editConversation: deeds.edit,
           archiveConversation: deeds.archive,
           archiveBlocker: w.archiveBlocker,
-          openAllChats: () => setAllChats(true),
+          openAllChats: (view = "all") => setAllChats(view),
           openPreferences: () => w.openPrefs("personalization"),
           onConversationUpdated: w.updateConversation,
         }}
@@ -140,32 +143,10 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
                     timeZone={w.props.timeZone}
                     initial={w.codeRendered() ? w.props.code?.page : undefined}
                     onCreateInChat={w.createFromCodeView}
-                    // The pane stands while the view's code loads, so nothing moves when it comes.
-                    waiting={(state) => (
-                      <Pane label={w.t().myCode}>
-                        <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
-                          <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
-                        </Show>
-                      </Pane>
-                    )}
                   />
                 )
               : w.mainView() === "prefs"
-                ? () => (
-                    <AssistantPrefsV2
-                      basePath={w.basePath}
-                      tab={w.prefsTab()}
-                      onTab={w.openPrefs}
-                      // The pane stands while the view's code loads, so nothing moves when it comes.
-                      waiting={(state) => (
-                        <Pane label={w.t().personalize}>
-                          <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
-                            <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
-                          </Show>
-                        </Pane>
-                      )}
-                    />
-                  )
+                ? () => <AssistantPrefsV2 basePath={w.basePath} tab={w.prefsTab()} onTab={w.openPrefs} initial={w.prefsSeed()} />
                 : w.projectView()
                   ? () => (
                       // The open Project as its own panes: its chats and composer, its context beside them.
@@ -184,13 +165,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
                               <AssistantProjectSettingsV2
                                 project={project()}
                                 onDone={w.closeProjectSettings}
-                                waiting={(state) => (
-                                  <Pane label={text("Project settings")}>
-                                    <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
-                                      <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
-                                    </Show>
-                                  </Pane>
-                                )}
+                                initial={w.projectSettingsSeed()}
                               />
                             )}
                           </Show>
@@ -215,21 +190,23 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
           content: <w.TabsContent />,
         }}
       />
-      <Show when={allChats()}>
-        <Suspense>
-          <AssistantLiveProvider value={w.liveHub}>
-            <AllChats
-              basePath={w.basePath}
-              initialView="all"
-              projects={w.projects}
-              openConversation={async (conversation) => {
-                if (conversation.id === w.chat.activeConversationId()) return "unchanged";
-                return (await w.openAndFocusConversation(conversation.id)) ? "opened" : "stale";
-              }}
-              onClose={() => setAllChats(false)}
-            />
-          </AssistantLiveProvider>
-        </Suspense>
+      <Show when={allChats()} keyed>
+        {(view) => (
+          <Suspense>
+            <AssistantLiveProvider value={w.liveHub}>
+              <AllChats
+                basePath={w.basePath}
+                initialView={view}
+                projects={w.projects}
+                openConversation={async (conversation) => {
+                  if (conversation.id === w.chat.activeConversationId()) return "unchanged";
+                  return (await w.openAndFocusConversation(conversation.id)) ? "opened" : "stale";
+                }}
+                onClose={() => setAllChats(null)}
+              />
+            </AssistantLiveProvider>
+          </Suspense>
+        )}
       </Show>
     </>
   );

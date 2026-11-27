@@ -11,7 +11,7 @@ const createProjectForm = lazyAction(() => import("./AssistantProjectsDialog"));
 
 /**
  * The panel's frame (`/app/assistant/panel`), still v1: the sidebar beside the chat and its tabs.
- * k2b-ui gap: PanelLayout has no `ui: "v2"` (lane PS); until it has, the panel keeps this frame.
+ * k2b-ui gap: #4311: PanelLayout has no `ui: "v2"`; until it has, the panel keeps this frame.
  */
 export default function AssistantPanelFrame(frame: { w: AssistantWorkspaceParts }) {
   const w = frame.w;

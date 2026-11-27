@@ -32,11 +32,19 @@ const readError = async (response: Pick<Response, "json">, fallback: string) => 
   return body?.message || fallback;
 };
 
+/** The models a Project can default to and who has access, read on the server for v2's settings page. */
+export type AssistantProjectSettingsSeed = { models: AiPeopleModels; access: AiProjectAccess[] };
+
 /**
  * The Project's settings: its fields and their changes, its default model, and who has access. `close` runs after a
  * save (v1's dialog closes, v2's page returns to the Project). v1's dialog and v2's page draw the same state.
  */
-export const createProjectSettings = (props: { project: AiProject; close: () => void }) => {
+export const createProjectSettings = (props: {
+  project: AiProject;
+  close: () => void;
+  /** What the server read for v2's page, so its first picture shows the models and who has access. */
+  initial?: AssistantProjectSettingsSeed | null;
+}) => {
   const text = useAssistantText();
   const [name, setName] = createSignal(props.project.name);
   const [description, setDescription] = createSignal(props.project.description);
@@ -45,6 +53,7 @@ export const createProjectSettings = (props: { project: AiProject; close: () => 
   const [defaultModel, setDefaultModel] = createSignal<AiModelRequest | null>(props.project.defaultModel ?? null);
   const models = query.create({
     source: () => props.project.id,
+    ...(props.initial ? { initial: { source: props.project.id, data: props.initial.models } } : {}),
     load: async (_, { abortSignal }) => {
       const response = await coreClient.ai.models.$get({}, { init: { signal: abortSignal } });
       if (!response.ok) throw new Error(text("Models could not be loaded."));
@@ -62,6 +71,7 @@ export const createProjectSettings = (props: { project: AiProject; close: () => 
   );
   const access = query.create<string | null, AiProjectAccess[], AssistantLiveInvalidation>({
     source: () => (props.project.permission === "admin" ? props.project.id : null),
+    ...(props.initial && props.project.permission === "admin" ? { initial: { source: props.project.id, data: props.initial.access } } : {}),
     load: async (projectId) => {
       if (!projectId) return [];
       const response = await coreClient.ai.projects[":projectId"].access.$get({ param: { projectId } });
