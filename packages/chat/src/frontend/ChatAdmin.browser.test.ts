@@ -74,6 +74,22 @@ const view = (nav: ChatAdminView["nav"]): ChatAdminView => ({
     { type: "notebooks.notebook", line: "Zu viele Anfragen · geprüft 22:40" },
   ],
 });
+/** break-ui: everything down, the database silent, and many places with the longest reasons Chat knows. */
+const worst = (nav: ChatAdminView["nav"]): ChatAdminView => ({
+  ...view(nav),
+  ok: false,
+  state: "Nicht verfügbar",
+  database: { ready: false, value: "Nicht erreichbar" },
+  notifications: {
+    status: "failing",
+    value: "Gestört",
+    detail: "Die Prüfung der Leserechte war nicht möglich: Die Gesundheitsprüfung hat ihre Kapazität erreicht · geprüft 22:41",
+  },
+  providers: Array.from({ length: 14 }, (_, index) => ({
+    type: index % 2 ? "notebooks.notebook" : "spaces.space",
+    line: "Die Anwendung hat keinen Zugang, um Inhalte im Namen des Systems zu lesen, und muss in der Administration freigegeben werden · geprüft 22:38",
+  })),
+});
 type Env = { Variables: { runtime: { apps: unknown[] }; user: typeof admin } };
 const server = new Hono<Env>()
   .use(async (c, next) => {
@@ -90,7 +106,8 @@ const server = new Hono<Env>()
           ui: "v2",
           title: "Chat",
           get children() {
-            return createComponent(ChatAdmin, { view: view(adminNavigation(c)) });
+            const nav = adminNavigation(c);
+            return createComponent(ChatAdmin, { view: c.req.query("worst") === undefined ? view(nav) : worst(nav) });
           },
         }),
     ),
@@ -116,12 +133,14 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
 });
 
-for (const [width, height] of [
-  [1440, 900],
-  [390, 844],
+for (const [state, width, height] of [
+  ["", 1440, 900],
+  ["", 390, 844],
+  ["worst", 1440, 900],
+  ["worst", 390, 844],
 ] as const)
-  test(`the admin page keeps the v2 rules at ${width} px`, async () => {
-    const response = await server.request("/admin/chat", { headers: { "accept-language": "de" } });
+  test(`the admin page keeps the v2 rules at ${width} px${state ? " with the worst state" : ""}`, async () => {
+    const response = await server.request(`/admin/chat${state ? "?worst" : ""}`, { headers: { "accept-language": "de" } });
     expect(response.status).toBe(200);
     const phone = width < 600;
     const context = await browser.newContext({ viewport: { width, height }, isMobile: phone, hasTouch: phone });
@@ -153,7 +172,7 @@ for (const [width, height] of [
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
       if (shots) {
         mkdirSync(shots, { recursive: true });
-        await page.screenshot({ path: join(shots, `03-admin-light-${width}.png`) });
+        await page.screenshot({ path: join(shots, `${state ? "19-worst-admin" : "03-admin"}-light-${width}.png`) });
       }
       expect(errors).toEqual([]);
     } finally {

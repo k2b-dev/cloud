@@ -127,18 +127,17 @@ export function ThreadsPageV2(props: {
             {row("general", t().general, props.threads?.general.unread ?? 0, props.threads?.general.lastMessage ?? null, t().generalHint)}
             <For each={activeThreads(props.threads)}>{thread}</For>
           </List>
-        </Section>
-        <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
-          <Empty icon="hash" text={props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet} />
-        </Show>
-        <Show when={archivedThreads(props.threads).length > 0}>
-          <Section title={t().archive}>
+          {/* The archived ones fold away at the end, as v1 folds them. */}
+          <Show when={archivedThreads(props.threads).length > 0}>
             <Disclosure title={t().archivedThreads({ count: archivedThreads(props.threads).length })}>
               <List label={t().archivedThreads({ count: archivedThreads(props.threads).length })}>
                 <For each={archivedThreads(props.threads)}>{thread}</For>
               </List>
             </Disclosure>
-          </Section>
+          </Show>
+        </Section>
+        <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
+          <Empty icon="hash" text={props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet} />
         </Show>
       </Match>
     </Switch>
