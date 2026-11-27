@@ -4199,6 +4199,16 @@
   height: var(--k2-h-control-small);
   margin-right: -10px;
 }
+/* A person who asks for less motion sees a sheet (a dialog's, a menu's, a popover's) where it rests. On a touch screen
+   core moves the sheet its scroll-snap way and plays its slide in and out and its spring after a swipe also then
+   (@ui-sdk/core 0.1.0-beta.14; its pointer way fades instead). An important declaration outranks an animation in the
+   cascade, so the sheet stands at its place at once and only its backdrop fades. At rest the host's scroll carries the
+   sheet, never a translate, and a swipe moves the host: both stay. */
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui [data-presentation="sheet"][data-driver="scroll-snap"] {
+    translate: none !important;
+  }
+}
 /* On a small touch screen the dialog is a sheet (core's presentation "auto"): the whole width at the bottom, its top
    corners round, as high as its content up to most of the screen; a swipe down closes it. */
 .k2-ui .k2-dialog[data-presentation="sheet"] {
