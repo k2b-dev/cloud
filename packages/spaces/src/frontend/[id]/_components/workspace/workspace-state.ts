@@ -938,17 +938,18 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     authorizationHeader: params.authorizationHeader,
     authority: params.authority,
   });
-  const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes, accessMembers] = await Promise.all([
-    spacesPublicResources.projectItemListResult(itemsResult, route.filter.groupBy),
-    projectKanbanBuckets(kanbanBuckets, columnIds),
-    spacesPublicResources.projectCalendarItems(calendarState.calendarItems),
-    projectCalendarTray(calendarState.calendarTray),
-    spacesPublicResources.projectWormholes(wormholes),
-    // The open item shows who has access to the space; its first picture carries the list instead of loading it.
-    selectedItemDetail && memberPermission !== "none"
-      ? spacesService.access.list({ spaceId: params.spaceId }).then((entries) => entries.items.map(toAccessMember))
-      : Promise.resolve(null),
-  ]);
+  const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes, accessMembers] =
+    await Promise.all([
+      spacesPublicResources.projectItemListResult(itemsResult, route.filter.groupBy),
+      projectKanbanBuckets(kanbanBuckets, columnIds),
+      spacesPublicResources.projectCalendarItems(calendarState.calendarItems),
+      projectCalendarTray(calendarState.calendarTray),
+      spacesPublicResources.projectWormholes(wormholes),
+      // The open item shows who has access to the space; its first picture carries the list instead of loading it.
+      selectedItemDetail && memberPermission !== "none"
+        ? spacesService.access.list({ spaceId: params.spaceId }).then((entries) => entries.items.map(toAccessMember))
+        : Promise.resolve(null),
+    ]);
 
   return {
     kind: "ok",

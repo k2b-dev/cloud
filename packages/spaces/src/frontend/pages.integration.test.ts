@@ -91,7 +91,9 @@ const seed = async (scale: Scale) => {
   // Members of the main Space, so its settings and its people list are as long as the scale says.
   for (let index = 0; index < scale.members; index++) {
     const member = await person(`Member ${index + 1} ${long ? "Ångström-Østergaard" : ""}`.trim());
-    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access (user_id, permission) VALUES (${member}::uuid, 'write') RETURNING id`;
+    const [grant] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access (user_id, permission) VALUES (${member}::uuid, 'write') RETURNING id`;
     await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${main.id}::uuid, ${grant!.id}::uuid)`;
   }
   // Six columns in the main Space (the last one done), one column in every other Space.
@@ -271,7 +273,10 @@ suite("every Spaces page's first view (integration)", () => {
       ]),
       spyOn(calendarView, "loadCalendarEvents").mockImplementation(async (_c, input) => ({
         items: CalendarEventsDataSchema.parse(
-          await readSourceEvents({ calendarIds: input.calendars.map((entry) => entry.calendarId), from: input.from, to: input.to }, sourceContext()),
+          await readSourceEvents(
+            { calendarIds: input.calendars.map((entry) => entry.calendarId), from: input.from, to: input.to },
+            sourceContext(),
+          ),
         ).items.map((item) => ({ ...item, appId: "spaces" })),
         sources: [{ appId: "spaces", state: "ok", error: null }],
       })),
