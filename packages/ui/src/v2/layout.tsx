@@ -7,10 +7,12 @@ import {
   createUniqueId,
   For,
   type JSX,
+  Match,
   onCleanup,
   onMount,
   children as resolveChildren,
   Show,
+  Switch,
   splitProps,
   useContext,
 } from "solid-js";
@@ -940,7 +942,62 @@ export type Tile = {
   foot?: string;
   /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
   trend?: SparkProps;
+  /**
+   * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
+   * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
+   * It is a picture of the content: assistive technology reads the card by its name.
+   */
+  preview?: TilePreview;
 };
+
+/** What a card's preview shows: the app gives the words, the card draws them. */
+export type TilePreview =
+  | { table: { columns: readonly string[]; rows: readonly (readonly string[])[] } }
+  | { page: { title: string; text?: string } }
+  | { icon: string };
+
+/** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
+const TILE_PREVIEW_PHONE_COLUMNS = 2;
+
+const TilePreviewView = (props: { preview: TilePreview }) => (
+  <span class="k2-tile-preview" aria-hidden="true">
+    <Switch>
+      <Match when={"table" in props.preview && props.preview.table}>
+        {(table) => (
+          <table class="k2-tile-pv-table">
+            <thead>
+              <tr>
+                <For each={table().columns}>
+                  {(column, index) => <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{column}</th>}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={table().rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>
+                      {(cell, index) => <td data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{cell}</td>}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        )}
+      </Match>
+      <Match when={"page" in props.preview && props.preview.page}>
+        {(page) => (
+          <span class="k2-tile-pv-page">
+            <b>{page().title}</b>
+            <Show when={page().text}>{(text) => <span>{text()}</span>}</Show>
+          </span>
+        )}
+      </Match>
+      <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
+    </Switch>
+  </span>
+);
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
 export type TileCreate = {
@@ -998,8 +1055,10 @@ const TileCard = (props: { tile: Tile }) => (
     class="k2-tile"
     role="listitem"
     data-open={props.tile.href !== undefined ? "" : undefined}
+    data-preview={props.tile.preview ? "" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
+    <Show when={props.tile.preview}>{(preview) => <TilePreviewView preview={preview()} />}</Show>
     <span class="k2-tile-top">
       <Mark icon={props.tile.icon} color={props.tile.color} />
       <TileName tile={props.tile} />
