@@ -1,0 +1,6 @@
+### A v2 head ran past the window on the phone: a button in its start could not shorten, and its end had no fold
+
+- **What happened:** In Notebooks' book head at 390 px, the button "1.000 Kommentare" in the bar's start ended 8 px past the edge. Once every head control stayed visible on the phone (#4373), a head with tabs and six kept actions had no room. Its end could not fold the actions it had no room for.
+- **Root cause:** Every child of a bar's start was `flex: none`, so only `Text` and `Inline` could shorten; a button kept its whole width. The bar's end had no way to give way except hiding actions without `keep` on the phone.
+- **Error class:** A part that may grow (a count in words, one more action) in a place of fixed width, without a rule for what gives way first.
+- **Guard:** `packages/ui/src/v2/bar-fold.browser.test.ts` covers three things at 390 px: a head with three tabs, six kept actions and a primary, which folds its last actions into "…" in their order with the primary staying; a keyboard order that follows the reading order; and the notebook head, whose start shortens to fit. It also checks that a head that fits at 1440 px is unchanged after the page comes alive. It failed first on main in Chromium and WebKit.
