@@ -373,7 +373,7 @@ export const TableFixture = () =>
           { title: "Treppe Haus am Hang", who: "Architekturbüro Winter", note: "kurz", state: "warn" as const, sum: "640,00 €" },
         ]}
         columns={[
-          { title: "Titel", width: { min: 160, default: 260 }, cell: (row) => row.title },
+          { title: "Titel", width: { min: 160, default: 260 }, grow: true, cell: (row) => row.title },
           { title: "Kunde", width: { min: 120, default: 180 }, cell: (row) => row.who, drop: true },
           { title: "Notiz", width: { min: 200, default: 300 }, wrap: true, cell: (row) => row.note },
           {

@@ -40,7 +40,7 @@ render(
             columns={[
               { title: "Name", width: { min: 200, default: 280 }, cell: (file) => file.name },
               { title: "Geändert", width: { min: 140, default: 170 }, cell: (file) => file.changed, drop: true },
-              { title: "Besitzer", width: { min: 120, default: 150 }, cell: (file) => file.owner, drop: true },
+              { title: "Besitzer", width: { min: 120, default: 220 }, cell: (file) => file.owner, drop: true },
               { title: "Größe", align: "end", width: { min: 90, default: 100 }, cell: (file) => file.size },
             ]}
           />

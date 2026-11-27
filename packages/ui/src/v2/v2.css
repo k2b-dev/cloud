@@ -1252,13 +1252,26 @@
 }
 
 /* ── Table: column head 36, a line under every row, none between columns, numbers right ─────────────────────── */
+/* A table that fits hides the scrollbar it does not need. One that needs more room than its place has scrolls sideways
+   and says so: the edge it continues past fades, and the shared scrollbar of @k2b/ui shows. */
 .k2-ui .k2-table-scroll {
   min-width: 0;
   overflow-x: auto;
+}
+.k2-ui .k2-table-scroll:not([data-more-start], [data-more-end]) {
   scrollbar-width: none;
 }
-.k2-ui .k2-table-scroll::-webkit-scrollbar {
+.k2-ui .k2-table-scroll:not([data-more-start], [data-more-end])::-webkit-scrollbar {
   display: none;
+}
+.k2-ui .k2-table-scroll[data-more-end] {
+  mask-image: linear-gradient(to left, transparent, #000 32px);
+}
+.k2-ui .k2-table-scroll[data-more-start] {
+  mask-image: linear-gradient(to right, transparent, #000 32px);
+}
+.k2-ui .k2-table-scroll[data-more-start][data-more-end] {
+  mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
 }
 /* separate borders, so a row of 40 px is 40 px with its line, as in the large table of the mockup */
 .k2-ui .k2-table {

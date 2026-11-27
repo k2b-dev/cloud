@@ -96,7 +96,7 @@ test("at 1024 px the list beside its open detail drops its columns in their orde
 test("as the table narrows, its columns that may drop give way one by one, in their order", async () => {
   await withPage(1024, async (page) => {
     const seen = new Set<string>();
-    for (const width of [1024, 900, 800, 700, 640, 600, 560, 520, 500]) {
+    for (const width of [1024, 900, 800, 720, 640, 600, 560, 500]) {
       await page.evaluate((px) => {
         document.getElementById("root")!.style.width = `${px}px`;
       }, width);

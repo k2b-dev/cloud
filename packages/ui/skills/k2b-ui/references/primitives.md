@@ -198,7 +198,10 @@ such columns, as beside an open detail, and on the phone), `sort` (its head is p
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
-page itself if it needs one. The last column takes the rest. Chips,
+page itself if it needs one. One column takes the rest: the one with `grow`,
+else the widest that holds no number (not `align: "end"`); a table narrower
+than its columns need scrolls sideways, its edge fades and its scrollbar
+shows. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 

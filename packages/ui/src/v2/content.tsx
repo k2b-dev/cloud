@@ -489,6 +489,11 @@ export type Column<T> = {
    */
   drop?: boolean;
   /**
+   * This column takes the room the others leave in a small table. Without it the widest column that holds no number
+   * (`align: "end"`) grows, the text a person reads; every other column keeps its width.
+   */
+  grow?: boolean;
+  /**
    * The rows can be sorted by this column: its head is pressed to sort. Give the address of the page sorted so
    * (`href`, which reload, back and links keep; with `onNavigate` it opens in place) or a deed (`onSort`). The app
    * decides the order a press leads to, such as the other direction when the column is the sorted one; the table's
@@ -668,8 +673,22 @@ export const Table = <T,>(props: TableProps<T>) => {
   const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
   const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
   const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
+  // In a small table one column takes the room that is left: the one named `grow`, else the widest that holds no
+  // number (aligned to the end), the text a person reads; every other column keeps its width.
+  const growIndex = createMemo(() => {
+    const named = props.columns.findIndex((column) => column.grow);
+    if (named >= 0) return named;
+    let widest = props.columns.length - 1;
+    let px = -1;
+    props.columns.forEach((column, index) => {
+      if (column.align === "end" || (column.width?.default ?? 0) <= px) return;
+      px = column.width?.default ?? 0;
+      widest = index;
+    });
+    return widest;
+  });
   // The columns that may drop give way by the table's own width, in their order (rule 7: columns drop, they do not
-  // shrink): each drops where the columns still standing need more room than the table has, the last one standing at
+  // shrink): each drops where the columns still standing need more room than the table has, the growing one at
   // least its `min`, the others their width. The stylesheet decides with a container query of this table, so the
   // server and the first frame of a narrow pane already show the columns that fit, and nothing moves afterwards. A
   // large table (`select`, `sticky`) scrolls sideways instead; on the phone every such column drops (the pane's query).
@@ -679,13 +698,22 @@ export const Table = <T,>(props: TableProps<T>) => {
     return order < 0 ? undefined : `d${order}`;
   };
   const dropName = `k2-t${createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  // What a small table needs at least once every column that may drop has gone: the others their width, the growing
+  // one its `min`. Narrower, it scrolls sideways (with its cue) instead of squeezing the growing column below its min.
+  const least = createMemo(() => {
+    if (grid() || !props.columns.every((column) => column.width)) return undefined;
+    let px = 0;
+    props.columns.forEach((column, index) => {
+      if (!column.drop) px += index === growIndex() ? (column.width?.min ?? 0) : (columnWidth(index) ?? 0);
+    });
+    return px;
+  });
   const dropRules = createMemo(() => {
     if (grid() || dropOrder().length === 0 || !props.columns.every((column) => column.width)) return undefined;
     const standing = new Set(props.columns.map((_, index) => index));
     const need = () => {
-      const last = Math.max(...standing);
       let px = 0;
-      for (const index of standing) px += index === last ? (props.columns[index]?.width?.min ?? 0) : (columnWidth(index) ?? 0);
+      for (const index of standing) px += index === growIndex() ? (props.columns[index]?.width?.min ?? 0) : (columnWidth(index) ?? 0);
       return px;
     };
     return dropOrder()
@@ -696,6 +724,30 @@ export const Table = <T,>(props: TableProps<T>) => {
         return rule;
       })
       .join("");
+  });
+  // A table that needs more room than its place has scrolls sideways and says so: the edge it continues past fades
+  // (`data-more-start`, `data-more-end`) and its scrollbar shows. Measured in the browser; the server sends none.
+  let scroller: HTMLDivElement | undefined;
+  const [more, setMore] = createSignal({ start: false, end: false });
+  onMount(() => {
+    const element = scroller;
+    if (!element) return;
+    const measure = () => {
+      const start = element.scrollLeft > 0.5;
+      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 0.5;
+      const now = more();
+      if (now.start !== start || now.end !== end) setMore({ start, end });
+    };
+    measure();
+    element.addEventListener("scroll", measure, { passive: true });
+    const sizes = new ResizeObserver(measure);
+    sizes.observe(element);
+    const inner = element.querySelector("table");
+    if (inner) sizes.observe(inner);
+    onCleanup(() => {
+      element.removeEventListener("scroll", measure);
+      sizes.disconnect();
+    });
   });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
@@ -729,6 +781,9 @@ export const Table = <T,>(props: TableProps<T>) => {
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
         style={dropRules() ? { container: `${dropName} / inline-size` } : undefined}
+        data-more-start={more().start ? "" : undefined}
+        data-more-end={more().end ? "" : undefined}
+        ref={scroller}
       >
         <Show when={dropRules()}>{(rules) => <style>{rules()}</style>}</Show>
         {/* said outside the table, which is busy while its rows load */}
@@ -742,19 +797,17 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-grid={grid() ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
+          style={least() ? { "min-width": `${least()}px` } : undefined}
         >
           <Show when={sized()}>
             <colgroup>
               <Show when={props.select}>
                 <col style={{ width: "44px" }} />
               </Show>
-              {/* every column is its default wide; in a small table the last one takes the rest of the row */}
+              {/* every column is its default wide; in a small table the growing one takes the rest of the row */}
               <For each={props.columns}>
                 {(_, index) => (
-                  <col
-                    data-drop={dropMark(index())}
-                    style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined}
-                  />
+                  <col data-drop={dropMark(index())} style={grid() || index() !== growIndex() ? sizeOf(columnWidth(index())) : undefined} />
                 )}
               </For>
             </colgroup>
