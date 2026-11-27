@@ -23,7 +23,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { Input, MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon } from "./marks";
+import { Avatar, Chip, custom, Icon, StateDot, stateWord } from "./marks";
 import { Menu, type MenuEntry, type MenuItem, MenuTab } from "./menu";
 import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
@@ -163,7 +163,7 @@ const NavEnd = (props: { item: NavItem }) => {
       {/* one place for the dot or the running mark, so an entry without either renders as it did before */}
       <Show when={props.item.dot}>
         <Show when={status()} fallback={<NavRunning label={t().running} />}>
-          {(dot) => <Dot status={dot()} />}
+          {(dot) => <StateDot status={dot()} />}
         </Show>
       </Show>
       <Show when={props.item.count !== undefined}>
@@ -360,19 +360,15 @@ export type TabsProps = {
   label: string;
 };
 
-/** The word of a state dot, for assistive technology and for a tab that hides in the menu of further views. */
-const stateWord = (status: Status, t: UiMessages) => (status === "ok" ? t.stateOk : status === "warn" ? t.stateWarn : t.stateBad);
-
 /** The words of a tab: its symbol, its name, its state and its count. */
 const TabFace = (props: { tab: Tab }) => {
   const locale = useLocale();
-  const t = useUiMessages();
   return (
     <>
       <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
       {props.tab.label}
       {/* the nav entry's dot in the same place, before the count; its word joins the tab's name */}
-      <Show when={props.tab.dot}>{(status) => <Dot status={status()} label={stateWord(status(), t())} />}</Show>
+      <Show when={props.tab.dot}>{(status) => <StateDot status={status()} />}</Show>
       <Show when={props.tab.count !== undefined}>
         <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
       </Show>

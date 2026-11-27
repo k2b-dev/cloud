@@ -1,7 +1,7 @@
 import { createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { type TreeParts, useTree } from "./behavior/lists";
 import { announceText } from "./behavior/treegrid";
-import { Dot, Icon } from "./marks";
+import { Icon, StateDot } from "./marks";
 import { Menu, type MenuEntry, PointerMenu } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { useTreeMessages } from "./tree-messages";
@@ -309,7 +309,7 @@ export const NavTreeView = (props: NavTree) => {
                 </parts.Link>
               )}
             </Show>
-            <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
+            <Show when={entry.node.dot}>{(status) => <StateDot status={status()} />}</Show>
             <Show when={entry.node.count !== undefined}>
               <span class="k2-ni-count">{entry.node.count}</span>
             </Show>

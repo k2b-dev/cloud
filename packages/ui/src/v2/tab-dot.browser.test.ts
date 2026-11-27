@@ -23,8 +23,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>) => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -72,4 +72,14 @@ test("a change of state keeps the tab's width, so nothing moves", async () => {
     }
     expect(await page.getByRole("link", { name: "Postgres Warnung" }).isVisible()).toBe(true);
   });
+});
+
+test("a tab without room keeps its state in words in the menu of further views", async () => {
+  await withPage(async (page) => {
+    // the bar has no room for every tab; the ones that do not fit stand in "Mehr", without a dot
+    await page.getByRole("button", { name: /^Mehr/ }).click();
+    const access = page.getByRole("menuitem", { name: /Zugang/ });
+    expect(await access.locator(".k2-mi-meta").innerText()).toBe("Warnung · 12");
+    expect(await access.locator(".k2-dot").count()).toBe(0);
+  }, 360);
 });

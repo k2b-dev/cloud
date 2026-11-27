@@ -63,13 +63,13 @@ A bar of fixed height with one line below and two places, `start` and `end`; its
 
 ### Nav
 
-The app's places in the sidebar: groups with a heading and a deed, counts, dots, folding entries and a foot.
+The app's places in the sidebar: groups with a heading and a deed, counts, dots, folding entries and a foot. A dot's word ("Warnung") is part of the entry's name, in a list of entries and in a tree of places.
 
 <Props of="Nav NavGroup NavItem" />
 
 ### Tabs
 
-Views of one thing; a menu tab at the end holds the views without a tab of their own. A tab can carry the state of what it opens with `dot` (`"ok"`, `"warn"`, `"bad"`), as a nav entry does: a dot after the name whose word ("Warnung") is part of the tab's name, also in the menu when the tab has no room. A change of state moves nothing.
+Views of one thing; a menu tab at the end holds the views without a tab of their own. A tab can carry the state of what it opens with `dot` (`"ok"`, `"warn"`, `"bad"`), as a nav entry does: a dot after the name whose word ("Warnung") is part of the tab's name. A tab that moves into the menu for lack of room shows its state in its menu entry ("Warnung · 12"), not on the bar. A change of state moves nothing.
 
 <Props of="Tabs Tab" />
 

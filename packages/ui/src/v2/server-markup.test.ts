@@ -15,7 +15,7 @@ const { Pane, Workspace } = await import("./layout");
 const { Input } = await import("./controls");
 const { List, Row, Text } = await import("./content");
 const { Heat } = await import("./heat");
-const { Tabs } = await import("./components");
+const { Nav, Tabs } = await import("./components");
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -218,4 +218,22 @@ test("a tab sends the dot of its state with its word, and a tab without a state 
   expect(markup.match(/class="k2-dot"/g)).toHaveLength(2);
   expect(markup).toMatch(/data-status="warn"[^>]*aria-label="Warning"/);
   expect(markup).toMatch(/data-status="ok"[^>]*aria-label="All clear"/);
+});
+
+// A nav entry's dot said nothing to assistive technology; it carries the same word as a tab's now, in a list of entries
+// and in a tree of places.
+test("a nav entry and a place of a tree send their dot with its word", () => {
+  const markup = renderToString(() =>
+    createComponent(Nav, {
+      title: "Betrieb",
+      icon: "activity",
+      groups: [
+        { label: "Dienste", items: [{ label: "Postgres", icon: "database", href: "/postgres", dot: "warn" }] },
+        { label: "Ordner", tree: { label: "Ordner", items: [{ key: "inbox", label: "Eingang", href: "/inbox", dot: "bad" }] } },
+      ],
+    }),
+  );
+  expect(markup).toMatch(/data-status="warn"[^>]*aria-label="Warning"/);
+  expect(markup).toMatch(/data-status="bad"[^>]*aria-label="Problem"/);
+  expect(markup).not.toMatch(/class="k2-dot"[^>]*aria-hidden/);
 });

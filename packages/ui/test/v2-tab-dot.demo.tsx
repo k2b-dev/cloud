@@ -3,7 +3,8 @@ import { Pane, Tabs, Text, Workspace } from "../src/v2";
 import type { Status } from "../src/v2/types";
 
 // The areas of an infrastructure record as tabs, each with the state of what it opens: Postgres needs a look, Valkey is
-// in order, NATS has no state. `window.__setPostgres` changes Postgres's state as a refresh would.
+// in order, NATS has no state, and Zugang needs a look with 12 entries. `window.__setPostgres` changes Postgres's
+// state as a refresh would.
 
 declare global {
   interface Window {
@@ -23,6 +24,7 @@ export function Demo() {
             { label: "Postgres", icon: "database", dot: postgres(), current: true, href: "#postgres" },
             { label: "Valkey", icon: "database", dot: "ok", href: "#valkey" },
             { label: "NATS", icon: "topology-star-3", href: "#nats" },
+            { label: "Zugang", icon: "key", dot: "warn", count: 12, href: "#access" },
           ]}
         />
       }

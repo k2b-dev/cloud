@@ -1,5 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { type UiMessages, useUiMessages } from "../intl/messages";
 import { personColor } from "../surfaces/person-color";
 import { safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
@@ -240,6 +241,15 @@ export const Chip = (props: ChipProps) => {
 export const Dot = (props: { status?: Status | "app"; label?: string }) => (
   <span class="k2-dot" data-status={props.status} role="img" aria-label={props.label} aria-hidden={props.label ? undefined : "true"} />
 );
+
+/** The word of a state ("Warnung"), for assistive technology and where no dot stands, such as a menu entry. */
+export const stateWord = (status: Status, t: UiMessages) => (status === "ok" ? t.stateOk : status === "warn" ? t.stateWarn : t.stateBad);
+
+/** The dot of a state in a nav entry or a tab: its word joins the entry's name, so the state is heard as well as seen. */
+export const StateDot = (props: { status: Status }) => {
+  const t = useUiMessages();
+  return <Dot status={props.status} label={stateWord(props.status, t())} />;
+};
 
 /** The state of one time slot of `Ticks`: it went well, it failed, or there is no data for it. */
 export type TickState = "ok" | "bad" | "none";
