@@ -1,4 +1,5 @@
 import { createMemo, For, type JSX, Show } from "solid-js";
+import { cssColor } from "../internal/color";
 import { useUiMessages } from "../intl/messages";
 import type { ButtonVariant } from "./Button";
 import Dropdown, { type DropdownItem } from "./Dropdown";
@@ -205,7 +206,9 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
       >
         <Show when={swatches().length > 0} fallback={<i class={props.icon} aria-hidden="true" />}>
           <span class="k2b-filter-chip__swatches" aria-hidden="true">
-            <For each={swatches()}>{(color) => <span class="k2b-filter-chip__dot" style={{ "--k2b-filter-color": color }} />}</For>
+            <For each={swatches()}>
+              {(color) => <span class="k2b-filter-chip__dot" style={{ "--k2b-filter-color": cssColor(color) }} />}
+            </For>
           </span>
         </Show>
         <Show when={!props.iconOnly}>
@@ -216,7 +219,9 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
                 <span class="k2b-filter-chip__value">
                   :{" "}
                   <Show when={first().color}>
-                    {(color) => <span class="k2b-filter-chip__dot" style={{ "--k2b-filter-color": color() }} aria-hidden="true" />}
+                    {(color) => (
+                      <span class="k2b-filter-chip__dot" style={{ "--k2b-filter-color": cssColor(color()) }} aria-hidden="true" />
+                    )}
                   </Show>
                   {first().label}
                   <Show when={props.value.length > 1}>{` +${props.value.length - 1}`}</Show>

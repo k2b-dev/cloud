@@ -3374,6 +3374,7 @@ export function ChatWorkspaceView(
             count: (unreadTotal() ?? loadedUnread()) || undefined,
             onNavigate: (navigation: LinkNavigateEvent) =>
               atList() ? void changeList(unreadOn() ? "all" : "unread") : navigation.fallback(),
+            // the head's "…" is gone (Valentin, v8): reading all of them is a deed of the unread ones
             menu: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
           },
           {

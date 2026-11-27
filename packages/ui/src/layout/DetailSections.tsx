@@ -1,6 +1,7 @@
-import { children, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { children, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import type { DropdownItem } from "../actions/Dropdown";
+import { cssColor } from "../internal/color";
 import { Avatar, type AvatarShape } from "../surfaces/Avatar";
 import { AvatarStack, type AvatarStackPerson } from "../surfaces/AvatarStack";
 import { personColor } from "../surfaces/person-color";
@@ -83,7 +84,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
   const others = createMemo(() => props.people.filter((person) => !person.self));
   const self = createMemo(() => props.people.find((person) => person.self));
   const short = (person: DetailPresencePerson) => person.shortName ?? person.name;
-  const color = (person: DetailPresencePerson) => person.color ?? personColor(person.name);
+  const color = (person: DetailPresencePerson) => cssColor(person.color) ?? personColor(person.name);
   const [hidden, setHidden] = createSignal(0);
   let chips: HTMLDivElement | undefined;
 
@@ -485,8 +486,18 @@ export type DetailLinkItem = {
 );
 
 export type DetailLinksProps = {
-  /** What links here. */
+  /** What links here: all of it, or the pages loaded so far when `incomingTotal` counts the rest. */
   incoming: readonly DetailLinkItem[];
+  /**
+   * How many link here when `incoming` holds only the pages loaded so far. The section's count, "Linked from n" and the
+   * summary count all of them. Defaults to `incoming.length`.
+   */
+  incomingTotal?: number;
+  /**
+   * The row that loads the next page of `incoming`, such as "Load more", inside the "Linked from" group after its
+   * rows. When loaded rows arrive, the group shows all of them.
+   */
+  incomingMore?: JSX.Element;
   /** What this object links to. */
   outgoing: readonly DetailLinkItem[];
   /** Rows per direction before "Show n more". Defaults to 5. */
@@ -533,10 +544,19 @@ const LinkRow = (props: { item: DetailLinkItem }): JSX.Element => {
   );
 };
 
-const LinkGroup = (props: { label: string; items: readonly DetailLinkItem[]; limit: number }): JSX.Element => {
+const LinkGroup = (props: { label: string; items: readonly DetailLinkItem[]; limit: number; more?: JSX.Element }): JSX.Element => {
   const panel = useDetailPanelMessages();
   const [all, setAll] = createSignal(false);
   const hiddenCount = () => Math.max(0, props.items.length - props.limit);
+  // Rows that arrive later (a loaded page) show at once instead of hiding behind "Show n more".
+  createEffect(
+    on(
+      () => props.items.length,
+      (length, before) => {
+        if (before !== undefined && length > before) setAll(true);
+      },
+    ),
+  );
   return (
     <div class="k2b-detail-section-group">
       <div class="k2b-detail-section-label">{props.label}</div>
@@ -550,6 +570,7 @@ const LinkGroup = (props: { label: string; items: readonly DetailLinkItem[]; lim
           onClick={() => setAll(!all())}
         />
       </Show>
+      {props.more}
     </div>
   );
 };
@@ -562,20 +583,21 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
   const t = useDetailSectionMessages();
   const limit = () => Math.max(1, props.limit ?? 5);
   const state = () => props.state ?? "ready";
-  const total = () => props.incoming.length + props.outgoing.length;
+  const incomingTotal = () => Math.max(props.incomingTotal ?? 0, props.incoming.length);
+  const total = () => incomingTotal() + props.outgoing.length;
   // Resolve once: the empty state reads it as a condition and as content.
   const footer = children(() => props.footer);
   const summary = () => {
     if (state() === "loading") return t().linksLoading;
     if (state() === "error") return t().linksFailed;
-    const names = (items: readonly DetailLinkItem[]) => ({
+    const names = (items: readonly DetailLinkItem[], count = items.length) => ({
       names: listNames(
         items.slice(0, 2).map((item) => item.title),
         t().and,
       ),
-      more: Math.max(0, items.length - 2),
+      more: Math.max(0, count - 2),
     });
-    return props.incoming.length ? t().linkedBySummary(names(props.incoming)) : t().linksToSummary(names(props.outgoing));
+    return props.incoming.length ? t().linkedBySummary(names(props.incoming, incomingTotal())) : t().linksToSummary(names(props.outgoing));
   };
   // Loading and failure take the row the next links would take, so the loaded rows above never move.
   const pending = () => (
@@ -633,7 +655,7 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
       >
         <div class="k2b-detail-section-rows">
           <Show when={props.incoming.length > 0}>
-            <LinkGroup label={t().linkedBy({ count: props.incoming.length })} items={props.incoming} limit={limit()} />
+            <LinkGroup label={t().linkedBy({ count: incomingTotal() })} items={props.incoming} limit={limit()} more={props.incomingMore} />
           </Show>
           <Show when={props.outgoing.length > 0}>
             <LinkGroup label={t().linksTo({ count: props.outgoing.length })} items={props.outgoing} limit={limit()} />
