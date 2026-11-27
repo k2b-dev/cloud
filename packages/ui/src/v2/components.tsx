@@ -417,43 +417,59 @@ export const Tabs = (props: TabsProps) => {
 /**
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
  * Without room the places before the page shorten first, each down to its own width or 12 characters, whichever is
- * less; the page itself shortens last, with "…". From four places on, the ones between the first place and the parent
- * stand in a "…" that opens them as a menu, until the browser finds room for every place at that least: the server
- * sends them folded, so nothing jumps when the page comes alive. On the phone the path gives way to the phone bar of
- * the shell, which names the page; its head stays only for a search.
+ * less; the page itself shortens last, with "…". When the places do not fit even so, they go into a "…" that opens them
+ * as a menu: first the ones between the first place and the parent (from four places on), then all of them. The
+ * server sends a path of four places with its middle ones folded; the browser unfolds them where they have room. On
+ * the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
+/** How much of a path stands in "…": nothing, the places between the first one and the parent, or every place. */
+type PathFold = 0 | 1 | 2;
+
 export const Path = (props: PathProps) => {
   const t = useUiMessages();
-  const [folded, setFolded] = createSignal(untrack(() => props.items.length) >= 4);
-  const middle = (index: number) => index > 0 && index < props.items.length - 2;
+  const [level, setLevel] = createSignal<PathFold>(untrack(() => props.items.length) >= 4 ? 1 : 0);
+  const last = () => props.items.length - 1;
+  const folds = (index: number, at: PathFold = level()) =>
+    index < last() && (at === 2 || (at === 1 && index > 0 && index < last() - 1));
   let nav: HTMLElement | undefined;
   onMount(() => {
     if (!nav) return;
+    const width = (length: string) => {
+      const probe = document.createElement("span");
+      probe.style.cssText = `position:absolute;visibility:hidden;width:${length}`;
+      nav?.append(probe);
+      const found = probe.offsetWidth;
+      probe.remove();
+      return found;
+    };
     const measure = () => {
       if (!nav) return;
       const places = [...nav.querySelectorAll<HTMLElement>(":scope > .k2-path-step")];
       const current = nav.querySelector<HTMLElement>(":scope > b");
-      // the least a place shortens to: its own width or 12 characters, whichever is less (as the stylesheet lays it out)
-      const probe = document.createElement("span");
-      probe.style.cssText = "position:absolute;visibility:hidden;width:12ch";
-      nav.append(probe);
-      const cap = probe.offsetWidth;
-      probe.remove();
+      if (places.length === 0 || !current) return setLevel(0);
+      // each place at its least (its own width or 12 characters), the page at its own (or 16 characters, beyond which
+      // it shortens)
+      const cap = width("12ch");
       const least = places.map((place) => Math.min(place.scrollWidth, cap));
-      if (props.items.length < 4) return setFolded(false);
-      // every place at its least, the page whole, a chevron and two gaps between each two
-      const chevron = current?.previousElementSibling instanceof HTMLElement ? current.previousElementSibling.offsetWidth : 0;
-      const gap = Number.parseFloat(getComputedStyle(nav).columnGap) || 0;
-      const count = places.length + 1;
-      const need =
-        least.reduce((sum, width) => sum + width, 0) + (current?.scrollWidth ?? 0) + (count - 1) * (chevron + 2 * gap);
-      const fold = need > nav.clientWidth + 0.5;
+      const page = Math.min(current.scrollWidth, width("16ch"));
+      const more = nav.querySelector<HTMLElement>(":scope > .k2-path-fold")?.scrollWidth ?? 0;
+      const chevron = current.previousElementSibling instanceof HTMLElement ? current.previousElementSibling.offsetWidth : 0;
+      const step = chevron + 2 * (Number.parseFloat(getComputedStyle(nav).columnGap) || 0);
+      const room = nav.clientWidth + 0.5;
+      const sum = (widths: number[]) => widths.reduce((total, each) => total + each, 0);
+      const next: PathFold =
+        sum(least) + page + places.length * step <= room
+          ? 0
+          : places.length >= 3 && least[0]! + least.at(-1)! + more + page + 3 * step <= room
+            ? 1
+            : 2;
       // a place that has the focus and folds hands it to "…", which holds it now
       const focused = document.activeElement;
-      const handsOver = fold && !folded() && focused instanceof HTMLElement && places.slice(1).includes(focused);
-      setFolded(fold);
+      const at = places.findIndex((place) => place === focused);
+      const handsOver = at >= 0 && folds(at, next) && !folds(at);
+      setLevel(next);
       if (handsOver) nav.querySelector<HTMLElement>(":scope > .k2-path-fold .k2-btn")?.focus();
     };
     let frame = 0;
@@ -493,20 +509,20 @@ export const Path = (props: PathProps) => {
   });
   const fold = (): MenuEntry[] =>
     props.items
-      .filter((_, index) => middle(index))
+      .filter((_, index) => folds(index))
       .map((item) => (item.href !== undefined ? { label: item.label, href: item.href } : { label: item.label, disabled: true }));
   return (
-    <nav ref={nav} class="k2-path" data-k2-part="Path" aria-label={props.label}>
+    <nav ref={nav} class="k2-path" data-k2-part="Path" data-fold={level()} aria-label={props.label}>
       <For each={props.items}>
         {(item, index) => {
-          const away = () => folded() && middle(index());
+          const away = () => folds(index());
           return (
             <>
               <Show when={index() > 0}>
                 <Icon name="chevron-right" />
               </Show>
               <Show
-                when={index() === props.items.length - 1}
+                when={index() === last()}
                 fallback={
                   <Show
                     when={item.href !== undefined}
@@ -524,7 +540,9 @@ export const Path = (props: PathProps) => {
               >
                 <b aria-current="page">{item.label}</b>
               </Show>
-              <Show when={index() === 0 && folded()}>
+              {/* "…" stands after the first place, where it is laid out also while nothing folds, so the path can measure
+                  it; it shows only while it holds places */}
+              <Show when={index() === 0 && props.items.length > 1}>
                 <Icon name="chevron-right" />
                 <span class="k2-path-fold">
                   <Menu variant="text" icon="dots" label={t().morePlaces} items={fold()} />

@@ -95,6 +95,7 @@ for (const width of [390, 1024, 1440])
         "Ort tief",
         "Seite lang 3",
         "Seite lang 5",
+        "Ort mittel",
         "Ort kurz",
       ]);
       for (const path of found)
@@ -105,60 +106,57 @@ for (const width of [390, 1024, 1440])
       // the long Space name gives way, and the settings stay whole
       expect(byName["Ort lang"]?.whole).toBe(true);
       // a page too long for the room is cut at its end, inside the path, after its places at their least (at 1440 px
-      // WebKit's narrower type lets it stand whole)
-      expect(byName["Seite lang 3"]).toMatchObject({ places: ["Spaces", space], ...(width <= 1024 ? { whole: false } : {}) });
+      // WebKit's narrower type lets it stand whole; at 390 px not even the least of its places has room, so they fold)
+      if (width === 1024) {
+        expect(byName["Seite lang 3"]).toMatchObject({ places: ["Spaces", space], more: [], whole: false });
+        expect(byName["Seite lang 5"]).toMatchObject({ more: [], whole: false });
+      }
       if (width < 768) {
-        // no room for every place at its least: the middle ones are in "…"
-        expect(byName["Ort tief"]).toMatchObject({ places: ["Spaces", "Küche Familie Oswald"], more: ["Weitere Orte"] });
+        // no room for every place at its least: the places fold into "…"; the first and the parent stay while they have room
+        expect(byName["Ort tief"]?.more).toEqual(["Weitere Orte"]);
+        expect(byName["Ort mittel"]).toMatchObject({ places: ["Spaces", "Küche"], more: ["Weitere Orte"], whole: true });
       } else {
-        // room for every place at its least: nothing folds (a wide pane shows "Projekte" too)
+        // room for every place at its least: nothing folds (it did with whole places, before)
         expect(byName["Ort tief"]).toMatchObject({ places: ["Spaces", space, "Projekte", "Küche Familie Oswald"], more: [], whole: true });
+        expect(byName["Ort mittel"]?.more).toEqual([]);
         expect(byName["Ort im Kopf"]?.whole).toBe(true);
         const verwalten = page.getByRole("button", { name: "Verwalten" });
         expect(await verwalten.evaluate((button) => button.scrollWidth <= button.clientWidth + 1)).toBe(true);
       }
-      // a page too long even with every place at its least: its middle ones are in "…" (at 1440 px WebKit's narrower
-      // type gives it room)
-      if (width <= 1024)
-        expect(byName["Seite lang 5"]).toMatchObject({ places: ["Spaces", "Küche Familie Oswald"], more: ["Weitere Orte"], whole: false });
     });
   });
 
-for (const width of [390, 1024])
-  test(`${width} px: the server sends a path of four places folded, and coming alive moves no page that stays folded`, async () => {
-    const page = await open(width, true);
-    const errors = pageErrors(page);
-    try {
-      await settled(page);
-      const at = (name: string) =>
-        page.evaluate(
-          (label) => document.querySelector(`nav[aria-label="${label}"] [aria-current="page"]`)?.getBoundingClientRect().x ?? -1,
-          name,
-        );
-      const sent = await at("Seite lang 5");
-      expect(await page.evaluate(() => document.querySelectorAll('nav[aria-label="Seite lang 5"] .k2-path-step[data-folded]').length)).toBe(2);
-      await live(page);
-      expect(await at("Seite lang 5")).toBe(sent);
-      expect(errors).toEqual([]);
-    } finally {
-      await page.close();
-    }
-  });
+test("390 px: the server sends a path of four places folded, and coming alive moves no page that stays folded", async () => {
+  const page = await open(390, true);
+  const errors = pageErrors(page);
+  try {
+    await settled(page);
+    const at = () =>
+      page.evaluate(() => document.querySelector('nav[aria-label="Ort mittel"] [aria-current="page"]')?.getBoundingClientRect().x ?? -1);
+    const sent = await at();
+    expect(await page.evaluate(() => document.querySelectorAll('nav[aria-label="Ort mittel"] .k2-path-step[data-folded]').length)).toBe(2);
+    await live(page);
+    expect(await at()).toBe(sent);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
 
 test("a folded place is no stop of the Tab key: from the first place the next stop is '…', then the parent", async () => {
   await withPage(390, async (page) => {
-    const nav = page.getByRole("navigation", { name: "Ort tief" });
+    const nav = page.getByRole("navigation", { name: "Ort mittel" });
     await nav.getByRole("link", { name: "Spaces" }).focus();
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Weitere Orte");
     await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Küche Familie Oswald");
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Küche");
   });
 });
 
 test("the '…' of a path opens a menu of the places it holds, as links in their order", async () => {
   await withPage(390, async (page) => {
-    await page.getByRole("navigation", { name: "Ort tief" }).getByRole("button", { name: "Weitere Orte" }).click();
+    await page.getByRole("navigation", { name: "Ort mittel" }).getByRole("button", { name: "Weitere Orte" }).click();
     await page.locator(".k2-menu").waitFor();
     await settled(page);
     const entries = await page.evaluate(() =>
@@ -168,8 +166,8 @@ test("the '…' of a path opens a menu of the places it holds, as links in their
       ]),
     );
     expect(entries).toEqual([
-      [space, "#space"],
-      ["Projekte", "#projekte"],
+      ["Werkstatt Nord", "#nord"],
+      ["Projekte 2026", "#projekte"],
     ]);
   });
 });
@@ -178,14 +176,14 @@ test("places that get room come back; a focused place that folds hands its focus
   await withPage(390, async (page) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await settled(page);
-    expect((await named(page))["Ort tief"]?.more).toEqual([]);
-    await page.getByRole("navigation", { name: "Ort tief" }).getByRole("link", { name: "Projekte" }).focus();
+    expect((await named(page))["Ort mittel"]?.more).toEqual([]);
+    await page.getByRole("navigation", { name: "Ort mittel" }).getByRole("link", { name: "Projekte 2026" }).focus();
     await page.setViewportSize({ width: 390, height: 900 });
     await settled(page);
-    expect((await named(page))["Ort tief"]?.more).toEqual(["Weitere Orte"]);
+    expect((await named(page))["Ort mittel"]?.more).toEqual(["Weitere Orte"]);
     expect(
       await page.evaluate(() =>
-        document.activeElement?.closest('nav[aria-label="Ort tief"]') ? document.activeElement.getAttribute("aria-label") : "elsewhere",
+        document.activeElement?.closest('nav[aria-label="Ort mittel"]') ? document.activeElement.getAttribute("aria-label") : "elsewhere",
       ),
     ).toBe("Weitere Orte");
   });

@@ -2964,10 +2964,13 @@
   font-size: 14px;
   color: var(--k2-n400);
 }
-/* a folded place and the chevron before it keep no room and make no overflow; its scrollWidth still says how wide it
-   would be */
+/* A folded place and the chevron before it keep no room and make no overflow; their scrollWidth still says how wide
+   they would be. "…" is laid out the same way while it holds nothing (`data-fold="0"`), and while it holds every place
+   (`data-fold="2"`) the chevron before it, after the first place, leaves too. */
 .k2-ui .k2-path > [data-folded],
-.k2-ui .k2-path > .k2-icon:has(+ [data-folded]) {
+.k2-ui .k2-path > .k2-icon:has(+ [data-folded]),
+.k2-ui .k2-path[data-fold="0"] > .k2-path-fold,
+.k2-ui .k2-path:is([data-fold="0"], [data-fold="2"]) > .k2-icon:has(+ .k2-path-fold) {
   position: absolute;
   width: 0;
   min-width: 0;
@@ -2979,10 +2982,15 @@
   display: inline-flex;
   flex: none;
 }
-/* While #4392's fold measures a bar, a path counts as its page alone, at most 16 characters: the end folds until that
-   least of the path has room. */
-.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :not(b) {
+/* While #4392's fold measures a bar, a path counts at its least: "…", the chevron and its page, at most 16 characters.
+   The end folds until that least has room, and the path folds the rest itself. */
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > :is(.k2-path-step, .k2-icon:not(:has(+ b))) {
   display: none;
+}
+.k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > .k2-path-fold {
+  position: static;
+  width: auto;
+  visibility: visible;
 }
 .k2-ui .k2-bar[data-k2-measuring] > .k2-bar-start > .k2-path > b {
   max-width: 16ch;
