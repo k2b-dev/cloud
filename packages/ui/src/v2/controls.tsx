@@ -1,10 +1,12 @@
 import {
   createContext,
+  createEffect,
   createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -15,7 +17,7 @@ import {
 import { Dynamic, isServer } from "solid-js/web";
 import { ActionButton } from "./button";
 import { useControlMessages } from "./control-messages";
-import { Avatar, Icon } from "./marks";
+import { Avatar, custom, Icon } from "./marks";
 import { textEdge } from "./tokens";
 import type { Action, Person } from "./types";
 
@@ -192,8 +194,10 @@ type InputBase = {
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
-  /** A text of several lines (80 px). */
+  /** A text of several lines: it shows `rows` lines at least and grows with its words up to ten lines, then scrolls. */
   multiline?: boolean;
+  /** The lines a multi-line field shows at least; 3 (80 px) when not set. */
+  rows?: number;
   /** The smallest number a `number` field takes. */
   min?: number;
   /** The largest number a `number` field takes. */
@@ -232,6 +236,49 @@ type InputBase = {
   spellcheck?: boolean;
   /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
   autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
+};
+
+/**
+ * The rows a text of several lines asks for: the lines of its value, at least its `rows` (3) and at most ten. Where
+ * the browser cannot size it to its words, these rows give it its height from the server's page on, so a long value
+ * does not make it grow when the page comes alive; lines that wrap are added by `followText` then.
+ */
+const rowsFor = (value: string | undefined, rows = 3) => Math.max(rows, Math.min(10, (value ?? "").split("\n").length));
+
+/** Whether the browser sizes a text of several lines to its words itself (CSS `field-sizing`, as v2.css asks). */
+const sizesToText = () => typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+
+/**
+ * Where the browser cannot, the height of a text of several lines follows its words: as you type, when its value
+ * changes and when its width does (the way core's textarea does it). v2.css bounds it between `rows` and ten lines.
+ */
+const followText = (area: HTMLTextAreaElement, value: () => string | undefined) => {
+  const fit = () => {
+    // For the moment of measuring, the field is at its least height, and a browser would pull every scroll above it
+    // back to fit; each keeps where it was (the page too).
+    const scrolls: [Element, number][] = [];
+    for (let node = area.parentElement; node; node = node.parentElement) if (node.scrollTop > 0) scrolls.push([node, node.scrollTop]);
+    const page = document.scrollingElement;
+    if (page && page.scrollTop > 0 && !scrolls.some(([node]) => node === page)) scrolls.push([page, page.scrollTop]);
+    // measured from its minimum (v2.css: `rows` lines), not from its height now: `auto` would keep the rows the
+    // server asked for its first value, and a field emptied later would stay that high
+    area.style.height = "0px";
+    area.style.height = `${area.scrollHeight}px`;
+    for (const [node, top] of scrolls) node.scrollTop = top;
+  };
+  createEffect(on(value, () => queueMicrotask(fit)));
+  area.addEventListener("input", fit);
+  let width = -1;
+  const sizes = new ResizeObserver(([entry]) => {
+    if (!entry || entry.contentRect.width === width) return;
+    width = entry.contentRect.width;
+    fit();
+  });
+  sizes.observe(area);
+  onCleanup(() => {
+    area.removeEventListener("input", fit);
+    sizes.disconnect();
+  });
 };
 
 /** Where a search sends its text (see `InputProps.send`). */
@@ -352,6 +399,7 @@ export const Input = (props: InputProps) => {
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
+      style={props.multiline && props.rows !== undefined ? custom({ "--k2-rows": String(props.rows) }) : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       <For each={kept()}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
@@ -381,7 +429,11 @@ export const Input = (props: InputProps) => {
             one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
-          ref={(element) => forwardRef(props.ref, element)}
+          rows={rowsFor(props.value, props.rows)}
+          ref={(element) => {
+            forwardRef(props.ref, element);
+            if (!sizesToText()) followText(element, () => props.value);
+          }}
           onInput={(event) => props.onInput?.(event.currentTarget.value)}
           onKeyDown={(event) => props.onKeyDown?.(event)}
         >
@@ -408,6 +460,8 @@ export type CheckProps = {
   disabled?: boolean;
   /** Called with the new state when a person changes it. */
   onChange?: (checked: boolean) => void;
+  /** A quiet line under the words, such as what turning it on does; assistive technology reads it with the box. */
+  description?: string;
 };
 
 /**
@@ -421,6 +475,9 @@ export const Check = (props: CheckProps) => {
   // With `onChange` the caller holds the state; without, the box keeps it, so the mark always shows what is set.
   const checked = () => (props.onChange ? props.checked : own());
   const set = () => checked() === true || checked() === "mixed";
+  const id = createUniqueId();
+  const described = `${id}-description`;
+  const named = `${id}-label`;
   return (
     <label
       class="k2-choice"
@@ -436,7 +493,9 @@ export const Check = (props: CheckProps) => {
           name={props.name ?? field?.name}
           checked={checked() === true}
           ref={(input) => mixed(input, () => checked() === "mixed")}
-          aria-describedby={field?.described}
+          // with a description inside the label, the box takes its name from its words alone: the line describes it
+          aria-labelledby={props.description ? named : undefined}
+          aria-describedby={[field?.described, props.description ? described : undefined].filter(Boolean).join(" ") || undefined}
           required={field?.required || undefined}
           disabled={props.disabled}
           onChange={(event) => {
@@ -457,7 +516,18 @@ export const Check = (props: CheckProps) => {
           <span class="k2-switch" data-checked={checked() === true ? "" : undefined} data-k2-mark="" />
         </Show>
       </span>
-      <span class="k2-choice-text">{props.label}</span>
+      <span class="k2-choice-text">
+        <Show when={props.description} fallback={props.label}>
+          {(text) => (
+            <>
+              <span id={named}>{props.label}</span>
+              <span class="k2-choice-description" id={described}>
+                {text()}
+              </span>
+            </>
+          )}
+        </Show>
+      </span>
     </label>
   );
 };

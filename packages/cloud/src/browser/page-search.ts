@@ -1,9 +1,15 @@
 /**
- * The search field of a v2 page's head, as the shell's phone bar reaches it: the shell marks a signed-in v2 page's
- * content with `data-k2-host-search`, and `@k2b/ui/v2` folds that head search away until it has the focus.
+ * The search field of a v2 page, as the shell's phone bar reaches it: the shell marks a signed-in v2 page's content
+ * with `data-k2-host-search`. It is the search of the page's head, which `@k2b/ui/v2` folds away until it has the
+ * focus, or the search of its sidebar (`Nav` `search`), which stands over the page's list where that list is the
+ * phone's page. The one that shows wins.
  */
-const field = () =>
-  document.querySelector<HTMLInputElement>('[data-k2-host-search] [data-slot="head"] [data-k2-part="Input"][data-search] > input');
+const field = () => {
+  const fields = document.querySelectorAll<HTMLInputElement>(
+    '[data-k2-host-search] [data-slot="head"] [data-k2-part="Input"][data-search] > input, [data-k2-host-search] [data-k2-part="Nav"] [data-k2-part="Input"][data-search] > input',
+  );
+  return [...fields].find((input) => input.getClientRects().length > 0) ?? fields[0] ?? null;
+};
 
 /** The page shows such a field, so the phone bar's search button opens it (and the global search moves to the app menu). */
 export const pageOwnsSearch = (): boolean => (field()?.getClientRects().length ?? 0) > 0;

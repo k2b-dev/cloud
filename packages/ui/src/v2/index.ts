@@ -12,6 +12,10 @@
 
 // The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
 export { useLocale } from "../intl/locale";
+// The bare address of a display form such as `"Berg, Anna" <anna@example.org>`, as an address field reads it.
+export { addressOf } from "./addresses";
+// News for assistive technology that the page shows nowhere as it happens (a run that changed its state).
+export { announce } from "./announce";
 export { Button, type ButtonProps } from "./button";
 export { CodeInput, type CodeInputProps } from "./code-input";
 export { ColorInput, type ColorInputProps } from "./color-input";
@@ -24,6 +28,7 @@ export {
   type NavGroup,
   type NavItem,
   type NavProps,
+  type NavSearch,
   Notice,
   type NoticeProps,
   Path,
@@ -81,9 +86,13 @@ export { DateInput, type DateInputProps } from "./date-input";
 export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
 export { Disclosure, type DisclosureProps } from "./disclosure";
+// the error fallback of every island: a module of its own, which loads no other part
+export { Failed, type FailedProps } from "./failed";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
 export { Group, type GroupProps } from "./group";
+// A year of days as a picture: what happened per day, in tones of one colour.
+export { Heat, type HeatDay, type HeatProps } from "./heat";
 export { ImageInput, type ImageInputProps } from "./image-input";
 // Layer 1: the primitives.
 export {
@@ -126,7 +135,7 @@ export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProp
 export { Prose, type ProseProps } from "./prose";
 export { Select, type SelectOption, type SelectProps } from "./select";
 export { Slider, type SliderProps } from "./slider";
-export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
+export { Empty, type EmptyProps, Loading, type LoadingProps } from "./states";
 export { Section, type SectionProps } from "./structure";
 export { TagsInput, type TagsInputProps } from "./tags-input";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
