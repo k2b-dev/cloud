@@ -179,6 +179,7 @@ function dummyService() {
       inventory: unused,
       provisioningUsers: unused,
       provisioningIdentity: unused,
+      groupMemberCounts: unused,
     },
     bindings: { find: unused, claim: unused, byId: unused, path: unused },
     displayNames: unused,
