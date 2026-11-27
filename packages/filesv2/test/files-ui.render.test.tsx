@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { createCollectionSelection, LocaleProvider } from "@k2b/ui";
+import { LocaleProvider } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import type { InventoryEntry } from "../src/contracts";
 import AdminHistory from "../src/frontend/AdminHistory";
 import AdminIssue from "../src/frontend/AdminIssue";
 import { parseAdminLocation } from "../src/frontend/admin-location";
-import FileList, { type FileRow } from "../src/frontend/FileList";
+import FilesScreen from "../src/frontend/FilesScreen.island";
 import FileThumbnail from "../src/frontend/FileThumbnail";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
 import Inventory from "../src/frontend/Inventory";
@@ -131,77 +131,55 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(de).toContain("Unbekanntes Konto");
     expect(de).toContain("Unbekannte Gruppe");
   });
-  test("a deep-linked entry renders as the active row like the tree's current folder, a checked row does not", () => {
-    const entry = (path: string, directory: boolean, extra: Partial<FileRow> = {}): FileRow => ({
+  test("a folder renders on v2 with its rows, its path and the open entry, and no loading state on the first picture", () => {
+    const base = {
+      id: "cloud:groups:team",
+      area: "cloud" as const,
+      kind: "groups" as const,
+      name: "Team",
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: true,
+      versioningEnabled: false,
+    };
+    const item = (path: string, directory: boolean, size = 0) => ({
       name: path.split("/").at(-1)!,
       path,
       directory,
-      size: directory ? 0 : 12,
-      modified: "2026-01-01T00:00:00Z",
-      ...extra,
+      size,
+      modified: "2026-11-20T09:15:00.000Z",
+      actions: { write: true, move: true, share: true },
     });
-    const messages = {
-      name: "Name",
-      size: "Size",
-      modified: "Modified",
-      details: String,
-      toggle: String,
-      select: String,
-      more: "More",
-      up: "Up",
-    };
-    const render = (props: { rows: FileRow[]; selected: string[]; tree?: boolean; currentPath?: string; selecting?: boolean }) =>
-      renderToString(() => {
-        const selection = createCollectionSelection({ ids: () => props.rows.map((row) => row.path), initial: props.selected });
-        return (
-          <LocaleProvider locale="en">
-            <FileList
-              {...props}
-              baseId="demo"
-              selection={selection}
-              label="Files"
-              showModified={false}
-              messages={messages}
-              onOpen={() => {}}
-              onDetails={() => {}}
-            />
-          </LocaleProvider>
-        );
-      });
-    // Each row's markup up to the next row; its opening tag carries the state classes and ARIA attributes.
-    const row = (html: string, path: string) => html.split('<div role="row"').find((chunk) => chunk.includes(`title="${path}"`))!;
-    const tag = (chunk: string) => chunk.slice(0, chunk.indexOf(">"));
-    const flat = [entry("Drafts", true), entry("Notes.md", false)];
-
-    const list = render({ rows: flat, selected: ["Drafts"] });
-    expect(tag(row(list, "Drafts"))).toContain("filesv2-list__row--active");
-    expect(tag(row(list, "Drafts"))).toContain('aria-selected="true"');
-    expect(row(list, "Drafts")).toContain("ti-folder-open");
-    expect(row(list, "Drafts")).toContain("k2b-icon-tile k2b-file-type-icon");
-    expect(row(list, "Drafts")).toContain('data-file-type="folder"');
-    expect(row(list, "Drafts")).toContain('data-size="md"');
-    expect(tag(row(list, "Notes.md"))).not.toContain("filesv2-list__row--active");
-
-    const selecting = render({ rows: flat, selected: ["Drafts"], selecting: true });
-    expect(tag(row(selecting, "Drafts"))).toContain('aria-selected="true"');
-    expect(tag(row(selecting, "Drafts"))).not.toContain("filesv2-list__row--active");
-    expect(row(selecting, "Drafts")).not.toContain("ti-folder-open");
-
-    const tree = render({
-      rows: [entry("Projects", true, { depth: 0, expanded: true }), entry("Projects/Drafts", true, { depth: 1 })],
-      selected: [],
-      tree: true,
-      currentPath: "Projects",
-    });
-    expect(tag(row(tree, "Projects"))).toContain("filesv2-list__row--active");
-    expect(tag(row(tree, "Projects"))).toContain('aria-current="location"');
-    expect(tag(row(tree, "Projects/Drafts"))).not.toContain("filesv2-list__row--active");
-    for (const path of ["Projects", "Projects/Drafts"]) {
-      expect(row(tree, path)).toContain("k2b-icon-tile k2b-file-type-icon");
-      expect(row(tree, path)).toContain('data-file-type="folder"');
-    }
-    expect(row(tree, "Projects")).toContain("ti-folder-open");
-    expect(row(tree, "Projects/Drafts")).not.toContain("ti-folder-open");
+    const items = [item("Projects/Drafts", true), item("Projects/Budget 2027.xlsx", false, 48_213), item("Projects/Notes.md", false, 912)];
+    const html = renderToString(() => (
+      <LocaleProvider locale="en">
+        <FilesScreen
+          timeZone="Europe/Berlin"
+          initial={{
+            source: `/app/filesv2?base=${encodeURIComponent(base.id)}&path=Projects&file=Projects%2FNotes.md`,
+            bases: { items: [base], issues: [], editor: null },
+            selectedId: base.id,
+            directory: { base, path: "Projects", items, next: null, actions: { create: true } },
+            detail: { base, entry: items[2]!, favorite: false },
+            errorCode: null,
+            now: "2026-11-25T12:00:00.000Z",
+          }}
+        />
+      </LocaleProvider>
+    ));
+    for (const text of ["Drafts", "Budget 2027.xlsx", "Notes.md", "Projects", "Upload", "3 items loaded"]) expect(html).toContain(text);
+    expect(html).toContain('data-k2-part="Workspace"');
+    expect(html).toContain('data-k2-part="Table"');
+    expect(html).toContain('data-k2-part="Path"');
+    expect(html).toContain('data-k2-part="FilterBar"');
+    // The open entry stands beside the list from the first picture, with its deeds and properties.
+    expect(html).toContain("Properties");
+    expect(html).toContain("Download");
+    // Zero loading indicators on the first render (quality bar of the v2 migration).
+    expect(html).not.toContain('data-k2-part="Loading"');
+    // The folder moves in place: every row is a real link with the folder or the open entry in its address.
+    expect(html).toContain("path=Projects%2FDrafts");
+    expect(html).toContain("file=Projects%2FBudget+2027.xlsx");
   });
 });
 

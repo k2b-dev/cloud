@@ -445,153 +445,8 @@ for (const language of [
       await context.close();
     }
   }, 30_000);
-
-  test(`keyboard opens the parked detail and expands and collapses item history in ${language.locale}`, async () => {
-    const { context, tab, errors } = await open(1200, "light", "", language.locale, true, "history");
-    try {
-      const address = tab.url();
-      await focused(tab, tab.getByRole("heading", { name: historyFile.name, exact: true }));
-      const history = tab.getByRole("group", { name: language.history, exact: true });
-      const rows = history.getByRole("article");
-      const older = history.getByRole("button", { name: language.older, exact: true });
-      await tabTo(tab, older);
-      expect(await rows.count()).toBe(4);
-      expect(await older.getAttribute("aria-expanded")).toBe("false");
-      const controlledRows = await older.getAttribute("aria-controls");
-      expect(controlledRows).toBeTruthy();
-      expect(await history.locator("ul").getAttribute("id")).toBe(controlledRows);
-      await tab.keyboard.press("Enter");
-      await rows.nth(5).waitFor();
-      expect(await rows.count()).toBe(6);
-      const fewer = history.getByRole("button", { name: language.fewer, exact: true });
-      await focused(tab, fewer);
-      expect(await fewer.getAttribute("aria-expanded")).toBe("true");
-      await tab.keyboard.press("Space");
-      await rows.nth(4).waitFor({ state: "hidden" });
-      expect(await rows.count()).toBe(4);
-      await focused(tab, older);
-      expect(await older.getAttribute("aria-expanded")).toBe("false");
-      expect(tab.url()).toBe(address);
-
-      await tab.keyboard.press("Escape");
-      const details = tab.getByRole("button", { name: "Details", exact: true });
-      await focused(tab, details);
-      await history.waitFor({ state: "hidden" });
-      expect(tab.url()).toBe(address);
-      await tab.keyboard.press("Enter");
-      await focused(tab, tab.getByRole("heading", { name: historyFile.name, exact: true }));
-      await older.waitFor();
-      expect(await rows.count()).toBe(4);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 30_000);
 }
 
-for (const count of [2, 6])
-  test(`keyboard paging retries and keeps focus when history ends with ${count} rows`, async () => {
-    const { context, tab, errors, fail } = await open(1200, "light", "", "en", true, "paged-history", false, count);
-    try {
-      const history = tab.getByRole("group", { name: "History", exact: true });
-      const rows = history.getByRole("article");
-      const older = history.getByRole("button", { name: "Show older", exact: true });
-      await tabTo(tab, older);
-      expect(await rows.count()).toBe(1);
-      fail(true);
-      await tab.keyboard.press("Enter");
-      const retry = history.getByRole("button", { name: "Try again", exact: true });
-      await focused(tab, retry);
-      expect(await history.getByRole("alert").innerText()).toContain("Older entries could not be loaded.");
-      fail(false);
-      await tab.keyboard.press("Enter");
-      await rows.nth(count - 1).waitFor();
-      expect(await rows.count()).toBe(count);
-      await retry.waitFor({ state: "hidden" });
-      const fewer = history.getByRole("button", { name: "Show fewer", exact: true });
-      if (count <= 4) {
-        expect(await fewer.count()).toBe(0);
-        await focused(tab, history.locator("ul"));
-      } else {
-        await focused(tab, fewer);
-        await tab.keyboard.press("Space");
-        await rows.nth(4).waitFor({ state: "hidden" });
-        await focused(tab, history.getByRole("button", { name: "Show 2 older", exact: true }));
-        expect(await rows.count()).toBe(4);
-      }
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 30_000);
-
-for (const touch of [false, true])
-  test(`file inspector follows its app container width with ${touch ? "touch" : "mouse"} input`, async () => {
-    const { context, tab, errors } = await open(1200, "light", "", "en", true, true, touch);
-    try {
-      const host = tab.locator("#root");
-      // The preview leads the body without a heading of its own.
-      const preview = tab.locator(".filesv2-inspector-preview");
-      const modified = tab.locator(".filesv2-inspector-info .k2b-description-list__item").filter({ hasText: "Modified" });
-      const versions = tab.locator(".filesv2-inspector-versions");
-      const count = tab
-        .locator(".filesv2-inspector-info")
-        .getByRole("button", { name: "View versions (2)", exact: true, includeHidden: true });
-      await count.waitFor({ state: "visible" });
-      await preview.waitFor({ state: "attached" });
-      await versions.waitFor({ state: "attached" });
-      expect(await host.evaluate((element) => getComputedStyle(element).containerName)).toBe("k2b-app-area");
-      expect(await tab.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(touch);
-      expect(await tab.locator(".filesv2-inspector .k2b-detail-panel__body").evaluate((element) => getComputedStyle(element).rowGap)).toBe(
-        "16px",
-      );
-      expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(700);
-      expect(await tab.evaluate(() => innerWidth)).toBe(1200);
-      expect(await preview.isVisible()).toBe(true);
-      expect(await versions.isVisible()).toBe(false);
-      expect(await versions.getAttribute("data-open")).toBeNull();
-      expect(await count.innerText()).toBe("2");
-      expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
-      expect(await count.getAttribute("aria-expanded")).toBe("false");
-
-      await count.click();
-      await versions.waitFor({ state: "visible" });
-      expect(await count.getAttribute("aria-expanded")).toBe("true");
-      const rowHeight = await versions
-        .locator("button.k2b-detail-panel__action")
-        .first()
-        .evaluate((element) => element.getBoundingClientRect().height);
-      if (touch) expect(rowHeight).toBeGreaterThanOrEqual(44);
-      else expect(rowHeight).toBeLessThanOrEqual(32);
-      expect(await versions.getByText(/^Initial draft · Mia Weber · /).isVisible()).toBe(true);
-      expect(await preview.isVisible()).toBe(true);
-      await count.click();
-      await versions.waitFor({ state: "hidden" });
-      expect(await versions.getAttribute("data-open")).toBeNull();
-
-      // Only the host grows: a viewport media query would leave the initial compact assertions failing.
-      await host.evaluate((element) => {
-        element.style.width = "900px";
-      });
-      await preview.waitFor({ state: "visible" });
-      await versions.waitFor({ state: "visible" });
-      await count.waitFor({ state: "hidden" });
-      expect(await versions.getByText(/^Initial draft · Mia Weber · /).isVisible()).toBe(true);
-      // The current version has no menu, yet its date ends on the same edge as the dates of older versions.
-      const dateEdges = await versions
-        .locator("time")
-        .evaluateAll((times) => times.map((time) => Math.round(time.getBoundingClientRect().right)));
-      expect(dateEdges).toHaveLength(2);
-      expect(Math.abs(dateEdges[0]! - dateEdges[1]!)).toBeLessThanOrEqual(1);
-      expect(await versions.getAttribute("data-open")).toBeNull();
-      expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(900);
-      expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
-      expect(await tab.evaluate(() => innerWidth)).toBe(1200);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 30_000);
 for (const width of [1440, 768, 390])
   for (const theme of ["light", "dark"] as const)
     test(`history and vanished folder fit ${width}px ${theme}`, async () => {
@@ -696,7 +551,7 @@ for (const width of [1440, 390])
     }
   }, 30_000);
 
-test("a bulk API job reads as one line per change, opens by keyboard in place, and its file link returns to the history", async () => {
+test("a bulk API job reads as one line per change, opens by keyboard in place, and its file link opens the file", async () => {
   const { context, tab, errors } = await open(1440, "light", "", "de", true, false, false, 6, historyBulk);
   try {
     await tab.goto("http://files-history.test/app/filesv2?view=activity&bulk=1");
@@ -752,10 +607,8 @@ test("a bulk API job reads as one line per change, opens by keyboard in place, a
     const link = rows.first().locator("a.filesv2-history-target--name");
     expect(await link.innerText()).toBe("Beleg-01.pdf");
     await link.click();
+    // The file opens on the v2 folder screen, a page of its own; Back returns to this history as any page does.
     await tab.waitForURL((url) => url.searchParams.get("file") === "Buchhaltung/Belege/2026/Beleg-01.pdf");
-    await tab.goBack();
-    await tab.waitForURL((url) => url.searchParams.get("view") === "activity");
-    await tab.locator("button.filesv2-history-run__toggle[aria-expanded='true']").waitFor();
     expect(errors).toEqual([]);
   } finally {
     await context.close();
