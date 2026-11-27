@@ -33,7 +33,13 @@ afterAll(async () => {
  */
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, column = width, host = false, path = false }: { width?: number; column?: number; host?: boolean; path?: boolean } = {},
+  {
+    width = 1440,
+    column = width,
+    host = false,
+    path = false,
+    bare = false,
+  }: { width?: number; column?: number; host?: boolean; path?: boolean; bare?: boolean } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
@@ -45,6 +51,10 @@ const withPage = async (
     if (path)
       await page.evaluate(() => {
         window.__k2PathHead = true;
+      });
+    if (bare)
+      await page.evaluate(() => {
+        window.__k2BareHead = true;
       });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -447,7 +457,8 @@ test("1440 px in a host's page: the search of the head stays in the Tab key's or
   );
 });
 
-// A head with a path gives way on the phone; its search opens over the content's first row, so nothing below moves.
+// A head with a path and nothing else but its search gives way on the phone; its search opens over the content's first
+// row, so nothing below moves. (A head that also holds a menu "…" keeps its height: phone-head-actions.browser.test.ts.)
 test("390 px in a host's bar with a path: the search opens over the status row and nothing below the head moves", async () => {
   await withPage(
     async (page) => {
@@ -474,7 +485,7 @@ test("390 px in a host's bar with a path: the search opens over the status row a
       await settled(page);
       expect({ ...(await state()), field: [], onTop: false }).toEqual({ head: 0, status: 0, field: [], onTop: false });
     },
-    { width: 390, host: true, path: true },
+    { width: 390, host: true, path: true, bare: true },
   );
 });
 
