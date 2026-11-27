@@ -1,6 +1,7 @@
-import { createSignal } from "solid-js";
+import { createSignal, For } from "solid-js";
 import {
   Band,
+  Chip,
   Choice,
   CodeInput,
   ColorInput,
@@ -42,6 +43,7 @@ export function Demo() {
   const [banner, setBanner] = createSignal<string | null>(null);
   const [zoom, setZoom] = createSignal(30);
   const [notify, setNotify] = createSignal<string[]>(["mail"]);
+  const [people, setPeople] = createSignal(["Anna Berg", "Jonas Wolf"]);
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -142,6 +144,27 @@ export function Demo() {
             </Field>
           </Band>
         </div>
+        {/* people as chips with their remove button */}
+        <Band>
+          <Text type="body">
+            <For each={people()}>
+              {(name) => (
+                <Chip
+                  tag
+                  remove={{
+                    name,
+                    onClick: () => {
+                      setPeople((list) => list.filter((each) => each !== name));
+                      did(`unassign:${name}`);
+                    },
+                  }}
+                >
+                  {name}
+                </Chip>
+              )}
+            </For>
+          </Text>
+        </Band>
         <form id="sent" onSubmit={(event) => event.preventDefault()}>
           <Band>
             {/* people to choose, each with their face: one who is responsible, several who take part */}
@@ -182,7 +205,18 @@ export function Demo() {
               />
             </Field>
             <Field name="hosts" label="Server">
-              <TagsInput value={["mx1.example"]} />
+              <TagsInput value={["mx1.example"]} max={2} />
+            </Field>
+            {/* addresses as chips: typed, pasted several at once, "Name <address>" too */}
+            <Field name="to" label="An">
+              <TagsInput type="email" value={["anna.berg@werkstatt.example"]} />
+            </Field>
+            <Field name="cc" label="Kopie">
+              <TagsInput type="email" max={3} />
+            </Field>
+            {/* addresses with suggestions to pick from while typing */}
+            <Field name="bcc" label="Weitere Empfänger">
+              <TagsInput type="email" suggestions={["lea@werkstatt.example", "tom@werkstatt.example"]} />
             </Field>
             <Field name="locked" label="Gesperrte Server">
               <TagsInput value={["mx9.example"]} disabled />

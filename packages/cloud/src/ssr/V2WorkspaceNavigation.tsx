@@ -60,7 +60,8 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
       ...(item.icon ? { icon: `ti ti-${item.icon}` } : {}),
       ...(item.count !== undefined ? { badge: item.count } : {}),
       ...(item.current ? { active: true } : {}),
-      ...(item.dot ? { unread: true } : {}),
+      // the old menu has no running state: work that runs is no unread mail, so it marks nothing there
+      ...(item.dot && item.dot !== "running" ? { unread: true } : {}),
       ...(item.menu ? { actions: deeds(item.menu, `${id}:menu`) } : {}),
     };
     if (item.items) {
