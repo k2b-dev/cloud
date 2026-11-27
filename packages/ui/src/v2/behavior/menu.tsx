@@ -48,7 +48,17 @@ export type MenuLevelParts = {
   bindContext: (element: HTMLElement) => () => void;
   /** A submenu of this level. Call it in a component under this level's popup. */
   useSubmenu: () => MenuLevelParts;
+  /**
+   * Receives the choices made in the radio group named `group`, in this menu or its submenus. Core reports every
+   * choice to the menu as a whole, also one whose group it does not hold at that moment, where the group's own
+   * `onValueChange` is never called and the value stays in core's own memory (#4361); so a choice always arrives
+   * here. Returns the function that lets go.
+   */
+  onChoice: (group: string, choose: (value: string) => void) => () => void;
 };
+
+/** The receivers of a menu's choices, by the name of their radio group; one for a menu and its submenus. */
+type Choices = Map<string, (value: string) => void>;
 
 type MenuHandle = Handle<typeof menuPrimitive>;
 
@@ -69,7 +79,7 @@ const featurePart =
 
 let contextAreas = 0;
 
-const levelParts = (handle: MenuHandle): MenuLevelParts => {
+const levelParts = (handle: MenuHandle, choices: Choices): MenuLevelParts => {
   handle.instance.use(menuCheckable);
   return {
     Trigger: slotComponent(handle, "trigger", "button"),
@@ -96,7 +106,17 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
       contextAreas += 1;
       return bindSlot(handle, "context-trigger", { id: `k2-context-${contextAreas}` }, element);
     },
-    useSubmenu: () => levelParts(usePrimitive(menuPrimitive, () => ({ parent: handle.api }))),
+    useSubmenu: () =>
+      levelParts(
+        usePrimitive(menuPrimitive, () => ({ parent: handle.api })),
+        choices,
+      ),
+    onChoice: (group, choose) => {
+      choices.set(group, choose);
+      return () => {
+        if (choices.get(group) === choose) choices.delete(group);
+      };
+    },
   };
 };
 
@@ -104,5 +124,13 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
 export function useMenuLevels(options: () => OverlayOptions = () => ({})): MenuLevelParts {
   // A pending item announces that it is waiting; core's own text is English only.
   const t = useBehaviorMessages();
-  return levelParts(usePrimitive(menuPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading })));
+  const choices: Choices = new Map();
+  // every choice of the menu and its submenus, with the name of its group (core's details carry it)
+  const onValueChange = (value: string, details: { group?: unknown }) => {
+    if (typeof details.group === "string") choices.get(details.group)?.(value);
+  };
+  return levelParts(
+    usePrimitive(menuPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading, onValueChange })),
+    choices,
+  );
 }
