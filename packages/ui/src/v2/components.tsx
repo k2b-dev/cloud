@@ -304,22 +304,25 @@ export const Nav = (props: NavProps) => {
           </div>
         )}
       </Show>
-      <Index each={props.groups}>
-        {(group) => (
-          <>
-            <Show when={group().label}>
-              <div class="k2-nav-label">
-                {group().label}
-                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-              </div>
-            </Show>
-            <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
-              {(tree) => <Dynamic component={tree().view} {...tree()} />}
-            </Show>
-          </>
-        )}
-      </Index>
+      {/* the groups scroll between the head and the foot, so many places never push the foot out of the sidebar */}
+      <div class="k2-nav-groups">
+        <Index each={props.groups}>
+          {(group) => (
+            <>
+              <Show when={group().label}>
+                <div class="k2-nav-label">
+                  {group().label}
+                  <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                  <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+                </div>
+              </Show>
+              <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+                {(tree) => <Dynamic component={tree().view} {...tree()} />}
+              </Show>
+            </>
+          )}
+        </Index>
+      </div>
       <Show when={list()}>
         <div class="k2-nav-list" data-phone={props.phone}>
           {list()}

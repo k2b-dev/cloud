@@ -100,9 +100,7 @@ for (const width of [1440, 1024])
         "k2-nav-title",
         "k2-nav-search",
         "k2-nav-primary",
-        "k2-ni",
-        "k2-ni",
-        "k2-ni",
+        "k2-nav-groups",
         "k2-nav-list",
         "k2-nav-foot",
       ]);
@@ -116,6 +114,11 @@ for (const width of [1440, 1024])
         .locator(".k2-ws-side .k2-nav-list")
         .evaluate((element) => ({ own: element.scrollHeight > element.clientHeight, page: document.documentElement.scrollHeight }));
       expect(scroll.own).toBe(true);
+      // the filters keep their height above the list: only the list gives way
+      const filters = await page
+        .locator(".k2-ws-side .k2-nav-groups")
+        .evaluate((element) => ({ entries: element.querySelectorAll(".k2-ni").length, cut: element.scrollHeight - element.clientHeight }));
+      expect(filters).toEqual({ entries: 3, cut: 0 });
       expect(scroll.page).toBeLessThanOrEqual(800);
       // the floating action is the phone's only
       expect((await box(page, ".k2-fab")).visible).toBe(false);
