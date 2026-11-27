@@ -1,12 +1,12 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, StatusRow, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { navigationReferenceKey } from "../../../navigation-contracts";
 import { workspaceMessages } from "../workspace/messages";
 import { type NavigationResource, navigationResources, navigationState } from "../workspace/navigation-catalog";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
 import GridsFrame, { LiveNotice, useGridsFrame } from "./GridsFrame";
-import { v2Icon } from "./grids-nav";
+import { kindMark, type MarkedKind } from "./kind-marks";
 import { frameMessages } from "./messages";
 import { filterResources, RESOURCE_TYPES, type ResourcesState, resourcesQuery } from "./resources-query";
 
@@ -89,11 +89,13 @@ function HomeHead(props: HomeProps) {
             ]}
           />
         ) : (
-          <Text type="body">{props.state.base.name}</Text>
+          // the sidebar names the base; the head names the page (at 390 the shell's phone title will name the base, #4266)
+          <Text type="body">{t().overview}</Text>
         )
       }
       end={
         <>
+          {/* k2b-ui slot (#4270, Z2): the head's search folds to an icon that opens over the head */}
           <Input
             type="search"
             icon="search"
@@ -120,6 +122,16 @@ function HomeHead(props: HomeProps) {
     />
   );
 }
+
+/** The kind whose mark a resource of the base carries. */
+const MARKED_KIND: Record<NavigationResourceType, MarkedKind> = {
+  table: "table",
+  view: "view",
+  form: "form",
+  documentTemplate: "documentTemplate",
+  workflow: "workflow",
+  customApp: "app",
+};
 
 function HomeList(props: HomeProps) {
   const locale = useLocale();
@@ -171,7 +183,7 @@ function HomeList(props: HomeProps) {
     // edge; a long Section title is cut without "…" on the phone. No app-side fix without CSS; reported to lane MW/Y.
     return (
       <Row
-        icon={v2Icon(resource.icon, sectionIcon[resource.type])}
+        mark={kindMark(MARKED_KIND[resource.type], resource.icon)}
         lines={[resource.name, second]}
         href={resource.href}
         onOpen={resource.href ? undefined : () => frame.nav.fillOut(resource.id)}
@@ -226,18 +238,8 @@ function HomeList(props: HomeProps) {
     <Pane
       label={props.state.base.name}
       scrollKey={`grids-home-${props.state.base.id}`}
-      status={
-        <>
-          <FilterBar
-            query={query()}
-            state={state()}
-            onChange={props.setQuery}
-            icons={{ type: "category" }}
-            results={t().resourcesCount({ count: number(shown().length) })}
-          />
-          <StatusRow lead={lead()} />
-        </>
-      }
+      // one block of two rows with the head: the filters with the count once at their end
+      status={<FilterBar query={query()} state={state()} onChange={props.setQuery} icons={{ type: "category" }} results={lead()} />}
     >
       <LiveNotice />
       <Show when={!frame.revoked()}>

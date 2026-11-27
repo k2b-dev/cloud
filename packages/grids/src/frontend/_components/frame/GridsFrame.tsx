@@ -1,5 +1,5 @@
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
-import { useLocale } from "@k2b/ui";
+import { dialogCore, useLocale } from "@k2b/ui";
 import { type Action, Dialog, Nav, Notice, useToast, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createContext, createSignal, type JSX, onCleanup, onMount, Show, useContext } from "solid-js";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
@@ -68,7 +68,8 @@ export default function GridsFrame(props: GridsFrameProps) {
         // k2b-ui gap: a toast cannot stay until dismissed; v1 kept "live updates stopped" open with its reload.
         showFailure: () => toast(t().liveUpdatesStopped, { status: "bad", retry: () => window.location.reload() }),
         clearFailure: () => {},
-        revoked: () => {},
+        // as in v1: a form or dialog that was open closes with the access it needed
+        revoked: () => dialogCore.close(),
       },
     );
     onCleanup(stop);

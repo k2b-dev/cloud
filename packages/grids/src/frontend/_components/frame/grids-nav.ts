@@ -178,7 +178,8 @@ export function createGridsNav(state: NavigationState): GridsNav {
   };
 
   const create = createMemo((): MenuItem[] => {
-    if (!edit || (!state.canCreateTables && !state.canManageBase)) return [];
+    // without access nothing can be created, so "Neu" leaves with the places it would add to
+    if (workspaceLiveStatus().revoked || !edit || (!state.canCreateTables && !state.canManageBase)) return [];
     const entries: MenuItem[] = [];
     if (state.canCreateTables)
       entries.push({ label: t().newTable, icon: "table", onClick: () => void createTable().catch(failed(t().createFailed)) });

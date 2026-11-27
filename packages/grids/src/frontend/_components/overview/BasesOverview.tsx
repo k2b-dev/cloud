@@ -1,11 +1,12 @@
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Input, List, Pane, Row, Section, StatusRow, Table, Tabs, Text, Tiles, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Empty, Input, List, Pane, Row, Section, Table, Tabs, Text, Tiles, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { PublicBase } from "../../../api/public-dto";
 import { APPS_PER_PAGE, BASES_PAGE_PATH, BASES_PER_PAGE, type BasesState, basesHref, basesQuery, withParam } from "./bases-query";
+import { kindMark } from "../frame/kind-marks";
 import CreateBaseDialog, { type BaseTemplate, BLANK } from "./CreateBaseDialog";
 import { overviewMessages } from "./messages";
 
@@ -95,8 +96,12 @@ export default function BasesOverview(props: BasesOverviewProps) {
       ? t().basesOf({ count: number(props.bases.length), total: number(props.total) })
       : t().basesCount({ count: number(props.total) });
 
-  const appTiles = () =>
-    props.apps.items.map((app) => ({ icon: icon(app.icon, "app-window"), title: app.name, meta: app.baseName, href: `/apps/${app.id}` }));
+  /** An app as a row with its mark in the apps' colour, its base as the quiet note. */
+  const appRow = (app: UsableApp) => (
+    <Row mark={kindMark("app", app.icon)} lines={[app.name]} meta={app.baseName} href={`/apps/${app.id}`} />
+  );
+  /** The count of a list as a quiet line over it (12 px meta), not as a figure. */
+  const countBar = (words: string) => <Bar start={<Text type="meta">{words}</Text>} />;
 
   const pager = (page: number, count: number, href: (page: number) => string) => (
     <Show when={count > 1}>
@@ -120,7 +125,7 @@ export default function BasesOverview(props: BasesOverviewProps) {
     <Pane
       label={t().bases}
       scrollKey="grids-bases"
-      status={<StatusRow lead={lead()} facts={searching() ? [{ before: t().searchBases, value: `„${props.state.search}“` }] : []} />}
+      status={countBar(searching() ? `${lead()} · ${t().searchBases} „${props.state.search}“` : lead())}
     >
       <Table
         label={t().bases}
@@ -132,7 +137,9 @@ export default function BasesOverview(props: BasesOverviewProps) {
             ? { icon: "search", text: t().noMatchingBases, action: { label: t().resetSearch, icon: "x", href: BASES_PAGE_PATH } }
             : { icon: "database-plus", text: t().noBases, action: newBase }
         }
+        // one line a base on the desktop; its description stands in the phone's second line
         phone={(base) => ({
+          mark: kindMark("base"),
           lines: [base.name, base.description || t().tableCount({ count: props.baseStats[base.id]?.tableCount ?? 0 })],
           time: lastChange(base.id),
         })}
@@ -140,7 +147,8 @@ export default function BasesOverview(props: BasesOverviewProps) {
           {
             title: t().name,
             width: { min: 200, default: 360 },
-            cell: (base) => (base.description ? { lines: [base.name, base.description] } : base.name),
+            mark: () => kindMark("base"),
+            cell: (base) => base.name,
           },
           {
             title: t().tables,
@@ -175,7 +183,7 @@ export default function BasesOverview(props: BasesOverviewProps) {
               : undefined
           }
         >
-          <Tiles label={t().apps} items={appTiles()} />
+          <List label={t().apps}>{props.apps.items.map(appRow)}</List>
         </Section>
       </Show>
       <Section icon="clock" title={t().recentlyChanged} summary={t().recentTablesDescription}>
@@ -183,7 +191,7 @@ export default function BasesOverview(props: BasesOverviewProps) {
           <List label={t().recentlyChanged}>
             {props.recentTables.map((table) => (
               <Row
-                icon={icon(table.icon, "table")}
+                mark={kindMark("table", table.icon)}
                 lines={[table.name, table.baseName]}
                 time={relative(table.lastActivityAt)}
                 href={`/app/grids/${table.baseId}/table/${table.id}`}
@@ -196,9 +204,9 @@ export default function BasesOverview(props: BasesOverviewProps) {
   );
 
   const appsPane = (page: number) => (
-    <Pane label={t().allAppsTitle} scrollKey="grids-apps" status={<StatusRow lead={t().appsCount({ count: number(props.apps.total) })} />}>
+    <Pane label={t().allAppsTitle} scrollKey="grids-apps" status={countBar(t().appsCount({ count: number(props.apps.total) }))}>
       <Show when={props.apps.items.length > 0} fallback={<Empty icon="app-window" text={t().noAppsDescription} />}>
-        <Tiles label={t().apps} items={appTiles()} />
+        <List label={t().apps}>{props.apps.items.map(appRow)}</List>
       </Show>
       {pager(page, appPages(), (next) => withParam(BASES_PAGE_PATH, "apps", String(next)))}
     </Pane>
@@ -248,6 +256,7 @@ export default function BasesOverview(props: BasesOverviewProps) {
           end={
             <>
               <Show when={!firstRun() && props.apps.page === null}>
+                {/* k2b-ui slot (#4270, Z2): the head's search folds to an icon that opens over the head */}
                 <Input
                   type="search"
                   icon="search"

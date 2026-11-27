@@ -25,12 +25,21 @@ const base = (id: string, name: string, description: string | null): PublicBase 
   updatedAt: "2026-08-01T10:00:00.000Z",
 });
 
+/** A small company's Grids: as many bases as a team keeps, most described, one not. */
 const PLAIN_BASES = [
   base("Bas001", "Werkstatt", "Aufträge, Ersatzteile und Termine"),
   base("Bas002", "Lager Nord", "Bestand und Einlieferungen"),
   base("Bas003", "Kunden", null),
   base("Bas004", "Personal", "Urlaub, Schichten und Schulungen"),
+  base("Bas005", "Fuhrpark", "Fahrzeuge, TÜV-Termine und Tankkarten"),
+  base("Bas006", "Einkauf", "Lieferanten, Bestellungen und Preise"),
+  base("Bas007", "Geräteverleih", "Geräte, Ausleihen und Rückgaben"),
+  base("Bas008", "Projekte 2026", "Baustellen, Abnahmen und Mängel"),
+  base("Bas009", "Buchhaltung", "Rechnungen, Zahlungen und Mahnungen"),
 ];
+
+/** What tables of a small company are called, for the recently changed ones. */
+const TABLE_NAMES = ["Aufträge", "Bestand", "Kontakte", "Urlaub", "Fahrzeuge", "Bestellungen", "Ausleihen", "Mängel", "Rechnungen"];
 
 const WORST_BASES = [
   base("Bas101", "Ersatzteilverwaltung-und-Reparaturdokumentation-der-Werkstatt-Nordhausen-Ost-2026", null),
@@ -84,7 +93,11 @@ export const basesFixture = (variant: FixtureVariant, params: URLSearchParams): 
   const bases = search ? all.filter((each) => `${each.name} ${each.description ?? ""}`.toLowerCase().includes(search)) : all;
   const apps =
     variant === "plain"
-      ? []
+      ? [
+          { id: "App0", name: "Annahme-Terminal", icon: "scan", baseName: "Werkstatt" },
+          { id: "App1", name: "Geräteausgabe", icon: "package", baseName: "Geräteverleih" },
+          { id: "App2", name: "Schichtplan", icon: "calendar", baseName: "Personal" },
+        ]
       : Array.from({ length: 8 }, (_, index) => ({
           id: `App${index}`,
           name: variant === "worst" && index === 0 ? "Ausgabe-und-Rücknahme-Terminal-für-Leihgeräte-im-Erdgeschoss" : `App ${index + 1}`,
@@ -101,7 +114,12 @@ export const basesFixture = (variant: FixtureVariant, params: URLSearchParams): 
       id: `Tab${index}`,
       baseId: each.id,
       baseName: each.name,
-      name: variant === "worst" && index === 0 ? "Wartungsprotokolle-der-Hebebühnen-und-Druckluftanlagen" : `Tabelle ${index + 1}`,
+      name:
+        variant === "worst" && index === 0
+          ? "Wartungsprotokolle-der-Hebebühnen-und-Druckluftanlagen"
+          : variant === "huge"
+            ? `Tabelle ${index + 1}`
+            : (TABLE_NAMES[index % TABLE_NAMES.length] ?? "Aufträge"),
       icon: null,
       lastActivityAt: minutesAgo(index * 41 + 1),
     })),
@@ -181,7 +199,14 @@ export const baseHomeFixture = (variant: FixtureVariant, options: { edit: boolea
                 { type: "form", id: "F1" },
               ],
             },
-            { id: "G2", name: variant === "worst" ? "Auswertungen-und-Berichte-für-die-Geschäftsführung-2026" : "Auswertung", entries: [] },
+            {
+              id: "G2",
+              name: variant === "worst" ? "Auswertungen-und-Berichte-für-die-Geschäftsführung-2026" : "Auswertung",
+              entries: [
+                { type: "view", id: "V1" },
+                { type: "workflow", id: "W1" },
+              ],
+            },
           ]
         : [],
     },

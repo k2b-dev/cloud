@@ -5,7 +5,15 @@ import { toPublicBases } from "../api/public-dto";
 import { ssr } from "../config";
 import { gridsService } from "../service";
 import BasesOverview from "./_components/overview/BasesOverview.island";
-import { APPS_PER_PAGE, BASES_PER_PAGE, basesHref, basesQuery, parseBasesAddress } from "./_components/overview/bases-query";
+import {
+  APPS_PER_PAGE,
+  BASES_PAGE_PATH,
+  BASES_PER_PAGE,
+  basesHref,
+  basesQuery,
+  parseBasesAddress,
+  withParam,
+} from "./_components/overview/bases-query";
 import { resolveGridsMessages } from "./messages";
 import { recentBasePath } from "./recent-base-path";
 
@@ -53,6 +61,9 @@ export default ssr<AuthContext>(async (c) => {
     limit: appsLimit,
     offset: appsPage ? (appsPage - 1) * APPS_PER_PAGE : 0,
   });
+  // an apps page past the end opens the last one, as the bases' pages do
+  const appPages = Math.max(1, Math.ceil(usableApps.total / APPS_PER_PAGE));
+  if (appsPage && appsPage > appPages) return c.redirect(withParam(BASES_PAGE_PATH, "apps", String(appPages)), 302);
   const apps = {
     items: usableApps.items
       .filter((app) => app.publishedValid)
