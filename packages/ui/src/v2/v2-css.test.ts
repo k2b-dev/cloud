@@ -169,6 +169,54 @@ test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   expect(problems).toEqual([]);
 });
 
+// A person who asks for less motion gets none that runs over time: every animation and transition of v2.css has a rule
+// in `@media (prefers-reduced-motion: reduce)` that stops it. An animation on a scroll timeline follows the person's own
+// scroll and is no motion of its own. (Core's sheet moves are pinned in menus and overlays browser tests.)
+test("every animation and transition in v2.css stops under prefers-reduced-motion", () => {
+  const reduced = (rule: postcss.Rule) => {
+    for (let parent = rule.parent; parent; parent = parent.parent)
+      if (parent.type === "atrule" && (parent as postcss.AtRule).params.includes("prefers-reduced-motion: reduce")) return true;
+    return false;
+  };
+  // The chain of classes and tags a selector names, without its attributes and simple pseudo-classes: a stop for
+  // `.a > .b` also stops `.a[data-x] > .b:first-child`, so a rule is stopped when its chain ends in a stop's chain.
+  const chain = (selector: string) =>
+    selector
+      .replace(/^\.k2-ui\s+/, "")
+      .replace(/\[[^\]]*\]/g, "")
+      .replace(/:[a-z-]+(?!\()/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  const stops: { chain: string; prop: string }[] = [];
+  root.walkRules((rule) => {
+    if (!reduced(rule)) return;
+    // `.k2-ui :is(a, b)` stops both a and b
+    const parts = rule.selectors.flatMap((selector) => {
+      const inner = selector.match(/^\.k2-ui :is\((.*)\)$/)?.[1];
+      return inner ? inner.split(/,\s*(?![^()]*\))/) : [selector];
+    });
+    rule.walkDecls((declaration) => {
+      if (declaration.value.startsWith("none")) for (const part of parts) stops.push({ chain: chain(part), prop: declaration.prop });
+    });
+  });
+  const running: string[] = [];
+  root.walkRules((rule) => {
+    if (reduced(rule) || (rule.parent?.type === "atrule" && (rule.parent as postcss.AtRule).name === "keyframes")) return;
+    const onScroll = rule.nodes.some(
+      (node) => node.type === "decl" && node.prop === "animation-timeline" && /scroll\(|view\(/.test(node.value),
+    );
+    rule.walkDecls((declaration) => {
+      if (!["animation", "transition"].includes(declaration.prop) || declaration.value === "none") return;
+      if (declaration.prop === "animation" && onScroll) return;
+      const covered = rule.selectors.every((selector) =>
+        stops.some((stop) => stop.prop === declaration.prop && chain(selector).endsWith(stop.chain)),
+      );
+      if (!covered) running.push(`${rule.selector} { ${declaration.prop}: ${declaration.value} }`);
+    });
+  });
+  expect(running).toEqual([]);
+});
+
 test("every custom property v2.css reads is one it defines", () => {
   const defined = new Set<string>();
   root.walkDecls((declaration) => {
