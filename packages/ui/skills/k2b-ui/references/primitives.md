@@ -651,8 +651,8 @@ name wraps in a small table and ends with "…" in one with column widths.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
-  they keep only their symbols, the words stay their names; leave on the
-  phone),
+  they keep only their symbols, the words stay their names; on the phone
+  they stay in the row, and what has no room folds into one "+n" menu),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them; the count stands in 14 px
   600 and is never cut, and actions without room go whole into a "…" menu
