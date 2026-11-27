@@ -80,6 +80,9 @@ export function Demo() {
                         did(`when:${value}`);
                       },
                     },
+                    // a panel in a submenu that opened to the left: it takes the submenu's place, growing to the left
+                    "separator",
+                    { label: "Andere Zeit …", panel: menuPanel((close) => <Panel close={close} />) },
                   ],
                 },
               ]}
@@ -88,9 +91,12 @@ export function Demo() {
         />
       }
     >
-      <Pane>
-        <Text>Auftrag</Text>
-      </Pane>
+      {/* a panel from a context menu, which has no button: it takes the menu's place at the pointer */}
+      <Menu.Context items={[{ label: "Notiz zur Zeile …", panel: menuPanel((close) => <Panel close={close} />) }]}>
+        <Pane>
+          <Text>Auftrag</Text>
+        </Pane>
+      </Menu.Context>
     </Workspace>
   );
 }

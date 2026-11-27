@@ -549,7 +549,9 @@ lines instead of cutting a thing.
   they keep only their symbols, the words stay their names; leave on the
   phone),
   `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  becomes the bar of what can be done with them; the count is never cut, and
+  actions without room go whole into a "…" menu from the end, right after the
+  last one in sight; the way out stays at the end of the bar).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
@@ -609,11 +611,13 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side), or `panel` (`menuPanel((close) => …)`, which
-  brings the panel's code along, so a menu without a panel loads none of it; a panel
-  beside the entry such as a `DatePicker`: a dialog of its own over the
-  menu, with its own keys and focus, that calls `close` once it picked;
-  Escape closes it first), and `current` (the value set through that
+  `items` (a submenu to the side), or `panel` (`menuPanel((close) => …)`,
+  which brings the panel's code along, so a menu without a panel loads none
+  of it; a panel such as a `DatePicker` as the next step: a dialog of its own that takes
+  the place of the menu the entry stands in, under a head that leads
+  back; its own keys and focus, so the arrows stay with the calendar;
+  Escape and the back button lead back; it calls `close` once it
+  picked), and `current` (the value set through that
   submenu or panel, such as a reminder's time: at the end in the app's
   colour and part of the entry's name; it takes the place of `meta`); or
   `"separator"` between groups; or a section `{ title, items }` under a
@@ -645,6 +649,14 @@ lines instead of cutting a thing.
   (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
+- `announce(text, { assertive? })`: news for assistive technology that no
+  element shows as it happens, such as a run that changed its state or new
+  mail. It goes to the live region that `Workspace` brings in its server
+  markup (also from another island; with several, the first one shown);
+  the same news twice is said twice, a burst within 250 ms as its last
+  news and at least once a second, and said news leaves after five
+  seconds; `assertive` only for news that cannot wait, such as a run that
+  failed.
 
 ## States
 

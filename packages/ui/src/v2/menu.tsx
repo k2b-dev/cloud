@@ -60,9 +60,10 @@ export type MenuItem = {
   /** A submenu, opened to the side. */
   items?: readonly MenuEntry[];
   /**
-   * In place of `items`: a panel opened to the side like a submenu, such as a `DatePicker`; on the phone the sheet's
-   * next step. Made with `menuPanel((close) => …)`, which brings the panel's code along, so a menu without a panel
-   * loads none of it. Its keys stay its own (only Escape goes back); `close` closes the menu once the panel has picked.
+   * In place of `items`: a panel, such as a `DatePicker`, opened as the next step: it takes the place of the menu the
+   * entry stands in (on the phone a sheet of its own) under a head that leads back, and Escape leads back too. Made with
+   * `menuPanel((close) => …)`, which brings the panel's code along, so a menu without a panel loads none of it. Its keys
+   * stay its own (the arrows walk a calendar, not the menu); `close` closes the menu once the panel has picked.
    */
   panel?: MenuPanel;
   /** In a section with `choice`: what choosing this entry gives; its `label` by default. */
@@ -169,6 +170,9 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
   const box = element.getBoundingClientRect();
   return box.left + box.width / 2 > document.documentElement.clientWidth / 2 ? "end" : "start";
 };
+
+/** The room a menu, a submenu or a panel keeps from the edges of the window, in px. */
+export const edgeRoom = 8;
 
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
@@ -362,7 +366,7 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
         >
           <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
-        <sub.Popup class="k2-menu" data-k2-part="Menu" side={side()} sideOffset={4} collisionPadding={8}>
+        <sub.Popup class="k2-menu" data-k2-part="Menu" side={side()} sideOffset={4} collisionPadding={edgeRoom}>
           <Entries level={sub} entries={props.item.items ?? []} />
         </sub.Popup>
       </>
@@ -431,11 +435,11 @@ const MenuRoot = (props: MenuRootProps) => {
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
   // The "…" at the end of a bar takes the buttons the bar has no room for, as its first section (see `Bar`), so no
-  // second "…" stands beside it. Only the plain "…" offers itself: no words, no symbol and no name of its own (a
-  // `Menu icon="filter" label="Filter"` is another thing and takes no actions).
+  // second "…" stands beside it. Every "…" offers itself: no words and no symbol of its own, whatever its name says
+  // ("Weitere Aktionen", "Mehr zum Angebot"). A `Menu icon="filter" label="Filter"` is another thing and takes none.
   const fold = useContext(BarFold);
   onMount(() => {
-    if (fold && trigger && iconOnly() && props.icon === undefined && props.label === undefined) onCleanup(fold.offer(trigger));
+    if (fold && trigger && iconOnly() && props.icon === undefined) onCleanup(fold.offer(trigger));
   });
   const items = (): readonly MenuEntry[] => {
     const folded = fold && trigger && fold.host() === trigger ? fold.entries() : [];
@@ -470,7 +474,7 @@ const MenuRoot = (props: MenuRootProps) => {
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={edgeRoom}>
         <Entries level={level} entries={items()} />
       </level.Popup>
     </>
@@ -522,7 +526,7 @@ export const MenuTab = (props: {
         {props.children}
         <Icon name="chevron-down" />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={edgeRoom}>
         <Entries level={level} entries={props.items} />
       </level.Popup>
     </>
@@ -557,7 +561,7 @@ const MenuContext = (props: MenuContextProps) => {
     <>
       {resolved()}
       <PageLayer from={element}>
-        <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={8}>
+        <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={edgeRoom}>
           <Entries level={level} entries={props.items} />
         </level.Popup>
       </PageLayer>
