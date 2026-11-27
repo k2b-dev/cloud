@@ -6,10 +6,12 @@ import {
   createUniqueId,
   For,
   type JSX,
+  Match,
   onCleanup,
   onMount,
   children as resolveChildren,
   Show,
+  Switch,
   splitProps,
   useContext,
 } from "solid-js";
@@ -418,7 +420,8 @@ export type PaneProps = {
    * The content stands in the middle of the column: across at its own measure, at most that of four cards (4 × 240 px
    * with their gaps, between the text edges), and in the middle of the height where it fits. Taller content starts at
    * the top and scrolls, as in any pane; on the phone it always starts at the top. For a page with little on it and
-   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. It draws no
+   * nothing beside it, such as the first start of an app without any data: one line and a few `Tiles`. A line of text
+   * stands centred over them, on the phone at the start. It draws no
    * line and no box of its own, and it is CSS alone, so the server's first render already stands there.
    */
   center?: boolean;
@@ -773,7 +776,62 @@ export type Tile = {
   sign?: { icon: string; label: string };
   /** The stable key of the tile, which a selection names; its `href` or title when not set. */
   key?: string;
+  /**
+   * Cards only: a glance of what the thing holds, across the top of the card above its name: a small table (its
+   * columns and first rows, as words), a page (its title and first words), or a sign for a thing that holds nothing yet.
+   * It is a picture of the content: assistive technology reads the card by its name.
+   */
+  preview?: TilePreview;
 };
+
+/** What a card's preview shows: the app gives the words, the card draws them. */
+export type TilePreview =
+  | { table: { columns: readonly string[]; rows: readonly (readonly string[])[] } }
+  | { page: { title: string; text?: string } }
+  | { icon: string };
+
+/** The columns of a preview's table that the phone's narrow card shows; the rest are marked `data-past`. */
+const TILE_PREVIEW_PHONE_COLUMNS = 2;
+
+const TilePreviewView = (props: { preview: TilePreview }) => (
+  <span class="k2-tile-preview" aria-hidden="true">
+    <Switch>
+      <Match when={"table" in props.preview && props.preview.table}>
+        {(table) => (
+          <table class="k2-tile-pv-table">
+            <thead>
+              <tr>
+                <For each={table().columns}>
+                  {(column, index) => <th data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{column}</th>}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={table().rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>
+                      {(cell, index) => <td data-past={index() >= TILE_PREVIEW_PHONE_COLUMNS ? "" : undefined}>{cell}</td>}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        )}
+      </Match>
+      <Match when={"page" in props.preview && props.preview.page}>
+        {(page) => (
+          <span class="k2-tile-pv-page">
+            <b>{page().title}</b>
+            <Show when={page().text}>{(text) => <span>{text()}</span>}</Show>
+          </span>
+        )}
+      </Match>
+      <Match when={"icon" in props.preview && props.preview.icon}>{(icon) => <Icon name={icon()} />}</Match>
+    </Switch>
+  </span>
+);
 
 /** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
 export type TileCreate = {
@@ -837,8 +895,10 @@ const TileCard = (props: { tile: Tile }) => (
     class="k2-tile"
     role="listitem"
     data-open={props.tile.href !== undefined ? "" : undefined}
+    data-preview={props.tile.preview ? "" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
+    <Show when={props.tile.preview}>{(preview) => <TilePreviewView preview={preview()} />}</Show>
     <span class="k2-tile-top">
       <Mark icon={props.tile.icon} color={props.tile.color} />
       <TileName tile={props.tile} />

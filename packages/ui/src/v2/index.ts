@@ -109,6 +109,7 @@ export {
   type PaneProps,
   type Tile,
   type TileCreate,
+  type TilePreview,
   type TileStat,
   Tiles,
   type TilesProps,
