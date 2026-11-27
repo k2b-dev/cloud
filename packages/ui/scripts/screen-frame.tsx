@@ -20,9 +20,10 @@ export type ScreenFrameProps = {
 // The apps of a host's rail, as the approved mockup draws it: home, mail, boards, files, tables, notes, chat, contacts.
 const railApps = ["home", "mail", "layout-kanban", "files", "table", "notebook", "messages", "address-book"];
 
-// The frame's own look. It is a picture of a host, not a v2 primitive, so it ships in no stylesheet: it travels with
-// the frame into every place that draws one (v2-preview, the recipe tests, Fibel). Its colours are v2 tokens, so it
-// follows light and dark.
+// The frame's own look. It is a picture of a host, not a v2 primitive, so it is no part of the package (it lives beside
+// v2-preview, outside `src`) and ships in no stylesheet: it travels with the frame into every place that draws one
+// (v2-preview, the recipe tests, Fibel). Its surfaces, lines and text are v2 tokens, so it follows light and dark; the
+// second hue of the page's tint and the person's initials keep the fixed colours the host draws them in.
 const css = `
 .k2-sf{position:relative;flex:1;display:flex;min-width:0;min-height:0;box-sizing:border-box;padding:8px 8px 8px 56px;
 background:linear-gradient(135deg,color-mix(in srgb,var(--k2-app,var(--k2-blue)) 10%,var(--k2-surface)),color-mix(in srgb,#4f46e5 7%,var(--k2-surface)))}

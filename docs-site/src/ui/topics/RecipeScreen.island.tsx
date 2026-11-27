@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { onMount, Show } from "solid-js";
-import { ScreenFrame } from "../../../../packages/ui/src/v2/screen-frame";
+import { ScreenFrame } from "../../../../packages/ui/scripts/screen-frame";
 import { isRecipeName, recipeApp, recipeLocale, resolveRecipeState } from "./recipes";
 
 /** How long a press waits for its button or menu item to appear, such as a menu that opens after a frame. */

@@ -142,7 +142,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 const { createComponent } = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { describeV2 } = await import("../src/v2/describe");
-const { ScreenFrame } = await import("../src/v2/screen-frame");
+const { ScreenFrame } = await import("./screen-frame");
 const { LocaleProvider } = await import("../src/intl/locale");
 const { transparentIslands } = await import("./v2-island-css");
 

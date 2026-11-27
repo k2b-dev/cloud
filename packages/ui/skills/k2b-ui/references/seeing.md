@@ -97,7 +97,8 @@ linkedom), call `describeV2(element)` from `@k2b/ui/v2` without `layout`.
 Ask for one when the outline cannot answer the question (does the drawing
 in a `Canvas` fit, does a long name read well, is the phone layout what
 the task meant) and always before you show a screen to a person. Light
-mode, 1440 and 390 px, in the frame of the host (`v2-preview` draws it).
+mode, 1440 and 390 px, in the frame of the host (`v2-preview` draws it;
+the frame stays in the monorepo, so outside it compare the bare screen).
 Put it beside the matching recipe picture in `images/` and fix every
 difference in faces, density and hierarchy ("The look" in the skill): a
 row without its mark, a state as a bare word, an empty half, a counter as

@@ -1,4 +1,5 @@
 import { createComponent, type JSX } from "solid-js";
+import type { ScreenApp } from "../../../../packages/ui/scripts/screen-frame";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
 import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
@@ -19,7 +20,6 @@ import * as settingsPage from "../../../../packages/ui/skills/k2b-ui/recipes/set
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
 import * as tree from "../../../../packages/ui/skills/k2b-ui/recipes/tree";
-import type { ScreenApp } from "../../../../packages/ui/src/v2/screen-frame";
 
 /**
  * One state a recipe offers beside its default screen, such as `empty`, `loading` or `failed`.

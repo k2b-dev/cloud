@@ -305,11 +305,11 @@ and contact as a third column).
 Three-line `Row`s (sender, subject, preview) with the sender's `avatar`,
 `unread`, `meta` count, `time` and `marks`; mailboxes and shared mailboxes
 in the `Nav` with their colours and the unread count; `StatusRow` with
-select-all and what it takes. The reader: head `Bar`
-with the subject as `Text type="lead"` and actions; a `Bar` with `Inline`
-chips; `Notice tone="ai"` for the summary; one `Band` per message with a
-sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles` with the
-colour of each file type.
+select-all and what it takes. The reader: head `Bar` with the subject as
+`Text type="lead"` and actions; a `Bar` with `Inline` chips; `Notice
+tone="ai"` for the summary; one `Band` per message with a sender `Row`
+(avatar, icon buttons in `end`), `Prose`, `Tiles` with the colour of each
+file type.
 
 - A colleague's internal note in the thread is a `Notice tone="note"` with
   `title` and `meta` (who, when).
@@ -473,11 +473,11 @@ with its deeds. 390: the list, an offer as its own page. 1024 and 1440:
 the list beside the offer. 1920: not built yet.
 
 The head `Bar` holds `Tabs`, a `Popover tip` on the refresh button, a
-`Menu` "Filter" with ticked entries (a `Popover` in the head leaves on the phone),
-a `Menu` with a choice section and toggles, and the
-one primary as a `Menu` with a submenu. Each `Row` stands in a
-`Menu.Context`, leads with the mark of its kind and has a `Button pressed`
-star and a "…" `Menu` with the same entries in its `end`. The offer the address names opens in a
+`Menu` "Filter" with ticked entries (a `Popover` in the head leaves on the
+phone), a `Menu` with a choice section and toggles, and the one primary as
+a `Menu` with a submenu. Each `Row` stands in a `Menu.Context`, leads with
+the mark of its kind and has a `Button pressed` star and a "…" `Menu` with
+the same entries in its `end`. The offer the address names opens in a
 `Pane detail` with its own deeds; `Button busy` while it sends, and a
 `Notice` with a `disabled` action that says why.
 

@@ -1,5 +1,6 @@
 import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { type ScreenApp, ScreenFrame } from "../scripts/screen-frame";
 import * as actions from "../skills/k2b-ui/recipes/actions";
 import * as content from "../skills/k2b-ui/recipes/content";
 import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
@@ -20,7 +21,6 @@ import * as settingsPage from "../skills/k2b-ui/recipes/settings-page";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
 import * as tree from "../skills/k2b-ui/recipes/tree";
-import { type ScreenApp, ScreenFrame } from "../src/v2/screen-frame";
 
 // The recipes of the k2b-ui skill in the browser, as Fibel's Example shows them: the page names a recipe and one of its
 // states before this bundle runs; the bundle mounts it in #root. The test then presses what a `press` state names.
