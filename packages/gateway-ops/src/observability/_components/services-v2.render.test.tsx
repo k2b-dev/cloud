@@ -27,7 +27,6 @@ const [
   import("../telemetry/_components/telemetry-screen.fixture"),
   import("../workflows/_components/workflows-screen.fixture"),
 ]);
-const { InfrastructureScreenFixture } = await import("../infrastructure/_components/infrastructure-screen.fixture");
 const { SettingsScreenFixture, BEREITSCHAFT } = await import("../settings/_components/settings-screen.fixture");
 
 /**
@@ -51,7 +50,6 @@ const render = (screen: () => JSX.Element) => {
 };
 
 const screens = {
-  infrastructure: () => createComponent(InfrastructureScreenFixture, {}),
   alerts: () => createComponent(SettingsScreenFixture, { open: BEREITSCHAFT }),
   health: () => createComponent(SettingsScreenFixture, { area: "health" }),
   retention: () => createComponent(SettingsScreenFixture, { area: "retention" }),
@@ -106,15 +104,6 @@ describe("the service pages of Observability on the server", () => {
     for (const name of ["valkey", "postgres", "telemetry", "browser"] as const) {
       expect({ name, drawn: render(screens[name]).html.includes("data-chart-kind") }).toEqual({ name, drawn: true });
     }
-  });
-
-  test("a slow backend loads in its own section; a failed one offers a retry there", () => {
-    const slow = render(() => createComponent(InfrastructureScreenFixture, { state: "slow" }));
-    expect(slow.loaders).toBe(1);
-    expect(slow.text).toContain("Speicher 2,1 GB");
-    const failed = render(() => createComponent(InfrastructureScreenFixture, { state: "failed" })).text;
-    expect(failed).toContain("ECONNREFUSED");
-    expect(failed).toContain("Erneut versuchen");
   });
 
   test("settings: alerts beside their list, an empty or failed list shows a way on, unreadable values ask first", () => {

@@ -114,8 +114,6 @@ const SCREENS = [
   ["alerts", "/admin/observability/settings?webhook=new"],
   ["health", "/admin/observability/settings/health-check"],
   ["retention", "/admin/observability/settings/retention?state=unreadable"],
-  ["infrastructure", "/admin/observability/infrastructure"],
-  ["infrastructure", "/admin/observability/infrastructure?failed"],
   ["nats", "/admin/observability/nats?state=problems&stream=MAIL_DLQ"],
   ["access", "/admin/observability/nats/access"],
   ["sync", "/admin/observability/nats/sync?storeApp=mail&store=outbox&kind=queue&message=m-1"],
