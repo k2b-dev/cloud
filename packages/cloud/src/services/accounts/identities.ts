@@ -21,6 +21,10 @@ export type AccountIdentityUser = {
 export type AccountIdentityGroup = { id: string; provider: UserProvider; name: string; gidNumber: number | null; personal: boolean };
 export type AccountIdentityPage<T> = { items: T[]; nextCursor: string | null };
 export type AccountIdentityAvailability = { localLinuxEnabled: boolean; freeipaEnabled: boolean };
+/** How many people belong to a group, and the first five of them by name. */
+export type AccountGroupMembers = { groupId: string; members: number; people: { name: string }[] };
+/** A group names this many of its people: the five faces an avatar stack shows at most; the count covers the rest. */
+const GROUP_MEMBER_NAMES = 5;
 type InventoryFilter = { provider: UserProvider; after?: string; id?: string; name?: string };
 
 export class AccountIdentityError extends Error {
@@ -309,18 +313,19 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
       );
     },
     /**
-     * How many people belong to each of the given groups, members of nested groups of the same provider counted once;
-     * an expired account does not count.
-     * Only groups the actor belongs to themselves are counted; any other group is left out, so a count never tells
-     * about a group the actor is not in. Counts only, no names. At most `PAGE_SIZE` groups per call.
+     * Who belongs to each of the given groups: how many people, members of nested groups of the same provider counted
+     * once, and the first five of them by name (the display name, else the account name; never a mail
+     * address). An expired account neither counts nor is named.
+     * Only groups the actor belongs to themselves are read; any other group is left out, so neither a count nor a name
+     * ever tells about a group the actor is not in. One statement for at most 50 groups per call.
      */
-    async groupMemberCounts(actor: RequestActor, groupIds: readonly string[]): Promise<{ groupId: string; members: number }[]> {
+    async groupMembers(actor: RequestActor, groupIds: readonly string[]): Promise<AccountGroupMembers[]> {
       const { row, state } = await requireUser(actor);
       if (groupIds.length > PAGE_SIZE) throw new AccountIdentityError("too_many_groups", 400);
       if (!groupIds.every((id) => groupIdSchema.safeParse(id).success)) throw new AccountIdentityError("invalid_group_id", 400);
       const ids = [...new Set(groupIds)];
       if (!ids.length) return [];
-      const rows = await db()<{ group_id: string; members: number }[]>`
+      const rows = await db()<{ group_id: string; members: number; names: string[] }[]>`
         WITH RECURSIVE wanted AS (
           SELECT g.id AS root_id, g.id AS group_id, g.provider
           FROM auth.groups g
@@ -333,13 +338,22 @@ export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamId
           JOIN auth.group_groups_v2 gg ON gg.parent_group_id = w.group_id
           JOIN auth.groups child ON child.id = gg.child_group_id
           WHERE child.provider = w.provider
+        ),
+        people AS (
+          SELECT DISTINCT w.root_id, u.id, COALESCE(NULLIF(u.display_name, ''), u.uid) AS name
+          FROM wanted w JOIN auth.user_groups_v2 ug ON ug.group_id = w.group_id
+          JOIN auth.users u ON u.id = ug.user_id AND (u.account_expires IS NULL OR u.account_expires > now())
         )
-        SELECT w.root_id AS group_id, count(DISTINCT ug.user_id)::integer AS members
-        FROM wanted w JOIN auth.user_groups_v2 ug ON ug.group_id = w.group_id
-        JOIN auth.users u ON u.id = ug.user_id AND (u.account_expires IS NULL OR u.account_expires > now())
-        GROUP BY w.root_id
+        SELECT root_id AS group_id, count(*)::integer AS members,
+          (array_agg(name ORDER BY lower(name), id))[1:${GROUP_MEMBER_NAMES}::int]::text[] AS names
+        FROM people
+        GROUP BY root_id
       `;
-      return rows.map((value) => ({ groupId: value.group_id, members: value.members }));
+      return rows.map((value) => ({
+        groupId: value.group_id,
+        members: value.members,
+        people: value.names.map((name) => ({ name })),
+      }));
     },
     inventory,
   };

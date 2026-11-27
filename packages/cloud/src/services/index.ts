@@ -6,7 +6,13 @@ export { accountsAppService } from "./accounts";
 export { posix as linuxIdentities, PosixError } from "./accounts/posix";
 export type { PosixCandidate } from "./accounts/posix";
 export { accountIdentities, AccountIdentityError } from "./accounts/identities";
-export type { AccountIdentityUser, AccountIdentityGroup, AccountIdentityPage, AccountIdentityAvailability } from "./accounts/identities";
+export type {
+  AccountIdentityUser,
+  AccountIdentityGroup,
+  AccountIdentityPage,
+  AccountIdentityAvailability,
+  AccountGroupMembers,
+} from "./accounts/identities";
 export type { AccountIdentityReconciliation } from "./accounts/identity-reconciliation";
 export { getAppWorkloadCredential } from "../_internal/workload-credential";
 export { providers } from "./providers";

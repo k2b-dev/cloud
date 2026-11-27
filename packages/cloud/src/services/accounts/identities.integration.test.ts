@@ -34,7 +34,7 @@ suite("public account identity reads against isolated Postgres", () => {
     db = new SQL(disposable.url);
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
-    await db`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), uid text UNIQUE NOT NULL, provider text NOT NULL, profile text NOT NULL, admin boolean NOT NULL DEFAULT false, account_expires timestamptz)`.simple();
+    await db`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), uid text UNIQUE NOT NULL, provider text NOT NULL, profile text NOT NULL, admin boolean NOT NULL DEFAULT false, account_expires timestamptz, display_name text, mail text)`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, provider text NOT NULL, gid_number integer)`.simple();
     await migratePosix(db);
     await db`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id),PRIMARY KEY(user_id,group_id))`.simple();
@@ -134,10 +134,16 @@ suite("public account identity reads against isolated Postgres", () => {
     await db`DELETE FROM auth.user_groups_v2 WHERE group_id=${direct}::uuid`;
     expect((await service.groups(actor)).items.map((item) => item.id)).toEqual([external]);
   });
-  test("member counts cover nested groups once and only groups the reader belongs to, in bounded batches", async () => {
-    const actor = await user("reader");
-    const colleague = await user("colleague");
-    const helper = await user("helper");
+  test("members cover nested groups once and only groups the reader belongs to, named and counted, in bounded batches", async () => {
+    const named = async (uid: string, name: string | null) => {
+      const person = await user(uid);
+      await db`UPDATE auth.users SET display_name=${name},mail=${`${uid}@example.test`} WHERE id=${person.user.id}::uuid`;
+      return person;
+    };
+    const actor = await named("reader", "Mira Solberg");
+    const colleague = await named("colleague", "Jonas Kern");
+    // no display name: the account name, never the mail address
+    const helper = await named("helper", null);
     const workshop = await group("werkstatt");
     const apprentices = await group("azubis");
     const foreign = await group("privat");
@@ -145,18 +151,36 @@ suite("public account identity reads against isolated Postgres", () => {
       (${actor.user.id}::uuid,${workshop}::uuid),(${colleague.user.id}::uuid,${workshop}::uuid),
       (${colleague.user.id}::uuid,${apprentices}::uuid),(${helper.user.id}::uuid,${apprentices}::uuid),
       (${colleague.user.id}::uuid,${foreign}::uuid),(${helper.user.id}::uuid,${foreign}::uuid)`;
-    // the apprentices belong to the workshop; a cycle back must not count anyone twice
+    // the apprentices belong to the workshop; a cycle back must not count or name anyone twice
     await db`INSERT INTO auth.group_groups_v2 VALUES(${workshop}::uuid,${apprentices}::uuid),(${apprentices}::uuid,${workshop}::uuid)`;
-    expect(await service.groupMemberCounts(actor, [workshop, foreign])).toEqual([{ groupId: workshop, members: 3 }]);
-    // an expired account no longer counts
+    expect(await service.groupMembers(actor, [workshop, foreign])).toEqual([
+      { groupId: workshop, members: 3, people: [{ name: "helper" }, { name: "Jonas Kern" }, { name: "Mira Solberg" }] },
+    ]);
+    // an expired account no longer counts and is not named
     await db`UPDATE auth.users SET account_expires=now() - interval '1 day' WHERE id=${helper.user.id}::uuid`;
-    expect(await service.groupMemberCounts(actor, [workshop])).toEqual([{ groupId: workshop, members: 2 }]);
-    await expect(service.groupMemberCounts(actor, ["not-a-group"])).rejects.toMatchObject({ code: "invalid_group_id" });
-    // a group the reader is not in says nothing, not even that it is empty
-    expect(await service.groupMemberCounts(await user("outsider"), [workshop, foreign])).toEqual([]);
-    expect(await service.groupMemberCounts(actor, [])).toEqual([]);
+    expect(await service.groupMembers(actor, [workshop])).toEqual([
+      { groupId: workshop, members: 2, people: [{ name: "Jonas Kern" }, { name: "Mira Solberg" }] },
+    ]);
+    await expect(service.groupMembers(actor, ["not-a-group"])).rejects.toMatchObject({ code: "invalid_group_id" });
+    // a group the reader is not in says nothing, not even that it is empty: no count and no name
+    expect(await service.groupMembers(await user("outsider"), [workshop, foreign])).toEqual([]);
+    expect(await service.groupMembers(colleague, [workshop, foreign]).then((rows) => rows.map((row) => row.groupId).sort())).toEqual(
+      [workshop, foreign].sort(),
+    );
+    expect(await service.groupMembers(actor, [])).toEqual([]);
     const many = Array.from({ length: 51 }, () => crypto.randomUUID());
-    await expect(service.groupMemberCounts(actor, many)).rejects.toMatchObject({ code: "too_many_groups" });
+    await expect(service.groupMembers(actor, many)).rejects.toMatchObject({ code: "too_many_groups" });
+  });
+  test("a large group names only its first five people by name and counts all of them", async () => {
+    const team = await group("grosses-team");
+    const people = ["Ute", "Tom", "Sami", "Rita", "Paul", "Olga", "Nils"];
+    const members = await Promise.all(people.map((name) => user(name.toLowerCase())));
+    for (const [index, member] of members.entries())
+      await db`UPDATE auth.users SET display_name=${people[index]!} WHERE id=${member.user.id}::uuid`;
+    await db`INSERT INTO auth.user_groups_v2 ${db(members.map((member) => ({ user_id: member.user.id, group_id: team })))}`;
+    expect(await service.groupMembers(members[0]!, [team])).toEqual([
+      { groupId: team, members: 7, people: ["Nils", "Olga", "Paul", "Rita", "Sami"].map((name) => ({ name })) },
+    ]);
   });
   test("effective groups flag the personal Linux group stored as a user's primary group", async () => {
     const actor = await user("owner");
