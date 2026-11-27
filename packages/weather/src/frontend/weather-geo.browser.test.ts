@@ -369,6 +369,11 @@ for (const width of [1440, 390])
       // the record's week: seven bars on one scale, the coldest day starting at the scale's start
       await page.goto(`${server.url.href}?screen=record`);
       await settled(page);
+      // the radar's legend speaks the page's language and draws all of the radar's colours, not one red bar
+      const legend = page.getByRole("img", { name: "Legende der Niederschlagsintensität" });
+      expect(await legend.textContent()).toBe("LeichtMäßigStarkExtrem");
+      expect(await legend.locator("div > div").count()).toBe(8);
+      await page.getByText("Deutschland · DWD").waitFor({ state: "attached" });
       // the week shows once: the table on a wide screen, one line per day on the phone
       const bars = page.locator('[data-k2-part="RangeBar"]:visible');
       expect(await bars.count()).toBe(7);
