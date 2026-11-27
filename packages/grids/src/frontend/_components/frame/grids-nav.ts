@@ -6,7 +6,6 @@ import { NavigationResourceTypeSchema, navigationReferenceKey } from "../../../n
 import { openDocumentTemplateEditorDialog } from "../dialogs/DocumentTemplateEditorDialog";
 import { createForm, openFormEditorDialog } from "../forms/FormsManager";
 import { openFormModal } from "../records/FormSubmitModal";
-import { createBaseSettings } from "../sidebar/base-settings";
 import { createCustomAppAction } from "../sidebar/create-custom-app";
 import { createTableAction } from "../sidebar/create-table";
 import { createWorkflowAction } from "../sidebar/create-workflow";
@@ -35,7 +34,7 @@ export type GridsNav = {
  * groups or one group per kind (tables with their views one level in), and at the foot edit mode and settings. Deeds
  * that create something live in the base's "…" while edit mode is on; links keep `?edit=true` then.
  */
-export function createGridsNav(state: NavigationState): GridsNav {
+export function createGridsNav(state: NavigationState, page?: "settings"): GridsNav {
   const locale = useLocale();
   const t = () => frameMessages.resolve([locale()]).t;
   const toast = useToast();
@@ -50,7 +49,6 @@ export function createGridsNav(state: NavigationState): GridsNav {
   const createTable = createTableAction({ baseId: base });
   const createApp = createCustomAppAction({ baseId: base });
   const createWorkflow = createWorkflowAction({ baseId: base, tables: state.catalog.tables, fieldsByTable: state.catalog.fieldsByTable });
-  const settings = createBaseSettings({ base: state.base, navigationResources: navigationResources(base, state.catalog) });
 
   const formOf = (id: string) => state.catalog.sidebarForms.find((entry) => entry.form.id === id);
   const fillOut = (id: string) => {
@@ -199,7 +197,7 @@ export function createGridsNav(state: NavigationState): GridsNav {
     // the base itself is the switcher above the groups; "Neu" stands in the head of the page
     const head: NavGroup = {
       items: [
-        { label: t().overview, icon: "layout-dashboard", href: href(), current: state.route.kind === "overview" },
+        { label: t().overview, icon: "layout-dashboard", href: href(), current: state.route.kind === "overview" && page !== "settings" },
         ...(state.canUseQueryWorkspace
           ? [{ label: t().query, icon: "code", href: `/app/grids/${base}/query`, current: state.route.kind === "query" }]
           : []),
@@ -242,7 +240,10 @@ export function createGridsNav(state: NavigationState): GridsNav {
     ...(state.canUseEditMode
       ? [{ label: edit ? t().doneEditing : t().editMode, icon: edit ? "check" : "tool", href: state.editModeToggleHref }]
       : []),
-    ...(state.canManageBase ? [{ label: t().settings, icon: "settings", onClick: () => void settings.showSettings() }] : []),
+    // the base's settings are a page of their own (`/settings`)
+    ...(state.canManageBase
+      ? [{ label: t().settings, icon: "settings", href: `/app/grids/${base}/settings`, current: page === "settings" }]
+      : []),
   ]);
 
   const editableForm = (id: string) => edit && state.catalog.tableLevels[formOf(id)?.table.id ?? ""] === "admin";

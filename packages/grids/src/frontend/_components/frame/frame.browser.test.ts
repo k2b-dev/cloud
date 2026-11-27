@@ -360,3 +360,47 @@ describe("a base home on v2", () => {
   // looks as busy as one with 11; the rows of one list need one shared top to be told apart at a glance.
   test.todo("#4196: the tables' sparks of one base home share one scale", () => {});
 });
+
+describe("a base's settings as a page", () => {
+  for (const variant of ["plain", "worst"] as const)
+    test(`General and Access keep the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const tab of ["", "/access"])
+        for (const view of [wide, narrow, phone]) {
+          const { context, tab: page, errors } = await open(view, `/app/grids/Bas001/settings${tab}`, variant);
+          try {
+            await expectClean(page);
+            await shoot(page, `grids-settings${tab ? "-access" : "-general"}-${variant}-light-${view.name}`);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 90_000);
+
+  test("the tabs live in the address; the parts not built on v2 open from More settings; the sidebar marks Settings", async () => {
+    const { context, tab, errors } = await open(wide, "/app/grids/Bas001/settings/access");
+    try {
+      const tabs = tab.getByRole("navigation", { name: "Einstellungen" }).or(tab.locator("[data-k2-part=Tabs]")).first();
+      expect(await tabs.getByRole("link", { name: "Allgemein" }).getAttribute("href")).toBe("/app/grids/Bas001/settings");
+      expect(await tabs.getByRole("link", { name: "Zugriff" }).getAttribute("aria-current")).toBe("page");
+      // the people and groups with their role
+      expect(await tab.getByText("Personen und Gruppen").count()).toBe(1);
+      expect(await tab.locator("[data-k2-part=Row]", { hasText: "Mira Solberg" }).innerText()).toContain("Verwalten");
+      await tab.getByRole("button", { name: "Weitere Einstellungen" }).click();
+      expect(await tab.getByRole("menuitem").allInnerTexts()).toEqual([
+        "Navigation",
+        "Tabellen",
+        "Dokumente",
+        "E-Mail-Vorlagen",
+        "Papierkorb",
+        "Lebenszyklus",
+      ]);
+      await tab.keyboard.press("Escape");
+      const settings = tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Einstellungen" });
+      expect(await settings.getAttribute("aria-current")).toBe("page");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+});

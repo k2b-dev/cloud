@@ -2,7 +2,6 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createNavigation, type NavigationItem, prompts, useLocale } from "@k2b/ui";
 import { NavigationResourceTypeSchema, navigationReferenceKey } from "../../../navigation-contracts";
 import { navigationMessages } from "../../../navigation-messages";
-import { createBaseSettings } from "../sidebar/base-settings";
 import { sidebarMessages } from "../sidebar/messages";
 import { createNewResource } from "../sidebar/new-resource";
 import { openSidebarForm } from "../sidebar/open-sidebar-form";
@@ -16,7 +15,6 @@ export default function GridsNavigation(props: { canCreate: boolean; state: Navi
   const navText = () => navigationMessages.resolve([locale()]).t;
   const state = props.state;
   const resources = navigationResources(state.base.id, state.catalog, state.adminModeRequested);
-  const settings = createBaseSettings({ base: state.base, navigationResources: navigationResources(state.base.id, state.catalog) });
   const create = createNewResource({
     baseId: state.base.id,
     tables: state.catalog.tables,
@@ -114,12 +112,12 @@ export default function GridsNavigation(props: { canCreate: boolean; state: Navi
         })),
       ...(state.canManageBase
         ? [
+            // the base's settings are a page of their own
             {
               id: "settings",
-              action: "settings",
+              href: `/app/grids/${state.base.id}/settings`,
               label: sidebarMessages.resolve([locale()]).t.settings,
               icon: "ti ti-settings",
-              disabled: settings.open(),
             },
           ]
         : []),
@@ -127,10 +125,6 @@ export default function GridsNavigation(props: { canCreate: boolean; state: Navi
     onAction: async (action) => {
       if (action === "new") {
         await create.open();
-        return;
-      }
-      if (action === "settings") {
-        await settings.showSettings();
         return;
       }
       const form = state.catalog.sidebarForms.find((entry) => `form:${entry.form.id}` === action)?.form;

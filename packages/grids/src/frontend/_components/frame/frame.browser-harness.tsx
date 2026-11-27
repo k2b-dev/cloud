@@ -2,7 +2,15 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import GridsStart from "../overview/GridsStart";
 import BaseHome from "./BaseHome";
-import { baseHomeFixture, basesFixture, type FixtureVariant, homeActivityFixture, startFixture } from "./frame.browser-fixture";
+import BaseSettings from "./BaseSettings";
+import {
+  accessFixture,
+  baseHomeFixture,
+  basesFixture,
+  type FixtureVariant,
+  homeActivityFixture,
+  startFixture,
+} from "./frame.browser-fixture";
 import { homeTab, resourcesQuery } from "./resources-query";
 
 /**
@@ -20,6 +28,13 @@ render(
     <LocaleProvider locale="de">
       {location.pathname === "/app/grids" ? (
         <GridsStart {...startFixture(params)} />
+      ) : location.pathname.startsWith("/app/grids/Bas001/settings") ? (
+        <BaseSettings
+          state={baseHomeFixture(variant, { edit: false, groups: true })}
+          tab={location.pathname.endsWith("/access") ? "access" : "general"}
+          access={accessFixture(variant)}
+          bases={basesFixture(variant, params)}
+        />
       ) : (
         (() => {
           const state = baseHomeFixture(variant, { edit: params.get("edit") === "true", groups: params.has("groups") });

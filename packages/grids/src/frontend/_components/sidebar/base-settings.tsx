@@ -10,7 +10,7 @@ export function createBaseSettings(props: { base: Base; navigationResources: Nav
   const { t } = sidebarMessages.resolve([useLocale()()]);
   const [open, setOpen] = createSignal(false);
 
-  const showSettings = async () => {
+  const showSettings = async (initialTab?: string) => {
     if (open()) return;
     setOpen(true);
     try {
@@ -24,6 +24,7 @@ export function createBaseSettings(props: { base: Base; navigationResources: Nav
               base={props.base}
               navigationResources={props.navigationResources}
               accessEntries={accessEntries}
+              initialTab={initialTab}
               onClose={() => close()}
               setDismissHandler={context.setDismissHandler}
             />

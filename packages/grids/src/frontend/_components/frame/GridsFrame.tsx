@@ -45,6 +45,8 @@ export type GridsFrameProps = {
   state: NavigationState;
   /** The switcher between bases at the top of the sidebar, and the dialog that makes a base. */
   bases?: GridsBases;
+  /** A page of the base outside its places, such as its settings: the sidebar marks its entry. */
+  page?: "settings";
   /** The keys of what the page shows, for the revision check (`table:<id>`, `view:<id>`, …). */
   activeKeys: string[];
   revision?: WorkspaceRevision;
@@ -63,7 +65,7 @@ export default function GridsFrame(props: GridsFrameProps) {
   const locale = useLocale();
   const t = () => frameMessages.resolve([locale()]).t;
   const toast = useToast();
-  const nav = createGridsNav(props.state);
+  const nav = createGridsNav(props.state, props.page);
   const [changed, setChanged] = createSignal(false);
   const reload = async () => {
     if (await Dialog.confirm({ title: t().reloadTitle, description: t().reloadDescription, confirm: t().reload, cancel: t().cancel }))
