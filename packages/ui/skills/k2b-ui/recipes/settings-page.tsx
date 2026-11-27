@@ -1,6 +1,6 @@
 // Recipe: a settings page of an administration. The state comes first as key numbers, each with colour, symbol and
 // word; then the settings by topic: a table where one setting has a value per kind, and `Setting` rows with the name
-// and hint on the left and the value beside them, so the page reads at a glance. A side column shows the methods and
+// on the left, the value beside it and its help under the value, so the page reads at a glance. A side column shows the methods and
 // who changed what. The page saves as a whole: a changed setting says what it was.
 import {
   Bar,

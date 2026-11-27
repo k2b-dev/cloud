@@ -64,7 +64,7 @@ Names one control with a label, a hint or an error, and "optional" or a unit, or
 
 ### Setting
 
-One setting of a settings page: the name alone on the left, the control in a column of 300 px beside it, the help and "geändert · vorher …" under the control; one column on the phone.
+One setting of a settings page: the name alone on the left, the control in a column of 300 px beside it and the help under the control; "geändert · vorher …" under the name and its deed beside the value, on a narrow pane both on a line kept under the value, so a change moves nothing. One column on the phone.
 
 <Props of="Setting" />
 
@@ -82,7 +82,7 @@ One choice from many options, in a list that opens.
 
 ### TagsInput
 
-Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick.
+Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick. With `type="email"` it takes e-mail addresses: a comma, a semicolon or a paste of several turns them into chips, `Name <address>` and `"Berg, Anna" <address>` as well. A value is the address in the form it came in, and the same address in other letters is one chip. A text that is no address stays in the field with a sentence why, and the form is not sent until it is fixed. While a person types, an address becomes a chip when a separator closes it; the last one when they press Enter, paste or leave the field. Every `TagsInput` takes at most `max` values (200 addresses by default, as one To of Mail) and says how many it left out. Each chip's button is named for what it removes; Backspace in the empty field takes the last one back, and a status says what was added or removed.
 
 <Props of="TagsInput" />
 

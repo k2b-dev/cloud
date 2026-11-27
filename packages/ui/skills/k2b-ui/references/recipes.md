@@ -188,7 +188,8 @@ chip in `marks`; then `Digest activity` under "Zuletzt geändert".
 ![files at 390 px](../images/files-390.png)
 
 Two full-width rows above list and detail: a head `Bar` with `Path`, a
-sharing `Chip`, the search, "Neuer Ordner" and the primary "Hochladen";
+sharing `Chip`, the search as its symbol and one create `Menu` "+"
+("Hochladen", "Neuer Ordner");
 then the `FilterBar` with `results` and `end` (`ListOrder`, a `Menu` for
 list or grid). The list is a `Table` with `select`, `group` (folders,
 files), a `mark` column with thumbnails and types, an `avatar` column; the
