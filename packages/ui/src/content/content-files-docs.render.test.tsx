@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createComponent, Suspense } from "solid-js";
-import { renderToString, renderToStringAsync } from "solid-js/web";
+import { escape, renderToString, renderToStringAsync, ssr } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-content-styles-"));
@@ -344,7 +344,9 @@ describe("@k2b/ui content behaviour", () => {
     const renderer = (id: string) => ({
       id,
       match: () => true,
-      component: () => <div data-renderer={id}>{id}</div>,
+      // the server markup the compiler would write for <div data-renderer={id}>{id}</div>; this file has no JSX, as Bun
+      // would compile it before registerSsrTestPlugin above runs (test-solid-plugins)
+      component: () => ssr(['<div data-renderer="', '">', "</div>"], escape(id), escape(id)),
     });
     const first = await renderFileView({
       file: { path: "/asset.custom", mediaType: "application/x-custom" },

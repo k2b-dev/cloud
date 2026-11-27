@@ -1,7 +1,22 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  mergeProps,
+  onCleanup,
+  onMount,
+  children as resolveChildren,
+  Show,
+  untrack,
+  useContext,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { usePopover } from "./behavior/overlays";
-import { Icon } from "./marks";
+import { custom, Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { usePhone } from "./overlays";
 import { PageLayer } from "./page-layer";
@@ -17,6 +32,12 @@ export type MenuItem = {
   label: string;
   /** A Tabler icon name without the `ti-` prefix. */
   icon?: string;
+  /**
+   * The data colour of the thing the entry stands for, such as an area: a dot before its words, in place of an icon.
+   * It goes through the colour guard (a value that is no colour leaves a neutral dot) and is decoration: the entry's
+   * name stays its words.
+   */
+  color?: string;
   /** The deed; a returned Promise keeps the menu open and the entry busy until it settles. */
   onClick?: () => unknown;
   /** The page the entry opens, as a link. */
@@ -40,8 +61,9 @@ export type MenuItem = {
   /** A submenu, opened to the side. */
   items?: readonly MenuEntry[];
   /**
-   * In place of `items`: a panel opened to the side like a submenu, such as a `DatePicker`; on the phone the sheet's
-   * next step. Its keys stay its own (only Escape goes back); `close` closes the menu once the panel has picked.
+   * In place of `items`: a panel, such as a `DatePicker`, opened as the next step: it takes the place of the menu the
+   * entry stands in (on the phone a sheet of its own) under a head that leads back, and Escape leads back too. Its keys
+   * stay its own (the arrows walk a calendar, not the menu); `close` closes the menu once the panel has picked.
    */
   panel?: (close: () => void) => JSX.Element;
   /** In a section with `choice`: what choosing this entry gives; its `label` by default. */
@@ -149,15 +171,19 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
   return box.left + box.width / 2 > document.documentElement.clientWidth / 2 ? "end" : "start";
 };
 
+/** The room a menu, a submenu or a panel keeps from the edges of the window, in px. */
+const edgeRoom = 8;
+
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
-  entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
+  entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon || !!entry.color));
 
 const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; lead?: boolean }) => {
   const lead = () => props.lead ?? hasLead(props.entries);
-  // Keyed by kind and words, not by object or place: new data for an open menu (a tick that flipped, an entry that
-  // came in before it) keeps every entry's element, so the highlight and the focus stay. An entry that turns into
-  // another kind gets a new key and is made anew, with the right role and handler.
+  // Keyed by kind and by its `value` or its place among the entries of its kind, not by object or words: new data for
+  // an open menu (a tick that flipped, an entry that turned disabled or got new words, "Favorit" to "Favorit
+  // entfernen") keeps every entry's element, so the highlight and the focus stay. An entry that turns into another
+  // kind gets a new key and is made anew, with the right role and handler.
   const keyed = createMemo(() => {
     const seen = new Map<string, number>();
     return menuEntries(props.entries).map((entry, index) => {
@@ -166,7 +192,9 @@ const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; 
           ? `separator:${index}`
           : isSection(entry)
             ? `${entry.choice === undefined ? "section" : "choice"}:${entry.title}`
-            : `${kindOf(entry)}:${entry.label}`;
+            : entry.value !== undefined
+              ? `${kindOf(entry)}:${entry.value}`
+              : kindOf(entry);
       const count = seen.get(base) ?? 0;
       seen.set(base, count + 1);
       return { key: count ? `${base}#${count}` : base, entry };
@@ -260,16 +288,10 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
 
 type EntryKind = "submenu" | "panel" | "tick" | "link" | "deed";
 
+// A link stays a link while it is disabled (it then leads nowhere, see `Entry`): its kind keys its element, and an
+// element made anew would lose the focus of the keys.
 const kindOf = (entry: MenuItem): EntryKind =>
-  entry.panel
-    ? "panel"
-    : entry.items
-      ? "submenu"
-      : entry.checked !== undefined
-        ? "tick"
-        : entry.href !== undefined && !entry.disabled
-          ? "link"
-          : "deed";
+  entry.panel ? "panel" : entry.items ? "submenu" : entry.checked !== undefined ? "tick" : entry.href !== undefined ? "link" : "deed";
 
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
@@ -277,7 +299,12 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
   <>
     <Show when={props.lead}>
       <span class="k2-mi-lead">
-        <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
+        <Show
+          when={props.item.color === undefined}
+          fallback={<span class="k2-mi-dot" aria-hidden="true" style={custom({ "--k2-c": props.item.color })} />}
+        >
+          <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
+        </Show>
       </span>
     </Show>
     <span class="k2-mi-label">{props.item.label}</span>
@@ -293,18 +320,51 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
 );
 
 /**
- * An entry that opens a panel (a calendar) beside it: a menu item, so the menu's keys reach it, that is also the
- * trigger of its own popover. The popover is a dialog of its own at the end of the page, a layer over the menu: the
- * menu never sees its keys, a press inside it is no press outside the menu, Escape closes it first and puts the focus
- * back on the entry. Enter, Space and the arrow to the side open it, as they open a submenu; it stays open while the
- * menu's data changes (a clock that moved on keeps what was typed in it). On the phone it is a sheet of its own.
+ * An entry that opens a panel (a calendar) as the next step: a menu item, so the menu's keys reach it, that is also
+ * the trigger of its own popover. The popover is a dialog of its own at the end of the page, a layer over the menu:
+ * the menu never sees its keys (the arrows stay with the calendar), a press inside it is no press outside the menu.
+ * On a wide screen it takes the place of the menu the entry stands in (at most two layers show); on the phone it is a
+ * sheet of its own. Its head, Escape and the back button lead back to the entry. Enter, Space and the arrow to the side
+ * open it, as they open a submenu; it stays open while the menu's data changes (a clock that moved on keeps what was
+ * typed in it).
  */
 const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Record<string, unknown>; lead: boolean }) => {
   const t = useOverlayMessages();
   const phone = usePhone();
-  const [open, setOpen] = createSignal(false);
-  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen, modal: true, presentation: phone() ? "sheet" : "popover" }));
+  const [open, setOpenState] = createSignal(false);
   const [entry, setEntry] = createSignal<HTMLElement>();
+  // Where the panel stands on a wide screen: on the corner of its menu that the menu grew from, taken once when it
+  // opens (before the menu gives way). It grows the way the menu grew: to the left for a submenu that opened to the
+  // left or a menu at the right edge of its button (the end in left-to-right, the start in right-to-left), to the right
+  // for every other one, also a context menu at the pointer or a menu turned upwards.
+  const [place, setPlace] = createSignal<{ x: number; top: number; growLeft: boolean; rtl: boolean }>();
+  // Closing gives the menu its place back at once, before the focus returns to the entry in it (a hidden entry takes
+  // no focus); the focus then stands on the entry unless something else took it.
+  const setOpen = (next: boolean) => {
+    if (next && !open()) {
+      const menu = entry()?.closest<HTMLElement>(".k2-menu");
+      if (menu) {
+        const box = menu.getBoundingClientRect();
+        const side = menu.getAttribute("data-side");
+        // the menu and the panel's layer at the end of the page both take the page's direction (<html dir>), so the
+        // menu's says how core reads the panel's start and end too
+        const rtl = getComputedStyle(menu).direction === "rtl";
+        // a submenu's side is physical; a menu under or over its button lines up with its start or end, which the
+        // page's direction turns into left or right
+        const growLeft = side === "left" || (side !== "right" && (menu.getAttribute("data-align") === "end") !== rtl);
+        setPlace({ x: growLeft ? box.right : box.left, top: box.top, growLeft, rtl });
+      } else setPlace(undefined);
+    }
+    if (!next && open()) {
+      entry()?.closest(".k2-menu")?.removeAttribute("data-covered");
+      requestAnimationFrame(() => {
+        const at = document.activeElement;
+        if (!at || at === document.body) entry()?.focus();
+      });
+    }
+    setOpenState(next);
+  };
+  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen, modal: true, presentation: phone() ? "sheet" : "popover" }));
   createEffect(() => {
     const element = entry();
     if (!element) return;
@@ -355,8 +415,21 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
       document.removeEventListener("keydown", escape, true);
     });
   });
-  // beside the entry on the side its menu opened to, so it never covers the way it came
-  const side = () => (entry()?.closest(".k2-menu")?.getAttribute("data-side") === "left" ? "left" : "right");
+  // On a wide screen the panel takes the place of the menu its entry stands in (at most two layers show): that menu
+  // gives way while the panel is open, and the panel stands where it stood. The panel's head leads back to it.
+  const holder = () => entry()?.closest<HTMLElement>(".k2-menu") ?? undefined;
+  createEffect(() => {
+    const menu = holder();
+    if (!open() || phone() || !menu) return;
+    menu.setAttribute("data-covered", "");
+    onCleanup(() => menu.removeAttribute("data-covered"));
+  });
+  const corner = () => (phone() ? undefined : place());
+  /** The edge of the panel that stands on the corner, in the reading direction that core places by. */
+  const panelAlign = () => {
+    const at = corner();
+    return at && at.growLeft !== at.rtl ? "end" : "start";
+  };
   const close = () => {
     setOpen(false);
     props.level.close();
@@ -374,26 +447,38 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
           class="k2-pop k2-dpop"
           data-k2-part="Popover"
           aria-label={props.item.label}
-          side={side()}
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
+          {...(() => {
+            const at = corner();
+            if (!at) return {};
+            // The corner is taken once, when the panel opens. Read on every check, its height keeps the panel inside
+            // the window: in a short one it moves up, never past the top (taller than the window, it scrolls inside).
+            const anchor = {
+              getBoundingClientRect: () => {
+                const tall = panel?.offsetHeight ?? 0;
+                return new DOMRect(at.x, Math.max(edgeRoom, Math.min(at.top, window.innerHeight - tall - edgeRoom)), 0, 0);
+              },
+            };
+            return { anchor };
+          })()}
+          side="bottom"
+          // the edge of the panel that stands on the corner, in the reading direction core places by
+          align={panelAlign()}
+          sideOffset={corner() ? 0 : 4}
+          collisionPadding={edgeRoom}
         >
-          {/* on the phone the sheet names its step and leads back to the entries, as a submenu's step does */}
-          <Show when={phone()}>
-            <button
-              type="button"
-              class="k2-mi k2-panel-back"
-              aria-label={t().backTo({ name: props.item.label })}
-              onClick={() => {
-                setOpen(false);
-                entry()?.focus();
-              }}
-            >
-              <Icon name="chevron-left" />
-              <span class="k2-mi-label">{props.item.label}</span>
-            </button>
-          </Show>
+          {/* the panel names its step and leads back to the entries it took the place of, as a submenu's step does */}
+          <button
+            type="button"
+            class="k2-mi k2-panel-back"
+            aria-label={t().backTo({ name: props.item.label })}
+            onClick={() => {
+              setOpen(false);
+              entry()?.focus();
+            }}
+          >
+            <Icon name="chevron-left" />
+            <span class="k2-mi-label">{props.item.label}</span>
+          </button>
           {/* made once while open: new data for the menu keeps what was typed in the panel */}
           {untrack(() => props.item.panel?.(close))}
         </popover.Popup>
@@ -413,13 +498,13 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       return props.item.disabled;
     },
   };
-  const keyed = {
-    ...shared,
+  // merged, not spread: a spread would read the getters of `shared` (disabled, danger) once
+  const keyed = mergeProps(shared, {
     value: props.value,
     get label() {
       return props.item.label;
     },
-  };
+  });
   const kind = props.kind;
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();
@@ -436,7 +521,7 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
         >
           <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
-        <sub.Popup class="k2-menu" data-k2-part="Menu" side={side()} sideOffset={4} collisionPadding={8}>
+        <sub.Popup class="k2-menu" data-k2-part="Menu" side={side()} sideOffset={4} collisionPadding={edgeRoom}>
           <Entries level={sub} entries={props.item.items ?? []} />
         </sub.Popup>
       </>
@@ -465,13 +550,17 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       <Show
         when={props.item.onNavigate}
         fallback={
-          <props.level.LinkItem {...keyed} href={props.item.href}>
+          <props.level.LinkItem {...keyed} href={props.item.disabled ? undefined : props.item.href}>
             <EntryFace item={props.item} lead={props.lead} />
           </props.level.LinkItem>
         }
       >
         {(onNavigate) => (
-          <props.level.NavLinkItem {...keyed} href={props.item.href} onNavigate={onNavigate()}>
+          <props.level.NavLinkItem
+            {...keyed}
+            href={props.item.disabled ? undefined : props.item.href}
+            onNavigate={props.item.disabled ? undefined : onNavigate()}
+          >
             <EntryFace item={props.item} lead={props.lead} />
           </props.level.NavLinkItem>
         )}
@@ -497,6 +586,17 @@ const MenuRoot = (props: MenuRootProps) => {
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
+  // The "…" at the end of a bar takes the buttons the bar has no room for, as its first section (see `Bar`), so no
+  // second "…" stands beside it. Every "…" offers itself: no words and no symbol of its own, whatever its name says
+  // ("Weitere Aktionen", "Mehr zum Angebot"). A `Menu icon="filter" label="Filter"` is another thing and takes none.
+  const fold = useContext(BarFold);
+  onMount(() => {
+    if (fold && trigger && iconOnly() && props.icon === undefined) onCleanup(fold.offer(trigger));
+  });
+  const items = (): readonly MenuEntry[] => {
+    const folded = fold && trigger && fold.host() === trigger ? fold.entries() : [];
+    return folded.length ? [...folded, "separator", ...props.items] : props.items;
+  };
   const [align, setAlign] = createSignal<"start" | "end">("end");
   const phone = usePhone();
   const level = useMenuLevels(() => ({
@@ -526,18 +626,35 @@ const MenuRoot = (props: MenuRootProps) => {
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <Entries level={level} entries={props.items} />
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={edgeRoom}>
+        <Entries level={level} entries={items()} />
       </level.Popup>
     </>
   );
 };
 
 /**
+ * What a `Bar` hands the menus of its end: the menu that takes its folded buttons (`host`), those buttons as entries,
+ * and the offer of an icon-only menu to take them. Internal to `Bar` and `Menu`.
+ */
+export type BarFoldHost = {
+  offer: (trigger: HTMLElement) => () => void;
+  host: Accessor<HTMLElement | undefined>;
+  entries: Accessor<readonly MenuItem[]>;
+};
+export const BarFold = createContext<BarFoldHost | undefined>();
+
+/**
  * A tab that opens a menu of further views (internal to `Tabs`): it looks like a tab, with the chevron after its
  * words, and is the menu's button, so Enter, Space and the arrow down open it and Escape brings the focus back.
  */
-export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean; children: JSX.Element }) => {
+export const MenuTab = (props: {
+  items: readonly MenuEntry[];
+  current?: boolean;
+  /** The "Mehr" that `Tabs` adds for the tabs without room (`data-k2-more`). */
+  more?: boolean;
+  children: JSX.Element;
+}) => {
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("start");
   const phone = usePhone();
@@ -555,12 +672,13 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
         }}
         class="k2-tab"
         data-menu=""
+        data-k2-more={props.more ? "" : undefined}
         aria-current={props.current ? "page" : undefined}
       >
         {props.children}
         <Icon name="chevron-down" />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={edgeRoom}>
         <Entries level={level} entries={props.items} />
       </level.Popup>
     </>
@@ -595,7 +713,7 @@ const MenuContext = (props: MenuContextProps) => {
     <>
       {resolved()}
       <PageLayer from={element}>
-        <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={8}>
+        <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={edgeRoom}>
           <Entries level={level} entries={props.items} />
         </level.Popup>
       </PageLayer>
