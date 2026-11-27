@@ -415,7 +415,7 @@ test("popover: a panel of 280 px under the start of its button with a title; Esc
     await page.getByRole("checkbox", { name: "Nur eilige" }).click();
     await page.keyboard.press("Escape");
     await closed(page, ".k2-pop");
-    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Filter");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Filter");
   });
 });
 
