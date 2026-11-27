@@ -11,8 +11,9 @@ test("finds IF NOT EXISTS columns and indexes with their lines, but not concurre
     "  IF NOT EXISTS i ON a.b(c)`;",
     "await sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS j ON a.b(c)`;",
     'await addColumns(sql, "a.b", { d: "TEXT" });',
+    "await sql`alter table a.b add column if not exists e text`;",
   ].join("\n");
-  expect(lockingStatements(source)).toEqual([1, 2]);
+  expect(lockingStatements(source)).toEqual([1, 2, 6]);
 });
 
 test("allows the baseline, reports growth and stale entries, ignores the helper and tests, and --fix only lowers", async () => {

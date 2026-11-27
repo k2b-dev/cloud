@@ -210,23 +210,24 @@ export const migrateCloudAi = async (): Promise<void> => {
     END IF;
   END $$`.simple();
   await addColumns(sql, "ai.conversations", { last_viewed_at: "TIMESTAMPTZ NOT NULL DEFAULT now()" });
-  // Both columns default to now() and are never null. The catalog decides first: ALTER COLUMN locks even without a change.
-  await withTableLock(sql, "ai.conversations", async (tx) => {
-    await tx`UPDATE ai.conversations SET last_viewed_at = now() WHERE last_viewed_at IS NULL`.simple();
-    await tx`UPDATE ai.conversations SET last_used_at = GREATEST(created_at, updated_at, last_viewed_at) WHERE last_used_at IS NULL`.simple();
-    await tx`DO $$
-    DECLARE
-      col TEXT;
-    BEGIN
-      FOREACH col IN ARRAY ARRAY['last_viewed_at', 'last_used_at'] LOOP
-        IF EXISTS (SELECT 1 FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-          WHERE a.attrelid = 'ai.conversations'::regclass AND a.attname = col AND NOT a.attisdropped
-            AND (NOT a.attnotnull OR pg_get_expr(d.adbin, d.adrelid) IS DISTINCT FROM 'now()')) THEN
-          EXECUTE format('ALTER TABLE ai.conversations ALTER COLUMN %I SET DEFAULT now(), ALTER COLUMN %I SET NOT NULL', col, col);
-        END IF;
-      END LOOP;
-    END $$`.simple();
-  });
+  // Both columns default to now() and are never null. The catalog decides first: ALTER COLUMN locks even without a
+  // change, and the backfills only run while a column may still hold NULL.
+  await withTableLock(sql, "ai.conversations", (tx) =>
+    tx`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = 'ai.conversations'::regclass AND a.attname = 'last_viewed_at' AND NOT a.attisdropped
+          AND (NOT a.attnotnull OR pg_get_expr(d.adbin, d.adrelid) IS DISTINCT FROM 'now()')) THEN
+        UPDATE ai.conversations SET last_viewed_at = now() WHERE last_viewed_at IS NULL;
+        ALTER TABLE ai.conversations ALTER COLUMN last_viewed_at SET DEFAULT now(), ALTER COLUMN last_viewed_at SET NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = 'ai.conversations'::regclass AND a.attname = 'last_used_at' AND NOT a.attisdropped
+          AND (NOT a.attnotnull OR pg_get_expr(d.adbin, d.adrelid) IS DISTINCT FROM 'now()')) THEN
+        UPDATE ai.conversations SET last_used_at = GREATEST(created_at, updated_at, last_viewed_at) WHERE last_used_at IS NULL;
+        ALTER TABLE ai.conversations ALTER COLUMN last_used_at SET DEFAULT now(), ALTER COLUMN last_used_at SET NOT NULL;
+      END IF;
+    END $$`.simple(),
+  );
   await addColumns(sql, "ai.conversations", {
     search_text: "TEXT NOT NULL DEFAULT ''",
     search_document: "TSVECTOR NOT NULL DEFAULT ''::tsvector",

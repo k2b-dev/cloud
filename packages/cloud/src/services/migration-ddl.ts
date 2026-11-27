@@ -1,4 +1,4 @@
-import type { SQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 import { logger } from "./logging";
 import { toPgTextArray } from "./postgres";
 
@@ -54,35 +54,59 @@ const sqlState = (error: unknown): string | null => {
   return typeof candidate?.code === "string" ? candidate.code : null;
 };
 
-/** A Bun transaction or savepoint client; the pool and reserved connections have no `savepoint`. */
-const inTransaction = (db: SQL) => "savepoint" in db;
+/**
+ * A lock timeout, a deadlock, or a concurrent `CREATE INDEX IF NOT EXISTS` of the same name in another session:
+ * both pass the existence check, and the later one fails on the catalog's unique name instead of waiting.
+ */
+const retryable = (error: unknown) => {
+  const state = sqlState(error);
+  if (state === "23505") {
+    const candidate = error as { constraint?: unknown; constraint_name?: unknown };
+    return (candidate.constraint ?? candidate.constraint_name) === "pg_class_relname_nsp_index";
+  }
+  return RETRIED.has(state ?? "");
+};
 
-/** Who holds a lock on the table, for the log line: `pg_dump (pid 812, AccessShareLock, 95 s)`. */
-const lockHolders = async (db: SQL, table: string): Promise<string[]> => {
+/** A Bun transaction or savepoint client; the pool and reserved connections have no `savepoint`. */
+const inTransaction = (db: SQL): db is TransactionSQL => "savepoint" in db;
+
+/** Who holds a lock on the tables, for the log line: `pg_dump (pid 812, AccessShareLock on ai.conversations, 95 s)`. */
+const lockHolders = async (db: SQL, tables: readonly string[]): Promise<string[]> => {
   try {
-    const rows = await db<{ pid: number; mode: string; client: string; seconds: number | null }[]>`
-      SELECT l.pid, l.mode, COALESCE(NULLIF(a.application_name, ''), a.backend_type, 'unknown') AS client,
+    const rows = await db<{ pid: number; mode: string; relation: string; client: string; seconds: number | null }[]>`
+      SELECT l.pid, l.mode, l.relation::regclass::text AS relation,
+        COALESCE(NULLIF(a.application_name, ''), a.backend_type, 'unknown') AS client,
         floor(extract(epoch FROM now() - a.xact_start))::int AS seconds
       FROM pg_catalog.pg_locks l
       LEFT JOIN pg_catalog.pg_stat_activity a ON a.pid = l.pid
-      WHERE l.locktype = 'relation' AND l.relation = to_regclass(${table}) AND l.granted AND l.pid <> pg_backend_pid()
+      WHERE l.locktype = 'relation' AND l.granted AND l.pid <> pg_backend_pid()
+        AND l.relation IN (SELECT to_regclass(name) FROM unnest(${toPgTextArray([...tables])}::text[]) AS name)
       ORDER BY a.xact_start NULLS LAST
       LIMIT 5`;
-    return rows.map((row) => `${row.client} (pid ${row.pid}, ${row.mode}${row.seconds === null ? "" : `, ${row.seconds} s`})`);
+    return rows.map(
+      (row) => `${row.client} (pid ${row.pid}, ${row.mode} on ${row.relation}${row.seconds === null ? "" : `, ${row.seconds} s`})`,
+    );
   } catch {
     return [];
   }
 };
 
 /**
- * Runs DDL that needs a lock on `table` so it never queues the table's readers and writers for long. On the pool it
- * runs in its own transaction with `lock_timeout` {@link MIGRATION_LOCK_WAIT_MS}, retries a lock timeout or deadlock
- * with backoff and logs each wait with the lock holders; after about 40 s it throws. Inside a caller's transaction it
- * runs there once: that transaction bounds its own wait and retries as a whole. Gate the statements on the catalog,
- * so that a start without changes takes no lock; `run` may run several times.
+ * Runs DDL that needs a lock on `table` (or on each of several tables) so it never queues their readers and writers for
+ * long. On the pool it runs in its own transaction with `lock_timeout` {@link MIGRATION_LOCK_WAIT_MS}, retries a lock
+ * timeout or deadlock with backoff and logs each wait with the lock holders; after about 40 s it throws. A migration
+ * that keeps several steps in one transaction passes the pool and runs them all in `run`. Inside a caller's
+ * transaction it runs there once: that transaction must bound its own wait with `SET LOCAL lock_timeout` and retry as
+ * a whole. Gate the statements on the catalog, so that a start without changes takes no lock; `run` may run several
+ * times.
  */
-export const withTableLock = async (db: SQL, table: string, run: (tx: SQL) => Promise<unknown>): Promise<void> => {
-  assertTable(table);
+export const withTableLock = async (
+  db: SQL,
+  table: string | readonly string[],
+  run: (tx: TransactionSQL) => Promise<unknown>,
+): Promise<void> => {
+  const tables = typeof table === "string" ? [table] : table;
+  for (const name of tables) assertTable(name);
   if (inTransaction(db)) {
     await run(db);
     return;
@@ -95,15 +119,15 @@ export const withTableLock = async (db: SQL, table: string, run: (tx: SQL) => Pr
       });
       return;
     } catch (error) {
-      if (!RETRIED.has(sqlState(error) ?? "")) throw error;
-      const holders = await lockHolders(db, table);
+      if (!retryable(error)) throw error;
+      const holders = await lockHolders(db, tables);
       if (attempt >= ATTEMPTS) {
         throw new Error(
-          `Migration could not lock ${table} in ${ATTEMPTS} attempts; held by ${holders.join(", ") || "a session that ended meanwhile"}`,
+          `Migration could not lock ${tables.join(", ")} in ${ATTEMPTS} attempts; held by ${holders.join(", ") || "a session that ended meanwhile"}`,
           { cause: error },
         );
       }
-      log.warn("Migration waits for a table lock and tries again", { table, attempt, holders: holders.join(", ") });
+      log.warn("Migration waits for a table lock and tries again", { table: tables.join(", "), attempt, holders: holders.join(", ") });
       await Bun.sleep(pause(attempt));
     }
   }

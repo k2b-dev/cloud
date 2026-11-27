@@ -1,9 +1,17 @@
 import { sql } from "@k2b/cloud";
-import { addColumns, createIndexes } from "@k2b/cloud/services/migration-ddl";
+import { addColumns, createIndexes, withTableLock } from "@k2b/cloud/services/migration-ddl";
 import type { SQL } from "bun";
 
 export const migrate = async (db: SQL = sql): Promise<void> => {
-  await db.begin(async (tx) => {
+  // One transaction for all steps; withTableLock bounds its lock waits and retries it as a whole.
+  const tables = [
+    "events.app_events",
+    "events.app_declarations",
+    "events.app_subscriptions",
+    "events.app_deliveries",
+    "events.app_broker_status",
+  ];
+  await withTableLock(db, tables, async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('cloud.app-events.migrate'))`;
     await tx`CREATE TABLE IF NOT EXISTS events.app_events (
       seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

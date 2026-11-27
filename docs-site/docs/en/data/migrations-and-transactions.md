@@ -109,8 +109,11 @@ tries again with a pause, up to eight attempts in about 40 seconds. Each wait
 logs a warning that names the sessions holding the lock. After the last
 attempt, setup fails with those names, and the next start tries again.
 
-Inside your own `sql.begin()`, a helper runs once in that transaction. Set
-`SET LOCAL lock_timeout` in the transaction and retry it as a whole.
+To keep several steps in one transaction, open it with
+`withTableLock(sql, [tables], async (tx) => …)` instead of `sql.begin()`, and
+pass `tx` to the helpers. The whole transaction then waits in the same bounded
+steps. Inside your own `sql.begin()`, a helper runs once and does not retry.
+Set `SET LOCAL lock_timeout` in that transaction and retry it as a whole.
 
 `createIndexes()` builds without `CONCURRENTLY`, and the build blocks writers.
 Use it for a new or small table. For a large table that is in use, build the

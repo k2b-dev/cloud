@@ -11,7 +11,7 @@ import type { Finding, Rule } from "./rule";
  */
 const HELPER = "packages/cloud/src/services/migration-ddl.ts";
 export const BASELINE = "scripts/checks/startup-ddl-locks.baseline";
-const STATEMENT = /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS|CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS/g;
+const STATEMENT = /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS|CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS/gi;
 const header = [
   "# Startup DDL that locks a table even when nothing changes, per file: <count> <file>.",
   "# A file may only lose statements: move them to addColumns/createIndexes (@k2b/cloud/services/migration-ddl).",
