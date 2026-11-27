@@ -1269,6 +1269,13 @@
   padding-block: 8px;
   vertical-align: top;
 }
+/* a group's head row is one short line in every table, as high as the column heads, its words in the middle; it never
+   takes the height of two-line rows */
+.k2-ui .k2-table tr[data-group] > td {
+  height: var(--k2-h-columns);
+  padding-block: 0;
+  vertical-align: middle;
+}
 .k2-ui .k2-table th:first-child,
 .k2-ui .k2-table td:first-child {
   padding-left: var(--k2-edge);
