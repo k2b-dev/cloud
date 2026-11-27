@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Button, Chip, Cut, Input, List, Menu, Notice, Pane, Row, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Chip, Cut, Input, List, Menu, Notice, Pane, Row, Table, Tabs, Tiles, Workspace } from "../src/v2";
 
 // Worst-case states of v2 primitives that change after the page is live (break-ui 25.11., review of #4210): a note that
 // grows, a tab that becomes the open one, words cut in the middle in a narrow box, an amount among a row's marks.
@@ -42,7 +42,26 @@ const scenario = document.body.dataset.case;
 // `<body data-case="rows">`: endpoints whose second line is an address of 300 characters without a break, beside a deed
 const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
 const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
-if (scenario === "rows")
+// `<body data-case="tiles">`: a long name without an extension (the card title of DP's #4223 identity fixture) and a
+// long file name, side by side in tiles
+if (scenario === "tiles")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <Tiles
+            label="Kacheln"
+            items={[
+              { icon: "building-warehouse", title: "Lager Nord mit einem sehr langen Namen, der auf der Karte ausblendet", href: "#lager" },
+              { icon: "file-text", title: "Angebot_Holzwerkstatt_Lindqvist_Kueche_final_v3.pdf", href: "#angebot" },
+            ]}
+          />
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "rows")
   render(
     () => (
       <Workspace>

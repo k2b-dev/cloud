@@ -3,7 +3,9 @@ import postcss from "postcss";
 // v2.css carries the chart's own stylesheet (src/styles/chart.css), so a chart renders with v2.css alone. Every rule of
 // it that names v1 (`k2b-`) hangs on a chart: the chart root or one of its parts, a stdlib drawing, or a calendar. A v1
 // rule that is not a chart rule, such as the scope `.k2b-ui {…}`, its reset `.k2b-ui * {…}` or a hint
-// `.k2b-ui [popover].k2b-tooltip {…}`, would style a v2 page through v2.css and is a leak.
+// `.k2b-ui [popover].k2b-tooltip {…}`, would style a v2 page through v2.css and is a leak. A v1 class counts, not an
+// attribute of the platform such as `data-k2b-primary`, which v1 and v2 both follow.
+const v1Class = /\.k2b-/;
 const chartMark = /\.k2b-chart|\.stdlib-chart|\[data-calendar/;
 
 /** The selector without its `:not(…)` groups: a chart named only in `:not()` does not hold the rule on a chart. */
@@ -28,7 +30,7 @@ export const v1Leaks = (css: string): string[] => {
   const leaks: string[] = [];
   postcss.parse(css).walkRules((rule) => {
     for (const selector of rule.selectors) {
-      if (!selector.includes("k2b-")) continue;
+      if (!v1Class.test(selector)) continue;
       if (!chartMark.test(withoutNot(selector))) leaks.push(selector);
     }
   });

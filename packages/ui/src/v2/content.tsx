@@ -45,6 +45,11 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /**
+   * The full words as a tooltip, for text its place may cut (a long title in a head): the same words, never a hint
+   * of something else.
+   */
+  title?: string;
   /** The words. */
   children: JSX.Element;
 };
@@ -68,8 +73,9 @@ export const Text = (props: TextProps) => {
       data-k2-part="Text"
       data-type={props.type}
       data-tone={props.tone}
-      // a title (the lead of a head) may be cut where it has no room: it says all of its words on hover
-      title={props.type === "lead" && typeof words() === "string" ? String(words()) : undefined}
+      // the full words the app gives; a title (the lead of a head) may be cut where it has no room, so it says all of
+      // its words on hover without them
+      title={props.title ?? (props.type === "lead" && typeof words() === "string" ? String(words()) : undefined)}
     >
       {words()}
     </Dynamic>
@@ -104,21 +110,22 @@ export const cutTail = (text: string, keep: CutProps["keep"]): number => {
 /**
  * Words cut in the middle where they have no room, so their end stays readable: "bob.lange-adr…@example.com",
  * "Angebot_Holzwerk…nal_v3.pdf". Their whole words show on hover. Use it for addresses and file names in a row,
- * a tile or a head; other text is cut at its end by the place it stands in.
+ * a tile or a head; other text is cut at its end by the place it stands in. Words without such an end (a name
+ * without a domain or an extension) stay plain text, so the place cuts them at their end too.
  */
 export const Cut = (props: CutProps) => {
   const split = () => props.text.length - cutTail(props.text, props.keep);
   const head = () => props.text.slice(0, split());
   return (
-    <span class="k2-midcut" title={props.text}>
-      {/* a start of a few letters is never cut: "…" would stand for nearly all of it */}
-      <Show when={head()}>
-        <span data-whole={Array.from(head()).length <= 4 ? "" : undefined}>{head()}</span>
-      </Show>
-      <Show when={split() < props.text.length}>
+    <Show when={split() < props.text.length} fallback={props.text}>
+      <span class="k2-midcut" title={props.text}>
+        {/* a start of a few letters is never cut: "…" would stand for nearly all of it */}
+        <Show when={head()}>
+          <span data-whole={Array.from(head()).length <= 4 ? "" : undefined}>{head()}</span>
+        </Show>
         <span>{props.text.slice(split())}</span>
-      </Show>
-    </span>
+      </span>
+    </Show>
   );
 };
 
@@ -651,7 +658,8 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={end() !== undefined || props.action}>
         <span class="k2-row-end">
-          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          {/* the deed is named by its words and then the row's title, so rows with the same deed are told apart */}
+          <Show when={props.action}>{(action) => <ActionButton action={action()} about={title} />}</Show>
           {end()}
         </span>
       </Show>
@@ -834,16 +842,6 @@ export const Table = <T,>(props: TableProps<T>) => {
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  // Every cell is made once per showing of its row: what `cell` returns is placed, never rendered a second time. The
-  // cells of the first page are made before the table, on the server and in the browser alike, so hydration finds them
-  // in the same order, and they live with the table (they also say whether rows have two lines). A row further down
-  // makes its cells when it comes into the page and lets them go with it, so a row that comes back makes them anew and
-  // shows what they read now.
-  const firstCells = createMemo(
-    () => new Map(props.rows.slice(0, SERVER_ROWS).map((row) => [row, props.columns.map((column) => column.cell(row))] as const)),
-  );
-  const cellsOf = (row: T): CellValue[] => firstCells().get(row) ?? props.columns.map((column) => column.cell(row));
-  const lines = () => (loading()?.lines === 2 || [...firstCells().values()].some((cells) => cells.some(isPair)) ? "2" : "1");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -856,6 +854,22 @@ export const Table = <T,>(props: TableProps<T>) => {
     });
     return out;
   });
+  // Every cell is made once per showing of its row: what `cell` returns is placed, never rendered a second time. The
+  // cells of the first page are made before the table, on the server and in the browser alike, so hydration finds them
+  // in the same order, and they live with the table (they also say whether rows have two lines). The first page is the
+  // entries the server sends, group heads counted (`SERVER_ROWS`): a cell made for a row it did not send would be a
+  // node hydration cannot find. A row further down makes its cells when it comes into the page and lets them go with
+  // it, so a row that comes back makes them anew and shows what they read now.
+  const firstCells = createMemo(
+    () =>
+      new Map(
+        items()
+          .slice(0, SERVER_ROWS)
+          .flatMap((item) => ("row" in item ? [[item.row, props.columns.map((column) => column.cell(item.row))] as const] : [])),
+      ),
+  );
+  const cellsOf = (row: T): CellValue[] => firstCells().get(row) ?? props.columns.map((column) => column.cell(row));
+  const lines = () => (loading()?.lines === 2 || [...firstCells().values()].some((cells) => cells.some(isPair)) ? "2" : "1");
   // A table of any length keeps only the rows in view in the page (see `createVirtualWindow`); its head stays.
   const itemKey = (item: TableItem<T>) => ("group" in item ? `group:${item.group.key}` : `row:${key(item.row, item.index)}`);
   const view = createVirtualWindow({ items: () => (loading() ? [] : items()), key: itemKey });
@@ -866,7 +880,12 @@ export const Table = <T,>(props: TableProps<T>) => {
   const selected = (row: T, index: number) => props.select?.selected.includes(key(row, index)) ?? false;
   // A click anywhere on a row that opens something opens it, unless it was meant for a control in the row.
   const openRow = (event: MouseEvent & { currentTarget: HTMLTableRowElement }) => {
-    if (!(event.target instanceof Element) || event.target.closest("a, button, input, label, select, textarea")) return;
+    // A control in the row, and a menu or popover that opened from one, keeps its click: choosing an entry in a row's
+    // menu must not also open the row (the menu may stand elsewhere in the page, but its click still reaches the row
+    // through the component tree). A dialog or popover the whole table stands in is no such control: its rows open.
+    if (!(event.target instanceof Element)) return;
+    const control = event.target.closest("a, button, input, label, select, textarea, [role=menu], [popover]");
+    if (control && !control.contains(event.currentTarget)) return;
     const open = event.currentTarget.querySelector<HTMLElement>(".k2-row-open");
     if (!open || event.altKey) return;
     // With Ctrl, Cmd or Shift a link opens elsewhere, as on the link itself. A click handed on loses that in WebKit,
@@ -1142,27 +1161,31 @@ export const Table = <T,>(props: TableProps<T>) => {
                     (() => {
                       const form = phone()(item.row);
                       const target = props.open?.(item.row);
+                      // a row says its place among the rows of the table: the heads of its groups are no rows
+                      const place = { index: () => item.index, size: () => props.rows.length };
                       return (
-                        <Row
-                          lines={form.lines}
-                          avatar={form.avatar}
-                          time={form.time}
-                          marks={form.marks}
-                          end={form.end}
-                          strong
-                          href={target?.href}
-                          onNavigate={target?.onNavigate}
-                          onOpen={target?.onOpen}
-                          current={props.current !== undefined && props.current === key(item.row, item.index)}
-                          select={
-                            props.select
-                              ? {
-                                  selected: selected(item.row, item.index),
-                                  onChange: (on) => toggle(key(item.row, item.index), on),
-                                }
-                              : undefined
-                          }
-                        />
+                        <ListItemContext.Provider value={place}>
+                          <Row
+                            lines={form.lines}
+                            avatar={form.avatar}
+                            time={form.time}
+                            marks={form.marks}
+                            end={form.end}
+                            strong
+                            href={target?.href}
+                            onNavigate={target?.onNavigate}
+                            onOpen={target?.onOpen}
+                            current={props.current !== undefined && props.current === key(item.row, item.index)}
+                            select={
+                              props.select
+                                ? {
+                                    selected: selected(item.row, item.index),
+                                    onChange: (on) => toggle(key(item.row, item.index), on),
+                                  }
+                                : undefined
+                            }
+                          />
+                        </ListItemContext.Provider>
                       );
                     })()
                   )

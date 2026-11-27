@@ -57,9 +57,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line. A drag or the keys (arrows 8 px, Shift 64 px, Home and End to the
   limits, Enter back to the default) move the width; a reload starts at the
-  default again. The sidebar's grip works the same. `width={{ fixed }}` keeps
-  one width without a grip, for a page to read rather than to arrange (a
-  visitor page, a wall screen).
+  default again. The sidebar's grip works the same. A grip shows only under the
+  pointer, on keyboard focus and while dragged (on touch screens it stays).
+  `width={{ fixed }}` keeps one width without a grip, for a page to read
+  rather than to arrange (a visitor page, a wall screen).
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the
@@ -72,8 +73,24 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
-- `side`: the info column of a record; quieter sections, a `more` link
-  becomes a row.
+- `side`: the context column (the info column of a record, what a form
+  feeds, a chart beside a table); quieter sections, a `more` link becomes a
+  row. In a `Pane.Split` of exactly one main column and this context column
+  after it, the context stands beside only where the split holds both at
+  their default widths (400 px without a `width`). With less it gives way
+  to the end of the main column, at its full width, and the split scrolls
+  in one piece: the main column is never squeezed and nothing hides; it
+  needs no room of the workspace, so the sidebar never becomes a drawer for
+  it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
+  main column that needs it (a table: beside only on a large screen). In
+  any other split (a list, its reader and an info column) it stands beside
+  as every column does.
+- A detail that grows on a large screen is the same part: under the
+  detail's one `head` (and what spans both, such as a hero band), a
+  `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
+  side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
+  from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
+  and in reading order below that.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -139,7 +156,9 @@ moves.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`measure` (its head, sentence and rows keep the reading measure of `Prose`,
+720 px of text, so a short list in a wide pane stays together; its line
+still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
@@ -179,7 +198,8 @@ and do not count as one.
 
 What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
 finds only rows in the page, so a list people search in needs its own
-search; Shift+Tab from below the list (a foot) lands on the last row in the
+search; printing prints only the rows in the page, so a list people print
+needs its own export or print view; Shift+Tab from below the list (a foot) lands on the last row in the
 page, not the last item; Tab out of a row that scrolled away looks at most
 20 entries further for the next stop (past 20 heads or rows without a
 control the browser decides); a group head is no entry of the list for a screen
@@ -214,8 +234,12 @@ A `Row`:
   `action` or `end`.
 - A line of three is cut with "…" and says its words on hover. An address
   or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
-  the middle, so the domain or extension stays readable.
-- `action` (one framed button at the end; under the text on the phone),
+  the middle, so the domain or extension stays readable; words without
+  one stay plain and are cut at their end.
+- `action` (one framed button at the end; under the text on the phone; its
+  name is its words and then the row's title, "Ansehen Angebot Küche", so
+  rows with the same deed are told apart: name nothing yourself; on the
+  phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
@@ -240,7 +264,7 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move; `{ fixed }`: one width, no grip), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows while the head is under the pointer, on focus and while dragged; on touch screens it stays; `{ fixed }`: one width, no grip), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
@@ -298,6 +322,10 @@ one.
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`title` gives text its full words as a tooltip where its place may cut it:
+the title of an open entry in its detail's head takes two lines, then "…".
+Two lines make that head 65 px: beside a list, its line then no longer meets
+the status row (K1 holds for a one-line title).
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 
@@ -333,7 +361,9 @@ lines instead of cutting a thing.
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
-  `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
+  `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
+  is about, such as a row's title: its name is its own words, then those;
+  `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the
   width, the look and the focus stay, a second press and a second sending
   of the form do nothing), `pressed` (a toggle such as a favourite star:
@@ -440,7 +470,8 @@ lines instead of cutting a thing.
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there). An item with `items` instead of `icon` and a link folds
+  problem there, `"running"` for work that runs now: a small turning mark
+  in the dot's place that says "Läuft"). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
