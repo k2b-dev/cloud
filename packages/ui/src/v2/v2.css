@@ -3191,6 +3191,11 @@
   overflow: hidden auto;
   overscroll-behavior: contain;
   margin: 0 -12px;
+  /* no bar of its own, as a pane's column: a classic one (WebKit) would cut the rows' lines short of the edge */
+  scrollbar-width: none;
+}
+.k2-ui .k2-nav-list::-webkit-scrollbar {
+  display: none;
 }
 .k2-ui .k2-nav-foot {
   margin-top: auto;
