@@ -15,7 +15,6 @@ import {
   type Person,
   RecordHead,
   type RecordId,
-  type StatusFact,
   StatusRow,
   Text,
   useLocale,
@@ -56,11 +55,13 @@ export type ChatDetailV2 = {
 
 export type ChatFrameV2Props = {
   nav: { label: string; groups: readonly NavGroup[]; foot?: readonly NavItem[] };
+  /** Deeds on the whole list, such as "Mark all read", behind one "…" in the head. */
+  listMenu: { label: string; items: readonly MenuEntry[] };
   newChat: Action;
   search: { value: string; onInput: (value: string) => void; onKeyDown: (event: KeyboardEvent) => void };
   list: {
-    lead: string;
-    facts?: readonly StatusFact[];
+    /** What to act on that the nav does not say; without it, no status row. */
+    lead?: string;
     loading: boolean;
     notices: readonly ChatListNotice[];
     content: JSX.Element;
@@ -138,6 +139,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                   onInput={props.search.onInput}
                   onKeyDown={props.search.onKeyDown}
                 />
+                <Menu label={props.listMenu.label} items={props.listMenu.items} />
                 <Button
                   variant="primary"
                   icon={props.newChat.icon}
@@ -156,7 +158,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
             label={v2().listWidth}
             width={{ min: 300, default: 380 }}
             scrollKey="chat-list"
-            status={<StatusRow lead={props.list.lead} facts={props.list.facts} loading={props.list.loading} />}
+            status={props.list.lead ? <StatusRow lead={props.list.lead} loading={props.list.loading} /> : undefined}
           >
             <For each={props.list.notices}>
               {(notice) => (

@@ -3418,10 +3418,9 @@ export function ChatWorkspaceView(
       {
         key: "chats",
         folded: collapsed().includes("chats"),
-        title: t().chats,
+        title: v2t().directAndGroups,
         rows: plain,
         empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
-        actions: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }],
         more: moreChats(),
       },
       ...(channels.length > 0 ? [{ key: "channels", title: t().channels, rows: channels, folded: collapsed().includes("channels") }] : []),
@@ -3490,12 +3489,18 @@ export function ChatWorkspaceView(
       });
     return notices;
   };
-  const v2Lead = () => {
-    if (archived()) return v2t().archived({ count: listRows().length });
-    const unread = rows().filter((row) => row.unread > 0);
-    if (unread.length === 0) return v2t().allRead;
-    const count = (unreadTotal() ?? loadedUnread()).toLocaleString(locale());
-    return v2t().unread({ count, chats: unread.length });
+  /**
+   * The one statement over the list says only what the nav does not: who mentioned the reader where (the nav already
+   * counts unread chats). Without a mention the list stands without a statement.
+   */
+  const v2Lead = (): string | undefined => {
+    if (archived()) return undefined;
+    const mentioned = rows().filter((row) => row.mentionsUnread > 0);
+    if (mentioned.length === 0) return undefined;
+    const count = mentioned.reduce((sum, row) => sum + row.mentionsUnread, 0);
+    const names = mentioned.slice(0, 2).map((row) => row.title);
+    if (mentioned.length > 2) names.push(`+${mentioned.length - 2}`);
+    return v2t().mentions({ count: count.toLocaleString(locale()), names: names.join(", ") });
   };
   const [followBusy, setFollowBusy] = createSignal(false);
   const toggleFollow = async (chatId: string, threadId: string, on: boolean) => {
@@ -3717,6 +3722,7 @@ export function ChatWorkspaceView(
     return (
       <V2.ChatFrameV2
         nav={v2Nav()}
+        listMenu={{ label: v2t().listActions, items: [{ label: t().markAllRead, icon: "checks", onClick: () => void readAll() }] }}
         newChat={{ label: t().newChat, icon: "message-plus", onClick: () => void newChat() }}
         search={{
           get value() {
@@ -3733,9 +3739,6 @@ export function ChatWorkspaceView(
         list={{
           get lead() {
             return v2Lead();
-          },
-          get facts() {
-            return forYouUnread() > 0 && !archived() ? [{ value: forYouUnread(), after: v2t().forYouFact }] : undefined;
           },
           get loading() {
             return listLoading() || listPending();

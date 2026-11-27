@@ -125,6 +125,8 @@ export default function ChatListV2(props: { sections: Accessor<readonly ChatList
   // Sections and rows stay by their key and ID while the live list replaces their data, so a row keeps its focus,
   // its open menu and its place when its count or last message changes.
   const keys = createMemo(() => props.sections().map((section) => section.key), undefined, { equals: sameKeys });
+  // One section alone needs no heading: the nav already names the list.
+  const alone = () => keys().length === 1;
   return (
     <For each={keys()}>
       {(key) => {
@@ -134,22 +136,30 @@ export default function ChatListV2(props: { sections: Accessor<readonly ChatList
         );
         const ids = createMemo(() => section().rows.map((row) => row.id), undefined, { equals: sameKeys });
         const byId = createMemo(() => new Map(section().rows.map((row) => [row.id, row])));
+        const rows = (
+          <Show when={ids().length > 0} fallback={<Show when={section().empty}>{(empty) => <Row lines={[empty()]} />}</Show>}>
+            <List label={`${props.context.label}: ${section().title}`}>
+              <For each={ids()}>
+                {(id) => {
+                  const row = createMemo<Conversation>((previous) => byId().get(id) ?? previous, byId().get(id)!);
+                  return <ChatRowV2 row={row()} section={key} context={props.context} />;
+                }}
+              </For>
+              <Show when={alone() ? section().more : undefined}>
+                {(more) => <Row icon={more().icon ?? "dots"} lines={[more().label]} onOpen={() => more().onClick?.()} />}
+              </Show>
+            </List>
+          </Show>
+        );
         return (
           // k2b-ui gap: v1 folded every section and remembered it (`collapsed`). `Section` cannot fold, and `Group` is
           // a framed box (a box in the list pane, a double line under the status row); a `Section` that folds with a
           // controlled `open`/`onOpenChange` is asked for. Until then the sections stay open; `folded` is ready for it.
-          <Section title={section().title} count={section().count} actions={section().actions} more={section().more}>
-            <Show when={ids().length > 0} fallback={<Show when={section().empty}>{(empty) => <Row lines={[empty()]} />}</Show>}>
-              <List label={`${props.context.label}: ${section().title}`}>
-                <For each={ids()}>
-                  {(id) => {
-                    const row = createMemo<Conversation>((previous) => byId().get(id) ?? previous, byId().get(id)!);
-                    return <ChatRowV2 row={row()} section={key} context={props.context} />;
-                  }}
-                </For>
-              </List>
-            </Show>
-          </Section>
+          <Show when={!alone()} fallback={rows}>
+            <Section title={section().title} count={section().count} actions={section().actions} more={section().more}>
+              {rows}
+            </Section>
+          </Show>
         );
       }}
     </For>

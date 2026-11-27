@@ -81,10 +81,10 @@ describe("Chat v2 server render", () => {
       const html = render(locale, props());
       expect(html).toContain('data-k2-part="Workspace"');
       expect(html).toContain('data-k2-part="Nav"');
-      // The one statement over the list, from the chats the server read.
-      expect(html).toContain(v2.unread({ count: (5).toLocaleString(locale), chats: 2 }));
+      // The nav counts unread chats; without a mention the list stands without a statement of its own.
+      expect(html).not.toContain('data-k2-part="StatusRow"');
       for (const title of ["Werkstatt Nord", "Nora Weber", "Lieferung KW 49", "Ankündigungen"]) expect(html).toContain(title);
-      for (const section of [t.pinnedChats, t.chats, t.channels]) expect(html).toContain(section);
+      for (const section of [t.pinnedChats, v2.directAndGroups, t.channels]) expect(html).toContain(section);
       // The first render has its data: no loading placeholder and no busy region.
       expect(html).not.toContain('data-k2-part="Loading"');
       expect(html).not.toContain('aria-busy="true"');
@@ -92,10 +92,19 @@ describe("Chat v2 server render", () => {
       expect(html).toContain(v2.noneOpen);
       expect(html).not.toContain("chat-list-page");
     });
+    test(`a mention is the one statement over the list in ${locale}`, () => {
+      const html = render(
+        locale,
+        props({ sidebar: { items: [...rows, chat("Chat05", "Lager-Team", { unread: 2, mentionsUnread: 2 })], nextCursor: null } }),
+      );
+      expect(html).toContain('data-k2-part="StatusRow"');
+      expect(html).toContain(v2.mentions({ count: (2).toLocaleString(locale), names: "Lager-Team" }));
+    });
     test(`an empty list says there are no chats yet in ${locale}`, () => {
       const html = render(locale, props({ sidebar: { items: [], nextCursor: null } }));
       expect(html).toContain(t.noneYet);
-      expect(html).toContain(v2.allRead);
+      // One section alone has no heading: the nav names the list.
+      expect(html).not.toContain(v2.directAndGroups);
     });
   }
 });
