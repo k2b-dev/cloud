@@ -90,7 +90,7 @@ Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at tha
 
 - Put the app's places in `Nav`, its views in `Tabs`, and its main action in the head and in `Workspace primary`.
 - Render the detail only while the address names an entry, and give its `back` the list's address.
-- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list.
+- Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list. While nothing is open, `detailEmpty` may carry a `hero`: a picture of the place as a whole, such as a [`Heat`](/en/ui/v2/content) of the mails received per day with a line that sums it up.
 - Give a long list a `scrollKey`, so back and forward return to where it was.
 
 ### Don't
