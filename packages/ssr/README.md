@@ -18,7 +18,10 @@ server writes as Seroval JSON data into a comment, the wrapper's first child
 (`<!--ssr-props:{…}-->`). CSS selectors and `textContent` do not see the
 comment, so the server markup looks to them as it does after mounting. Props
 are never evaluated, so pages work under a Content Security Policy without
-`'unsafe-eval'`. Two consequences of re-rendering follow:
+`'unsafe-eval'`. Serve pages with their HTML comments: a proxy or optimizer
+that strips them (for example mod_pagespeed `remove_comments`) leaves every
+island without props, and it shows its error fallback. Two consequences of
+re-rendering follow:
 
 - state that exists only in the server HTML inside an island, such as a scroll
   position, is replaced on mount. Focus and typed text are kept: an element
@@ -141,6 +144,20 @@ import { routes } from "@valentinkolb/ssr/hono";
 import { createConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
 ```
+
+### Upgrading from 0.23
+
+Island props moved from the wrapper's `data-props` attribute into its first
+child, the comment `<!--ssr-props:…-->`. Pages rendered through the transform
+need no change.
+
+- Code that reads `data-props` (tests, scrapers, measurement scripts) reads the
+  comment instead. The text after `ssr-props:` is Seroval JSON in which `<` is
+  written as `\u003c` and `>` as `\u003e`; parse it with `JSON.parse`, then
+  Seroval's `fromJSON`.
+- Code that writes wrappers by hand puts `<!--ssr-props:` + that JSON + `-->`
+  first in the wrapper, with `<` and `>` escaped the same way, so the text can
+  never end the comment.
 
 ## Required TypeScript settings
 

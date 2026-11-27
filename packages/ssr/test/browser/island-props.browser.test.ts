@@ -84,3 +84,20 @@ test.each(["globalThis.pwned=1", '({label:"old"})', undefined])(
     expect(Reflect.get(globalThis, "pwned")).toBeUndefined();
   },
 );
+
+test("the props comment is found behind whitespace and another comment, but not behind an element", async () => {
+  const bundle = await build();
+  const props = JSON.stringify(toJSON({ label: "found" }));
+  document.body.innerHTML =
+    `<solid-island data-id="${bundle.id}">\n  <!-- formatted -->\n  ${propsComment(props)}<i>SSR</i></solid-island>` +
+    `<solid-island data-id="${bundle.id}"><i>SSR</i>${propsComment(props)}</solid-island>`;
+  const [found, late] = document.querySelectorAll("solid-island");
+  late!.addEventListener("ssr:island-error", (event) => event.preventDefault());
+  const received: unknown[] = [];
+  Reflect.set(globalThis, "receiveProps", (value: unknown) => received.push(value));
+  await bundle.load();
+  expect(received).toEqual([{ label: "found" }]);
+  expect(found!.textContent).toBe("Mounted");
+  // A comment after the server markup is the island's own content, not its props.
+  expect(late!.querySelector("[role=alert][data-ssr-error]")).not.toBeNull();
+});

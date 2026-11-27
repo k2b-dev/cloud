@@ -67,11 +67,14 @@ export const islandOf = (owner: Owner): HTMLElement | undefined => {
 const propsText = (element: HTMLElement): string | undefined => {
   const islands = registry();
   islands.props ??= new WeakMap();
-  const node = element.firstChild;
-  // By node type: a minimal DOM may define no Comment global.
-  if (node && node.nodeType === node.COMMENT_NODE && node.nodeValue?.startsWith(PROPS_COMMENT)) {
-    islands.props.set(element, node.nodeValue.slice(PROPS_COMMENT.length));
-    node.remove();
+  // The first props comment before the first element: whitespace or another comment in front of it (hand-written or
+  // reformatted markup) does not hide it. By node type: a minimal DOM may define no Comment global.
+  for (let node = element.firstChild; node && node.nodeType !== node.ELEMENT_NODE; node = node.nextSibling) {
+    if (node.nodeType === node.COMMENT_NODE && node.nodeValue?.startsWith(PROPS_COMMENT)) {
+      islands.props.set(element, node.nodeValue.slice(PROPS_COMMENT.length));
+      node.remove();
+      break;
+    }
   }
   return islands.props.get(element);
 };
