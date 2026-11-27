@@ -159,6 +159,11 @@ for (const [state, width, height] of [
               .transform(response)
               .text(),
           });
+        if (path === "/branding/logo")
+          return route.fulfill({
+            contentType: "image/svg+xml",
+            body: Buffer.from(await Bun.file(resolve(import.meta.dir, "../../../cloud/public/logo.svg")).arrayBuffer()),
+          });
         if (path.startsWith("/fonts/") || path.startsWith("/tabler-icons"))
           return route.fulfill({ body: Buffer.from(await Bun.file(resolve(uiDist, `.${path}`)).arrayBuffer()) });
         return route.fulfill({ status: 404, body: "" });

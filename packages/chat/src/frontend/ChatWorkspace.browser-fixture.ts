@@ -875,6 +875,11 @@ export const startChatHarness = async (
       if (harness.has(url.pathname))
         return new Response(harness.get(url.pathname), { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+      // Cloud's own logo, as Core serves it, so the shell in the pictures is the real one.
+      if (url.pathname === "/branding/logo")
+        return new Response(Bun.file(resolve(import.meta.dir, "../../../cloud/public/logo.svg")), {
+          headers: { "Content-Type": "image/svg+xml" },
+        });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       // @k2b/ui v2 for the pages on it, as the Layout loads it beside the global stylesheet.
       if (url.pathname === "/v2.css")

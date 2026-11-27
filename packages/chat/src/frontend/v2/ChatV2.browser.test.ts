@@ -129,6 +129,9 @@ for (const [width, height] of [
       const composer = await page.locator(".chat-conversation__composer").boundingBox();
       expect(composer).not.toBeNull();
       expect(composer!.y + composer!.height).toBeLessThanOrEqual(height);
+      // The pictures show the real shell: its logo loads (the fixture serves Cloud's own).
+      const logo = page.locator('img[src="/branding/logo"]').first();
+      if (await logo.isVisible()) expect(await logo.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
       await shoot(page, `02-chat-light-${width}`);
       expect(errors).toEqual([]);
     } finally {
