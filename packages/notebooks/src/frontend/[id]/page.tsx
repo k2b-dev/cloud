@@ -15,7 +15,7 @@ import NoteWorkspace from "./_components/NoteWorkspace.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
-import VersionHistory from "./_components/versions/VersionHistory.island";
+import VersionsWorkspace from "./_components/versions/VersionsWorkspace.island";
 import { loadNotebookPageData } from "./page-data";
 
 export default ssr<AuthContext>(async (c) => {
@@ -115,6 +115,7 @@ export default ssr<AuthContext>(async (c) => {
     readonlyMode,
     graph,
     versionHistory,
+    editDays,
     ctx,
     appUrl,
     currentHref,
@@ -138,6 +139,36 @@ export default ssr<AuthContext>(async (c) => {
     { title: notebook.name, ...(isVersionsMode || isGraphMode ? {} : { href: `/app/notebooks/${notebook.id}` }) },
     ...(selectedNote ? [{ title: selectedNote.title }] : []),
   ];
+  if (isVersionsMode && selectedNoteId)
+    return () => (
+      <Layout
+        context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
+        printHint={t.printHint}
+        c={c}
+        fullPage
+        fullWidth
+        ui="v2"
+        title={title}
+      >
+        <link rel="stylesheet" href={katexStylesHref} />
+        <RememberNotebook notebookId={notebook.id} />
+        <NotebookCommands notebookId={notebook.id} notebookName={notebook.name} canWrite={canWrite} ownsSearchNavigation />
+        {/* Live changes reach the page through one workspace socket; version history edits no note. */}
+        <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} initialNoteId={null} />
+        <VersionsWorkspace
+          ctx={ctx}
+          noteId={selectedNote?.id ?? selectedNoteId}
+          noteTitle={selectedNote?.title ?? ""}
+          isLocked={!!selectedNote?.lockedAt}
+          currentContentMd={selectedNote?.contentMd ?? null}
+          dateConfig={dateConfig}
+          initialVersions={versionHistory?.versions}
+          initialTotal={versionHistory?.total}
+          edits={editDays ?? undefined}
+          initialVersionId={c.req.query("version") || null}
+        />
+      </Layout>
+    );
   if (!isVersionsMode && !isGraphMode)
     return () => (
       <Layout
@@ -296,18 +327,7 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>
-            {isVersionsMode && selectedNoteId ? (
-              <VersionHistory
-                notebookId={notebook.id}
-                noteId={selectedNote?.id ?? selectedNoteId}
-                noteTitle={selectedNote?.title ?? ""}
-                isLocked={!!selectedNote?.lockedAt}
-                currentContentMd={selectedNote?.contentMd ?? null}
-                dateConfig={dateConfig}
-                initialVersions={versionHistory?.versions}
-                initialTotal={versionHistory?.total}
-              />
-            ) : isGraphMode && graph && data.graphView ? (
+            {isGraphMode && graph && data.graphView ? (
               <NotebookGraph
                 notebookId={notebook.id}
                 notebookName={notebook.name}

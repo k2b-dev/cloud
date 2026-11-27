@@ -358,3 +358,46 @@ export const noteAuthors = async ({ noteId }: { noteId: string }): Promise<NoteA
   const createdBy = actor("creator");
   return { createdBy, lastEditedBy: actor("editor") ?? createdBy };
 };
+
+/** How often a note was edited lately: edits per day, oldest first, and how many people made them. */
+export type NoteEditDays = { perDay: number[]; people: number };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const dayKey = (date: Date, timeZone: string) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+
+/**
+ * The edits of one note on each of the last `days` days in a time zone, today last, in one bounded aggregate. An
+ * edit is one logged change (an edit bucket of one person, a restore, the creation), as the activity log counts it.
+ * Call only after the caller has authorized access to this note.
+ */
+export const noteEditDays = async ({
+  noteId,
+  days,
+  timeZone,
+  now = new Date(),
+}: {
+  noteId: string;
+  days: number;
+  timeZone: string;
+  now?: Date;
+}): Promise<NoteEditDays> => {
+  const keys = Array.from({ length: days }, (_, index) => dayKey(new Date(now.getTime() - (days - 1 - index) * DAY_MS), timeZone));
+  // a day more than asked, so the first local day is whole in every time zone; the keys drop what lies before it
+  const since = new Date(now.getTime() - (days + 1) * DAY_MS);
+  const rows = await sql<{ day: string | null; edits: number; people: number }[]>`
+    WITH edits AS (
+      SELECT to_char((last_occurred_at AT TIME ZONE ${timeZone})::date, 'YYYY-MM-DD') AS day, actor_kind, actor_id
+      FROM notebooks.activity_events
+      WHERE note_id = ${noteId}::uuid
+        AND action IN ('note.edited', 'note.restored', 'note.created')
+        AND last_occurred_at >= ${since}
+        AND to_char((last_occurred_at AT TIME ZONE ${timeZone})::date, 'YYYY-MM-DD') >= ${keys[0]}
+    )
+    SELECT day, count(*)::int AS edits, count(DISTINCT (actor_kind, actor_id))::int AS people
+    FROM edits
+    GROUP BY GROUPING SETS ((day), ())
+  `;
+  const byDay = new Map(rows.flatMap((row) => (row.day ? [[row.day, row.edits] as const] : [])));
+  return { perDay: keys.map((key) => byDay.get(key) ?? 0), people: rows.find((row) => row.day === null)?.people ?? 0 };
+};

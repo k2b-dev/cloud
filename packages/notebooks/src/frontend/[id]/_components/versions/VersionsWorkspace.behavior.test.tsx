@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
-import { buildNoteUrl } from "../../../params";
+import { buildNoteUrl, buildVersionsUrl } from "../../../params";
+import { notesContext, sampleNotes } from "../../notes/notes-list.fixture";
 
 const navigateTo = mock((_href: string) => {});
 const load = async () => {
@@ -10,20 +11,24 @@ const load = async () => {
   try {
     const nav = await import("@k2b/ssr/nav");
     mock.module("@k2b/ssr/nav", () => ({ ...nav, navigateTo }));
-    const { default: VersionHistory } = await import("./VersionHistory.island");
+    const { default: VersionsWorkspace } = await import("./VersionsWorkspace");
     const notice = await import("./restore-notice");
     const { toast } = await import("@k2b/ui");
-    return { VersionHistory, ...notice, toast };
+    return { VersionsWorkspace, ...notice, toast };
   } finally {
     dom.cleanup();
   }
 };
 const loaded = isServer ? undefined : await load();
+const base = notesContext(sampleNotes(3));
+const ctx = { ...base, notebook: { ...base.notebook, id: "Book01" } };
+const PAGE_GLOBALS = ["NodeFilter", "HTMLInputElement", "CSS"] as const;
+/** The v2 toasts on the page, by their words. */
+const toasts = (document: Document) => [...document.querySelectorAll('[data-k2-part="Toast"] li')].map((toast) => toast.textContent ?? "");
 
+/** Waits for a condition; the test's own timeout bounds it. */
 const waitFor = async (condition: () => boolean) => {
-  const deadline = Date.now() + 2_000;
   while (!condition()) {
-    if (Date.now() >= deadline) throw new Error("Timed out waiting for version history");
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 };
@@ -46,7 +51,7 @@ describe("version history pagination", () => {
 
   test("keeps existing versions and shows a retryable error for an invalid next page", async () => {
     const dom = createDomTestHarness();
-    const { VersionHistory } = loaded!;
+    const { VersionsWorkspace } = loaded!;
     delegateEvents(["click"], dom.document);
     globalThis.fetch = Object.assign(
       () =>
@@ -60,10 +65,11 @@ describe("version history pagination", () => {
     );
     const dispose = render(
       () =>
-        createComponent(VersionHistory, {
-          notebookId: "notebook-1",
+        createComponent(VersionsWorkspace, {
+          ctx,
           noteId: "note-1",
           noteTitle: "Runbook",
+          isLocked: false,
           currentContentMd: "Current",
           dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
           initialVersions: [
@@ -75,6 +81,7 @@ describe("version history pagination", () => {
             },
           ],
           initialTotal: 21,
+          initialVersionId: null,
         }),
       dom.root,
     );
@@ -89,9 +96,11 @@ describe("version history pagination", () => {
       loadMore!.click();
       await flush();
 
-      expect(dom.document.body.textContent).toContain("The server returned an invalid version page");
-      expect(dom.document.body.textContent).toContain("Retry");
-      expect(dom.document.body.textContent).toContain("1 / 21");
+      await waitFor(() => dom.document.body.textContent?.includes("The server returned an invalid version page") ?? false);
+      // the loaded version stays, the failure stands after it with its retry, and the count still says 21
+      expect(dom.document.querySelectorAll('[data-k2-part="Row"]')).toHaveLength(1);
+      expect([...dom.document.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Retry")).toBe(true);
+      expect(dom.document.querySelector('[data-k2-part="Section"]')?.textContent).toContain("21");
     } finally {
       dispose();
       dom.cleanup();
@@ -105,7 +114,7 @@ describe("version history restore", () => {
     return;
   }
 
-  const { VersionHistory, rememberRestoredVersion, showRestoredVersionNotice, toast } = loaded!;
+  const { VersionsWorkspace, rememberRestoredVersion, showRestoredVersionNotice, toast } = loaded!;
   const originalFetch = globalThis.fetch;
   const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
   const path = "/api/notebooks/Book01/notes/Note01/versions/Version01";
@@ -124,6 +133,8 @@ describe("version history restore", () => {
     dom = createDomTestHarness();
     delegateEvents(["click"], dom.document);
     Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: dom.window.sessionStorage });
+    // The harness binds browser globals one by one; v2 toasts walk their text, menus and links read these too.
+    for (const name of PAGE_GLOBALS) Object.defineProperty(globalThis, name, { configurable: true, value: Reflect.get(dom.window, name) });
     navigateTo.mockClear();
     requests = [];
     respond = async () => Response.json({ contentMd: "Saved content", yjsSnapshot: "" });
@@ -143,14 +154,16 @@ describe("version history restore", () => {
     globalThis.fetch = originalFetch;
     if (originalStorage) Object.defineProperty(globalThis, "sessionStorage", originalStorage);
     else Reflect.deleteProperty(globalThis, "sessionStorage");
+    for (const name of PAGE_GLOBALS) Reflect.deleteProperty(globalThis, name);
     dom.cleanup();
   });
 
-  const mount = (isLocked = false) => {
+  /** The version history, with Version01 open as the address says (`?version=Version01`), or none open. */
+  const mount = (isLocked = false, open: string | null = "Version01") => {
     dispose = render(
       () =>
-        createComponent(VersionHistory, {
-          notebookId: "Book01",
+        createComponent(VersionsWorkspace, {
+          ctx,
           noteId: "Note01",
           noteTitle: "Runbook",
           isLocked,
@@ -158,15 +171,15 @@ describe("version history restore", () => {
           dateConfig: { locale: "en", timeZone: "UTC" },
           initialVersions: [{ id: "Version01", noteId: "Note01", createdBy: null, createdAt: "2026-08-11T10:00:00.000Z" }],
           initialTotal: 1,
+          initialVersionId: open,
         }),
       dom.root,
     );
   };
   const button = (label: string) =>
     Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((element) => element.textContent?.trim() === label);
-  const primary = () => dom.root.querySelector<HTMLButtonElement>(".k2b-split-button__primary");
+  const primary = () => button("Restore");
   const select = async () => {
-    dom.root.querySelector<HTMLButtonElement>("button[aria-pressed]")!.click();
     await waitFor(() => dom.root.querySelector("article")?.textContent?.trim() === "Saved content");
   };
   const openToasts = () => Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing])"));
@@ -185,17 +198,18 @@ describe("version history restore", () => {
     });
     respond = async (request) => (request.method === "POST" ? pending : Response.json({ contentMd: "Saved content", yjsSnapshot: "" }));
     mount();
-    expect(primary()!.disabled).toBe(true);
     await select();
-    expect(button("Restore this version")).toBe(primary()!);
     expect(primary()!.disabled).toBe(false);
     primary()!.click();
     await waitFor(() => posts().length === 1);
     expect(new URL(posts()[0]!.url).pathname).toBe(`${path}/restore`);
     expect(posts()[0]!.method).toBe("POST");
     expect(await posts()[0]!.text()).toBe("");
+    // busy, so a second press does nothing, and the copy waits too
     expect(primary()!.getAttribute("aria-busy")).toBe("true");
-    expect(primary()!.disabled).toBe(true);
+    primary()!.click();
+    expect(dom.root.querySelector<HTMLButtonElement>('button[aria-label="More restore options"]')!.disabled).toBe(true);
+    expect(posts()).toHaveLength(1);
     expect(navigateTo).not.toHaveBeenCalled();
     expect(sessionStorage.length).toBe(0);
     release(Response.json({ note: { id: "Note01" }, changed: true, previousVersionId: "Previous01", versionId: "Version01" }));
@@ -212,14 +226,17 @@ describe("version history restore", () => {
     mount();
     await select();
     primary()!.click();
-    await waitFor(() => hasToast("Cannot restore locked note", "error") && !primary()!.disabled);
+    await waitFor(
+      () => toasts(dom.document).some((text) => text.includes("Cannot restore locked note")) && !primary()!.hasAttribute("aria-busy"),
+    );
+    expect(primary()!.disabled).toBe(false);
     expect(posts().map((request) => new URL(request.url).pathname)).toEqual([`${path}/restore`]);
     expect(primary()!.hasAttribute("aria-busy")).toBe(false);
     expect(navigateTo).not.toHaveBeenCalled();
     expect(sessionStorage.length).toBe(0);
   });
 
-  test("the split-button menu restores a copy and navigates to its note", async () => {
+  test("the restore menu restores a copy and navigates to its note", async () => {
     respond = async (request) =>
       request.method === "POST" ? Response.json({ id: "Copy01" }) : Response.json({ contentMd: "Saved content", yjsSnapshot: "" });
     mount();
@@ -243,18 +260,136 @@ describe("version history restore", () => {
     respond = async (request) =>
       request.method === "POST" ? Response.json({ id: "Copy01" }) : Response.json({ contentMd: "Saved content", yjsSnapshot: "" });
     mount(true);
-    expect(primary()).toBeNull();
-    expect(button("Restore this version")).toBeUndefined();
-    expect(dom.root.querySelector(".k2b-split-button__menu-trigger")).toBeNull();
-    expect(dom.root.textContent).toContain("Locked");
-    expect(button("Restore as copy")!.dataset.variant).toBe("secondary");
-    expect(button("Restore as copy")!.disabled).toBe(true);
     await select();
+    expect(primary()).toBeUndefined();
+    expect(dom.root.querySelector('button[aria-label="More restore options"]')).toBeNull();
+    expect(dom.root.textContent).toContain("Locked");
+    // framed (secondary), the way a second deed looks
+    expect(button("Restore as copy")!.dataset.variant).toBeUndefined();
     expect(button("Restore as copy")!.disabled).toBe(false);
     button("Restore as copy")!.click();
     await waitFor(() => navigateTo.mock.calls.length === 1);
     expect(posts().map((request) => new URL(request.url).pathname)).toEqual([`${path}/copy`]);
     expect(navigateTo).toHaveBeenCalledWith(buildNoteUrl("Book01", "Copy01"));
+  });
+
+  describe("the comparison", () => {
+    const PAGE_100 = "100";
+    /** The newest 100 hold an older version that the paged list (only Version01) has not loaded. */
+    const hundred = () =>
+      Response.json({
+        data: [
+          { id: "Version01", noteId: "Note01", createdBy: null, createdAt: "2026-08-11T10:00:00.000Z" },
+          { id: "Older01", noteId: "Note01", createdBy: null, createdAt: "2026-07-01T10:00:00.000Z" },
+        ],
+        pagination: { page: 1, per_page: 100, total: 2, total_pages: 1, has_next: false },
+      });
+    const content = (url: URL) =>
+      Response.json({
+        contentMd: url.pathname.includes("/Older01/") ? "Old line" : "Saved content",
+        yjsSnapshot: "",
+      });
+    const hundredRequests = () => requests.filter((request) => new URL(request.url).searchParams.get("per_page") === PAGE_100);
+    /** The open comparison menu's entries: radios for the versions, and plain entries after them. */
+    const openMenu = async () => {
+      button("Change")!.click();
+      await waitFor(() =>
+        [...dom.document.querySelectorAll('[role="menuitemradio"]')].some((entry) => entry.textContent?.includes("Current note")),
+      );
+      const live = [...dom.document.querySelectorAll('[role="menuitemradio"]')].find((entry) =>
+        entry.textContent?.includes("Current note"),
+      )!;
+      return live.closest<HTMLElement>('[role="menu"]')!;
+    };
+    const radios = (menu: HTMLElement) => [...menu.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+
+    test("reaches a version of the newest 100 that the list has not loaded, and compares with it", async () => {
+      respond = async (request) => {
+        const url = new URL(request.url);
+        return url.pathname.endsWith("/versions") ? hundred() : content(url);
+      };
+      mount();
+      await select();
+      button("Changes")!.click();
+      await waitFor(() => hundredRequests().length === 1);
+      const list = new URL(hundredRequests()[0]!.url);
+      expect(list.pathname).toBe("/api/notebooks/Book01/notes/Note01/versions");
+      expect(list.searchParams.get("page")).toBe("1");
+      const menu = await openMenu();
+      // the live note and the older version; the open one is not offered against itself
+      const entries = radios(menu).map((entry) => entry.textContent ?? "");
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toContain("Current note");
+      expect(entries[1]).toContain("2026");
+      radios(menu)[1]!.click();
+      // older first: the older version's line was removed, the open version's line added
+      await waitFor(() => dom.root.textContent?.includes("Old line") ?? false);
+      expect(dom.root.textContent).toContain("+1 −1");
+      expect(dom.root.querySelector('[data-diff="removed"]')?.textContent).toContain("Old line");
+      expect(dom.root.querySelector('[data-diff="added"]')?.textContent).toContain("Saved content");
+    });
+
+    test("a failed load says so in the menu, and Retry brings the versions", async () => {
+      let fail = true;
+      respond = async (request) => {
+        const url = new URL(request.url);
+        if (!url.pathname.endsWith("/versions")) return content(url);
+        return fail ? Response.json({ message: "Unavailable" }, { status: 503 }) : hundred();
+      };
+      mount();
+      await select();
+      button("Changes")!.click();
+      await waitFor(() => hundredRequests().length === 1);
+      await flush();
+      let menu = await openMenu();
+      // the live note stays to choose, and the failure stands after it with its retry
+      expect(radios(menu)).toHaveLength(1);
+      const entries = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+      expect(entries.map((entry) => entry.textContent?.trim())).toEqual(["Failed to load saved versions.", "Retry"]);
+      expect(entries[0]!.getAttribute("aria-disabled")).toBe("true");
+      fail = false;
+      entries[1]!.click();
+      await waitFor(() => hundredRequests().length === 2);
+      await flush();
+      menu = await openMenu();
+      expect(radios(menu)).toHaveLength(2);
+      // the version Retry brought in can be compared with
+      radios(menu)[1]!.click();
+      await waitFor(() => dom.root.textContent?.includes("Old line") ?? false);
+      expect(dom.root.textContent).toContain("+1 −1");
+    });
+
+    test("switching between Content and Changes loads the 100 once", async () => {
+      respond = async (request) => {
+        const url = new URL(request.url);
+        return url.pathname.endsWith("/versions") ? hundred() : content(url);
+      };
+      mount();
+      await select();
+      button("Changes")!.click();
+      await waitFor(() => hundredRequests().length === 1);
+      button("Content")!.click();
+      await flush();
+      button("Changes")!.click();
+      await flush();
+      await flush();
+      expect(hundredRequests()).toHaveLength(1);
+    });
+  });
+
+  test("a version opens from its row into the address, and back closes it", async () => {
+    dom.window.history.replaceState(null, "", buildVersionsUrl("Book01", "Note01"));
+    mount(false, null);
+    expect(dom.root.querySelector("article")).toBeNull();
+    expect(dom.root.textContent).toContain("Its saved content opens here");
+    dom.root.querySelector<HTMLAnchorElement>('[data-k2-part="Row"] a')!.click();
+    await select();
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(
+      `${buildVersionsUrl("Book01", "Note01")}&version=Version01`,
+    );
+    dom.window.history.back();
+    await waitFor(() => !dom.root.querySelector("article"));
+    expect(dom.window.location.search).not.toContain("version=");
   });
 
   test("the restored notice appears once and Undo restores the previous version", async () => {
