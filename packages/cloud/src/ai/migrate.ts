@@ -2,6 +2,7 @@ import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
+import { ensureAiConversationSidebarIndex } from "./conversation-indexes";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
@@ -2410,6 +2411,8 @@ export const migrateCloudAi = async (): Promise<void> => {
   await migrateAiModelAccess();
   await migrateAiQuotas();
   await migrateAiModelClasses();
+  // Built next to live writes; a failed build is logged and retried at the next start.
+  await ensureAiConversationSidebarIndex();
 
   await sql`CREATE OR REPLACE FUNCTION ai.sidebar_tool_label(blocks jsonb) RETURNS jsonb AS $$
     SELECT jsonb_build_object('label', left(COALESCE(block->'presentation'->>'title', block->>'name'),200), 'status', block->>'status')
