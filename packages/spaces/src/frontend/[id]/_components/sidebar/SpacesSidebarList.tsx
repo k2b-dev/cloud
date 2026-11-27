@@ -1,6 +1,7 @@
 import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { AppWorkspace, IconButton, MovedHint, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { hexColor } from "@/frontend/lib/color";
 import { overviewMessages } from "../../../overview-messages";
 import { useSpaceMessages } from "../../messages";
 import { setPinnedSpaceIds } from "../settings/SpaceSettingsStore";
@@ -94,8 +95,11 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
               const active = () => props.current.kind === "space" && props.current.id === space.id;
               const icon = () => (
                 <AppWorkspace.SidebarItemIcon>
-                  <Show when={isPinned()} fallback={<span class="spaces-overview-space-dot" style={{ "background-color": space.color }} />}>
-                    <i class="ti ti-flag" style={{ color: space.color }} />
+                  <Show
+                    when={isPinned()}
+                    fallback={<span class="spaces-overview-space-dot" style={{ "background-color": hexColor(space.color) }} />}
+                  >
+                    <i class="ti ti-flag" style={{ color: hexColor(space.color) }} />
                   </Show>
                 </AppWorkspace.SidebarItemIcon>
               );
