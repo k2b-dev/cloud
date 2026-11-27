@@ -572,6 +572,11 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
       "/api/apps/badges": { total: 0, apps: {} },
     };
     if (url.pathname in quiet) return route.fulfill({ json: quiet[url.pathname] });
+    // A chat's stored tabs: a new chat (or one without a stored arrangement) has none; a change is taken.
+    if (/^\/api\/assistant\/workspace\/conversations\/\w+\/tabs$/.test(url.pathname))
+      return route.fulfill({
+        json: method === "GET" ? { state: { tabs: [], layout: null, front: null }, revision: 0 } : { conflict: false, revision: 1 },
+      });
     if (url.pathname === "/branding/logo")
       return route.fulfill({
         contentType: "image/svg+xml",
