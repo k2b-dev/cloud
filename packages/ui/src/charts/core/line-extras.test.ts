@@ -44,7 +44,7 @@ test("bands lie behind the data, from their X to their X, clipped to the plot, n
   // the first starts at the plot's start; the second runs past the last hour and stops at the plot's end
   const gridline = svg.match(/<line class="stdlib-chart-grid" x1="([^"]+)"[^>]*x2="([^"]+)"/)!;
   expect(night!.x).toBe(Number(gridline[1]));
-  expect(evening!.x + evening!.width).toBeCloseTo(Number(gridline[2]), 1);
+  expect(evening!.x! + evening!.width!).toBeCloseTo(Number(gridline[2]), 1);
   // behind everything that is data: before the first bar and the first line in the drawing order
   expect(svg.indexOf('<rect class="k2b-line-band')).toBeLessThan(svg.indexOf('<rect class="k2b-line-bar'));
   expect(svg.indexOf('<rect class="k2b-line-bar')).toBeLessThan(svg.indexOf('<path class="stdlib-chart-line'));

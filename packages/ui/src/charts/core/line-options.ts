@@ -36,7 +36,8 @@ export const lineDetailsEnabled = (opts: {
   legendValues?: boolean;
   bands?: unknown[];
   track?: unknown;
-  series?: readonly { colorScale?: unknown }[];
+  // any series: a portable description's has no colour scale, a drawing's may
+  series?: readonly object[];
 }) =>
   !!(
     opts.forecast ||
@@ -46,5 +47,5 @@ export const lineDetailsEnabled = (opts: {
     opts.legendValues ||
     opts.bands?.length ||
     opts.track ||
-    opts.series?.some((series) => series.colorScale)
+    opts.series?.some((series) => "colorScale" in series && series.colorScale)
   );
