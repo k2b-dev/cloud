@@ -45,6 +45,8 @@ const KNOWN = new Set([
   "Popover",
   "Progress",
   "Section",
+  // #4353 put Ticks into marks.tsx, the file of the style helper custom that almost every v2 file imports; goes with #4453.
+  "Ticks",
   "useLocale",
   "useToast",
 ]);
