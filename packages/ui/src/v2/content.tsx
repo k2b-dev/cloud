@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
+import { hintAt, showHint } from "../internal/truncated-title";
 import { useLocale } from "../intl/locale";
 import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
@@ -484,13 +485,14 @@ export type Column<T> = {
   wrap?: boolean;
   /**
    * Drops away where the table has no room for it, in the order of the columns that may drop, and on the phone (rule
-   * 7: columns drop, they do not shrink). The table decides by its own width (a narrow pane beside an open detail), on
-   * the server already; a large table (`select`, `sticky`) scrolls sideways instead.
+   * 7: columns drop, they do not shrink). A small table whose every column has a `width` (the growing one may leave it
+   * open) decides by its own width (a narrow pane beside an open detail), on the server already; a large table
+   * (`select`, `sticky`) scrolls sideways instead.
    */
   drop?: boolean;
   /**
-   * This column takes the room the others leave in a small table. Without it the widest column that holds no number
-   * (`align: "end"`) grows, the text a person reads; every other column keeps its width.
+   * This column takes the room the others leave in a small table, and its head has no grip. Without it a column
+   * without a `width` grows, else the widest that is neither a number (`align: "end"`) nor a column that may drop.
    */
   grow?: boolean;
   /**
@@ -673,20 +675,29 @@ export const Table = <T,>(props: TableProps<T>) => {
   const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
   const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
   const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
-  // In a small table one column takes the room that is left: the one named `grow`, else the widest that holds no
-  // number (aligned to the end), the text a person reads; every other column keeps its width.
+  // In a small table one column takes the room that is left: the one named `grow`; else a column without a `width`
+  // (the author left it open); else the widest that is neither a number (aligned to the end) nor a column that may
+  // drop, the text a person reads. Every other column keeps its width.
   const growIndex = createMemo(() => {
     const named = props.columns.findIndex((column) => column.grow);
     if (named >= 0) return named;
+    const open = props.columns.findIndex((column) => !column.width);
+    if (open >= 0) return open;
     let widest = props.columns.length - 1;
     let px = -1;
     props.columns.forEach((column, index) => {
-      if (column.align === "end" || (column.width?.default ?? 0) <= px) return;
+      if (column.align === "end" || column.drop || (column.width?.default ?? 0) <= px) return;
       px = column.width?.default ?? 0;
       widest = index;
     });
     return widest;
   });
+  // What a column takes in a small table while it stands: the growing one at least its `min`, the others their
+  // default (never a grip's width, so dragging a column never drops another under the pointer).
+  const needs = (index: number) =>
+    index === growIndex() ? (props.columns[index]?.width?.min ?? 0) : (props.columns[index]?.width?.default ?? 0);
+  // Drop and the least width need every column's room: each has a `width`, the growing one may leave it open.
+  const measurable = () => !grid() && props.columns.every((column, index) => column.width || index === growIndex());
   // The columns that may drop give way by the table's own width, in their order (rule 7: columns drop, they do not
   // shrink): each drops where the columns still standing need more room than the table has, the growing one at
   // least its `min`, the others their width. The stylesheet decides with a container query of this table, so the
@@ -701,25 +712,30 @@ export const Table = <T,>(props: TableProps<T>) => {
   // What a small table needs at least once every column that may drop has gone: the others their width, the growing
   // one its `min`. Narrower, it scrolls sideways (with its cue) instead of squeezing the growing column below its min.
   const least = createMemo(() => {
-    if (grid() || !props.columns.every((column) => column.width)) return undefined;
+    if (!measurable()) return undefined;
     let px = 0;
     props.columns.forEach((column, index) => {
-      if (!column.drop) px += index === growIndex() ? (column.width?.min ?? 0) : (columnWidth(index) ?? 0);
+      if (!column.drop) px += index === growIndex() ? needs(index) : (columnWidth(index) ?? 0);
     });
     return px;
   });
   const dropRules = createMemo(() => {
-    if (grid() || dropOrder().length === 0 || !props.columns.every((column) => column.width)) return undefined;
+    if (!measurable() || dropOrder().length === 0) return undefined;
     const standing = new Set(props.columns.map((_, index) => index));
     const need = () => {
       let px = 0;
-      for (const index of standing) px += index === growIndex() ? (props.columns[index]?.width?.min ?? 0) : (columnWidth(index) ?? 0);
+      for (const index of standing) px += needs(index);
       return px;
     };
+    // only the cells of this table, not those of a table inside one of its cells
+    const own = (mark: string) =>
+      ["colgroup >", "thead > tr >", "tbody > tr >"]
+        .map((path) => `.k2-ui [data-k2-table=${dropName}] > table > ${path} [data-drop=${mark}]`)
+        .join(",");
     return dropOrder()
       .map((index, order) => {
         // no "<" in the rule: the server writes the text of a style element as it is
-        const rule = `@container ${dropName} (max-width: ${(need() - 0.01).toFixed(2)}px){.k2-ui [data-drop=d${order}]{display:none}}`;
+        const rule = `@container ${dropName} (max-width: ${(need() - 0.01).toFixed(2)}px){${own(`d${order}`)}{display:none}}`;
         standing.delete(index);
         return rule;
       })
@@ -744,20 +760,21 @@ export const Table = <T,>(props: TableProps<T>) => {
     sizes.observe(element);
     const inner = element.querySelector("table");
     if (inner) sizes.observe(inner);
-    // A line cut with "…" shows its whole text as a hint where the pointer rests on it: measured then, so only a line
-    // that is cut gets one, and no cell carries an element for it. Its whole text stays in the page as its name.
+    // A line cut with "…" shows its whole text as a hint where the pointer rests on it, on the element the pointer is
+    // on (the shared helper of lists and tables): measured then, so only a line that is cut gives one, and no cell
+    // carries an element for it. Its whole text stays in the page as its name.
     const hint = (event: PointerEvent) => {
-      const line = event.target instanceof Element ? event.target.closest<HTMLElement>(".k2-cell-line") : null;
-      if (!line || !element.contains(line)) return;
-      const cut =
-        line.scrollWidth > line.clientWidth + 0.5 || (line.hasAttribute("data-wrap") && line.scrollHeight > line.clientHeight + 0.5);
-      if (cut) line.title = line.textContent?.trim() ?? "";
-      else line.removeAttribute("title");
+      const cell = event.target instanceof Element ? event.target.closest("td") : null;
+      if (!cell || !element.contains(cell)) return;
+      showHint(
+        event.target,
+        hintAt(cell.querySelectorAll(".k2-cell-line .k2-inline > .k2-text, .k2-cell-line"), event.clientX, event.clientY),
+      );
     };
-    element.addEventListener("pointerover", hint);
+    element.addEventListener("pointermove", hint);
     onCleanup(() => {
       element.removeEventListener("scroll", measure);
-      element.removeEventListener("pointerover", hint);
+      element.removeEventListener("pointermove", hint);
       sizes.disconnect();
     });
   });
@@ -793,6 +810,7 @@ export const Table = <T,>(props: TableProps<T>) => {
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
         style={dropRules() ? { container: `${dropName} / inline-size` } : undefined}
+        data-k2-table={dropRules() ? dropName : undefined}
         data-more-start={more().start ? "" : undefined}
         data-more-end={more().end ? "" : undefined}
         ref={scroller}
@@ -843,7 +861,8 @@ export const Table = <T,>(props: TableProps<T>) => {
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width}>
+                    {/* the grip moves the column before it, unless that one takes the rest of a small table */}
+                    <Show when={index() > 0 && (grid() || index() - 1 !== growIndex()) && props.columns[index() - 1]?.width}>
                       {(width) => (
                         <ColumnGrip
                           label={props.columns[index() - 1]?.title ?? ""}

@@ -29,6 +29,8 @@ const members = [
   },
   { id: "2", name: "Jonas Wille", role: "Mitglied", note: "Lager und Inventur" },
 ];
+const keys = [{ id: "1", name: "Werkstatt-Export", prefix: "k2_live_8f3a…", used: "vor 3 Minuten" }];
+const people = [{ id: "1", name: "Anna Brandt", mail: "anna.brandt@werkstatt.example", role: "Leitung" }];
 const dates = [
   {
     id: "1",
@@ -67,6 +69,32 @@ render(
               { title: "Name", width: { min: 200, default: 220 }, grow: true, cell: (member) => member.name },
               { title: "Rolle", width: { min: 100, default: 140 }, cell: (member) => member.role },
               { title: "Notiz", width: { min: 200, default: 300 }, cell: (member) => member.note },
+            ]}
+          />
+        </Section>
+        {/* a column without a width is the one the author left open: it grows */}
+        <Section title="Schlüssel">
+          <Table
+            label="Schlüssel"
+            rows={keys}
+            rowKey={(key) => key.id}
+            columns={[
+              { title: "Name", width: { min: 160, default: 200 }, cell: (key) => key.name },
+              { title: "Präfix", cell: (key) => key.prefix },
+              { title: "Zuletzt genutzt", width: { min: 200, default: 320 }, cell: (key) => key.used, drop: true },
+            ]}
+          />
+        </Section>
+        {/* the widest column may drop: the widest that stays grows instead */}
+        <Section title="Personen">
+          <Table
+            label="Personen"
+            rows={people}
+            rowKey={(person) => person.id}
+            columns={[
+              { title: "Name", width: { min: 160, default: 200 }, cell: (person) => person.name },
+              { title: "E-Mail", width: { min: 200, default: 300 }, cell: (person) => person.mail, drop: true },
+              { title: "Rolle", width: { min: 100, default: 140 }, cell: (person) => person.role },
             ]}
           />
         </Section>

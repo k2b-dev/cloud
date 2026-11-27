@@ -11,10 +11,11 @@
   and showed nothing at its edge.
 - **Error class:** A part that gives way at one fixed width of its place, or by its position, not by what its own
   content needs.
-- **Guard:** Each table writes, from its column widths, a container query of its own: a column that may drop drops
-  where the columns still standing need more room than the table has, in their order, already on the server. One
-  column grows: the one with `grow`, else the widest that holds no number. A table never gets narrower than its
-  columns need; then it scrolls with a fading edge and its scrollbar.
-  A cut cell shows its whole text as a hint under the pointer, measured then, without an element per cell.
-  `table-drop.browser.test.ts` and `table-columns.browser.test.ts` check this at 1024 px and 1440 px in Chromium and
-  WebKit.
+- **Guard:** Each table writes, from its column defaults, a container query of its own, scoped to its own cells: a
+  column that may drop drops where the columns still standing need more room than the table has, in their order,
+  already on the server. One column grows: the one with `grow`, else one without a `width`, else the widest that is
+  neither a number nor a column that may drop; its head has no grip. A small table never gets narrower than its
+  columns need; then it scrolls, the stylesheet shows its scrollbar from the first frame, and its edge fades. A cut
+  cell shows its whole text as a hint under the pointer through the shared helper of lists and tables
+  (`internal/truncated-title.ts`). `table-drop`, `table-columns` and `table-ssr.browser.test.ts` (server markup and
+  hydrated page alike, with real scrollbars) check this at 640, 1024 and 1440 px in Chromium and WebKit.

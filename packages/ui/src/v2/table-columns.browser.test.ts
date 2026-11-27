@@ -72,6 +72,14 @@ for (const width of [1440, 1024])
       expect(members.columns.Notiz).toBe(300);
       expect(members.columns.Rolle).toBe(140);
       expect(members.columns.Name).toBeGreaterThan(220);
+      // without `grow`: the column without a width grows; the widest that may drop does not
+      const keys = await page.evaluate(table, "Schlüssel");
+      expect(keys.columns.Name).toBe(200);
+      expect(keys.columns.Präfix).toBeGreaterThan(200);
+      if (width === 1440) expect(keys.columns["Zuletzt genutzt"]).toBe(320);
+      const people = await page.evaluate(table, "Personen");
+      expect(people.columns.Rolle).toBe(140);
+      if (width === 1440) expect([people.columns["E-Mail"], people.columns.Name! > 200]).toEqual([300, true]);
     });
   });
 

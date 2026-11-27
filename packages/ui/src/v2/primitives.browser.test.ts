@@ -792,6 +792,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             };
           });
           expect(found.reply).toBe(edge);
+          // the order grows and has no grip; the customer's grip stands in the head of the amount, not on the phone
           if (width < textEdge.phoneBelow) {
             expect(found.phoneText).toBe(edge);
             expect(found.grips).toBe(0);

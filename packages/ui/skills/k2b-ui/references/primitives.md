@@ -196,12 +196,16 @@ returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
 lines), `drop` (leaves where the table has no room for it, in the order of
-such columns, as beside an open detail, and on the phone), `sort` (its head is pressed to sort:
+such columns, as beside an open detail, and on the phone; by the table's
+width only in a small table whose every column has a `width`, the growing one
+may leave it open; a large table scrolls instead), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
 page itself if it needs one. One column takes the rest: the one with `grow`,
-else the widest that holds no number (not `align: "end"`); a table narrower
+else one without a `width`,
+else the widest that is neither a number (`align: "end"`) nor a `drop`
+column; its head has no grip. A small table narrower
 than its columns need scrolls sideways, its edge fades and its scrollbar
 shows. A cell cut with "…" shows its whole text as a hint under the
 pointer. Chips,
