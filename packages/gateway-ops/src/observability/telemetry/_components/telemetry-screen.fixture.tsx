@@ -66,7 +66,7 @@ export const TelemetryScreenFixture = (props: { search?: string; worst?: boolean
             meta: "5xx",
             tone: props.worst ? "bad" : undefined,
           },
-          { icon: "hand-stop", label: "Clientfehler", value: "312", meta: "Ratenbegrenzt (429): 4", tone: "warn" },
+          { icon: "hand-stop", label: "Clientfehler", value: "312", meta: "429: 4", tone: "warn" },
           { icon: "clock-exclamation", label: "Langsam", value: "12", meta: ">= 1000ms", tone: "warn" },
         ]}
         charts={charts(locale)}

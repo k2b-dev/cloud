@@ -114,6 +114,15 @@ const longOutline: TocItem[] = [
 ];
 
 const many = state === "many";
+/** A note linked from 250 notes: the server sends the first page of 100 and the total (#4417). */
+const linked = state === "linked";
+const linkedFrom = (index: number) => ({
+  noteId: `l${String(index).padStart(4, "0")}`,
+  title: `Lieferschein ${index}`,
+  notebookId: "book01",
+  notebookName: "Handbuch Logistik",
+  updatedAt: minutesAgo(index),
+});
 const empty = state === "empty";
 const comments = empty ? [] : many ? manyComments : fewComments;
 const jana = { kind: "user" as const, id: JANA, displayName: "Jana Berger", avatarHash: "h1" };
@@ -212,26 +221,35 @@ render(
                   ]
                 : []
             }
+            backlinksTotal={linked ? 250 : many ? 3 : 0}
             backlinks={
-              many
-                ? [
-                    {
-                      noteId: "n2",
-                      title: "Onboarding",
-                      notebookId: "book01",
-                      notebookName: "Handbuch Logistik",
-                      updatedAt: minutesAgo(30),
-                    },
-                    {
-                      noteId: "n3",
-                      title: "Inventur 2026",
-                      notebookId: "book01",
-                      notebookName: "Handbuch Logistik",
-                      updatedAt: minutesAgo(30),
-                    },
-                    { noteId: "n4", title: "Retouren", notebookId: "book02", notebookName: "Handbuch Versand", updatedAt: minutesAgo(30) },
-                  ]
-                : []
+              linked
+                ? Array.from({ length: 100 }, (_, index) => linkedFrom(index + 1))
+                : many
+                  ? [
+                      {
+                        noteId: "n2",
+                        title: "Onboarding",
+                        notebookId: "book01",
+                        notebookName: "Handbuch Logistik",
+                        updatedAt: minutesAgo(30),
+                      },
+                      {
+                        noteId: "n3",
+                        title: "Inventur 2026",
+                        notebookId: "book01",
+                        notebookName: "Handbuch Logistik",
+                        updatedAt: minutesAgo(30),
+                      },
+                      {
+                        noteId: "n4",
+                        title: "Retouren",
+                        notebookId: "book02",
+                        notebookName: "Handbuch Versand",
+                        updatedAt: minutesAgo(30),
+                      },
+                    ]
+                  : []
             }
             namedBlocks={
               many

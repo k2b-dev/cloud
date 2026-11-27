@@ -88,8 +88,11 @@ test("native same-origin OAuth and job form posts and token-bound Mail unlock po
     const page = await context.newPage();
     for (const kind of ["consent", "device", "jobs", "mail"]) {
       await page.goto(`${origin}/forms/${kind}`);
+      const form = page.url();
       const [response] = await Promise.all([
         page.waitForResponse((response) => response.request().method() === "POST"),
+        // the post navigates the page to its answer: the next read waits until that document stands (#4468)
+        page.waitForURL((url) => url.href !== form),
         page.getByRole("button", { name: "Submit" }).click(),
       ]);
       expect(response.status()).toBe(200);
@@ -114,8 +117,11 @@ test("same-site foreign form, multipart, text/plain and bodyless POSTs cannot di
         else form.setAttribute("enctype", encoding);
       }, encoding);
       const before = writes;
+      const form = page.url();
       const [rejected] = await Promise.all([
         page.waitForResponse((response) => response.request().method() === "POST"),
+        // the refused post still navigates the page to its answer; the next round's goto waits until it stands (#4468)
+        page.waitForURL((url) => url.href !== form),
         page.getByRole("button", { name: "Submit" }).click(),
       ]);
       expect(rejected.status()).toBe(403);
@@ -202,8 +208,11 @@ test("a no-referrer page's own form post sends Origin: null as same-origin and p
     await context.addCookies([{ name: "session_token", value: "web-fixture", url: origin, sameSite: "Lax", httpOnly: true }]);
     const page = await context.newPage();
     await page.goto(`${origin}/share/example/token`);
+    const share = page.url();
     const [own] = await Promise.all([
       page.waitForResponse((response) => response.request().method() === "POST"),
+      // the post navigates the page to its answer; the next goto waits until that document stands (#4468)
+      page.waitForURL((url) => url.href !== share),
       page.getByRole("button", { name: "Submit" }).click(),
     ]);
     const ownHeaders = await own.request().allHeaders();
@@ -214,8 +223,10 @@ test("a no-referrer page's own form post sends Origin: null as same-origin and p
 
     const before = writes;
     await page.goto(`http://localhost:${foreign.port}/no-referrer`);
+    const foreignForm = page.url();
     const [foreignPost] = await Promise.all([
       page.waitForResponse((response) => response.request().method() === "POST"),
+      page.waitForURL((url) => url.href !== foreignForm),
       page.getByRole("button", { name: "Submit" }).click(),
     ]);
     const foreignHeaders = await foreignPost.request().allHeaders();

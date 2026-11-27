@@ -1,7 +1,8 @@
 import { createNavigation, type NavigationItem } from "@k2b/ui";
-import type { MenuEntry, NavGroup, NavItem, OnNavigate } from "@k2b/ui/v2";
-import { createMemo } from "solid-js";
+import type { MenuEntry, NavGroup, NavItem, NavTree, NavTreeNode, OnNavigate } from "@k2b/ui/v2";
+import { type Accessor, createMemo, getOwner, runWithOwner } from "solid-js";
 import WorkspaceNavigationProvider from "./WorkspaceNavigationProvider";
+import { holdsCurrent } from "./workspace-navigation";
 
 type V2Navigation = {
   items: NavigationItem[];
@@ -17,11 +18,11 @@ type V2Navigation = {
  * - an entry `nested` stands under the entry before it, always open and without a toggle, as the sidebar shows it;
  * - a folding entry (`items`) folds the same way, open while it holds the open entry;
  * - an entry's own "…" (`menu`) becomes its row's menu;
+ * - a tree (`tree`) keeps its loaded places: a place with children folds them, its own link first, open on the way to
+ *   the open place;
  * - symbols, counts, the open one and "something new" carry over.
  * Deeds are found by id (`click`), links by their address as written (`navigate`).
  */
-const holdsCurrent = (item: NavigationItem): boolean => !!item.active || (item.children ?? []).some(holdsCurrent);
-
 const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navigation => {
   const navigate = new Map<string, OnNavigate>();
   const click = new Map<string, () => void>();
@@ -60,7 +61,8 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
       ...(item.icon ? { icon: `ti ti-${item.icon}` } : {}),
       ...(item.count !== undefined ? { badge: item.count } : {}),
       ...(item.current ? { active: true } : {}),
-      ...(item.dot ? { unread: true } : {}),
+      // the old menu has no running state: work that runs is no unread mail, so it marks nothing there
+      ...(item.dot && item.dot !== "running" ? { unread: true } : {}),
       ...(item.menu ? { actions: deeds(item.menu, `${id}:menu`) } : {}),
     };
     if (item.items) {
@@ -86,13 +88,44 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
     // nested entries stay open and have no toggle, as the sidebar always shows them
     return top.map(({ item, children }) => (children.length === 0 ? item : { ...item, children, disclosure: false as const }));
   };
+  const place = (tree: NavTree, node: NavTreeNode): NavigationItem => {
+    const id = node.href ?? `tree:${node.key}`;
+    const common = {
+      id,
+      label: node.label,
+      ...(node.icon ? { icon: `ti ti-${node.icon}` } : {}),
+      ...(node.count !== undefined ? { badge: node.count } : {}),
+      ...(node.key === tree.current ? { active: true } : {}),
+      ...(node.dot ? { unread: true } : {}),
+      ...(node.menu ? { actions: deeds(node.menu, `${id}:menu`) } : {}),
+    };
+    const self: NavigationItem =
+      node.href !== undefined
+        ? (() => {
+            if (node.onNavigate) navigate.set(node.href, node.onNavigate);
+            return { ...common, href: node.href, ...(node.onNavigate ? { navigation: "enhanced" as const } : {}) };
+          })()
+        : { ...common, action: id, disabled: true };
+    const loaded = node.children ?? [];
+    if (loaded.length === 0) return self;
+    const children = [...(node.href !== undefined ? [{ ...self, id: `${id}:self` }] : []), ...loaded.map((child) => place(tree, child))];
+    const { active: _active, ...fold } = common;
+    return { ...fold, children, defaultExpanded: children.some(holdsCurrent) };
+  };
   const items = groups.flatMap((group, index): NavigationItem[] => {
     const own = group.action && "items" in group.action ? deeds(group.action.items, `group:${index}:menu`) : [];
-    const children = [...rows(group.items, `${index}`), ...own];
+    const entries = group.tree === undefined ? rows(group.items, `${index}`) : group.tree.items.map((node) => place(group.tree, node));
+    const children = [...entries, ...own];
     return group.label ? [{ id: `group:${index}`, label: group.label, section: true, children }] : children;
   });
   return { items: [...items, ...rows(foot, "foot")], navigate, click };
 };
+
+/**
+ * The entries the page carries for a menu opened before the island runs: as many as a long v2 list renders on the
+ * server before it windows the rest (#4211), so the page's weight does not grow with the navigation.
+ */
+const SNAPSHOT_ENTRIES = 40;
 
 export type V2WorkspaceNavigationProps = {
   /** The name of the menu, such as the open mailbox. */
@@ -108,9 +141,21 @@ export type V2WorkspaceNavigationProps = {
  * it, the phone bar's title becomes the menu "Name ⌄" and lists the same entries, and a tap opens each entry the way
  * the sidebar does (in place through its `onNavigate`, else as a page). Render it once, inside the app's island, with
  * the data of its `Nav`.
+ *
+ * The page carries the first 40 entries (and the way to the open one) for a menu opened before the island is alive;
+ * the island gives the menu all of them once it runs. Outside an island the menu keeps those 40.
  */
 export default function V2WorkspaceNavigation(props: V2WorkspaceNavigationProps) {
-  const tree = createMemo(() => fromNav(props.groups, props.foot ?? []));
+  // the tree is made when the menu first reads it, not when the island mounts: a base with a thousand tables costs a
+  // page whose phone menu never opens nothing
+  const owner = getOwner();
+  let made: Accessor<V2Navigation> | undefined;
+  const tree = () => {
+    made ??=
+      runWithOwner(owner, () => createMemo(() => fromNav(props.groups, props.foot ?? []))) ??
+      (() => fromNav(props.groups, props.foot ?? []));
+    return made();
+  };
   const navigation = createNavigation({
     items: () => tree().items,
     onNavigate: (event) => {
@@ -119,5 +164,5 @@ export default function V2WorkspaceNavigation(props: V2WorkspaceNavigationProps)
     },
     onAction: (action) => tree().click.get(action)?.(),
   });
-  return <WorkspaceNavigationProvider navigation={navigation} label={props.label} />;
+  return <WorkspaceNavigationProvider navigation={navigation} label={props.label} entries={SNAPSHOT_ENTRIES} />;
 }

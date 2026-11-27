@@ -21,6 +21,15 @@ That is the point: two agents building the same screen get the same result.
 `@k2b/ui/v2` is **provisional** until the maintainer approves it. Names and
 props may change in any release; check the types of the installed version.
 
+## The look is part of done
+
+Every screen follows [the look](references/look.md): a screen brief before
+code, one hero with its real trend, the app's colour where it means
+something, one data picture per row, a tinted head for the open object, and
+a large screen that uses its room. Run its wireframe check on your pictures
+before you call a screen ready: a screen that fails it is not done, however
+clean it is.
+
 ## Start here
 
 1. Find the screen in the task table below and open its recipe in
@@ -54,9 +63,16 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   puts `k2-ui` on the page's main area and loads v2.css with the app's accent
   tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
   and loads `@k2b/ui/v2.css`.
-- A screen is a component that returns one `Workspace`.
+- A screen is a component that returns one `Workspace`. It renders on the
+  server; only the parts that need the browser are islands (`.island.tsx`):
+  a button with its action, a field, a row's actions, a filter bar. An island
+  stands wherever its primitive stands. v2.css and `describeV2` look through
+  the `<solid-island>` and `<solid-client>` wrappers, so the layout stays the
+  same. Never make the whole screen one island to keep its layout.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
+- A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
+  page's language: the `@k2b/ui` entry belongs to v1.
 
 ## What to use for what
 
@@ -64,9 +80,13 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | --- | --- | --- |
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
+| folders or pages in levels in the sidebar | a `Nav` group with `tree` (`load`, `loadMore` for what opens) | `tree.tsx` |
+| the app's own rows in the sidebar (conversations), the phone's page | `Nav` `list` with `phone: "page"`, `search` and `primary` | `conversations.tsx` |
+| rows in levels (a folder's content as a tree) | `Table` with `rowKey` and `tree` | `tree.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
+| an exception in the statement ("1 ohne Zugriff") | `StatusRow marks` with a `Chip status` | – |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
@@ -86,6 +106,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
+| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
+| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
@@ -96,7 +120,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
+| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
@@ -156,12 +180,13 @@ a `Notice` that names the deed.
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
   (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`.
+- **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Steps`.
+  `Ticks`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `DatePicker`, `Check`, `Choice`.
+  `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
+  `CodeInput`, `Slider`, `ColorInput`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
@@ -171,8 +196,9 @@ a `Notice` that names the deed.
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
-a code block with highlighting, an image or video viewer, and an assistant
+the mail and chat composer (comes from `@k2b/editor`), the menus of the
+Markdown editor (the editor itself goes into a `Canvas`, where its toolbar
+follows v2), a code block with highlighting, an image or video viewer, and an assistant
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with

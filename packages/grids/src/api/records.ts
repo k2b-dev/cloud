@@ -10,6 +10,7 @@ import { gridsService } from "../service";
 import { DEFAULT_MAX_FILE_SIZE_MB, getMaxFileSizeBytes } from "../service/file-limits";
 import { fromPublicRecordValues, resolvePublicId, resolvePublicIds } from "../service/public-resources";
 import { validateRecordQueryForTable } from "../service/query-validation";
+import { getRecordCreatedSeries, RECORD_SERIES_DAYS } from "../service/record-created-series";
 import * as recordFinalizationService from "../service/record-finalization";
 import { PublicRecordRevisionPageSchema, toPublicRecordRevisionPage } from "./durable-history";
 import { apiMessages } from "./messages";
@@ -154,6 +155,18 @@ const DurableHistoryQuerySchema = z
   .object({
     cursor: ShortIdSchema.optional(),
     limit: z.coerce.number().int().min(1).max(50).optional(),
+  })
+  .strict();
+
+const RecordCreatedSeriesQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(RECORD_SERIES_DAYS.max).optional(),
+});
+export const PublicRecordCreatedSeriesSchema = z
+  .object({
+    total: z.number().int().nonnegative(),
+    points: z
+      .array(z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), created: z.number().int().nonnegative() }).strict())
+      .max(RECORD_SERIES_DAYS.max),
   })
   .strict();
 
@@ -1151,6 +1164,35 @@ export const recordsRoutes = new Hono<AuthContext>()
           "Content-Disposition": `attachment; filename="${result.data.filename}"`,
         },
       });
+    },
+  )
+
+  .get(
+    "/by-table/:tableId/created-series",
+    requirePublicIdParam("tableId", "table", "Table"),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Count a table's records and its new records per day",
+      description:
+        "Returns the live records of a stored table and, for each of the last `days` (30 by default, at most 90) calendar " +
+        "days of the viewer's time zone, how many of them were created that day. Days without a new record count 0.",
+      responses: {
+        200: jsonResponse(PublicRecordCreatedSeriesSchema, "Record count and new records per day"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid input or not a stored table"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Not found"),
+      },
+    }),
+    v("query", RecordCreatedSeriesQuerySchema),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "read");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      if (table.kind === "federated") return c.json({ message: apiMessages(c).createdSeriesStoredOnly }, 400);
+      const series = await getRecordCreatedSeries(tableId, { days: c.req.valid("query").days, timeZone: getDateConfig(c).timeZone });
+      return c.json(PublicRecordCreatedSeriesSchema.parse(series));
     },
   )
 

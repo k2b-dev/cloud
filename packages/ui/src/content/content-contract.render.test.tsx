@@ -284,9 +284,10 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).not.toContain("k2b-calendar-month");
     expect(html).not.toContain("Review");
 
-    // Never rendered: without custom views, JSX keeps the built-in view type in the callbacks.
+    // Never rendered: without custom views, the props keep the built-in view type in the callbacks. Written without
+    // JSX: Bun would compile this file's own JSX before registerSsrTestPlugin above runs (test-solid-plugins).
     const builtIn = (view: CalendarView) => view;
-    void (() => <Calendar date="2026-07-15" events={[]} onViewChange={(view) => builtIn(view)} />);
+    void (() => createComponent(Calendar, { date: "2026-07-15", events: [], onViewChange: (view) => builtIn(view) }));
   });
 
   test("indexes year-view events once instead of rescanning them for every day", () => {
@@ -446,8 +447,9 @@ describe("@k2b/ui Cloud content contract", () => {
         );
 
       const dayDe = render("de", "day");
-      // The header names the shown day, as the browser does once it measured.
-      expect(dayDe).toContain("Fr, 9. Okt 2026");
+      // The header names the month of the shown day; the day itself stands once, in its own head.
+      expect(dayDe).toContain("Oktober 2026");
+      expect(dayDe).not.toContain("Fr, 9. Okt 2026");
       expect(dayDe).toContain("Heute");
       expect(dayDe).toContain("Freitag, 9. Oktober");
       // The day starts at six; its night folds.
@@ -465,7 +467,7 @@ describe("@k2b/ui Cloud content contract", () => {
       expect(dayDe).not.toContain("Donnerstag, 8. Oktober");
 
       const dayEn = render("en", "day");
-      expect(dayEn).toContain("Fri, Oct 9, 2026");
+      expect(dayEn).toContain("October 2026");
       expect(dayEn).toContain("27 min left");
       expect(dayEn).toContain("1 hr 15 min free");
       expect(dayEn).toContain("Nothing planned");

@@ -22,7 +22,7 @@ The deliveries of the same customer. A `Band` in a tone carries the one statemen
 
 ### Section
 
-- A titled part of the page: "Anstehend", "Vorgänge", "Kontakt".
+- A titled part of the page: "Anstehend", "Vorgänge", "Kontakt". A long title, such as a question, wraps.
 - Rows, `Facts`, a `Digest` or groups stand directly in it.
 - One line at its end, none under its head or between its entries.
 

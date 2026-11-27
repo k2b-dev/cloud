@@ -45,7 +45,13 @@ afterAll(async () => {
   rmSync(temp, { recursive: true, force: true });
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
+/**
+ * `fallback`: the browser sizes no text field to its words (`field-sizing` off, as in browsers without it), so the
+ * page's own sizing runs. `beforeClient` reads the page as the server sent it, before the client starts.
+ */
+type PageOptions = { fallback?: boolean; beforeClient?: (page: Page) => Promise<void> };
+
+const withPage = async (run: (page: Page) => Promise<void>, width = 1440, options: PageOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin" });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -55,8 +61,21 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
   });
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style>${options.fallback ? "<style>.k2-ui textarea { field-sizing: fixed !important; }</style>" : ""}</head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
     );
+    await options.beforeClient?.(page);
+    // without field-sizing, the page asks the browser and hears no (an init script does not reach a page set by
+    // `setContent`, so the answer is set here, before the client starts)
+    if (options.fallback)
+      await page.evaluate(() => {
+        const supports = CSS.supports.bind(CSS);
+        CSS.supports = ((...query: [string, string?]) =>
+          query[0] === "field-sizing"
+            ? false
+            : query.length === 2
+              ? supports(query[0], query[1]!)
+              : supports(query[0])) as typeof CSS.supports;
+      });
     // what the server sent, kept to compare with the page once it is live
     await page.evaluate(() => {
       window.__k2Sent = document.getElementById("root")!.cloneNode(true);
@@ -194,9 +213,10 @@ test("an entry that opens something holds no control inside a control, and each 
     await row.getByRole("button", { name: "Mehr zu Holzwerk" }).click();
     expect(await hash()).toBe("#angebot");
     await page.getByText("Geöffnet: mehr").waitFor();
-    await page.getByRole("button", { name: "Jonas Hartwig" }).click();
+    await page.getByRole("button", { name: "Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: jonas").waitFor();
-    await page.getByRole("button", { name: "Annehmen" }).click();
+    // the row's deed is named by its words and then the row's title
+    await page.getByRole("button", { name: "Annehmen Jonas Hartwig", exact: true }).click();
     await page.getByText("Geöffnet: annehmen").waitFor();
     // a digest entry and a table row open from anywhere on them, their own links stay theirs
     // a link in the title of a row stays its own; the row is opened by the element named by that title
@@ -251,6 +271,35 @@ test("a multi-line field shows its value in what the server sent, and keeps what
   });
 });
 
+// A browser without `field-sizing` shows a field of several lines as high as its lines from the server's page on, so
+// it does not grow when the page comes alive (8 lines: 160 px of text, not 3 lines and then 8).
+for (const fallback of [false, true])
+  test(`a multi-line field with a long value has its height from the server's page on${fallback ? ", without field-sizing" : ""}`, async () => {
+    const height = (page: Page) =>
+      page.getByRole("textbox", { name: "Lange Antwort" }).evaluate((area) => Math.round(area.getBoundingClientRect().height));
+    let sent = 0;
+    await withPage(
+      async (page) => {
+        expect(await height(page)).toBe(sent);
+        expect(sent).toBe(8 * 20);
+        // emptied, it shrinks to its 3 rows, although its `value` stays the long one (nothing writes it back)
+        await page.getByRole("textbox", { name: "Lange Antwort" }).fill("");
+        await settled(page);
+        expect(await height(page)).toBe(3 * 20);
+        await page.getByRole("textbox", { name: "Lange Antwort" }).fill("Eins\nZwei\nDrei\nVier\nFünf");
+        await settled(page);
+        expect(await height(page)).toBe(5 * 20);
+      },
+      1440,
+      {
+        fallback,
+        beforeClient: async (page) => {
+          sent = await height(page);
+        },
+      },
+    );
+  });
+
 test("controls without a handler keep their own state, and the shape shows it", async () => {
   await withPage(async (page) => {
     const select = page.locator('[data-k2-part="Select"]');
@@ -267,6 +316,65 @@ test("controls without a handler keep their own state, and the shape shows it", 
   });
 });
 
+// Facts and cells whose values are on their way keep the shape of the loaded ones: labels and hints stay, each value
+// is a bar of its line's height, and nothing moves when the values come (#4152).
+for (const width of [1440, 390])
+  test(`at ${width}: loading facts and cells stand in the shape of the loaded ones`, async () => {
+    await withPage(async (page) => {
+      const shape = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll(".k2-facts, .k2-fact-pair > *, .k2-cells, .k2-cell, .k2-cell > *")].map((element) => {
+            const box = element.getBoundingClientRect();
+            return [element.className || element.tagName, Math.round(box.top), Math.round(box.left), Math.round(box.height)].join(" ");
+          }),
+        );
+      const loaded = await shape();
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(true));
+      await settled(page);
+      // places and heights, not widths: an inline value's bar is shorter than its words, the line keeps its height
+      expect(await shape()).toEqual(loaded);
+      const said = await page.evaluate(() => ({
+        busy: [...document.querySelectorAll('[aria-busy="true"]')].map((element) => element.className),
+        // per value: what assistive technology hears, and whether the value that is there is held unseen
+        values: [...document.querySelectorAll(".k2-fact-value, .k2-cell-value")].map((value) => [
+          value.querySelector(":scope > .k2-hidden-text")?.textContent,
+          value.querySelector(":scope > .k2-held")?.getAttribute("aria-hidden") ?? "no value yet",
+        ]),
+        labels: [...document.querySelectorAll(".k2-fact-pair > dt, .k2-cell-label")].map((label) => label.textContent?.trim()),
+      }));
+      expect(said.busy).toEqual(["k2-facts", "k2-facts", "k2-facts", "k2-cell", "k2-cell"]);
+      const held = ["Wird geladen...", "true"];
+      // "Notiz" has no value yet: a bar of one line
+      expect(said.values).toEqual([held, held, held, held, held, ["Wird geladen...", "no value yet"], held, held, held, held, held, held]);
+      expect(said.labels).toEqual([
+        "Kundennr.",
+        "Ort",
+        "Anschrift",
+        "Schlüssel",
+        "Status",
+        "Notiz",
+        "Stand",
+        "Termin",
+        "Betrag",
+        "Ansprechperson",
+        "Offen",
+        "Erledigt",
+      ]);
+      // the value under the bar is not seen
+      expect(
+        await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-held *, .k2-held")].every((part) => getComputedStyle(part).visibility === "hidden"),
+        ),
+      ).toBe(true);
+      // the copy buttons keep their place, not yet usable
+      const copy = page.locator(".k2-fact-pair > dd > .k2-btn");
+      expect(await copy.evaluateAll((buttons) => buttons.map((button) => button.matches(":disabled")))).toEqual([true, true]);
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(false));
+      await settled(page);
+      expect(await shape()).toEqual(loaded);
+    }, width);
+  });
+
 test("facts are pairs of term and value, Markdown in prose runs nothing", async () => {
   await withPage(async (page) => {
     const facts = await page.evaluate(() => {
@@ -274,7 +382,8 @@ test("facts are pairs of term and value, Markdown in prose runs nothing", async 
       return [...list.children].map((pair) => `${pair.tagName}:${[...pair.children].map((child) => child.tagName).join(",")}`);
     });
     expect(facts).toEqual(["DIV:DT,DD", "DIV:DT,DD"]);
-    expect(await page.locator("dl.k2-facts dd .k2-btn").count()).toBe(1);
+    // the first list: one value to copy
+    expect(await page.locator("dl.k2-facts").first().locator("dd .k2-btn").count()).toBe(1);
     const prose = page.locator('[data-k2-part="Prose"]');
     expect(await prose.locator("script, img, [onerror]").count()).toBe(0);
     expect(await prose.locator('a[href^="javascript"]').count()).toBe(0);

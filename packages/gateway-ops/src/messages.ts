@@ -358,7 +358,6 @@ export const gatewayOpsMessages = i18n.define({
       sortBy: ({ label }: { label: string }) => `Sort by ${label}`,
       serverErrors: "Server errors",
       clientErrors: "Client errors",
-      rateLimited: "Rate limited",
       traffic: "Traffic",
       trafficDescription: "Requests and failing responses over the selected range. Hover or focus for exact values.",
       requestAvailability: "Request availability",
@@ -1268,7 +1267,6 @@ export const gatewayOpsMessages = i18n.define({
       sortBy: ({ label }) => `Nach ${label} sortieren`,
       serverErrors: "Serverfehler",
       clientErrors: "Clientfehler",
-      rateLimited: "Begrenzt",
       traffic: "Datenverkehr",
       trafficDescription:
         "Anfragen und fehlgeschlagene Antworten im gewählten Zeitraum. Exakte Werte erscheinen beim Darüberfahren oder Fokussieren.",

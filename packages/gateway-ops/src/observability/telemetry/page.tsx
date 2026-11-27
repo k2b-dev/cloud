@@ -121,7 +121,7 @@ export default ssr<AuthContext>(async (c) => {
       icon: "hand-stop",
       label: t.clientErrors,
       value: number(overview.clientErrors),
-      meta: `${t.rateLimited} (429): ${number(overview.rateLimited)}`,
+      meta: `429: ${number(overview.rateLimited)}`,
       tone: overview.rateLimited > 0 ? "warn" : undefined,
     },
     {

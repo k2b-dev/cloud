@@ -137,6 +137,22 @@ covering SQL snapshots. Mail then prunes the covered prefix. A full log
 rejects new edits; browsers keep unacknowledged input for retry. Incomplete
 history requires explicit recovery and cannot be sent.
 
+A device can hold unsent input whose base the log has already pruned. An open
+draft then refuses that input instead of guessing where it belongs. The browser
+keeps the input as a recovery copy of that draft and clears it from the device.
+Reopening the draft edits the current version and offers to restore the copy.
+A draft with incomplete history keeps the explicit recovery below instead. A
+draft lists at most 100 recovery copies, so Mail refuses a new copy beyond that;
+the device keeps its text.
+
+Input for a reply that can no longer take it lands in the conversation's reply
+slot. When an open reply holds the slot, the input becomes its recovery copy.
+When the reply holding the slot is already scheduled or sending, for example by
+another person, a mailbox-wide writer's input becomes a separate new message. An
+assigned-only writer may not start one; their input stays a recovery copy of
+that reply, which can be restored only if its send is undone. The limit of 100
+listed copies applies to every draft that receives one.
+
 With Sync 7.1.1, a join whose missing prefix is covered by the SQL snapshot
 rebases in place. A gap in the live stream reconnects with backoff and resends
 pending input. For an uncovered gap, Mail saves the valid retained updates at
