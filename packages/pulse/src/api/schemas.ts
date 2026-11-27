@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
 import { FETCH_BUCKET_MINUTES, FETCH_TICKS, METRIC_TYPES, SOURCE_HOUR_MINUTES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
 
+export { SOURCE_ALERTS_MAX } from "../service/source-alerts";
 export { SOURCE_HOUR_MINUTES, SOURCE_PAGE_MAX };
 
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
@@ -311,6 +312,14 @@ export const SourceSchema = z.object({
   lastErrorAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+export const SourceAlertSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  state: z.enum(["ok", "pending", "firing", "no_data", "error"]),
+  severity: z.enum(["warn", "critical"]).nullable(),
+  since: z.string().nullable(),
 });
 
 export const FetchMinuteSchema = z.object({

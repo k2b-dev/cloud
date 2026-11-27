@@ -61,6 +61,15 @@ export const FETCH_BUCKET_MINUTES = 10;
 export type FetchSlot = "ok" | "bad" | "none";
 /** Minutes of fetches the open source shows. */
 export const SOURCE_HOUR_MINUTES = 60;
+/** An alert rule that concerns one source, as its open detail lists it. */
+export type SourceAlert = {
+  id: string;
+  name: string;
+  state: "ok" | "pending" | "firing" | "no_data" | "error";
+  severity: "warn" | "critical" | null;
+  /** Since when the rule is in its state. */
+  since: string | null;
+};
 /** One minute of a source's fetches with the values they brought. */
 export type FetchMinute = { slot: FetchSlot; values: number };
 /** Today's fetches of a base: how many succeeded and failed, per FETCH_BUCKET_MINUTES since midnight in its zone. */

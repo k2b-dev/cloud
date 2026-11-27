@@ -19,8 +19,10 @@ import {
   CreateSourceSchema,
   FetchMinuteSchema,
   IngestBatchSchema,
+  SOURCE_ALERTS_MAX,
   SOURCE_HOUR_MINUTES,
   SOURCE_PAGE_MAX,
+  SourceAlertSchema,
   SourceApiKeySchema,
   SourceFiguresSchema,
   SourcePageQuerySchema,
@@ -231,6 +233,23 @@ const routes = new Hono<AuthContext>()
       const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
       if (!sourceId.ok) return respond(c, sourceId.result);
       return respond(c, await pulseService.source.hour({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
+    },
+  )
+  .get(
+    "/bases/:baseId/sources/:sourceId/alerts",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "List the alert rules that concern a Pulse source",
+      description:
+        "A rule concerns the source when its SQL or parameters name the source's id, or when one of its keys is the source's target (the endpoint's host).",
+      responses: { 200: jsonResponse(z.array(SourceAlertSchema).max(SOURCE_ALERTS_MAX), "Alert rules of the source, firing first") },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respond(c, await pulseService.source.alerts({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
     },
   )
   .get(

@@ -245,7 +245,7 @@ const LOG_CSS = `
 
 // study B: .band, .fig, .chart .cap, .ex, .exr; the phone stacks figure, chart and exceptions
 const HERO_CSS = `
-.pulse-hero{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'fig chart' 'ex ex';gap:14px 32px;align-items:end;padding:18px var(--k2-edge,20px) 14px;font:var(--k2-t-body);color:var(--k2-text-2)}
+.pulse-hero{container:pulse-hero/inline-size;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:'fig chart' 'ex ex';gap:14px 32px;align-items:end;padding:18px var(--k2-edge,20px) 14px;font:var(--k2-t-body);color:var(--k2-text-2)}
 .pulse-hero-fig{grid-area:fig;display:flex;flex-direction:column;gap:2px;min-width:0}
 .pulse-hero-n{font:600 30px/34px var(--k2-font);color:${INK};letter-spacing:-.015em;white-space:nowrap;font-variant-numeric:tabular-nums}
 .pulse-hero-l{font:var(--k2-t-body);font-weight:500;color:var(--k2-text-2);white-space:nowrap}
@@ -258,6 +258,7 @@ const HERO_CSS = `
 .pulse-hero-exr{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--k2-text-2);min-width:0}
 .pulse-hero-exr b{font-weight:600}
 .pulse-hero-exr .pulse-hero-m{margin-left:2px;max-width:32ch}
+@container pulse-hero (min-width:600px){.pulse-hero-ex{flex-wrap:nowrap}.pulse-hero-exr{flex:0 1 auto}.pulse-hero-exr .pulse-hero-m{flex:0 1 auto;min-width:3ch}}
 .pulse-hero-dot{width:7px;height:7px;border-radius:50%;background:var(--k2-ok-dot);flex:none}
 .pulse-hero-dot[data-tone=bad]{background:var(--k2-bad-dot)}
 .pulse-hero-dot[data-tone=off]{background:var(--k2-n400)}

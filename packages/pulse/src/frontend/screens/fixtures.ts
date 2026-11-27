@@ -10,6 +10,7 @@ import {
   type PulseSource,
   type PulseSourceScrape,
   SOURCE_HOUR_MINUTES,
+  type SourceAlert,
   type SourceFigures,
 } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
@@ -330,6 +331,15 @@ export const fixtureMinutesFor = (sourceId: string): FetchMinute[] => {
   });
 };
 
+/** The alert rules that concern a source: the printer's "no values" rule fires since 10:41, its toner rule is quiet. */
+export const fixtureAlertsFor = (sourceId: string): SourceAlert[] =>
+  sourceId === "s7Ee8Ff9"
+    ? [
+        { id: "Al7Pr1", name: "Drucker Halle 2 liefert nicht", state: "firing", severity: "critical", since: "2026-11-25T09:41:00.000Z" },
+        { id: "Al7Tn2", name: "Toner unter 10 %", state: "ok", severity: null, since: "2026-11-18T13:20:00.000Z" },
+      ]
+    : [];
+
 /** A source's last fetches, matching its state: the printer timed out at 10:40, 10:41 and 10:42; the others answer. */
 export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
   // a failing source failed at 10:40, 10:41 and 10:42 with its own error
@@ -440,6 +450,7 @@ export const sourcesProps = (
     },
     initialSourceScrapes: open ? { [open]: fixtureScrapesFor(open) } : {},
     initialSourceMinutes: open ? { [open]: fixtureMinutesFor(open) } : {},
+    initialSourceAlerts: open ? { [open]: fixtureAlertsFor(open) } : {},
     // a source that receives data has the key it receives them with
     initialSourceApiKeys: open && sources.find((source) => source.id === open)?.kind === "http_ingest" ? { [open]: fixtureApiKeys } : {},
     initialQueryCoverage: { bases: true, baseData: true, sourceDetail: true },

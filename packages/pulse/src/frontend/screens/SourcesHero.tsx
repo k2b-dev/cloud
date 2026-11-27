@@ -13,8 +13,6 @@ export function SourcesHero(props: {
   figures: SourceFigures;
   /** The clock time now in the base's zone, the chart's end. */
   now: string;
-  /** A time as its clock time in the base's zone, for "seit 10:40". */
-  clock: (value: string) => string;
   /** The base's alerts that need a look, as one exception that opens their list. */
   alerts?: { count: number; name: string; critical: boolean; href: string };
 }) {
@@ -35,7 +33,8 @@ export function SourcesHero(props: {
               word: words().errorWord,
               meta: first
                 ? [
-                    first.since ? words().failingSince({ name: first.name, time: props.clock(first.since) }) : first.name,
+                    // the who stays short (the name; since when stands in the open source), so the line holds at 1440
+                    first.name,
                     props.figures.failingCount > 1 ? `+${number(props.figures.failingCount - 1)}` : "",
                   ]
                     .filter(Boolean)

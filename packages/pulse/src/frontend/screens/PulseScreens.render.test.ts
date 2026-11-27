@@ -71,7 +71,6 @@ describe("Pulse pages on the server", () => {
     // the alerts stand as one exception in the hero, not as a block above the list
     expect(page.text).toContain("Alarme");
     expect(page.text).not.toContain("Braucht Aufmerksamkeit");
-    expect(page.text).toContain("Drucker Halle 2 seit 10:40");
     expect(page.text).toContain("Liefert seit 10:40 keine Werte");
     expect(page.text).toContain("Werte je Minute");
     // the address stands in the open source, breakable at its slashes

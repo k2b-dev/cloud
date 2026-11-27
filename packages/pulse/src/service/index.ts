@@ -16,6 +16,7 @@ import {
 import { sourceHour } from "./fetch-timeline";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
+import { sourceAlerts } from "./source-alerts";
 import {
   countSources,
   createSource,
@@ -70,6 +71,7 @@ export const pulseService = {
     get: getSource,
     scrapes: listSourceScrapes,
     hour: sourceHour,
+    alerts: sourceAlerts,
     apiKeys: {
       list: listSourceApiKeys,
       create: createSourceApiKey,

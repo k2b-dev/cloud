@@ -5,6 +5,7 @@ import { newShortId } from "../lib/short-id";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { accessScopeFor } from "./access-control";
 import { sourceHour } from "./fetch-timeline";
+import { sourceAlerts } from "./source-alerts";
 import { listSources, sourceFigures } from "./source-management";
 
 // 10:42 in Berlin; the base's day began at 23:00 UTC the evening before
@@ -90,6 +91,32 @@ suiteFor("database", "valkey")("Pulse fetch timeline", () => {
     const [elsewhere] = await sql<{ id: string }[]>`SELECT id FROM pulse.sources WHERE base_id = ${otherBaseId}::uuid`;
     const crossed = await sourceHour({ baseId, sourceId: elsewhere!.id, user: scope(), now: NOW });
     expect(crossed.ok).toBe(false);
+  });
+
+  test("an open source lists the alert rules that name it or fire on its target, and no others", async () => {
+    await sql`UPDATE pulse.sources SET endpoint_url = 'http://10.0.0.12:9100/metrics' WHERE id = ${sourceId}::uuid`;
+    const [server] = await sql<{ short_id: string }[]>`SELECT short_id FROM pulse.sources WHERE id = ${sourceId}::uuid`;
+    const rule = async (base: string, name: string, query: string, state = "ok") => {
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO pulse.alert_rules(short_id, base_id, name, sql, comparison, critical, min_duration_seconds, interval_seconds, state)
+        VALUES (${newShortId()}, ${base}::uuid, ${name}, ${query}, 'above', 90, 0, 300, ${state}) RETURNING id`;
+      return row!.id;
+    };
+    // names the source by its id; fires on the source's target; names nothing of it; the id only inside a longer word;
+    // another base naming the source
+    await rule(baseId, "By id", `SELECT 'x' AS key, 1 AS value FROM series WHERE source_id = '${server!.short_id}'`);
+    const byTarget = await rule(baseId, "By target", "SELECT host AS key, avg(value) AS value FROM samples GROUP BY host", "firing");
+    await sql`INSERT INTO pulse.alert_states(rule_id, key, state, since, last_checked_at)
+      VALUES (${byTarget}::uuid, '10.0.0.12:9100', 'firing', now(), now())`;
+    await rule(baseId, "Unrelated", "SELECT 'shop' AS key, 1 AS value");
+    await rule(baseId, "Part of a word", `SELECT 'x${server!.short_id}y' AS key, 1 AS value`);
+    await rule(otherBaseId, "Other base", `SELECT '${server!.short_id}' AS key, 1 AS value`);
+    const alerts = await sourceAlerts({ baseId, sourceId, user: scope() });
+    if (!alerts.ok) throw new Error("The alerts are not readable");
+    // firing first, then by name
+    expect(alerts.data.map((alert) => alert.name)).toEqual(["By target", "By id"]);
+    expect(alerts.data[0]).toMatchObject({ state: "firing" });
+    expect((await sourceAlerts({ baseId: otherBaseId, sourceId, user: scope() })).ok).toBe(false);
   });
 
   test("the figures count today's fetches since midnight in the base's zone, in ten-minute buckets", async () => {

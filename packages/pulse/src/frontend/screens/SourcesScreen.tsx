@@ -32,7 +32,7 @@ import {
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { AlertRule } from "../../alert-contracts";
-import type { FetchMinute, FetchSlot, PulseBaseRead, PulseSource } from "../../contracts";
+import type { FetchMinute, FetchSlot, PulseBaseRead, PulseSource, SourceAlert } from "../../contracts";
 import { localizedSourceError } from "../../messages";
 import type { AlertAttention } from "../../service/base-attention";
 import { jsonFetch } from "../http";
@@ -348,7 +348,6 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               <SourcesHero
                 figures={all()}
                 now={compactDate(props.initialNow, dateContext())}
-                clock={(value) => compactDate(value, dateContext())}
                 alerts={
                   alerts().length > 0
                     ? {
@@ -496,6 +495,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               loading={loading() || writeBlocked()}
               scrapes={queries.currentDetail()?.scrapes ?? []}
               minutes={queries.currentDetail()?.minutes ?? []}
+              alerts={queries.currentDetail()?.alerts ?? []}
+              alertHref={(alertId) => buildPulseWorkspaceHref({ baseId, state: { view: "sql", alertId } })}
               now={props.initialNow}
               timeZone={dateContext().timeZone}
               apiKeys={queries.currentDetail()?.apiKeys ?? []}
@@ -613,6 +614,10 @@ function SourceDetail(props: {
   apiKeys: import("@k2b/cloud/access/ui").ResourceApiKey[];
   /** A metrics source's last hour per minute, oldest first. */
   minutes: FetchMinute[];
+  /** The alert rules that concern the source, firing first. */
+  alerts: SourceAlert[];
+  /** Where an alert opens: its SQL in the console. */
+  alertHref: (alertId: string) => string;
   /** Now, for the hour's end. */
   now: string;
   /** The base's zone, in which the fetches' times stand. */
@@ -644,6 +649,19 @@ function SourceDetail(props: {
     ]
       .filter(Boolean)
       .join(" · ");
+  // an alert's state in words: when it fired, since when it has no data or cannot be checked, or that it is quiet
+  const alertLine = (alert: SourceAlert) => {
+    const since = alert.since ? props.when(alert.since) : "";
+    return alert.state === "firing"
+      ? words().alertFiredAt({ time: since })
+      : alert.state === "no_data"
+        ? words().alertNoDataSince({ time: since })
+        : alert.state === "error"
+          ? words().alertErrorSince({ time: since })
+          : alert.state === "pending"
+            ? words().alertPending
+            : words().alertQuiet;
+  };
   // the failures at the head of the fetches, newest first, that end now
   const failedInARow = () => {
     let count = 0;
@@ -820,6 +838,29 @@ function SourceDetail(props: {
               label={hourLabel()}
             />
           </Canvas>
+        </Section>
+      </Show>
+      {/* the rules that concern this source (identity B): firing ones first, each opening its SQL */}
+      <Show when={props.alerts.length > 0}>
+        <Section title={words().alertsWord} count={props.alerts.length}>
+          <List label={words().alertsWord}>
+            <For each={props.alerts}>
+              {(alert) => (
+                <Row
+                  mark={
+                    alert.state === "firing"
+                      ? { icon: "bell-ringing", color: alert.severity === "critical" ? "#b91c1c" : "#b45309" }
+                      : alert.state === "no_data" || alert.state === "error"
+                        ? { icon: "bell-exclamation", color: "#b45309" }
+                        : { icon: "bell", color: "var(--k2-muted)" }
+                  }
+                  lines={[alert.name, alertLine(alert)]}
+                  strong={alert.state === "firing"}
+                  href={props.alertHref(alert.id)}
+                />
+              )}
+            </For>
+          </List>
         </Section>
       </Show>
       <Show when={source().kind === "metrics"}>

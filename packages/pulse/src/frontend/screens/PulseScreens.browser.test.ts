@@ -8,9 +8,11 @@ import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
 import {
   FIXTURE_NOW,
   figuresOf,
+  fixtureAlertsFor,
   fixtureApiKeys,
   fixtureBase,
   fixtureBases,
+  fixtureMinutesFor,
   fixtureScrapesFor,
   fixtureSources,
   manySources,
@@ -185,6 +187,8 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
     });
   if (call.path.endsWith("/scrape")) return route.fulfill({ json: { metrics: 12, events: 0, states: 0 } });
   if (call.path.endsWith("/scrapes")) return route.fulfill({ json: fixtureScrapesFor(call.path.split("/").at(-2) ?? "") });
+  if (call.path.endsWith("/minutes")) return route.fulfill({ json: fixtureMinutesFor(call.path.split("/").at(-2) ?? "") });
+  if (call.path.endsWith("/alerts")) return route.fulfill({ json: fixtureAlertsFor(call.path.split("/").at(-2) ?? "") });
   if (call.path.endsWith("/api-keys")) return route.fulfill({ json: call.path.includes("s4Cc5Dd6") ? fixtureApiKeys : [] });
   if (call.path.startsWith(`${base}/sources/`) && call.method === "PATCH")
     return route.fulfill({
