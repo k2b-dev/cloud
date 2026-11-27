@@ -83,8 +83,12 @@ describe("Chat v2 server render", () => {
       expect(html).toContain('data-k2-part="Nav"');
       // The nav counts unread chats; the list has no status row of its own (a live statement would move it).
       expect(html).not.toContain('data-k2-part="StatusRow"');
-      for (const title of ["Werkstatt Nord", "Nora Weber", "Lieferung KW 49", "Ankündigungen"]) expect(html).toContain(title);
-      for (const section of [t.pinnedChats, v2.directAndGroups, t.channels]) expect(html).toContain(section);
+      // One list without headings: the pinned chat first, marked with its pin, then the chats and channels.
+      const order = ["Werkstatt Nord", "Nora Weber", "Lieferung KW 49", "Ankündigungen"].map((title) => html.indexOf(title));
+      expect(order.every((at, index) => at > 0 && (index === 0 || at > order[index - 1]!))).toBe(true);
+      expect(html).toContain(`aria-label="${t.pinnedChats}"`);
+      expect(html.match(/data-k2-part="List"/g)?.length).toBe(1);
+      expect(html).not.toContain('data-k2-part="Section"');
       // The first render has its data: no loading placeholder and no busy region.
       expect(html).not.toContain('data-k2-part="Loading"');
       expect(html).not.toContain('aria-busy="true"');
@@ -103,8 +107,8 @@ describe("Chat v2 server render", () => {
     test(`an empty list says there are no chats yet in ${locale}`, () => {
       const html = render(locale, props({ sidebar: { items: [], nextCursor: null } }));
       expect(html).toContain(t.noneYet);
-      // One section alone has no heading: the nav names the list.
-      expect(html).not.toContain(v2.directAndGroups);
+      // The list has no heading: the nav names it.
+      expect(html).not.toContain('data-k2-part="Section"');
     });
   }
 });

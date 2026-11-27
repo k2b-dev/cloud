@@ -46,6 +46,8 @@ export type ChatDetailV2 = {
   buttons?: readonly ChatHeadButton[];
   /** The rest of the deeds behind "…". */
   menu?: readonly MenuEntry[];
+  /** A page's own search and filter at the start of the head's end, which the page hands in once it has loaded. */
+  tools?: Accessor<JSX.Element | undefined>;
   /** What the pane shows, made once per key. */
   content: () => JSX.Element;
   /** The content is Chat's own drawing (the history and composer), drawn in a `Canvas` that fills the pane; `false` for a page built of v2 parts. */
@@ -194,6 +196,7 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                       }
                       end={
                         <>
+                          {detail().tools?.()}
                           <Show when={detail().picker}>
                             {(picker) => (
                               <Menu label={picker().label} items={picker().items}>

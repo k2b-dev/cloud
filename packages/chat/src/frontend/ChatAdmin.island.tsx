@@ -1,5 +1,5 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
-import { Bar, Button, Cells, Chip, List, type NavProps, Notice, Pane, Row, Section, StatusRow } from "@k2b/ui/v2";
+import { Button, Cells, Chip, List, type NavProps, Notice, Pane, Row, Section, StatusRow } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
 
 /** Chat's operational state as the server read it, in the words of the page's language. */
@@ -26,19 +26,23 @@ const state = (tone: "bad" | "warn" | undefined, text: string): JSX.Element => (
 export default function ChatAdmin(props: { view: ChatAdminView }): JSX.Element {
   const view = () => props.view;
   return (
-    <AdminWorkspace
-      nav={view().nav}
-      head={
-        <Bar
-          end={
-            <Button icon="file-search" keep href="/admin/observability/logs?search=chat">
-              {view().labels.logs}
-            </Button>
-          }
-        />
-      }
-    >
-      <Pane label={view().title} status={<StatusRow lead={view().state} facts={[{ value: view().observed }]} />}>
+    <AdminWorkspace nav={view().nav}>
+      <Pane
+        label={view().title}
+        status={
+          // Logs stands in the row of the statement (Valentin, v8: no bar of its own above it).
+          // k2b-ui gap: the status row's end leaves on the phone, so Logs is not there; an end action that stays is asked.
+          <StatusRow
+            lead={view().state}
+            facts={[{ value: view().observed }]}
+            filters={
+              <Button icon="file-search" href="/admin/observability/logs?search=chat">
+                {view().labels.logs}
+              </Button>
+            }
+          />
+        }
+      >
         {/* k2b-ui gap (DP): the hero band with its figure; the statement stands in the status row until it lands. */}
         <Cells>
           <Cells.Cell

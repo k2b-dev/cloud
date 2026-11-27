@@ -12,7 +12,6 @@ import {
   type OnNavigate,
   Row,
   Section,
-  type TwoActions,
   useLocale,
 } from "@k2b/ui/v2";
 import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
@@ -45,21 +44,16 @@ export type ChatRowsContext = {
   href: (row: Conversation) => string;
   onNavigate: (row: Conversation) => OnNavigate;
   /** The deeds of one chat, the same behind its "…" and on a right-click or long press. */
-  menu: (row: Conversation, section: string) => readonly MenuEntry[];
+  menu: (row: Conversation) => readonly MenuEntry[];
 };
 
-export type ChatListSection = {
-  key: string;
-  title: string;
+/** The one list of chats: its rows in order, the words without any, and the ways to more of them. */
+export type ChatListModel = {
   rows: readonly Conversation[];
-  count?: number | string;
-  actions?: TwoActions;
-  /** Shown in place of the rows when the section has none. */
+  /** Shown in place of the rows when there are none. */
   empty?: string;
-  /** The way to more of them, such as the next page of chats. */
-  more?: Action;
-  /** The person folded this group away (v1's remembered sections). */
-  folded?: boolean;
+  /** The ways to more rows, such as the next page of chats and of discussions; at its end. */
+  more: readonly Action[];
 };
 
 /** What a row shows of its unread state: the count, a dot for a chat marked unread without new messages, or nothing. */
@@ -78,7 +72,7 @@ const sign = (row: Conversation): { icon?: string; color?: string; avatar?: { na
  * One chat as a row of two lines: its sign, its name with the unread count, its last message and the time. The open
  * chat shows no count while it is being read, as in v1; after "Mark unread" it shows it like any other.
  */
-export function ChatRowV2(props: { row: Conversation; section: string; context: ChatRowsContext }): JSX.Element {
+export function ChatRowV2(props: { row: Conversation; context: ChatRowsContext }): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const row = () => props.row;
@@ -95,7 +89,7 @@ export function ChatRowV2(props: { row: Conversation; section: string; context: 
     const mark = marks();
     return typeof mark.unread === "number" ? `${mark.mention ? "@" : ""}${mark.unread.toLocaleString(locale())}` : undefined;
   };
-  const menu = () => props.context.menu(row(), props.section);
+  const menu = () => props.context.menu(row());
   return (
     <Menu.Context items={menu()}>
       <Row
@@ -104,10 +98,16 @@ export function ChatRowV2(props: { row: Conversation; section: string; context: 
         avatar={sign(row()).avatar}
         lines={[row().title, line()]}
         meta={
-          <Show when={marks().muted} fallback={count()}>
-            <Icon name="bell-off" label={t().notificationsOffMark} />
+          <>
+            {/* k2b-ui gap: avatar badge (pin at the avatar's bottom right). Until then the pin stands by the name. */}
+            <Show when={row().pinnedRank !== null}>
+              <Icon name="pin" label={t().pinnedChats} />
+            </Show>
+            <Show when={marks().muted}>
+              <Icon name="bell-off" label={t().notificationsOffMark} />
+            </Show>
             {count()}
-          </Show>
+          </>
         }
         unread={marks().unread !== undefined && !marks().muted}
         current={row().id === props.context.activeId}
@@ -120,49 +120,29 @@ export function ChatRowV2(props: { row: Conversation; section: string; context: 
   );
 }
 
-/** Chat's list on v2: one section per kind (pinned, chats, channels, discussions), each chat one row. */
-export default function ChatListV2(props: { sections: Accessor<readonly ChatListSection[]>; context: ChatRowsContext }): JSX.Element {
-  // Sections and rows stay by their key and ID while the live list replaces their data, so a row keeps its focus,
-  // its open menu and its place when its count or last message changes.
-  const keys = createMemo(() => props.sections().map((section) => section.key), undefined, { equals: sameKeys });
-  // One section alone needs no heading: the nav already names the list.
-  const alone = () => keys().length === 1;
+/**
+ * Chat's list on v2: one list without headings, the pinned chats on top, then the chats and channels by their last
+ * activity, then the discussions about places. The ways to more rows close it.
+ */
+export default function ChatListV2(props: { list: Accessor<ChatListModel>; context: ChatRowsContext }): JSX.Element {
+  // Rows stay by their ID while the live list replaces their data, so a row keeps its focus, its open menu and its
+  // place when its count or last message changes.
+  const ids = createMemo(() => props.list().rows.map((row) => row.id), undefined, { equals: sameKeys });
+  const byId = createMemo(() => new Map(props.list().rows.map((row) => [row.id, row])));
   return (
-    <For each={keys()}>
-      {(key) => {
-        const section = createMemo<ChatListSection>(
-          (previous) => props.sections().find((entry) => entry.key === key) ?? previous,
-          props.sections().find((entry) => entry.key === key)!,
-        );
-        const ids = createMemo(() => section().rows.map((row) => row.id), undefined, { equals: sameKeys });
-        const byId = createMemo(() => new Map(section().rows.map((row) => [row.id, row])));
-        const rows = (
-          <Show when={ids().length > 0} fallback={<Show when={section().empty}>{(empty) => <Row lines={[empty()]} />}</Show>}>
-            <List label={`${props.context.label}: ${section().title}`}>
-              <For each={ids()}>
-                {(id) => {
-                  const row = createMemo<Conversation>((previous) => byId().get(id) ?? previous, byId().get(id)!);
-                  return <ChatRowV2 row={row()} section={key} context={props.context} />;
-                }}
-              </For>
-              <Show when={alone() ? section().more : undefined}>
-                {(more) => <Row icon={more().icon ?? "dots"} lines={[more().label]} onOpen={() => more().onClick?.()} />}
-              </Show>
-            </List>
-          </Show>
-        );
-        return (
-          // k2b-ui gap: v1 folded every section and remembered it (`collapsed`). `Section` cannot fold, and `Group` is
-          // a framed box (a box in the list pane, a double line under the status row); a `Section` that folds with a
-          // controlled `open`/`onOpenChange` is asked for. Until then the sections stay open; `folded` is ready for it.
-          <Show when={!alone()} fallback={rows}>
-            <Section title={section().title} count={section().count} actions={section().actions} more={section().more}>
-              {rows}
-            </Section>
-          </Show>
-        );
-      }}
-    </For>
+    <Show when={ids().length > 0} fallback={<Show when={props.list().empty}>{(empty) => <Row lines={[empty()]} />}</Show>}>
+      <List label={props.context.label}>
+        <For each={ids()}>
+          {(id) => {
+            const row = createMemo<Conversation>((previous) => byId().get(id) ?? previous, byId().get(id)!);
+            return <ChatRowV2 row={row()} context={props.context} />;
+          }}
+        </For>
+        <For each={props.list().more}>
+          {(more) => <Row icon={more.icon ?? "dots"} lines={[more.label]} onOpen={() => more.onClick?.()} />}
+        </For>
+      </List>
+    </Show>
   );
 }
 
@@ -263,10 +243,10 @@ export function ChatSearchV2(props: {
               {(hit) => (
                 <Switch>
                   <Match when={hit.kind === "chat" && hit}>
-                    {(chat) => <ChatRowV2 row={props.known(chat().conversation)} section="search" context={props.context} />}
+                    {(chat) => <ChatRowV2 row={props.known(chat().conversation)} context={props.context} />}
                   </Match>
                   <Match when={hit.kind === "system" && hit.conversation}>
-                    {(conversation) => <ChatRowV2 row={props.known(conversation())} section="search" context={props.context} />}
+                    {(conversation) => <ChatRowV2 row={props.known(conversation())} context={props.context} />}
                   </Match>
                   <Match when={hit.kind === "system" && hit}>
                     {(system) => (

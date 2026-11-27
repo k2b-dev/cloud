@@ -108,7 +108,7 @@ import {
   viewReadStart,
 } from "./threads";
 import type { ChatDetailV2, ChatHeadButton, ChatListNotice } from "./v2/ChatFrameV2";
-import type { ChatListSection, ChatRowsContext } from "./v2/ChatListV2";
+import type { ChatListModel, ChatRowsContext } from "./v2/ChatListV2";
 import type { ChatV2Parts } from "./v2/chat-v2-parts";
 
 type ReadUpdate = z.infer<typeof ReadUpdateSchema>;
@@ -3281,6 +3281,8 @@ export function ChatWorkspaceView(
     if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
   };
   const loadedUnread = () => rows().reduce((sum, row) => sum + row.unread, 0);
+  /** A place's discussions hand their search and state filter to the pane's head once their page has loaded. */
+  const [directoryTools, setDirectoryTools] = createSignal<JSX.Element>();
   const v2Nav = () => ({
     label: t().appName,
     groups: [
@@ -3329,7 +3331,7 @@ export function ChatWorkspaceView(
       },
     ],
   });
-  const rowMenu = (row: Conversation, section: string): MenuEntry[] => {
+  const rowMenu = (row: Conversation): MenuEntry[] => {
     const pending = listPending() || listLoading();
     const pins = pinnedRows();
     const unread = row.unread > 0 || row.read?.unreadFromSeq != null;
@@ -3343,7 +3345,7 @@ export function ChatWorkspaceView(
               disabled: pending,
               onClick: () => void personal(row.id, { pinned: row.pinnedRank === null }),
             },
-            ...(section === "pinned"
+            ...(row.pinnedRank !== null && !row.archived
               ? [
                   {
                     label: t().moveUp,
@@ -3406,45 +3408,33 @@ export function ChatWorkspaceView(
     hasMore()
       ? { label: t().showMoreChats, icon: "dots", disabled: listLoading() || listPending(), onClick: () => void more() }
       : undefined;
-  const v2Sections = (): ChatListSection[] => {
-    if (archived()) return [{ key: "archive", title: t().archive, rows: listRows(), empty: t().archiveEmpty, more: moreChats() }];
-    const plain = listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system");
-    const channels = listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system");
-    const discussions = systemRows();
+  /**
+   * The one list (Valentin, v8): no headings and no lines between kinds. The pinned chats on top, then the chats and
+   * channels in the server's order (last activity), then the discussions about places, each source with its own way
+   * to more.
+   */
+  const v2List = (): ChatListModel => {
+    const more = moreChats();
+    if (archived()) return { rows: listRows(), empty: t().archiveEmpty, more: more ? [more] : [] };
+    const rest = listRows().filter((row) => row.pinnedRank === null && row.kind !== "system");
     const systemMore = Object.values(systemList.page()?.cursors ?? {}).some(Boolean);
-    return [
-      ...(pinnedRows().length > 0
-        ? [{ key: "pinned", title: t().pinnedChats, rows: pinnedRows(), folded: collapsed().includes("pinned") }]
-        : []),
-      {
-        key: "chats",
-        folded: collapsed().includes("chats"),
-        title: v2t().directAndGroups,
-        rows: plain,
-        empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
-        more: moreChats(),
-      },
-      ...(channels.length > 0 ? [{ key: "channels", title: t().channels, rows: channels, folded: collapsed().includes("channels") }] : []),
-      ...(discussions.length > 0 || systemMore
-        ? [
-            {
-              key: "system",
-              folded: !systemExpanded(),
-              title: t().systemChats,
-              count: discussions.reduce((sum, row) => sum + row.unread, 0) || undefined,
-              rows: discussions,
-              more: systemMore
-                ? {
-                    label: t().showMoreChats,
-                    icon: "dots",
-                    disabled: systemList.status() === "loading",
-                    onClick: () => void systemList.load(true),
-                  }
-                : undefined,
-            },
-          ]
-        : []),
-    ];
+    return {
+      rows: [...pinnedRows(), ...rest, ...systemRows()],
+      empty: hasMore() || listLoading() ? undefined : filter() === "unread" ? t().noUnreadChats : t().noneYet,
+      more: [
+        ...(more ? [more] : []),
+        ...(systemMore
+          ? [
+              {
+                label: v2t().moreDiscussions,
+                icon: "dots",
+                disabled: systemList.status() === "loading",
+                onClick: () => void systemList.load(true),
+              },
+            ]
+          : []),
+      ],
+    };
   };
   const v2Notices = (): ChatListNotice[] => {
     const notices: ChatListNotice[] = [];
@@ -3674,9 +3664,12 @@ export function ChatWorkspaceView(
             now={now}
             revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
             onOpen={(view, navigation) => openView(threads.id, view, navigation)}
+            tools={(element) => setDirectoryTools(() => element)}
           />
         )),
-        head: { name: threads.title, ids: [{ value: t().systemMembers }] },
+        // The head holds the search and the state filter; who belongs to the place stands in its info.
+        head: { name: threads.title },
+        tools: directoryTools,
         drawing: false,
       };
     if (threads)
@@ -3783,7 +3776,7 @@ export function ChatWorkspaceView(
               <Show when={rows().length > 0 && !listError()}>
                 <V2.ChatDeviceNoticeV2 notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
               </Show>
-              <V2.ChatListV2 sections={v2Sections} context={rowsContext} />
+              <V2.ChatListV2 list={v2List} context={rowsContext} />
             </Show>
           ),
         }}
