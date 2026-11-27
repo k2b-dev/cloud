@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
+const { Heat } = await import("./heat");
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -83,4 +84,22 @@ test("Ticks are drawn by the server alone: a picture with its sentence and one t
   expect(markup).toContain('aria-label="Quelle: 2 Abrufe, 1 fehlgeschlagen"');
   expect(markup.match(/<i data-s="(ok|bad|none)"/g)).toEqual(['<i data-s="none"', '<i data-s="ok"', '<i data-s="bad"']);
   expect(markup).toContain("--k2-c:#7c3aed");
+});
+
+// A Heat is drawn whole by the server: every day of the 53 weeks with its tone and words, today marked and the one Tab
+// stop, so the first paint needs no script and no measuring.
+test("a heat sends every day of its 53 weeks, today marked, in the server's markup", () => {
+  const markup = renderToString(() =>
+    createComponent(Heat, {
+      days: [{ date: "2026-11-27", count: 3 }],
+      today: "2026-11-27",
+      label: "Mails pro Tag",
+      unit: (count: number) => `${count} Mails`,
+    }),
+  );
+  // weeks from Sunday in English: Sunday to Friday reach this week, Saturday stops at the week before
+  expect(markup.match(/role="gridcell"/g)).toHaveLength(370);
+  expect(markup).toContain('role="grid"');
+  expect(markup.match(/tabindex="0"/g)).toHaveLength(1);
+  expect(markup).toMatch(/data-tone="1" aria-label="3 Mails on Fri, Nov 27" aria-current="date"/);
 });

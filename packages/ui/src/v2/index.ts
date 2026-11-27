@@ -92,10 +92,10 @@ export {
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
-// A year of days as a picture: what happened per day, in tones of one colour.
-export { Heat, type HeatDay, type HeatProps } from "./heat";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
+// A year of days as a picture: what happened per day, in tones of one colour.
+export { Heat, type HeatDay, type HeatProps } from "./heat";
 // Layer 1: the primitives.
 export {
   Band,
