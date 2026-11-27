@@ -112,6 +112,56 @@ describe("Chat v2 server render", () => {
       // the frame has no head of its own that could hold a statement
       expect(html).not.toContain('data-k2-part="Bar"><div class="k2-bar-start"><span');
     });
+    // A place opens on its General stream with its discussions as cards, on the server too: the card's link is built
+    // without the browser's location (a reference to it answered the page with 500).
+    test(`a place's General stream renders its discussions as cards on the server in ${locale}`, () => {
+      const place = chat("Place01", "Frühlingsausstellung", {
+        kind: "system",
+        resource: { type: "spaces.space", id: "Space1" },
+        threads: 1,
+      });
+      const html = render(
+        locale,
+        props({
+          chatId: place.id,
+          view: "general",
+          sidebar: { items: [...rows, place], nextCursor: null },
+          open: {
+            conversation: place,
+            page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+            focus: null,
+            threads: {
+              nextCursor: null,
+              general: { unread: 0, lastMessage: null },
+              items: [
+                {
+                  id: "Thread01",
+                  name: "Besichtigung",
+                  description: null,
+                  archived: false,
+                  unread: 1,
+                  read: null,
+                  lastMessage: null,
+                  lastActivityAt: now,
+                  createdAt: now,
+                  resource: {
+                    ref: { type: "spaces.item", id: "Item1" },
+                    title: "Besichtigung",
+                    permission: "read",
+                    typeTitle: "Item",
+                    icon: "ti ti-package",
+                    status: "Offen",
+                  },
+                },
+              ],
+            },
+          },
+        }),
+      );
+      expect(html).toContain('class="chat-discussion"');
+      expect(html).toContain("Besichtigung");
+      expect(html).toContain('href="/app/chat/c/Place01/t/Thread01"');
+    });
     test(`an empty list says there are no chats yet in ${locale}`, () => {
       const html = render(locale, props({ sidebar: { items: [], nextCursor: null } }));
       expect(html).toContain(t.noneYet);

@@ -1027,7 +1027,7 @@ export function ChatWorkspaceView(
             at: thread.lastActivityAt,
             own: false,
             discussion: {
-              href: viewHref(threadHref(current.id, thread.id)),
+              href: listHref(threadHref(current.id, thread.id)),
               onOpen: () => void openView(current.id, thread.id),
               name: thread.name,
               icon: threadIcon(thread),

@@ -32,6 +32,7 @@ const propsFor = (path: string) => {
   const url = new URL(path, "https://chat.test");
   return harness.props({
     chat: /\/c\/([^/]+)/.exec(url.pathname)?.[1],
+    thread: /\/t\/([^/]+)/.exec(url.pathname)?.[1],
     panel: url.searchParams.get("panel") === "info" ? "info" : undefined,
     forYouPage: url.pathname.endsWith("/for-you"),
     channelsPage: url.pathname.endsWith("/channels"),
@@ -303,42 +304,95 @@ test("a mention that arrives live shows as '@' on its row and moves no row", asy
   }
 }, 60_000);
 
-test("a place's discussions are a v2 page whose search and state filter live in the address", async () => {
-  const place = harness.addChat({ members: [nora, tobias], name: "Frühlingsausstellung", count: 3, end: harness.now() });
-  harness.setSystem(place, { type: "spaces.space", id: "Space1" });
-  for (const [index, name] of ["Einladung freigeben", "Besichtigung", "Aufbau"].entries()) {
-    const thread = harness.addThread(place, { name, count: 1, unread: index === 1 ? 1 : 0 });
+/** A place with three discussions about its items: one done, one with a new message, one open. */
+const placeWithDiscussions = (name: string) => {
+  const place = harness.addChat({ members: [nora, tobias], name, count: 3, end: harness.now() });
+  harness.setSystem(place, { type: "spaces.space", id: `Space-${name}` });
+  const threads = ["Einladung freigeben", "Besichtigung", "Aufbau"].map((title, index) => {
+    const thread = harness.addThread(place, {
+      name: title,
+      count: 1,
+      unread: index === 1 ? 1 : 0,
+      end: new Date(harness.now().getTime() - (3 - index) * 30_000),
+    });
     harness.resourceThread(place, thread, {
-      ref: { type: "spaces.item", id: `Item0${index}` },
-      title: name,
+      ref: { type: "spaces.item", id: `${name}-Item0${index}` },
+      title,
       permission: "read",
       typeTitle: "Item",
       icon: "ti ti-package",
       status: index === 0 ? "Erledigt" : "Offen",
       done: index === 0,
-      href: `/app/spaces/items/Item0${index}`,
+      href: `/app/spaces/items/${name}-Item0${index}`,
     });
-  }
-  for (const [width, height] of [
-    [1440, 900],
-    [390, 844],
-  ] as const) {
-    const { page, errors, close } = await load(`/app/chat/c/${place}/threads`, width, height);
+    return thread;
+  });
+  return { place, threads };
+};
+
+// B (study v2-chat-threads-study, Valentin's v8 comment on the discussions column): a place has no column of its own.
+// Its "General" stream holds its discussions as cards at their last activity; a card opens the discussion as a page
+// of its own, whose way back leads to the place.
+for (const [width, height] of [
+  [1440, 900],
+  [390, 844],
+] as const)
+  test(`a place's discussions stand as cards in its General stream and open as pages that lead back, at ${width} px`, async () => {
+    const { place, threads } = placeWithDiscussions(`Ausstellung ${width}`);
+    const { page, errors, close } = await load(`/app/chat/c/${place}/t/general`, width, height);
     try {
-      const detail = page.locator('[data-k2-part="Pane"][data-detail]');
-      await detail.locator('[data-k2-part="Row"]', { hasText: "Besichtigung" }).waitFor();
-      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      const cards = page.locator(".chat-discussion");
+      await cards.first().waitFor();
+      // by their last activity, the done one first; state in words, the new one marked
+      expect(await cards.locator(".chat-discussion__name").allInnerTexts()).toEqual(["Einladung freigeben", "Besichtigung", "Aufbau"]);
+      expect(await cards.nth(0).locator(".chat-discussion__state").innerText()).toBe("Erledigt");
+      expect(await cards.nth(1).getAttribute("data-unread")).toBe("");
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", skip: '[data-k2-part="Canvas"]' });
       expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
       await shoot(page, `09-discussions-light-${width}`);
-      // The search writes the address; reload and back show the same.
-      await detail.getByRole("searchbox").fill("Aufbau");
-      await page.waitForURL(/q=Aufbau/);
+      // a card opens its discussion as a page, named after the item, with the place as its way back
+      await cards.nth(1).click();
+      await page.waitForURL(new RegExp(`/c/${place}/t/${threads[1]}`));
+      await page.locator(".chat-conversation__composer").waitFor();
+      const detail = page.locator('[data-k2-part="Pane"][data-detail]');
+      await detail.locator('[data-k2-part="RecordHead"]', { hasText: "Besichtigung" }).waitFor();
+      await shoot(page, `09-discussion-open-light-${width}`);
+      const back = page.locator('[data-k2-part="Back"] a', { hasText: `Ausstellung ${width}` }).first();
+      if (width < 768) {
+        await back.click();
+        await page.waitForURL(new RegExp(`/c/${place}/t/general`));
+        await cards.first().waitFor();
+      } else expect(await back.getAttribute("href")).toContain(`/c/${place}/t/general`);
       expect(errors).toEqual([]);
     } finally {
       await close();
     }
+  }, 90_000);
+
+test("a place's head menu filters its cards by state and finds the discussions of that state from the server", async () => {
+  const { place } = placeWithDiscussions("Filterort");
+  const { page, errors, close } = await load(`/app/chat/c/${place}/t/general`, 1440, 900);
+  try {
+    const cards = page.locator(".chat-discussion");
+    await cards.first().waitFor();
+    const before = harness.systemRequests.length;
+    await page.locator('[data-k2-part="Pane"][data-detail] [data-slot="head"] button[aria-haspopup="menu"]').first().click();
+    await page.getByRole("menuitemradio", { name: "Done" }).click();
+    // the cards follow at once; the server's list for "done" is asked for
+    await page.waitForFunction(() => document.querySelectorAll(".chat-discussion").length === 1);
+    expect(await cards.locator(".chat-discussion__name").allInnerTexts()).toEqual(["Einladung freigeben"]);
+    const asked = () => harness.systemRequests.slice(before).some((request) => request.query.filter === "done");
+    for (let tries = 0; tries < 50 && !asked(); tries++) await page.waitForTimeout(100);
+    expect(asked()).toBe(true);
+    // the menu lists the server's discussions of that state, each opening its page
+    await page.locator('[data-k2-part="Pane"][data-detail] [data-slot="head"] button[aria-haspopup="menu"]').first().click();
+    await page.getByRole("menuitemradio", { name: /Einladung freigeben/ }).waitFor();
+    expect(await page.getByRole("menuitemradio", { name: /Besichtigung/ }).count()).toBe(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
   }
-}, 90_000);
+}, 60_000);
 
 test("a chat the reader may not see says so without naming it, and leads back to the chats", async () => {
   const { page, errors, close } = await load("/app/chat/c/Nope0001", 1440, 900);
