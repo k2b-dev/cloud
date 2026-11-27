@@ -166,7 +166,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
         <Pane
           label={t().apps}
           // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
-          width={app() ? { min: 420, default: 620 } : undefined}
+          width={app() ? { min: 420, default: 480 } : undefined}
           scrollKey="admin-apps"
           status={
             // The screen's figure from the 24-hour sums the providers report: requests over every app and their error rate.
@@ -265,7 +265,21 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
             detail
             label={app()!.entry.name}
             back={{ label: t().apps, href: appsHref({ list: list() }) }}
+            // the views are the head of the open app, a bar of their own, so each has room; its name and deeds stand below
             head={
+              <Tabs
+                label={app()!.entry.name}
+                items={[
+                  { label: viewLabel(null), href: appsHref({ app: app()!.entry.id, list: list() }), current: !detail() },
+                  ...views().map((view) => ({
+                    label: viewLabel(view),
+                    href: appsHref({ app: app()!.entry.id, view, list: list() }),
+                    current: detail()?.view === view,
+                  })),
+                ]}
+              />
+            }
+            status={
               <Bar
                 start={
                   // slot for #4208/#4223 (DP): the tinted object head (40 px mark, name 18, three key facts); the name stands in
@@ -289,19 +303,6 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                     <Button variant="ghost" icon="x" label={t().closeDetail} href={appsHref({ list: list() })} />
                   </>
                 }
-              />
-            }
-            status={
-              <Tabs
-                label={app()!.entry.name}
-                items={[
-                  { label: viewLabel(null), href: appsHref({ app: app()!.entry.id, list: list() }), current: !detail() },
-                  ...views().map((view) => ({
-                    label: viewLabel(view),
-                    href: appsHref({ app: app()!.entry.id, view, list: list() }),
-                    current: detail()?.view === view,
-                  })),
-                ]}
               />
             }
           >

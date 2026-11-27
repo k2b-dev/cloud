@@ -240,6 +240,8 @@ export default function RegistryForm(props: {
           !item.isCustom && item.valueSource === "env" ? `${t().sourceEnv} ·` : "",
           item.description,
           item.kind === "secret" ? (item.isCustom || item.valueSource === "env" ? t().secretSet : t().secretEmpty) : "",
+          // an empty picture is no state of its own in the picker: the words say that the default stands
+          item.kind === "image" && !form.draft()[item.key] ? t().imageDefault : "",
         ]
           .filter(Boolean)
           .join(" ");

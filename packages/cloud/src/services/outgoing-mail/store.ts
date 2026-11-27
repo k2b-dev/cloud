@@ -137,6 +137,11 @@ const mapProfile = (row: ProfileRow, appCount: number, usedLast24h: number): Adm
   appCount,
   usedLast24h,
 });
+/**
+ * A message that counts against a profile's rolling 24-hour recipient quota: not cancelled and created in the last 24
+ * hours. Its columns stand unqualified, so it reads `outgoing_mail.messages` also inside a subquery beside profiles.
+ */
+export const countsTowardQuota = (db: SQL) => db`status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'`;
 const list = async (db: SQL = sql, registeredApps?: readonly AppRegistryEntry[]): Promise<AdminMailProfile[]> => {
   const apps = registeredApps ?? (await listApps());
   const rows = await db<ProfileRow[]>`SELECT ${columns(db)} FROM outgoing_mail.profiles ORDER BY is_default DESC, name, key`;
@@ -149,7 +154,7 @@ const list = async (db: SQL = sql, registeredApps?: readonly AppRegistryEntry[])
   const used = senders.length
     ? await db<{ profile_id: string; used: number }[]>`
         SELECT profile_id, COALESCE(sum(recipient_count), 0)::int AS used FROM outgoing_mail.messages
-        WHERE app_id = ANY(${senders}) AND status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'
+        WHERE app_id = ANY(${senders}) AND ${countsTowardQuota(db)}
         GROUP BY profile_id`
     : [];
   const usedBy = new Map(used.map((entry) => [String(entry.profile_id), entry.used]));
@@ -399,7 +404,7 @@ const profilesForApp = async (appId: string): Promise<MailProfile[]> => {
   >`
     SELECT p.key, p.name, p.from_address, p.is_default, p.max_attachment_bytes, p.daily_recipient_limit,
       (SELECT COALESCE(sum(m.recipient_count), 0)::int FROM outgoing_mail.messages m WHERE m.app_id = ${appId}
-        AND m.profile_id = p.id AND m.status <> 'cancelled' AND m.created_at > now() - INTERVAL '24 hours') AS used
+        AND m.profile_id = p.id AND ${countsTowardQuota(sql)}) AS used
     FROM outgoing_mail.profiles p WHERE
       CASE WHEN EXISTS(SELECT 1 FROM outgoing_mail.app_access WHERE app_id = ${appId} AND mode = 'selected')
       THEN EXISTS(SELECT 1 FROM outgoing_mail.app_profiles WHERE app_id = ${appId} AND profile_id = p.id)

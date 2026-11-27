@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Check, Input, Select } from "@k2b/ui/v2";
+import { Check, ImageInput, Input, Select } from "@k2b/ui/v2";
 import { type JSX, Match, Switch } from "solid-js";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { FieldInput } from "../settings/_components/setting-inputs";
@@ -100,8 +100,12 @@ export default function SettingControl(props: SettingControlProps): JSX.Element 
           }
         />
       </Match>
-      <Match when={kind() === "image" || kind() === "template"}>
-        {/* k2b-ui gap: no image picker and no template editor in v2; the v1 controls stand in until they exist. */}
+      <Match when={kind() === "image"}>
+        {/* its preview is the value, the deeds beside it; the picked file becomes a square data URL as before */}
+        <ImageInput value={text(props.value)} disabled={props.locked} onChange={(image) => props.onChange(image ?? "")} />
+      </Match>
+      <Match when={kind() === "template"}>
+        {/* k2b-ui gap: no template editor in v2; the v1 control stands in until it exists. */}
         <FieldInput entry={props.entry} value={() => props.value} error={() => props.error} onChange={props.onChange} />
       </Match>
     </Switch>

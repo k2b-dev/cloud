@@ -52,6 +52,30 @@ test("the sections stand under their entry in the admin bar, and the page keeps 
   expect(errors).toEqual([]);
 }, 60_000);
 
+test("the purpose stands apart from the head and the first section; logo and favicon show their picture or the default", async () => {
+  await goto("/admin/base");
+  await settled(page);
+  const purpose = await page.evaluate(() => {
+    const band = document.querySelector('main [data-k2-part="Pane"] [data-k2-part="Band"]');
+    const text = band?.querySelector(".k2-text");
+    const next = band?.nextElementSibling;
+    if (!band || !text || !next) return null;
+    const [b, t, n] = [band, text, next].map((element) => element.getBoundingClientRect());
+    return { above: t!.top - b!.top >= 12, below: b!.bottom - t!.bottom >= 12, clear: n!.top >= b!.bottom - 0.5 };
+  });
+  // the band's room (12 px) above and below its words, and the section after it starts below its line
+  expect(purpose).toEqual({ above: true, below: true, clear: true });
+  // logo and favicon: the value is the picture's place with its deed beside it; with no picture of its own the hint
+  // says the default stands
+  const pictures = page.locator('main [data-k2-part="Field"]').filter({ has: page.locator('[data-k2-part="ImageInput"]') });
+  expect(await pictures.count()).toBe(2);
+  for (const field of await pictures.all()) {
+    expect(await field.locator(".k2-image-preview").isVisible()).toBe(true);
+    expect(await field.getByRole("button", { name: "Choose image" }).isVisible()).toBe(true);
+    expect(await field.innerText()).toContain("Default (no image of your own).");
+  }
+});
+
 test("general settings save with the footer's Save, which counts the changes, and continue from the stored versions", async () => {
   await goto("/admin/base");
   expect(await button("Save").isDisabled()).toBe(true);
