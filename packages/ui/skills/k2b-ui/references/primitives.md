@@ -123,7 +123,12 @@ of its own).
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+href?, onNavigate?, onOpen?, current?, color? }[]`, `more` (an action after
+them), `label`. `onOpen` opens a tile by a deed instead of an address (it is
+then a button); `current` marks the tile of what is open now (the tint of an
+open row and `aria-current`, nothing moves). In a pane under 480 px they stand two by two, never one per row:
+the name on up to two lines, the quiet line cut with "…", an odd last one
+in its half.
 
 `variant="media"`: photos, pages and videos in a grid of at least 160 px.
 A tile adds `image` (its picture, 4:3), `kind` (`PDF`, a video's length),
@@ -282,7 +287,9 @@ no rows and nothing loading, the empty state stands in place of the table.
 `items: { label, value, hint?, copy?, mono? }[]`: label 12 quiet, value 13, 32 px
 per row; the label column is as wide as the longest label of that list
 (80–160 px), so two `Facts` lists may start their values at different
-edges.
+edges. On the phone each pair is one line, the label on the left and a short
+value at the end; a value longer than the rest of the line goes under its
+label.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
@@ -334,7 +341,9 @@ lines instead of cutting a thing.
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
 - `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
-  the colour of its kind: table, form, PDF), `image` (a thumbnail over the
+  the colour of its kind: table, form, PDF); `initial` in place of `icon`
+  for a thing without a symbol of its own (its name: a space "Werkstatt"
+  shows "W" on its colour, in the symbol's size), `image` (a thumbnail over the
   symbol; while it loads and when it fails the symbol shows), `kind` (the
   type on its corner: `PDF`), `label` (without one it is decoration beside
   its name). The place sets the size: 20 in the sidebar and in a sentence,
@@ -360,7 +369,9 @@ lines instead of cutting a thing.
 ## Controls
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
-  `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
+  `text` (quiet, in heads and at row ends; a `ghost` or `text` button with
+  words first in a bar or last at the end of a bar, group head or row stands
+  with its words on the text edge, a framed one with its box); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
   `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
   is about, such as a row's title: its name is its own words, then those;

@@ -11,7 +11,7 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-head-media-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Preview } = await import("./marks");
+const { Mark, Preview } = await import("./marks");
 const { Cells, Tiles } = await import("./layout");
 const { Nav, Path } = await import("./components");
 const { Choice, Input, Select, Setting } = await import("./controls");
@@ -43,7 +43,8 @@ test("a setting names its control and says what an unsaved change was", () => {
   expect(markup).toContain("data-setting");
   // the label names the control as in a field
   expect(markup).toMatch(/<label class="k2-field-label" id="([^"]+)" for="([^"]+)"/);
-  expect(markup).toContain("geändert · vorher 12 Std.");
+  // the word "geändert" stands in a part of its own (it gives way on a narrow phone); read as text it is one sentence
+  expect(markup.replace(/<[^>]+>/g, "")).toContain("geändert · vorher 12 Std.");
   expect(markup).toContain("Danach muss man sich neu anmelden.");
   // a setting without a change says nothing about it
   expect(html(Setting, { label: "Adresse", children: createComponent(Input, { value: "x" }) })).not.toContain("k2-field-was");
@@ -158,6 +159,15 @@ test("a value with a limit shows a meter inside the limit, says the value in wor
   expect(html(Cells.Cell, { icon: "clock", label: "Arbeitszeit", value: "0 h", meter: { value: 0, of: 0 } })).not.toContain('role="meter"');
 });
 
+test("a thing without a symbol shows the first letter of its name on its colour, a whole letter or emoji", () => {
+  const letter = (initial: string) => html(Mark, { initial, color: "#0284c7" }).match(/k2-mk-initial[^>]*>([^<]*)</)?.[1];
+  expect(letter("werkstatt")).toBe("W");
+  expect(letter("  Ärzte Nord")).toBe("Ä");
+  expect(letter("🎨 Atelier")).toBe("🎨");
+  // the letter stands in the symbol's place: no symbol beside it
+  expect(html(Mark, { initial: "Werkstatt" })).not.toContain("ti-");
+});
+
 test("key numbers count themselves on the server: the cells say how many they are and each its place", () => {
   const markup = html(Cells, {
     get children() {
@@ -168,4 +178,14 @@ test("key numbers count themselves on the server: the cells say how many they ar
   });
   expect(markup).toMatch(/class="k2-cells"[^>]*data-n="3"/);
   expect([...markup.matchAll(/data-k2-part="Cells.Cell" data-i="(\d)"/g)].map((match) => match[1])).toEqual(["1", "2", "3"]);
+});
+
+test("a media tile may open by a deed: its title is a button, and the tile is marked as one that opens", () => {
+  const markup = html(Tiles, {
+    variant: "media",
+    label: "Notizen",
+    items: [{ key: "n", icon: "note", title: "Notiz zur Abnahme", onOpen: () => {} }],
+  });
+  expect(markup).toMatch(/class="k2-tile"[^>]*data-open=""/);
+  expect(markup).toMatch(/<button type="button" class="k2-row-open"[^>]*>Notiz zur Abnahme</);
 });

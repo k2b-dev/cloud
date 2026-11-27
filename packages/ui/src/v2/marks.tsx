@@ -4,7 +4,7 @@ import { personColor } from "../surfaces/person-color";
 import { colorStyle, safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
 import { linkOr } from "./link";
-import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
+import { initialOf, initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
@@ -168,9 +168,21 @@ const AvatarStack = (props: AvatarStackProps) => {
 
 export const Avatar = /* @__PURE__ */ Object.assign((props: AvatarProps) => <Face {...props} />, { Stack: AvatarStack });
 
-export type MarkProps = {
-  /** A Tabler icon for the kind of thing, such as `table`, `folder-filled` or `tool`. */
-  icon: string;
+export type MarkProps = (
+  | {
+      /** A Tabler icon for the kind of thing, such as `table`, `folder-filled` or `tool`. */
+      icon: string;
+      initial?: undefined;
+    }
+  | {
+      icon?: undefined;
+      /**
+       * The name of a thing that has no symbol of its own, such as a space without an icon: its first letter stands
+       * on its colour in the symbol's place and size ("Werkstatt": "W").
+       */
+      initial: string;
+    }
+) & {
   /**
    * The data colour of the thing: a base, a storage, a mailbox, or the colour of its type (a table, a form, a PDF).
    * Without one the mark stays neutral; give one wherever the data has it.
@@ -207,7 +219,17 @@ export const Mark = (props: MarkProps) => {
       aria-hidden={props.label ? undefined : "true"}
       style={custom({ "--k2-c": props.color })}
     >
-      <Icon name={props.icon} />
+      <Show
+        when={props.icon}
+        fallback={
+          // a glyph like an avatar's initials: it has no type role of the text around it
+          <span class="k2-icon k2-mk-initial" data-k2-glyph="">
+            {initialOf(props.initial ?? "")}
+          </span>
+        }
+      >
+        {(name) => <Icon name={name()} />}
+      </Show>
       <picture.Picture />
       <Show when={props.kind}>
         {/* a glyph like an avatar's initials: it has no type role of the text around it */}

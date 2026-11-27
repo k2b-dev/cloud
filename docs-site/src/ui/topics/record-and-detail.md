@@ -68,7 +68,7 @@ One statement that stands out in a column, in a tone; free height and one line b
 
 ### Facts
 
-Labels with their values; `copy` for what people paste elsewhere, `mono` for keys and IDs, `inline` for one line.
+Labels with their values; `copy` for what people paste elsewhere, `mono` for keys and IDs, `inline` for one line. On the phone the labels stand in a column of 100 px beside their values; a long label wraps in it.
 
 <Props of="Facts Fact" />
 

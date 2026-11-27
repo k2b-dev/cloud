@@ -642,8 +642,9 @@
   min-width: 0;
   flex: none;
 }
-/* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
-.k2-ui .k2-scroll > .k2-bar[data-k2-part="Bar"]:last-child {
+/* the foot of a column (a form's deeds) or of a section draws no line under itself: the line above it, or the
+   section's own, separates it, so two lines never stand one over the other */
+.k2-ui :is(.k2-scroll, .k2-sec) > .k2-bar[data-k2-part="Bar"]:last-child {
   border-bottom: 0;
 }
 .k2-ui .k2-bar-start,
@@ -912,6 +913,10 @@
   min-width: 0;
   max-width: 100%;
 }
+/* the tile of what is open now takes the tint of the app it belongs to, as an open row; only its ground changes */
+.k2-ui .k2-tile[data-current] {
+  background: var(--k2-app-tint);
+}
 .k2-ui .k2-tile > span {
   display: flex;
   flex-direction: column;
@@ -1074,6 +1079,11 @@
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-open]:hover {
   background: var(--k2-n100);
 }
+/* a tile of what is open keeps its tint under the pointer, after the hover grounds of card and media tiles; a selection
+   (below) still wins */
+.k2-ui .k2-tiles > .k2-tile[data-current][data-open]:hover {
+  background: var(--k2-app-tint);
+}
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-selected],
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-selected]:hover {
   background: var(--k2-blue-tint);
@@ -1185,6 +1195,16 @@
 }
 .k2-ui .k2-sec > * {
   flex: none;
+}
+/* no line under the last section of a column: the space under it ends the page, as under a list's last row (rule 4);
+   a popover after it, also alone in an island of its own (a menu's island), is no part of the column */
+.k2-ui
+  :is(.k2-scroll, .k2-dialog-body)
+  > .k2-sec:nth-last-child(
+    1 of
+      :not([popover], [data-slot$="-content"], :is(solid-island, solid-client):has(> :is([popover], [data-slot$="-content"]):only-child))
+  ) {
+  border-bottom: 0;
 }
 /* sections side by side: two columns where both get 360 px, else one; no line between the columns */
 .k2-ui .k2-sec-cols {
@@ -1355,7 +1375,17 @@
   margin-right: -8px;
 }
 .k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
-  margin-right: -6px;
+  margin-inline-end: -6px;
+}
+/* a ghost button with words first in a bar, or last at the end of a bar, a group head or a row, stands with its
+   words on the text edge, as a text button does (K5): it gives back its room and its unseen 1 px frame */
+.k2-ui .k2-bar-start > .k2-btn[data-variant="ghost"]:not([data-icon-only]):first-child {
+  margin-inline-start: calc(-1px - var(--k2-btn-pad));
+}
+.k2-ui
+  :is(.k2-bar-end, .k2-gh-end, .k2-row-end)
+  > .k2-btn[data-variant="ghost"]:not([data-icon-only]):nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
+  margin-inline-end: calc(-1px - var(--k2-btn-pad-end));
 }
 .k2-ui .k2-group[data-folded] {
   padding-bottom: 0;
@@ -1607,7 +1637,7 @@
 }
 .k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
 .k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
-  margin-right: -10px;
+  margin-inline-end: -10px;
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
    Controls inside the row stand above the stretch, so each keeps its own target. */
@@ -2046,6 +2076,8 @@
   color: var(--k2-subtle);
   padding: 6px 0;
   max-width: 160px;
+  /* a label longer than its column wraps in it, a word too long for it breaks: never cut, never over its value */
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-fact-pair > dd {
   display: flex;
@@ -2081,7 +2113,8 @@
 }
 /* the copy button stands 2 px below the top of its row and adds no height to it */
 .k2-ui .k2-fact-pair > dd > .k2-btn {
-  margin: -4px -6px -4px 0;
+  margin-block: -4px;
+  margin-inline-end: -6px;
 }
 .k2-ui .k2-facts[data-inline] {
   display: flex;
@@ -2111,7 +2144,7 @@
 }
 /* an icon button at the end stands with its icon on the text edge */
 .k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
-  margin-right: -10px;
+  margin-inline-end: -10px;
 }
 
 /* ── Prose: reading text, 14/22, measure 720 ────────────────────────────────────────────────────────────────── */
@@ -2192,9 +2225,9 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
-/* A line of things that has no room wraps, in a column of any width, so no chip or action is cut in half (or lost);
-   a line that fits stays one line. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+/* A line of things that has no room wraps, in a column of any width and in a dialog or panel, so no chip or action is
+   cut in half (or lost); a line that fits stays one line. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   flex-wrap: wrap;
   row-gap: 8px;
 }
@@ -2408,6 +2441,11 @@
 }
 .k2-ui .k2-mk > .k2-icon {
   font-size: 15px;
+}
+/* the first letter of a thing without a symbol: in the symbol's place and size, set as a glyph */
+.k2-ui .k2-mk-initial {
+  font-family: var(--k2-font);
+  font-weight: 600;
 }
 /* a picture lies over the symbol; while it loads and when it fails the symbol shows, and nothing moves */
 .k2-ui .k2-mk > img {
@@ -2749,7 +2787,10 @@
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
 .k2-ui .k2-btn {
   height: var(--k2-h-control);
-  padding: 0 12px;
+  /* the room beside the words, which a borderless button at an edge gives back to stand with its words on it */
+  --k2-btn-pad: 12px;
+  --k2-btn-pad-end: var(--k2-btn-pad);
+  padding: 0 var(--k2-btn-pad);
   border-radius: var(--k2-r-control);
   border: 1px solid var(--k2-line-control);
   background: var(--k2-surface);
@@ -2830,7 +2871,8 @@
 }
 .k2-ui .k2-btn[data-variant="text"] {
   height: var(--k2-h-control-small);
-  padding: 0 8px;
+  --k2-btn-pad: 8px;
+  padding: 0 var(--k2-btn-pad);
   gap: 4px;
   border-color: transparent;
   background: transparent;
@@ -2846,13 +2888,15 @@
   padding: 0;
 }
 .k2-ui .k2-btn[data-menu] {
-  padding-right: 8px;
+  --k2-btn-pad-end: 8px;
+  padding-inline-end: var(--k2-btn-pad-end);
 }
 /* the place picks the control height, so the air above and below is equal and at least 6 px:
    head 56 → 36, status row 52 → 36, bar 40 → 28, a row → 28. A control never turns square in a band. */
 .k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
   height: var(--k2-h-control-small);
-  padding: 0 8px;
+  --k2-btn-pad: 8px;
+  padding: 0 var(--k2-btn-pad);
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
@@ -3211,7 +3255,9 @@
   position: absolute;
   inset: -12px -4px;
 }
-.k2-ui .k2-sec > .k2-field[data-setting] + .k2-field[data-setting] {
+/* settings follow each other without the room between fields: each brings its own 8 px (no sibling relation, which an
+   island's wrapper would multiply) */
+.k2-ui .k2-sec > .k2-field[data-setting] {
   margin-top: 0;
 }
 /* By the width of its pane, not of the window. Below 800 px of pane the deed has no room after the value (about 170 px
@@ -5461,17 +5507,19 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  /* On the phone the labels stand in a column of 100 px beside their values, as the study draws them (identity B); a
+     long label wraps in its column, a long value beside its label. */
   .k2-ui .k2-facts {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 100px minmax(0, 1fr);
+    column-gap: 16px;
   }
-  .k2-ui .k2-fact-pair > dt {
-    padding-bottom: 0;
-  }
-  .k2-ui .k2-fact-pair > dd {
-    padding-top: 0;
+  /* a value not there yet holds a short place of its own at the end, as in an inline line */
+  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd > .k2-fact-value > .k2-skel:not([data-over]) {
+    width: 48px;
   }
   .k2-ui .k2-fact-pair > dd > .k2-btn {
-    margin: 2px -6px -6px 0;
+    margin-block: -4px;
+    margin-inline-end: -6px;
   }
   .k2-ui .k2-facts[data-inline] > .k2-fact-pair > :is(dt, dd) {
     padding: 6px 0;
@@ -5512,6 +5560,29 @@
   container: k2-pane / inline-size;
 }
 @container k2-pane (max-width: 479px) {
+  /* Small tiles never stand one per row: two side by side, each with its name on up to two lines and its quiet line
+     cut with "…"; an odd last one keeps its half, and the deed after them takes its own line. */
+  .k2-ui .k2-tiles:not([data-variant]) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .k2-ui .k2-tiles:not([data-variant]) > .k2-tile {
+    height: auto;
+    min-height: 44px;
+    padding-block: 8px;
+  }
+  .k2-ui .k2-tiles:not([data-variant]) > .k2-tile .k2-tile-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .k2-ui .k2-tiles:not([data-variant]) > :not(.k2-tile) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
   /* an entry of a digest puts its date, title, state and text one under the other: beside each other the text would
      break after every word (akte.html at 1024 px, where the record's main column is 400 px). The query is the pane's,
      so a digest finds its narrow form inside a `Pane`. */
@@ -6290,6 +6361,9 @@
   }
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:not([data-menu]):has(> .k2-icon:first-child) {
     width: var(--k2-h-control);
+    /* no room beside the symbol: a ghost button at the end gives back only its unseen frame */
+    --k2-btn-pad: 0px;
+    --k2-btn-pad-end: 0px;
     padding: 0;
   }
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn[data-variant="text"]:not([data-menu]):has(> .k2-icon:first-child) {

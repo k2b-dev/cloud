@@ -42,7 +42,12 @@ type Case =
   | "groups"
   | "split-list-canvas"
   | "empty-ways"
-  | "view-statement";
+  | "view-statement"
+  | "section-foot"
+  | "facts"
+  | "dialog-inline"
+  | "agenda"
+  | "tiles-current";
 
 let browser: Browser;
 let client: string;
@@ -1022,6 +1027,7 @@ for (const width of [700, 390])
           const setting = page.locator("[data-k2-part='Setting']", { hasText: name }).first();
           await setting.locator(".k2-field-action button").focus();
           await page.keyboard.press("Shift+Tab");
+          await settled(page);
           const value = await setting.evaluate((element) => {
             const focused = document.activeElement;
             if (!focused || !element.contains(focused) || focused.closest(".k2-field-action")) return null;
@@ -1029,6 +1035,7 @@ for (const width of [700, 390])
             return { top: box.top, bottom: box.bottom, right: box.right, middle: box.top + box.height / 2 };
           });
           await page.keyboard.press("Tab");
+          await settled(page);
           const deed = await setting.evaluate((element) => {
             const focused = document.activeElement;
             if (!focused?.closest(".k2-field-action") || !element.contains(focused)) return null;
@@ -1741,6 +1748,282 @@ test("on the phone the statements end before 'Ansicht' at rest and fade at their
         if (which === "view-statement") expect(cut).toEqual({ long: true, ellipsis: "ellipsis" });
       },
       390,
+    );
+});
+
+// a menu's island after the last section (an island that holds only its popover) is no part of the column: the last
+// section still draws no line under it (review r10 P3)
+test("the last section of a column draws no line also where an island with only a popover follows it", async () => {
+  await withPage("section-foot", async (page) => {
+    const line = await page.evaluate(() => {
+      const scroll = document.querySelector(".k2-scroll:has(> .k2-sec)")!;
+      const island = document.createElement("solid-island");
+      island.innerHTML = "<div popover>Menü</div>";
+      scroll.append(island);
+      const sections = scroll.querySelectorAll(":scope > .k2-sec");
+      return getComputedStyle(sections[sections.length - 1]!).borderBottomWidth;
+    });
+    expect(line).toBe("0px");
+  });
+});
+
+test("a bar that ends a section draws no line of its own: one line parts it from the next section, never two", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "section-foot",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const [first] = document.querySelectorAll(".k2-sec");
+          return {
+            bar: getComputedStyle(first!.querySelector(":scope > .k2-bar")!).borderBottomWidth,
+            section: getComputedStyle(first!).borderBottomWidth,
+          };
+        });
+        expect(found).toEqual({ bar: "0px", section: "1px" });
+        // a ghost button with words stands with its words, not its box, on the text edge at both ends of the bar (K5)
+        const words = await page.evaluate(() => {
+          const bar = document.querySelector(".k2-sec > .k2-bar")!;
+          const pane = bar.closest(".k2-pane")!.getBoundingClientRect();
+          const text = (button: Element) => {
+            const range = document.createRange();
+            range.selectNodeContents(button);
+            return range.getBoundingClientRect();
+          };
+          const [start, end] = [...bar.querySelectorAll(".k2-btn")];
+          return [Math.round(text(start!).left - pane.left), Math.round(pane.right - text(end!).right)];
+        });
+        expect(words).toEqual(width === 390 ? [16, 16] : [20, 20]);
+        // pulled to the text edge, a ghost button keeps its whole focus ring (3 px) inside every column that clips it
+        const cut = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2-sec > .k2-bar .k2-btn")].flatMap((button) => {
+            const ring = button.getBoundingClientRect();
+            const found: string[] = [];
+            for (let box = button.parentElement; box; box = box.parentElement) {
+              const style = getComputedStyle(box);
+              if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+              const room = box.getBoundingClientRect();
+              if (ring.left - 3 < room.left - 0.5 || ring.right + 3 > room.right + 0.5)
+                found.push(`${button.textContent} in ${box.className}`);
+            }
+            return found;
+          }),
+        );
+        expect(cut).toEqual([]);
+        // a space without a symbol: its first letter in the symbol's size and place, in the middle of its mark
+        const initial = await page.evaluate(() => {
+          const letter = document.querySelector<HTMLElement>(".k2-mk-initial")!;
+          const mark = letter.parentElement!.getBoundingClientRect();
+          const box = letter.getBoundingClientRect();
+          const symbol = getComputedStyle(document.querySelectorAll(".k2-row-lead > .k2-mk")[1]!.querySelector(".k2-icon")!);
+          return {
+            text: letter.textContent,
+            size: [getComputedStyle(letter).fontSize, getComputedStyle(letter).fontWeight],
+            symbol: symbol.fontSize,
+            centred:
+              Math.abs(box.left + box.width / 2 - (mark.left + mark.width / 2)) <= 1 &&
+              Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) <= 1,
+          };
+        });
+        // in a row's mark of 24 (a list without pictures; 40 on the phone) the symbol is 15 (22 on the phone), and the
+        // letter takes its size
+        expect(initial).toEqual({ text: "W", size: [initial.symbol, "600"], symbol: width === 390 ? "22px" : "15px", centred: true });
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("on the phone the labels of facts stand in a column of 100 px, each value beside its label; a long label wraps in its column, never cut or over its value", async () => {
+  await withPage(
+    "facts",
+    async (page) => {
+      const found = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-fact-pair")].map((pair) => {
+          const term = pair.querySelector("dt")!;
+          const label = term.getBoundingClientRect();
+          const value = pair.querySelector("dd")!.getBoundingClientRect();
+          return {
+            name: term.textContent,
+            label: Math.round(label.width),
+            gap: Math.round(value.left - label.right),
+            beside: Math.abs(label.top - value.top) < 1,
+            whole: term.scrollWidth <= term.clientWidth && term.scrollHeight <= term.clientHeight,
+            lines: (() => {
+              const range = document.createRange();
+              range.selectNodeContents(term);
+              return new Set([...range.getClientRects()].map((line) => Math.round(line.top))).size;
+            })(),
+          };
+        }),
+      );
+      expect(found.length).toBeGreaterThan(3);
+      for (const { name, label, gap, beside, whole } of found)
+        expect({ name, label, gap, beside, whole }).toEqual({ name, label: 100, gap: 16, beside: true, whole: true });
+      // the worst case: a word longer than the column breaks in it, and the label takes the lines it needs
+      expect(found.find((fact) => fact.name?.startsWith("Aufbewahrung"))!.lines).toBeGreaterThan(1);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
+  );
+});
+
+test("in a dialog a line of things longer than its room wraps: every chip whole, inside the dialog", async () => {
+  for (const width of [390, 1440])
+    await withPage(
+      "dialog-inline",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const line = document.querySelector<HTMLElement>(".k2-dialog-body > .k2-inline")!;
+          const room = line.getBoundingClientRect();
+          const chips = [...line.querySelectorAll<HTMLElement>(":scope > .k2-chip")];
+          return {
+            wraps: getComputedStyle(line).flexWrap,
+            lines: new Set(chips.map((chip) => Math.round(chip.getBoundingClientRect().top))).size,
+            whole: chips.every(
+              (chip) => chip.getBoundingClientRect().right <= room.right + 0.5 && chip.scrollWidth <= chip.clientWidth + 1,
+            ),
+          };
+        });
+        expect({ wraps: found.wraps, whole: found.whole }).toEqual({ wraps: "wrap", whole: true });
+        // six people do not fit on one line of a dialog on the phone
+        if (width === 390) expect(found.lines).toBeGreaterThan(1);
+      },
+      width,
+    );
+});
+
+// the tile of what is open now (W2: the way to start that the preview beside the tiles shows) is marked as an open row
+// is: aria-current and the tint of its app, also under the pointer; nothing of its size or place changes
+test("the tile of what is open now takes the open row's tint and aria-current, and keeps its size", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "agenda",
+      async (page) => {
+        const read = () =>
+          page.evaluate(() => {
+            const tiles = [...document.querySelectorAll<HTMLElement>(".k2-tiles > .k2-tile")];
+            const open = tiles.find((tile) => tile.getAttribute("aria-current") === "true")!;
+            const probe = document.createElement("i");
+            probe.style.background = "var(--k2-app-tint)";
+            open.parentElement!.append(probe);
+            const tint = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            const box = open.getBoundingClientRect();
+            return {
+              current: tiles.filter((tile) => tile.getAttribute("aria-current") === "true").length,
+              tinted: getComputedStyle(open).backgroundColor === tint,
+              box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)].join(","),
+              // every tile's place and size, so the pointer on one moves none of them
+              all: tiles.map((tile) => {
+                const each = tile.getBoundingClientRect();
+                return [Math.round(each.left), Math.round(each.top), Math.round(each.width), Math.round(each.height)].join(",");
+              }),
+            };
+          });
+        const before = await read();
+        expect({ current: before.current, tinted: before.tinted }).toEqual({ current: 1, tinted: true });
+        await page.locator(".k2-tile[aria-current='true']").hover();
+        await settled(page);
+        const hovered = await read();
+        expect({ tinted: hovered.tinted, box: hovered.box, all: hovered.all }).toEqual({ tinted: true, box: before.box, all: before.all });
+      },
+      width,
+    );
+});
+
+// cards and media have a hover ground of their own: the tile of what is open keeps its tint over it, and a selection's
+// blue wins over the tint (review r1 #4314)
+for (const theme of ["light", "dark"] as const)
+  test(`a current card and a current picture keep the tint at rest and under the pointer, blue once selected, their box unchanged (${theme})`, async () => {
+    await withPage("tiles-current", async (page) => {
+      // in an app of its own colour, so its tint differs from the blue of a selection
+      await page.evaluate((next) => {
+        document.body.style.setProperty("--k2-app", "#16a34a");
+        document.body.setAttribute("data-theme", next);
+      }, theme);
+      await settled(page);
+      const read = (variant: "card" | "media") =>
+        page.evaluate((variant) => {
+          const tile = document.querySelector<HTMLElement>(`.k2-tiles[data-variant='${variant}'] > .k2-tile[aria-current='true']`)!;
+          const ground = (value: string) => {
+            const probe = document.createElement("i");
+            probe.style.background = value;
+            tile.parentElement!.append(probe);
+            const color = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return color;
+          };
+          const own = getComputedStyle(tile).backgroundColor;
+          const box = tile.getBoundingClientRect();
+          return {
+            ground: own === ground("var(--k2-app-tint)") ? "tint" : own === ground("var(--k2-blue-tint)") ? "blue" : own,
+            box: [box.left, box.top, box.width, box.height].map(Math.round).join(","),
+          };
+        }, variant);
+      const tile = (variant: "card" | "media") => page.locator(`.k2-tiles[data-variant='${variant}'] > .k2-tile[aria-current='true']`);
+      for (const variant of ["card", "media"] as const) {
+        const rest = await read(variant);
+        await tile(variant).hover();
+        await settled(page);
+        const hovered = await read(variant);
+        expect({ variant, rest: rest.ground, hovered: hovered.ground, box: hovered.box }).toEqual({
+          variant,
+          rest: "tint",
+          hovered: "tint",
+          box: rest.box,
+        });
+      }
+      // the picture selected: blue under the pointer and away from it, in the same box
+      const before = await read("media");
+      await tile("media").getByRole("checkbox").click();
+      await settled(page);
+      const selectedHovered = await read("media");
+      await page.mouse.move(1, 1);
+      await settled(page);
+      const selectedRest = await read("media");
+      expect([selectedHovered, selectedRest]).toEqual([
+        { ground: "blue", box: before.box },
+        { ground: "blue", box: before.box },
+      ]);
+    });
+  });
+
+test("small tiles in a narrow pane stand two by two, never one per row: names on up to two lines, an odd last one keeps its half; a tile may open by a deed", async () => {
+  for (const width of [390, 1440])
+    await withPage(
+      "agenda",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const tiles = [...document.querySelectorAll<HTMLElement>(".k2-tiles > .k2-tile")];
+          const boxes = tiles.map((tile) => tile.getBoundingClientRect());
+          return {
+            rows: new Set(boxes.map((box) => Math.round(box.top))).size,
+            widths: [...new Set(boxes.map((box) => Math.round(box.width)))],
+            lastLeft: Math.round(boxes.at(-1)!.left - boxes[0]!.left),
+            // a name takes at most two lines and ends with "…" beyond them
+            names: tiles.map((tile) => {
+              const title = tile.querySelector<HTMLElement>(".k2-tile-title")!;
+              return Math.round(title.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(title).lineHeight)) <= 2;
+            }),
+            deed: tiles.at(-1)!.querySelector(".k2-row-open")!.tagName,
+          };
+        });
+        expect(found.deed).toBe("BUTTON");
+        expect(found.names.every(Boolean)).toBe(true);
+        if (width === 390) {
+          expect(found.rows).toBe(3);
+          // equal halves, the fifth under the first in its half
+          expect(found.widths.length).toBe(1);
+          expect(found.lastLeft).toBe(0);
+        }
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+        await page.locator(".k2-tile button.k2-row-open").click();
+        expect(await page.getByText("geöffnet: 1").count()).toBe(1);
+      },
+      width,
     );
 });
 

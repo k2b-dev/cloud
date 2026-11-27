@@ -868,7 +868,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
   );
 
   test(
-    "rule 9: no line under a section head or between its entries, none inside a group; one line at the end of a section",
+    "rule 9: no line under a section head or between its entries, none inside a group; one line at the end of a section, none under the last",
     async () => {
       const page = await open("structure");
       try {
@@ -886,11 +886,18 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             sectionRows: inside(".k2-sec > .k2-row, .k2-sec .k2-sh"),
             groupInside: inside(".k2-group *"),
             sectionEnd: getComputedStyle(document.querySelector(".k2-pane:not([data-side]) .k2-sec")!).borderBottomWidth,
+            // the last section of the column: the space under it ends the page, without a line (look rule 4)
+            lastEnds: [...document.querySelectorAll(".k2-pane:not([data-side]) > .k2-scroll > .k2-sec")].map(
+              (section) => getComputedStyle(section).borderBottomWidth,
+            ),
           };
         });
         expect(lines.sectionRows).toEqual([]);
         expect(lines.groupInside).toEqual([]);
         expect(lines.sectionEnd).toBe("1px");
+        expect(lines.lastEnds.length).toBeGreaterThan(1);
+        expect(lines.lastEnds.at(-1)).toBe("0px");
+        expect(lines.lastEnds.slice(0, -1).every((width) => width === "1px")).toBe(true);
       } finally {
         await page.close();
       }

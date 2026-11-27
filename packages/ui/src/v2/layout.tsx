@@ -792,6 +792,13 @@ export type Tile = {
   href?: string;
   /** … in place on a plain click (see `OnNavigate`). */
   onNavigate?: OnNavigate;
+  /** … or this deed without an address of its own, such as opening a note in the page: the tile is then a button. */
+  onOpen?: () => void;
+  /**
+   * The tile stands for what is open now, such as the way to start that the preview beside the tiles shows: the tint of
+   * the app it belongs to, as an open row, and `aria-current`; nothing of its size changes.
+   */
+  current?: boolean;
   /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
   color?: string;
   /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
@@ -852,7 +859,7 @@ export type TilesProps = {
 const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
     <span class="k2-tile-title">
-      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
         {props.tile.title}
       </RowOpen>
     </span>
@@ -866,7 +873,9 @@ const TileCard = (props: { tile: Tile }) => (
   <div
     class="k2-tile"
     role="listitem"
-    data-open={props.tile.href !== undefined ? "" : undefined}
+    data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
+    data-current={props.tile.current ? "" : undefined}
+    aria-current={props.tile.current ? "true" : undefined}
     style={custom({ "--k2-c": props.tile.color })}
   >
     <span class="k2-tile-top">
@@ -963,7 +972,9 @@ const TileMedia = (props: { tile: Tile; select?: TilesProps["select"] }) => {
     <div
       class="k2-tile"
       role="listitem"
-      data-open={props.tile.href !== undefined ? "" : undefined}
+      data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
+      data-current={props.tile.current ? "" : undefined}
+      aria-current={props.tile.current ? "true" : undefined}
       data-selected={selected() ? "" : undefined}
     >
       <span class="k2-tile-media">
@@ -977,7 +988,7 @@ const TileMedia = (props: { tile: Tile; select?: TilesProps["select"] }) => {
         </Show>
       </span>
       <span class="k2-tile-title" id={title} title={props.tile.title}>
-        <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+        <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
           {props.tile.title}
         </RowOpen>
       </span>
@@ -1010,7 +1021,13 @@ export const Tiles = (props: TilesProps) => (
       fallback={
         <For each={props.variant === undefined ? props.items : []}>
           {(tile) => (
-            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+            <div
+              class="k2-tile"
+              role="listitem"
+              data-open={tile.href !== undefined || tile.onOpen ? "" : undefined}
+              data-current={tile.current ? "" : undefined}
+              aria-current={tile.current ? "true" : undefined}
+            >
               <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
                 {(color) => <Mark icon={tile.icon} color={color()} />}
               </Show>

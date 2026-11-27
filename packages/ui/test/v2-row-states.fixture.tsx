@@ -10,6 +10,7 @@ import {
   Dialog,
   Digest,
   Empty,
+  Facts,
   Failed,
   Field,
   FilterBar,
@@ -27,6 +28,7 @@ import {
   Setting,
   StatusRow,
   Text,
+  Tiles,
   Workspace,
 } from "../src/v2";
 import { defineListQuery, field, type ListQueryStateOf } from "../src/v2/list-query";
@@ -599,3 +601,153 @@ export const InvitationScreen = () => (
     </Dialog>
   </Workspace>
 );
+
+// A section that ends with its own bar of deeds ("Alle anzeigen"), above a second section: one line between them.
+export const SectionFootScreen = () => (
+  <Workspace>
+    <Pane label="Werkstatt">
+      <Section title="Anstehend" count={2}>
+        <List label="Anstehend">
+          <Row mark={{ initial: "Werkstatt", color: "#0284c7" }} lines={["Fronten ölen"]} time="heute" />
+          <Row mark={{ icon: "ruler", color: "#0284c7" }} lines={["Aufmaß Küche"]} time="morgen" />
+        </List>
+        <Bar start={<Button variant="ghost">Ältere laden</Button>} end={<Button variant="ghost">Alle anzeigen</Button>} />
+      </Section>
+      <Section title="Zuletzt" count={1}>
+        <List label="Zuletzt">
+          <Row lines={["Angebot Lindqvist"]} time="09:40" />
+        </List>
+      </Section>
+    </Pane>
+  </Workspace>
+);
+
+// The facts of a space on the phone: short values beside their labels, a long one, an ID, one with a hint under it and a
+// label longer than its column.
+export const FactsScreen = () => (
+  <Workspace>
+    <Pane label="Space">
+      <Section title="Über diesen Space">
+        <Facts
+          items={[
+            { label: "Mitglieder", value: "12" },
+            { label: "Erstellt", value: "03.11.2026" },
+            { label: "Ablage", value: "Werkstatt / Projekte / 2026 / Kunden / Lindqvist / Küche / Angebote und Aufmaß" },
+            {
+              label: "Kennung",
+              value: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C",
+              mono: true,
+              copy: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C",
+            },
+            { label: "Sichtbar", value: "Alle im Team", hint: "Standard" },
+            // the worst case: a label of several words, one of them longer than the column of 100 px
+            { label: "Aufbewahrungsfristverlängerung der Belege", value: "31.12.2036" },
+          ]}
+        />
+      </Section>
+    </Pane>
+  </Workspace>
+);
+
+// A dialog that names who sees a space: more people than one line holds (Spaces, W3 #4197).
+export const DialogInlineScreen = () => (
+  <Workspace>
+    <Pane label="Space">
+      <Text>Werkstatt</Text>
+    </Pane>
+    <Dialog title="Wer diesen Space sieht" open onOpenChange={() => {}} foot={<Button variant="primary">Fertig</Button>}>
+      <Inline>
+        {["Felix Thal", "Mira Solberg", "Jonas Kern", "Ada Renz", "Tom Oswald", "Lea Brandt"].map((name) => (
+          <Chip icon="user">{name}</Chip>
+        ))}
+      </Inline>
+    </Dialog>
+  </Workspace>
+);
+
+// What is open now among cards and media (W2): a current card, and a current picture among media that one can select;
+// the tint stays under the pointer, a selection's blue wins over it (review r1 #4314).
+export const CurrentTilesScreen = () => {
+  const [selected, setSelected] = createSignal<readonly string[]>([]);
+  return (
+    <Workspace>
+      <Pane label="Offen">
+        <Section title="Bases">
+          <Tiles
+            label="Bases"
+            variant="card"
+            items={[
+              { icon: "table", color: "#0284c7", title: "Kunden", meta: "12 Tabellen", href: "#kunden", current: true },
+              { icon: "table", color: "#16a34a", title: "Lager", meta: "4 Tabellen", href: "#lager" },
+            ]}
+          />
+        </Section>
+        <Section title="Bilder">
+          <Tiles
+            label="Bilder"
+            variant="media"
+            select={{
+              selected: selected(),
+              onChange: (key, on) => setSelected(on ? [...selected(), key] : selected().filter((each) => each !== key)),
+            }}
+            items={[
+              { icon: "photo", title: "Front.jpg", meta: "2,1 MB", href: "#front", key: "front", current: true },
+              { icon: "photo", title: "Granit.jpg", meta: "1,4 MB", href: "#granit", key: "granit" },
+            ]}
+          />
+        </Section>
+      </Pane>
+    </Workspace>
+  );
+};
+
+// Today in the spaces (Spaces home, W3 #4197): five short entries with the colour of their space, long names, and a
+// note of the notebook start page (W2) that opens in the page through a deed instead of an address.
+export const AgendaTilesScreen = () => {
+  const [opened, setOpened] = createSignal(0);
+  return (
+    <Workspace>
+      <Pane label="Heute">
+        <Section title="Heute in deinen Spaces" count={5}>
+          <Tiles
+            label="Heute"
+            items={[
+              {
+                icon: "calendar-event",
+                color: "#0284c7",
+                title: "Planung Küche Lindqvist mit Abnahme der Fronten",
+                meta: "09:15–09:30 · Werkstatt",
+                href: "#a",
+              },
+              {
+                icon: "checkbox",
+                color: "#16a34a",
+                title: "Angebot nachfassen",
+                meta: "bis 12:00 · Vertrieb und Kundenbetreuung Nord",
+                href: "#b",
+                // what stands open now (W2: the way to start the preview beside the tiles shows)
+                current: true,
+              },
+              { icon: "calendar-event", color: "#9333ea", title: "Lieferung Eiche", meta: "13:00 · Lager", href: "#c" },
+              {
+                icon: "checkbox",
+                color: "#0284c7",
+                title: "Rechnung 2026-114 prüfen und an die Buchhaltung geben",
+                meta: "heute · Werkstatt",
+                href: "#d",
+              },
+              {
+                icon: "note",
+                color: "#ea580c",
+                title: "Notiz zur Abnahme",
+                meta: "gestern · Notizbuch",
+                onOpen: () => setOpened(opened() + 1),
+              },
+            ]}
+          />
+          <Text>{`geöffnet: ${opened()}`}</Text>
+        </Section>
+      </Pane>
+    </Workspace>
+  );
+};

@@ -3,16 +3,21 @@ import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
 import {
+  AgendaTilesScreen,
   AreasMenuScreen,
   CanvasFillScreen,
   CellsScreen,
+  CurrentTilesScreen,
   DeepPathScreen,
+  DialogInlineScreen,
   EmptyWaysScreen,
+  FactsScreen,
   GroupsScreen,
   InvitationScreen,
   LongAddressScreen,
   ProseCodeScreen,
   RowStatesScreen,
+  SectionFootScreen,
   SelectionScreen,
   SettingChangeScreen,
   StructureScreen,
@@ -50,7 +55,12 @@ declare global {
       | "groups"
       | "split-list-canvas"
       | "empty-ways"
-      | "view-statement";
+      | "view-statement"
+      | "section-foot"
+      | "facts"
+      | "dialog-inline"
+      | "agenda"
+      | "tiles-current";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -81,6 +91,16 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" || which === "selection-four" ? (
         <SelectionScreen four={which === "selection-four"} />
+      ) : which === "agenda" ? (
+        <AgendaTilesScreen />
+      ) : which === "tiles-current" ? (
+        <CurrentTilesScreen />
+      ) : which === "dialog-inline" ? (
+        <DialogInlineScreen />
+      ) : which === "facts" ? (
+        <FactsScreen />
+      ) : which === "section-foot" ? (
+        <SectionFootScreen />
       ) : which === "view-statement" ? (
         <ViewStatementScreen />
       ) : which === "long" ? (

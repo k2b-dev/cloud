@@ -281,7 +281,10 @@ for (const width of [1440, 390])
         page.evaluate(() =>
           [...document.querySelectorAll(".k2-facts, .k2-fact-pair > *, .k2-cells, .k2-cell, .k2-cell > *")].map((element) => {
             const box = element.getBoundingClientRect();
-            return [element.className || element.tagName, Math.round(box.top), Math.round(box.left), Math.round(box.height)].join(" ");
+            // a value is placed by its end: on the phone it ends on the text edge beside its label, in a column it fills
+            // its column; everything else by its start
+            const edge = element.tagName === "DD" ? box.right : box.left;
+            return [element.className || element.tagName, Math.round(box.top), Math.round(edge), Math.round(box.height)].join(" ");
           }),
         );
       const loaded = await shape();

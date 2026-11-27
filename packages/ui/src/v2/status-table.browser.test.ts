@@ -93,6 +93,12 @@ const statusRow = () => {
       clear: shape.right <= end,
     };
   });
+  const contentRight = (button: HTMLElement) => {
+    if (button.dataset.variant !== "ghost" && button.dataset.variant !== "text") return button.getBoundingClientRect().right;
+    // what is in sight of it: its symbols and words, not words kept only as its name (taken out of the flow)
+    const shown = [...button.children].filter((part) => getComputedStyle(part).position !== "absolute");
+    return Math.max(...shown.map((part) => part.getBoundingClientRect().right));
+  };
   const seen = figures.filter((figure) => figure.seen);
   const before = row.querySelector(".k2-status-busy")?.getBoundingClientRect() ?? lead;
   return {
@@ -105,7 +111,8 @@ const statusRow = () => {
     // the buttons and the switches at the end (a switch is a `Check` in a `.k2-choice`)
     controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end :is(.k2-btn, .k2-choice)")].map((button) => ({
       name: button.textContent?.trim(),
-      inside: button.getBoundingClientRect().right <= inner + 0.5,
+      // a framed button keeps its box inside the edge; a borderless one stands with its words and signs on it (K5)
+      inside: contentRight(button) <= inner + 0.5,
       whole: button.scrollWidth <= button.clientWidth,
       clear: button.getBoundingClientRect().left >= lead.right,
     })),

@@ -60,6 +60,9 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /** The first character a person sees of a word: a whole emoji or a letter with its accent, never half of one. */
 const first = (word: string) => graphemes.segment(word)[Symbol.iterator]().next().value?.segment ?? "";
 
+/** The first letter of a thing's name, as its mark shows it without a symbol of its own ("Werkstatt": "W"). */
+export const initialOf = (name: string): string => first(name.trim()).toLocaleUpperCase();
+
 /** The initials of a name: the first letters of its first and its last word ("Charles Montgomery III": "CM"). */
 export const initialsOf = (person: Person): string => {
   if (person.initials) return person.initials;
