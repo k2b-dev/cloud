@@ -5467,7 +5467,8 @@
   border-radius: var(--k2-r-control);
   box-shadow: inset 0 0 0 2px var(--k2-blue);
 }
-.k2-ui .k2-tab-label {
+/* only the tab bar's: the tabs of a head share the class and keep their own width */
+.k2-ui .k2-tabbar > .k2-tab > .k2-tab-label {
   max-width: 100%;
   padding: 0 4px;
   box-sizing: border-box;
