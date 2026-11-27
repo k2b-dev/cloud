@@ -51,13 +51,9 @@ const demo: StartTemplate[] = [
 // what each card previews: the templates' first tables, as the server reads them; the worst set's longest words
 const previews: Record<string, TilePreview> = {
   "daily-notes": {
-    table: {
-      columns: ["Eintrag", "Nächster Schritt", "Status"],
-      rows: [
-        ["Heimische Hecke", "In das Gartentagebuch verschieben", "nächste Durchsicht"],
-        ["Kaffee mit Anna", "Kalender", "geplant"],
-        ["Buch über bewusstes Üben", "Recherchieren", "ausstehend"],
-      ],
+    page: {
+      title: "Tagebuch",
+      text: "Beginne hier. Schreibe täglich eine kurze Notiz. Die Seitenliste zeigt Stimmung, Energie und Schlaf.",
     },
   },
   "recipe-collector": {

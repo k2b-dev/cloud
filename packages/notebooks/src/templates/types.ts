@@ -29,6 +29,11 @@ export type NotebookTemplate = {
   notebookName: string | ((ctx: TemplateContext) => string);
   notebookDescription?: string | ((ctx: TemplateContext) => string);
   homepageNoteKey?: string;
+  /**
+   * What the start card previews: its first page (title and first line) instead of the first table it makes, for a
+   * template whose first table does not say what it is, such as a diary whose first table is its inbox.
+   */
+  startPreview?: "page";
   notes: (ctx: TemplateContext) => TemplateNote[];
   translations?: Record<string, Partial<Pick<NotebookTemplate, "name" | "description" | "notebookName" | "notebookDescription">>>;
 };

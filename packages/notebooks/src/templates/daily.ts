@@ -60,6 +60,8 @@ export const dailyNotesTemplate: NotebookTemplate = {
   name: "Daily Journal",
   description: "Daily notes, inbox triage, habits, tasks, and weekly reviews.",
   icon: "ti ti-calendar-stats",
+  // a diary is its daily page, not its inbox table
+  startPreview: "page",
   notebookName: "Daily Journal",
   notebookDescription: "Daily notes, an inbox, and automatic page lists with mood, energy, and sleep.",
   translations: {

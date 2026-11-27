@@ -67,6 +67,8 @@ test("a template's preview is its first table with rows, three columns of three 
     ["Zutat", "Menge", "Einheit"],
     ["Camembert", "250", "g"],
   ]);
+  // a diary shows its daily page, not its inbox table (`startPreview`, mockup empty-start-tiles v4)
+  expect(preview("daily-notes", "de")).toEqual({ page: { title: "Tagebuch", text: expect.stringMatching(/^Beginne hier\./) } });
   expect(preview("no-such-template")).toBeNull();
 });
 

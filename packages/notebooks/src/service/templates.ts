@@ -163,16 +163,18 @@ const pagePreview = (title: string, content: string) => {
 
 /**
  * What a template's start card shows, in the person's language: the first table it makes (its head and first rows, as
- * words), or else its first page (its title and first line). Bounded: three columns of three rows, one line.
+ * words), or else its first page (its title and first line); a template that asks for its page (`startPreview`) shows
+ * it. Bounded: three columns of three rows, one line.
  */
 export const preview = (id: string, locale = "en"): TemplatePreview | null => {
   const pages = madePages(id, locale);
   if (!pages?.length) return null;
+  const [first] = pages;
+  if (getTemplate(id)?.startPreview === "page" && first) return pagePreview(first.title, first.content);
   for (const page of pages) {
     const table = firstTable(page.content);
     if (table) return { table };
   }
-  const [first] = pages;
   return first ? pagePreview(first.title, first.content) : null;
 };
 

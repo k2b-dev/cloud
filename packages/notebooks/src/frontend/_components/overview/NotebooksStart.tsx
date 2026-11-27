@@ -79,7 +79,7 @@ export default function NotebooksStart(props: {
     onCleanup(() => window.removeEventListener("popstate", follow));
   });
   const ways = () => [
-    { id: BLANK, name: t().blankNotebook, icon: "notebook", pageCount: props.blankPageCount, preview: props.blankPreview },
+    { id: BLANK, name: t().blankNotebook, icon: "plus", pageCount: props.blankPageCount, preview: props.blankPreview },
     ...props.templates.slice(0, START_TEMPLATES).map((template) => ({
       id: template.id,
       name: template.name,
