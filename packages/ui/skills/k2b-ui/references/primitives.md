@@ -143,9 +143,10 @@ of its own).
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href?, onNavigate?, onOpen?, color? }[]`, `more` (an action after them),
-`label`. `onOpen` opens a tile by a deed instead of an address (it is then a
-button). In a pane under 480 px they stand two by two, never one per row:
+href?, onNavigate?, onOpen?, current?, color? }[]`, `more` (an action after
+them), `label`. `onOpen` opens a tile by a deed instead of an address (it is
+then a button); `current` marks the tile of what is open now (the tint of an
+open row and `aria-current`, nothing moves). In a pane under 480 px they stand two by two, never one per row:
 the name on up to two lines, the quiet line cut with "…", an odd last one
 in its half.
 

@@ -686,6 +686,8 @@ export const AgendaTilesScreen = () => {
                 title: "Angebot nachfassen",
                 meta: "bis 12:00 · Vertrieb und Kundenbetreuung Nord",
                 href: "#b",
+                // what stands open now (W2: the way to start the preview beside the tiles shows)
+                current: true,
               },
               { icon: "calendar-event", color: "#9333ea", title: "Lieferung Eiche", meta: "13:00 · Lager", href: "#c" },
               {

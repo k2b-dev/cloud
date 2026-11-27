@@ -1890,6 +1890,41 @@ test("in a dialog a line of things longer than its room wraps: every chip whole,
     );
 });
 
+// the tile of what is open now (W2: the way to start that the preview beside the tiles shows) is marked as an open row
+// is: aria-current and the tint of its app, also under the pointer; nothing of its size or place changes
+test("the tile of what is open now takes the open row's tint and aria-current, and keeps its size", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "agenda",
+      async (page) => {
+        const read = () =>
+          page.evaluate(() => {
+            const tiles = [...document.querySelectorAll<HTMLElement>(".k2-tiles > .k2-tile")];
+            const open = tiles.find((tile) => tile.getAttribute("aria-current") === "true")!;
+            const probe = document.createElement("i");
+            probe.style.background = "var(--k2-app-tint)";
+            open.parentElement!.append(probe);
+            const tint = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            const box = open.getBoundingClientRect();
+            return {
+              current: tiles.filter((tile) => tile.getAttribute("aria-current") === "true").length,
+              tinted: getComputedStyle(open).backgroundColor === tint,
+              box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)].join(","),
+              sizes: new Set(tiles.map((tile) => Math.round(tile.getBoundingClientRect().height))).size,
+            };
+          });
+        const before = await read();
+        expect({ current: before.current, tinted: before.tinted }).toEqual({ current: 1, tinted: true });
+        await page.locator(".k2-tile[aria-current='true']").hover();
+        await settled(page);
+        const hovered = await read();
+        expect({ tinted: hovered.tinted, box: hovered.box }).toEqual({ tinted: true, box: before.box });
+      },
+      width,
+    );
+});
+
 test("small tiles in a narrow pane stand two by two, never one per row: names on up to two lines, an odd last one keeps its half; a tile may open by a deed", async () => {
   for (const width of [390, 1440])
     await withPage(
