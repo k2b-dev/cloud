@@ -275,21 +275,22 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     // The server read every part: nothing asks for itself after the first picture.
     expect(apiRequests).toHaveLength(0);
-    // the storages as a table: what each is, who belongs to it, what it holds, who changed it last
+    // the storages as a table: what each is, who belongs to it, its changes per day, what it holds, who changed it last
     const cards = () => [...dom.root.querySelectorAll<HTMLElement>('table[aria-label="All storage"] tbody tr:not([data-spacer])')];
     expect(cards()).toHaveLength(2);
     const cells = (row: HTMLElement) => [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim());
     const home = cells(cards()[0]!);
-    // a count that stopped at its limit is a lower bound; the last change leads with the person's avatar
-    expect(home.slice(1, 3)).toEqual(["Only you", "≥ 1.2 MB"]);
+    // a count that stopped at its limit is a lower bound; changes per day that were not read say "—"; the last change
+    // leads with the person's avatar
+    expect(home.slice(1, 4)).toEqual(["Only you", "—", "≥ 1.2 MB"]);
     // the short form: today the time alone
-    expect(home[3]).toEndWith("Bob Berger · 10:30 AM");
+    expect(home[4]).toEndWith("Bob Berger · 10:30 AM");
     expect(cards()[0]!.querySelector('[data-k2-part="Avatar"]')).not.toBeNull();
     // the group's people as faces with "+n", named in words: the names the server read and how many more belong to it
     const stack = cards()[1]!.querySelector('[data-k2-part="Avatar.Stack"]');
     expect(stack?.getAttribute("aria-label")).toBe("Ada Lind, Bob Berger and 4 more");
     expect(stack?.querySelectorAll('[data-k2-part="Avatar"]')).toHaveLength(2);
-    expect(cells(cards()[1]!).slice(2)).toEqual(["—", "—"]);
+    expect(cells(cards()[1]!).slice(2)).toEqual(["—", "—", "—"]);
     const failed = () => [...dom.root.querySelectorAll('[data-k2-part="Failed"]')];
     expect(failed()).toHaveLength(2);
     failed()[0]!.querySelector<HTMLButtonElement>("button")!.click();

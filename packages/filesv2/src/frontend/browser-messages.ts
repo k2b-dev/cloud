@@ -468,6 +468,9 @@ export const browserMessages = i18n.define({
       v2EmptyDrop: "Add files with “+”.",
       v2Used: "Used",
       v2LastChange: "Last change",
+      v2LastDays: (values: { days: number }) => `${values.days} days`,
+      v2ChangesSpark: (values: { name: string; total: number; today: number; days: number }) =>
+        `${values.name}: ${values.total} ${values.total === 1 ? "change" : "changes"} in ${values.days} days, ${values.today} today`,
       v2People: "People",
       v2GroupMembers: (count: number) => (count === 1 ? "1 person" : `${count} people`),
       // the avatar stack's name: the people it names, and how many more belong to the storage
@@ -974,6 +977,9 @@ export const browserMessages = i18n.define({
       v2EmptyDrop: "Füge Dateien mit „+“ hinzu.",
       v2Used: "Belegt",
       v2LastChange: "Letzte Änderung",
+      v2LastDays: (values: { days: number }) => `${values.days} Tage`,
+      v2ChangesSpark: (values: { name: string; total: number; today: number; days: number }) =>
+        `${values.name}: ${values.total} ${values.total === 1 ? "Änderung" : "Änderungen"} in ${values.days} Tagen, heute ${values.today}`,
       v2People: "Personen",
       v2GroupMembers: (count: number) => (count === 1 ? "1 Person" : `${count} Personen`),
       v2GroupPeople: (input: { names: string; more: number }) => (input.more ? `${input.names} und ${input.more} weitere` : input.names),

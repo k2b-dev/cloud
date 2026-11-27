@@ -840,6 +840,10 @@ describe("the views beside the folders on v2", () => {
       expect(await stack.getAttribute("aria-label")).toBe("Mira Sommer, Felix Thal, Jana Krüger, Sven Yilmaz und 3 weitere");
       expect(await stack.locator("[data-k2-part=Avatar]").count()).toBe(3);
       expect(await storageRows.first().innerText()).toContain("Nur du");
+      // one column of data over time (B): each storage's changes per day of the month, named as a sentence
+      const sparks = storageRows.locator("[data-k2-part=Spark]");
+      expect(await sparks.count()).toBe(2);
+      expect(await sparks.last().getAttribute("aria-label")).toMatch(/^Werkstatt: \d+ Änderungen? in 30 Tagen, heute \d+$/);
       await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
       // beside the storages, the viewer's own last changes in the row design of Activity, under their day
       const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");

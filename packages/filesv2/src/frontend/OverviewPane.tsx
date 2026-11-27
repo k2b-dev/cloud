@@ -1,8 +1,8 @@
 import { formatFileViewSize, useLocale } from "@k2b/ui";
-import { Avatar, Bar, Button, Chip, Failed, List, type OnNavigate, Pane, Row, Section, Table, Text } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Failed, List, type OnNavigate, Pane, Row, Section, Spark, Table, Text } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
-import type { BaseSummary, BasesResult, MarkedEntry, StorageFacts } from "../contracts";
+import { type BaseSummary, type BasesResult, CHANGE_DAYS, type MarkedEntry, type StorageFacts } from "../contracts";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
@@ -78,6 +78,11 @@ export default function OverviewPane(props: {
   const changes = createMemo(() => byBase(facts().changes));
   const usage = createMemo(() => byBase(facts().usage));
   const members = createMemo(() => byBase(facts().members));
+  // changes per day over the last month, from the activity log; a storage without any has its days at zero, and a
+  // series that could not be read leaves the cell "—"
+  const daily = createMemo(() => new Map((facts().daily?.storages ?? []).map((storage) => [storage.baseId, storage.days])));
+  const daysOf = (base: BaseSummary) =>
+    facts().daily ? (daily().get(base.id) ?? Array.from({ length: CHANGE_DAYS }, () => 0)) : undefined;
   const kind = (base: BaseSummary) => {
     if (base.kind === "users") return b().onlyYou;
     const count = members().get(base.id)?.members;
@@ -207,6 +212,28 @@ export default function OverviewPane(props: {
                 width: { min: 96, default: 104 },
                 drop: true,
                 cell: (base) => (base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : people(base)),
+              },
+              {
+                // the one column of data over time (B): changes per day of the last month, today in full colour
+                title: b().v2LastDays({ days: CHANGE_DAYS }),
+                width: { min: 80, default: 88 },
+                drop: true,
+                cell: (base) => {
+                  const days = daysOf(base);
+                  if (!days) return "—";
+                  const total = days.reduce((sum, day) => sum + day, 0);
+                  return (
+                    <Spark
+                      values={days}
+                      label={b().v2ChangesSpark({
+                        name: baseLabel(base, b(), locale()),
+                        total,
+                        today: days.at(-1) ?? 0,
+                        days: CHANGE_DAYS,
+                      })}
+                    />
+                  );
+                },
               },
               { title: b().v2Used, width: { min: 84, default: 92 }, align: "end", drop: true, cell: (base) => used(base) },
               {
