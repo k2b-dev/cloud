@@ -10,6 +10,9 @@ declare global {
   }
 }
 
+/** Whether the entry is the open one or holds it in its folds. */
+export const holdsCurrent = (item: NavigationItem): boolean => !!item.active || (item.children ?? []).some(holdsCurrent);
+
 /** How many listeners the navigation has: the phone menu while it is open. Only then are its entries made. */
 const [listeners, setListeners] = createSignal(0);
 
@@ -107,7 +110,11 @@ export function readWorkspaceNavigation(): WorkspaceNavigationState | undefined 
 export function observeWorkspaceNavigation(listener: () => void) {
   window.addEventListener(changedEvent, listener);
   setListeners((count) => count + 1);
+  let done = false;
+  // a second call (two cleanups of one owner) leaves the count as it is
   return () => {
+    if (done) return;
+    done = true;
     window.removeEventListener(changedEvent, listener);
     setListeners((count) => count - 1);
   };

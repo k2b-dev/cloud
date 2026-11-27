@@ -2,6 +2,7 @@ import { createNavigation, type NavigationItem } from "@k2b/ui";
 import type { MenuEntry, NavGroup, NavItem, OnNavigate } from "@k2b/ui/v2";
 import { type Accessor, createMemo, getOwner, runWithOwner } from "solid-js";
 import WorkspaceNavigationProvider from "./WorkspaceNavigationProvider";
+import { holdsCurrent } from "./workspace-navigation";
 
 type V2Navigation = {
   items: NavigationItem[];
@@ -20,8 +21,6 @@ type V2Navigation = {
  * - symbols, counts, the open one and "something new" carry over.
  * Deeds are found by id (`click`), links by their address as written (`navigate`).
  */
-const holdsCurrent = (item: NavigationItem): boolean => !!item.active || (item.children ?? []).some(holdsCurrent);
-
 const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navigation => {
   const navigate = new Map<string, OnNavigate>();
   const click = new Map<string, () => void>();

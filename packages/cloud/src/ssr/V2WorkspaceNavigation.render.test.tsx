@@ -1,5 +1,6 @@
 import { afterAll, expect, spyOn, test } from "bun:test";
 import { resolve } from "node:path";
+import type { NavGroup } from "@k2b/ui/v2";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
@@ -45,6 +46,28 @@ const tables = (count: number, open = 0) => [
     })),
   },
 ];
+/** 60 tables and then a folder "Archiv" of 20 old ones, the 15th of them open: deep in a fold, beyond the 40. */
+const folded = (): NavGroup[] => [
+  {
+    label: "Tabellen",
+    items: [
+      ...Array.from({ length: 60 }, (_, index) => ({
+        label: `Tabelle ${index + 1}`,
+        icon: "table",
+        href: `/app/folders/tables/t${index + 1}`,
+      })),
+      {
+        label: "Archiv",
+        items: Array.from({ length: 20 }, (_, index) => ({
+          label: `Alt ${index + 1}`,
+          icon: "table",
+          href: `/app/folders/tables/old${index + 1}`,
+          ...(index === 14 ? { current: true } : {}),
+        })),
+      },
+    ],
+  },
+];
 
 const app = defineApp({
   id: "folders",
@@ -73,7 +96,7 @@ const server = new Hono<Env>()
           get children() {
             const registered = c.req.query("menu") !== "0";
             const entries = Number(c.req.query("entries") ?? 0);
-            const shown = entries ? tables(entries, Number(c.req.query("open") ?? 1) - 1) : groups;
+            const shown = c.req.query("deep") === "1" ? folded() : entries ? tables(entries, Number(c.req.query("open") ?? 1) - 1) : groups;
             return [
               registered && createComponent(V2WorkspaceNavigation, { label: "Ordner", groups: shown }),
               createComponent(Workspace, {
@@ -124,9 +147,10 @@ test("without it the shell stays unmarked and the phone title stays the app's na
 // Nav itself shows them, and the menu reads the rest once its island is alive. Measured 27.11.2026: 125,090 bytes
 // before (a snapshot of every entry), 5,024 after (40 entries); the budget leaves room for longer labels and links.
 const MENU_BYTES = 6 * 1024;
+type Shown = { label: string; active?: boolean; defaultExpanded?: boolean; children?: Shown[] };
 const snapshotOf = (html: string) =>
   JSON.parse(/<script type="application\/json" data-cloud-workspace-navigation[^>]*>([^<]*)<\/script>/.exec(html)?.[1] ?? "null") as {
-    items: { label: string; children?: { label: string; active?: boolean }[] }[];
+    items: Shown[];
   };
 
 test("with 1000 entries the page carries the first 40 and the way to the open one, for a menu before the island runs", async () => {
@@ -136,6 +160,14 @@ test("with 1000 entries the page carries the first 40 and the way to the open on
   expect(labels.slice(0, 39)).toEqual(Array.from({ length: 39 }, (_, index) => `Tabelle ${index + 1}`));
   expect(labels.slice(39)).toEqual(["Tabelle 500"]);
   expect(snapshot.items[0]?.children?.at(-1)?.active).toBe(true);
+});
+test("an open entry deep in a folder beyond the 40 keeps its way: the folder, open, with only that entry", async () => {
+  const snapshot = snapshotOf(await (await server.request("/app/folders?deep=1")).text());
+  const rows = snapshot.items[0]?.children ?? [];
+  expect(rows.slice(0, 39).map((row) => row.label)).toEqual(Array.from({ length: 39 }, (_, index) => `Tabelle ${index + 1}`));
+  const folder = rows.slice(39);
+  expect(folder.map((row) => [row.label, row.defaultExpanded])).toEqual([["Archiv", true]]);
+  expect(folder[0]?.children?.map((row) => [row.label, row.active])).toEqual([["Alt 15", true]]);
 });
 test("with 1000 entries the menu adds a bounded payload to the page, not one copy of every entry", async () => {
   const page = async (query: string) => (await (await server.request(`/app/folders?${query}`)).text()).length;

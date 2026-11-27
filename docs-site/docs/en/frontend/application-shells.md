@@ -215,6 +215,10 @@ const navigation = createNavigation({
 <WorkspaceNavigationProvider label="Inventory" navigation={navigation} />
 ```
 
+With `entries={40}` the page carries only the first 40 rows and the way to the
+open one for a menu opened before the island runs, and the browser writes no
+snapshot at all: the live island answers the menu itself.
+
 A page on `@k2b/ui/v2` puts its sidebar away on phones. Render
 `V2WorkspaceNavigation` once inside the application island with the same groups
 and foot as its v2 `Nav`; the phone bar's title becomes the menu and lists them:

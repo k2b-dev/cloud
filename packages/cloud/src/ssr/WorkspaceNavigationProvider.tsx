@@ -1,9 +1,7 @@
 import type { NavigationController, NavigationItem } from "@k2b/ui";
 import { isServer } from "solid-js/web";
 import { markShellContent } from "./shell-content-state";
-import { provideWorkspaceNavigation } from "./workspace-navigation";
-
-const holdsCurrent = (item: NavigationItem): boolean => !!item.active || (item.children ?? []).some(holdsCurrent);
+import { holdsCurrent, provideWorkspaceNavigation } from "./workspace-navigation";
 
 /** The first `limit` rows of the tree in reading order, and beyond them only the way to the open entry. */
 const firstRows = (items: readonly NavigationItem[], limit: number): NavigationItem[] => {
