@@ -4,6 +4,7 @@ import {
   Bar,
   Button,
   Chip,
+  Failed,
   type Column,
   Facts,
   FilterBar,
@@ -45,7 +46,8 @@ export type DeletedAccountsScreenProps = {
   page: number;
   pages: number;
   total: number;
-  rows: DeletedRow[];
+  /** The entries of this page; null when they could not be read. */
+  rows: DeletedRow[] | null;
   /** The entry the address names, and that entry when it stands on this page. */
   entry: string | null;
   open: DeletedOpen | null;
@@ -113,7 +115,7 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
       head={
         <Bar
           // k2b-ui gap: head rows (lane DP). The statement stands in the head, the filters below: two rows.
-          start={<Text weight="strong">{t().deletedAccountCount({ count: props.total })}</Text>}
+          start={<Text weight="strong">{props.rows ? t().deletedAccountCount({ count: props.total }) : d().loadFailed}</Text>}
           end={
             <Input
               type="search"
@@ -157,56 +159,60 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
             )}
           </Show>
           {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the list (at most one page of rows in the DOM). */}
-          <Table
-            label={t().deletedAccounts}
-            rows={props.rows}
-            rowKey={(row) => row.id}
-            sticky
-            current={props.entry ?? undefined}
-            open={(row) => ({ href: href(row.id) })}
-            empty={
-              changed() || state().search
-                ? {
-                    icon: "filter-off",
-                    text: d().noMatches,
-                    action: { label: words().resetFilters, icon: "filter-off", href: kindHref("deleted") },
-                  }
-                : { icon: "user-off", text: t().noDeletedAccounts }
-            }
-            phone={(row) => ({
-              lines: [row.name, reasonLabel(t(), row.reason)],
-              avatar: { name: row.name },
-              time: row.deleted,
-              marks: reasonChip(t(), d().demoted, row.reason),
-            })}
-            columns={(
-              [
-                {
-                  title: t().account,
-                  width: { min: 160, default: 220 },
-                  cell: (row) => ({
-                    lines: [
-                      <Inline>
-                        <Avatar name={row.name} decorative />
-                        <Text>{row.name}</Text>
-                      </Inline>,
-                      row.uid,
-                    ],
-                  }),
-                },
-                {
-                  title: t().reason,
-                  width: { min: 220, default: 320 },
-                  cell: (row) => ({ lines: [reasonChip(t(), d().demoted, row.reason), reasonLabel(t(), row.reason)] }),
-                },
-                { title: t().deleted, width: { min: 160, default: 170 }, cell: (row) => row.deleted, drop: true },
-                { title: t().email, width: { min: 160, default: 220 }, cell: (row) => row.mail || "–", drop: true },
-                { title: t().accountType, cell: (row) => kind(row), drop: true },
-              ] satisfies Column<DeletedRow>[]
-            )
-              // beside the open entry the list keeps who and why; the rest stands in the entry
-              .filter((_, index) => !props.entry || index < 2)}
-          />
+          <Show when={props.rows} fallback={<Failed text={d().loadFailed} onRetry={() => void showChanges()} />}>
+            {(rows) => (
+              <Table
+                label={t().deletedAccounts}
+                rows={rows()}
+                rowKey={(row) => row.id}
+                sticky
+                current={props.entry ?? undefined}
+                open={(row) => ({ href: href(row.id) })}
+                empty={
+                  changed() || state().search
+                    ? {
+                        icon: "filter-off",
+                        text: d().noMatches,
+                        action: { label: words().resetFilters, icon: "filter-off", href: kindHref("deleted") },
+                      }
+                    : { icon: "user-off", text: t().noDeletedAccounts }
+                }
+                phone={(row) => ({
+                  lines: [row.name, reasonLabel(t(), row.reason)],
+                  avatar: { name: row.name },
+                  time: row.deleted,
+                  marks: reasonChip(t(), d().demoted, row.reason),
+                })}
+                columns={(
+                  [
+                    {
+                      title: t().account,
+                      width: { min: 160, default: 220 },
+                      cell: (row) => ({
+                        lines: [
+                          <Inline>
+                            <Avatar name={row.name} decorative />
+                            <Text>{row.name}</Text>
+                          </Inline>,
+                          row.uid,
+                        ],
+                      }),
+                    },
+                    {
+                      title: t().reason,
+                      width: { min: 220, default: 320 },
+                      cell: (row) => ({ lines: [reasonChip(t(), d().demoted, row.reason), reasonLabel(t(), row.reason)] }),
+                    },
+                    { title: t().deleted, width: { min: 160, default: 170 }, cell: (row) => row.deleted, drop: true },
+                    { title: t().email, width: { min: 160, default: 220 }, cell: (row) => row.mail || "–", drop: true },
+                    { title: t().accountType, cell: (row) => kind(row), drop: true },
+                  ] satisfies Column<DeletedRow>[]
+                )
+                  // beside the open entry the list keeps who and why; the rest stands in the entry
+                  .filter((_, index) => !props.entry || index < 2)}
+              />
+            )}
+          </Show>
           <Show when={props.pages > 1}>
             <Bar
               start={<Text type="meta">{words().pageOf({ page: props.page, pages: props.pages })}</Text>}

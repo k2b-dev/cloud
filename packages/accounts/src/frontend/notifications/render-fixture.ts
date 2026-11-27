@@ -146,5 +146,8 @@ export const pageWeight = (html: string) => {
   return {
     elements: body.match(/<[a-zA-Z][\w-]*/g)?.length ?? 0,
     loaders: (body.match(/data-k2-part="Loading"|aria-busy="true"|animate-spin/g) ?? []).length,
+    // what the islands receive: the serialized props of every island, in bytes as sent
+    props: [...body.matchAll(/data-props="([^"]*)"/g)].reduce((sum, match) => sum + new TextEncoder().encode(match[1]!).length, 0),
+    html: new TextEncoder().encode(html).length,
   };
 };

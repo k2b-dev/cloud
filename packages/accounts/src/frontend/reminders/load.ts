@@ -15,15 +15,18 @@ export const loadReminders = async (
   const { locale, timeZone } = context;
   const query = remindersQuery(locale);
   const address = parseRemindersAddress(query, url.searchParams);
-  const reminders = await accountsService.lifecycle.reminders.list({
-    page: address.page,
-    perPage: REMINDERS_PER_PAGE,
-    search: address.state.search,
-    status: address.state.filters.status,
-  });
-  const pages = Math.max(1, Math.ceil(reminders.total / REMINDERS_PER_PAGE));
+  // A store that cannot be read fails the list, not the page: the list shows the failure with a way to try again.
+  const reminders = await accountsService.lifecycle.reminders
+    .list({
+      page: address.page,
+      perPage: REMINDERS_PER_PAGE,
+      search: address.state.search,
+      status: address.state.filters.status,
+    })
+    .catch(() => null);
+  const pages = Math.max(1, Math.ceil((reminders?.total ?? 0) / REMINDERS_PER_PAGE));
   // A page past the end, from an old link, opens the last page with the same filters.
-  if (address.page > pages) return { redirect: remindersHref(query, address.state, pages) };
+  if (reminders && address.page > pages) return { redirect: remindersHref(query, address.state, pages) };
 
   const words = listMessages.resolve([locale]).t;
   const ignored =
@@ -32,7 +35,8 @@ export const loadReminders = async (
           params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", "),
         })
       : null;
-  const rows = reminders.items.map((entry) => ({
+  const rows =
+    reminders?.items.map((entry) => ({
     id: entry.id,
     name: entry.displayName || entry.uid || null,
     image:
@@ -45,14 +49,14 @@ export const loadReminders = async (
     attempts: entry.attemptCount,
     lastAttempt: entry.lastAttemptAt ? dates.formatDateTime(entry.lastAttemptAt, { locale, timeZone }) : null,
     error: entry.lastError,
-  }));
+  })) ?? null;
 
   return {
     props: {
       state: address.state,
       page: address.page,
       pages,
-      total: reminders.total,
+      total: reminders?.total ?? 0,
       rows,
       ignored,
       pendingRequests: context.pendingRequests,

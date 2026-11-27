@@ -19,15 +19,18 @@ export const loadDeleted = async (
   const { locale, timeZone } = context;
   const query = deletedQuery(locale);
   const address = parseDeletedAddress(query, url.searchParams);
-  const deleted = await accountsService.lifecycle.deletedAccounts.list({
-    page: address.page,
-    perPage: DELETED_PER_PAGE,
-    search: address.state.search,
-    reason: address.state.filters.reason,
-  });
-  const pages = Math.max(1, Math.ceil(deleted.total / DELETED_PER_PAGE));
+  // A store that cannot be read fails the list, not the page: the list shows the failure with a way to try again.
+  const deleted = await accountsService.lifecycle.deletedAccounts
+    .list({
+      page: address.page,
+      perPage: DELETED_PER_PAGE,
+      search: address.state.search,
+      reason: address.state.filters.reason,
+    })
+    .catch(() => null);
+  const pages = Math.max(1, Math.ceil((deleted?.total ?? 0) / DELETED_PER_PAGE));
   // A page past the end, from an old link, opens the last page with the same filters.
-  if (address.page > pages) return { redirect: deletedHref(query, address.state, pages) };
+  if (deleted && address.page > pages) return { redirect: deletedHref(query, address.state, pages) };
 
   const words = listMessages.resolve([locale]).t;
   const ignored =
@@ -36,7 +39,8 @@ export const loadDeleted = async (
           params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", "),
         })
       : null;
-  const rows = deleted.items.map((entry) => ({
+  const items = deleted?.items ?? [];
+  const rows = items.map((entry) => ({
     id: entry.id,
     name: entry.displayName || entry.uid,
     uid: entry.uid,
@@ -47,8 +51,8 @@ export const loadDeleted = async (
     deleted: dates.formatDateTime(entry.deletedAt, { locale, timeZone }),
   }));
   // the open entry is one of this page's rows; an entry from another page or one that is gone opens nothing
-  const index = address.entry ? deleted.items.findIndex((entry) => entry.id === address.entry) : -1;
-  const [row, item] = [rows[index], deleted.items[index]];
+  const index = address.entry ? items.findIndex((entry) => entry.id === address.entry) : -1;
+  const [row, item] = [rows[index], items[index]];
   const open =
     row && item ? { ...row, meta: Object.entries(item.meta ?? {}).map(([key, value]) => ({ key, value: metaText(value) })) } : null;
 
@@ -57,8 +61,8 @@ export const loadDeleted = async (
       state: address.state,
       page: address.page,
       pages,
-      total: deleted.total,
-      rows,
+      total: deleted?.total ?? 0,
+      rows: deleted ? rows : null,
       entry: address.entry,
       open,
       ignored,

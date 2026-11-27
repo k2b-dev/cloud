@@ -166,3 +166,26 @@ test("an unknown kind shows the audit log and says what did not apply", async ()
     restore();
   }
 });
+
+test("a kind whose entries cannot be read shows the failure in place of the list, with a way to try again", async () => {
+  const { spies, restore } = services();
+  const down = new Error("database down");
+  spies.audit.mockRejectedValue(down);
+  spies.batches.mockRejectedValue(down);
+  spies.reminders.mockRejectedValue(down);
+  spies.deleted.mockRejectedValue(down);
+  const app = mount(adminApp());
+  try {
+    for (const kind of ["", "?kind=notifications", "?kind=reminders", "?kind=deleted"]) {
+      const response = await app.request(`/app/accounts/activity${kind}`, de);
+      const html = await response.text();
+      // the page stays: its filters and the other kinds are still there, only the list says it failed
+      expect(response.status, kind).toBe(200);
+      expect(html, kind).toContain('data-k2-part="Failed"');
+      expect(html, kind).toContain("Erneut versuchen");
+      expect(html, kind).not.toContain('data-k2-part="Empty"');
+    }
+  } finally {
+    restore();
+  }
+});

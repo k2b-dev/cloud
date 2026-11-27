@@ -9,6 +9,7 @@ export const reminderMessages = i18n.define({
     en: {
       searchLabel: "Name, UID or email",
       newestFirst: "Newest first",
+      loadFailed: "The reminders could not be loaded.",
       noMatches: "No reminder matches these filters.",
       daysBefore: ({ when, count }: { when: string; count: number }) =>
         i18n.plural(count, "en", { one: `${when} · 1 day before`, other: `${when} · ${count} days before` }),
@@ -16,6 +17,7 @@ export const reminderMessages = i18n.define({
     de: {
       searchLabel: "Name, UID oder E-Mail",
       newestFirst: "Neueste zuerst",
+      loadFailed: "Die Erinnerungen konnten nicht geladen werden.",
       noMatches: "Keine Erinnerung passt zu diesen Filtern.",
       daysBefore: ({ when, count }) => i18n.plural(count, "de", { one: `${when} · 1 Tag vorher`, other: `${when} · ${count} Tage vorher` }),
     },

@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Avatar, Bar, Button, Chip, FilterBar, Inline, Input, Notice, Pane, Table, Text, Workspace } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Failed, FilterBar, Inline, Input, Notice, Pane, Table, Text, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../AccountsNav";
@@ -28,7 +28,8 @@ export type RemindersScreenProps = {
   page: number;
   pages: number;
   total: number;
-  rows: ReminderRow[];
+  /** The entries of this page; null when they could not be read. */
+  rows: ReminderRow[] | null;
   /** Parameters of the address that did not apply, already worded. */
   ignored: string | null;
   pendingRequests: number;
@@ -75,7 +76,7 @@ export default function RemindersScreen(props: RemindersScreenProps) {
         ["pending", "warn", t().pending],
       ] as const
     ).flatMap(([value, status, label]) => {
-      const n = props.pages === 1 ? props.rows.filter((row) => row.status === value).length : undefined;
+      const n = props.pages === 1 && props.rows ? props.rows.filter((row) => row.status === value).length : undefined;
       const next = query().set({ ...base, filters: { ...base.filters, kind: "reminders" } }, "status", value);
       return n === 0 || !next
         ? []
@@ -97,7 +98,7 @@ export default function RemindersScreen(props: RemindersScreenProps) {
           // k2b-ui gap: head rows (lane DP). The statement and its chips stand in the head, the filters below: two rows.
           start={
             <Inline>
-              <Text weight="strong">{t().entryCount({ count: props.total })}</Text>
+              <Text weight="strong">{props.rows ? t().entryCount({ count: props.total }) : r().loadFailed}</Text>
               <For each={attention()}>
                 {(item) => (
                   <Chip status={item.status} href={item.href} pressed={state().filters.status === item.value}>
@@ -149,52 +150,56 @@ export default function RemindersScreen(props: RemindersScreenProps) {
           )}
         </Show>
         {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the list (at most one page of rows in the DOM). */}
-        <Table
-          label={t().reminderHistory}
-          rows={props.rows}
-          rowKey={(row) => row.id}
-          sticky
-          empty={
-            changed() || state().search
-              ? {
-                  icon: "filter-off",
-                  text: r().noMatches,
-                  action: { label: words().resetFilters, icon: "filter-off", href: kindHref("reminders") },
-                }
-              : { icon: "bell", text: t().noReminders }
-          }
-          phone={(row) => ({
-            lines: [name(row), row.error || r().daysBefore({ when: row.target, count: row.days })],
-            avatar: { name: name(row), image: row.image },
-            marks: chip(row),
-          })}
-          columns={[
-            {
-              title: t().user,
-              width: { min: 180, default: 240 },
-              cell: (row) => (
-                <Inline>
-                  <Avatar name={name(row)} image={row.image} decorative />
-                  <Text weight="strong">{name(row)}</Text>
-                </Inline>
-              ),
-            },
-            {
-              title: t().status,
-              width: { min: 140, default: 240 },
-              cell: (row) => (row.error ? { lines: [chip(row), row.error] } : chip(row)),
-            },
-            {
-              title: t().targetExpiry,
-              width: { min: 220, default: 250 },
-              cell: (row) => r().daysBefore({ when: row.target, count: row.days }),
-              drop: true,
-            },
-            { title: t().attempts, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.attempts, drop: true },
-            // the lifecycle records one kind of reminder (account expiry), so the list needs no column for it
-            { title: t().lastAttempt, cell: (row) => row.lastAttempt ?? "–", drop: true },
-          ]}
-        />
+        <Show when={props.rows} fallback={<Failed text={r().loadFailed} onRetry={() => void showChanges()} />}>
+          {(rows) => (
+            <Table
+              label={t().reminderHistory}
+              rows={rows()}
+              rowKey={(row) => row.id}
+              sticky
+              empty={
+                changed() || state().search
+                  ? {
+                      icon: "filter-off",
+                      text: r().noMatches,
+                      action: { label: words().resetFilters, icon: "filter-off", href: kindHref("reminders") },
+                    }
+                  : { icon: "bell", text: t().noReminders }
+              }
+              phone={(row) => ({
+                lines: [name(row), row.error || r().daysBefore({ when: row.target, count: row.days })],
+                avatar: { name: name(row), image: row.image },
+                marks: chip(row),
+              })}
+              columns={[
+                {
+                  title: t().user,
+                  width: { min: 180, default: 240 },
+                  cell: (row) => (
+                    <Inline>
+                      <Avatar name={name(row)} image={row.image} decorative />
+                      <Text weight="strong">{name(row)}</Text>
+                    </Inline>
+                  ),
+                },
+                {
+                  title: t().status,
+                  width: { min: 140, default: 240 },
+                  cell: (row) => (row.error ? { lines: [chip(row), row.error] } : chip(row)),
+                },
+                {
+                  title: t().targetExpiry,
+                  width: { min: 220, default: 250 },
+                  cell: (row) => r().daysBefore({ when: row.target, count: row.days }),
+                  drop: true,
+                },
+                { title: t().attempts, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.attempts, drop: true },
+                // the lifecycle records one kind of reminder (account expiry), so the list needs no column for it
+                { title: t().lastAttempt, cell: (row) => row.lastAttempt ?? "–", drop: true },
+              ]}
+            />
+          )}
+        </Show>
         <Show when={props.pages > 1}>
           <Bar
             start={<Text type="meta">{words().pageOf({ page: props.page, pages: props.pages })}</Text>}

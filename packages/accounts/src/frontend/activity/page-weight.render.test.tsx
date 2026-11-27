@@ -57,7 +57,7 @@ test("every kind of the activity page and a batch render their first picture wit
   app.get("/app/accounts/activity", ...activityPage);
   app.get("/app/accounts/activity/notifications/:id", ...recordPage);
   try {
-    const weights: Record<string, { elements: number; loaders: number }> = {};
+    const weights: Record<string, { elements: number; loaders: number; props: number; html: number }> = {};
     for (const path of [
       "/app/accounts/activity",
       "/app/accounts/activity?kind=notifications",
