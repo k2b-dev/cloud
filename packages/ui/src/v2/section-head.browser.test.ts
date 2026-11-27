@@ -151,7 +151,8 @@ test("the clear line stands between sections, the hair between rows and table ro
       const color = (element: Element | null) => (element ? getComputedStyle(element).borderBottomColor : null);
       return {
         section: color(document.querySelector('[data-k2-part="Section"]')),
-        between: getComputedStyle(document.querySelector('[data-k2-part="Section"] > [data-k2-part="Row"] + [data-k2-part="Row"]')!).borderTopColor,
+        between: getComputedStyle(document.querySelector('[data-k2-part="Section"] > [data-k2-part="Row"] + [data-k2-part="Row"]')!)
+          .borderTopColor,
         row: color(document.querySelector('.k2-list > [data-k2-part="Row"]')),
         cell: color(document.querySelector(".k2-table tbody tr:first-child td")),
       };
