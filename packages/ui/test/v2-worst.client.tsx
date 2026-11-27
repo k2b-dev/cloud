@@ -81,9 +81,11 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
             start={
               <Tabs
                 label="Ansichten"
+                // views that take most of a phone's head, so its deeds have to fold (see `Bar`)
                 items={[
-                  { label: "Alle", current: true, onClick: () => undefined },
+                  { label: "Alle Unterhaltungen", current: true, onClick: () => undefined },
                   { label: "Ungelesen", onClick: () => undefined },
+                  { label: "Wartet auf Antwort", onClick: () => undefined },
                 ]}
               />
             }
@@ -102,7 +104,7 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
                   <Button keep pressed={marked()} onClick={() => setMarked(!marked())}>
                     Markiert
                   </Button>
-                  <Menu label="Weitere Aktionen" items={[{ label: "Einstellungen", onClick: () => undefined }]} />
+                  <Menu items={[{ label: "Einstellungen", onClick: () => undefined }]} />
                 </>
               ) : scenario === "headicon" ? (
                 // a kept deed with words beside a kept icon button, and no "…" of the app's own
@@ -114,7 +116,7 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
                 // two "…" of the app's own beside a kept deed: the first takes the deed, the second keeps its own
                 <>
                   <Button keep>Freigeben</Button>
-                  <Menu label="Weitere Aktionen" items={[{ label: "Einstellungen", onClick: () => undefined }]} />
+                  <Menu items={[{ label: "Einstellungen", onClick: () => undefined }]} />
                   <Menu icon="eye" label="Ansicht" items={[{ label: "Kompakt", onClick: () => undefined }]} />
                 </>
               ) : undefined
