@@ -22,7 +22,7 @@ const build = async () => {
   const id = islandIdFromFile(file, root);
   return { id, load: () => import(join(root, "_ssr", `${id}.js`)) };
 };
-const attribute = (props: object) => JSON.stringify(toJSON(props)).replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+const propsComment = (data: string) => `<!--ssr-props:${data.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")}-->`;
 
 test("rich props mount as JSON data with eval and Function disabled", async () => {
   const bundle = await build();
@@ -35,7 +35,7 @@ test("rich props mount as JSON data with eval and Function disabled", async () =
     missing: undefined,
     text: '</script>"&',
   };
-  document.body.innerHTML = `<solid-island data-id="${bundle.id}" data-props="${attribute(props)}">SSR</solid-island>`;
+  document.body.innerHTML = `<solid-island data-id="${bundle.id}">${propsComment(JSON.stringify(toJSON(props)))}SSR</solid-island>`;
   let errors = 0;
   document.querySelector("solid-island")!.addEventListener("ssr:island-error", (event) => {
     errors++;
@@ -71,7 +71,7 @@ test.each(["globalThis.pwned=1", '({label:"old"})', undefined])(
   "invalid or missing props are contained without executing (%s)",
   async (value) => {
     const bundle = await build();
-    document.body.innerHTML = `<solid-island data-id="${bundle.id}"${value === undefined ? "" : ` data-props="${value.replaceAll('"', "&quot;")}"`}>SSR</solid-island>`;
+    document.body.innerHTML = `<solid-island data-id="${bundle.id}">${value === undefined ? "" : propsComment(value)}SSR</solid-island>`;
     const element = document.querySelector("solid-island")!;
     let errors = 0;
     element.addEventListener("ssr:island-error", (event) => {

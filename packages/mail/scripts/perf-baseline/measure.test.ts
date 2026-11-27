@@ -23,7 +23,7 @@ import {
 import { type DatabaseMeasurement, scenarioSchema } from "./model";
 
 const island = (props: unknown, tag = "solid-island") =>
-  `<${tag} data-id="built-entry" data-props="${Bun.escapeHTML(JSON.stringify(toJSON(props)))}"></${tag}>`;
+  `<${tag} data-id="built-entry"><!--ssr-props:${JSON.stringify(toJSON(props)).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")}--></${tag}>`;
 function pageResponse(html: string) {
   const response = new Response(`<html><body>${html}</body></html>`, { headers: { "server-timing": "ssr_data;dur=3.5" } });
   Object.defineProperty(response, "url", { value: "https://localhost:4100/app/mail/mailbox" });
@@ -65,7 +65,9 @@ test("request records timings and raw bytes; finalization alone compresses and i
     expect(compression).toHaveBeenCalledTimes(2);
     expect(inspection).toHaveBeenCalledTimes(1);
     expect(sample.requests.map((r) => r.brotliBytes)).toEqual(expectedBrotli);
-    expect(sample.requests.map((r) => r.propsBytes)).toEqual([Buffer.byteLength(JSON.stringify(toJSON(props))), 0]);
+    // The props bytes on the wire: Seroval's JSON with `<` and `>` escaped for the props comment.
+    const serialized = JSON.stringify(toJSON(props)).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+    expect(sample.requests.map((r) => r.propsBytes)).toEqual([Buffer.byteLength(serialized), 0]);
     for (const key of ["totalMs", "ttfbMs", "rawBytes", "brotliBytes", "propsBytes"] as const)
       expect(sample[key]).toBe(sample.requests.reduce((sum, r) => sum + r[key], 0));
     await finalizeSample(sample);
@@ -110,7 +112,7 @@ test("SSR finalization rejects partial failures in MailWorkspace.data and MailOv
     await request(api, sample, "/app/mail/mailbox", undefined, true);
     await finalizeSample(sample);
     expect(sample.propsBytes).toBeGreaterThan(0);
-    html = '<solid-island data-props="globalThis.mailPerfEvaluated=true"></solid-island>';
+    html = "<solid-island><!--ssr-props:globalThis.mailPerfEvaluated=true--></solid-island>";
     const malformed = emptySample();
     await request(api, malformed, "/app/mail/mailbox", undefined, true);
     await expect(finalizeSample(malformed)).rejects.toThrow();
@@ -205,11 +207,9 @@ test("host clients refuse other ports, hosts and databases", () => {
     expect(() => assertRunUrl(url, 4211, "postgresql:", "cloud_perf_test")).toThrow();
 });
 test("SSR counts decoded props bytes and Server-Timing phases", async () => {
-  expect(
-    await propsBytes(
-      '<solid-island data-props="{&quot;x&quot;:&quot;ä&quot;}"></solid-island><solid-client data-props="abc"></solid-client>',
-    ),
-  ).toBe(Buffer.byteLength('{"x":"ä"}') + 3);
+  expect(await propsBytes('<solid-island><!--ssr-props:{"x":"ä"}--></solid-island><solid-client><!--ssr-props:abc--></solid-client>')).toBe(
+    Buffer.byteLength('{"x":"ä"}') + 3,
+  );
   expect(parseServerTiming("auth;dur=1.25, ssr_data;dur=3.5")).toEqual({ auth: 1.25, ssr_data: 3.5 });
 });
 test("jsonlog parser prefers matched plans, drops the observer role, and counts corrupt entries", async () => {

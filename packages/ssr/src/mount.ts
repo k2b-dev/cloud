@@ -1,6 +1,7 @@
 import { fromJSON } from "seroval";
 import { type Component, getOwner, type Owner } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
+import { PROPS_COMMENT } from "./props-comment";
 import { captureTypedFields, composingIn, focusTypedField, restoreTypedFields } from "./typed-fields";
 
 /** Props received by a configured island error fallback component. */
@@ -37,6 +38,8 @@ type IslandRegistry = {
   /** The dispose function of each mounted wrapper. */
   mounted: WeakMap<HTMLElement, () => void>;
   roots?: WeakMap<Owner, HTMLElement>;
+  /** Each wrapper's serialized props, taken from its props comment; shared so every runtime copy can mount it again. */
+  props?: WeakMap<HTMLElement, string>;
   /** Internal navigation listeners called after each wrapper mounted, also when it renders nothing. */
   listeners?: Set<() => void>;
 };
@@ -56,6 +59,23 @@ export const islandOf = (owner: Owner): HTMLElement | undefined => {
   }
 };
 
+/**
+ * The wrapper's serialized props. The server writes them as the comment `<!--ssr-props:{…}-->`, the wrapper's first
+ * child; it leaves the markup before each render, and the text last read stays readable for Try again and a mount
+ * after disposal.
+ */
+const propsText = (element: HTMLElement): string | undefined => {
+  const islands = registry();
+  islands.props ??= new WeakMap();
+  const node = element.firstChild;
+  // By node type: a minimal DOM may define no Comment global.
+  if (node && node.nodeType === node.COMMENT_NODE && node.nodeValue?.startsWith(PROPS_COMMENT)) {
+    islands.props.set(element, node.nodeValue.slice(PROPS_COMMENT.length));
+    node.remove();
+  }
+  return islands.props.get(element);
+};
+
 const mountElement = <Props extends object>(
   element: HTMLElement,
   Component: Component<Props>,
@@ -70,6 +90,8 @@ const mountElement = <Props extends object>(
   }
   const start = (): void => {
     try {
+      // Taken first, so the props comment is no node of the markup that focus and typed text are carried from.
+      propsText(element);
       // The browser renders the island again over its server markup. Focus taken before that (a keyboard user, or a
       // test that is faster than the island's script) moves to the same element of the new markup instead of the body,
       // and text typed into a server field moves to the same field (typed-fields.ts).
@@ -99,8 +121,8 @@ const mountElement = <Props extends object>(
             });
           },
           get children() {
-            // Props are data: JSON.parse and Seroval fromJSON never evaluate them.
-            return createComponent(Component, fromJSON<Props>(JSON.parse(element.dataset.props ?? "")));
+            // Props are data: JSON.parse and Seroval fromJSON never evaluate them. Read again here: reset() reruns only this.
+            return createComponent(Component, fromJSON<Props>(JSON.parse(propsText(element) ?? "")));
           },
         });
       }, element);

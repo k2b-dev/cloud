@@ -65,9 +65,7 @@ export async function helpPanelServerBrowserFixture() {
       ),
     };
     const runtimeId = islandIdFromFile(panelIslandEntries.at(-1)!, root);
-    const runtimeProps = JSON.stringify(toJSON({ provider: "fixture", scope: "/panel" }))
-      .replaceAll("&", "&amp;")
-      .replaceAll('"', "&quot;");
+    const runtimeProps = JSON.stringify(toJSON({ provider: "fixture", scope: "/panel" }));
     const app = new Hono()
       // Split chunks import each other by relative paths from the build's output layout; serve every file by name.
       .get("/:path{.+\\.js}", (c) => {
@@ -81,7 +79,7 @@ export async function helpPanelServerBrowserFixture() {
       )
       .get("/panel", (c) =>
         c.html(
-          `<!doctype html><html lang="en"${themeClass(c.req.query("theme"))}><head><style>${css}</style><style>html,body{margin:0;height:100%}*,*::before,*::after{animation:none!important;transition:none!important}</style></head><body class="k2b-ui"><div class="cloud-panel-page" data-cloud-panel-page><script id="cloud-panel-context" type="application/json">{"v":1,"seq":0,"pageId":"22222222-2222-4222-8222-222222222222","app":"spaces","help":["share"]}</script><solid-island data-id="${runtimeId}" data-props="${runtimeProps}"></solid-island>${renderer.render({ ...panelFixtureProps, ...(c.req.query("topic") ? { initialTopic: "share", initialArticle } : {}) })}</div><script>document.documentElement.dataset.serverGeometry=JSON.stringify((${panelGeometry.toString()})());</script><script type="module">${JSON.stringify(scripts)}.forEach((file)=>import("/assets/"+file))</script></body></html>`,
+          `<!doctype html><html lang="en"${themeClass(c.req.query("theme"))}><head><style>${css}</style><style>html,body{margin:0;height:100%}*,*::before,*::after{animation:none!important;transition:none!important}</style></head><body class="k2b-ui"><div class="cloud-panel-page" data-cloud-panel-page><script id="cloud-panel-context" type="application/json">{"v":1,"seq":0,"pageId":"22222222-2222-4222-8222-222222222222","app":"spaces","help":["share"]}</script><solid-island data-id="${runtimeId}"><!--ssr-props:${runtimeProps}--></solid-island>${renderer.render({ ...panelFixtureProps, ...(c.req.query("topic") ? { initialTopic: "share", initialArticle } : {}) })}</div><script>document.documentElement.dataset.serverGeometry=JSON.stringify((${panelGeometry.toString()})());</script><script type="module">${JSON.stringify(scripts)}.forEach((file)=>import("/assets/"+file))</script></body></html>`,
         ),
       )
       .get("/api/help/search", (c) => c.json({ ids: ["share"] }))

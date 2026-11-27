@@ -14,9 +14,11 @@ It uses file conventions:
 
 Islands are not hydrated. When an island's code loads, the client clears the
 island's server HTML and renders the component again from its props, which the
-server writes as Seroval JSON data. Props are never evaluated, so pages work
-under a Content Security Policy without `'unsafe-eval'`. Two consequences of
-re-rendering follow:
+server writes as Seroval JSON data into a comment, the wrapper's first child
+(`<!--ssr-props:{…}-->`). CSS selectors and `textContent` do not see the
+comment, so the server markup looks to them as it does after mounting. Props
+are never evaluated, so pages work under a Content Security Policy without
+`'unsafe-eval'`. Two consequences of re-rendering follow:
 
 - state that exists only in the server HTML inside an island, such as a scroll
   position, is replaced on mount. Focus and typed text are kept: an element
@@ -563,8 +565,8 @@ Every island and client component instance is mounted inside its own error
 boundary. No setup is needed. If a component throws while it mounts, while its
 props are parsed, or later in a reactive update, only that instance is
 replaced with a fallback. Other instances and other islands keep working, also
-when they are updated by the same signal write. Malformed `data-props` also
-ends in the fallback.
+when they are updated by the same signal write. Missing or malformed props
+data also ends in the fallback.
 
 The default fallback is plain, unstyled markup:
 
@@ -574,8 +576,8 @@ The default fallback is plain, unstyled markup:
 </div>
 ```
 
-**Try again** remounts the component with fresh state from the same
-`data-props`. Style the fallback through `[data-ssr-error]`.
+**Try again** remounts the component with fresh state from the same props.
+Style the fallback through `[data-ssr-error]`.
 
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event on
 the `<solid-island>` or `<solid-client>` element. Its `detail` contains
