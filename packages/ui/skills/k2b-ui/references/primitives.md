@@ -212,7 +212,8 @@ A `Row`:
   `action` or `end`.
 - A line of three is cut with "…" and says its words on hover. An address
   or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
-  the middle, so the domain or extension stays readable.
+  the middle, so the domain or extension stays readable; words without
+  one stay plain and are cut at their end.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
