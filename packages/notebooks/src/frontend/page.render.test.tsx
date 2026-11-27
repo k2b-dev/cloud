@@ -158,8 +158,8 @@ test("without a notebook, Notebooks is one line and four cards in a centred page
   // each previews what it makes from the template itself: the welcome page, then the first tables
   const previews = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile-preview');
   expect(previews.map((preview) => preview.attributes["aria-hidden"])).toEqual(["true", "true", "true", "true"]);
-  expect(previews[2]?.text).toContain("Camembert");
-  expect(previews[3]?.text).toContain("Michael Ende");
+  expect(previews[2]?.text).toContain("Zwiebel");
+  expect(previews[3]?.text).toContain("Momo");
   // a German notebook speaks German in its sample data too
   expect(previews[3]?.text).toContain("Lese ich");
   const links = await selectHtml(html, '[data-k2-part="Tiles"] .k2-tile a[href^="/app/notebooks?new="]');

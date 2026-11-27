@@ -48,26 +48,37 @@ test("a template's preview is its first table with rows, three columns of three 
       expect(shown.table.rows.length).toBeGreaterThan(0);
       expect(shown.table.rows.length).toBeLessThanOrEqual(3);
       // plain words: no Markdown and no table syntax left in a cell
-      for (const cell of [...shown.table.columns, ...shown.table.rows.flat()]) expect(cell).not.toMatch(/[|*]|^-+$/);
+      for (const cell of [
+        ...shown.table.columns.map((column) => (typeof column === "string" ? column : column.label)),
+        ...shown.table.rows.flat(),
+      ])
+        expect(cell).not.toMatch(/[|*]|^-+$/);
     }
   }
-  // the reading list shows its books, in German in a German notebook; the recipes skip a table without rows and show the
-  // pantry
+  // the card templates choose short values of their own content, so the card cuts nothing: the reading list its titles
+  // and states without the authors, the recipes the pantry's shortest rows with the amount at the end
   expect(preview("reading-list", "de")).toEqual({
     table: {
-      columns: ["Titel", "Autor", "Status"],
+      columns: ["Titel", "Status"],
       rows: [
-        ["Momo", "Michael Ende", "Lese ich"],
-        ["Unterleuten", "Juli Zeh", "Will ich lesen"],
-        ["Der Process", "Franz Kafka", "Gelesen"],
+        ["Momo", "Lese ich"],
+        ["Faust", "Gelesen"],
+        ["Altes Land", "Gelesen"],
       ],
     },
   });
-  const pantry = preview("recipe-collector", "de");
-  expect(pantry && "table" in pantry ? [pantry.table.columns, pantry.table.rows[0]] : null).toEqual([
-    ["Zutat", "Menge", "Einheit"],
-    ["Camembert", "250", "g"],
-  ]);
+  expect(preview("recipe-collector", "de")).toEqual({
+    table: {
+      columns: ["Zutat", { label: "Menge", align: "end" }, "Einheit"],
+      rows: [
+        ["Zwiebel", "1,2", "kg"],
+        ["Eier", "8", "Stück"],
+        ["Mehl", "1,5", "kg"],
+      ],
+    },
+  });
+  // an English reading list has long titles: its card shows its first page
+  expect(preview("reading-list", "en")).toMatchObject({ page: { title: "Reading Dashboard" } });
   // a diary shows its daily page, not its inbox table (`startPreview`, mockup empty-start-tiles v4)
   expect(preview("daily-notes", "de")).toEqual({ page: { title: "Tagebuch", text: expect.stringMatching(/^Beginne hier\./) } });
   expect(preview("no-such-template")).toBeNull();
@@ -82,4 +93,17 @@ test("a blank notebook's preview is its welcome page: its title and first line a
 test("a blank notebook's welcome page previews in the language it is made in (#4460)", () => {
   expect(welcomePreview("de")).toEqual({ page: { title: welcomeOutline("de")[0]?.title ?? "-", text: expect.any(String) } });
   expect(welcomeOutline("de")[0]?.title).not.toBe(welcomeOutline("en")[0]?.title);
+});
+
+test("the start previews the templates choose keep every value short enough that a card cuts nothing", () => {
+  for (const locale of ["de", "en"])
+    for (const template of templates) {
+      const shown = preview(template.id, locale);
+      if (!shown || !("table" in shown) || !template.startPreview) continue;
+      const cells = [
+        ...shown.table.columns.map((column) => (typeof column === "string" ? column : column.label)),
+        ...shown.table.rows.flat(),
+      ];
+      for (const cell of cells) expect(cell.length).toBeLessThanOrEqual(12);
+    }
 });

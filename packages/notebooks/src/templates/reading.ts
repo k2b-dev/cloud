@@ -29,12 +29,23 @@ export const readingListTemplate: NotebookTemplate = {
   icon: "ti ti-books",
   notebookName: "Reading List",
   notebookDescription: "Track books, current reads, quotes, and a queue without turning reading into project management.",
+  // the English titles are long, so the card shows the reading list's first page, which cuts nothing
+  startPreview: "page",
   translations: {
     de: {
       name: "Leseliste",
       description: "Bücher, Leseliste, Notizen, Zitate und Bewertungen.",
       notebookName: "Leseliste",
       notebookDescription: "Bücher, aktuelle Lektüre, Zitate und eine Merkliste verwalten, ohne das Lesen zum Projektmanagement zu machen.",
+      // title and status only: the author would be cut on a card
+      startPreview: {
+        columns: ["Titel", "Status"],
+        rows: [
+          ["Momo", "Lese ich"],
+          ["Faust", "Gelesen"],
+          ["Altes Land", "Gelesen"],
+        ],
+      },
     },
   },
   homepageNoteKey: "dashboard",

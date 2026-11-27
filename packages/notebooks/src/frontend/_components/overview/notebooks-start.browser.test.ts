@@ -158,7 +158,16 @@ for (const width of [1440, 1920, 1024, 390]) {
         expect.stringContaining("Leseliste"),
       ]);
       expect(await cards.nth(1).innerText()).toContain("6 Seiten");
-      expect(await cards.nth(2).locator(".k2-tile-preview").innerText()).toContain("Camembert");
+      expect(await cards.nth(2).locator(".k2-tile-preview").innerText()).toContain("Zwiebel");
+      // no preview value is cut: every visible cell shows all its words
+      const cut = await page
+        .locator(".k2-tile-pv-table :is(th, td)")
+        .evaluateAll((cells) =>
+          cells
+            .filter((cell) => getComputedStyle(cell).display !== "none" && cell.scrollWidth > cell.clientWidth)
+            .map((cell) => cell.textContent),
+        );
+      expect(cut).toEqual([]);
       expect(await cards.nth(0).innerText()).toContain("1 Seite");
       // the fourth template waits in the dialog
       expect(

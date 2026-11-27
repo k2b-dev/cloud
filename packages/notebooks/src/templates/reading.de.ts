@@ -77,7 +77,7 @@ limit: 25
 |---|---|---|---:|---|---|---|
 | Momo | Michael Ende | Lese ich |  | ${ctx.now.getFullYear()}-05-01 |  | kurze Kapitel für jeden Abend |
 | Unterleuten | Juli Zeh | Will ich lesen |  |  |  | Dorfroman, Empfehlung von Anna |
-| Der Process | Franz Kafka | Gelesen | 5 | ${ctx.now.getFullYear()}-04-01 | ${ctx.now.getFullYear()}-04-14 | beklemmend und genau |
+| Faust | Johann Wolfgang von Goethe | Gelesen | 5 | ${ctx.now.getFullYear()}-04-01 | ${ctx.now.getFullYear()}-04-14 | kurze Szenen, viele Zitate |
 | Altes Land | Dörte Hansen | Gelesen | 4 | ${ctx.now.getFullYear()}-03-11 | ${ctx.now.getFullYear()}-03-15 | ruhig, norddeutsch |
 | Duden – Die deutsche Rechtschreibung | Dudenredaktion | Zum Nachschlagen |  |  |  | einzelne Regeln nachschlagen |
 

@@ -58,21 +58,21 @@ const previews: Record<string, TilePreview> = {
   },
   "recipe-collector": {
     table: {
-      columns: ["Zutat", "Menge", "Einheit"],
+      columns: ["Zutat", { label: "Menge", align: "end" }, "Einheit"],
       rows: [
-        ["Camembert", "250", "g"],
-        ["Frischkäse", "200", "g"],
-        ["Zwiebel", "1.2", "kg"],
+        ["Zwiebel", "1,2", "kg"],
+        ["Eier", "8", "Stück"],
+        ["Mehl", "1,5", "kg"],
       ],
     },
   },
   "reading-list": {
     table: {
-      columns: ["Titel", "Autor", "Status"],
+      columns: ["Titel", "Status"],
       rows: [
-        ["Momo", "Michael Ende", "Lese ich"],
-        ["Unterleuten", "Juli Zeh", "Will ich lesen"],
-        ["Der Process", "Franz Kafka", "Gelesen"],
+        ["Momo", "Lese ich"],
+        ["Faust", "Gelesen"],
+        ["Altes Land", "Gelesen"],
       ],
     },
   },

@@ -123,7 +123,9 @@ export const outline = (id: string, locale = "en"): TemplatePage[] | null => {
 export const welcomeOutline = (locale = "en"): TemplatePage[] => [{ title: deriveNoteTitle(welcomeMarkdown(locale)), parent: null }];
 
 /** What a start card shows of a template: its first table, or its first page. */
-export type TemplatePreview = { table: { columns: string[]; rows: string[][] } } | { page: { title: string; text?: string } };
+export type TemplatePreview =
+  | { table: { columns: (string | { label: string; align?: "end" })[]; rows: string[][] } }
+  | { page: { title: string; text?: string } };
 
 /** How much of a table a preview shows: three columns of its first three rows, as a card has room for. */
 const PREVIEW_COLUMNS = 3;
@@ -170,7 +172,10 @@ export const preview = (id: string, locale = "en"): TemplatePreview | null => {
   const pages = madePages(id, locale);
   if (!pages?.length) return null;
   const [first] = pages;
-  if (getTemplate(id)?.startPreview === "page" && first) return pagePreview(first.title, first.content);
+  const template = getTemplate(id);
+  const chosen = template ? materializeTemplate(template, new Date(), locale).startPreview : undefined;
+  if (chosen === "page" && first) return pagePreview(first.title, first.content);
+  if (chosen && chosen !== "page") return { table: { columns: [...chosen.columns], rows: chosen.rows.map((row) => [...row]) } };
   for (const page of pages) {
     const table = firstTable(page.content);
     if (table) return { table };
