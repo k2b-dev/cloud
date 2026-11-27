@@ -1,4 +1,4 @@
-import { createSignal, type JSX, Show } from "solid-js";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
 import { useControlMessages } from "./control-messages";
@@ -237,6 +237,49 @@ export const Chip = (props: ChipProps) => {
 /** A small round dot of a state (internal: a row marks "unread" with it, the sidebar "new"). */
 export const Dot = (props: { status?: Status | "app"; label?: string }) => (
   <span class="k2-dot" data-status={props.status} role="img" aria-label={props.label} aria-hidden={props.label ? undefined : "true"} />
+);
+
+/** The state of one time slot of `Ticks`: it went well, it failed, or there is no data for it. */
+export type TickState = "ok" | "bad" | "none";
+
+export type TicksProps = {
+  /**
+   * One state per time slot, oldest first, such as one per minute of the last 30 minutes. They read in the writing
+   * direction: the oldest at the start (on the right in a page written right to left). In a table cell at most 60
+   * slots: the cell's 140 px hold no more, and a strip with more is cut at its end.
+   */
+  slots: readonly TickState[];
+  /**
+   * What the ticks say, in one sentence a person who cannot see them gets the same from, always in the same form:
+   * what, over which time, then what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen
+   * fehlgeschlagen".
+   */
+  label: string;
+  /** The data colour of what the ticks belong to; without it the colour of the app. Failures stay red. */
+  color?: string;
+  /**
+   * The ticks take the room between the text edges of their place, such as a detail: 2 px apart, each slot up to 12 px
+   * wide, the strip at the start where the place is wider; without it 140 px, the width of a table cell.
+   */
+  stretch?: boolean;
+};
+
+/**
+ * One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a
+ * failure red and taller, a slot without data a low stub. 20 px high; the one column of a list that shows its data
+ * over time.
+ */
+export const Ticks = (props: TicksProps) => (
+  <span
+    class="k2-ticks"
+    data-k2-part="Ticks"
+    data-stretch={props.stretch ? "" : undefined}
+    role="img"
+    aria-label={props.label}
+    style={custom({ "--k2-c": props.color })}
+  >
+    <For each={props.slots}>{(state) => <i data-s={state} />}</For>
+  </span>
 );
 
 export type ProgressProps = {

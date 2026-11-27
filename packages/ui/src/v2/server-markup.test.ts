@@ -112,3 +112,14 @@ test("a meter carries its state only when it has one", async () => {
   expect(renderToString(() => createComponent(Progress, { value: 120, of: 120, status: "bad" }))).toContain('data-status="bad"');
   expect(renderToString(() => createComponent(Progress, { value: 9, of: 12 }))).not.toContain("data-status");
 });
+
+test("Ticks are drawn by the server alone: a picture with its sentence and one tick per slot", async () => {
+  const { Ticks } = await import("./marks");
+  const markup = renderToString(() =>
+    createComponent(Ticks, { slots: ["none", "ok", "bad"], label: "Quelle: 2 Abrufe, 1 fehlgeschlagen", color: "#7c3aed" }),
+  );
+  expect(markup).toContain('role="img"');
+  expect(markup).toContain('aria-label="Quelle: 2 Abrufe, 1 fehlgeschlagen"');
+  expect(markup.match(/<i data-s="(ok|bad|none)"/g)).toEqual(['<i data-s="none"', '<i data-s="ok"', '<i data-s="bad"']);
+  expect(markup).toContain("--k2-c:#7c3aed");
+});

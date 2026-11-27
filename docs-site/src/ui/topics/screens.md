@@ -18,6 +18,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="filtered-table" height="520" default="Filtered" />
 
+## Folders as a tree
+
+<Example recipe="tree" height="560" />
+
 ## Record
 
 <Example recipe="record" height="720" default="Customer" />
