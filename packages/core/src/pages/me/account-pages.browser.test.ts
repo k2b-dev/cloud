@@ -106,6 +106,8 @@ const ipaUser: User = {
 let user: User = localUser;
 let freeIpaEnabled = false;
 let requestsEnabled = false;
+/** A FreeIPA account request that waits, or none. */
+let pending: { id: string; createdAt: Date } | null = null;
 
 const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
@@ -113,6 +115,7 @@ beforeEach(() => {
   user = localUser;
   freeIpaEnabled = false;
   requestsEnabled = false;
+  pending = null;
   spies.push(
     spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) => {
       return createComponent(LocaleProvider, {
@@ -135,7 +138,7 @@ beforeEach(() => {
                 ? true
                 : undefined) as never,
     ),
-    spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockResolvedValue(null as never),
+    spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockImplementation(async () => pending as never),
     spyOn(services.accountsAppService.accountRequest, "isEnabled").mockImplementation(async () => requestsEnabled),
     spyOn(services.accountsAppService.user.group, "list").mockImplementation(async ({ recursive }) => {
       const direct = user.memberofGroup.filter((name) => name !== "internal-fixture-group");
@@ -318,6 +321,23 @@ describe("account pages on v2", () => {
     const all = await content("/me", "en", "?groups=all");
     expect(shown(all)).toHaveLength(9);
     expect(all).toContain('href="/me#groups"');
+  });
+
+  test("the profile offers the FreeIPA request and shows a waiting one with its withdrawal", async () => {
+    // not offered while the installation takes no requests
+    expect(await content("/me", "en")).not.toContain('id="freeipa"');
+    freeIpaEnabled = true;
+    requestsEnabled = true;
+    const offered = await content("/me", "en");
+    expect(offered).toContain('id="freeipa"');
+    expect(offered).toContain(">Request FreeIPA account<");
+    // a waiting request stays withdrawable after new requests are turned off
+    requestsEnabled = false;
+    pending = { id: "00000000-0000-4000-8000-0000000000aa", createdAt: new Date("2026-09-28T08:00:00.000Z") };
+    const waiting = await content("/me", "en");
+    expect(waiting).toContain("Request pending since");
+    expect(waiting).toContain(">Withdraw request<");
+    expect(waiting).not.toContain(">Request FreeIPA account<");
   });
 
   test("inherited memberships remain reachable when all direct groups are internal", async () => {
@@ -549,6 +569,66 @@ describe.if(Boolean(shots))("account pages in the Cloud shell", () => {
           await tab.goto(`${origin}${screen.path}${screen.query ?? ""}`);
           await tab.evaluate(() => document.fonts.ready);
           await tab.screenshot({ path: join(shots!, `shell-${screen.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+  }, 240_000);
+
+  test("review pictures of the profile's groups and FreeIPA request at 1440 and 390 px, scrolled to their section", async () => {
+    spies.shift()?.mockRestore();
+    // the old address of the groups leads to the profile's section, all groups shown
+    const moved = await createPagesRouter().request(`${origin}/me/access?groups=all`);
+    expect(moved.headers.get("Location")).toBe("/me?groups=all#groups");
+    const scenes: { name: string; query?: string; hash: string; setup?: () => void }[] = [
+      { name: "groups", hash: "#groups" },
+      { name: "groups-all-from-access", query: "?groups=all", hash: "#groups" },
+      {
+        name: "freeipa-request",
+        hash: "#freeipa",
+        setup: () => {
+          freeIpaEnabled = requestsEnabled = true;
+        },
+      },
+      {
+        name: "freeipa-pending",
+        hash: "#freeipa",
+        setup: () => {
+          freeIpaEnabled = true;
+          pending = { id: "00000000-0000-4000-8000-0000000000aa", createdAt: new Date("2026-09-28T08:00:00.000Z") };
+        },
+      },
+    ];
+    for (const scene of scenes)
+      for (const view of [desktop, phone]) {
+        freeIpaEnabled = requestsEnabled = false;
+        pending = null;
+        scene.setup?.();
+        const response = await request("/me", "de", scene.query);
+        const html = (await response.text()).replace("</head>", `<style>${pageCss.v2}</style></head>`);
+        const tab = await browser.newPage({
+          viewport: { width: view.width, height: view.height },
+          deviceScaleFactor: 1,
+          isMobile: view.touch,
+          hasTouch: view.touch,
+        });
+        try {
+          await tab.route(`${origin}/**`, (route) => {
+            const path = new URL(route.request().url()).pathname;
+            if (path === "/me") return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+            if (path === "/public/core/app.css") return route.fulfill({ contentType: "text/css", body: pageCss.app });
+            if (path === "/public/global.css") return route.fulfill({ contentType: "text/css", body: pageCss.global });
+            if (path.startsWith("/branding/")) return route.fulfill({ contentType: "image/svg+xml", body: BRAND_MARK });
+            if (path.startsWith("/public/")) return route.fulfill({ path: join(root, path) }).catch(() => route.fulfill({ status: 404 }));
+            return route.fulfill({ status: 404, body: "" });
+          });
+          await tab.goto(`${origin}/me${scene.query ?? ""}${scene.hash}`);
+          await tab.evaluate(() => document.fonts.ready);
+          // the address alone leads to the section: its head stands in view without scrolling by hand
+          const top = (await tab.locator(scene.hash).boundingBox())?.y ?? -1;
+          expect(top).toBeGreaterThanOrEqual(0);
+          expect(top).toBeLessThan(view.height / 2);
+          await tab.screenshot({ path: join(shots!, `review-${scene.name}-${view.name}.png`) });
         } finally {
           await tab.close();
         }
