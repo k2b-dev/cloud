@@ -263,7 +263,7 @@ const feedbackEntries = [
   { rating: 5, comment: "Bester Kuchen auf dem Campus!", createdAt: "2026-11-25T08:30:00.000Z" },
   { rating: 4, comment: "Freundlich, aber die Schlange war lang.", createdAt: "2026-11-25T07:50:00.000Z" },
   { rating: 5, comment: null, createdAt: "2026-11-25T07:10:00.000Z" },
-  { rating: 3, comment: null, createdAt: "2026-11-24T14:10:00.000Z" },
+  { rating: 2, comment: null, createdAt: "2026-11-24T14:10:00.000Z" },
   { rating: 4, comment: "Mehr vegane Brötchen wären schön.", createdAt: "2026-11-24T10:05:00.000Z" },
   { rating: 4, comment: null, createdAt: "2026-11-23T15:40:00.000Z" },
   { rating: 4, comment: null, createdAt: "2026-11-23T09:20:00.000Z" },
@@ -313,11 +313,13 @@ export const fixtureDashboard = (patch: Partial<VenueDashboard> = {}): VenueDash
   ],
   feedback: {
     count: 7,
-    averageRating: 4.1,
+    averageRating: 4,
     commentCount: 3,
+    // the 2-star rating of Tuesday afternoon
+    lowCount: 1,
     buckets: [
       { date: "2026-11-23", count: 2, averageRating: 4 },
-      { date: "2026-11-24", count: 2, averageRating: 3.5 },
+      { date: "2026-11-24", count: 2, averageRating: 3 },
       { date: "2026-11-25", count: 3, averageRating: 4.7 },
     ],
   },
@@ -417,6 +419,19 @@ export const fixturePreview = (): PublicStatus => {
 };
 
 /** Worst-case data for the schedule and an open shift: an endless title, many people with long and non-Latin names. */
+/** A venue that was just created: no shifts, no sign-ups, no feedback yet. */
+export const emptyDashboard = (): VenueDashboard =>
+  fixtureDashboard({
+    templates: [],
+    slots: [],
+    otherAssignments: [],
+    myUpcomingShifts: [],
+    myShiftCount: 0,
+    feedback: { count: 0, averageRating: null, commentCount: 0, lowCount: 0, buckets: [] },
+    feedbackEntries: [],
+    feedbackEntriesPage: null,
+  });
+
 export const worstDashboard = (): VenueDashboard => {
   const dashboard = fixtureDashboard();
   const names = [

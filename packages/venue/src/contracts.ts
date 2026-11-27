@@ -378,9 +378,14 @@ const FeedbackSummarySchema = z.object({
   count: z.number().int().min(0),
   averageRating: z.number().nullable(),
   commentCount: z.number().int().min(0),
+  /** Ratings of FEEDBACK_LOW_RATING stars or fewer in the window: the ones worth a look. */
+  lowCount: z.number().int().min(0),
   buckets: z.array(z.object({ date: DateKeySchema, count: z.number().int(), averageRating: z.number().nullable() })),
 });
 export type FeedbackSummary = z.infer<typeof FeedbackSummarySchema>;
+
+/** A rating of this many stars or fewer is a bad one: it carries colour and stands as an exception. */
+export const FEEDBACK_LOW_RATING = 2;
 
 /** Feedback entries per page in the workspace table and the dashboard API. */
 export const FEEDBACK_PAGE_SIZE = 50;

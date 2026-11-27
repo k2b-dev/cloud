@@ -41,7 +41,7 @@ const dashboard: VenueDashboard = {
   myUpcomingShifts: [],
   myShiftCount: 0,
   sections: [],
-  feedback: { count: 7, averageRating: 4.07, commentCount: 0, buckets },
+  feedback: { count: 7, averageRating: 4.07, commentCount: 0, lowCount: 0, buckets },
   feedbackEntries: [],
   feedbackEntriesPage: null,
 };

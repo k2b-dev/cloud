@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import {
+  emptyDashboard,
   evening,
   FIXTURE_NOW,
   fixtureDashboard,
@@ -151,7 +152,8 @@ const answer = async (route: Route, calls: Call[]) => {
   const call: Call = { method: request.method(), path: url.pathname, body: request.postData() ? JSON.parse(request.postData()!) : null };
   calls.push(call);
   if (call.method === "POST" && call.path === "/api/venue/venues") return route.fulfill({ status: 201, json: { id: "New001" } });
-  if (call.path.endsWith("/dashboard")) return route.fulfill({ json: variant === "worst" ? worstDashboard() : fixtureDashboard() });
+  if (call.path.endsWith("/dashboard"))
+    return route.fulfill({ json: variant === "worst" ? worstDashboard() : variant === "empty" ? emptyDashboard() : fixtureDashboard() });
   if (call.method === "POST" && call.path.includes("/signup-weeks")) return route.fulfill({ status: 201, json: [{}, {}, {}] });
   if (call.method === "POST" && call.path.endsWith("/signup")) return route.fulfill({ status: 201, json: {} });
   if (call.method === "DELETE") return route.fulfill({ json: { message: "Shift cancelled" } });
@@ -339,6 +341,9 @@ describe("Venue on v2", () => {
     const { context, tab, errors, calls } = await open(desktop, "/app/venue/Cafe01/my-shifts", { permission: "write" });
     try {
       await shoot(tab, "my-shifts-1440");
+      // the row opens the shift in the schedule; leaving stands in its head
+      await tab.locator('[data-k2-part="Table"]').getByRole("link", { name: "Inventur" }).first().click();
+      await tab.waitForURL(/shift=/);
       await tab.getByRole("button", { name: "Austreten" }).first().click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Austreten" }).click();
       await tab.waitForFunction(() => document.querySelector('[role="alertdialog"]') === null);
@@ -347,6 +352,9 @@ describe("Venue on v2", () => {
         // the first of my shifts is today's stocktaking
         { method: "DELETE", path: "/api/venue/venues/Cafe01/assignments/Asg006", body: null },
       ]);
+      // back to my shifts, where the calendar subscription stands
+      await tab.getByRole("link", { name: /^Meine Schichten/ }).first().click();
+      await tab.waitForURL(/\/my-shifts/);
       await tab.getByRole("button", { name: "Kalender abonnieren" }).click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("button", { name: "Link erneuern" }).click();
@@ -525,11 +533,19 @@ describe("Venue on v2", () => {
 
   test("worst-case names keep their rows and break nothing (break-ui)", async () => {
     const found: string[] = [];
+    // the worst names and counts, and a new venue (and none at all) without shifts, sign-ups or feedback
     for (const view of [desktop, phone])
-      for (const address of ["/app/venue", `${schedule}&shift=${lunchId}`]) {
-        const { context, tab, errors } = await open(view, address, { variant: "worst" });
+      for (const [variant, address] of [
+        ["worst", "/app/venue"],
+        ["worst", `${schedule}&shift=${lunchId}`],
+        ["empty", "/app/venue"],
+        ["empty", schedule],
+        ["empty", "/app/venue/Cafe01/my-shifts"],
+        ["empty", "/app/venue/Cafe01/feedback"],
+      ] as const) {
+        const { context, tab, errors } = await open(view, address, { variant });
         try {
-          const name = `worst-${address.replace(/[^a-z0-9]+/gi, "-")}-${view.width}`;
+          const name = `${variant}-${address.replace(/[^a-z0-9]+/gi, "-")}-${view.width}`;
           await shoot(tab, name);
           for (const problem of (await measureV2Layout(tab, { root: "#root" })).problems) found.push(`${name}: ${problem}`);
           if (await tab.evaluate(() => document.documentElement.scrollWidth > window.innerWidth))

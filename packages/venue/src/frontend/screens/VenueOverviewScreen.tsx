@@ -1,16 +1,19 @@
+import V2WorkspaceNavigation from "@k2b/cloud/ssr/V2WorkspaceNavigation";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Chip,
   Dialog,
   Empty,
   Field,
-  Icon,
   Input,
   List,
   Menu,
   type MenuEntry,
+  Nav,
+  type NavGroup,
   Notice,
   Pane,
   Row,
@@ -26,6 +29,10 @@ import { apiClient } from "../../api/client";
 import type { MyNextShift, Venue, VenueTemplateSummary } from "../../contracts";
 import { formatVenueSpan } from "../../time-format";
 import { readError } from "../_components/venue-workspace/utils";
+
+/** The venues the sidebar lists by name; the table below holds them all. */
+const NAV_VENUES = 50;
+
 import { slugFromName, venueSlugError } from "../venue-slug";
 import { useVenueWords } from "./messages";
 
@@ -88,160 +95,173 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
         ]
       : []),
   ];
+  // the venues stay places in the sidebar here too (the first ones), with "Alle Standorte" as the current one
+  const groups = (): NavGroup[] => [
+    { items: [{ label: t().allVenues, icon: "layout-grid", href: "/app/venue", current: true }] },
+    {
+      label: t().yourVenues,
+      items: props.venues.slice(0, NAV_VENUES).map((venue) => ({
+        label: venue.name,
+        icon: iconName(venue.icon),
+        color: venue.accentColor,
+        href: `/app/venue/${venue.id}`,
+      })),
+    },
+  ];
   return (
-    <Workspace
-      head={
-        <Bar
-          end={
-            <>
-              <Show when={props.venues.length > 0}>
-                <Input
-                  type="search"
-                  icon="search"
-                  label={t().searchVenues}
-                  placeholder={t().searchVenuesPlaceholder}
-                  value={query()}
-                  onInput={search}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape" && query()) {
-                      event.preventDefault();
-                      search("");
-                    }
-                  }}
-                />
-              </Show>
-              <Menu variant="primary" icon="plus" items={startEntries()}>
-                {t().newVenue}
-              </Menu>
-            </>
-          }
-        />
-      }
-      primary={{ label: t().newVenue, icon: "plus", onClick: () => setCreating({}) }}
-    >
-      <Pane
-        label={t().yourVenues}
-        scrollKey="venue-overview"
-        // a count says nothing to act on; only a search says how much it found
-        status={
-          query().trim() ? <StatusRow lead={words().matchesCount({ count: shown().length, total: props.venues.length })} /> : undefined
+    <>
+      <V2WorkspaceNavigation label={t().appName} groups={groups()} />
+      <Workspace
+        sidebar={<Nav title={t().appName} icon="building-carousel" groups={groups()} />}
+        sidebarLabel={t().yourVenues}
+        head={
+          <Bar
+            end={
+              <>
+                <Show when={props.venues.length > 0}>
+                  <Input
+                    type="search"
+                    icon="search"
+                    label={t().searchVenues}
+                    placeholder={t().searchVenuesPlaceholder}
+                    value={query()}
+                    onInput={search}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && query()) {
+                        event.preventDefault();
+                        search("");
+                      }
+                    }}
+                  />
+                </Show>
+                <Menu variant="primary" icon="plus" items={startEntries()}>
+                  {t().newVenue}
+                </Menu>
+              </>
+            }
+          />
         }
+        primary={{ label: t().newVenue, icon: "plus", onClick: () => setCreating({}) }}
       >
-        <Show
-          when={props.venues.length > 0}
-          fallback={
-            <>
-              <Empty
-                icon="building-carousel"
-                text={t().noVenuesDescription}
-                action={{ label: t().startBlank, icon: "plus", onClick: () => setCreating({}) }}
-              />
-              <Show when={props.templates.length > 0}>
-                <List label={t().templates}>
-                  <For each={props.templates}>
-                    {(template) => (
-                      <Row
-                        mark={{ icon: iconName(template.icon) }}
-                        lines={[template.name, template.description]}
-                        action={{ label: t().create, icon: "plus", onClick: () => setCreating({ template }) }}
-                      />
-                    )}
-                  </For>
-                </List>
-              </Show>
-            </>
+        <Pane
+          label={t().yourVenues}
+          scrollKey="venue-overview"
+          // a count says nothing to act on; only a search says how much it found
+          status={
+            query().trim() ? <StatusRow lead={words().matchesCount({ count: shown().length, total: props.venues.length })} /> : undefined
           }
         >
           <Show
-            when={shown().length > 0}
-            fallback={<Empty icon="search" text={t().noMatchingVenues} action={{ label: t().clearSearch, onClick: () => search("") }} />}
+            when={props.venues.length > 0}
+            fallback={
+              <>
+                <Empty
+                  icon="building-carousel"
+                  text={t().noVenuesDescription}
+                  action={{ label: t().startBlank, icon: "plus", onClick: () => setCreating({}) }}
+                />
+                <Show when={props.templates.length > 0}>
+                  <List label={t().templates}>
+                    <For each={props.templates}>
+                      {(template) => (
+                        <Row
+                          mark={{ icon: iconName(template.icon) }}
+                          lines={[template.name, template.description]}
+                          action={{ label: t().create, icon: "plus", onClick: () => setCreating({ template }) }}
+                        />
+                      )}
+                    </For>
+                  </List>
+                </Show>
+              </>
+            }
           >
-            {/* k2b-ui gap: v2 tables do not virtualize yet (lane MW); a person sees the venues they belong to. */}
-            <Table
-              label={t().yourVenues}
-              rows={shown().slice(0, visible())}
-              rowKey={(venue) => venue.id}
-              open={(venue) => ({ href: `/app/venue/${venue.id}` })}
-              phone={(venue) => ({
-                mark: { icon: iconName(venue.icon), color: venue.accentColor },
-                lines: [venue.name, next(venue) ? nextLine(venue, next(venue)!) : venue.description || signup(venue.signupMode)],
-              })}
-              columns={[
-                {
-                  title: words().venueColumn,
-                  width: { min: 240, default: 360 },
-                  mark: (venue) => ({ icon: iconName(venue.icon), color: venue.accentColor }),
-                  cell: (venue) => ({ lines: [venue.name, venue.description || signup(venue.signupMode)] }),
-                },
-                { title: words().roleColumn, width: { min: 110, default: 130 }, drop: true, cell: (venue) => role(venue.permission) },
-                {
-                  title: words().nextShiftColumn,
-                  width: { min: 220, default: 300 },
-                  drop: true,
-                  // the own next shift there, with how many more follow; staff without one see a quiet line, readers nothing
-                  cell: (venue) => {
-                    const shift = next(venue);
-                    return shift ? (
-                      {
-                        lines: [
-                          formatVenueSpan(shift.startsAt, shift.endsAt, venue.timezone, locale()),
-                          shift.upcoming > 1
-                            ? words().titleAndMore({ title: shift.title ?? t().freeTime, count: shift.upcoming - 1 })
-                            : (shift.title ?? t().freeTime),
-                        ],
-                      }
-                    ) : venue.permission === "write" || venue.permission === "admin" ? (
-                      <Text type="meta" muted>
-                        {words().noShiftYet}
-                      </Text>
-                    ) : (
-                      ""
-                    );
+            <Show
+              when={shown().length > 0}
+              fallback={<Empty icon="search" text={t().noMatchingVenues} action={{ label: t().clearSearch, onClick: () => search("") }} />}
+            >
+              {/* k2b-ui gap: v2 tables do not virtualize yet (lane MW); a person sees the venues they belong to. */}
+              <Table
+                label={t().yourVenues}
+                rows={shown().slice(0, visible())}
+                rowKey={(venue) => venue.id}
+                open={(venue) => ({ href: `/app/venue/${venue.id}` })}
+                phone={(venue) => ({
+                  mark: { icon: iconName(venue.icon), color: venue.accentColor },
+                  lines: [venue.name, next(venue) ? nextLine(venue, next(venue)!) : venue.description || signup(venue.signupMode)],
+                })}
+                columns={[
+                  {
+                    title: words().venueColumn,
+                    width: { min: 240, default: 360 },
+                    mark: (venue) => ({ icon: iconName(venue.icon), color: venue.accentColor }),
+                    // one line per venue (identity B, rule 4); the description belongs to the venue itself
+                    cell: (venue) => <Text weight="strong">{venue.name}</Text>,
                   },
-                },
-                {
-                  title: words().publicColumn,
-                  width: { min: 110, default: 130 },
-                  drop: true,
-                  // only a public page is worth a word: most venues are internal, and a chip in every row says nothing
-                  cell: (venue) =>
-                    venue.publicEnabled ? (
-                      <Text tone="ok" weight="medium">
-                        <Icon name="world" /> {words().publicShort}
-                      </Text>
-                    ) : (
-                      ""
-                    ),
-                },
-              ]}
-            />
-            <Show when={shown().length > visible()}>
-              <Bar
-                start={
-                  <Text type="meta" muted>
-                    {words().shownOf({ shown: visible(), total: shown().length })}
-                  </Text>
-                }
-                end={
-                  <Button icon="chevrons-down" onClick={() => setVisible(visible() + PAGE)}>
-                    {words().showMore}
-                  </Button>
-                }
+                  { title: words().roleColumn, width: { min: 110, default: 130 }, drop: true, cell: (venue) => role(venue.permission) },
+                  {
+                    title: words().nextShiftColumn,
+                    width: { min: 220, default: 300 },
+                    drop: true,
+                    // the own next shift there, with how many more follow; staff without one see a quiet line, readers nothing
+                    cell: (venue) => {
+                      const shift = next(venue);
+                      return shift ? (
+                        {
+                          lines: [
+                            formatVenueSpan(shift.startsAt, shift.endsAt, venue.timezone, locale()),
+                            shift.upcoming > 1
+                              ? words().titleAndMore({ title: shift.title ?? t().freeTime, count: shift.upcoming - 1 })
+                              : (shift.title ?? t().freeTime),
+                          ],
+                        }
+                      ) : venue.permission === "write" || venue.permission === "admin" ? (
+                        <Text type="meta" muted>
+                          {words().noShiftYet}
+                        </Text>
+                      ) : (
+                        ""
+                      );
+                    },
+                  },
+                  {
+                    title: words().publicColumn,
+                    width: { min: 110, default: 130 },
+                    drop: true,
+                    // only a public page is worth a word: most venues are internal, and a chip in every row says nothing
+                    // a public page is no problem: a quiet badge, not a colour (identity B, rule 7)
+                    cell: (venue) => (venue.publicEnabled ? <Chip icon="world">{words().publicShort}</Chip> : ""),
+                  },
+                ]}
               />
+              <Show when={shown().length > visible()}>
+                <Bar
+                  start={
+                    <Text type="meta" muted>
+                      {words().shownOf({ shown: visible(), total: shown().length })}
+                    </Text>
+                  }
+                  end={
+                    <Button icon="chevrons-down" onClick={() => setVisible(visible() + PAGE)}>
+                      {words().showMore}
+                    </Button>
+                  }
+                />
+              </Show>
             </Show>
           </Show>
-        </Show>
-      </Pane>
-      <CreateVenueDialog
-        request={creating()}
-        close={(id) => {
-          setCreating(null);
-          if (!id) return;
-          toast(t().venueCreated, { status: "ok" });
-          navigateTo(`/app/venue/${id}`);
-        }}
-      />
-    </Workspace>
+        </Pane>
+        <CreateVenueDialog
+          request={creating()}
+          close={(id) => {
+            setCreating(null);
+            if (!id) return;
+            toast(t().venueCreated, { status: "ok" });
+            navigateTo(`/app/venue/${id}`);
+          }}
+        />
+      </Workspace>
+    </>
   );
 }
 

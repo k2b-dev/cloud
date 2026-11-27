@@ -51,7 +51,8 @@ export type SlotState = {
  */
 export const slotState = (slot: UpcomingSlot, t: VenueMessages, now = new Date()): SlotState => {
   if (new Date(slot.endsAt) < now) return { tone: "neutral", color: "zinc", icon: "ti ti-history", label: t.ended };
-  if (slot.missingPeople === 0) return { tone: "success", color: "emerald", icon: "ti ti-check", label: slot.full ? t.full : t.covered };
+  // a covered shift is the normal case: neutral in the calendar (identity B, rule 7), colour only where people miss
+  if (slot.missingPeople === 0) return { tone: "success", color: "zinc", icon: "ti ti-check", label: slot.full ? t.full : t.covered };
   const label = t.missing({ count: slot.missingPeople });
   if (slot.template.requireTargetForOpening && new Date(slot.startsAt).getTime() - now.getTime() <= URGENT_BEFORE_START_MS) {
     return { tone: "danger", color: "red", icon: "ti ti-alert-triangle", label, hint: t.opensOnlyWhenStaffed };

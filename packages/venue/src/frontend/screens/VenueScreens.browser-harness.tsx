@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import type { VenueView } from "../_components/venue-workspace/types";
 import { parseCalendarView, parseShiftSelection } from "../schedule-url";
 import {
+  emptyDashboard,
   fixtureDashboard,
   fixtureNextShifts,
   fixtureSettings,
@@ -39,7 +40,9 @@ const venues =
     ? Array.from({ length: 1000 }, (_, index) => fixtureVenue({ id: `V${String(index).padStart(5, "0")}`, name: `Ort ${index + 1}` }))
     : variant === "worst"
       ? [...worst, ...fixtureVenues]
-      : fixtureVenues;
+      : variant === "empty"
+        ? []
+        : fixtureVenues;
 
 const screen = () => {
   const path = location.pathname;
@@ -73,7 +76,7 @@ const screen = () => {
   return (
     <VenueScreen
       {...base}
-      dashboard={{ ...(variant === "worst" ? worstDashboard() : base.dashboard), venue }}
+      dashboard={{ ...(variant === "worst" ? worstDashboard() : variant === "empty" ? emptyDashboard() : base.dashboard), venue }}
       initialView={view}
       initialCalendarView={parseCalendarView(params.get("cv")) ?? "week"}
       initialCalendarDate={params.get("cd") ?? base.initialCalendarDate}

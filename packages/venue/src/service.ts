@@ -60,6 +60,7 @@ import type {
   VenueTemplateSummary,
 } from "./contracts";
 import {
+  FEEDBACK_LOW_RATING,
   FEEDBACK_PAGE_SIZE,
   PUBLIC_EXCEPTION_DAYS,
   PublicSectionInputSchema,
@@ -1675,8 +1676,9 @@ const feedbackSummary = async (
   const days = Math.max(1, Math.min(30, options.days ?? 30));
   const today = localDateKey(new Date(), venue.timezone);
   const windowStart = instantFor(dateKeyAfterDays(today, -(days - 1), venue.timezone), "00:00", venue.timezone);
-  const [summary] = await sql<{ count: number; average_rating: number | null; comment_count: number }[]>`
-    SELECT COUNT(*)::int AS count, ROUND(AVG(rating)::numeric, 2)::float AS average_rating, COUNT(comment)::int AS comment_count
+  const [summary] = await sql<{ count: number; average_rating: number | null; comment_count: number; low_count: number }[]>`
+    SELECT COUNT(*)::int AS count, ROUND(AVG(rating)::numeric, 2)::float AS average_rating, COUNT(comment)::int AS comment_count,
+      COUNT(*) FILTER (WHERE rating <= ${FEEDBACK_LOW_RATING})::int AS low_count
     FROM venue.feedback_entries
     WHERE venue_id = ${venue.id}::uuid AND created_at >= ${windowStart}
   `;
@@ -1719,6 +1721,7 @@ const feedbackSummary = async (
       count: summary?.count ?? 0,
       averageRating: summary?.average_rating ?? null,
       commentCount: summary?.comment_count ?? 0,
+      lowCount: summary?.low_count ?? 0,
       buckets: buckets.map((bucket) => ({ date: toDateKey(bucket.date), count: bucket.count, averageRating: bucket.average_rating })),
     },
     entries: entries.map(mapFeedback),

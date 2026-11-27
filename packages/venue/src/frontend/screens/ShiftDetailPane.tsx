@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Chip, Empty, Facts, List, Menu, Notice, Pane, Progress, Row, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Canvas, Check, Chip, Empty, Facts, List, Menu, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { ShiftAssignment, UpcomingSlot, Venue } from "../../contracts";
 import { formatVenueSpan } from "../../time-format";
@@ -12,6 +12,7 @@ import {
   slotActionKey,
 } from "../_components/venue-workspace/shift-detail";
 import { useVenueWords } from "./messages";
+import { StaffingMeterDrawing } from "./venue-drawings";
 
 /** A slot state as a chip: covered is ok, missing waits, urgent is wrong, ended is plain. */
 export const slotChip = (slot: UpcomingSlot, t: ReturnType<ReturnType<typeof useVenueWords>["t"]>) => {
@@ -109,16 +110,22 @@ export default function ShiftDetailPane(props: {
               items={[
                 {
                   label: t().staffing,
-                  // how full the shift is, as a bar against its target; its state as a word on the next line
+                  // how full the shift is against its target, and whether people are missing, in one statement
                   value: (
-                    <Progress
-                      value={current().assignedCount}
-                      of={Math.max(1, current().minPeople)}
-                      label={t().staffed({ assigned: current().assignedCount, target: slotTarget(current()) })}
-                    />
+                    <Canvas label={t().staffing}>
+                      <StaffingMeterDrawing
+                        assigned={current().assignedCount}
+                        target={Math.max(1, current().minPeople)}
+                        missing={current().missingPeople > 0}
+                        words={
+                          current().missingPeople > 0
+                            ? `${t().staffed({ assigned: current().assignedCount, target: slotTarget(current()) })} · ${slotState(current(), t()).label}`
+                            : t().staffed({ assigned: current().assignedCount, target: slotTarget(current()) })
+                        }
+                      />
+                    </Canvas>
                   ),
                 },
-                { label: words().shiftState, value: slotChip(current(), t()) },
               ]}
             />
             <Show when={permissions().take && current().template.date === null}>

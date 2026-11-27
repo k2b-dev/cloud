@@ -22,6 +22,7 @@ import {
   Section,
   Select,
   Setting,
+  Table,
   Tabs,
   Text,
   useToast,
@@ -740,53 +741,63 @@ function ScheduleArea(props: {
       <Section
         icon="clock"
         title={t().regularHours}
-        summary={words().hoursHint}
         count={props.settings.openingRules.length}
         actions={[{ label: t().newHours, icon: "plus", onClick: () => void addOpening() }]}
       >
         <Show when={props.settings.openingRules.length > 0} fallback={<Empty icon="clock" text={t().noRegularHours} />}>
-          <List label={t().regularHours}>
-            <For each={sortOpeningRules(props.settings.openingRules)}>
-              {(rule) => (
-                <Row
-                  icon="clock"
-                  lines={[weekday(rule.weekday), `${rule.startTime}–${rule.endTime}${rule.note ? ` · ${rule.note}` : ""}`]}
-                  end={
-                    <Menu
-                      label={`${t().editOpening}: ${weekday(rule.weekday)}`}
-                      disabled={props.busy !== null}
-                      items={[
-                        { label: t().editOpening, icon: "pencil", onClick: () => void editOpening(rule) },
-                        {
-                          label: t().deleteOpening,
-                          icon: "trash",
-                          danger: true,
-                          onClick: () =>
-                            void confirmThen(
-                              {
-                                title: t().deleteOpening,
-                                description: t().deleteOpeningQuestion({
-                                  label: `${weekday(rule.weekday)} ${rule.startTime}–${rule.endTime}`,
+          {/* a dense table, one line per day (identity B): the day, its hours, a note */}
+          <Table
+            label={t().regularHours}
+            rows={sortOpeningRules(props.settings.openingRules)}
+            rowKey={(rule) => rule.id}
+            phone={(rule) => ({ lines: [weekday(rule.weekday), `${rule.startTime}–${rule.endTime}${rule.note ? ` · ${rule.note}` : ""}`] })}
+            columns={[
+              {
+                title: words().dayColumn,
+                width: { min: 120, default: 160 },
+                cell: (rule) => <Text weight="strong">{weekday(rule.weekday)}</Text>,
+              },
+              { title: words().hoursColumn, width: { min: 120, default: 140 }, cell: (rule) => `${rule.startTime}–${rule.endTime}` },
+              { title: words().noteColumn, width: { min: 120, default: 240 }, drop: true, cell: (rule) => rule.note ?? "" },
+              {
+                title: "",
+                align: "end",
+                width: { min: 56, default: 56 },
+                cell: (rule) => (
+                  <Menu
+                    label={`${t().editOpening}: ${weekday(rule.weekday)}`}
+                    disabled={props.busy !== null}
+                    items={[
+                      { label: t().editOpening, icon: "pencil", onClick: () => void editOpening(rule) },
+                      {
+                        label: t().deleteOpening,
+                        icon: "trash",
+                        danger: true,
+                        onClick: () =>
+                          void confirmThen(
+                            {
+                              title: t().deleteOpening,
+                              description: t().deleteOpeningQuestion({
+                                label: `${weekday(rule.weekday)} ${rule.startTime}–${rule.endTime}`,
+                              }),
+                            },
+                            `opening:${rule.id}`,
+                            del(
+                              () =>
+                                apiClient.venues[":id"]["opening-rules"][":resourceId"].$delete({
+                                  param: { id: id(), resourceId: rule.id },
                                 }),
-                              },
-                              `opening:${rule.id}`,
-                              del(
-                                () =>
-                                  apiClient.venues[":id"]["opening-rules"][":resourceId"].$delete({
-                                    param: { id: id(), resourceId: rule.id },
-                                  }),
-                                t().deleteOpeningFailed,
-                              ),
-                              t().openingDeleted,
+                              t().deleteOpeningFailed,
                             ),
-                        },
-                      ]}
-                    />
-                  }
-                />
-              )}
-            </For>
-          </List>
+                            t().openingDeleted,
+                          ),
+                      },
+                    ]}
+                  />
+                ),
+              },
+            ]}
+          />
         </Show>
       </Section>
       <Section
@@ -812,7 +823,6 @@ function ScheduleArea(props: {
       <Section
         icon="users"
         title={t().shifts}
-        summary={words().shiftsHint}
         count={weekly().length}
         actions={[{ label: t().newShift, icon: "plus", onClick: () => void addShift() }]}
       >

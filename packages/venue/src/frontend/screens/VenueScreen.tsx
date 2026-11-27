@@ -6,10 +6,10 @@ import { query } from "@k2b/stdlib/solid";
 import { Calendar, type CalendarEvent, Chart, useLocale } from "@k2b/ui";
 import {
   Avatar,
+  Band,
   Bar,
   Button,
   Canvas,
-  Cells,
   Dialog,
   Empty,
   FilterBar,
@@ -23,7 +23,6 @@ import {
   Pane,
   Row,
   Section,
-  StatusRow,
   Table,
   Text,
   useToast,
@@ -31,11 +30,11 @@ import {
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
-import type { ShiftAssignment, UpcomingSlot } from "../../contracts";
+import { FEEDBACK_LOW_RATING, type ShiftAssignment, type UpcomingSlot } from "../../contracts";
 import { formatDateKey, formatVenueDateTime, formatVenueSpan, formatVenueWeekdayTime, timeZoneName } from "../../time-format";
 import { feedbackRatingTooltip, formatFeedbackRating } from "../_components/venue-workspace/feedback-chart-tooltips";
 import { PublicPageEditor } from "../_components/venue-workspace/public-page-editor";
-import { slotStaffingLabel, slotState } from "../_components/venue-workspace/schedule";
+import { slotState } from "../_components/venue-workspace/schedule";
 import { scheduleIsEmpty, setupSteps } from "../_components/venue-workspace/setup-checklist";
 import {
   announceTaken,
@@ -63,9 +62,10 @@ import {
 } from "../schedule-url";
 import { CalendarSubscriptionDialog, PublicLinkDialog } from "./LinkDialogs";
 import { useVenueWords } from "./messages";
-import ShiftDetailPane, { slotChip } from "./ShiftDetailPane";
+import ShiftDetailPane from "./ShiftDetailPane";
 import SignupDialog from "./SignupDialog";
 import { iconName } from "./VenueOverviewScreen";
+import { ShiftBlockDrawing, VenueHeroDrawing } from "./venue-drawings";
 import { venueNav, venueSettingsHref } from "./venue-nav";
 
 /**
@@ -90,11 +90,20 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
       ? dashboard().slots.find((slot) => slot.template.id === shift.templateId && slot.startsAt === shift.startsAt)
       : undefined;
   const coworkers = (slot: UpcomingSlot) => slot.assignments.filter((person) => person.userId !== props.userId);
-  const STATE_HEX: Record<string, string> = { zinc: "#52525b", emerald: "#059669", amber: "#d97706", red: "#dc2626", blue: "#2563eb" };
-  const mineMark = (shift: ShiftAssignment) => {
-    const slot = slotOf(shift);
-    if (!slot) return { icon: "clock-plus", color: "var(--k2-muted)" };
-    return { icon: "calendar-event", color: STATE_HEX[slotState(slot, t()).color] ?? "#2563eb" };
+  // the mark carries the venue's colour (whose shift it is); a gap stands as a word in its own column
+  const mineMark = (shift: ShiftAssignment) =>
+    shift.templateId ? { icon: "calendar-event", color: venue().accentColor } : { icon: "clock-plus", color: "var(--k2-muted)" };
+  const slotProblem = (slot: UpcomingSlot) => {
+    const tone = slotState(slot, t()).tone;
+    return tone === "warning" || tone === "danger";
+  };
+  const slotWord = (slot: UpcomingSlot) => {
+    const state = slotState(slot, t());
+    return (
+      <Text tone={state.tone === "danger" ? "bad" : "warn"} weight="medium">
+        {`● ${state.label}`}
+      </Text>
+    );
   };
   const venue = () => dashboard().venue;
   const view = (): VenueView => props.initialView;
@@ -147,9 +156,11 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
         start: slot.startsAt,
         end: slot.endsAt,
         color: slotState(slot, t()).color,
-        accessibleDetail: slotState(slot, t()).label,
+        // the calendar shows this word too, so only a gap carries one
+        accessibleDetail: slotState(slot, t()).color === "zinc" ? undefined : slotState(slot, t()).label,
         meta: slot.assignments.map((entry) => entry.userDisplayName).join(", ") || t().noOneYet,
-        description: slotStaffingLabel(slot, t()),
+        // the block names the shift and its people; only a gap says a word ("1 fehlt")
+        description: slotState(slot, t()).color === "zinc" ? undefined : slotState(slot, t()).label,
       })),
     // Free time and other sign-ups outside the shifts have no target, so the gaps filter leaves them out.
     ...(gapsOnly()
@@ -401,9 +412,15 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
                     const people = slot
                       ? slot.assignments.map((entry) => entry.userDisplayName).join(", ") || t().noOneYet
                       : other?.userDisplayName;
-                    return context.compact
-                      ? `${context.leadingTime ? `${context.leadingTime} ` : ""}${event.title}`
-                      : `${event.title} · ${slot ? slotState(slot, t()).label : ""}${people && context.durationHours >= 1.5 ? ` · ${people}` : ""}`;
+                    const state = slot ? slotState(slot, t()) : undefined;
+                    return (
+                      <ShiftBlockDrawing
+                        title={context.compact && context.leadingTime ? `${context.leadingTime} ${event.title}` : event.title}
+                        gap={state && state.color !== "zinc" ? state.label : undefined}
+                        people={context.durationHours >= 1.5 ? people : undefined}
+                        compact={context.compact}
+                      />
+                    );
                   }}
                 />
               </Canvas>
@@ -434,46 +451,70 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
               when={dashboard().myUpcomingShifts.length > 0}
               fallback={<Empty icon="calendar-off" text={t().noUpcomingShifts} action={canWrite(venue()) ? signup : undefined} />}
             >
-              <List label={t().myShifts}>
-                <For each={dashboard().myUpcomingShifts}>
-                  {(shift) => (
-                    <Row
-                      // the mark carries the shift's staffing in its colour, the chip says it, the faces show who works along
-                      mark={mineMark(shift)}
-                      marks={
-                        <Show when={slotOf(shift)}>
-                          {(slot) => (
-                            <Inline>
-                              <Show when={coworkers(slot()).length > 0}>
-                                <Avatar.Stack
-                                  people={coworkers(slot()).map((person) => ({ name: person.userDisplayName }))}
-                                  max={4}
-                                  label={words().withPeople({
-                                    names: coworkers(slot())
-                                      .map((person) => person.userDisplayName)
-                                      .join(", "),
-                                  })}
-                                />
-                              </Show>
-                              {slotChip(slot(), t())}
-                            </Inline>
-                          )}
-                        </Show>
-                      }
-                      lines={
-                        shift.note
-                          ? [assignmentTitle(shift), formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale()), shift.note]
-                          : [assignmentTitle(shift), formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale())]
-                      }
-                      href={scheduleHref(venue().id, {
-                        date: dates.formatDateKey(new Date(shift.startsAt), { timeZone: venue().timezone }),
-                        shift: assignmentSelectionId(shift.id),
-                      })}
-                      action={{ label: t().leave, disabled: actions.pending(assignmentActionKey(shift)), onClick: () => void leave(shift) }}
-                    />
-                  )}
-                </For>
-              </List>
+              {/* identity B: one line per shift (mark · name · when · who works along · state only when someone is
+                  missing); the row opens the shift in the schedule, where leaving stands in its head */}
+              <Table
+                label={t().myShifts}
+                rows={dashboard().myUpcomingShifts}
+                rowKey={(shift) => shift.id}
+                open={(shift) => ({
+                  href: scheduleHref(venue().id, {
+                    date: dates.formatDateKey(new Date(shift.startsAt), { timeZone: venue().timezone }),
+                    shift: assignmentSelectionId(shift.id),
+                  }),
+                })}
+                phone={(shift) => ({
+                  mark: mineMark(shift),
+                  lines: [
+                    assignmentTitle(shift),
+                    <>
+                      {formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale())}
+                      <Show when={slotOf(shift) && slotProblem(slotOf(shift)!)}>
+                        {" · "}
+                        {slotWord(slotOf(shift)!)}
+                      </Show>
+                    </>,
+                  ],
+                })}
+                columns={[
+                  {
+                    title: words().shiftColumn,
+                    width: { min: 180, default: 240 },
+                    mark: mineMark,
+                    cell: (shift) => <Text weight="strong">{assignmentTitle(shift)}</Text>,
+                  },
+                  {
+                    title: words().whenColumn,
+                    width: { min: 200, default: 230 },
+                    cell: (shift) => formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale()),
+                  },
+                  {
+                    title: words().withColumn,
+                    width: { min: 120, default: 150 },
+                    drop: true,
+                    cell: (shift) => {
+                      const slot = slotOf(shift);
+                      const people = slot ? coworkers(slot) : [];
+                      return people.length > 0 ? (
+                        <Avatar.Stack
+                          people={people.map((person) => ({ name: person.userDisplayName }))}
+                          max={4}
+                          label={words().withPeople({ names: people.map((person) => person.userDisplayName).join(", ") })}
+                        />
+                      ) : (
+                        ""
+                      );
+                    },
+                  },
+                  {
+                    title: words().staffingColumn,
+                    width: { min: 120, default: 140 },
+                    drop: true,
+                    // fine says nothing; only a gap stands, as a dot and a word
+                    cell: (shift) => (slotOf(shift) && slotProblem(slotOf(shift)!) ? slotWord(slotOf(shift)!) : ""),
+                  },
+                ]}
+              />
             </Show>
           </Pane>
         </Show>
@@ -618,12 +659,9 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
     return current && current.total > 0 ? current : null;
   };
   const pages = () => (page() ? Math.ceil(page()!.total / page()!.pageSize) : 1);
-  // a rating in the colour of its meaning: four or five good, three middling, below that bad
+  // a rating stays quiet; only a bad one (FEEDBACK_LOW_RATING stars or fewer) carries colour (identity B, rule 7)
   const stars = (rating: number) => (
-    <>
-      <Text tone={rating >= 4 ? "ok" : rating === 3 ? "warn" : "bad"}>{`${"★".repeat(rating)}${"☆".repeat(5 - rating)}`}</Text>
-      {` ${rating}/5`}
-    </>
+    <Text tone={rating <= FEEDBACK_LOW_RATING ? "bad" : undefined}>{`${"★".repeat(rating)}${"☆".repeat(5 - rating)} ${rating}/5`}</Text>
   );
   return (
     <Pane
@@ -654,45 +692,49 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
         />
       }
     >
-      {/* the filter bar names the range once; the figures and the chart do not repeat it */}
-      <Cells>
-        <Cells.Cell
-          icon="star"
-          color="#d97706"
-          label={t().averageRating}
-          value={average() === null ? words().noRatingsYet : formatFeedbackRating(average()!, locale())}
-          loading={props.refreshing}
-        />
-        <Cells.Cell icon="message-star" color="#2563eb" label={t().ratings} value={String(props.dashboard.feedback?.count ?? 0)} />
-        <Cells.Cell
-          icon="message"
-          color="#2563eb"
-          label={t().comments}
-          value={String(props.dashboard.feedback?.commentCount ?? 0)}
-          meta={t().ratingsWithComments}
-        />
-      </Cells>
-      {/* one chart: the rating over the days; how many came per day stands in its tooltip and the figures above */}
-      <Section icon="chart-line" title={words().ratingPerDay}>
-        <Canvas label={words().ratingPerDay} height={180}>
-          <Show when={ratingData().length > 0} fallback={<Empty icon="chart-line" text={t().noFeedbackInDays({ count: days() })} />}>
-            <Chart
-              kind={ratingData().length > 1 ? "line" : "scatter"}
-              style={{ height: "100%" }}
-              series={[{ label: t().averageRating, data: ratingData() }]}
-              xAxis={xAxis()}
-              yAxis={yAxis}
-              smooth={false}
-              tooltip={feedbackRatingTooltip({
-                dayLabels: labels(),
-                label: t().averageRating,
-                locale: locale(),
-                counts: { label: t().ratings, values: buckets().map((bucket) => bucket.count) },
-              })}
-            />
-          </Show>
+      {/* identity B: one hero, the average in the venue's colour with its course over the days beside it, and the
+          exceptions under it; the filter bar names the range and the count once, nothing here repeats them */}
+      <Band label={t().averageRating}>
+        <Canvas label={t().averageRating}>
+          <VenueHeroDrawing
+            figure={average() === null ? "—" : formatFeedbackRating(average()!, locale())}
+            label={average() === null ? words().noRatingsYet : t().averageRating}
+            color={venue().accentColor}
+            chart={
+              <Show when={ratingData().length > 0}>
+                <Chart
+                  kind={ratingData().length > 1 ? "line" : "scatter"}
+                  style={{ height: "100%" }}
+                  series={[{ label: t().averageRating, data: ratingData() }]}
+                  xAxis={xAxis()}
+                  yAxis={yAxis}
+                  smooth={false}
+                  tooltip={feedbackRatingTooltip({
+                    dayLabels: labels(),
+                    label: t().averageRating,
+                    locale: locale(),
+                    counts: { label: t().ratings, values: buckets().map((bucket) => bucket.count) },
+                  })}
+                />
+              </Show>
+            }
+            exceptions={[
+              ...((props.dashboard.feedback?.lowCount ?? 0) > 0
+                ? [
+                    {
+                      tone: "bad" as const,
+                      count: String(props.dashboard.feedback!.lowCount),
+                      word: words().lowRatings({ stars: FEEDBACK_LOW_RATING }),
+                    },
+                  ]
+                : []),
+              ...((props.dashboard.feedback?.commentCount ?? 0) > 0
+                ? [{ tone: "off" as const, count: String(props.dashboard.feedback!.commentCount), word: words().withComment }]
+                : []),
+            ]}
+          />
         </Canvas>
-      </Section>
+      </Band>
       <Table
         label={t().feedback}
         rows={props.dashboard.feedbackEntries}
