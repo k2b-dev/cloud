@@ -127,6 +127,25 @@
   :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .stdlib-chart-heatmap-label.stdlib-chart-state-now-label {
     fill: CanvasText;
   }
+  /* A line's colour scale becomes the text colour, bars and quiet ranges the muted one: each stays apart from the
+     page, and a band stays behind the data. The scale's gradient is the line's own style, so this outranks it. */
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-scaled {
+    forced-color-adjust: none;
+    stroke: CanvasText !important;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart [data-scaled-fill] {
+    forced-color-adjust: none;
+    fill: GrayText !important;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-bar {
+    forced-color-adjust: none;
+    fill: GrayText;
+  }
+  :is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart .k2b-line-band {
+    forced-color-adjust: none;
+    fill: GrayText;
+    fill-opacity: 0.2;
+  }
 }
 
 :is(.k2b-ui, .k2-ui) .k2b-chart__svg,

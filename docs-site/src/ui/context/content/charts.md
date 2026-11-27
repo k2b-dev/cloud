@@ -193,6 +193,37 @@ keyboard inspection and linked cursors follow the actual plot below the legend.
   series={[{ label: "Orders", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }] }]} />
 ```
 
+## A line with a track of bars
+
+A day of weather reads as one chart: the temperature as a line whose colour
+follows its value, the chance of rain as bars in a track under it, and the night
+hours as quiet bands behind both. All of it shares the X axis. A chart never puts
+a second Y axis over the lines; a second measure gets a track of its own.
+
+- `bands` shades ranges of X, clipped to the plot, behind the grid and the data.
+  A band's `label` names it to assistive technology.
+- A series with `colorScale` takes the colour of its value: give stops in rising
+  order, each a value and a tone. Between two stops the colour blends; below the
+  first and above the last it stays theirs. The legend swatch shows the scale.
+- `track` draws bars in a strip of their own under the plot: its `label` stands
+  above it and names its scale, which shows its lowest and highest value at the
+  strip's start, written with the track's `format`. The scale starts at 0 unless
+  `domain` says otherwise; `height` sets the strip (default 48 px). Each bar
+  stands under its X and carries its value as a title. The X axis's labels stand
+  under the track.
+
+```tsx
+<Chart kind="line" timeAxis={{ timeZone: "Europe/Berlin" }}
+  series={[
+    { label: "Temperatur", data: temperature, colorScale: [
+      { value: 0, tone: "blue" }, { value: 10, tone: "amber" }, { value: 20, tone: "red" },
+    ] },
+  ]}
+  bands={[{ from: dusk, to: dawn, label: "Nacht" }]}
+  track={{ label: "Regen", data: rain, format: (value) => `${value} %` }}
+  yAxis={{ format: (value) => `${value}°` }} />
+```
+
 ## A state timeline
 
 A state with its own `color` fills its intervals and its swatch with that
@@ -371,7 +402,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 
 | Kind | Required payload | Additional options and defaults |
 | --- | --- | --- |
-| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `points=false` (a hollow ring in the series colour on every value, above the line), `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`, `legendValues=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`. |
+| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `points=false` (a hollow ring in the series colour on every value, above the line), `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`, `legendValues=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`; `bands?: {from, to, label?}[]` (quiet X ranges behind the data, such as night hours). A series accepts `colorScale?: {value, tone}[]` (rising stops; the line's colour follows its value; tones `blue`, `cyan`, `green`, `amber`, `orange`, `red`, `violet`, each at least 3:1 against light and dark surfaces). `track?: {label, data, format?, domain?, height?}` draws bars in a strip of their own under the plot, on the same X axis, never as a second Y axis. In forced colors a scaled line takes the text colour and bars and bands the muted one. See [A line with a track of bars](#a-line-with-a-track-of-bars). |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
 | `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. Aligned `x` and `series` support `layout="grouped"` or `"stacked"`; `normalize` shows 100% shares. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
