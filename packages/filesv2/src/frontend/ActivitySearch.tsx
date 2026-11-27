@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { type Action, Bar, Button, Chip, Empty, List, Notice, type OnNavigate, Row, Section, Text, useToast } from "@k2b/ui/v2";
-import { createMemo, getOwner, type JSX, mapArray, runWithOwner, Show } from "solid-js";
+import { createMemo, getOwner, mapArray, runWithOwner, Show } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry } from "../activity-contracts";
 import { entryMark } from "./entry-mark";
 import {
@@ -58,8 +58,6 @@ export type ActivitySearchProps = {
   clearHref: string;
   onNavigate?: OnNavigate;
   onChanged?: () => void;
-  /** Activity's summary over the hits' changes, under the hits and above their older pages. */
-  summary?: JSX.Element;
 };
 
 /**
@@ -155,7 +153,6 @@ export default function ActivitySearch(props: ActivitySearchProps) {
           </Show>
         </Show>
       </Show>
-      {props.summary}
       <Show when={props.moreFailed}>
         <Notice tone="bad" actions={[{ label: h().retry, onClick: props.onLoadMore }]}>
           {h().olderFailed}
