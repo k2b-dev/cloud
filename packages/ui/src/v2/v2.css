@@ -2685,6 +2685,19 @@
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
 }
+/* A drawing that is the whole pane takes what the pane's column has left, by layout alone: nothing is measured, so the
+   first render already has its final height. Below 240 px the pane scrolls instead of squeezing the drawing. */
+.k2-ui .k2-canvas[data-fill] {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 240px;
+  /* It asks its pane for its 240 px only, never for what its drawing holds (a chat history taller than the phone,
+     W7 26.11.), and its one child, the drawing, takes all of it even without a height: what is taller scrolls inside. */
+  contain: size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
 /* A state stands in the drawing's place: `Empty`, `Loading` or `Failed` inside a Canvas with a height keep the height
    of the Canvas, so nothing moves when the drawing comes, stays empty or fails. Empty and Failed stand in its middle;
    Loading is one square placeholder on the text edge, as wide as the drawing, since a drawing has no rows. */
@@ -3953,6 +3966,18 @@
     overflow: hidden;
   }
   .k2-ui .k2-split > .k2-pane[data-detail] > .k2-scroll {
+    overflow-y: auto;
+  }
+  /* a pane whose drawing is the whole pane (a board, a calendar) is the page too: it takes the height that is left, so
+     the drawing fills it as it does beside other panes (W3 #4197) */
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) {
+    flex: 1;
+    /* never less than its head, its status and the drawing's 240 px: a long list beside it in the split moves the
+       drawing down the page instead of squeezing it */
+    min-height: min-content;
+    overflow: hidden;
+  }
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) > .k2-scroll {
     overflow-y: auto;
   }
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
