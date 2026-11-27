@@ -212,7 +212,8 @@ export default function AppsScreen(props: {
       <Pane.Split>
         <Pane
           label={t().apps}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={opened() ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-outgoing-mail-apps"
           status={<StatusRow lead={t().appCount({ count: props.apps.length })} />}
         >

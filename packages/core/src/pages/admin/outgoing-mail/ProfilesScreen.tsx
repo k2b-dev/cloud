@@ -129,7 +129,8 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
       <Pane.Split>
         <Pane
           label={t().profiles}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={creating() || opened() ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-outgoing-mail-profiles"
           status={
             // k2b-ui gap: the hero band comes with DP. Its figure, the recipients of the last 24 hours, exists per profile in the

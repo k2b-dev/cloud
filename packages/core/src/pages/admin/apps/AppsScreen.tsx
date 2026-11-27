@@ -156,7 +156,8 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
       <Pane.Split>
         <Pane
           label={t().apps}
-          width={{ min: 420, default: 620 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={app() ? { min: 420, default: 620 } : undefined}
           scrollKey="admin-apps"
           status={
             // k2b-ui gap: the hero band (one figure in the owner colour with its real trend) comes with DP; there is no
@@ -222,7 +223,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                     },
                     {
                       title: t().columnStatus,
-                      width: { min: 110, default: 120 },
+                      width: { min: 140, default: 150 },
                       cell: (entry) => <StatusChip t={t()} status={entry.status} />,
                     },
                     { title: t().columnProblem, drop: true, cell: problemLine },

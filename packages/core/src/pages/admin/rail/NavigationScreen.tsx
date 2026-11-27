@@ -180,7 +180,8 @@ export default function NavigationScreen(props: NavigationScreenProps) {
       <Pane.Split>
         <Pane
           label={t().title}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={entry() ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-navigation"
           status={<StatusRow lead={t().shortcuts({ count: state().entries.length })} />}
         >

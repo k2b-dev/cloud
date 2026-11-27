@@ -641,7 +641,8 @@ export default function StorageScreen(props: StorageScreenProps) {
         <Pane
           label={t().area}
           // the list keeps the ideal width of the identity study (~640 px); a narrower one falls into its phone form
-          width={{ min: 360, default: 620 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={props.items !== null && props.selection.kind !== "none" ? { min: 360, default: 620 } : undefined}
           scrollKey="admin-storage"
           status={<StatusRow lead={t().bucketCount({ count: items().length })} />}
         >

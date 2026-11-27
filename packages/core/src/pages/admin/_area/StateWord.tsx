@@ -8,7 +8,11 @@ import type { JSX } from "solid-js";
 export default function StateWord(props: { muted?: boolean; children: JSX.Element }) {
   return (
     <Text muted={props.muted}>
-      {/* the study writes the dot as a sign; the icon font has no filled point */}● {props.children}
+      {/* a small grey dot, as the study writes it (the icon font has no filled point) */}
+      <Text type="meta" muted>
+        ●
+      </Text>{" "}
+      {props.children}
     </Text>
   );
 }

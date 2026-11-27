@@ -146,7 +146,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
       <Pane.Split>
         <Pane
           label={t().announcements}
-          width={{ min: 420, default: 640 }}
+          // the list keeps its ideal width beside an open entry and takes the room while none is open (identity rule 5)
+          width={props.open && (creating() || entry()) ? { min: 420, default: 640 } : undefined}
           scrollKey="admin-announcements"
           status={
             <StatusRow
