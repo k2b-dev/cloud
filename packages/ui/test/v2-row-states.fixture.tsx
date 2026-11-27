@@ -69,11 +69,27 @@ export const RowStatesScreen = () => (
   </Workspace>
 );
 
+/**
+ * A chat as the Assistant draws it (W7): a column that asks for no height of its own, its history far taller than the
+ * phone and scrolling inside, over the composer.
+ */
+const ChatDrawing = () => (
+  <div class="chat" style={{ display: "flex", "flex-direction": "column", "min-height": "0" }}>
+    <div class="chat-history" style={{ flex: "1", "min-height": "0", overflow: "auto" }}>
+      {Array.from({ length: 60 }, (_, index) => (
+        <p style={{ margin: "0", padding: "12px 16px" }}>Nachricht {index + 1} im Verlauf</p>
+      ))}
+    </div>
+    <textarea class="chat-composer" aria-label="Nachricht" rows={2} style={{ margin: "8px 16px", "flex-shrink": "0" }} />
+  </div>
+);
+
 // `split`: the drawing's pane stands in a `Pane.Split` (a board or a calendar beside the place of its detail, W3 #4197).
 // `list`: a long list stands in the split too, one under the other on the phone; it must not squeeze the drawing.
 // `tall`: the drawing's content is taller than the split (the days of a calendar on the phone): its pane keeps the
 // split's height and scrolls inside, never growing past it (W3, Spaces' phone calendar).
-export const CanvasFillScreen = (props: { split?: boolean; list?: boolean; tall?: boolean }) => {
+// `chat`: the drawing is a chat whose history is far taller than the phone (W7).
+export const CanvasFillScreen = (props: { split?: boolean; list?: boolean; tall?: boolean; chat?: boolean }) => {
   const pane = () => (
     <Pane
       label="Vorlage"
@@ -89,7 +105,9 @@ export const CanvasFillScreen = (props: { split?: boolean; list?: boolean; tall?
       status={<StatusRow lead="Entwurf" facts={[{ value: 3, after: "Seiten" }]} />}
     >
       <Canvas label="Editor der Vorlage" height="fill">
-        {props.tall ? (
+        {props.chat ? (
+          <ChatDrawing />
+        ) : props.tall ? (
           <div class="calendar" style={{ height: "100%", overflow: "auto" }}>
             <div class="days" style={{ height: "1260px", background: "#fafafa" }}>
               <p>Montag</p>

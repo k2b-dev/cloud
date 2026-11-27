@@ -151,7 +151,12 @@ of another page). Directly in its `Pane`, it takes the height left under
 head and status by layout alone, from the first render (never measure it
 in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
 phone, where the panes stand one under the other, its pane takes the
-height that is left, so the drawing still fills it.
+height that is left, so the drawing still fills it. The pane asks only for
+the drawing's 240 px, never for what the drawing holds: one drawing that
+asks for no height of its own (a chat column) takes the whole height, and
+what is taller (its history) scrolls inside it, the composer stays in sight.
+No absolute positioning is needed. A fill `Canvas` holds one child, the
+drawing: a second child stands in a row of its own under it and is cut away.
 
 ## Structure
 
