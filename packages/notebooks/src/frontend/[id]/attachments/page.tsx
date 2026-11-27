@@ -2,13 +2,13 @@
  * Notebook attachments overview page — `/app/notebooks/<id>/attachments`.
  *
  * Path-based (NOT a `?mode=` query) so the URL stays clean and deep-linkable.
- * Search + pagination via SSR — the SearchBar submits to the same URL with
- * `?search=` set, and the page handler re-renders the filtered grid. KISS:
+ * Search + pagination via SSR — the search in the head opens the same URL with
+ * `?search=` set, and the page handler renders the filtered list. KISS:
  * no client-side filter, results stay deterministic.
  */
 
 import { hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { toPublicAttachment } from "@/api/public-resources";
@@ -61,18 +61,19 @@ export default ssr<AuthContext>(async (c) => {
 
   // Queries in parallel:
   //   1. Filtered + paginated attachments for the grid (current page only)
-  //   2. Unfiltered total count for the sidebar's "Attachments" badge —
-  //      independent of the active search so the badge always reflects
-  //      the notebook's actual size, not the current view.
+  //   2. The notebook's attachment figures, independent of the active search: the hero (count, uploads per day)
+  //      and the sidebar's "Attachments" badge always reflect the notebook's actual size, not the current view.
   const workspaceCursor = await notebooksService.workspaceEvents.latestCursor({ notebookId });
-  const [snapshotNotebook, paginatedResult, totalAttachmentCount, tags, favoriteRows, appUrl] = await Promise.all([
+  const dateConfig = getDateConfig(c);
+  const now = new Date();
+  const [snapshotNotebook, paginatedResult, figures, tags, favoriteRows, appUrl] = await Promise.all([
     notebooksService.notebook.get({ id: notebookId }),
     notebooksService.attachment.listPaginated({
       notebookId,
       pagination: { page, perPage: PER_PAGE },
       filter: { query: search || undefined },
     }),
-    notebooksService.attachment.count({ notebookId }),
+    notebooksService.figures.attachments({ notebookId, timeZone: getTimeZone(c), now }),
     notebooksService.tag.listForNotebook({ notebookId }),
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
     get<string>("app.url"),
@@ -102,11 +103,11 @@ export default ssr<AuthContext>(async (c) => {
     navigationHidden: parseNavigationHidden(cookieHeader),
     fullWidth: parseFullWidth(cookieHeader),
     permission,
-    attachmentCount: totalAttachmentCount,
+    attachmentCount: figures.count,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
     tags,
     workspaceCursor,
-    dateConfig: getDateConfig(c),
+    dateConfig,
     sidebarFilter,
     presentationMode,
   };
@@ -132,12 +133,13 @@ export default ssr<AuthContext>(async (c) => {
         ctx={ctx}
         attachments={paginatedResult.items.map((attachment) => toPublicAttachment(attachment, notebook.shortId))}
         total={paginatedResult.total}
+        figures={figures}
         search={search}
         page={paginatedResult.page}
         pages={totalPages}
         baseHref={baseHref}
         graphBack={c.req.path + new URL(c.req.url).search}
-        now={new Date().toISOString()}
+        now={now.toISOString()}
       />
     </Layout>
   );

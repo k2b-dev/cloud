@@ -122,15 +122,21 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   });
   const readonlyMode = presentationMode !== "write";
   const graph = isGraphMode ? await notebooksService.notebook.graphView({ notebookId, noteId: selected.internalNoteId }) : null;
-  const versionHistory =
+  // The version history's first page and its hero: the note's edits per day over 30 days, in the reader's days.
+  const [versionHistory, editDays] =
     isVersionsMode && selected.note && selected.internalNoteId
-      ? await notebooksService.note.versions
-          .list({
-            noteId: selected.internalNoteId,
-            pagination: { page: 1, perPage: 20, offset: 0 },
-          })
-          .catch(() => null)
-      : null;
+      ? await Promise.all([
+          notebooksService.note.versions
+            .list({
+              noteId: selected.internalNoteId,
+              pagination: { page: 1, perPage: 20, offset: 0 },
+            })
+            .catch(() => null),
+          notebooksService.activity
+            .noteEditDays({ noteId: selected.internalNoteId, days: 30, timeZone: getDateConfig(c).timeZone ?? "UTC" })
+            .catch(() => null),
+        ])
+      : [null, null];
   const publicVersionHistory = versionHistory
     ? { ...versionHistory, versions: versionHistory.versions.map((version) => ({ ...version, noteId: selected.note!.id })) }
     : null;
@@ -243,6 +249,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     bookHtml: selected.bookHtml,
     graph,
     versionHistory: publicVersionHistory,
+    editDays,
     ctx,
     appUrl,
     currentHref: `${requestUrl.pathname}${requestUrl.search}`,
