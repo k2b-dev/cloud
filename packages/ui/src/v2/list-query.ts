@@ -30,6 +30,9 @@
  * ```
  */
 
+import type { MarkProps } from "./marks";
+import type { Person } from "./types";
+
 // ---------------------------------------------------------------------------------------------------------------
 // Values
 // ---------------------------------------------------------------------------------------------------------------
@@ -53,6 +56,10 @@ export type LookupItem = {
   readonly label: string;
   /** Optional second line, such as an email address or a number. */
   readonly meta?: string;
+  /** Its face before the name, such as a person in a lookup of people: an avatar or a mark (`Avatar`, `Mark`). */
+  readonly face?: { readonly avatar: Person } | { readonly mark: MarkProps };
+  /** It cannot be chosen, and this says why, such as "hat schon Bearbeiten": it stays in the list, dimmed. */
+  readonly unavailable?: string;
 };
 
 /** What `load` of a lookup returns for one search. */

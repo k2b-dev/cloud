@@ -197,9 +197,11 @@ const loadConsignors = (query: string, context: { signal: AbortSignal; limit: nu
     pending.push(entry);
   });
 
+// buyers with their faces: a person's avatar, a gallery's mark, and one that cannot be chosen, with the reason
 const BUYERS: readonly LookupItem[] = [
-  { value: "c-1001", label: "Lena Hof", meta: "Basel" },
-  { value: "c-2002", label: "Galerie Nord", meta: "Kiel" },
+  { value: "c-1001", label: "Lena Hof", meta: "Basel", face: { avatar: { name: "Lena Hof" } } },
+  { value: "c-2002", label: "Galerie Nord", meta: "Kiel", face: { mark: { icon: "building-store", color: "#7c3aed" } } },
+  { value: "c-3003", label: "Atelier Ost", meta: "Ulm", face: { mark: { icon: "palette", color: "#0e7490" } }, unavailable: "gesperrt" },
 ];
 
 export const articleQuery = defineListQuery({

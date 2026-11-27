@@ -501,6 +501,23 @@ test("renaming a saved view keeps the query it holds, also while the list shows 
   });
 });
 
+test("lookup: a value shows its face, and one that cannot be chosen stays dimmed with its reason", async () => {
+  await withPage("buyer=c-1001", async (page) => {
+    await page.locator(".k2-stmt-b").first().click();
+    await page.getByRole("searchbox", { name: "Käufer suchen" }).waitFor();
+    const option = (name: string) => page.locator(".k2-lookup [role=option]").filter({ hasText: name });
+    await option("Atelier Ost").waitFor();
+    expect(await option("Lena Hof").locator('[data-k2-part="Avatar"]').count()).toBe(1);
+    expect(await option("Galerie Nord").locator('[data-k2-part="Mark"]').count()).toBe(1);
+    // the one that cannot be chosen says why, and a press does not choose it
+    expect(await option("Atelier Ost").textContent()).toContain("gesperrt");
+    expect(await option("Atelier Ost").getAttribute("aria-disabled")).toBe("true");
+    await option("Atelier Ost").click({ force: true });
+    await settled(page);
+    expect(page.url()).not.toContain("c-3003");
+  });
+});
+
 test("two lookup fields with the same code keep their own names", async () => {
   await withPage("consignor=c-1001&buyer=c-1001", async (page) => {
     await page.waitForFunction(() => document.querySelectorAll(".k2-stmt-b b .k2-icon").length === 0);

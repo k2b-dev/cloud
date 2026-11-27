@@ -3,8 +3,10 @@ import { useListbox } from "./behavior/lists";
 import { useBehaviorMessages } from "./behavior/messages";
 import { useFilterMessages } from "./filter-messages";
 import type { LookupItem } from "./list-query";
-import { Icon } from "./marks";
+import type { MarkProps } from "./marks";
+import { Avatar, Icon, Mark } from "./marks";
 import { Empty, Failed } from "./states";
+import type { Person } from "./types";
 
 /**
  * Loads the values for a search. `signal` aborts when a newer search replaces this one or the lookup closes; pass it
@@ -178,15 +180,30 @@ export const Lookup = (props: LookupProps) => {
   };
 
   const Option = (item: LookupItem) => (
-    <list.Item class="k2-opt" value={item.value} label={item.label}>
+    <list.Item
+      class="k2-opt"
+      value={item.value}
+      label={item.label}
+      disabled={item.unavailable !== undefined && !props.value.includes(item.value)}
+      data-face={item.face ? "" : undefined}
+    >
       <span class="k2-check" data-checked={props.value.includes(item.value) ? "" : undefined} aria-hidden="true">
         <Show when={props.value.includes(item.value)}>
           <Icon name="check" />
         </Show>
       </span>
+      <Show when={item.face}>
+        {(face) =>
+          "avatar" in face() ? (
+            <Avatar {...(face() as { avatar: Person }).avatar} decorative />
+          ) : (
+            <Mark {...(face() as { mark: MarkProps }).mark} />
+          )
+        }
+      </Show>
       <span class="k2-opt-label">
         {item.label}
-        <Show when={item.meta}>{(meta) => <span class="k2-opt-meta">{meta()}</span>}</Show>
+        <Show when={item.unavailable ?? item.meta}>{(meta) => <span class="k2-opt-meta">{meta()}</span>}</Show>
       </span>
       <Show when={missing().has(item.value)}>
         <span class="k2-opt-warn" title={t().unknownValue}>

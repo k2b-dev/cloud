@@ -11,6 +11,10 @@ export type PopoverPanelProps = TriggerProps & {
   title?: string;
   /** What the panel shows: v2 primitives such as `Text`, `Facts`, `Check`, `Field`. */
   content: JSX.Element;
+  /** Whether the panel is open, for a caller that closes it itself, such as after a pick; with `onOpenChange`. */
+  open?: boolean;
+  /** Called when the panel opens or closes, by its button, Escape or a press outside. */
+  onOpenChange?: (open: boolean) => void;
 };
 
 export type PopoverTipProps = {
@@ -37,8 +41,10 @@ const Panel = (props: PopoverPanelProps) => {
   const [align, setAlign] = createSignal<"start" | "end">("start");
   const popover = usePopover(() => ({
     presentation: phone() ? "sheet" : "popover",
+    ...(props.open !== undefined ? { open: props.open } : {}),
     onOpenChange: (open: boolean) => {
       if (open) setAlign(alignTo(trigger));
+      props.onOpenChange?.(open);
     },
   }));
   return (
