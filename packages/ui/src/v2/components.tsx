@@ -38,8 +38,11 @@ type NavEntryBase = {
   current?: boolean;
   /** One level in, such as the folders of a mailbox. */
   nested?: boolean;
-  /** Something new here. */
-  dot?: Status;
+  /**
+   * Something here: `"ok"` new, `"warn"` or `"bad"` a problem, `"running"` work that runs now (a chat that answers, a
+   * sync), a small turning mark in the place of the dot that says "Läuft".
+   */
+  dot?: Status | "running";
 };
 
 /**
@@ -109,17 +112,31 @@ const countIn = (count: number | string, locale: string) => (typeof count === "n
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
 const NavEnd = (props: { item: NavItem }) => {
+  const t = useUiMessages();
   const locale = useLocale();
+  const status = (): Status | undefined => (props.item.dot === "running" ? undefined : props.item.dot);
   return (
     <>
       <span class="k2-ni-name">{props.item.label}</span>
-      <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+      {/* one place for the dot or the running mark, so an entry without either renders as it did before */}
+      <Show when={props.item.dot}>
+        <Show when={status()} fallback={<NavRunning label={t().running} />}>
+          {(dot) => <Dot status={dot()} />}
+        </Show>
+      </Show>
       <Show when={props.item.count !== undefined}>
         <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
       </Show>
     </>
   );
 };
+
+/** Work that runs in an entry: a mark that turns in the place of the dot, as wide as the dot, so nothing moves. */
+const NavRunning = (props: { label: string }) => (
+  <span class="k2-ni-running" role="img" aria-label={props.label}>
+    <Icon name="loader-2" />
+  </span>
+);
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
   <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
@@ -568,7 +585,7 @@ export const StatusRow = (props: StatusRowProps) => {
 
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type NoticeProps = {
+type NoticeBase = {
   /** What it is: a note of a person, a summary by AI, something wrong, something waiting. */
   tone: "note" | "ai" | "bad" | "warn";
   /** A symbol other than the one of the tone, such as a pin for a pinned note. */
@@ -577,11 +594,28 @@ export type NoticeProps = {
   title?: string;
   /** Quiet words after the title: who and when. */
   meta?: string;
-  /** Text buttons at the end; at most two. */
-  actions?: TwoActions;
   /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
+
+/** At most two deeds in all: two quiet text buttons, or the one thing to do and one quiet deed beside it. */
+export type NoticeProps = NoticeBase &
+  (
+    | {
+        /** Text buttons at the end; at most two. */
+        actions?: TwoActions;
+        primary?: undefined;
+      }
+    | {
+        /** One quiet text button before the primary deed. */
+        actions?: readonly [Action];
+        /**
+         * The one thing to do, such as "Neu laden" when the page is offline: a framed button at the end, after the
+         * quiet deed. It is no primary of the page; the page keeps its own one.
+         */
+        primary: Action;
+      }
+  );
 
 const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
 
@@ -605,9 +639,10 @@ export const Notice = (props: NoticeProps) => (
       </span>
     </Show>
     <span class="k2-notice-text">{props.children}</span>
-    <Show when={props.actions?.length}>
+    <Show when={props.actions?.length || props.primary}>
       <span class="k2-notice-end">
         <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
+        <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
       </span>
     </Show>
   </div>

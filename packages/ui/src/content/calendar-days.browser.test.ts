@@ -570,7 +570,8 @@ describe(`Calendar day and week views in ${browserName}`, () => {
         await page.evaluate(() => (window as unknown as Fixture).setDate("2026-11-18"));
         await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
         await page.evaluate(() => (window as unknown as Fixture).setRange("2026-11-09", "2026-12-06"));
-        await titled(page, view === "day" ? "Wed, Nov 18, 2026" : "Nov 16 – 22, 2026");
+        // the day view names its month; the day itself stands in its own head
+        await titled(page, view === "day" ? "November 2026" : "Nov 16 – 22, 2026");
         const first = view === "day" ? "2026-11-18" : "2026-11-16";
         await page.waitForFunction((key) => (window as unknown as Fixture).visible.at(-1) === key, first);
         expect(await page.evaluate(() => (window as unknown as Fixture).visible.at(-1))).toBe(first);
