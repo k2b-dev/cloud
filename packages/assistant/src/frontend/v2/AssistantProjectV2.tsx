@@ -15,6 +15,10 @@ export default function AssistantProjectV2(p: ProjectParts) {
   return (
     <>
       <Pane.Split>
+        {/* k2b-ui gap: #4340 (Pane side): at 1920 the chats stretch to about 1,250 px, where they should keep a reading
+            width and the context grow. A width on this pane would do it, but then at 1024 its minimum, the context's
+            and the sidebar no longer fit, and the sidebar would become a drawer; #4340 shows the context only where
+            there is room. */}
         <Pane
           label={p.props.project.name}
           head={
