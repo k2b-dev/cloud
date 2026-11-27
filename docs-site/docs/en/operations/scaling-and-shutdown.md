@@ -111,7 +111,6 @@ grow with the replica count.
 | Chat (`chat`) | Yes | Postgres outbox to a NATS live topic; NATS scheduler for maintenance | None |
 | Contacts (`contacts`) | Yes | Postgres outbox to a NATS live topic; NATS scheduler for retention | None |
 | Dashboard (`dashboard`) | Yes | Postgres rows per person | None |
-| FAQ (`faq`) | Yes | Postgres only | None |
 | Files (`filesv2`) | Yes | NATS mutexes and Postgres reservations for operations and uploads | 4 uploads |
 | Gateway operations (`gateway-ops`) | Yes | NATS scheduler and slot-keyed jobs; one durable NATS consumer for telemetry | Metrics collected by every replica |
 | Grids (`grids`) | Yes | Postgres outbox claims, NATS mutexes and schedulers | Workflow slots (`grids.workflow_concurrency`, default 10); extra Postgres pools for queries (`grids.query_pool_size`, default 12 connections), workflow effects (10) and number series (4) |
