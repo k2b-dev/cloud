@@ -248,23 +248,25 @@ describe("app colors", () => {
 
   test("the v2 grounds are the surface and tint mix of @k2b/ui/v2.css in each theme", () => {
     const v2 = parse(readFileSync(resolve(workspaceRoot, "packages/ui/src/v2/v2.css"), "utf8"));
-    const grounds = (pick: (selector: string) => boolean) => {
-      let found: { surface: string; tint: number } | undefined;
+    // The surface stands in the token block of the theme, the tint mix in the one block that also serves another app's
+    // rows; both name the theme's root among their selectors.
+    const grounds = (root: string) => {
+      let surface: string | undefined;
+      let tint: number | undefined;
       v2.walkRules((rule) => {
-        if (found || !pick(rule.selector)) return;
-        const values = new Map<string, string>();
-        rule.walkDecls((declaration) => void values.set(declaration.prop, declaration.value));
-        const mix = values.get("--k2-app-tint-mix")?.match(/^color-mix\(in srgb, var\(--k2-app\) ([\d.]+)%, var\(--k2-surface\)\)$/);
-        const surface = values.get("--k2-surface");
-        if (mix && surface) found = { surface, tint: Number(mix[1]) / 100 };
+        if (!rule.selectors.includes(root)) return;
+        rule.walkDecls((declaration) => {
+          if (declaration.prop === "--k2-surface") surface ??= declaration.value;
+          const mix =
+            declaration.prop === "--k2-app-tint-mix" &&
+            declaration.value.match(/^color-mix\(in srgb, var\(--k2-app\) ([\d.]+)%, var\(--k2-surface\)\)$/);
+          if (mix) tint ??= Number(mix[1]) / 100;
+        });
       });
-      if (!found) throw new Error("v2.css names no surface and tint mix here");
-      return found;
+      if (surface === undefined || tint === undefined) throw new Error(`v2.css names no surface and tint mix for ${root}`);
+      return { surface, tint };
     };
-    expect({
-      light: grounds((selector) => selector === ".k2-ui"),
-      dark: grounds((selector) => selector.includes('.k2-ui[data-theme="dark"]')),
-    }).toEqual(v2InkGrounds);
+    expect({ light: grounds(".k2-ui"), dark: grounds('.k2-ui[data-theme="dark"]') }).toEqual(v2InkGrounds);
   });
 
   // 9 steps per channel (00, 22, … ee, ff) give 729 accents; the paint of the tint is unrounded, as in the browser.
