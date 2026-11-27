@@ -52,13 +52,14 @@ export type TextProps = {
   children: JSX.Element;
 };
 
-const typeClass = { meta: "k2-t-meta", row: "k2-t-row", body: "k2-t-body", lead: "k2-t-lead" } as const;
+const typeClass = { meta: "k2-t-meta", row: "k2-t-row", body: "k2-t-body", lead: "k2-t-lead", figure: "k2-t-figure" } as const;
 const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
 
 /**
- * Text in one of the four type roles. Standing in the flow of a column (a pane, a band, a section, a group) it is a
- * block that carries the text edge itself; anywhere else (a bar, a row, a sentence) it runs inline, and in a bar it is
- * cut to one line with "…". The stylesheet decides by place, so text passed as data behaves the same.
+ * Text in one of the type roles (`figure` only for the one hero of a screen). Standing in the flow of a column (a pane,
+ * a band, a section, a group) it is a block that carries the text edge itself; anywhere else (a bar, a row, a sentence)
+ * it runs inline, and in a bar it is cut to one line with "…". The stylesheet decides by place, so text passed as data
+ * behaves the same.
  */
 export const Text = (props: TextProps) => (
   <Dynamic

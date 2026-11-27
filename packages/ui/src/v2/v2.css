@@ -205,7 +205,7 @@
   }
 }
 
-/* Type: four roles, three weights. Meta is quiet by itself. */
+/* Type: four roles and the hero's figure (once per screen), three weights. Meta is quiet by itself. */
 .k2-ui .k2-t-meta {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
@@ -218,6 +218,10 @@
 }
 .k2-ui .k2-t-lead {
   font: var(--k2-t-lead);
+}
+.k2-ui .k2-t-figure {
+  font: var(--k2-t-figure);
+  letter-spacing: -0.015em;
 }
 .k2-ui .k2-strong {
   font-weight: 600;
@@ -993,49 +997,96 @@
   font: var(--k2-t-meta);
   color: var(--k2-bad);
 }
-/* Ticks: one per fetch or check, in the owner's soft colour; a failed one red and taller, none a quiet stub. */
+/* ── Ticks: one tick per time slot, ok soft in the colour of what it belongs to, a failure red and taller ──── */
+/* The slots read in the writing direction: the oldest at the start (left, or right in a page written right to left).
+   More slots than a cell holds (from about 60) never leave it: the strip clips at its 140 px. */
 .k2-ui .k2-ticks {
+  --k2-ticks-mix: 45%;
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
   gap: 1px;
-  height: 16px;
+  width: 140px;
+  height: 20px;
+  flex: none;
   vertical-align: middle;
+  overflow: clip;
+}
+/* dark: the soft colour mixes in more of itself, so ok still stands apart from the dark surface */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-ticks,
+.k2-ui.dark .k2-ticks,
+.k2-ui[data-theme="dark"] .k2-ticks {
+  --k2-ticks-mix: 62%;
+}
+/* across its place between the text edges, such as a detail, as dense as a data picture: 2 px apart, each slot grows
+   with the room up to 12 px; a wider place does not spread it further, the strip keeps that width at the start */
+.k2-ui .k2-ticks[data-stretch] {
+  display: flex;
+  width: auto;
+  margin-inline: var(--k2-edge);
+  justify-content: flex-start;
+  gap: 2px;
+}
+.k2-ui .k2-ticks[data-stretch] > i {
+  flex: 1 1 0;
+  max-width: 12px;
 }
 .k2-ui .k2-ticks > i {
-  width: 3px;
+  flex: 0 1 4px;
+  min-width: 1px;
   height: 12px;
   border-radius: 1px;
-  background: var(--k2-app-soft, var(--k2-app-text));
 }
-.k2-ui .k2-ticks > i[data-state="bad"] {
-  height: 16px;
-  background: var(--k2-bad-dot);
+.k2-ui .k2-ticks > i[data-s="ok"] {
+  background: color-mix(
+    in srgb,
+    var(--k2-c, var(--k2-app, var(--k2-blue))) calc(var(--k2-ticks-mix) + var(--k2-ticks-lift, 0%)),
+    var(--k2-surface)
+  );
 }
-.k2-ui .k2-ticks > i[data-state="none"] {
+/* in the selected or open row of a table, ok stands a little darker, on the row's tint */
+.k2-ui .k2-table tr:is([data-selected], [aria-current="true"]) .k2-ticks {
+  --k2-ticks-lift: 10%;
+}
+/* a slot without data keeps its place as a low stub, so the strip shows where nothing happened */
+.k2-ui .k2-ticks > i[data-s="none"] {
   height: 4px;
   background: var(--k2-n200);
 }
-.k2-ui .k2-ticks[data-place="hero"] {
-  display: flex;
-  gap: 2px;
+/* red only for a failure, and taller, so it reads without its colour too */
+.k2-ui .k2-ticks > i[data-s="bad"] {
+  height: 18px;
+  background: var(--k2-bad);
+}
+/* forced colours replace backgrounds: the ticks draw in system colours, a failure in the text colour */
+@media (forced-colors: active) {
+  .k2-ui .k2-ticks > i {
+    forced-color-adjust: none;
+  }
+  .k2-ui .k2-ticks > i:is([data-s="ok"], [data-s="none"]) {
+    background: GrayText;
+  }
+  .k2-ui .k2-ticks > i[data-s="bad"] {
+    background: CanvasText;
+  }
+}
+
+/* across a hero's drawing the ticks stand as tall as its bars (identity B): ok 38, a failure the whole 44 */
+.k2-ui .k2-hero .k2-ticks[data-stretch] {
   height: 44px;
+  margin-inline: 0;
   align-items: flex-end;
 }
-.k2-ui .k2-ticks[data-place="hero"] > i {
-  flex: 1;
-  width: auto;
+.k2-ui .k2-hero .k2-ticks[data-stretch] > i {
+  max-width: none;
   height: 38px;
   border-radius: 1.5px;
 }
-.k2-ui .k2-ticks[data-place="hero"] > i[data-state="bad"] {
+.k2-ui .k2-hero .k2-ticks[data-stretch] > i[data-s="bad"] {
   height: 44px;
 }
-.k2-ui .k2-ticks[data-place="hero"] > i[data-state="none"] {
+.k2-ui .k2-hero .k2-ticks[data-stretch] > i[data-s="none"] {
   height: 4px;
-}
-/* in the open row the ticks that worked take more of the colour, so they stay apart from its tint */
-.k2-ui :is(.k2-row[data-current], .k2-table tr[aria-current]) .k2-ticks > i[data-state="ok"] {
-  background: var(--k2-app-text);
 }
 
 /* In a narrow column (under 560 px: a list beside its detail, a pane of 480) the hero stands one under the other as on
@@ -1052,15 +1103,9 @@
    system (data in CanvasText, a failure as Mark, none in GrayText), and the open row and the head of the open thing
    keep a frame in Highlight instead of their tint. */
 @media (forced-colors: active) {
-  .k2-ui :is(.k2-ticks, .k2-spark) > i {
+  .k2-ui .k2-spark > i {
     forced-color-adjust: none;
     background: CanvasText;
-  }
-  .k2-ui .k2-ticks > i[data-state="bad"] {
-    background: Mark;
-  }
-  .k2-ui .k2-ticks > i[data-state="none"] {
-    background: GrayText;
   }
   .k2-ui .k2-hero-draw {
     forced-color-adjust: none;

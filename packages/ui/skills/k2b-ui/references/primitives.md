@@ -319,7 +319,7 @@ one.
 
 ### Text
 
-`type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
+`type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24, `figure` 30/34 (the one hero of a screen).
 `weight` (`"strong"` 600, `"medium"` 500 for a state or amount that stands
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
@@ -372,8 +372,10 @@ lines instead of cutting a thing.
   rest; the count is always right and never cut, from the first render.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
-  never only the title of the data. A few bars of a short history, the
-  last strongest; beside a number, never instead of it.
+  never only the title of the data, `color` (the data colour of its thing;
+  without it the owner's, else the app's). A few bars of a short history,
+  the history soft and the last in the full ink; beside a number, never
+  instead of it.
 - Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
   `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour

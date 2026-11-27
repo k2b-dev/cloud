@@ -218,6 +218,6 @@ test("the head of an open thing and the ticks come whole from the server", () =>
   expect(head).toMatch(/<header class="k2-ohead" data-k2-part="ObjectHead">/);
   expect(head).toContain("<dt>Verbunden</dt>");
   expect(head).toContain("Liefert keine Werte");
-  const ticks = html(Ticks, { values: ["ok", "bad", "none"], label: "3 Abrufe" });
-  expect([...ticks.matchAll(/data-state="(\w+)"/g)].map((match) => match[1])).toEqual(["ok", "bad", "none"]);
+  const ticks = html(Ticks, { slots: ["ok", "bad", "none"], label: "3 Abrufe" });
+  expect([...ticks.matchAll(/data-s="(\w+)"/g)].map((match) => match[1])).toEqual(["ok", "bad", "none"]);
 });

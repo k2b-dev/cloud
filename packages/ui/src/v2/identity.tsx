@@ -137,7 +137,7 @@ export const Hero = (props: HeroProps) => (
             const shown = trend();
             if (shown.kind === "bars") return <Bars values={shown.values} label={shown.label} />;
             if (shown.kind === "area") return <Area values={shown.values} label={shown.label} failedFrom={shown.failedFrom} />;
-            return <Ticks values={shown.values} label={shown.label} place="hero" />;
+            return <Ticks slots={shown.values} label={shown.label} stretch />;
           })()}
           <Show when={trend().start || trend().caption || trend().end}>
             <span class="k2-hero-cap">

@@ -291,6 +291,8 @@ export type SparkProps = {
    * of the data ("Änderungen der letzten 7 Tage"): a rise, a fall and a flat line would then say the same.
    */
   label: string;
+  /** The data colour of the thing the history belongs to; without it the colour of the owner, else of the app. */
+  color?: string;
 };
 
 /**
@@ -300,7 +302,7 @@ export type SparkProps = {
 export const Spark = (props: SparkProps) => {
   const top = () => Math.max(...props.values, 0);
   return (
-    <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label}>
+    <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label} style={custom({ "--k2-c": props.color })}>
       <For each={props.values}>
         {(value) => <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((value / top()) * 100)) : 8}%` })} />}
       </For>
@@ -308,25 +310,46 @@ export const Spark = (props: SparkProps) => {
   );
 };
 
-/** One fetch or check: it worked, it failed, or there was none. */
+/** The state of one time slot of `Ticks`: it went well, it failed, or there is no data for it. */
 export type TickState = "ok" | "bad" | "none";
 
 export type TicksProps = {
-  /** The fetches or checks in their order, oldest first, such as the last 30 minutes of a source. */
-  values: readonly TickState[];
-  /** What they say, in one sentence, such as "30 Abrufe, 3 fehlgeschlagen seit 10:40". */
+  /**
+   * One state per time slot, oldest first, such as one per minute of the last 30 minutes. They read in the writing
+   * direction: the oldest at the start (on the right in a page written right to left). In a table cell at most 60
+   * slots: the cell's 140 px hold no more, and a strip with more is cut at its end.
+   */
+  slots: readonly TickState[];
+  /**
+   * What the ticks say, in one sentence a person who cannot see them gets the same from, always in the same form:
+   * what, over which time, then what happened, such as "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen
+   * fehlgeschlagen".
+   */
   label: string;
-  /** Where they stand: `row`, small in a table cell or a row (the default); `hero`, across the drawing of a `Hero`. */
-  place?: "row" | "hero";
+  /** The data colour of what the ticks belong to; without it the colour of the app. Failures stay red. */
+  color?: string;
+  /**
+   * The ticks take the room between the text edges of their place, such as a detail: 2 px apart, each slot up to 12 px
+   * wide, the strip at the start where the place is wider; without it 140 px, the width of a table cell.
+   */
+  stretch?: boolean;
 };
 
 /**
- * The shape of a list's data over time in one column (identity B): a tick per fetch or check in the soft colour of the
- * app the thing belongs to, a failed one red and taller, none a quiet stub. Only one such picture per row.
+ * One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a
+ * failure red and taller, a slot without data a low stub. 20 px high; the one column of a list that shows its data
+ * over time.
  */
 export const Ticks = (props: TicksProps) => (
-  <span class="k2-ticks" data-k2-part="Ticks" data-place={props.place === "hero" ? "hero" : undefined} role="img" aria-label={props.label}>
-    <For each={props.values}>{(state) => <i data-state={state} />}</For>
+  <span
+    class="k2-ticks"
+    data-k2-part="Ticks"
+    data-stretch={props.stretch ? "" : undefined}
+    role="img"
+    aria-label={props.label}
+    style={custom({ "--k2-c": props.color })}
+  >
+    <For each={props.slots}>{(state) => <i data-s={state} />}</For>
   </span>
 );
 

@@ -155,5 +155,5 @@ export {
   type SectionProps,
 } from "./structure";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
-export { figureRole, fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
+export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
 export type { Action, OnNavigate, Person, Status, TwoActions, Width } from "./types";

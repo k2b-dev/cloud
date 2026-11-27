@@ -146,3 +146,13 @@ test("a key number with its history that is loading: the bar on the value, the h
   expect(shown).not.toContain("aria-busy");
   expect(shown).toContain("k2-spark");
 });
+
+// a spark in the data colour of its thing: validated, its history in the soft tone and the last bar in the ink (C)
+test("a spark takes the data colour of its thing, validated, its history soft and its last bar in the ink", () => {
+  const own = html(Spark, { values: [1, 2, 3], label: "Werkstatt: von 1 auf 3", color: "#0f766e" });
+  expect(own).toContain("--k2-c:#0f766e");
+  expect(own).toContain("--k2-c-soft:");
+  expect(own).toContain("--k2-c-ink:");
+  // a colour that is none is left out: the spark keeps the owner's or the app's
+  expect(html(Spark, { values: [1, 2], label: "x", color: "red;display:none" })).not.toContain("--k2-c");
+});

@@ -417,7 +417,7 @@ export const PulseScreen = (props: { list?: boolean }) => (
               width: { min: 140, default: 140 },
               cell: (source) => (
                 <Ticks
-                  values={source.ticks}
+                  slots={source.ticks}
                   label={`${source.name}: ${source.ticks.filter((tick) => tick === "bad").length} von 30 Abrufen fehlgeschlagen`}
                 />
               ),
@@ -615,7 +615,7 @@ export const OwnerScreen = (props: { color: string }) => (
           current="Drucker Halle 2"
           columns={[
             { title: "Quelle", cell: (source) => source.name, mark: (source) => ({ icon: source.icon, color: source.color }) },
-            { title: "Abrufe", cell: (source) => <Ticks values={source.ticks} label={`${source.name}: Abrufe`} /> },
+            { title: "Abrufe", cell: (source) => <Ticks slots={source.ticks} label={`${source.name}: Abrufe`} /> },
           ]}
         />
       </Pane>

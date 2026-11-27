@@ -43,7 +43,7 @@
  * ```
  */
 import type { Page } from "playwright";
-import { figureRole, fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
+import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
 import { settled } from "./settled";
 
 export type V2LayoutOptions = {
@@ -67,7 +67,10 @@ export type V2LayoutOptions = {
   figure?: string;
   /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
-  /** The one figure of a screen (`Hero`), which may stand in the figure type (30/34 600), once per page. */
+  /**
+   * The one figure of a screen (a `Hero`, or `Text type="figure"` such as an error page's title), which may stand in
+   * the figure type (30/34 600), once per page.
+   */
   heroFigure?: string;
 };
 
@@ -758,7 +761,9 @@ async function gripPixelsInPage(input: { png: string; scale: number; left: numbe
 export async function measureV2Layout(page: Page, options: V2LayoutOptions = {}): Promise<V2Layout> {
   // Fonts, observers and animations first: a measurement of a page that still moves measures a moment, not the page.
   await settled(page);
-  const roles = Object.values(typeRoles);
+  // the figure is no role of running text: it stands once, in a hero or as the title of a page that stands alone
+  const { figure: figureType, ...textRoles } = typeRoles;
+  const roles = Object.values(textRoles);
   const limits: InPage = {
     root: options.root ?? "body",
     columns: options.columns ?? "[data-k2-column]",
@@ -767,8 +772,8 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
     untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
-    heroFigure: options.heroFigure ?? "[data-k2-type='figure']",
-    figureType: figureRole,
+    heroFigure: options.heroFigure ?? ".k2-t-figure, [data-k2-type='figure']",
+    figureType,
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
     // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).

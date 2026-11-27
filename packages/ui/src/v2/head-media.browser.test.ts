@@ -2272,7 +2272,7 @@ for (const color of ["eab308", "f59e0b", "06b6d4", "84cc16"])
           const [figure, name, ticks] = await contrastIn(page, [
             ["[data-k2-type='figure']", "surface"],
             [".k2-table tr[aria-current] > td:first-child", "td"],
-            [".k2-table tbody tr:not([aria-current]) .k2-ticks > i[data-state='ok']", "background"],
+            [".k2-table tbody tr:not([aria-current]) .k2-ticks > i[data-s='ok']", "background"],
           ]);
           expect({ color, theme, figure: figure! >= 3, name: name! >= 4.5, ticks: ticks! >= 3 }).toEqual({
             color,
