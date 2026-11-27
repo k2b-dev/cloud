@@ -103,6 +103,49 @@ suiteFor(
       }
     }));
 
+  test("disconnecting counts reserved connections, ends one person's approved device sign-in, and answers 0 or 404 where nothing is", () =>
+    withAdminOAuth(async ({ userId, sessionHeaders }) => {
+      const fixture = await connectedClient();
+      try {
+        const [ada, ben] = fixture.people;
+        // Ada also has a connection Core has not activated yet, and each person an approved device sign-in
+        await oauth.refreshTokens.reserve({
+          userId: ada!.userId,
+          authEpoch: 0,
+          client: fixture.client,
+          scopes: ["openid", "offline_access"],
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        });
+        for (const person of [ada!, ben!])
+          await sql`
+            INSERT INTO oauth.device_authorizations
+              (device_code_hash, user_code_hash, client_id, scopes, audiences, status, user_id, auth_epoch, decided_at, expires_at)
+            VALUES (${crypto.randomUUID()}, ${crypto.randomUUID()}, ${fixture.clientId}, ARRAY['openid']::text[], ARRAY['cloud']::text[],
+              'approved', ${person.userId}::uuid, 0, now(), now() + INTERVAL '10 minutes')
+          `;
+        const openDevices = async () =>
+          (
+            await sql<{ user_id: string }[]>`
+              SELECT user_id FROM oauth.device_authorizations WHERE client_id = ${fixture.clientId} AND expires_at > now()
+            `
+          ).map((row) => row.user_id);
+        const disconnect = async (path: string) => {
+          const response = await routes.request(path, { method: "DELETE", headers: sessionHeaders });
+          return { status: response.status, body: await response.json() };
+        };
+
+        expect(await disconnect(`/${fixture.id}/connections/${ada!.userId}`)).toEqual({ status: 200, body: { revoked: 2 } });
+        expect(await openDevices()).toEqual([ben!.userId]);
+        // a second call and a person without a connection find nothing to revoke
+        expect(await disconnect(`/${fixture.id}/connections/${ada!.userId}`)).toEqual({ status: 200, body: { revoked: 0 } });
+        expect(await disconnect(`/${fixture.id}/connections/${userId}`)).toEqual({ status: 200, body: { revoked: 0 } });
+        expect((await disconnect(`/${crypto.randomUUID()}/connections`)).status).toBe(404);
+        expect((await disconnect(`/${crypto.randomUUID()}/connections/${ada!.userId}`)).status).toBe(404);
+      } finally {
+        await fixture.remove();
+      }
+    }));
+
   test("a person who is not an administrator cannot disconnect anyone", () =>
     withAdminOAuth(
       async ({ adminHeaders, sessionHeaders }) => {

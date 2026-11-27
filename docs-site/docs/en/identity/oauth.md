@@ -463,10 +463,16 @@ Both revoke the live refresh-token families of the client and answer with the
 number revoked, such as `{ "revoked": 3 }`. Disconnecting a person with no
 live connection answers `{ "revoked": 0 }`. The next refresh returns
 `invalid_grant`; access tokens already issued remain valid until they expire,
-at most one hour. Sign-ins still on their way end too: authorization codes not
-yet exchanged and approved device sign-ins of that person, or of everyone, plus
-open device sign-ins when everyone is disconnected. The person can connect
-again through a new consent.
+at most one hour. Sign-ins that have not issued tokens yet end too.
+
+A disconnect ends the current connections; it does not block anyone. A person
+whom the client's access rules still allow can connect again:
+
+- with a managed client, at the next sign-in, without a consent step;
+- with a dynamic or first-party client, after confirming its consent again.
+
+To keep a person out, change the client's access rules (`allowedProfiles`,
+`accessMode`, `allowedUserIds`, `allowedGroupIds`), then disconnect.
 
 Only administrators can disconnect, with a browser session or an OAuth token
 with the `write` or `admin` scope. Each call writes one

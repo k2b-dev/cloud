@@ -8,17 +8,18 @@ import { rejectBrowserSignIn } from "./sign-in";
 // ==========================
 
 /**
- * End the device sign-ins of a client that were not exchanged yet: approved ones of one person, or every open and
- * approved one when no person is given. A disconnect also stops the sign-ins on their way. Runs in the caller's
- * transaction.
+ * End the device sign-ins of a client that have not issued tokens yet: the decided ones of one person, or every one
+ * when no person is given, whether or not the device already collected them. A disconnect also stops the sign-ins on
+ * their way. Runs in the caller's transaction.
  */
-export const expireOpen = async (params: { db: typeof sql; clientId: string; userId: string | null }): Promise<void> => {
+export const expireUnissued = async (params: { db: typeof sql; clientId: string; userId: string | null }): Promise<void> => {
   await params.db`
     UPDATE oauth.device_authorizations
     SET expires_at = LEAST(expires_at, now() - INTERVAL '1 second')
     WHERE client_id = ${params.clientId}
       AND (${params.userId}::uuid IS NULL OR user_id = ${params.userId}::uuid)
-      AND status IN ('pending', 'approved')
+      AND status IN ('pending', 'approved', 'consumed')
+      AND authority_issued_at IS NULL
   `;
 };
 

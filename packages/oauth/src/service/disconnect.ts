@@ -22,8 +22,8 @@ export const revokeConnections = async (params: {
 
   return sql.begin(async (tx) => {
     const scope = { db: tx, clientId: existing.clientId, userId: params.userId };
-    await codes.expireUnused(scope);
-    await device.expireOpen(scope);
+    await codes.expireUnissued(scope);
+    await device.expireUnissued(scope);
     const revoked = await refreshTokens.revokeClientFamilies({
       ...scope,
       reason: params.userId ? "admin_disconnect_user" : "admin_disconnect_all",

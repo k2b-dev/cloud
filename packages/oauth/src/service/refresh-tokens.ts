@@ -297,6 +297,7 @@ export const rotate = async (
             revoked_at = COALESCE(revoked_at, now()),
             revoked_reason = 'refresh_token_reuse'
           WHERE id = ${row.family_id}::uuid
+            AND status <> 'revoked'
         `;
         await tx`
           UPDATE oauth.refresh_tokens

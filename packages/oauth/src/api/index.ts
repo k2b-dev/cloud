@@ -216,7 +216,7 @@ const app = new Hono<AuthContext>()
       tags: ["OAuth Admin"],
       summary: "Disconnect everyone from an OAuth client",
       description:
-        "Revoke every person's refresh tokens for this client (admin only). Access tokens already issued run out at their expiry. Recorded in the audit log.",
+        "Revoke every person's refresh tokens for this client and end sign-ins that have not issued tokens yet (admin only). Access tokens already issued run out at their expiry. This ends the current connections and does not block anyone: people the client's access rules allow can connect again (managed clients at the next sign-in, dynamic and first-party clients after confirming consent). To keep someone out, change the client's access rules. Recorded in the audit log.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(RevokedConnectionsSchema, "Number of revoked connections"),
@@ -243,7 +243,7 @@ const app = new Hono<AuthContext>()
       tags: ["OAuth Admin"],
       summary: "Disconnect a person from an OAuth client",
       description:
-        "Revoke one person's refresh tokens for this client (admin only). Access tokens already issued run out at their expiry. Recorded in the audit log.",
+        "Revoke one person's refresh tokens for this client and end their sign-ins that have not issued tokens yet (admin only). Access tokens already issued run out at their expiry. This ends the current connections and does not block the person: if the client's access rules allow them, they can connect again (managed clients at the next sign-in, dynamic and first-party clients after confirming consent). To keep them out, change the client's access rules. Recorded in the audit log.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(RevokedConnectionsSchema, "Number of revoked connections"),
