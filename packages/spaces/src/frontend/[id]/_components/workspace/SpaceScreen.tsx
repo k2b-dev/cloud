@@ -204,6 +204,9 @@ export default function SpaceScreen(props: SpaceScreenProps) {
       ? [
           {
             title: t.headPeople,
+            // The people are named, not chosen: no entry has a deed, so each one is `disabled` and reads dimmed.
+            // k2b-ui gap: Menu has no read-only entry (full-strength words that focus passes over) for a list it
+            // only names; Spaces has no per-person filter that could give the entries a deed.
             items: props.people.map((person) => ({
               label: person.displayName,
               icon: person.kind === "service_account" ? "robot" : "user",
