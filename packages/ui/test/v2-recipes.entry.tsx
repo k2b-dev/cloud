@@ -2,6 +2,7 @@ import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import * as actions from "../skills/k2b-ui/recipes/actions";
 import * as content from "../skills/k2b-ui/recipes/content";
+import * as conversations from "../skills/k2b-ui/recipes/conversations";
 import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
 import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
 import * as form from "../skills/k2b-ui/recipes/form";
@@ -27,6 +28,7 @@ type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?:
 const recipes: Record<string, Recipe> = {
   "actions.tsx": actions,
   "content.tsx": content,
+  "conversations.tsx": conversations,
   "dialogs.tsx": dialogs,
   "filtered-table.tsx": filteredTable,
   "form-detail.tsx": formDetail,

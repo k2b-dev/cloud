@@ -16,12 +16,15 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
+import { BarFold, Menu, type MenuItem } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
@@ -162,9 +165,10 @@ export type WorkspaceProps = {
   /**
    * What stands in the detail's place while none is open, such as `{ icon: "mail", text: "Keine Nachricht
    * ausgewählt" }`; "Nothing selected" in the language of the page when not set. Not on the phone, where the list is
-   * the page.
+   * the page. `hero` stands above the sentence: a picture of the place as a whole, such as a `Heat` of the mails
+   * received per day with a line that sums it up.
    */
-  detailEmpty?: { icon: string; text: string };
+  detailEmpty?: { icon: string; text: string; hero?: JSX.Element };
   /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
@@ -186,7 +190,9 @@ type Column = { readonly need: number; readonly detail: boolean; readonly away?:
  * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
  * at the top also learns what stands in the place of a declared detail while none is open.
  */
-type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+/** What stands in a declared detail's place while none is open. */
+type DetailEmpty = { icon: string; text: string; hero?: JSX.Element };
+type Columns = { register: (column: Column) => void; empty: () => DetailEmpty | undefined };
 const ColumnsContext = createContext<Columns | undefined>();
 
 /**
@@ -208,6 +214,9 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  // `detailEmpty` written as an object in JSX is a getter that makes its hero anew on every read: read it once here.
+  const detailEmpty = createMemo(() => props.detailEmpty);
+  const emptyHero = resolveChildren(() => detailEmpty()?.hero);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -215,10 +224,12 @@ export const Workspace = (props: WorkspaceProps) => {
   };
   // the detail the workspace declares, at its minimum; it counts open or closed
   const declared = () => (props.detail === undefined ? undefined : props.detail === true ? flexibleMin : props.detail);
+  // Read where it is drawn, never ahead: on the server the panes register their columns while they render, after this
+  // line, so a value computed here would not know an open detail yet.
   const empty = () =>
     declared() === undefined || columns().some((column) => column.detail)
       ? undefined
-      : (props.detailEmpty ?? { icon: "click", text: t().nothingSelected });
+      : { icon: detailEmpty()?.icon ?? "click", text: detailEmpty()?.text ?? t().nothingSelected, hero: emptyHero() };
   // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
   // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
   // its declared minimum, open or closed, so the room stays the same when it opens.
@@ -583,7 +594,7 @@ Pane.Split = (props: {
  */
 const SplitBody = (props: {
   entries: readonly SplitEntry[];
-  empty: { icon: string; text: string } | undefined;
+  empty: DetailEmpty | undefined;
   /** One main column and one context column after it (see `Pane side`). */
   contextual: boolean;
   children: JSX.Element;
@@ -686,6 +697,9 @@ const SplitBody = (props: {
           {(empty) => (
             <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
               <div class="k2-scroll">
+                <Show when={empty().hero}>
+                  <div class="k2-detail-hero">{empty().hero}</div>
+                </Show>
                 <Empty icon={empty().icon} text={empty().text} />
               </div>
             </section>
@@ -711,17 +725,76 @@ export type BarProps = {
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
+ *
+ * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
+ * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
+ * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end's last
+ * plain `Menu` "…" is followed only by parts that never fold, they are that menu's first section; an end made outside
+ * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
+ * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
+ * browser measures the fold once the page is alive; before that the bar stands as it does when nothing folds (the end
+ * whole, the start given way down to its least), so the server's page is the live one wherever nothing folds. Only an
+ * end that has to fold cuts, from its start, until the fold takes over.
  */
 export const Bar = (props: BarProps) => {
+  const t = useOverlayMessages();
+  // the entries of the buttons that do not fit, and the menu of the end that holds them; none on the server's page
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [host, setHost] = createSignal<HTMLElement>();
+  // the bar's own "…" takes another name where the end holds a menu of the same name that does not take the buttons
+  const [twin, setTwin] = createSignal(false);
+  let bar: HTMLDivElement | undefined;
+  let watch: Fold | undefined;
+  // menus that offered themselves before the bar watched (children mount before the bar's effect runs)
+  const waiting = new Map<HTMLElement, () => void>();
+  const offer = (trigger: HTMLElement) => {
+    if (watch) return watch.offer(trigger);
+    waiting.set(trigger, () => {});
+    return () => {
+      waiting.get(trigger)?.();
+      waiting.delete(trigger);
+    };
+  };
   const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => props.end);
+  // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
+  const end = resolveChildren(() => <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>);
+  const hasEnd = createMemo(() => end() !== undefined);
+  createEffect(() => {
+    if (!bar || !hasEnd()) return;
+    const own = t().moreActions;
+    const fold = watchFold(bar, (entries, menu) => {
+      setFolded(entries);
+      setHost(menu);
+      setTwin(
+        !menu &&
+          [...(bar?.querySelectorAll('.k2-bar-end [aria-haspopup="menu"][data-icon-only]') ?? [])].some(
+            (other) => !other.closest(".k2-bar-fold") && other.getAttribute("aria-label") === own,
+          ),
+      );
+    });
+    watch = fold;
+    for (const trigger of waiting.keys()) waiting.set(trigger, fold.offer(trigger));
+    onCleanup(() => {
+      watch = undefined;
+      fold.stop();
+    });
+  });
   return (
-    <div class="k2-bar" data-k2-part="Bar">
+    <div ref={bar} class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
-      <Show when={end() !== undefined}>
-        <div class="k2-bar-end">{end()}</div>
+      <Show when={hasEnd()}>
+        <div class="k2-bar-end">
+          {end()}
+          <Show when={folded().length > 0 && !host()}>
+            <span class="k2-bar-fold">
+              <BarFold.Provider value={undefined}>
+                <Menu items={folded()} label={twin() ? t().moreInBar : undefined} />
+              </BarFold.Provider>
+            </span>
+          </Show>
+        </div>
       </Show>
     </div>
   );
