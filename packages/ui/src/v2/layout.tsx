@@ -16,21 +16,19 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { type Fold, watchFold } from "./bar-fold";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
 import { Cut, RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
-import { HeadFoldContext, Menu, type MenuEntry } from "./menu";
+import { BarFold, Menu, type MenuItem } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
-
-/** A bar made as the head of a workspace or pane: on the phone it folds the deeds a crowded head cannot hold (`Bar`). */
-const HeadContext = createContext(false);
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -212,8 +210,7 @@ export const Workspace = (props: WorkspaceProps) => {
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
-  // a bar made as the head knows it (see `Bar`)
-  const head = resolveChildren(() => <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>);
+  const head = resolveChildren(() => props.head);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -479,7 +476,7 @@ export const Pane = (props: PaneProps) => {
       return Boolean(props.side) && (contextual?.() ?? false);
     },
   });
-  const head = resolveChildren(() => <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>);
+  const head = resolveChildren(() => props.head);
   const status = resolveChildren(() => props.status);
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
@@ -717,54 +714,73 @@ export type BarProps = {
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
+ *
+ * The start keeps a least: its name at `--k2-start-least` (16ch; its whole content, where narrower), or its open
+ * tab. Where the end does not fit beside the whole start (six actions beside tabs on the phone), the end folds first:
+ * its buttons that do not fit move into a menu "…" at its end, in their order, the last first. Where the end's last
+ * plain `Menu` "…" is followed only by parts that never fold, they are that menu's first section; an end made outside
+ * the bar (an island of its own) gets the bar's own "…" instead. The primary action, a closing ×, a menu and a search
+ * never fold. Only when nothing more can fold does the start shorten its words with "…", down to its least. The
+ * browser measures the fold once the page is alive; before that the bar stands as it does when nothing folds (the end
+ * whole, the start given way down to its least), so the server's page is the live one wherever nothing folds. Only an
+ * end that has to fold cuts, from its start, until the fold takes over.
  */
 export const Bar = (props: BarProps) => {
-  const inHead = useContext(HeadContext);
   const t = useOverlayMessages();
-  // On the phone the open view never gives way to deeds that keep their words: in a head with views, those deeds fold
-  // into the head's own "…" (handed to it by context) or, without one, into this menu (the stylesheet shows it only
-  // there); each runs as the button itself would, a pressed one as a ticked entry.
-  const [folded, setFolded] = createSignal<MenuEntry[]>([]);
-  const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => <HeadFoldContext.Provider value={inHead ? folded : undefined}>{props.end}</HeadFoldContext.Provider>);
+  // the entries of the buttons that do not fit, and the menu of the end that holds them; none on the server's page
+  const [folded, setFolded] = createSignal<readonly MenuItem[]>([]);
+  const [host, setHost] = createSignal<HTMLElement>();
+  // the bar's own "…" takes another name where the end holds a menu of the same name that does not take the buttons
+  const [twin, setTwin] = createSignal(false);
   let bar: HTMLDivElement | undefined;
-  onMount(() => {
-    const deeds = inHead ? bar?.querySelector(":scope > .k2-bar-end") : null;
-    if (!deeds) return;
-    // only a head with views folds (its start holds the tabs); a pressed deed is a ticked entry
-    const read = () =>
-      !bar?.querySelector(":scope > .k2-bar-start > .k2-tabs-nav")
-        ? setFolded([])
-        : setFolded(
-            Array.from(deeds.querySelectorAll<HTMLElement>(":scope > [data-keep]:not([data-icon-only])")).map((button) => ({
-              label: (button.textContent ?? "").replace(/\s+/g, " ").trim() || (button.getAttribute("aria-label") ?? ""),
-              disabled: button.matches(":disabled") || button.getAttribute("aria-disabled") === "true",
-              onClick: () => button.click(),
-              checked: button.getAttribute("aria-pressed") === null ? undefined : button.getAttribute("aria-pressed") === "true",
-            })),
-          );
-    read();
-    const changes = new MutationObserver(read);
-    changes.observe(deeds, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ["disabled", "aria-disabled", "aria-pressed"],
+  let watch: Fold | undefined;
+  // menus that offered themselves before the bar watched (children mount before the bar's effect runs)
+  const waiting = new Map<HTMLElement, () => void>();
+  const offer = (trigger: HTMLElement) => {
+    if (watch) return watch.offer(trigger);
+    waiting.set(trigger, () => {});
+    return () => {
+      waiting.get(trigger)?.();
+      waiting.delete(trigger);
+    };
+  };
+  const start = resolveChildren(() => props.start);
+  // the end is made inside the fold's context, so a menu "…" in it can offer itself to take the folded buttons
+  const end = resolveChildren(() => <BarFold.Provider value={{ offer, host, entries: folded }}>{props.end}</BarFold.Provider>);
+  const hasEnd = createMemo(() => end() !== undefined);
+  createEffect(() => {
+    if (!bar || !hasEnd()) return;
+    const own = t().moreActions;
+    const fold = watchFold(bar, (entries, menu) => {
+      setFolded(entries);
+      setHost(menu);
+      setTwin(
+        !menu &&
+          [...(bar?.querySelectorAll('.k2-bar-end [aria-haspopup="menu"][data-icon-only]') ?? [])].some(
+            (other) => !other.closest(".k2-bar-fold") && other.getAttribute("aria-label") === own,
+          ),
+      );
     });
-    onCleanup(() => changes.disconnect());
+    watch = fold;
+    for (const trigger of waiting.keys()) waiting.set(trigger, fold.offer(trigger));
+    onCleanup(() => {
+      watch = undefined;
+      fold.stop();
+    });
   });
   return (
-    <div class="k2-bar" data-k2-part="Bar" ref={bar}>
+    <div ref={bar} class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
-      <Show when={end() !== undefined}>
+      <Show when={hasEnd()}>
         <div class="k2-bar-end">
           {end()}
-          <Show when={inHead && start() !== undefined}>
+          <Show when={folded().length > 0 && !host()}>
             <span class="k2-bar-fold">
-              <Menu label={t().moreActions} items={folded()} />
+              <BarFold.Provider value={undefined}>
+                <Menu items={folded()} label={twin() ? t().moreInBar : undefined} />
+              </BarFold.Provider>
             </span>
           </Show>
         </div>

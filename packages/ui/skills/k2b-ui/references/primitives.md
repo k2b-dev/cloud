@@ -35,10 +35,9 @@ The working surface of an app: one per screen.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`. In
-  a head with `Tabs` the open view never gives way: buttons with words that
-  `keep` fold into the head's own "…" (each runs as its button would), and
-  the open tab keeps its whole name. A column with a `width` fills the
-  screen; its minimum counts only on the desktop.
+  a head with `Tabs` the open tab keeps its whole name; buttons that do not
+  fit beside the tabs fold into the bar's "…" (see `Bar`). A column with a
+  `width` fills the screen; its minimum counts only on the desktop.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape. A host that offers the
@@ -116,6 +115,23 @@ column narrower than 480 px, a bar inside a pane whose `start` is an
 40 px, and only a second line makes the bar higher; a bar in `status` too.
 A head and a status row keep their height.
 
+The `start` keeps a least: its name at `--k2-start-least` (16ch, or all
+of it, where it is narrower), or its open tab. Where the `end` does not fit beside the whole
+`start` (six kept actions beside tabs on the phone), the end folds first:
+its buttons that do not fit move into a menu "…" at its end, in their
+order, the last first. If the end's last plain `Menu` "…" (no icon or
+label of its own) is followed only by parts that never fold (a closing ×,
+the primary), they are its first section; no second "…" stands beside it.
+An end made outside the `Bar` (a helper's JSX, an island of its own)
+cannot offer its "…": the bar then shows its own, "Mehr in dieser Leiste". The primary action, a
+closing ×, a `Menu`, a search and a button that opens a menu never fold.
+Only when nothing more can fold does the `start` shorten with "…", down
+to its least, never to nothing. The browser measures the fold once the
+page is alive; before that the bar stands as it does when nothing folds
+(the end whole, the start given way down to its least), so the server's
+page is the live one wherever nothing folds. Only an end that has to fold
+cuts, from its start, until the fold takes over.
+
 ### Band
 
 A block of free height with one line below. `tone`: `note`, `ai`, `yours`,
@@ -172,8 +188,9 @@ still reaches the column's edges), `more` (one link under the rows, its
 words on their text edge, never at the right: "All deliveries ›"; its
 `meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
-the head or between entries, one line at the end. Put `Row`s directly in a
-section, or a `Digest`, `Facts`, `Group`s.
+the head or between entries, one line at the end. A long title (a
+question, a name) wraps onto more lines and the head grows with it; no word
+is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
 
 ### Group
 
@@ -390,8 +407,9 @@ lines instead of cutting a thing.
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
   required field shows `error="Pflichtfeld."`.
-- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
-  `max`, `onInput`; `label` when it stands without a `Field` (a search).
+- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline` (shows
+  `rows` lines at least, 3 by default, or the lines of its value from the
+  server's page on, and grows with its words up to ten lines, then scrolls), `min`, `max`, `onInput`; `label` when it stands without a `Field` (a search).
   `onKeyDown` (Enter to search, Escape to clear; while
   `event.isComposing`, Enter belongs to the input method and must not
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
@@ -457,7 +475,9 @@ lines instead of cutting a thing.
   month's short name, keys move the weeks, the arrows by six. Use it inside a
   popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
-  `onChange`, `disabled` (dimmed).
+  `onChange`, `disabled` (dimmed), `description` (a quiet line under the
+  words, such as what turning it on does; it describes the box and is no
+  part of its name).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
@@ -465,7 +485,17 @@ lines instead of cutting a thing.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
+  `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
+  `Action`, such as "Neuer Chat") stand under the name, each across the
+  column; pass the same action as `Workspace` `primary`, which floats on the
+  phone. `list` holds the app's own rows after the groups (a `List` of
+  `Row`s, such as conversations): made once, like the other parts of a
+  frame, they reach the column's edges and scroll on their own above the
+  foot; virtualize a long list. With `phone: "page"` the list with the
+  search is the phone's page while no pane is open beside it; the title,
+  the groups and the foot are then in the platform's menu, and any pane
+  that opens (a detail or a page of its own) is the page in its place.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
@@ -583,7 +613,9 @@ lines instead of cutting a thing.
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the
   quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
+  head it stays on the phone. An entry: `label`, `icon` or `color` (a data
+  colour as a dot before the words, such as an area; it goes through the
+  colour guard and adds nothing to the name), `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
