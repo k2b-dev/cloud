@@ -87,9 +87,10 @@ suite("bounded observability reads", () => {
     const source = `newest-${crypto.randomUUID()}`;
     const other = `other-${crypto.randomUUID()}`;
     try {
-      // the shape of a real log: one quiet source (such as a nightly sync) among a busy one, over a day
+      // the shape of a real log: a source with a thousand lines among a busy one, over a day; enough that reading them
+      // all and sorting costs more than reading the newest 50 in order
       await sql`INSERT INTO logging.entries(source, message, created_at)
-        SELECT CASE WHEN n % 500 = 0 THEN ${source} ELSE ${other} END, 'line', now() - (n || ' seconds')::interval
+        SELECT CASE WHEN n % 50 = 0 THEN ${source} ELSE ${other} END, 'line', now() - (n || ' seconds')::interval
         FROM generate_series(1, 50000) n`;
       const [indexes] = await sql<{ composite: boolean; single: boolean }[]>`
         SELECT to_regclass('logging.idx_logging_entries_source_created') IS NOT NULL AS composite,
