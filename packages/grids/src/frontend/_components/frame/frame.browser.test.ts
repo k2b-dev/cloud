@@ -202,7 +202,10 @@ describe("Grids before its first base", () => {
         expect(await ways.locator(".k2-tile-preview").count()).toBe(4);
         expect(await ways.locator(".k2-tile-pv-table").count()).toBe(3);
         for (const way of [1, 2, 3]) expect(await ways.nth(way).locator(".k2-tile-pv-table tbody tr").count()).toBe(3);
+        // amounts stand at the end of their column
+        expect(await ways.nth(1).locator(".k2-tile-pv-table th").nth(1).getAttribute("data-align")).toBe("end");
         // every word of a preview stands whole: no cell of a shown column ends in "…"
+        await settled(tab);
         const cut = await ways
           .locator(".k2-tile-pv-table :is(th, td)")
           .evaluateAll((cells) =>

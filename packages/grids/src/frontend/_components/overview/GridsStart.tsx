@@ -68,7 +68,12 @@ export default function GridsStart(props: GridsStartProps) {
             meta: way.preview ? t().tableCount({ count: way.preview.tables, formatted: number(way.preview.tables) }) : t().blankBaseFoot,
             // above the name the small table the template brings for its card; the blank base shows a table's sign
             preview: way.preview
-              ? { table: { columns: way.preview.columns.map((column) => column.name), rows: way.preview.rows } }
+              ? {
+                  table: {
+                    columns: way.preview.columns.map(({ name, align }) => (align ? { label: name, align } : name)),
+                    rows: way.preview.rows,
+                  },
+                }
               : { icon: "table" },
           }))}
         />
