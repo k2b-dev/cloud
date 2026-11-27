@@ -54,10 +54,7 @@ export default function AssistantProjectV2(p: ProjectParts) {
           <Section
             title={p.text("Recent chats")}
             count={p.chatTotal()}
-            actions={[
-              // The section already names the Project: the action is the short deed.
-              { label: p.text("Search chats"), icon: "search", onClick: () => void p.searchChats() },
-            ]}
+            // One search on the page: the head's search symbol searches this Project's chats while it is open.
             // Further chats are the way to the rest of the section, at its end.
             more={
               p.chats.hasMore() ? { label: p.text("Load more chats"), icon: "chevron-down", onClick: () => void p.loadMore() } : undefined

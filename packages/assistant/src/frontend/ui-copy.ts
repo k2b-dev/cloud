@@ -214,7 +214,7 @@ const germanText: Record<string, string> = {
   Instructions: "Anweisungen",
   "Instructions are applied to new turns in every Project chat.":
     "Die Anweisungen gelten für neue Anfragen in allen Chats dieses Projekts.",
-  "Learn personalization from private chats": "Personalisierung aus privaten Chats lernen",
+  "Learn from private chats": "Aus privaten Chats lernen",
   Learned: "Gelernt",
   "Learning activity": "Lernaktivität",
   "Learning run details": "Details des Lernlaufs",
@@ -328,8 +328,8 @@ const germanText: Record<string, string> = {
   "Use a short, action-oriented name with lowercase letters, numbers, and hyphens.":
     "Verwende einen kurzen, handlungsorientierten Namen aus Kleinbuchstaben, Zahlen und Bindestrichen.",
   "Use a short, recognizable name such as product-rules.": "Verwende einen kurzen, eindeutigen Namen wie product-rules.",
-  "Use personalization": "Personalisierung verwenden",
-  "Use personalization in Gustav chats": "Personalisierung in Gustav-Chats verwenden",
+  Usage: "Verwendung",
+  "Use in Gustav chats": "In Gustav-Chats verwenden",
   "View activity": "Aktivität anzeigen",
   "View details for": "Details anzeigen für",
   "View learning run details": "Details des Lernlaufs anzeigen",

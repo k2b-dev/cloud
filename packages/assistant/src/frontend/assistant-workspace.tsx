@@ -1476,7 +1476,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     setProjectSettings(false);
     if (projectId) navigate(assistantProjectHref(window.location.href, projectId), { scroll: "manual", viewTransition: false });
   };
-  const openProject = async (projectId: string) => {
+  /** Opens a Project in place; `settings` opens its settings page (Back to `?project=…&settings=1`). */
+  const openProject = async (projectId: string, options: { settings?: boolean } = {}) => {
     const project = projects().find((item) => item.id === projectId);
     if (!project) throw new Error(t().projectNotFound);
     const requestId = ++navigationRequest;
@@ -1485,6 +1486,10 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
       assistantApi.loadProjectContext(projectId),
     ]);
     if (requestId !== navigationRequest) return false;
+    // Another Project, or the same one again: its settings open only when asked, and never with the server's seed,
+    // which belongs to the settings page the server rendered.
+    setProjectSettingsRendered(false);
+    setProjectSettings(!props.embedded && Boolean(options.settings));
     setMainView(null);
     setProjectView({ projectId, page, context });
     return true;
@@ -1587,9 +1592,10 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
       }
       setMainView(null);
       setProjectSettingsRendered(false);
-      setProjectSettings(!props.embedded && assistantProjectSettingsFromHref(window.location.href));
+      const settings = !props.embedded && assistantProjectSettingsFromHref(window.location.href);
+      setProjectSettings(settings);
       if (projectId) {
-        void openProject(projectId).catch(() => navigateTo(basePath));
+        void openProject(projectId, { settings }).catch(() => navigateTo(basePath));
         return;
       }
       if (!conversationId) {
@@ -3761,7 +3767,9 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     projectSettings,
     openProjectSettings,
     closeProjectSettings,
-    projectSettingsSeed: () => (projectSettingsRendered() ? props.initialProjectSettingsSeed : undefined),
+    // Only for the Project whose settings page the server rendered.
+    projectSettingsSeed: () =>
+      projectSettingsRendered() && projectView()?.projectId === props.initialProject?.id ? props.initialProjectSettingsSeed : undefined,
     projectView,
     ProjectContent,
     codeRendered,

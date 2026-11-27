@@ -56,7 +56,6 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
   };
   const needingYou = () => o.items().filter((item) => needsPerson(cardStatus(item)));
   const running = () => o.items().filter((item) => cardStatus(item) === "running");
-  const create = () => ({ label: t().codeCreateInChat, icon: "sparkles", onClick: () => props.onCreateInChat() });
   const toggle = (filter: "attention" | "paused") => o.choose(o.filter() === filter ? "all" : filter);
 
   return (
@@ -64,6 +63,9 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
       label={t().myCode}
       status={
         <Show when={o.page()}>
+          {/* k2b-ui gap: StatusRow end on the phone (R): v2 hides a status row's end below 768 px, so the exception
+              chips (and their filters) are not there on the phone. "Im Chat erstellen" stands in the page's head instead
+              (a "+" menu as the floating button needs `Workspace primary` to take a menu). */}
           {/* k2b-ui gap: #4360 (Hero): the hero is "n runs today" as figure 30 in Gustav's colour with the day line as
               its trend; until the band lands, the status row carries the statement and its exceptions. */}
           <StatusRow
@@ -86,12 +88,6 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
                     {t().appsExceptionPaused({ count: o.counts().paused })}
                   </Chip>
                 </Show>
-                {/* Without apps the empty state offers it; once is enough. */}
-                <Show when={!o.empty()}>
-                  <Button icon="sparkles" onClick={() => props.onCreateInChat()}>
-                    {t().codeCreateInChat}
-                  </Button>
-                </Show>
               </>
             }
           />
@@ -105,7 +101,8 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
         <Show
           when={!o.empty()}
           // The explanations belong to the empty state, not to every day (B: only what counts).
-          fallback={<Empty icon="code" text={`${t().codeEmpty} ${t().codeEmptyHint} ${t().codeRunsAsYou}`} action={create()} />}
+          // "Im Chat erstellen" stands in the head, so the empty state explains and offers nothing twice.
+          fallback={<Empty icon="code" text={`${t().codeEmpty} ${t().codeEmptyHint} ${t().codeRunsAsYou}`} />}
         >
           {/* k2b-ui gap: #4344: no v2 primitive draws a day of marks on a time axis (it extends the state timeline of #4233);
               v1's day line stands bare here, its runs in Gustav's soft colour, without a legend. */}

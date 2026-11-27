@@ -98,10 +98,10 @@ describe("My apps & automations on v2", () => {
     expect(html).toMatch(/aria-pressed="false"[^>]*>[\s\S]*?pausiert/);
   });
 
-  test("empty says so and offers to create in the chat, without a table", () => {
+  test("empty says so without a table; the page's head offers to create in the chat, once", () => {
     const html = apps("leer");
     expect(html).toContain('data-k2-part="Empty"');
-    expect(visible(html)).toContain("Im Chat erstellen");
+    expect(visible(html)).not.toContain("Im Chat erstellen");
     // The empty state explains what Code is here.
     expect(visible(html)).toContain("Dein Code läuft als du, mit deinen Rechten und nicht mehr.");
     expect(html).not.toContain('data-k2-part="Table"');

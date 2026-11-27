@@ -165,8 +165,8 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain("Add personalization");
     expect(preferences).toContain('variant="input"');
     expect(preferences).not.toContain("suffix={");
-    expect(preferences).toContain("Use personalization in Gustav chats");
-    expect(preferences).toContain("Learn personalization from private chats");
+    expect(preferences).toContain("Use in Gustav chats");
+    expect(preferences).toContain("Learn from private chats");
     expect(preferences).toContain('title={text("Saved personalization")}');
     expect(preferences).toContain("hasSavedPersonalization");
     expect(preferences).toContain('state="empty"');

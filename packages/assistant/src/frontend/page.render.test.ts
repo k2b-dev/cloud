@@ -243,6 +243,46 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
   expect(html).not.toContain(project.id);
 });
 
+test("a Project's settings at ?project=…&settings=1 draw their models and access on the first picture, without a loader", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [],
+    }),
+  );
+  const admin = { ...project, permission: "admin" as const };
+  const models = {
+    status: "ok" as const,
+    selection: null,
+    effectiveDefault: { class: "balanced" as const },
+    classes: [{ class: "balanced" as const, variantId: "standard" }],
+    options: [],
+  };
+  spies.push(
+    spyOn(ai.aiProjects, "getByShortId").mockResolvedValue(admin),
+    spyOn(ai.aiConversations, "listConversationsPage").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 20, hasNext: false }),
+    spyOn(projectContext, "loadAssistantProjectContextSnapshot").mockResolvedValue({
+      projectId: admin.shortId,
+      knowledge: [],
+      files: [],
+      references: [],
+      skills: { items: [], page: 1, hasNext: false },
+    }),
+    spyOn(ai, "peopleAiModels").mockResolvedValue(models),
+  );
+  const access = spyOn(ai.aiProjects, "listAccess").mockResolvedValue([]);
+  spies.push(access);
+  const html = await (await request("https://cloud.example.test/app/assistant?project=project123&settings=1")).text();
+  expect(access).toHaveBeenCalledWith(admin.id, expect.objectContaining({ accessSubject: { type: "user", userId: user.id } }), "en");
+  expect(islandProps(html).initialProjectSettings).toBe(true);
+  expect(islandProps(html).initialProjectSettingsSeed).toEqual({ models, access: [] });
+  expect(html).toMatch(/data-k2-part="Pane"[^>]*aria-label="Project settings"/);
+  expect(html).not.toMatch(/data-k2-part="Pane"[^>]*aria-label="Project settings"[\s\S]*?data-k2-part="Loading"/);
+});
+
 const chat = {
   id: "chat1",
   shortId: "chat1",

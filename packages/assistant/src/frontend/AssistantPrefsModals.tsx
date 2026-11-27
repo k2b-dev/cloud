@@ -428,19 +428,16 @@ export function MemorySettings(props: {
   return (
     <>
       <div class="flex flex-col gap-6" aria-busy={Boolean(busyId()) || memories.loading}>
-        <SettingsGroup
-          title={text("Use personalization")}
-          description={text("Choose how Gustav uses and learns durable context about you.")}
-        >
+        <SettingsGroup title={text("Usage")} description={text("Choose how Gustav uses and learns durable context about you.")}>
           <Switch
-            label={text("Use personalization in Gustav chats")}
+            label={text("Use in Gustav chats")}
             description={text("Relevant personal facts, preferences, and workflow defaults are added to new turns.")}
             value={memoryEnabled}
             onValueChange={setMemoryEnabled}
             disabled={Boolean(busyId())}
           />
           <Switch
-            label={text("Learn personalization from private chats")}
+            label={text("Learn from private chats")}
             description={text(
               "While this is on, Gustav may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.",
             )}
