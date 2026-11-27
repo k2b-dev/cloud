@@ -2,9 +2,12 @@ import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import { query } from "@k2b/stdlib/solid";
 import { type Accessor, createMemo } from "solid-js";
 import type { FetchMinute, PulseBase, PulseSource, PulseSourceScrape, SourceAlert, SourceEvent, SourceFigures } from "../../contracts";
-import { jsonFetch } from "../http";
+import { jsonFetch, messageFromBody } from "../http";
 import { SOURCES_PAGE } from "./source-page";
 import type { PulseWorkspaceProps } from "./types";
+
+/** The open base is gone for this person: deleted, or their access ended. */
+export class BaseGone extends Error {}
 
 type SourceDetail = {
   baseId: string;
@@ -27,10 +30,14 @@ export const createPulseWorkspaceQueries = (
   search?: Accessor<string>,
 ) => {
   const baseId = props.initialBaseId;
-  const bases = query.create({
-    source: () => "bases",
-    initial: props.initialQueryCoverage.bases ? { source: "bases", data: props.initialBases } : undefined,
-    load: (_, { abortSignal }) => jsonFetch<PulseBase[]>("/api/pulse/bases", { signal: abortSignal }),
+  // the open base alone: its store state and time zone; the sidebar's bases come once with the page
+  const base = query.create({
+    source: () => baseId,
+    initial: props.initialQueryCoverage.base ? { source: baseId, data: props.initialBase } : undefined,
+    load: (id, { abortSignal }) =>
+      jsonFetch<PulseBase>(`/api/pulse/bases/${id}`, { signal: abortSignal }, undefined, (status, body) =>
+        status === 403 || status === 404 ? new BaseGone() : new Error(messageFromBody(body, "Request failed")),
+      ),
   });
   // One page of sources at a time, searched on the server; more pages come on request. The figures above the list
   // cover all sources, so the list never needs all of them.
@@ -103,5 +110,5 @@ export const createPulseWorkspaceQueries = (
     const detail = sourceDetail.data();
     return detail?.baseId === baseId && detail.sourceId === selectedSourceId() ? detail : undefined;
   };
-  return { bases, baseData, figures, sourceDetail, currentDetail };
+  return { base, baseData, figures, sourceDetail, currentDetail };
 };

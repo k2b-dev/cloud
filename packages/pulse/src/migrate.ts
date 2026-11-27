@@ -9,6 +9,7 @@ import {
   installDashboards,
   installOverviewAlerts,
   installReceiptCheckpoints,
+  installSourceHistoryIndex,
   installSourceRejections,
   installSqlConsole,
 } from "./schema";
@@ -21,6 +22,7 @@ const MIGRATIONS = [
   { version: 7, name: "sql_dashboards", up: installDashboards },
   { version: 8, name: "receipt_checkpoints", up: installReceiptCheckpoints },
   { version: 9, name: "source_rejections", up: installSourceRejections },
+  { version: 10, name: "source_history_index", up: installSourceHistoryIndex },
 ];
 const log = logger("pulse:migrate");
 

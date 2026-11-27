@@ -363,3 +363,9 @@ export const installDashboards = async (sql: TransactionSQL): Promise<void> => {
 export const installAgentSourceOwnership = async (sql: TransactionSQL): Promise<void> => {
   await sql`ALTER TABLE pulse.sources ADD COLUMN created_by_subject TEXT`.simple();
 };
+
+/** A source's history reads its own entries of the activity log, newest first, without walking the whole base's log. */
+export const installSourceHistoryIndex = async (sql: TransactionSQL): Promise<void> => {
+  await sql`CREATE INDEX IF NOT EXISTS idx_pulse_base_activity_source ON pulse.base_activity(base_id, (data->>'sourceId'), at DESC, id DESC)
+    WHERE kind IN ('source.created', 'source.updated', 'source_freshness')`.simple();
+};

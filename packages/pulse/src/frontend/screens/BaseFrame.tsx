@@ -1,22 +1,22 @@
 import V2WorkspaceNavigation from "@k2b/cloud/ssr/V2WorkspaceNavigation";
-import { type Action, Bar, Menu, type MenuEntry, Nav, type NavGroup, Tabs, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Menu, type MenuEntry, Nav, Tabs, Workspace } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
-import type { PulseBase } from "../../contracts";
+import type { PulseNav } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
-import { navBases } from "../workspace/nav-bases";
+import { baseHref, createBaseNav } from "./base-nav";
 import { useScreenMessages } from "./messages";
-import { baseColor, iconName } from "./store-state";
+import { iconName } from "./store-state";
 
-export { iconName };
+export { baseHref, iconName };
 
 export type BaseView = "sources" | "sql" | "queries";
 
-export const baseHref = (baseId: string, view: BaseView | "settings" = "sources") =>
-  `/app/pulse/${encodeURIComponent(baseId)}${view === "sources" ? "" : `/${view}`}`;
-
 type Props = {
-  bases: PulseBase[];
+  /** The sidebar's bases, as the page read them. */
+  nav: PulseNav;
   baseId: string;
+  /** The open base's name, for its settings entry. */
+  baseName: string;
   view: BaseView;
   sourceCount: number;
   /** What the head shows before the "…": a search, or the main action of the view. */
@@ -30,26 +30,6 @@ type Props = {
   children: JSX.Element;
 };
 
-/** The sidebar of a base's pages: all bases first, then the bases (the open one always among them). */
-export const baseNavGroups = (bases: PulseBase[], currentId: string, words: { allBases: string; bases: string }): NavGroup[] => {
-  const shown = navBases(bases, currentId);
-  return [
-    // "" is the list of all bases itself
-    { items: [{ label: words.allBases, icon: "layout-grid", href: "/app/pulse", current: currentId === "" }] },
-    {
-      label: words.bases,
-      items: shown.map((base) => ({
-        label: base.name,
-        icon: iconName(base.icon),
-        color: baseColor(base.color),
-        href: baseHref(base.id),
-        current: base.id === currentId,
-        dot: base.store.state === "failed" ? ("bad" as const) : undefined,
-      })),
-    },
-  ];
-};
-
 /**
  * The frame of one base: the bases are the places in the sidebar, the base's views (sources, SQL, saved queries)
  * are tabs in the head, and the rare deeds on the base (settings, Gustav) wait behind "…".
@@ -57,13 +37,13 @@ export const baseNavGroups = (bases: PulseBase[], currentId: string, words: { al
 export default function BaseFrame(props: Props) {
   const t = usePulseMessages();
   const words = useScreenMessages();
-  const groups = () => baseNavGroups(props.bases, props.baseId, words());
-  const name = () => props.bases.find((base) => base.id === props.baseId)?.name ?? t().appName;
+  const nav = createBaseNav(props.nav, () => props.baseId);
   return (
     <>
-      <V2WorkspaceNavigation label={t().appName} groups={groups()} />
+      <V2WorkspaceNavigation label={t().appName} groups={nav.groups()} />
+      {nav.dialog()}
       <Workspace
-        sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={groups()} />}
+        sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={nav.groups()} />}
         sidebarLabel={words().bases}
         detail={props.detail}
         detailEmpty={props.detailEmpty}
@@ -92,7 +72,7 @@ export default function BaseFrame(props: Props) {
                 <Menu
                   label={words().moreBaseActions}
                   items={[
-                    { label: t().settingsFor({ title: name() }), icon: "settings", href: baseHref(props.baseId, "settings") },
+                    { label: t().settingsFor({ title: props.baseName }), icon: "settings", href: baseHref(props.baseId, "settings") },
                     ...(props.more ?? []),
                   ]}
                 />

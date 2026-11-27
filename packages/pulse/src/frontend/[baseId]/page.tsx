@@ -42,7 +42,8 @@ export default ssr<AuthContext>(async (c) => {
     >
       {props.initialRouteState.view === "sql" ? (
         <SqlScreen
-          bases={props.initialBases}
+          nav={props.initialNav}
+          baseName={data.baseName}
           baseId={props.initialBaseId}
           sourceCount={data.sourceCount}
           route={props.initialRouteState}

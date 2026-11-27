@@ -45,7 +45,7 @@ import { createSourceController } from "../workspace/source-controller";
 import { sourceStatus } from "../workspace/source-helpers";
 import { installStoreRecheck } from "../workspace/store-recheck";
 import type { PulseWorkspaceProps } from "../workspace/types";
-import { createPulseWorkspaceQueries } from "../workspace/workspace-queries";
+import { BaseGone, createPulseWorkspaceQueries } from "../workspace/workspace-queries";
 import BaseFrame, { baseHref } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
 import { EditSourceDialog, NewSourceDialog } from "./SourceDialogs";
@@ -163,11 +163,10 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   let settle: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(settle));
   const queries = createPulseWorkspaceQueries(props, selectedSourceId, () => true, settled);
-  const bases = () => queries.bases.data() ?? props.initialBases;
   const sources = () => queries.baseData.data() ?? props.initialSources;
   // the figures of all sources, read with their own aggregate; the list below is one page of them
   const figures = () => queries.figures.data() ?? props.initialFigures ?? null;
-  const base = () => bases().find((entry) => entry.id === baseId) ?? null;
+  const base = () => queries.base.data() ?? props.initialBase;
   const baseName = () => base()?.name ?? t().appName;
   const selected = () => sources().find((source) => source.id === selectedSourceId()) ?? null;
   // k2b-ui gap: tables do not virtualize yet (lane MW); the server sends SOURCES_PAGE rows at a time, more on request.
@@ -175,8 +174,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const readQueries = () =>
     // the figures belong to the page's reads, so a failed refresh of them shows like any other
     selectedSourceId()
-      ? [queries.bases, queries.baseData, queries.figures, queries.sourceDetail]
-      : [queries.bases, queries.baseData, queries.figures];
+      ? [queries.base, queries.baseData, queries.figures, queries.sourceDetail]
+      : [queries.base, queries.baseData, queries.figures];
   const writeBlocked = () => readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
   const readError = () =>
     readQueries()
@@ -206,16 +205,16 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     watching: () => true,
     check: async () => (await jsonFetch<PulseBaseRead>(`/api/pulse/bases/${baseId}`)).outage,
     recovered: async () => {
-      await Promise.all([queries.bases.refresh(), queries.baseData.refresh(), queries.figures.refresh()]);
+      await Promise.all([queries.base.refresh(), queries.baseData.refresh(), queries.figures.refresh()]);
     },
   });
   const storeDownSince = () => store.since() ?? base()?.store.errorAt ?? null;
-  // A base the person lost access to leaves; the next base they can open takes its place.
+  // A base the person lost access to leaves; Pulse opens the next base they can open in its place.
   createEffect(
     on(
-      queries.bases.data,
-      (next) => {
-        if (next && !next.some((entry) => entry.id === baseId)) navigateTo(next[0] ? baseHref(next[0].id) : "/app/pulse");
+      queries.base.error,
+      (error) => {
+        if (error instanceof BaseGone) navigateTo("/app/pulse");
       },
       { defer: true },
     ),
@@ -294,8 +293,9 @@ export default function SourcesScreen(props: SourcesScreenProps) {
 
   return (
     <BaseFrame
-      bases={bases()}
+      nav={props.initialNav}
       baseId={baseId}
+      baseName={baseName()}
       view="sources"
       sourceCount={Math.max(props.sourceCount ?? 0, sources().length)}
       // A detail stands beside the list only while a source is open; without one the list has the whole width.

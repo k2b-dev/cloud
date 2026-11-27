@@ -23,7 +23,8 @@ export default ssr<AuthContext>(async (c) => {
       ]}
     >
       <QueriesScreen
-        bases={data.bases}
+        nav={data.nav}
+        baseName={data.base.name}
         baseId={data.publicBaseId}
         sourceCount={data.sourceCount}
         page={data.page}

@@ -4,7 +4,7 @@ import type { ServiceAccountKind } from "@k2b/cloud/services";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Empty, Failed, Pane, Table, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import type { PulseBase } from "../../contracts";
+import type { PulseNav } from "../../contracts";
 import type { SavedQueriesPage, SavedQuery } from "../../service/saved-queries";
 import { usePulseMessages } from "../use-messages";
 import { buildPulseWorkspaceHref } from "../workspace/routes";
@@ -33,8 +33,10 @@ const queryMark = (sql: string) =>
   QUERY_MARKS[/\bFROM\s+([a-z_]+)/i.exec(sql)?.[1]?.toLowerCase() ?? ""] ?? { icon: "file-code", color: "#0d9488" };
 
 export type QueriesScreenProps = {
-  bases: PulseBase[];
+  /** The sidebar's bases. */
+  nav: PulseNav;
   baseId: string;
+  baseName: string;
   sourceCount: number;
   /** The page of saved queries the address names; null when it could not be read. */
   page: SavedQueriesPage | null;
@@ -58,7 +60,7 @@ export default function QueriesScreen(props: QueriesScreenProps) {
   const t = usePulseMessages();
   const words = useScreenMessages();
   const locale = useLocale();
-  const base = () => props.bases.find((entry) => entry.id === props.baseId)?.name ?? t().appName;
+  const base = () => props.baseName;
   const time = (value: string) =>
     new Intl.DateTimeFormat(locale(), { timeZone: props.dateConfig.timeZone, dateStyle: "medium", timeStyle: "short" }).format(
       new Date(value),
@@ -75,7 +77,8 @@ export default function QueriesScreen(props: QueriesScreenProps) {
   const newQuery = { label: t().sqlNewQuery, icon: "plus", href: baseHref(props.baseId, "sql") };
   return (
     <BaseFrame
-      bases={props.bases}
+      nav={props.nav}
+      baseName={props.baseName}
       baseId={props.baseId}
       view="queries"
       sourceCount={props.sourceCount}

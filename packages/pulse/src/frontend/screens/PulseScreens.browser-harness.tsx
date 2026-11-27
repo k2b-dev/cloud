@@ -10,6 +10,7 @@ import {
   fixtureAuthors,
   fixtureBases,
   fixtureDeletingBases,
+  fixtureNav,
   fixtureQueries,
   fixtureSources,
   manyBases,
@@ -61,7 +62,12 @@ const screen = (): JSX.Element => {
   if (path === "/app/pulse")
     return <OverviewScreen bases={bases} deletingBases={fixtureDeletingBases} initialQuery={params.get("q") ?? ""} />;
   const [, , , , view, id] = path.split("/");
-  const frame = { bases: fixtureBases, baseId, sourceCount: sources.length };
+  const frame = {
+    nav: fixtureNav(),
+    baseId,
+    baseName: fixtureBases.find((base) => base.id === baseId)?.name ?? "",
+    sourceCount: sources.length,
+  };
   if (view === "sql") {
     const route = readWorkspacePathState(`${path}${location.search}`, baseId);
     const query = id ? (fixtureQueries.find((entry) => entry.id === id) ?? null) : null;
@@ -82,7 +88,7 @@ const screen = (): JSX.Element => {
     const tab = PULSE_SETTINGS_TABS.find((entry) => entry === id) ?? "general";
     return (
       <SettingsScreen
-        bases={fixtureBases}
+        nav={fixtureNav()}
         base={fixtureBases[0]!}
         tab={tab}
         canAdmin={variant !== "member"}

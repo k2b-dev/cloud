@@ -1,12 +1,12 @@
 import { LocaleProvider } from "@k2b/ui";
-import { fixtureBases } from "../fixtures";
+import { fixtureBases, fixtureNav } from "../fixtures";
 import SettingsScreen from "../SettingsScreen";
 
 /** The general settings of a base for an admin, for `v2-preview`. */
 export default () => (
   <LocaleProvider locale="de">
     <SettingsScreen
-      bases={fixtureBases}
+      nav={fixtureNav()}
       base={fixtureBases[0]!}
       tab="general"
       canAdmin

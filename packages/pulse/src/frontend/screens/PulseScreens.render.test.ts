@@ -18,7 +18,9 @@ const { default: QueriesScreen } = await import("./QueriesScreen");
 const { default: SettingsScreen } = await import("./SettingsScreen");
 const { default: AdminScreen } = await import("../admin/AdminScreen");
 const { fixtureAdminBases, fixtureAdminNav, fixturePolicy, fixtureTargets } = await import("../admin/admin-fixtures");
-const { fixtureAuthors, fixtureBases, fixtureDeletingBases, fixtureQueries, sourcesProps, worstBases } = await import("./fixtures");
+const { fixtureAuthors, fixtureBases, fixtureDeletingBases, fixtureNav, fixtureQueries, sourcesProps, worstBases } = await import(
+  "./fixtures"
+);
 const { sqlTestLimits } = await import("../workspace/sql-test-fixtures");
 
 const dom = createDomTestHarness();
@@ -41,7 +43,7 @@ const render = (screen: () => JSX.Element) => {
   return { text: body.textContent?.replace(/\s+/g, " ") ?? "", loading };
 };
 const baseId = fixtureBases[0]!.id;
-const frame = { bases: fixtureBases, baseId, sourceCount: 4 };
+const frame = { nav: fixtureNav(), baseId, baseName: fixtureBases[0]!.name, sourceCount: 4 };
 
 describe("Pulse pages on the server", () => {
   test("the base list shows every base, its store and the deletions, without a loading state", () => {
@@ -129,7 +131,7 @@ describe("Pulse pages on the server", () => {
     for (const tab of ["general", "members", "retention", "usage", "danger"] as const) {
       const page = render(() =>
         createComponent(SettingsScreen, {
-          bases: fixtureBases,
+          nav: fixtureNav(),
           base: fixtureBases[0]!,
           tab,
           canAdmin: tab !== "usage",

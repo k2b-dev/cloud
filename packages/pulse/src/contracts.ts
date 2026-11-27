@@ -6,6 +6,22 @@ export type SourceKind = (typeof SOURCE_KINDS)[number];
 export const METRIC_TYPES = ["gauge", "counter"] as const;
 export type MetricType = (typeof METRIC_TYPES)[number];
 
+/** How many bases the sidebar lists before its search reaches further; the open one always stands among them. */
+export const NAV_BASES = 50;
+/** How many bases in deletion the sidebar names for their admins to follow or resume. */
+export const NAV_DELETING_BASES = 20;
+/** A base as the sidebar names it: its public id, sign and state, nothing the sidebar does not show. */
+export type PulseBaseNav = {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  /** `failed`: its store needs attention; `deleting`/`deletion-failed`: an admin's base on its way out. */
+  state: "ok" | "failed" | "deleting" | "deletion-failed";
+};
+/** The sidebar's bases: the first NAV_BASES (and the open one), whether the search reaches more, and those in deletion. */
+export type PulseNav = { bases: PulseBaseNav[]; more: boolean; deleting: PulseBaseNav[] };
+
 export type PulseBase = {
   memberCount: number;
   /**
@@ -51,6 +67,8 @@ export type PulseSourceRejections = { last24h: number; lastReason: string | null
 
 /** The most sources one list request returns; a base with more is read page by page with `offset`. */
 export const SOURCE_PAGE_MAX = 500;
+/** Bases per page of the base list (API and CLI), at most and by default. */
+export const BASE_PAGE_MAX = 100;
 
 /** The figures of all of a base's sources; `failing` names the first three, `today` is null while the store cannot answer. */
 /** Minutes of fetches a source row shows, one slot per minute. */

@@ -6,7 +6,9 @@ import {
   type FetchesToday,
   type FetchMinute,
   type FetchSlot,
+  NAV_BASES,
   type PulseBase,
+  type PulseNav,
   type PulseSource,
   type PulseSourceScrape,
   SOURCE_HOUR_MINUTES,
@@ -442,13 +444,27 @@ const fetchesTodayOf = (sources: PulseSource[]): FetchesToday => {
   };
 };
 
+/** The sidebar's bases as the server sends them: lean, the first NAV_BASES. */
+export const fixtureNav = (bases: readonly PulseBase[] = fixtureBases): PulseNav => ({
+  bases: bases.slice(0, NAV_BASES).map((base) => ({
+    id: base.id,
+    name: base.name,
+    icon: base.icon,
+    color: base.color,
+    state: base.store.state === "failed" ? "failed" : "ok",
+  })),
+  more: bases.length > NAV_BASES,
+  deleting: [],
+});
+
 export const sourcesProps = (
   options: { open?: string; sources?: PulseSource[]; alerts?: BaseAttention["alerts"]; storeDown?: boolean } = {},
 ): SourcesScreenProps => {
   const sources = options.sources ?? fixtureSources;
   const open = options.open ?? "";
   return {
-    initialBases: fixtureBases,
+    initialNav: fixtureNav(),
+    initialBase: fixtureBases[0]!,
     initialBaseId: fixtureBases[0]!.id,
     initialRouteState: { view: "sources", sourceId: open },
     // the server sends the first page of sources; the figures cover all of them
@@ -466,7 +482,7 @@ export const sourcesProps = (
     initialSourceHistory: open ? { [open]: fixtureHistoryFor(open) } : {},
     // a source that receives data has the key it receives them with
     initialSourceApiKeys: open && sources.find((source) => source.id === open)?.kind === "http_ingest" ? { [open]: fixtureApiKeys } : {},
-    initialQueryCoverage: { bases: true, baseData: true, sourceDetail: true },
+    initialQueryCoverage: { base: true, baseData: true, sourceDetail: true },
     initialFigures: figuresOf(sources),
     initialDateConfig: { timeZone: "Europe/Berlin", locale: "de", firstDayOfWeek: 1 },
     initialNow: FIXTURE_NOW,

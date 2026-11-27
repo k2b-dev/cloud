@@ -2,7 +2,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { AutocompleteEditor, Chart, highlightSql, useLocale } from "@k2b/ui";
 import { Band, Bar, Button, Canvas, Chip, Dialog, Empty, Field, Inline, Input, Notice, Pane, Section, Table, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import type { PulseBase } from "../../contracts";
+import type { PulseNav } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
 import { buildPulseWorkspaceHref, readWorkspacePathState, type WorkspaceRouteState } from "../workspace/routes";
 import { createSqlConsoleController, type SqlStatusBand, sqlConsoleInitialState } from "../workspace/sql-console-controller";
@@ -19,8 +19,10 @@ const ROWS_STEP = 100;
 const NUMERIC = /^(?:U?Int\d+|Float\d+|Decimal(?:\d+)?(?:\([^)]*\))?)$/;
 
 export type SqlScreenProps = {
-  bases: PulseBase[];
+  /** The sidebar's bases. */
+  nav: PulseNav;
   baseId: string;
+  baseName: string;
   sourceCount: number;
   route: WorkspaceRouteState;
   snapshot: PulseWorkspaceProps["initialSql"];
@@ -38,7 +40,7 @@ export default function SqlScreen(props: SqlScreenProps) {
   const locale = useLocale();
   const lifetime = new AbortController();
   onCleanup(() => lifetime.abort());
-  const base = () => ({ id: props.baseId, name: props.bases.find((entry) => entry.id === props.baseId)?.name ?? t().appName });
+  const base = () => ({ id: props.baseId, name: props.baseName });
   const [linkTooLong, setLinkTooLong] = createSignal(false);
   const [visibleRows, setVisibleRows] = createSignal(ROWS_STEP);
   const [savingAs, setSavingAs] = createSignal(false);
@@ -171,7 +173,8 @@ export default function SqlScreen(props: SqlScreenProps) {
 
   return (
     <BaseFrame
-      bases={props.bases}
+      nav={props.nav}
+      baseName={props.baseName}
       baseId={props.baseId}
       view="sql"
       sourceCount={props.sourceCount}

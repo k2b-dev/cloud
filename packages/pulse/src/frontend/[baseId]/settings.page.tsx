@@ -28,7 +28,7 @@ export default ssr<AuthContext>(async (c) => {
       ]}
     >
       <SettingsScreen
-        bases={data.bases}
+        nav={data.nav}
         base={data.base}
         tab={tab ?? "general"}
         canAdmin={data.canAdmin}

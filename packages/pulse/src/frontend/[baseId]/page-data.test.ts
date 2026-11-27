@@ -5,11 +5,12 @@ import { type Context, Hono } from "hono";
 import { pulseService } from "../../service";
 import * as access from "../../service/access-control";
 import * as attention from "../../service/base-attention";
+import * as baseNavModule from "../../service/base-nav";
 import * as resources from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import * as sqlService from "../../service/sql-service";
 import { adminFixtureIdentity } from "../../store/admin-identity.test-fixture";
-import { figuresOf, fixtureBase, fixtureBases } from "../screens/fixtures";
+import { figuresOf, fixtureBase, fixtureNav } from "../screens/fixtures";
 import { sqlTestLimits } from "../workspace/sql-test-fixtures";
 import { loadPulseQueriesPageData, loadPulseSettingsPageData, loadPulseWorkspacePageData } from "./page-data";
 
@@ -29,9 +30,9 @@ const stubBase = () => {
     list,
     count,
     spyOn(resources, "resolvePublicId").mockResolvedValue(baseId),
-    spyOn(resources, "projectBases").mockImplementation(async (items) => items),
+    spyOn(baseNavModule, "baseNav").mockResolvedValue(fixtureNav()),
     spyOn(pulseService.base, "get").mockResolvedValue(ok(fixtureBase({ id: baseId, name: "Werkstatt" }))),
-    spyOn(pulseService.base, "list").mockResolvedValue(ok(fixtureBases)),
+
     spyOn(access, "requireBaseAccess").mockResolvedValue(ok("admin")),
     spyOn(savedQueries, "list").mockResolvedValue(ok({ items: [], total: 0, nextOffset: null })),
     spyOn(sqlService, "baseSqlLimits").mockResolvedValue(ok(sqlTestLimits)),

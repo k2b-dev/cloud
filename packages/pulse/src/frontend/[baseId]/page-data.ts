@@ -6,15 +6,15 @@ import type { Context } from "hono";
 import type { PulseSource } from "../../contracts";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
-import { accessScopeFor, requireBaseAccess } from "../../service/access-control";
+import { accessScopeFor, requireBaseAccess, withPageAccess } from "../../service/access-control";
 import { alertRules } from "../../service/alert-rules";
 import { readBaseAttention } from "../../service/base-attention";
+import { baseNav } from "../../service/base-nav";
 import { readBasePolicy } from "../../service/base-policy";
-import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
+import { projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
 import type { QueryAuthor } from "../screens/QueriesScreen";
-import { navBases } from "../workspace/nav-bases";
 import { readWorkspacePathState } from "../workspace/routes";
 import { SOURCES_PAGE } from "../workspace/source-page";
 import type { PulseWorkspaceProps } from "../workspace/types";
@@ -39,7 +39,7 @@ const noSources: PulseSource[] = [];
 type PageData =
   | { kind: "error"; status: ServiceError["status"] }
   | { kind: "ok"; baseName: string; sourceCount: number; workspaceProps: PulseWorkspaceProps };
-export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Context<T>): Promise<PageData> {
+async function loadWorkspace<T extends AuthContext>(c: Context<T>): Promise<PageData> {
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
   const publicBaseId = c.req.param("baseId") ?? "";
@@ -47,9 +47,10 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const baseId = await resolvePublicId("bases", publicBaseId);
   if (!baseId) return { kind: "error", status: 404 };
   const route = readWorkspacePathState(`${url.pathname}${url.search}`, publicBaseId);
-  const [base, bases, appUrl] = await Promise.all([
+  const [base, nav, appUrl] = await Promise.all([
     pulseService.base.get(baseId, user),
-    pulseService.base.list(user),
+    // the sidebar names the bases lean: one statement, nothing the sidebar does not show
+    baseNav(user, { currentId: publicBaseId }),
     getSetting<string>("app.url").catch(() => ""),
   ]);
   if (!base.ok) return { kind: "error", status: base.error.status };
@@ -67,20 +68,21 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const sourceCount = await pulseService.source.count(baseId, user);
   if (!sourceCount.ok) return { kind: "error", status: sourceCount.error.status };
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
-  const [write, admin] = scope.ok
-    ? await Promise.all([requireBaseAccess(baseId, scope.data, "write"), requireBaseAccess(baseId, scope.data, "admin")])
-    : [null, null];
+  // one read of the person's level answers both: may they write, may they administer
+  const level = scope.ok ? await requireBaseAccess(baseId, scope.data, "read") : null;
+  const levelData = level?.ok ? level.data : "none";
   // Settings have a page of their own now (settings.page.tsx); the views of a base need no policy or admin names.
   const props: PulseWorkspaceProps = {
-    initialPermissions: { write: write?.ok ?? false, admin: admin?.ok ?? false },
-    // the sidebar lists at most NAV_BASES bases, so the page carries no more than that
-    initialBases: await projectBases(navBases(bases.ok ? bases.data : [base.data], baseId)),
+    initialPermissions: { write: levelData === "write" || levelData === "admin", admin: levelData === "admin" },
+    initialNav: nav,
+    // the base names itself by its public id, as every address does
+    initialBase: { ...base.data, id: base.data.shortId },
     initialBaseId: publicBaseId,
     initialRouteState: route,
     initialSources: await projectSources(sources.data),
     initialSourceScrapes: {},
     initialSourceApiKeys: {},
-    initialQueryCoverage: { bases: bases.ok, baseData: true, sourceDetail: true },
+    initialQueryCoverage: { base: true, baseData: true, sourceDetail: true },
     initialDateConfig: getDateConfig(c),
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
@@ -148,27 +150,25 @@ const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
   if (!SHORT_ID_REGEX.test(publicBaseId)) return { kind: "error" as const, status: 404 as const };
   const baseId = await resolvePublicId("bases", publicBaseId);
   if (!baseId) return { kind: "error" as const, status: 404 as const };
-  const [base, bases, sources] = await Promise.all([
+  const [base, nav, sources] = await Promise.all([
     pulseService.base.get(baseId, user),
-    pulseService.base.list(user),
+    baseNav(user, { currentId: publicBaseId }),
     pulseService.source.count(baseId, user),
   ]);
   if (!base.ok) return { kind: "error" as const, status: base.error.status };
-  const projected = await projectBases(navBases(bases.ok ? bases.data : [base.data], baseId));
-  const [current] = await projectBases([base.data]);
   return {
     kind: "ok" as const,
     baseId,
     publicBaseId,
-    base: current!,
-    bases: projected,
+    base: { ...base.data, id: base.data.shortId },
+    nav,
     sourceCount: sources.ok ? sources.data : 0,
     identity: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId },
   };
 };
 
 /** The saved queries of a base, one page of `QUERIES_PER_PAGE` from `?offset=`; a failed read becomes the page's Failed state. */
-export async function loadPulseQueriesPageData<T extends AuthContext>(c: Context<T>, perPage: number) {
+async function loadQueries<T extends AuthContext>(c: Context<T>, perPage: number) {
   const shell = await loadBaseShell(c);
   if (shell.kind === "error") return shell;
   const raw = Number(c.req.query("offset") ?? 0);
@@ -197,7 +197,7 @@ const authorNames = async (ids: (string | null)[]): Promise<Record<string, Query
 };
 
 /** A base's settings: who may change them and who administers it, plus what the open tab shows on its first picture. */
-export async function loadPulseSettingsPageData<T extends AuthContext>(c: Context<T>, tab: string) {
+async function loadSettings<T extends AuthContext>(c: Context<T>, tab: string) {
   const shell = await loadBaseShell(c);
   if (shell.kind === "error") return shell;
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
@@ -224,3 +224,9 @@ export async function loadPulseSettingsPageData<T extends AuthContext>(c: Contex
     limits: limits?.ok ? limits.data : null,
   };
 }
+
+// every page of a base reads the person's grant once per load (withPageAccess), however many services check it
+export const loadPulseWorkspacePageData = <T extends AuthContext>(c: Context<T>) => withPageAccess(() => loadWorkspace(c));
+export const loadPulseQueriesPageData = <T extends AuthContext>(c: Context<T>, perPage: number) =>
+  withPageAccess(() => loadQueries(c, perPage));
+export const loadPulseSettingsPageData = <T extends AuthContext>(c: Context<T>, tab: string) => withPageAccess(() => loadSettings(c, tab));

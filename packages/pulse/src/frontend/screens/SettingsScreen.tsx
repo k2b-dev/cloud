@@ -31,7 +31,7 @@ import {
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { BASE_COLORS } from "../../base-settings";
-import type { PulseBase } from "../../contracts";
+import type { PulseBase, PulseNav } from "../../contracts";
 import type { SqlLimits } from "../../service/sql-service";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
@@ -39,12 +39,14 @@ import { type BaseSettingsInput, createBaseController } from "../workspace/base-
 import { baseStoreMessages } from "../workspace/base-store-messages";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import type { PulseSettingsTab } from "../workspace/routes";
-import { baseHref, baseNavGroups } from "./BaseFrame";
+import { baseHref } from "./BaseFrame";
+import { createBaseNav } from "./base-nav";
 import { useScreenMessages } from "./messages";
 import { baseColor, iconName, StoreChip, storeState } from "./store-state";
 
 export type SettingsScreenProps = {
-  bases: PulseBase[];
+  /** The sidebar's bases. */
+  nav: PulseNav;
   base: PulseBase;
   tab: PulseSettingsTab;
   canAdmin: boolean;
@@ -102,7 +104,8 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     canAdmin: () => props.canAdmin,
     save: (input) => controller.updateSettings(base(), input),
   });
-  const groups = () => baseNavGroups(props.bases, props.base.id, words());
+  const nav = createBaseNav(props.nav, () => props.base.id);
+  const groups = nav.groups;
   const tabs = () =>
     (
       [
@@ -117,6 +120,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
   return (
     <>
       <V2WorkspaceNavigation label={t().appName} groups={groups()} />
+      {nav.dialog()}
       <Workspace
         sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={groups()} />}
         sidebarLabel={words().bases}
