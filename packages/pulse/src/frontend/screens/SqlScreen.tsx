@@ -11,6 +11,7 @@ import { sqlResultChart } from "../workspace/sql-result-chart";
 import type { PulseWorkspaceProps } from "../workspace/types";
 import BaseFrame from "./BaseFrame";
 import { useScreenMessages } from "./messages";
+import { PulseChartTone } from "./sources-drawings";
 
 export const EXAMPLE_SQL =
   "SELECT toStartOfInterval(ts, toIntervalSecond(:bucket), :base_tz) AS time, count() AS events\nFROM events\nWHERE ts >= now() - INTERVAL 1 DAY\nGROUP BY time\nORDER BY time";
@@ -360,7 +361,9 @@ export default function SqlScreen(props: SqlScreenProps) {
             >
               <Canvas label={words().chart} height={240}>
                 {/* the first series in Pulse's colour: the chart belongs to the app that owns the data */}
-                <Chart {...value().chart} legendPlacement="top-start" style={{ height: "100%", "--stdlib-chart-c1": "#1e40af" }} />
+                <PulseChartTone>
+                  <Chart {...value().chart} legendPlacement="top-start" style={{ height: "100%" }} />
+                </PulseChartTone>
               </Canvas>
             </Section>
           )}

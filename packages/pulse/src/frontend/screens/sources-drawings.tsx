@@ -214,6 +214,14 @@ export const FetchLogDrawing = (props: { rows: readonly FetchLogRow[]; label: st
   </table>
 );
 
+/** A chart in Pulse's colour: its palette sits on the chart's own element, so the first series is set right there. */
+export const PulseChartTone = (props: { children: JSX.Element }) => (
+  <div class="pulse-chart">
+    <style>{`.pulse-chart{height:100%}.pulse-chart .stdlib-chart{--stdlib-chart-c1:${PULSE}}`}</style>
+    {props.children}
+  </div>
+);
+
 const HOUR_CSS = `
 .pulse-hour{padding:4px var(--k2-edge,20px) 2px}
 .pulse-hour svg{display:block}
