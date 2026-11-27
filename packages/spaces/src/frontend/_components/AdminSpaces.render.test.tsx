@@ -48,6 +48,19 @@ describe("Spaces in the administration", () => {
     expect(head).not.toContain(">Spaces<");
   });
 
+  test("at 1024 px every column fits the pane, Settings included, and the search's words fit its field", () => {
+    const html = render({ rows: [{ id: "Space1", name: "Planning", description: "Team work", color: "#6366f1", permissionCount: 3 }] });
+    // The pane beside the administration's navigation is about 710 px wide at 1024 px (shell shots, 27.11.). The
+    // sized columns stand at their defaults; the last one, Settings, takes the rest and needs room for its menu
+    // button. A table wider than its pane scrolls sideways without a cue, which cut Permissions and hid Settings.
+    const widths = [...html.matchAll(/<col style="width:(\d+)px"/g)].map((match) => Number(match[1]));
+    expect(widths.length).toBe(3);
+    expect(widths.reduce((sum, width) => sum + width, 0) + 64).toBeLessThanOrEqual(710);
+    // The placeholder is short enough for the field at every width; the field keeps its full accessible name.
+    expect(html).toContain('placeholder="Search Spaces"');
+    expect(html).toContain('aria-label="Search spaces"');
+  });
+
   test("the first band counts the Spaces, names the ones nobody can open in red, and each row carries its sign", () => {
     const rows = [
       { id: "Space1", name: "Planning", description: null, color: "#6366f1", permissionCount: 0 },

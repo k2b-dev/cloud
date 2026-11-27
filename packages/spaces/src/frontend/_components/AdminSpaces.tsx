@@ -174,24 +174,28 @@ export default function AdminSpaces(props: AdminSpacesProps) {
               ),
             ],
           })}
+          // The columns' defaults fit the pane at 1024 px (about 710 px beside the navigation) with room for the
+          // Settings column, which takes the rest of the row: a wider table only scrolls sideways, without a cue.
+          // k2b-ui gap: Table has no column priority between the phone form (pane < 480 px) and the desktop, so
+          // Description cannot step back first at 1024 and keeps these defaults at 1920 too.
           columns={[
             {
               title: t().space,
-              width: { min: 180, default: 260 },
+              width: { min: 160, default: 220 },
               // Every Space carries its sign in its colour, as in the Spaces sidebar.
               mark: (space) => ({ icon: SPACE_MARK_ICON, color: space.color }),
               cell: (space) => space.name,
             },
             {
               title: t().description,
-              width: { min: 200, default: 420 },
+              width: { min: 160, default: 250 },
               // A Space without a description leaves the cell empty rather than repeating a grey filler.
               cell: (space) => space.description ?? "",
               drop: true,
             },
             {
               title: t().permissions,
-              width: { min: 140, default: 170 },
+              width: { min: 130, default: 160 },
               cell: (space) =>
                 space.permissionCount === 0 ? (
                   <Chip status="bad">{t().noAccess}</Chip>
