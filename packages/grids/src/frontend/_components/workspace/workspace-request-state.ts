@@ -26,7 +26,10 @@ export const loadWorkspaceRequest = async (
   const canManageBase = gridsService.permission.hasAtLeast(level, "admin");
   const hasBaseRead = gridsService.permission.hasAtLeast(level, "read");
   if (!hasBaseRead) return { kind: "accessDenied", title: t.accessDenied, message: t.noBaseAccess };
-  const catalog = await loadCatalog(base.id, params.user, canManageBase);
+  const catalog = await loadCatalog(base.id, params.user, level, {
+    customApps: canManageBase,
+    launchers: Boolean(params.activeCustomAppSlug),
+  });
   if (params.activeCustomAppSlug && !canManageBase) {
     return { kind: "accessDenied", title: t.accessDenied, message: t.appAdminRequired };
   }

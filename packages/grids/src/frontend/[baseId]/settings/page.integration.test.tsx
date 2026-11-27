@@ -79,7 +79,9 @@ describe("a base's settings page", () => {
         const statements = await meter.during(async () => {
           response = await open(fixture.admin, path);
         });
-        pages[tab] = { status: response?.status ?? 0, html: (await response?.text()) ?? "", statements: statements.length };
+        // without NATS here the page logs that it has no live cursor; a running Cloud has one and writes no log
+        const page = statements.filter((text) => !text.startsWith("INSERT INTO logging.entries"));
+        pages[tab] = { status: response?.status ?? 0, html: (await response?.text()) ?? "", statements: page.length };
       }
       console.info(`grids settings: general ${pages.general?.statements} statements, access ${pages.access?.statements}`);
       expect(pages.general).toMatchObject({ status: 200, statements: GENERAL_STATEMENTS });
@@ -95,5 +97,9 @@ describe("a base's settings page", () => {
   });
 });
 
-/** The budget of General, measured on 27.11. after the caches of the process were warm. */
-const GENERAL_STATEMENTS = 16;
+/**
+ * The budget of General, measured on 27.11. with warm caches: the base, its live revision, the person's grant (read
+ * once), what the navigation lists (tables, fields, forms, document templates, views, apps, workflows), its order,
+ * and the switcher's bases.
+ */
+const GENERAL_STATEMENTS = 12;

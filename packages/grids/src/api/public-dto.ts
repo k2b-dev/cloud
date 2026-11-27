@@ -865,11 +865,13 @@ export const toPublicFederatedSourcePublications = async (publications: readonly
 export const toPublicBase = (base: Base) => ({ ...omitShortId(base), id: base.shortId });
 export const toPublicBases = (bases: readonly Base[]) => bases.map(toPublicBase);
 
-export const toPublicTables = async (tables: readonly Table[]): Promise<PublicTable[]> => {
-  const baseIds = await projectPublicIds(
+/** `knownBaseIds` are the public ids of bases the caller has read already (internal id → public id). */
+export const toPublicTables = async (tables: readonly Table[], knownBaseIds?: ReadonlyMap<string, string>): Promise<PublicTable[]> => {
+  const projectedBaseIds = await projectPublicIds(
     "base",
-    tables.map((table) => table.baseId),
+    tables.map((table) => table.baseId).filter((id) => !knownBaseIds?.has(id)),
   );
+  const baseIds = new Map([...(knownBaseIds ?? []), ...projectedBaseIds]);
   const projected = await Promise.all(
     tables.map(async (table) => ({
       ...omitShortId(table),
