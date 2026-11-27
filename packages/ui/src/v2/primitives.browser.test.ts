@@ -430,6 +430,30 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  // break-ui: an endless name never takes the way back's words to nothing; the way back keeps a few letters and "…"
+  test(
+    "390 px: a detail named far longer than its bar keeps a few letters of its way back",
+    async () => {
+      const page = await open("namedBackLong", { width: 390 });
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
+          const label = bar.querySelector<HTMLElement>(".k2-btn .k2-btn-label")!;
+          const name = bar.querySelector<HTMLElement>(".k2-pane-back-name")!;
+          return {
+            backShown: label.getBoundingClientRect().width >= 40,
+            nameCut: name.scrollWidth > name.clientWidth,
+          };
+        });
+        expect(found).toEqual({ backShown: true, nameCut: true });
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   // A detail without a head of its own (an editor) is named in the bar of its way back, where the workspace's head gives
   // way: the name is the page, so the way back is cut first and takes at most half the bar.
   test(

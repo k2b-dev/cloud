@@ -164,10 +164,13 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
 `measure` (its head, sentence and rows keep the reading measure of `Prose`,
 720 px of text, so a short list in a wide pane stays together; its line
-still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+still reaches the column's edges), `more` (one link under the rows, its
+words on their text edge, never at the right: "All deliveries ›"; its
+`meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
-the head or between entries, one line at the end. Put `Row`s directly in a
-section, or a `Digest`, `Facts`, `Group`s.
+the head or between entries, one line at the end. A long title (a
+question, a name) wraps onto more lines and the head grows with it; no word
+is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
 
 ### Group
 
@@ -326,6 +329,10 @@ lines instead of cutting a thing.
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
+  With `status`, `quiet` drops the tinted round: the dot in the colour of
+  the state and the word in the ink of the text ("● Aktiv"), on the chip's
+  height. Use it for a column of states in a dense table or list, where a
+  chip on every line is too loud.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
   the writing direction; at most 60 in a table cell, more are cut at its
@@ -341,7 +348,8 @@ lines instead of cutting a thing.
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
-  such as the one a thread is assigned to), `href` (+ `onNavigate`),
+  such as the one a thread is assigned to), `href` (+ `onNavigate`, or
+  `download`: `true` or a file name, the browser saves the file),
   `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
   is about, such as a row's title: its name is its own words, then those;
   `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
@@ -353,7 +361,8 @@ lines instead of cutting a thing.
   (deprecated: head actions stay on the phone by default), `floats` (the head's twin of `Workspace primary`:
   it leaves the head on the phone, where the floating button stands for it), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
-  it needs `label`.
+  it needs `label`. With children, `label` is its name only where the
+  words alone do not say enough, and it begins with the words.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
@@ -363,8 +372,9 @@ lines instead of cutting a thing.
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
   required field shows `error="Pflichtfeld."`.
-- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
-  `max`, `onInput`; `label` when it stands without a `Field` (a search).
+- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline` (shows
+  `rows` lines at least, 3 by default, or the lines of its value from the
+  server's page on, and grows with its words up to ten lines, then scrolls), `min`, `max`, `onInput`; `label` when it stands without a `Field` (a search).
   `onKeyDown` (Enter to search, Escape to clear; while
   `event.isComposing`, Enter belongs to the input method and must not
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
@@ -430,7 +440,9 @@ lines instead of cutting a thing.
   month's short name, keys move the weeks, the arrows by six. Use it inside a
   popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
-  `onChange`, `disabled` (dimmed).
+  `onChange`, `disabled` (dimmed), `description` (a quiet line under the
+  words, such as what turning it on does; it describes the box and is no
+  part of its name).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is

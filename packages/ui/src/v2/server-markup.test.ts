@@ -41,6 +41,17 @@ test("a multi-line field sends its value as the text of its textarea, leading bl
   expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz" }))).toContain(">\n</textarea>");
 });
 
+// Without CSS `field-sizing` a field of several lines is as high as its rows: the server gives it the lines of its value
+// (at least its `rows`, at most ten), so it does not grow when the page comes alive.
+test("a multi-line field asks for the lines of its value on the server, from its rows up to ten", () => {
+  const rows = (props: { value?: string; rows?: number }) =>
+    /<textarea[^>]*\brows="(\d+)"/.exec(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", ...props })))?.[1];
+  expect(rows({ value: "Eine Zeile" })).toBe("3");
+  expect(rows({ value: "1\n2\n3\n4\n5\n6\n7\n8" })).toBe("8");
+  expect(rows({ value: Array.from({ length: 14 }, (_, line) => `Zeile ${line}`).join("\n") })).toBe("10");
+  expect(rows({ value: "Eine Zeile", rows: 5 })).toBe("5");
+});
+
 // A password manager reads the server's markup, before the island hydrates: what it may fill in stands there (#4173).
 test("a text field sends autocomplete, length, keyboard, spelling and capitals in the server's markup", () => {
   const markup = renderToString(() =>
@@ -72,6 +83,25 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+test("Failed writes out the button a `Button` with its icon and words draws, so a change to Button reaches it", async () => {
+  const { Failed } = await import("./failed");
+  const { Button } = await import("./button");
+  const { resolveUiMessages } = await import("../intl/messages");
+  // the same markup apart from hydration keys, Solid's markers and spacing inside a class list or before a tag's end
+  const button = (markup: string) =>
+    markup
+      .match(/<button\b[\s\S]*?<\/button>/)?.[0]
+      .replace(/ data-hk="[^"]*"/g, "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/\s+>/g, ">")
+      .replace(/class="([^"]*)"/g, (_, names: string) => `class="${names.trim().split(/\s+/).join(" ")}"`);
+  const failed = renderToString(() => createComponent(Failed, { text: "Nicht geladen.", onRetry: () => undefined }));
+  const retry = resolveUiMessages().retry;
+  const plain = renderToString(() => createComponent(Button, { icon: "refresh", children: retry }));
+  expect(button(failed)).toBeDefined();
+  expect(button(failed)).toBe(button(plain));
 });
 
 test("Ticks are drawn by the server alone: a picture with its sentence and one tick per slot", async () => {

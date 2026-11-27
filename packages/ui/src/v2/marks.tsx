@@ -1,38 +1,30 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
+import { safeColor, safeValue } from "./colors";
 import { useControlMessages } from "./control-messages";
+import { Icon } from "./icon";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
-  const entries = Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined);
+  const entries = Object.entries(values).flatMap(([key, value]): [string, string][] => {
+    if (value === undefined) return [];
+    // a data colour comes from data: only a real colour passes, else the primitive stays neutral; anything else is the
+    // primitive's own number and never ends its declaration
+    if (key === "--k2-c") {
+      const color = safeColor(value);
+      return color === undefined ? [] : [[key, color]];
+    }
+    return safeValue(value) ? [[key, value]] : [];
+  });
   return entries.length ? Object.fromEntries(entries) : undefined;
 };
 
 // ── Marks ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type IconProps = {
-  /** A Tabler icon name without the `ti-` prefix, such as `package`. */
-  name: string;
-  /** A name for assistive technology; without one the icon is decoration. */
-  label?: string;
-  tone?: Status | "ai" | "app" | "muted" | "subtle";
-};
-
-/** A Tabler icon. Its size comes from its place: 16 px in rows and bars, 20 px on a tile, 14 px among marks. */
-export const Icon = (props: IconProps) => (
-  <i
-    class={`ti ti-${props.name} k2-icon`}
-    data-k2-part="Icon"
-    data-name={props.name}
-    data-tone={props.tone}
-    role="img"
-    aria-label={props.label}
-    aria-hidden={props.label ? undefined : "true"}
-  />
-);
+export { Icon, type IconProps } from "./icon";
 
 export type AvatarProps = Person & {
   /**
@@ -130,6 +122,12 @@ export type ChipProps = {
     | {
         /** A state with a dot and a word: ok, waiting or wrong. */
         status: Status;
+        /**
+         * The state as its dot and its word only, without the tinted round: for a column of states in a dense table or
+         * list, where a chip on every line is too loud. The colour stays on the dot; the word, in the ink of the text,
+         * carries the meaning.
+         */
+        quiet?: boolean;
         yours?: never;
         tag?: never;
         amount?: never;
@@ -137,6 +135,7 @@ export type ChipProps = {
       }
     | {
         status?: never;
+        quiet?: never;
         /** "You are next" in the blue of selection; with `dot` a state that is being worked on ("in Arbeit"). */
         yours: true;
         dot?: boolean;
@@ -146,6 +145,7 @@ export type ChipProps = {
       }
     | {
         status?: never;
+        quiet?: never;
         yours?: never;
         /** A tag in its data colour. */
         tag: true;
@@ -155,14 +155,15 @@ export type ChipProps = {
       }
     | {
         status?: never;
+        quiet?: never;
         yours?: never;
         tag?: never;
         /** An amount of money that goes out (we pay) or comes in. */
         amount: "out" | "in";
         ai?: never;
       }
-    | { status?: never; yours?: never; tag?: never; amount?: never /** Something Gustav proposes, in plum. */; ai: true }
-    | { status?: never; yours?: never; tag?: never; amount?: never; ai?: never }
+    | { status?: never; quiet?: never; yours?: never; tag?: never; amount?: never /** Something Gustav proposes, in plum. */; ai: true }
+    | { status?: never; quiet?: never; yours?: never; tag?: never; amount?: never; ai?: never }
   );
 
 /** A round mark that shows a state, a tag, an amount or a count. Never a colour without a word. */
@@ -193,6 +194,7 @@ export const Chip = (props: ChipProps) => {
       class="k2-chip"
       data-k2-part="Chip"
       data-status={props.status}
+      data-quiet={props.status && "quiet" in props && props.quiet ? "" : undefined}
       data-kind={kind()}
       aria-pressed={props.onClick && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       data-pressed={props.pressed ? "" : undefined}

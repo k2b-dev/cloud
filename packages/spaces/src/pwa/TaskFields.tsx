@@ -15,6 +15,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import type { SpaceItemAssignee } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { DEADLINE_DEFAULT_TIME, deadlinePresets } from "../frontend/[id]/_components/shared/item-form/date";
 import { spaceMessages } from "../frontend/[id]/messages";
 import { createRetryToasts } from "../frontend/lib/feedback";
@@ -250,7 +251,7 @@ export function TaskProps(props: Props) {
     <Show when={status()} fallback={<Skeleton class="spaces-pwa-task__sk spaces-pwa-task__sk--value" />}>
       {(current) => (
         <span class="spaces-pwa-task__inline">
-          <span class="spaces-pwa__dot" style={{ "background-color": current().color }} aria-hidden="true" />
+          <span class="spaces-pwa__dot" style={{ "background-color": hexColor(current().color) }} aria-hidden="true" />
           {current().name}
         </span>
       )}
