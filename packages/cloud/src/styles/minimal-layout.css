@@ -31,8 +31,7 @@
 }
 
 /* A page with a measure (`MinimalLayout ui="v2" measure`): from 768 px one task to read and decide stands as a column
-   of 560 px, centred on the page background in both directions (a card taller than the window starts at its top and
-   the page scrolls), as a card with the one hairline and the card radius (the page's one
+   of 560 px, centred on the page background, as a card with the one hairline and the card radius (the page's one
    child, its workspace). Below, it is the page without a measure: the workspace fills the window above the footer,
    flat, and scrolls inside. On both, the task ends with its last part: no line under it, neither above the empty
    window nor beside the card's own edge. */
@@ -47,13 +46,12 @@
   .minimal-layout-main[data-measure] {
     justify-content: center;
     align-items: flex-start;
-    padding: 24px 16px;
+    padding: 48px 16px 24px;
   }
   .minimal-layout-main[data-measure] > :only-child {
     flex: 0 1 560px;
     min-width: 0;
     height: auto;
-    margin-block: auto;
     border: var(--k2-hairline);
     border-radius: var(--k2-r-card);
     background: var(--k2-surface);
