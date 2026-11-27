@@ -137,9 +137,9 @@ for (const width of [1024, 1440])
       await settled(page);
       const at = () =>
         page.evaluate(() =>
-          // a path beside an end is left out: before the page is alive the bar's fold keeps the start whole and cuts
-          // the end (bar-fold.ts), and once alive the start gives way, so such a path moves unless it fits whole
-          ["Ort tief", "Ort mittel", "Seite lang 5"].map((name) =>
+          // also the head's path beside an end that fits: before the page is alive the bar stands as it does when
+          // nothing folds (bar-fold.ts), the start given way to the room the end leaves
+          ["Ort im Kopf", "Ort tief", "Ort mittel", "Seite lang 5"].map((name) =>
             [...document.querySelectorAll<HTMLElement>(`nav[aria-label="${name}"] > :is(.k2-path-step, b)`)].map((part) => {
               const box = part.getBoundingClientRect();
               return `${name} ${part.textContent?.slice(0, 12)} ${Math.round(box.x)} ${Math.round(box.width)}`;
@@ -212,26 +212,27 @@ for (const width of [390, 800, 1024])
     });
   });
 
-test("1024 px: beside the crowded end nothing folds, and a path that fits whole there stands as the server sent it", async () => {
+test("1024 px: beside the crowded end nothing folds, and the paths stand as the server sent them, shortened or whole", async () => {
   const page = await open(1024, true);
   const errors = pageErrors(page);
   try {
     await settled(page);
     const at = () =>
-      page.evaluate(() => {
-        const bar = document.querySelector<HTMLElement>('nav[aria-label="Kurz und Aktionen"]')!.closest<HTMLElement>(".k2-bar")!;
-        return [...bar.querySelectorAll<HTMLElement>(".k2-path-step, b, .k2-bar-end > .k2-btn")].map((part) => {
-          const box = part.getBoundingClientRect();
-          return `${part.textContent?.slice(0, 10) || part.getAttribute("aria-label")} ${Math.round(box.x)} ${Math.round(box.width)}`;
-        });
-      });
+      page.evaluate(() =>
+        ["Ort und Aktionen", "Kurz und Aktionen"].flatMap((name) => {
+          const bar = document.querySelector<HTMLElement>(`nav[aria-label="${name}"]`)!.closest<HTMLElement>(".k2-bar")!;
+          return [...bar.querySelectorAll<HTMLElement>(".k2-path-step, b, .k2-bar-end > .k2-btn")].map((part) => {
+            const box = part.getBoundingClientRect();
+            return `${name} ${part.textContent?.slice(0, 10) || part.getAttribute("aria-label")} ${Math.round(box.x)} ${Math.round(box.width)}`;
+          });
+        }),
+      );
     const sent = await at();
     await live(page);
-    expect(await at()).toEqual(sent);
-    // the deep path beside the same end: nothing folds, and its page stands whole
     const deep = await crowded(page);
     expect([deep.fold, deep.endFolded]).toEqual(["0", 0]);
     expect((await named(page))["Ort und Aktionen"]?.whole).toBe(true);
+    expect(await at()).toEqual(sent);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
