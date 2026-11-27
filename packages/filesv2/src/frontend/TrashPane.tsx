@@ -1,10 +1,10 @@
 import { prompts, toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Failed, Icon, Inline, Notice, type OnNavigate, Pane, StatusRow, Table, Text } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Failed, Notice, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, TrashEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
-import { entryIcon } from "./entry-icon";
+import { entryMark } from "./entry-mark";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { useTrashMessages } from "./trash-messages";
@@ -101,11 +101,17 @@ export default function TrashPane(props: {
     <Pane
       label={b().trashTitle}
       scrollKey={`filesv2-trash:${props.base.id}`}
+      // the sidebar names the trash (B: no title that repeats it): the toolbar says how many and the one thing to know,
+      // as meta; on the phone the shell's bar names it
       status={
-        <StatusRow
-          lead={page() ? b().v2TrashCount({ count: page()!.entries.length, more: page()!.next ? "+" : "" }) : b().trashTitle}
-          loading={loading()}
-          facts={[{ after: b().trashDescription }]}
+        <Bar
+          start={
+            <Text type="meta">
+              {[page() ? b().v2TrashCount({ count: page()!.entries.length, more: page()!.next ? "+" : "" }) : "", b().trashKept]
+                .filter(Boolean)
+                .join(" · ")}
+            </Text>
+          }
         />
       }
     >
@@ -124,6 +130,7 @@ export default function TrashPane(props: {
               empty={{ icon: "trash", text: b().trashEmpty }}
               phone={(entry) => ({
                 lines: [entry.name, place(entry)],
+                mark: entryMark(entry),
                 time: deleted(entry),
                 marks: unresolved(entry) ? <Chip status="warn">{b().v2Unresolved}</Chip> : undefined,
               })}
@@ -131,15 +138,10 @@ export default function TrashPane(props: {
                 {
                   title: t().name,
                   width: { min: 200, default: 280 },
-                  cell: (entry) => ({
-                    lines: [
-                      <Inline>
-                        <Icon name={entryIcon(entry)} />
-                        <Text>{entry.name}</Text>
-                      </Inline>,
-                      place(entry),
-                    ],
-                  }),
+                  // the entry's mark as every file list shows it, and its name as words the table cuts with "…" where it
+                  // has no room (break-ui: a name of its own markup ran into the next column without a cut)
+                  mark: (entry) => entryMark(entry),
+                  cell: (entry) => ({ lines: [entry.name, place(entry)] }),
                 },
                 { title: b().v2Deleted, width: { min: 150, default: 220 }, drop: true, cell: deleted },
                 // The state of an entry stands only while one is not finished; otherwise it would be an empty column.

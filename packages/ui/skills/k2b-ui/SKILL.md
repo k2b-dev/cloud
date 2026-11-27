@@ -187,11 +187,9 @@ Dense is not busy: show more, never the same thing twice (design pass 26.11.).
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
-  `Disclosure`.
-- **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
-  `Chip`, `Progress`, `Spark`, `Steps`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`, `Disclosure`.
+- **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row, body, lead), `Prose`,
+  `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`, `Chip`, `Progress`, `Spark`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
   `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
   `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
@@ -199,8 +197,7 @@ Dense is not busy: show more, never the same thing twice (design pass 26.11.).
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
   `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
-- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
-  and `@k2b/ui/v2/testing` for Playwright tests.
+- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`), `@k2b/ui/v2/testing` for Playwright.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
 the mail and chat composer and a Markdown editor (come from `@k2b/editor`),

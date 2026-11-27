@@ -27,6 +27,10 @@ import {
   fixtureShares,
   fixtureTrash,
   fixtureVersions,
+  fixtureWorstFavorites,
+  fixtureWorstItemShares,
+  fixtureWorstTrash,
+  fixtureWorstVersions,
 } from "./files-screen.fixture";
 
 // A person works in a folder of Files on v2: opens folders and files in place, sorts, searches, chooses entries and
@@ -228,8 +232,8 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
         ? route.fulfill({ json: { base: fixtureBase, entry: found, favorite: false } })
         : route.fulfill({ status: 404, json: { code: "not_found", message: "Nicht gefunden" } });
     }
-    if (url.pathname === `${api}/bases/demo/trash`) return route.fulfill({ json: fixtureTrash });
-    if (url.pathname === `${api}/favorites`) return route.fulfill({ json: fixtureFavorites });
+    if (url.pathname === `${api}/bases/demo/trash`) return route.fulfill({ json: fixture === "worst" ? fixtureWorstTrash : fixtureTrash });
+    if (url.pathname === `${api}/favorites`) return route.fulfill({ json: fixture === "worst" ? fixtureWorstFavorites : fixtureFavorites });
     // The open notes tell their history as their versions do; other items' own histories stay empty, and Activity
     // answers with the day of the fixture.
     const notes =
@@ -252,9 +256,12 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     // the detail asks for the links of its file; the overview of links asks without a path
     if (url.pathname === `${api}/shares`)
       return route.fulfill({
-        json: url.searchParams.get("path") ? fixtureItemShares(url.searchParams.get("path")!) : fixtureShares(fixture),
+        json: url.searchParams.get("path")
+          ? (fixture === "worst" ? fixtureWorstItemShares : fixtureItemShares)(url.searchParams.get("path")!)
+          : fixtureShares(fixture),
       });
-    if (url.pathname === `${api}/bases/demo/versions`) return route.fulfill({ json: fixtureVersions() });
+    if (url.pathname === `${api}/bases/demo/versions`)
+      return route.fulfill({ json: fixture === "worst" ? fixtureWorstVersions() : fixtureVersions() });
     // the trashed file of the search can come back from the trash, as the server checks it now
     if (url.pathname.startsWith(`${api}/activity/`) && url.pathname.endsWith("/recovery"))
       return route.fulfill({
@@ -346,7 +353,9 @@ const expectClean = async (tab: Page) => {
   const outline = await describeV2Page(tab, "#root");
   expect(outline.includes("Problems (") ? outline : "").toBe("");
   const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
-  expect(layout.problems).toEqual([]);
+  // the width is part of the answer, so a failure names the size it happened at
+  const width = tab.viewportSize()?.width;
+  expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
 };
 
 describe("a folder of Files on v2", () => {
@@ -404,8 +413,30 @@ describe("a folder of Files on v2", () => {
       expect(await sharing.getByRole("button", { name: "Link kopieren" }).count()).toBe(0);
       expect(await sharing.locator("[data-k2-part=Row] time").count()).toBeGreaterThan(0);
       expect(await tab.getByRole("link", { name: /Verwalten/ }).count()).toBeGreaterThan(0);
+      // what the file is, then who reaches it and what happened: one under the other in the detail of 1440 …
+      const what = tab.locator("[data-k2-part=Pane][aria-label='Was es ist']");
+      const who = tab.locator("[data-k2-part=Pane][aria-label='Freigabe und Verlauf']");
+      const besides = async () => {
+        const [left, right] = [await what.boundingBox(), await who.boundingBox()];
+        return !!left && !!right && right.x >= left.x + left.width - 1 && Math.abs(right.y - left.y) < 2;
+      };
+      await settled(tab);
       await shoot(tab, "02-detail-1440");
+      expect(await besides()).toBe(false);
       await expectClean(tab);
+      // … and side by side on a large screen, where the detail grows and the list keeps its width (B)
+      await tab.setViewportSize({ width: 1920, height: 1080 });
+      await settled(tab);
+      expect(await besides()).toBe(true);
+      await shoot(tab, "02c-detail-1920");
+      await expectClean(tab);
+      await tab.setViewportSize({ width: 1024, height: 768 });
+      await settled(tab);
+      expect(await besides()).toBe(false);
+      await shoot(tab, "02b-detail-1024");
+      await expectClean(tab);
+      await tab.setViewportSize({ width: 1440, height: 900 });
+      await settled(tab);
       await tab.getByRole("link", { name: "Details schließen", exact: true }).first().click();
       await tab.waitForFunction(() => !new URL(location.href).searchParams.get("file"));
       expect(seen.pages).toHaveLength(1);
@@ -649,6 +680,10 @@ describe("a folder of Files on v2", () => {
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "trash");
       await tab.getByText("Alter Entwurf.pdf").first().waitFor();
       expect(await tab.locator("[data-k2-part=Table]").innerText()).toContain("Ursprünglicher Speicherort unbekannt");
+      // the sidebar names the trash: no title repeats it, the path says whose it is, the count is meta (B)
+      expect(await tab.locator("[data-k2-part=Path]").innerText()).not.toContain("Papierkorb");
+      expect(await tab.locator("[data-k2-part=StatusRow]").count()).toBe(0);
+      await tab.getByText("2 Einträge · sie bleiben, bis die Administration den Papierkorb leert").waitFor();
       await shoot(tab, "09-trash-1440");
       await expectClean(tab);
 
@@ -674,6 +709,23 @@ describe("a folder of Files on v2", () => {
       const { context, tab, errors } = await open(phone, address);
       try {
         await shoot(tab, `11-${address.includes("trash") ? "trash" : "favorites"}-390`);
+        await expectClean(tab);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+  // break-ui on the open file: an endless name, a long link creator, a huge open count, a long version comment
+  for (const view of [wide, phone])
+    test(`an open file of worst-case data keeps the detail whole at ${view.name}px`, async () => {
+      const name = `${"Ein sehr langer Dateiname mit vielen Wörtern, der nie aufhört und weiter geht ".repeat(3)}.pdf`;
+      const { context, tab, errors } = await open(view, `/app/filesv2?base=demo&file=${encodeURIComponent(name)}`, "worst");
+      try {
+        await tab.locator("[data-k2-part=Pane][data-detail] [data-k2-part=Facts]").waitFor();
+        await tab.locator("[data-k2-part=List][aria-label='Freigabe'] [data-k2-part=Row]").first().waitFor();
+        await settled(tab);
+        await shoot(tab, `24-worst-detail-${view.name}`);
         await expectClean(tab);
         expect(errors).toEqual([]);
       } finally {
@@ -846,6 +898,7 @@ describe("the views beside the folders on v2", () => {
       await shoot(tab, "16-editor-1440");
       await expectClean(tab);
       // on a v2 page the editor's counts read as its meta text: 12 px in the page's typeface, not 10 px mono
+      await settled(tab);
       const stats = await tab
         .locator(".k2b-markdown-editor__stats")
         .evaluate((element) => [getComputedStyle(element).fontSize, getComputedStyle(element).fontFamily]);
@@ -884,6 +937,27 @@ describe("the views beside the folders on v2", () => {
       await context.close();
     }
   });
+
+  // break-ui on the trash, the favorites and a moved folder, at the desktop and on the phone
+  for (const view of [wide, phone])
+    for (const [name, address, fixture] of [
+      ["trash", "/app/filesv2?base=demo&view=trash", "worst"],
+      ["favorites", "/app/filesv2?view=favorites", "worst"],
+      ["moved", "/app/filesv2?base=demo&path=Alte+Angebote", "plain"],
+    ] as const)
+      test(`the ${name} of ${fixture === "worst" ? "worst-case data" : "a moved folder"} keeps the layout whole at ${view.name}px`, async () => {
+        const { context, tab, errors } = await open(view, address, fixture);
+        try {
+          // a visible row: on the phone the table's rows stay in the page hidden, its phone rows stand in their place
+          await tab.locator("[data-k2-part=Row]:visible, [data-k2-part=Table] tbody tr:visible").first().waitFor();
+          await settled(tab);
+          await shoot(tab, `25-${fixture === "worst" ? "worst-" : ""}${name}-${view.name}`);
+          await expectClean(tab);
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      });
 
   test("an old folder address says where its folder went instead of not found", async () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo&path=Alte+Angebote");

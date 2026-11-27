@@ -170,6 +170,54 @@ export const fixtureFavorites: MarkedEntry[] = [
   },
 ];
 
+/**
+ * The trash as break-ui feeds it: an endless name without breaks, one letter, emoji, other scripts, a place that is a
+ * deep path, a lost place and time, and an entry deleted years ago.
+ */
+export const fixtureWorstTrash = {
+  entries: [
+    {
+      id: "w-1",
+      name: `${"Ein sehr langer Dateiname mit vielen Wörtern, der nie aufhört und weiter geht ".repeat(3)}.pdf`,
+      original: `${"Unterordner-mit-langem-Namen/".repeat(8)}Ziel.pdf`,
+      directory: false,
+      deletedAt: hoursAgo(1),
+      state: "trashed" as const,
+    },
+    { id: "w-2", name: "b", original: "b", directory: false, deletedAt: hoursAgo(26), state: "trashed" as const },
+    { id: "w-3", name: "📁 Ablage 🗂️", original: null, directory: true, deletedAt: null, state: "trashed" as const },
+    {
+      id: "w-4",
+      name: "مستند طويل جدا للاختبار.pdf",
+      original: "Eingang/مستند طويل جدا للاختبار.pdf",
+      directory: false,
+      deletedAt: hoursAgo(24 * 800),
+      state: "trashed" as const,
+    },
+    {
+      id: "w-5",
+      name: `${"x".repeat(180)}.txt`,
+      original: `${"x".repeat(180)}.txt`,
+      directory: false,
+      deletedAt: hoursAgo(5),
+      state: "trashed" as const,
+    },
+  ],
+  next: null,
+};
+
+/** Favorites as break-ui feeds them: endless names, other scripts and a storage with a long name. */
+export const fixtureWorstFavorites: MarkedEntry[] = worst.slice(0, 7).map((entry, index) => ({
+  base: {
+    id: fixtureBase.id,
+    name: index % 3 === 2 ? "Benachrichtigungseinstellungen-Benachrichtigungseinstellungen" : fixtureBase.name,
+    kind: fixtureBase.kind,
+    area: fixtureBase.area,
+  },
+  entry,
+  markedAt: hoursAgo(index * 7),
+}));
+
 /** The own home beside the workshop, so all storage has two places to show. */
 export const fixtureHome: BaseSummary = { ...fixtureBase, id: "home", name: "mira", kind: "users" };
 export const fixtureBases = [fixtureHome, fixtureBase];
@@ -403,6 +451,40 @@ export const fixtureShareAccess = (from: string, to: string): ShareAccessCounts 
 });
 
 /** Two earlier states of an open file, by two people of the workshop. */
+/**
+ * The links of an open file as break-ui feeds them: a creator with a long compound name, a huge open count, an agent
+ * without a name, an expired and a revoked link.
+ */
+export const fixtureWorstItemShares = (path: string): SharePage => ({
+  items: [
+    link(0, { items: [path], state: "active", createdBy: "Aleksandra Wiśniewska-Kowalczyk", accessCount: 98_765_432 }),
+    link(1, { items: [path], state: "active", createdBy: "J", accessCount: 1, kind: "inbox" }),
+    link(2, { items: [path], state: "expired", createdBy: "نور الهدى عبد الرحمن", accessCount: 0 }),
+    link(3, { items: [path], state: "revoked", createdBy: "👩🏽‍💻 Priya", accessCount: 12 }),
+  ],
+  next: null,
+});
+
+/** Versions as break-ui feeds them: a long comment without breaks, a missing author, a size of terabytes. */
+export const fixtureWorstVersions = (): FileVersion[] => [
+  {
+    id: "v-3",
+    created: new Date(Date.parse(FIXTURE_NOW) - 2 * 3_600_000).toISOString(),
+    size: 4_398_046_511_104,
+    pinned: false,
+    comment: `${"Stand-nach-Rücksprache-mit-Statik-und-Bauherrschaft-".repeat(3)}final`,
+    author: "Christopher Alexander Montgomery III",
+  },
+  {
+    id: "v-2",
+    created: new Date(Date.parse(FIXTURE_NOW) - 400 * 86_400_000).toISOString(),
+    size: 0,
+    pinned: true,
+    comment: null,
+    author: null,
+  },
+];
+
 export const fixtureVersions = (): FileVersion[] => [
   {
     id: "v-2",
