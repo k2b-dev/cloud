@@ -372,6 +372,8 @@ export default function HostsScreen(props: HostsScreenProps) {
   );
 
   const list = () => (
+    // k2b-ui gap: with nothing open, the two-column group table spans the whole width on a large screen; the context
+    // column of #4340 (the latest sync beside the list) takes that room, so the list keeps the width of rule 5
     <Pane label={t().hosts} scrollKey={`ipa-hosts-${props.tab}`}>
       <Show when={!emptyMirror()}>
         {hero()}
@@ -659,8 +661,8 @@ export default function HostsScreen(props: HostsScreenProps) {
           <Cells.Cell
             icon="folders"
             label={t().memberOf}
+            // the count only: the groups stand by name in their section below
             value={number(host.memberofHostgroup.length)}
-            meta={firstAndMore(host.memberofHostgroup.map((name) => short(name, STRIP_LINE))) || t().noGroupYet}
           />
           <Cells.Cell
             icon="key"
@@ -674,13 +676,14 @@ export default function HostsScreen(props: HostsScreenProps) {
           <Cells.Cell
             icon="network"
             label={t().macAddressesLabel}
+            // the count only: the addresses stand with copy in the details below
             value={number(host.macAddress.length)}
-            meta={host.macAddress[0] ?? t().noMac}
           />
         </Cells>
         <Section title={t().details}>
           <Facts
             items={[
+              { label: t().host, value: host.fqdn, mono: true, copy: host.fqdn },
               ...(host.description ? [{ label: t().description, value: host.description }] : []),
               ...(place(host) ? [{ label: t().location, value: place(host) }] : []),
               ...(host.platform || host.osVersion
@@ -858,13 +861,13 @@ export default function HostsScreen(props: HostsScreenProps) {
     <AdminWorkspace
       nav={props.nav}
       detail={props.group || props.host ? 460 : undefined}
-      // the main action follows what is open: a host takes groups, the groups view takes a new group, the rest none
-      // the main action follows what is open: an empty mirror is filled by a sync, the groups view takes a new group;
-      // an open host takes groups in its own section, so the phone shows one way to add, not two
+      // the groups list floats "Neue Hostgruppe" on the phone; an empty mirror's way on is its sync, in its empty state.
+      // With a group or host open there is none: on the phone it is a page of its own with back and its deeds in its
+      // head (the layout check learns this in #4373)
       primary={
         emptyMirror()
           ? undefined
-          : props.tab === "groups"
+          : props.tab === "groups" && !props.group && !props.host
             ? {
                 label: t().newGroup,
                 icon: "folder-plus",

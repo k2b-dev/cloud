@@ -212,6 +212,7 @@ export const hostStats = async (): Promise<{
       (SELECT COUNT(*)::int FROM ipa_hosts.hosts h
         WHERE NOT EXISTS (SELECT 1 FROM ipa_hosts.host_hostgroups hh WHERE hh.host_fqdn = h.fqdn)) AS hosts_ungrouped,
       (SELECT COUNT(*)::int FROM ipa_hosts.hostgroups)                                             AS hostgroups_total,
+      -- a sync stamps every host it takes from FreeIPA; edits in Cloud do not, so this is the last sync
       (SELECT max(synced_at) FROM ipa_hosts.hosts)                                                 AS last_synced_at,
       (SELECT COUNT(*)::int FROM ipa_hosts.hosts WHERE cardinality(ssh_fingerprints) = 0)          AS hosts_without_keys,
       (SELECT fqdn FROM ipa_hosts.hosts WHERE cardinality(ssh_fingerprints) = 0
@@ -226,6 +227,30 @@ export const hostStats = async (): Promise<{
     hostsWithoutKeys: row?.hosts_without_keys ?? 0,
     firstWithoutKeys: row?.first_without_keys ?? null,
   };
+};
+
+/**
+ * Write an edit FreeIPA accepted into the mirror. It leaves `synced_at` alone: an edit in Cloud is not a sync, and the
+ * page's "zuletzt abgeglichen" reads the latest `synced_at`.
+ */
+export const applyHostEdit = async (
+  fqdn: string,
+  opts: { location?: string; locality?: string; description?: string; macAddress?: string[] },
+): Promise<void> => {
+  await sql.begin(async (tx) => {
+    if (opts.description !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET description = ${opts.description} WHERE fqdn = ${fqdn}`;
+    }
+    if (opts.location !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET location = ${opts.location} WHERE fqdn = ${fqdn}`;
+    }
+    if (opts.locality !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET locality = ${opts.locality} WHERE fqdn = ${fqdn}`;
+    }
+    if (opts.macAddress !== undefined) {
+      await tx`UPDATE ipa_hosts.hosts SET mac_address = ${freeipa.util.toPgTextArray(opts.macAddress)}::text[] WHERE fqdn = ${fqdn}`;
+    }
+  });
 };
 
 export const hostMod = async (
@@ -247,21 +272,7 @@ export const hostMod = async (
     return { ok: false, error: response.error.message, status: freeipa.util.mapIpaErrorCode(response.error.code) };
   }
 
-  await sql.begin(async (tx) => {
-    if (opts.description !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET description = ${opts.description} WHERE fqdn = ${fqdn}`;
-    }
-    if (opts.location !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET location = ${opts.location} WHERE fqdn = ${fqdn}`;
-    }
-    if (opts.locality !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET locality = ${opts.locality} WHERE fqdn = ${fqdn}`;
-    }
-    if (opts.macAddress !== undefined) {
-      await tx`UPDATE ipa_hosts.hosts SET mac_address = ${freeipa.util.toPgTextArray(opts.macAddress)}::text[] WHERE fqdn = ${fqdn}`;
-    }
-    await tx`UPDATE ipa_hosts.hosts SET synced_at = now() WHERE fqdn = ${fqdn}`;
-  });
+  await applyHostEdit(fqdn, opts);
 
   return { ok: true };
 };
@@ -591,7 +602,6 @@ export const hostgroupMod = async (ipaSession: string, cn: string, opts: { descr
     if (opts.description !== undefined) {
       await tx`UPDATE ipa_hosts.hostgroups SET description = ${opts.description} WHERE cn = ${cn}`;
     }
-    await tx`UPDATE ipa_hosts.hostgroups SET synced_at = now() WHERE cn = ${cn}`;
   });
 
   return { ok: true };

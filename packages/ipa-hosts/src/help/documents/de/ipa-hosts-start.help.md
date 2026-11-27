@@ -12,8 +12,8 @@ Hosts zeigt einen lokalen Spiegel der FreeIPA-Hosts und Hostgruppen. Personen mi
 
 :::reference
 - **FreeIPA:** FreeIPA ist die maßgebliche Quelle. Die Seite liest aus dem lokalen Spiegel; Änderungen rufen FreeIPA als FreeIPA-Benutzer aus den Anmelde-Einstellungen auf.
-- **Hostgruppe:** Eine Hostgruppe gruppiert Hosts anhand ihrer FreeIPA-Mitgliedschaft. Verschachtelte Hostgruppen erscheinen als kompakte Badges im Gruppenkopf.
-- **Nicht gruppierter Host:** Ein gespiegelter Host ohne Hostgruppenmitgliedschaft. Die Seite zeigt solche Hosts zuerst, weil sie meist zugeordnet werden müssen.
+- **Hostgruppe:** Eine Hostgruppe gruppiert Hosts anhand ihrer FreeIPA-Mitgliedschaft. Eine geöffnete Hostgruppe nennt ihre Untergruppen, ihre Hosts und wie viele davon keine SSH-Schlüssel haben.
+- **Host ohne Gruppe:** Ein gespiegelter Host ohne Hostgruppenmitgliedschaft. Oben auf der Seite steht, wie viele es gibt; der Reiter Ohne Gruppe listet sie.
 - **Synchronisierung:** Eine Synchronisierung aktualisiert den lokalen Spiegel aus FreeIPA. Der Zeitplan verwendet einen fünfteiligen Cron-Ausdruck in der konfigurierten Zeitzone.
 :::
 
@@ -21,10 +21,10 @@ Hosts zeigt einen lokalen Spiegel der FreeIPA-Hosts und Hostgruppen. Personen mi
 
 :::reference
 - **Hosts und Gruppen finden:** Filtere Hostgruppen und Hosts über das Suchfeld. Die Seitennavigation hält große Spiegel übersichtlich.
-- **Fehlende Zuordnungen prüfen:** Kennzahl und Abschnitt Nicht gruppiert zeigen gespiegelte Hosts ohne Hostgruppe.
-- **Host-Metadaten ändern:** Bearbeite über das Aktionsmenü einer Host-Zeile Beschreibung, Ort, Standort, MAC-Adressen oder Hostgruppenmitgliedschaft.
-- **Hostgruppen pflegen:** Erstelle Hostgruppen, bearbeite Beschreibungen oder lösche nicht mehr benötigte Gruppen über die Hostgruppen-Karten.
-- **Synchronisierung starten oder planen:** Starte mit Jetzt synchronisieren eine sofortige Aktualisierung oder ändere unter Einstellungen den wiederkehrenden Cron-Ausdruck.
+- **Fehlende Zuordnungen prüfen:** Die Zahl oben und der Reiter Ohne Gruppe zeigen gespiegelte Hosts ohne Hostgruppe. Die Zeile darunter nennt Hosts ohne SSH-Schlüssel.
+- **Host-Metadaten ändern:** Öffne den Host in der Liste. Mit Bearbeiten änderst du Beschreibung, Ort, Standort und MAC-Adressen; unter Hostgruppen fügst du ihn mit Zu Hostgruppe hinzufügen einer Gruppe hinzu oder nimmst ihn mit Entfernen heraus.
+- **Hostgruppen pflegen:** Erstelle mit Neue Hostgruppe eine Gruppe. Öffne eine Gruppe in der Liste, um ihre Beschreibung zu bearbeiten oder sie über Weitere Aktionen zu löschen.
+- **Synchronisierung starten oder planen:** Unter Weitere Aktionen im Kopf startest du mit Jetzt synchronisieren eine sofortige Aktualisierung oder änderst unter Host-Synchronisierung den wiederkehrenden Cron-Ausdruck.
 :::
 
 :::info CLI und Audit-Verlauf

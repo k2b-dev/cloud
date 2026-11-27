@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { cloudShellSheets } from "../../../../../scripts/fixtures/cloud-shell-sheets";
+import { loadShellAssets, type ShellAssets } from "../../../../cloud/test/shell-page";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { loadShellAssets, type ShellAssets } from "../../../../../scripts/fixtures/shell-page";
 
 // Hosts on v2, from invented hosts: the screen keeps the v2 layout rules at desktop, tablet and phone width with normal,
 // worst-case and no data; a group and a host open beside the list, and their deeds ask before they change anything.
@@ -136,24 +136,25 @@ const shoot = async (tab: Page, name: string) => {
 };
 
 describe("Hosts on v2", () => {
-  test("the screen keeps the v2 rules at 1440, 1024 and 390 px, with normal, worst-case and no data", async () => {
-    const LONG = "kunden-und-auftraege-werkstatt-nord-zeiterfassung-und-materialbestellung-01.intern.werkstatt-nord.example";
-    const cases: [string, string, string, View][] = [
-      ["groups", "normal", "", desktop],
-      ["groups", "normal", "", tablet],
-      ["groups", "normal", "", phone],
-      ["groups", "worst", "", desktop],
-      ["groups", "worst", "", phone],
-      ["groups", "empty", "", desktop],
-      ["ungrouped", "normal", "?tab=ungrouped", desktop],
-      ["ungrouped", "worst", "?tab=ungrouped", phone],
-      ["group", "normal", "?group=server", desktop],
-      ["group", "worst", "?group=werkstatt-nord-schichtbetrieb-maschinen-und-messplaetze-im-erdgeschoss", phone],
-      ["host", "normal", "?group=server&host=db1.werkstatt.example", desktop],
-      ["host", "worst", `?host=${LONG}`, desktop],
-      ["host", "worst", `?host=${LONG}`, phone],
-      ["gone", "normal", "?host=weg.werkstatt.example", desktop],
-    ];
+  const LONG = "kunden-und-auftraege-werkstatt-nord-zeiterfassung-und-materialbestellung-01.intern.werkstatt-nord.example";
+  /** The cases of the screen's v2 rules: each is checked with the outline and the measured layout. */
+  const layoutCases: [string, string, string, View][] = [
+    ["groups", "normal", "", desktop],
+    ["groups", "normal", "", tablet],
+    ["groups", "normal", "", phone],
+    ["groups", "worst", "", desktop],
+    ["groups", "worst", "", phone],
+    ["groups", "empty", "", desktop],
+    ["ungrouped", "normal", "?tab=ungrouped", desktop],
+    ["ungrouped", "worst", "?tab=ungrouped", phone],
+    ["group", "normal", "?group=server", desktop],
+    ["group", "worst", "?group=werkstatt-nord-schichtbetrieb-maschinen-und-messplaetze-im-erdgeschoss", phone],
+    ["host", "normal", "?group=server&host=db1.werkstatt.example", desktop],
+    ["host", "worst", `?host=${LONG}`, desktop],
+    ["host", "worst", `?host=${LONG}`, phone],
+    ["gone", "normal", "?host=weg.werkstatt.example", desktop],
+  ];
+  const checkLayout = async (cases: [string, string, string, View][]) => {
     for (const [view, state, search, size] of cases) {
       const name = `hosts-${view}-${state}-${size.width}`;
       const { context, tab, errors } = await open(size, `/admin/ipa-hosts${search}`, state);
@@ -168,10 +169,41 @@ describe("Hosts on v2", () => {
         await context.close();
       }
     }
-  }, 300_000);
+  };
+  // On the phone an open entry is a page of its own without a floating action; the layout check learns that in #4373.
+  const opensOnPhone = (row: [string, string, string, View]) => row[3] === phone && /[?&](group|host)=/.test(row[2]);
+
+  test(
+    "the screen keeps the v2 rules at 1440, 1024 and 390 px, with normal, worst-case and no data",
+    () => checkLayout(layoutCases.filter((row) => !opensOnPhone(row))),
+    300_000,
+  );
+
+  test.todo("waits for #4373: the v2 rules at 390 px with an entry open", () => checkLayout(layoutCases.filter(opensOnPhone)));
 
   const host = "/admin/ipa-hosts?group=server&host=db1.werkstatt.example";
   const closed = (tab: Page) => tab.waitForFunction(() => !window.document.querySelector('[role="dialog"], [role="alertdialog"]'));
+
+  test("on the phone the list floats its main action; an open group is a page with its deeds in the head", async () => {
+    const { context, tab, errors } = await open(phone, "/admin/ipa-hosts");
+    try {
+      const fab = tab.locator(".k2-fab");
+      expect(await fab.isVisible()).toBe(true);
+      // the open entry by its address, as a row press leads there
+      await tab.goto(`${origin}/admin/ipa-hosts?group=server`);
+      await tab.waitForSelector('body[data-ready="true"]');
+      expect(await fab.count()).toBe(0);
+      expect(await tab.getByRole("button", { name: "Bearbeiten" }).isVisible()).toBe(true);
+      await tab.getByRole("button", { name: "Weitere Aktionen für server" }).first().click();
+      expect(await tab.getByRole("menuitem", { name: "Löschen" }).isVisible()).toBe(true);
+      await tab.keyboard.press("Escape");
+      await tab.getByRole("link", { name: "Hostgruppen" }).first().click();
+      await fab.waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 
   test("a host is edited with its MAC addresses checked before anything is sent", async () => {
     const { context, tab, errors, calls, bodies } = await open(desktop, host);

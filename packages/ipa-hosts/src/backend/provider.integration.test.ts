@@ -3,7 +3,7 @@ import { sql } from "@k2b/cloud";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
-import { hostGet, hostgroupGetWithHosts, hostgroupListWithHosts, hostStats } from "./provider";
+import { applyHostEdit, hostGet, hostgroupGetWithHosts, hostgroupListWithHosts, hostStats } from "./provider";
 
 suiteFor("database")("the host mirror's records", () => {
   test("a host and a host group are read by their exact name in one statement, behind any number of longer names", async () => {
@@ -73,6 +73,23 @@ suiteFor("database")("the host mirror's records", () => {
     } finally {
       await meter.close();
       await sql`DELETE FROM ipa_hosts.hosts WHERE fqdn LIKE ${`${prefix}-%`}`;
+    }
+  });
+
+  test("an edit in Cloud is not a sync: the host keeps its sync time and the figures keep the last sync", async () => {
+    await migrate();
+    const fqdn = `t${crypto.randomUUID().slice(0, 8)}-edited.example`;
+    await sql`INSERT INTO ipa_hosts.hosts (fqdn, synced_at) VALUES (${fqdn}, now() - INTERVAL '1 day')`;
+    try {
+      const syncedAt = async () =>
+        (await sql<{ synced_at: Date }[]>`SELECT synced_at FROM ipa_hosts.hosts WHERE fqdn = ${fqdn}`)[0]!.synced_at.toISOString();
+      const before = { host: await syncedAt(), figures: (await hostStats()).lastSyncedAt };
+      // the write an edit makes once FreeIPA accepted it
+      await applyHostEdit(fqdn, { description: "Hauptsystem", macAddress: ["AA:BB:CC:00:11:22"] });
+      expect((await hostGet(fqdn))?.description).toBe("Hauptsystem");
+      expect({ host: await syncedAt(), figures: (await hostStats()).lastSyncedAt }).toEqual(before);
+    } finally {
+      await sql`DELETE FROM ipa_hosts.hosts WHERE fqdn = ${fqdn}`;
     }
   });
 });

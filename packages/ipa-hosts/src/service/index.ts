@@ -215,7 +215,6 @@ export const ipaHostsService = {
         hasNext: page * perPage < result.total,
       };
     },
-    /** One host group by its exact name with its members; null when the mirror has none. */
     /** One group by its exact name with one page of its hosts (`page`, `perPage`) and the number of all of them. */
     getWithHosts: async (config: { cn: string; page: number; perPage: number }) =>
       ipaHosts.hostgroups.getWithHosts(config.cn, { page: config.page, perPage: config.perPage }),
