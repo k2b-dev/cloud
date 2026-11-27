@@ -4031,6 +4031,30 @@
 .k2-ui .k2-nav-primary {
   margin-bottom: 8px;
 }
+/* The groups: they scroll between the head and the foot, so many places never push the foot out of the sidebar. A tree
+   in a group still gives way first and scrolls on its own (the area is a column it can shrink in); the area scrolls
+   only what does not shrink. It shows no scroll bar of its own, which would end the rows short of the column's edge,
+   and keeps room for the focus ring, as a tree does. */
+.k2-ui .k2-nav-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  margin: -4px;
+  padding: 4px;
+}
+.k2-ui .k2-nav-groups::-webkit-scrollbar {
+  display: none;
+}
+/* Above a list of their own (Chat's filters above the conversations) the groups keep their height: only the list gives
+   way, or both would shrink by their share and cut the filters (nav-list.browser.test) */
+.k2-ui .k2-nav-groups:has(~ .k2-nav-list) {
+  flex-shrink: 0;
+}
 /* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their
    own between the groups and the foot, as a tree does; the foot keeps its place at the bottom */
 .k2-ui .k2-nav-list {
@@ -5537,7 +5561,7 @@
   .k2-ui
     .k2-ws-side
     > .k2-nav:has(> .k2-nav-list[data-phone="page"])
-    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-label, .k2-ni, .k2-ni-row, .k2-nav-fold, .k2-nt, .k2-nav-foot) {
+    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-groups, .k2-nav-foot) {
     display: none;
   }
   .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) > .k2-nav-search {
