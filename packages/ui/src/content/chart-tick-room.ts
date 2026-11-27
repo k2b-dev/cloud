@@ -66,3 +66,29 @@ export const stretchedTickRoomsSvg = (svg: string): string => {
       : marked.replace(/^(<text[^>]*)>/, `$1${tickRoomStyle(room)}>`);
   });
 };
+
+/**
+ * The first X label of a line or scatter drawing that its host stretches starts at its tick instead of standing in
+ * its middle. Y labels end left of the value axis and the first X label then begins at or right of it, so the two
+ * never meet at the corner where the axes meet. A short box brings the row of X labels within a few pixels of the
+ * lowest Y label (text keeps its size while the drawing's height shrinks), and a label in its middle reached across
+ * the axis. The drawing itself stays as the renderer made it, so only stretching hosts carry the change.
+ */
+export const stretchedAxisCornerSvg = (svg: string): string => {
+  const labels = [...svg.matchAll(tickLabel)].map((match) => ({
+    tag: match[0],
+    at: match.index ?? 0,
+    x: Number(attribute(match[0], "x")),
+    y: attribute(match[0], "y"),
+  }));
+  const shared = new Map<string, number>();
+  for (const label of labels) if (label.y !== undefined) shared.set(label.y, (shared.get(label.y) ?? 0) + 1);
+  const row = [...shared]
+    .filter(([, count]) => count > 1)
+    .map(([y]) => y)
+    .sort((a, b) => Number(b) - Number(a))[0];
+  const first = labels.filter((label) => label.y === row && Number.isFinite(label.x)).sort((a, b) => a.x - b.x)[0];
+  if (!first?.tag.includes('text-anchor="middle"')) return svg;
+  const moved = first.tag.replace('text-anchor="middle"', 'text-anchor="start"');
+  return svg.slice(0, first.at) + moved + svg.slice(first.at + first.tag.length);
+};

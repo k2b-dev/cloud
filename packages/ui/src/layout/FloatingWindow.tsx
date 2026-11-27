@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, createUniqueId, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Portal, render } from "solid-js/web";
 import { Button, IconButton } from "../actions/Button";
+import { cssColor } from "../internal/color";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { inheritUiScope } from "../internal/portal-scope";
@@ -417,7 +418,7 @@ export default function FloatingWindow(props: FloatingWindowProps): JSX.Element 
         data-mobile={mobile() ? "true" : undefined}
         data-state={state()}
         style={{
-          "--k2b-window-accent": props.accent,
+          "--k2b-window-accent": cssColor(props.accent),
           left: frameRect() ? `${frameRect()!.x}px` : undefined,
           top: frameRect() ? `${frameRect()!.y}px` : undefined,
           width: frameRect() ? `${frameRect()!.width}px` : undefined,

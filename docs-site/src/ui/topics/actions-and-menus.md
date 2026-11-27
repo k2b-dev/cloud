@@ -70,7 +70,7 @@ Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only
 ### Do
 
 - Give a row's "…" and its `Menu.Context` the same list of entries.
-- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv".
+- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv". A button with words takes a `label` only where the words alone do not say enough; it begins with the words, such as "Öffnen: Hausordnung" for "Öffnen".
 - Put deeds that destroy last, with `danger`; the line before them comes by itself.
 - Say why a deed is disabled, in the sentence beside it.
 

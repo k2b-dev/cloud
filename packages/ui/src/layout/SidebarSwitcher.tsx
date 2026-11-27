@@ -2,6 +2,7 @@ import { documentNavigate } from "@k2b/ssr/nav";
 import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
+import { cssColor } from "../internal/color";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
@@ -73,7 +74,10 @@ const SWITCHER_GAP = 4;
 const SWITCHER_INSET = 8;
 
 const iconClass = (icon: string) => (icon.split(/\s+/).includes("ti") ? icon : `ti ${icon}`);
-const tint = (color: string | undefined) => (color ? { "--k2b-sidebar-switcher-color": color } : undefined);
+const tint = (color: string | undefined) => {
+  const safe = cssColor(color);
+  return safe ? { "--k2b-sidebar-switcher-color": safe } : undefined;
+};
 const plainClick = (event: MouseEvent) => event.button === 0 && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
 
 /**

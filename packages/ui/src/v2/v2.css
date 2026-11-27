@@ -602,6 +602,8 @@
 .k2-ui .k2-pane-back > .k2-pane-back-name {
   flex: 0 1 auto;
   min-width: 0;
+  /* an endless name leaves the way back a few letters and "…" (break-ui): it never takes the last 6em of the bar */
+  max-width: calc(100% - 6em);
   margin-inline-start: 8px;
   overflow: hidden;
   font: var(--k2-t-row);
@@ -902,18 +904,25 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
+/* The head of a section is 52 px; a long title (a question, a name) wraps onto more lines and the head grows with it,
+   so no word is cut. */
 .k2-ui .k2-sh {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: var(--k2-h-status);
+  min-height: var(--k2-h-status);
   padding: 8px var(--k2-edge) 0;
   min-width: 0;
 }
 .k2-ui .k2-sh > h3 {
   font: var(--k2-t-body);
   font-weight: 600;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* the symbol, the count and the deeds keep their size; only the title wraps */
+.k2-ui .k2-sh > :not(h3) {
+  flex: none;
 }
 .k2-ui .k2-sh > .k2-sh-count {
   color: var(--k2-subtle);
@@ -959,7 +968,7 @@
   padding: 12px 0 4px;
 }
 .k2-ui .k2-pane[data-side] .k2-sh {
-  height: var(--k2-h-control-small);
+  min-height: var(--k2-h-control-small);
   padding: 0 var(--k2-edge);
 }
 .k2-ui .k2-pane[data-side] .k2-sh > h3 {
@@ -1975,6 +1984,15 @@
   background: var(--k2-bad-tint);
   color: var(--k2-bad);
 }
+/* a quiet state: its dot and its word in the ink of the text, without the tinted round, for a column of states in a
+   dense table or list; the height stays, so a chip and a quiet state stand on one line */
+.k2-ui .k2-chip[data-quiet] {
+  gap: 6px;
+  padding: 0;
+  background: none;
+  color: var(--k2-text);
+  font-weight: 400;
+}
 .k2-ui .k2-chip[data-kind="ai"] {
   background: var(--k2-ai-tint);
   color: var(--k2-ai);
@@ -2390,6 +2408,12 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* a quiet line under the words of a check, as a field's hint stands under its control */
+.k2-ui .k2-choice-description {
+  display: block;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
 .k2-ui .k2-choices {
   display: flex;
   flex-direction: column;
@@ -2445,13 +2469,21 @@
   color: var(--k2-subtle);
   opacity: 1;
 }
+/* A text of several lines shows `rows` lines at least (3: 80 px) and grows with its text up to ten lines, then it
+   scrolls. The browser sizes it to its text (`field-sizing`); where it cannot, Input sets its height as you type. */
 .k2-ui .k2-input[data-multiline] {
-  height: 80px;
+  --k2-rows: 3;
+  height: auto;
   align-items: flex-start;
-  padding-top: 8px;
+  padding-block: 8px 10px;
 }
 .k2-ui .k2-input[data-multiline] > textarea {
   resize: none;
+  height: auto;
+  line-height: 20px;
+  field-sizing: content;
+  min-height: calc(var(--k2-rows) * 20px);
+  max-height: 200px;
 }
 .k2-ui .k2-input > .k2-icon {
   color: var(--k2-subtle);
@@ -3181,6 +3213,30 @@
   outline: none;
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
+/* The nav's search and main action stand under the app's name, each across the column, before the groups */
+.k2-ui .k2-nav-search,
+.k2-ui .k2-nav-primary {
+  display: flex;
+  flex: none;
+  min-width: 0;
+}
+.k2-ui .k2-nav-search > .k2-input,
+.k2-ui .k2-nav-primary > .k2-btn {
+  flex: 1;
+  min-width: 0;
+}
+.k2-ui .k2-nav-primary {
+  margin-bottom: 8px;
+}
+/* A group's own rows (an app's list, such as Chat's conversations): they reach the column's edges and scroll on their
+   own between the groups and the foot, as a tree does; the foot keeps its place at the bottom */
+.k2-ui .k2-nav-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  margin: 0 -12px;
+}
 .k2-ui .k2-nav-foot {
   margin-top: auto;
   padding-top: 8px;
@@ -3750,19 +3806,25 @@
   color: var(--k2-c, var(--k2-n600));
 }
 
-/* The way to all of a section, at its end: a quiet text button on the right ("All deliveries ›") … */
+/* A section's way to all of it stands under its rows, its words on their text edge (Valentin 26.11.: at the start, not
+   the end; logical margins, so a page written right to left has it at the right), after a symbol where the section has
+   one; its 8 px of padding stand before the edge, as a text button's */
 .k2-ui .k2-sec-link {
-  align-self: flex-end;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: var(--k2-h-control-small);
-  margin: 4px var(--k2-edge) 0 0;
+  margin-block: 4px 0;
+  margin-inline: calc(var(--k2-edge) - 8px) 0;
   padding: 0 8px;
   border-radius: var(--k2-r-control);
   font: var(--k2-t-meta);
   font-weight: 500;
   color: var(--k2-muted);
+}
+.k2-ui .k2-pane:not([data-side]) .k2-sec:has(> .k2-sh > :is(.k2-icon, .k2-stile)) > .k2-sec-link {
+  margin-inline-start: calc(var(--k2-edge-icon) - 8px);
 }
 .k2-ui .k2-sec-link > b {
   font-weight: 500;
@@ -4491,6 +4553,41 @@
   .k2-ui .k2-ws > .k2-seam,
   .k2-ui .k2-grip {
     display: none;
+  }
+  /* A nav whose list is the phone's page (`Nav` `list` with `phone: "page"`): while the main column holds no pane
+     (only the place of a detail that is not open), the sidebar is the page after the workspace's head, its search over
+     its list; the title, the groups and the foot are in the platform's menu, and the main action floats. Any pane in
+     the main column, an open detail or a page of its own, is the page in its place. */
+  .k2-ui
+    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane:not([data-detail-empty])))
+    > .k2-ws-side {
+    display: flex;
+    order: 1;
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .k2-ui
+    .k2-ws:has(> .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"]):not(:has(> .k2-ws-main .k2-pane:not([data-detail-empty])))
+    > .k2-ws-main {
+    flex: none;
+  }
+  .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) {
+    padding: 0;
+    gap: 0;
+  }
+  .k2-ui
+    .k2-ws-side
+    > .k2-nav:has(> .k2-nav-list[data-phone="page"])
+    > :is(.k2-nav-title, .k2-nav-primary, .k2-nav-label, .k2-ni, .k2-ni-row, .k2-nav-fold, .k2-nt, .k2-nav-foot) {
+    display: none;
+  }
+  .k2-ui .k2-ws-side > .k2-nav:has(> .k2-nav-list[data-phone="page"]) > .k2-nav-search {
+    padding: 8px var(--k2-edge);
+  }
+  .k2-ui .k2-ws-side > .k2-nav > .k2-nav-list[data-phone="page"] {
+    flex: 1;
+    margin: 0;
   }
   .k2-ui .k2-split {
     flex-direction: column;

@@ -8,6 +8,7 @@ import { isNamedBlockHandle } from "@k2b/editor/markdown/lib/named-blocks";
 import { blockMathPattern, inlineMathPattern } from "@k2b/editor/markdown/math-syntax";
 import { highlightTree, tagHighlighter, tags } from "@lezer/highlight";
 import { notebookChartOptions } from "../../../../lib/chart-options";
+import { hexColor } from "../../../lib/color";
 
 export const NOTE_PREVIEW_ID = "notebook-note-preview";
 export type NotePreviewPart = string | { className: string; children: NotePreviewPart[]; attributes?: Record<string, string> };
@@ -222,7 +223,11 @@ const markRanges = (marks: readonly NotePreviewMark[]) => ({
         to: mark.to,
         className: "cm-annotation",
         order: 3,
-        attributes: { "data-annotation": mark.id, style: `--annotation-color: ${mark.color}`, "aria-description": mark.label },
+        attributes: {
+          "data-annotation": mark.id,
+          style: `--annotation-color: ${hexColor(mark.color) ?? "transparent"}`,
+          "aria-description": mark.label,
+        },
       }),
     ),
   orphans: marks.filter((mark) => mark.orphan).sort((a, b) => a.from - b.from),
@@ -246,7 +251,12 @@ const linePartsWithDots = (
     parts.push({
       className: "cm-annotation-orphan",
       children: [],
-      attributes: { "data-annotation": dot.id, style: `--annotation-color: ${dot.color}`, role: "button", "aria-label": dot.label },
+      attributes: {
+        "data-annotation": dot.id,
+        style: `--annotation-color: ${hexColor(dot.color) ?? "transparent"}`,
+        role: "button",
+        "aria-label": dot.label,
+      },
     });
     start = dot.from;
   }

@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Checkbox, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
+import { hexColor } from "@/frontend/lib/color";
 import { formatDeadline } from "@/presentation/deadline";
 import { isTaskOverdue } from "@/task-overdue";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
@@ -228,7 +229,10 @@ export default function ItemRow(props: ItemRowProps) {
                 <div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-dimmed">
                   <Show when={status()}>
                     <span class="inline-flex min-w-0 items-center gap-1">
-                      <span class="h-1.5 w-1.5 shrink-0 rounded-full" style={`background-color:${status()!.color ?? "#6b7280"}`} />
+                      <span
+                        class="h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={`background-color:${hexColor(status()!.color) ?? "#6b7280"}`}
+                      />
                       <span class="truncate">{status()!.name}</span>
                     </span>
                   </Show>
