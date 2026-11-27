@@ -734,6 +734,31 @@ export const Table = <T,>(props: TableProps<T>) => {
   const t = useTreeMessages();
   const said = useBehaviorMessages();
   const grid = () => props.select !== undefined || props.sticky === true;
+  // A touch on the head gives its column grips a target of a fingertip until a touch or a click lands elsewhere; a tap
+  // beside a title before that stays the title's (v2.css).
+  let head: HTMLTableSectionElement | undefined;
+  const [touched, setTouched] = createSignal(false);
+  let stopAway: (() => void) | undefined;
+  const touchHead = (event: PointerEvent) => {
+    if (event.pointerType !== "touch" || touched()) return;
+    setTouched(true);
+    const away = (next: PointerEvent) => {
+      if (next.target instanceof Node && head?.contains(next.target)) return;
+      setTouched(false);
+      stopAway?.();
+    };
+    document.addEventListener("pointerdown", away, true);
+    stopAway = () => {
+      document.removeEventListener("pointerdown", away, true);
+      stopAway = undefined;
+    };
+  };
+  onCleanup(() => stopAway?.());
+  // a focus in the head shows its grips; the head's own focus events say so, which a focus in the body never reaches
+  const [headFocused, setHeadFocused] = createSignal(false);
+  const leaveHead = (event: FocusEvent) => {
+    if (!(event.relatedTarget instanceof Node && head?.contains(event.relatedTarget))) setHeadFocused(false);
+  };
   const sized = () => grid() || props.columns.some((column) => column.width);
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
 
@@ -1125,7 +1150,14 @@ export const Table = <T,>(props: TableProps<T>) => {
               </For>
             </colgroup>
           </Show>
-          <thead>
+          <thead
+            ref={head}
+            data-touched={touched() ? "" : undefined}
+            data-focused={headFocused() ? "" : undefined}
+            onPointerDown={touchHead}
+            onFocusIn={() => setHeadFocused(true)}
+            onFocusOut={leaveHead}
+          >
             <tr>
               <Show when={props.select}>
                 {(select) => (
