@@ -50,7 +50,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. A column with `width` gets a grip in the head. The grip shows only while the pointer is on the head, something in it has focus, or a touch landed there; after a touch it takes a 44 px target. It stays in the tab order, and nothing moves when it shows.
 
 <Props of="Table Column" />
 

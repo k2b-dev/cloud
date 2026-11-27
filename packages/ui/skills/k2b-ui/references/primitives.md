@@ -192,7 +192,9 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, a grip in the head that a drag or the keys move), `wrap` (one text column may take 3
+never widens it, a grip in the head that a drag or the keys move; it shows
+only on hover or focus in the head, or after a touch there, with a 44 px
+target, and stays in the tab order), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by

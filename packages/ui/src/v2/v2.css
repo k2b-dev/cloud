@@ -1523,11 +1523,13 @@
 }
 
 /* column width grip in the head: the same pill, smaller (9 x 18), at the left edge of the following head. At rest
-   only the dots show; there is no column line, the blue line appears only at the grip. */
+   nothing shows (study B); a pointer on the head or a focus in it shows the dots, the head under the pointer and a grip
+   the keys reach the pill. Its room never changes, so nothing moves, and it stays in the tab order. There is no column
+   line; the blue line appears only at the grip. */
 .k2-ui .k2-cgrip {
   --k2-pill: transparent;
   --k2-pill-edge: transparent;
-  --k2-dot: var(--k2-n300);
+  --k2-dot: transparent;
   position: absolute;
   /* on the line before its column, also right to left */
   inset-inline-start: -5px;
@@ -1556,6 +1558,9 @@
     radial-gradient(circle at 6px 12px, var(--k2-dot) 0 1px, transparent 1.3px),
     var(--k2-pill);
 }
+.k2-ui .k2-table thead:is(:hover, :focus-within, [data-touched]) .k2-cgrip {
+  --k2-dot: var(--k2-n300);
+}
 .k2-ui .k2-table th:hover > .k2-cgrip,
 .k2-ui .k2-cgrip:focus-visible {
   --k2-pill: var(--k2-n100);
@@ -1570,6 +1575,19 @@
 }
 .k2-ui .k2-table th:has(> .k2-cgrip) {
   overflow: visible;
+}
+/* After a touch on the head (`data-touched`, until a touch lands elsewhere), each grip takes a target of 44 x 44 px
+   around its line, from the top of the head down (the table's scroller ends there). Before it, a grip keeps its own
+   small target, so a tap near a title stays the title's. */
+@media (any-pointer: coarse) {
+  .k2-ui .k2-table thead:is(:hover, :focus-within, [data-touched]) .k2-cgrip::after {
+    content: "";
+    position: absolute;
+    top: -9px;
+    left: -17.5px;
+    width: 44px;
+    height: 44px;
+  }
 }
 
 /* ── Facts: label quiet 12, value 13, 32 px per row, copy at the value ──────────────────────────────────────── */

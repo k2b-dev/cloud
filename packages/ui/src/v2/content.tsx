@@ -613,6 +613,26 @@ type TableItem<T> = { group: TableGroup } | { row: T; index: number };
  */
 export const Table = <T,>(props: TableProps<T>) => {
   const grid = () => props.select !== undefined || props.sticky === true;
+  // A touch on the head shows its column grips with their larger target until a touch or a click lands elsewhere: a
+  // pointer shows them by its hover, and no browser keeps a hover after a tap.
+  let head: HTMLTableSectionElement | undefined;
+  const [touched, setTouched] = createSignal(false);
+  let stopAway: (() => void) | undefined;
+  const touchHead = (event: PointerEvent) => {
+    if (event.pointerType !== "touch" || touched()) return;
+    setTouched(true);
+    const away = (next: PointerEvent) => {
+      if (next.target instanceof Node && head?.contains(next.target)) return;
+      setTouched(false);
+      stopAway?.();
+    };
+    document.addEventListener("pointerdown", away, true);
+    stopAway = () => {
+      document.removeEventListener("pointerdown", away, true);
+      stopAway = undefined;
+    };
+  };
+  onCleanup(() => stopAway?.());
   const sized = () => grid() || props.columns.some((column) => column.width);
   // Every cell is made once: what `cell` returns is placed, never rendered a second time.
   const values = createMemo(() => props.rows.map((row) => props.columns.map((column) => column.cell(row))));
@@ -719,7 +739,7 @@ export const Table = <T,>(props: TableProps<T>) => {
               </For>
             </colgroup>
           </Show>
-          <thead>
+          <thead ref={head} data-touched={touched() ? "" : undefined} onPointerDown={touchHead}>
             <tr>
               <Show when={props.select}>
                 {(select) => (
