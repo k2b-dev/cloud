@@ -1,6 +1,6 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, type NavProps, Pane, type PaneProps, Path, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, type NavProps, Pane, type PaneProps, Path, Text } from "@k2b/ui/v2";
 import { type JSX, Show } from "solid-js";
 import { settingsMessages } from "../settings/_components/messages";
 
@@ -33,7 +33,14 @@ export default function AreaFrame(props: AreaFrameProps) {
   const s = () => settingsMessages.resolve([locale()]).t;
   const main = () => (
     <Pane label={props.title} scrollKey={`admin-${props.area.href}-${props.title}`} status={props.status}>
-      <Show when={props.description}>{(description) => <Text muted>{description()}</Text>}</Show>
+      {/* the purpose stands in a band of its own, with the room and line the settings recipe gives what leads a page */}
+      <Show when={props.description}>
+        {(description) => (
+          <Band>
+            <Text muted>{description()}</Text>
+          </Band>
+        )}
+      </Show>
       {props.children}
     </Pane>
   );

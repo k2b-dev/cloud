@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
 import { type SmtpSinkOptions, smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
+import { meterSql } from "../../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
@@ -332,6 +333,28 @@ suiteFor(
     await sql`UPDATE outgoing_mail.messages SET created_at = now() - INTERVAL '25 hours'`;
     expect(await mail.profiles()).toMatchObject({ ok: true, data: [{ quota: { usedLast24h: 0 } }] });
     expect(await adminUsed()).toBe(0);
+  });
+  test("the admin list of profiles costs four statements however many apps send, the 24-hour count included", async () => {
+    await configure({ dailyRecipientLimit: 5 });
+    await accept();
+    const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: true });
+    const routes = createAdminOutgoingMailRoutes(async (c, next) => {
+      c.set("user", user);
+      await next();
+    });
+    const meter = await meterSql();
+    try {
+      let listed: Response | undefined;
+      // profiles, app access, profile grants and one sum over the quota index for every sending app at once
+      const statements = await meter.during(async () => {
+        listed = await routes.request("/profiles");
+      });
+      expect(listed?.status).toBe(200);
+      expect(statements).toHaveLength(4);
+      expect(statements.filter((statement) => statement.includes("sum(recipient_count)"))).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
   });
   test("exhausted recipient quota rejects attachments before reading or storing them", async () => {
     await configure({ dailyRecipientLimit: 1 });

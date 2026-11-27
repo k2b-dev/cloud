@@ -162,6 +162,26 @@ test("key states: a refused start leads the list and the app page, with one way 
   expect(await replaced.getByRole("link", { name: "Neuen Schlüssel erzeugen" }).count()).toBe(0);
 }, 20_000);
 
+test("at 1440 every view of the open app is a whole tab in its head, none cut or hidden", async () => {
+  // Lager has all eight views (domains and keys included), the most an app can have
+  await open("?app=lager", 1440);
+  const detail = page.locator('main [data-k2-part="Pane"][data-detail]');
+  const tabs = detail.getByRole("navigation", { name: "Lager" }).getByRole("link");
+  expect(await tabs.allInnerTexts()).toEqual(["Übersicht", "Zugriff", "Schlüssel", "Domains", "Ereignisse", "Routen", "Laufzeit", "Fehler"]);
+  const pane = (await detail.boundingBox())!;
+  for (const tab of await tabs.all()) {
+    expect(await tab.isVisible()).toBe(true);
+    const box = (await tab.boundingBox())!;
+    // whole and inside the column, clear of its right edge
+    expect({ tab: await tab.innerText(), inside: box.x >= pane.x && box.x + box.width <= pane.x + pane.width - 8 }).toEqual({
+      tab: await tab.innerText(),
+      inside: true,
+    });
+  }
+  // no menu of further views: nothing had to hide
+  expect(await detail.getByRole("button", { name: /^(Weitere|Mehr)/ }).count()).toBe(0);
+});
+
 test("domains: only an app with public pages has a Domains tab and fact", async () => {
   await open("?app=mail");
   expect(await fact("Domains").count()).toBe(0);
