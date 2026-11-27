@@ -98,6 +98,7 @@ export const gridsApiMessages = i18n.define({
       viewRestoreNeedsAdmin: "Only view admins can restore this view",
       documentLinkRevokeDenied: "Only the creator or a document editor can revoke this link.",
       mutationPolicyStoredOnly: "Mutation policies are only available for stored tables.",
+      createdSeriesStoredOnly: "Only a stored table counts its new records per day.",
       sourceTablesUnavailable: "One or more source tables are unavailable or not administrable.",
       cancelRunStateInvalid: "Only queued, running, or waiting runs can be canceled.",
       recordEditorChanged: "This record editor changed after the app was published",
@@ -218,6 +219,7 @@ export const gridsApiMessages = i18n.define({
       documentLinkRevokeDenied:
         "Nur die erstellende Person oder Personen mit Bearbeitungsrechten für das Dokument können diesen Link widerrufen.",
       mutationPolicyStoredOnly: "Änderungsrichtlinien sind nur für gespeicherte Tabellen verfügbar.",
+      createdSeriesStoredOnly: "Nur eine gespeicherte Tabelle zählt ihre neuen Datensätze je Tag.",
       sourceTablesUnavailable: "Mindestens eine Quelltabelle ist nicht verfügbar oder kann nicht verwaltet werden.",
       cancelRunStateInvalid: "Nur wartende, laufende oder in der Warteschlange befindliche Ausführungen können abgebrochen werden.",
       recordEditorChanged: "Dieser Datensatzeditor wurde seit der Veröffentlichung der App geändert",

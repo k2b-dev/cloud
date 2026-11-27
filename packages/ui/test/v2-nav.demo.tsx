@@ -67,8 +67,9 @@ export function Demo() {
                   nested: true,
                   items: [place("Archiv", "archive"), place("Papierkorb", "trash"), place("Spam", "alert-octagon")],
                 },
-                place("Lieferanten", "folder"),
-                { label: "Rechnungen", items: [place("Offen", "folder"), place("Bezahlt", "folder")] },
+                // a sync of the mailbox runs here, and one finished in "Rechnungen"
+                { ...place("Lieferanten", "folder"), dot: "running" },
+                { label: "Rechnungen", dot: "ok", items: [place("Offen", "folder"), place("Bezahlt", "folder")] },
               ],
             },
           ]}

@@ -599,6 +599,40 @@ test("dialog on a phone: a sheet from the bottom, the whole width, its top corne
   );
 });
 
+test("dialog on a phone: the sheet shows a grip to swipe it down and keeps its close button, which closes it (Spaces W3)", async () => {
+  await withPage(
+    async (page) => {
+      await openDialog(page);
+      const dialog = page.locator(".k2-dialog");
+      // the grip: a short bar in the middle of the sheet's top edge, for the eye only (the swipe is core's)
+      const grip = await dialog.locator(".k2-dialog-grip").evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const sheet = element.closest(".k2-dialog")!.getBoundingClientRect();
+        return {
+          hidden: element.getAttribute("aria-hidden"),
+          width: Math.round(box.width),
+          middle: Math.round(box.left + box.width / 2 - (sheet.left + sheet.width / 2)),
+          top: Math.round(box.top - sheet.top),
+        };
+      });
+      expect(grip).toEqual({ hidden: "true", width: 36, middle: 0, top: 8 });
+      const close = dialog.getByRole("button", { name: "Schließen" });
+      expect(await close.isVisible()).toBe(true);
+      expect(await problems(page, ".k2-dialog")).toEqual([]);
+      await close.tap();
+      await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("dialog in the middle of a wide window has no grip", async () => {
+  await withPage(async (page) => {
+    await openDialog(page);
+    expect(await page.locator(".k2-dialog .k2-dialog-grip").isVisible()).toBe(false);
+  });
+});
+
 // Dialog.confirm (the concept's question before something that cannot be taken back): an alert dialog in the shape of
 // Dialog, rendered by Workspace. No close button; focus starts on the other button, Escape and that button answer no,
 // a press outside does nothing, the agreeing button answers yes, and it is never a sheet.

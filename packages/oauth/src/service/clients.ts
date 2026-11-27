@@ -60,7 +60,7 @@ type AccessPrincipals = {
   groups: OAuthAccessGroup[];
 };
 
-type OAuthClientAdminActor = {
+export type OAuthClientAdminActor = {
   id: string;
   uid: string;
   provider: string;

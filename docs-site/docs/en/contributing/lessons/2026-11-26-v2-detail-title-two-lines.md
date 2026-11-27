@@ -1,0 +1,7 @@
+### A long title in a detail's head was cut to one line with no way to read it
+
+- **What happened:** The Spaces worst case (an open task with a 96-sign title beside its list) showed the gap: on a wide screen, the v2 detail's head cut the title to one line ending in …, and nothing showed the rest, since v2 `Text` had no `title` for a tooltip. The fix and its test use a fixture of that case; Spaces takes `Text title` when its screens move to v2.
+- **Root cause:** Only on the phone did the detail's head let its title take a second line. On wider screens, the head kept the fixed height of its place, and the title stayed on one line like any text in a bar.
+- **Error class:** A rule for text of free length that held at one width only, and a primitive without a way to carry the full words of cut text.
+- **Guard:** The detail's head grows from its height (56, or 52 beside a list) for a second line of title at every width, and cuts with … after two lines. `Text title` carries the full words as the tooltip. `packages/ui/src/v2/detail-title.browser.test.ts` checks at 1440 and 390 px, in Chromium and WebKit, that a 99-sign title takes two lines, carries its tooltip, leaves the actions their place and makes the head 65 px, and that a title longer than two lines ends in "…". A short title keeps 52 px beside the list.
+- **Known limits:** K1 (the head's line meets the status row beside it) holds for a one-line title only; with two lines the head is 65 px, its line 13 px lower. A title renamed in place that wraps to a second line moves the content below it by 13 px.
