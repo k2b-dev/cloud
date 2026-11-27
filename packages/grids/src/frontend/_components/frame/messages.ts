@@ -36,6 +36,8 @@ export const frameMessages = i18n.define({
       recentlyOpened: "Recently opened",
       searchBase: "Search bases",
       noBaseMatches: "No base matches",
+      moreBases: ({ count, formatted }: { count: number; formatted: string }) =>
+        count === 1 ? "1 more base through the search" : `${formatted} more bases through the search`,
       fromTemplate: "From a template",
       newBase: "New base",
       editMode: "Edit mode",
@@ -115,6 +117,7 @@ export const frameMessages = i18n.define({
       recentlyOpened: "Zuletzt geöffnet",
       searchBase: "Base suchen",
       noBaseMatches: "Keine Base passt",
+      moreBases: ({ count, formatted }) => (count === 1 ? "1 weitere Base über die Suche" : `${formatted} weitere Bases über die Suche`),
       fromTemplate: "Aus Vorlage",
       newBase: "Neue Base",
       editMode: "Bearbeiten",

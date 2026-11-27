@@ -50,12 +50,11 @@ export default function GridsStart(props: GridsStartProps) {
 
   return (
     <Workspace>
-      {/* k2b-ui gap (#4477): `Pane center` puts the block in the middle of the page */}
-      <Pane label={t().getStarted}>
+      <Pane label={t().getStarted} center>
         <Text type="lead">{t().firstBaseQuestion}</Text>
-        {/* k2b-ui gap (#4477): `perRow={4}` keeps the four ways in one row */}
         <Tiles
           variant="card"
+          perRow={4}
           label={t().waysToStart}
           items={props.ways.map((way) => ({
             icon: way.icon,

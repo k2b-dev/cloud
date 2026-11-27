@@ -131,6 +131,7 @@ export default function GridsFrame(props: GridsFrameProps) {
       options: [...bases.recent.map(option(t().recentlyOpened)), ...bases.others.map(option(t().allBases))],
       search: t().searchBase,
       noMatch: t().noBaseMatches,
+      more: (hidden) => t().moreBases({ count: hidden, formatted: new Intl.NumberFormat(locale()).format(hidden) }),
       actions: bases.canCreate
         ? [way(t().newBase, "plus", BLANK), ...(template ? [way(t().fromTemplate, "template", template.id)] : [])]
         : [],
