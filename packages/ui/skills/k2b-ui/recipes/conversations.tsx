@@ -51,25 +51,23 @@ function Screen(props: { open?: string }) {
                 { label: "Kanäle entdecken", icon: "speakerphone", href: "/chat/channels" },
               ],
             },
-            {
-              phone: "page",
-              list: () => (
-                <List label="Chats">
-                  {conversations.map((chat) => (
-                    <Row
-                      avatar={{ name: chat.name }}
-                      lines={[chat.name, chat.line]}
-                      meta={chat.unread}
-                      unread={chat.unread !== undefined}
-                      time={chat.time}
-                      current={chat.id === props.open}
-                      href={`/chat/c/${chat.id}`}
-                    />
-                  ))}
-                </List>
-              ),
-            },
           ]}
+          list={
+            <List label="Chats">
+              {conversations.map((chat) => (
+                <Row
+                  avatar={{ name: chat.name }}
+                  lines={[chat.name, chat.line]}
+                  meta={chat.unread}
+                  unread={chat.unread !== undefined}
+                  time={chat.time}
+                  current={chat.id === props.open}
+                  href={`/chat/c/${chat.id}`}
+                />
+              ))}
+            </List>
+          }
+          phone="page"
           foot={[{ label: "Archiv", icon: "archive", href: "/chat/archive" }]}
         />
       }

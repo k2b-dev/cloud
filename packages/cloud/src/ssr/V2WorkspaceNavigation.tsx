@@ -114,8 +114,6 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
     return { ...fold, children, defaultExpanded: children.some(holdsCurrent) };
   };
   const items = groups.flatMap((group, index): NavigationItem[] => {
-    // an app's own rows are no places of the menu: on the phone they are the page (`phone: "page"`) or away
-    if (group.list) return [];
     const own = group.action && "items" in group.action ? deeds(group.action.items, `group:${index}:menu`) : [];
     const entries = group.tree === undefined ? rows(group.items, `${index}`) : group.tree.items.map((node) => place(group.tree, node));
     const children = [...entries, ...own];

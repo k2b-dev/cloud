@@ -435,16 +435,17 @@ lines instead of cutting a thing.
 
 ## Components
 
-- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `foot`.
+- `Nav`: `title`, `icon`, `search?`, `primary?`, `groups: { label?, action?, items }[]`, `list?`, `phone?`, `foot`.
   `search` (`{ label, value, onInput, onKeyDown? }`) and `primary` (an
   `Action`, such as "Neuer Chat") stand under the name, each across the
   column; pass the same action as `Workspace` `primary`, which floats on the
-  phone. A group with `list: () => JSX.Element` in the place of `items`
-  holds the app's own rows (a `List` of `Row`s, such as conversations):
-  made once, they reach the column's edges and scroll on their own between
-  the groups and the foot; virtualize a long list. With `phone: "page"`
-  the list with the search is the phone's page while no detail is open; the
-  title, the other groups and the foot are then in the platform's menu.
+  phone. `list` holds the app's own rows after the groups (a `List` of
+  `Row`s, such as conversations): made once, like the other parts of a
+  frame, they reach the column's edges and scroll on their own above the
+  foot; virtualize a long list. With `phone: "page"` the list with the
+  search is the phone's page while no pane is open beside it; the title,
+  the groups and the foot are then in the platform's menu, and any pane
+  that opens (a detail or a page of its own) is the page in its place.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
