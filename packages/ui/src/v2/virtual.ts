@@ -335,8 +335,9 @@ export const createVirtualWindow = <T>(options: {
       if (key !== undefined) setFocused(key);
     };
     const focusOut = (event: FocusEvent) => {
-      // a switch to another window or tab takes the focus from the page, not from the row: it comes back to it
-      if (!document.hasFocus()) return;
+      // a switch to another window or tab takes the focus from the page, not from the row: it comes back to it. Focus
+      // that a script moves elsewhere (a target is named) still leaves the row, also while the window has no focus.
+      if (event.relatedTarget === null && !document.hasFocus()) return;
       if (!(event.relatedTarget instanceof Node) || !list.contains(event.relatedTarget)) setFocused(undefined);
     };
     list.addEventListener("focusin", focusIn);

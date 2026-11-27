@@ -407,3 +407,54 @@ test(
   },
   TEST_TIMEOUT,
 );
+
+// Review r2 of #4211: a switch to another window or tab takes the focus from the page, not from the row: the parked
+// row stays, so the focus comes back to it. A blur while the page has the focus still lets it go.
+for (const away of [true, false])
+  test(
+    `a parked row ${away ? "stays when the window loses the focus" : "leaves when the page itself moves the focus away"}`,
+    async () => {
+      await withPage(async (page) => {
+        await page.locator('a[href="#e7"]').focus();
+        await scrollTo(page, '.k2-pane[aria-label="Liste"] > .k2-scroll', 30000);
+        await settled(page);
+        await page.evaluate((away) => {
+          if (away) document.hasFocus = () => false;
+          (document.activeElement as HTMLElement).blur();
+        }, away);
+        await scrollTo(page, '.k2-pane[aria-label="Liste"] > .k2-scroll', 31000);
+        await settled(page);
+        expect(await page.locator('a[href="#e7"]').count()).toBe(away ? 1 : 0);
+      });
+    },
+    TEST_TIMEOUT,
+  );
+
+// Review r2 of #4211: a scroller found anew is watched too: once the split scrolls, a taller window alone brings the
+// rows its new height shows.
+test(
+  "a list whose split began to scroll fills a taller window with rows",
+  async () => {
+    await withPage(
+      async (page) => {
+        await page.setViewportSize({ width: 1440, height: 700 });
+        await settled(page);
+        await page.setViewportSize({ width: 1440, height: 1600 });
+        await settled(page);
+        const filled = await page.evaluate(() => {
+          const view = document.querySelector(".k2-split[data-context]")!.getBoundingClientRect();
+          const rows = [...document.querySelectorAll('.k2-pane[aria-label="Liste"] [data-k2-part="Row"]')];
+          // a row stands at the bottom of what the split shows
+          return rows.some((row) => {
+            const box = row.getBoundingClientRect();
+            return box.top <= view.bottom - 20 && box.bottom >= view.bottom - 20;
+          });
+        });
+        expect(filled).toBe(true);
+      },
+      1700,
+      "context",
+    );
+  },
+  TEST_TIMEOUT,
+);
