@@ -12,7 +12,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { speedTestMessages } = await import("./SpeedTest.island.tsx");
+const { speedTestMessages } = await import("./SpeedTestView.tsx");
 
 describe("Network tools i18n", () => {
   test("German catalogs are complete", () => {

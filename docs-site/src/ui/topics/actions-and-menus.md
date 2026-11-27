@@ -37,13 +37,15 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Button
 
-The one button: `primary` once per page, framed by default, `ghost` and `text` for quiet places; `busy`, `pressed` and `disabled` for its state.
+The one button: `primary` once per page, framed by default, `ghost` and `text` for quiet places; `busy`, `pressed` and `disabled` for its state. `primary` takes the main colour of its app: blue, or plum for an app with `appearance.primary: "ai"`, such as the Assistant.
 
 <Props of="Button" />
 
 ### Menu
 
 More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
+
+An entry can also open a `panel` beside it, such as a `DatePicker`. The panel is a dialog of its own over the menu: its keys and focus are its own, Escape closes it first, and on the phone it is a sheet with a head that leads back. An entry that sets a value through its submenu or panel shows that value with `current` at its end, in the app's colour, in place of `meta`. A choice whose options say enough by themselves, such as offered times with the one set now ticked, may go without a heading (`title: ""`).
 
 <Props of="Menu MenuItem MenuSection" />
 
@@ -68,7 +70,7 @@ A `Popover` in the head has no `keep`: on the phone it leaves with the other hea
 ### Do
 
 - Give a row's "…" and its `Menu.Context` the same list of entries.
-- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv".
+- Name every icon button and every "…" with `label`, such as "Aktionen für Regal Archiv". A button with words takes a `label` only where the words alone do not say enough; it begins with the words, such as "Öffnen: Hausordnung" for "Öffnen".
 - Put deeds that destroy last, with `danger`; the line before them comes by itself.
 - Say why a deed is disabled, in the sentence beside it.
 

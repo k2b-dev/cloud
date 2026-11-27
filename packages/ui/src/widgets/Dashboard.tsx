@@ -1,5 +1,6 @@
 import { createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { cssColor } from "../internal/color";
 
 /**
  * A panel's share of the six dashboard columns: a third is two, a half three, two thirds four, full all six. At a
@@ -48,7 +49,9 @@ export function DashboardSection(props: DashboardSectionProps): JSX.Element {
           <Show when={props.icon}>
             <i
               class={`k2b-dashboard-section__icon ${props.icon}`}
-              style={props.iconColor ? { color: `color-mix(in srgb, ${props.iconColor} 72%, var(--k2b-text))` } : undefined}
+              style={
+                cssColor(props.iconColor) ? { color: `color-mix(in srgb, ${cssColor(props.iconColor)} 72%, var(--k2b-text))` } : undefined
+              }
               aria-hidden="true"
             />
           </Show>

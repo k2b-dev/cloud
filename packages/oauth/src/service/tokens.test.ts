@@ -2625,6 +2625,100 @@ suite("OAuth account epochs", () => {
       }));
   }
 
+  test("a code exchanged but not issued yet cannot issue after an administrator disconnects the person", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      try {
+        const exchange = async () => {
+          const grant = await f.authorize();
+          const consumed = await oauth.codes.consume({
+            code: grant.code,
+            clientId: f.client.clientId,
+            client: f.client,
+            redirectUri: f.redirectUri,
+            codeVerifier: grant.verifier,
+          });
+          if (!consumed || consumed.authEpoch === null) throw new Error("Missing consumed grant");
+          return () =>
+            oauth.tokens.createTokens({
+              userId: f.userId,
+              client: f.client,
+              scopes: consumed.scopes,
+              audiences: consumed.audiences,
+              authorityGrant: consumed.authorityGrant,
+              authEpoch: consumed.authEpoch!,
+              issueRefreshToken: true,
+              login: { lifetimeSeconds: oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS },
+            });
+        };
+        // without a disconnect the exchanged code issues
+        await expect((await exchange())()).resolves.toMatchObject({ refreshToken: expect.any(String) });
+
+        const issue = await exchange();
+        const disconnected = await oauth.disconnect.revokeConnections({ id: f.client.id, userId: f.userId, actor: adminActor(f.userId) });
+        expect(disconnected).toEqual({ ok: true, data: { revoked: 1 } });
+        await expect(issue()).rejects.toBeInstanceOf(oauth.tokens.OAuthAuthorityGrantRejectedError);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
+  test("a device sign-in collected but not issued yet cannot issue after an administrator disconnects the person", () =>
+    withFrozenTime(async () => {
+      const f = await epochFixture();
+      // only a public client that allows the device grant can issue from a device sign-in
+      const created = await oauth.clients.create({
+        actor: adminActor(f.userId),
+        data: {
+          name: `Device disconnect ${crypto.randomUUID()}`,
+          redirectUris: [],
+          scopes: ["openid"],
+          audiences: ["cloud"],
+          allowedProfiles: ["user"],
+          accessMode: "profiles",
+          allowedUserIds: [],
+          allowedGroupIds: [],
+          isPublic: true,
+          allowDeviceGrant: true,
+        },
+      });
+      if (!created.ok) throw new Error("Client setup failed");
+      const client = created.data;
+      try {
+        // the device collected its approved sign-in: consumed, with the nonce Core checks, not issued yet
+        const collected = async () => {
+          const sign = await oauth.device.create({ client, scopes: ["openid"] });
+          const nonce = crypto.randomUUID();
+          const [row] = await sql<{ audiences: string[] }[]>`
+            UPDATE oauth.device_authorizations
+            SET status = 'consumed', user_id = ${f.userId}::uuid, auth_epoch = ${f.authEpoch}, decided_at = now(),
+              authority_nonce = ${nonce}::uuid
+            WHERE id = ${sign.id}::uuid
+            RETURNING audiences
+          `;
+          return () =>
+            oauth.tokens.createTokens({
+              userId: f.userId,
+              client,
+              scopes: ["openid"],
+              audiences: row!.audiences,
+              authorityGrant: { kind: "device_code", deviceAuthorizationId: sign.id, nonce },
+              authEpoch: f.authEpoch,
+              login: { lifetimeSeconds: oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS },
+            });
+        };
+        // without a disconnect the collected sign-in issues
+        await expect((await collected())()).resolves.toMatchObject({ accessToken: expect.any(String) });
+
+        const issue = await collected();
+        await oauth.disconnect.revokeConnections({ id: client.id, userId: f.userId, actor: adminActor(f.userId) });
+        await expect(issue()).rejects.toBeInstanceOf(oauth.tokens.OAuthAuthorityGrantRejectedError);
+      } finally {
+        await sql`DELETE FROM oauth.clients WHERE id = ${client.id}::uuid`;
+        await f.cleanup();
+      }
+    }));
+
   test("a consumed code cannot issue after its epoch changes and its family is cleaned up", () =>
     withFrozenTime(async () => {
       const f = await epochFixture();
