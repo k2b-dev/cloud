@@ -19,11 +19,12 @@ const entrySource = `
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
+import AssistantPanel from ${JSON.stringify(resolve(import.meta.dir, "AssistantPanel.island.tsx"))};
 
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>
-      <AssistantWorkspace {...window.harness.props} />
+      {window.harness.props.embedded ? <AssistantPanel {...window.harness.props} /> : <AssistantWorkspace {...window.harness.props} />}
     </LocaleProvider>
   ),
   document.getElementById("root"),
@@ -190,7 +191,7 @@ const propsOf = (scenario: Scenario, url: URL) => {
     initialPlace: answer && answer !== "fail" ? answer : null,
     initialPlaceChats: { total: placeChats.length, items: placeChats },
     initialPlacesFilter: Boolean(scenario.placesFilter),
-    initialCounts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 } },
+    initialCounts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 }, hasArchived: false },
     userId: "user123",
     cloudUrl: assets.url.origin,
     status: {
@@ -327,7 +328,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       const outer = view.column ? "display:flex;justify-content:flex-end;height:100vh" : "display:flex;height:100vh";
       const inner = view.column
         ? `<div id="root" style="width:${view.column};display:flex;height:100vh;border-left:1px solid #e4e4e7"></div>`
-        : `<div id="root" style="display:flex;width:100%;height:100vh"></div>`;
+        : `<div id="root" class="${scenario.full ? "k2-ui" : ""}" style="display:flex;width:100%;height:100vh"></div>`;
       const panelContext = harness.props.initialPanelContext
         ? `<script type="application/json" id="cloud-panel-context">${JSON.stringify(harness.props.initialPanelContext)}</script>`
         : `<script type="application/json" id="cloud-panel-context">null</script>`;
@@ -393,7 +394,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       return route.fulfill({
         json: {
           conversations: chats,
-          counts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 } },
+          counts: { unread: 0, needsAttention: 0, places: { total: placeChats.length, unread: 0, needsAttention: 0 }, hasArchived: false },
           placeChats: { total: placeChats.length, items: placeChats },
           projects: [],
           doneCount: 0,
@@ -960,35 +961,25 @@ describe("Gustav at a place", () => {
     }
   }, 60_000);
 
-  test("the Gustav list leaves chats at places out, and At places lists them with app and place", async () => {
+  test("the Gustav list leaves chats at places out, and At places folds them away at its end", async () => {
     const h = await open(desktop, { full: true, answers: {} });
     try {
-      const sidebar = h.page.locator('[data-sidebar-mode="expanded"]').first();
-      await h.page.getByRole("button", { name: "An Orten 2" }).waitFor();
-      expect(await h.page.getByText("Antwort an Marta Beispiel").filter({ visible: true }).count()).toBe(0);
+      // v2: the filter chip of v1 is the folding entry "An Orten" with its count at the end of the sidebar.
+      const nav = h.page.locator('[data-k2-part="Nav"]');
+      const fold = nav.getByRole("button", { name: /An Orten/ });
+      await fold.waitFor();
+      expect(await fold.textContent()).toContain("2");
+      expect(await nav.getByText("Antwort an Marta Beispiel").filter({ visible: true }).count()).toBe(0);
+      expect(await nav.getByText("Steuer-Checkliste 2026").filter({ visible: true }).count()).toBe(1);
       await shot(h.page, "07-liste-ohne-orte-light-1440");
-      await h.page.getByRole("button", { name: "An Orten 2" }).click();
-      await h.page.getByText("An Orten · nur deine Chats").waitFor();
-      await h.page.getByText("Kundenkontakt · Marta Beispiel").waitFor();
-      expect(await h.page.getByText("Steuer-Checkliste 2026").filter({ visible: true }).count()).toBe(0);
-      expect(new URL(h.page.url()).searchParams.get("places")).toBe("1");
+      await fold.click();
+      await nav.getByText("Antwort an Marta Beispiel").filter({ visible: true }).waitFor();
+      expect(await nav.getByText("Abholung Jonas Probe").filter({ visible: true }).count()).toBe(1);
+      // k2b-ui gap: a Nav entry has no second line, so the place's app and name show only as the app's symbol.
       await shot(h.page, "08-liste-an-orten-light-1440");
-      // The same chip switches back to the person's own chats.
-      await h.page.getByRole("button", { name: "An Orten 2" }).click();
-      await h.page.getByText("Steuer-Checkliste 2026").filter({ visible: true }).waitFor();
-      expect(new URL(h.page.url()).searchParams.has("places")).toBe(false);
-      expect(await sidebar.count()).toBeGreaterThan(0);
       expect(h.errors).toEqual([]);
     } finally {
       await h.close();
-    }
-    // A reload keeps the filter.
-    const reloaded = await open(desktop, { full: true, placesFilter: true, answers: {} });
-    try {
-      await reloaded.page.getByText("Kundenkontakt · Jonas Probe").waitFor();
-      expect(await reloaded.page.getByRole("button", { name: "An Orten 2" }).getAttribute("aria-pressed")).toBe("true");
-    } finally {
-      await reloaded.close();
     }
   }, 60_000);
 });

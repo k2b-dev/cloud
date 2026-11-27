@@ -1,10 +1,12 @@
 import {
   aiConversations,
   aiProjects,
+  aiUserPrefs,
   assistantAiSettingsState,
   getAiChatQuotas,
   getLiveDictationStatus,
   loadAiStreamState,
+  peopleAiModels,
 } from "@k2b/cloud/ai";
 import { buildAiMessageTimeline, collectAiWakeupLines } from "@k2b/cloud/ai/browser";
 import { aiLive } from "@k2b/cloud/ai/live";
@@ -26,7 +28,9 @@ import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { chatSecretTitleRefs, loadSecretTitles } from "../secret-titles";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import { loadWaitingAutomations } from "../waiting-automations";
+import AssistantPanel from "./AssistantPanel.island";
 import AssistantWorkspace from "./AssistantWorkspace.island";
+import { assistantPrefsTabFromHref } from "./assistant-navigation";
 import { readAssistantPlace } from "./assistant-place";
 import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
 import { loadCodeOverview } from "./code-overview";
@@ -41,6 +45,11 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = assistantMessages.resolve([locale]);
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
+  // v1's list filter "At places" (`?places=1`) is the sidebar's folder "An Orten" on v2: an old address opens the page.
+  if (!embedded && url.searchParams.has("places")) {
+    url.searchParams.delete("places");
+    return c.redirect(`${url.pathname}${url.search}`, 302);
+  }
   const requestedConversationId = url.searchParams.get("conversation") ?? undefined;
   const requestedProjectId = url.searchParams.get("project") ?? undefined;
   const initialArtifactPath = url.searchParams.get("artifact");
@@ -51,6 +60,8 @@ export default ssr<AuthContext>(async (c) => {
   const codeOpen =
     detailCodeId !== undefined ||
     (!approvalsOpen && url.searchParams.get("code") === "1" && !requestedConversationId && !requestedProjectId);
+  // Gustav's settings, a view of the page only (the panel keeps its dialog).
+  const prefsTab = embedded || detailCodeId !== undefined ? null : assistantPrefsTabFromHref(url.href);
   const panelContext = embedded ? readPanelContext(c) : null;
   // Gustav reads Code through Core's public queries with the person's own credentials, like any application.
   const codeCaller = {
@@ -79,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
     codeDetail,
     automations,
     placeState,
+    prefsRead,
   ] = await Promise.all([
     assistantAiSettingsState(subject),
     getLiveDictationStatus(c.get("accessSubject")),
@@ -103,7 +115,17 @@ export default ssr<AuthContext>(async (c) => {
     approvalsOpen ? loadWaitingAutomations(invokeCode, timeZone).catch(() => null) : undefined,
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
     panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
+    // Gustav's settings page draws its first picture from these, as its browser reads would: the person's settings,
+    // and whether the OpenAI-compatible API is on; its models are the page's own read above (`settings`). Null:
+    // unreadable now, so the page reads them itself and says so.
+    prefsTab ? Promise.all([aiUserPrefs.get(user.id), coreSettings.get<boolean>("ai.openai_api_enabled")]).catch(() => null) : null,
   ]);
+  const initialPrefs = prefsRead
+    ? {
+        prefs: prefsRead[0],
+        access: prefsRead[1] ? { baseUrl: `${publicCloudOrigin(appUrl)}/api/ai/openai/v1`, models: settings.options } : null,
+      }
+    : null;
   // An app that does not answer right now leaves the place to the panel, which shows "Try again" in the bar.
   const initialPlace = (() => {
     try {
@@ -141,10 +163,23 @@ export default ssr<AuthContext>(async (c) => {
         perPage: 20,
       })
     : null;
-  const projectContext = activeProject ? await loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null;
+  // A Project's settings page (its administrators') draws its first picture from its models and access, read with the
+  // Project's context, as its browser reads would.
+  const projectSettingsOpen = !embedded && activeProject?.permission === "admin" && url.searchParams.get("settings") === "1";
+  const [projectContext, initialProjectSettingsSeed] = await Promise.all([
+    activeProject ? loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null,
+    projectSettingsOpen && activeProjectRecord
+      ? Promise.all([
+          peopleAiModels(c.get("accessSubject")),
+          aiProjects.listAccess(activeProjectRecord.id, { actor: c.get("actor"), accessSubject: c.get("accessSubject") }, locale),
+        ])
+          .then(([models, access]) => (access ? { models, access } : null))
+          .catch(() => null)
+      : null,
+  ]);
 
   const selectedConversationId =
-    activeProject || approvalsOpen || codeOpen
+    activeProject || approvalsOpen || codeOpen || prefsTab
       ? null
       : (requestedConversationId ??
         (embedded ? placeConversationId : conversations.find((conversation) => !conversation.isDone)?.shortId) ??
@@ -204,69 +239,71 @@ export default ssr<AuthContext>(async (c) => {
       )
     : undefined;
 
-  const workspace = () => (
-    <AssistantWorkspace
-      initialCodeVersionCards={initialCodeVersionCards}
-      initialSecretTitles={initialSecretTitles}
-      embedded={embedded}
-      initialPanelContext={panelContext}
-      initialPlace={initialPlace}
-      initialPlaceChats={sidebar.placeChats ?? null}
-      // A chat at a place opens with the list that holds it, so a reload keeps the person where they were.
-      initialPlacesFilter={url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place))}
-      initialQuotas={initialQuotas}
-      userId={user.id}
-      canConfigureAi={user.roles.includes("admin")}
-      cloudUrl={publicCloudOrigin(appUrl)}
-      status={status}
-      models={status.options}
-      timeZone={timeZone}
-      renderedAt={new Date().toISOString()}
-      initialLiveCursor={initialLiveCursor}
-      initialCounts={sidebar.counts}
-      initialConversations={initialConversations}
-      initialDoneCount={sidebar.doneCount}
-      initialQuestions={sidebar.questions}
-      initialConversationId={activeConversation?.shortId ?? null}
-      initialArtifactPath={initialArtifactPath}
-      initialWorkspaceHref={`${url.pathname}${url.search}`}
-      initialDetail={
-        initialDetail
-          ? {
-              conversation: initialDetail.conversation,
-              messages: initialDetail.messages,
-              hasMoreMessages: initialDetail.hasMoreMessages ?? false,
-              activeTurn: initialDetail.activeTurn,
-              timeline: initialTimeline,
-            }
-          : null
-      }
-      initialContext={initialContext}
-      initialWakeupLines={initialWakeupLines}
-      initialTabs={activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null}
-      arrangeHintSeen={getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen"}
-      projects={projects}
-      initialProject={activeProject}
-      initialProjectChats={
-        projectChats
-          ? {
-              ...projectChats,
-              items: projectChats.items.map((chat) => ({ ...chat, id: chat.shortId, projectId: activeProject!.id })),
-            }
-          : null
-      }
-      initialProjectContext={projectContext}
-      approvals={{ ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen }}
-      code={{
-        has: hasCode,
-        open: codeOpen,
-        ...(codeList !== undefined ? { page: codeList } : {}),
-        ...(codeDetail ? { detail: codeDetail } : {}),
-      }}
-      {...(automations !== undefined ? { initialAutomations: automations } : {})}
-      initialCodeBlock={panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null}
-    />
-  );
+  const islandProps = {
+    initialCodeVersionCards: initialCodeVersionCards,
+    initialSecretTitles: initialSecretTitles,
+    embedded: embedded,
+    initialPanelContext: panelContext,
+    initialPlace: initialPlace,
+    initialPlaceChats: sidebar.placeChats ?? null,
+    // A chat at a place opens with the list that holds it, so a reload keeps the person where they were.
+    initialPlacesFilter: url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place)),
+    initialQuotas: initialQuotas,
+    userId: user.id,
+    canConfigureAi: user.roles.includes("admin"),
+    cloudUrl: publicCloudOrigin(appUrl),
+    status: status,
+    models: status.options,
+    timeZone: timeZone,
+    renderedAt: new Date().toISOString(),
+    initialLiveCursor: initialLiveCursor,
+    initialCounts: sidebar.counts,
+    initialConversations: initialConversations,
+    initialDoneCount: sidebar.doneCount,
+    initialMoreConversations: sidebar.moreConversations ?? false,
+    initialQuestions: sidebar.questions,
+    initialConversationId: activeConversation?.shortId ?? null,
+    initialArtifactPath: initialArtifactPath,
+    initialWorkspaceHref: `${url.pathname}${url.search}`,
+    initialDetail: initialDetail
+      ? {
+          conversation: initialDetail.conversation,
+          messages: initialDetail.messages,
+          hasMoreMessages: initialDetail.hasMoreMessages ?? false,
+          activeTurn: initialDetail.activeTurn,
+          timeline: initialTimeline,
+        }
+      : null,
+    initialContext: initialContext,
+    initialWakeupLines: initialWakeupLines,
+    initialTabs: activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null,
+    arrangeHintSeen: getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen",
+    projects: projects,
+    initialProject: activeProject,
+    initialProjectChats: projectChats
+      ? {
+          ...projectChats,
+          items: projectChats.items.map((chat) => ({ ...chat, id: chat.shortId, projectId: activeProject!.id })),
+        }
+      : null,
+    initialProjectContext: projectContext,
+    approvals: { ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen },
+    initialPrefsTab: prefsTab,
+    initialPrefs,
+    // A Project's settings are its administrators' page on v2; the panel and everyone else get the Project.
+    initialProjectSettings: projectSettingsOpen,
+    initialProjectSettingsSeed,
+    code: {
+      has: hasCode,
+      open: codeOpen,
+      ...(codeList !== undefined ? { page: codeList } : {}),
+      ...(codeDetail ? { detail: codeDetail } : {}),
+    },
+    ...(automations !== undefined ? { initialAutomations: automations } : {}),
+    initialCodeBlock: panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null,
+  };
+  // The panel and the page are two islands, each with only its own frame; each is written out, so SSR marks it.
+  const workspace = () => (embedded ? <AssistantPanel {...islandProps} /> : <AssistantWorkspace {...islandProps} />);
   if (embedded)
     return () => (
       <PanelLayout c={c} title={t.assistant}>
@@ -274,7 +311,7 @@ export default ssr<AuthContext>(async (c) => {
       </PanelLayout>
     );
   return () => (
-    <Layout c={c} fullPage title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
+    <Layout c={c} fullPage ui="v2" title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
       {workspace()}
     </Layout>
   );

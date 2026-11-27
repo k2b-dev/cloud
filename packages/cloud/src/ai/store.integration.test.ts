@@ -1174,6 +1174,8 @@ suite("AI conversation store integration", () => {
       const more = await Promise.all(Array.from({ length: 20 }, () => aiConversations.createConversation({ ownerUserId: userId })));
       conversationIds.push(...more.map((item) => item.id));
       expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(21);
+      // The sidebar's bound: a smaller limit returns exactly that many, the newest first.
+      expect(await aiConversations.listSidebarConversations({ ownerUserId: userId, limit: 5 })).toHaveLength(5);
       await aiConversations.submitChatTurn({
         conversationId: chat.id,
         modelId: "test-model",

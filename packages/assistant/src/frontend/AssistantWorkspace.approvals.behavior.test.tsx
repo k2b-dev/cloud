@@ -6,7 +6,8 @@ import { createDomTestHarness } from "../../../ui/test/dom";
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    return (await import("./AssistantWorkspace.island")).default;
+    // Shared logic, seen through the panel, which keeps the v1 frame; the v2 page has its own browser tests.
+    return (await import("./AssistantPanel.island")).default;
   } finally {
     dom.cleanup();
   }
@@ -38,7 +39,7 @@ const blank: AiConversation = {
 
 test("New chat and the chat row leave the approvals view opened over an empty chat and return to that chat", async () => {
   const dom = createDomTestHarness();
-  dom.window.history.replaceState(null, "", "/app/assistant?conversation=blank1");
+  dom.window.history.replaceState(null, "", "/app/assistant/panel?conversation=blank1");
   const requests: { method: string; url: string }[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
@@ -93,7 +94,7 @@ test("New chat and the chat row leave the approvals view opened over an empty ch
   const composer = () => dom.root.querySelector('button[aria-label="Send message"]');
   try {
     expect(composer()).not.toBeNull();
-    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant?approvals=1"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant/panel?approvals=1"]')!.click();
     await Bun.sleep(0);
     expect(dom.window.location.search).toBe("?approvals=1");
     expect(approvalsView()).not.toBeNull();
@@ -106,10 +107,10 @@ test("New chat and the chat row leave the approvals view opened over an empty ch
     expect(dom.window.location.search).toBe("?conversation=blank1");
     // The empty chat is reused; another empty one would only crowd the list.
     expect(requests.filter((request) => request.method === "POST" && request.url.endsWith("/conversations"))).toEqual([]);
-    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant?approvals=1"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant/panel?approvals=1"]')!.click();
     await Bun.sleep(0);
     expect(approvalsView()).not.toBeNull();
-    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant?conversation=blank1"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant/panel?conversation=blank1"]')!.click();
     for (let attempt = 0; attempt < 100 && dom.window.location.search !== "?conversation=blank1"; attempt += 1) await Bun.sleep(10);
     expect(approvalsView()).toBeNull();
     expect(composer()).not.toBeNull();

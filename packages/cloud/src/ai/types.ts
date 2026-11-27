@@ -161,6 +161,8 @@ export type AiConversationCounts = {
   unread: number;
   needsAttention: number;
   places: { total: number; unread: number; needsAttention: number };
+  /** The person has archived chats, which every other count leaves out. */
+  hasArchived: boolean;
 };
 export type AiConversationPlaceFilter = "none" | "any" | `${string}:${string}`;
 
@@ -891,7 +893,8 @@ export type AiConversationService = {
     unassigned?: boolean;
     limit?: number;
   }): Promise<AiConversation[]>;
-  listSidebarConversations(input: { ownerUserId: string; place?: AiConversationPlaceFilter }): Promise<AiConversation[]>;
+  /** The open chats of the sidebar, pinned first, then the newest; at most `limit`, `AI_SIDEBAR_CONVERSATIONS_MAX` when not set. */
+  listSidebarConversations(input: { ownerUserId: string; place?: AiConversationPlaceFilter; limit?: number }): Promise<AiConversation[]>;
   listConversationsPage(input: {
     ownerUserId: string;
     place?: AiConversationPlaceFilter;

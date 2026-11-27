@@ -268,8 +268,10 @@ listing a chat does not call the place provider. The place is also indexed as
 a conversation resource, so the existing exact `refs` filter can find it.
 
 `GET /api/ai/conversations/counts` returns `{ unread, needsAttention, places:
-{ total, unread, needsAttention } }` for the current person's non-archived chats.
-The first two counts include place chats; `places` gives their separate counts.
+{ total, unread, needsAttention }, hasArchived }` for the current person's
+non-archived chats. The first two counts include place chats; `places` gives
+their separate counts. `hasArchived` says whether the person also has archived
+chats, so a list of every chat can stay offered when no open chat is left.
 Search presents place chats in **At places** (**An Orten** in German).
 The `ai.chats.search` and `ai.chats.resources` tools exclude place chats unless
 their `place` input gives an exact resource reference. Cross-chat resource

@@ -1,4 +1,5 @@
 import { appAccess, defineApp } from "@k2b/cloud";
+import { ASSISTANT_ACCENT } from "./accent";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
@@ -24,9 +25,9 @@ export const app = defineApp({
   appearance: {
     // In Gustav plum is the primary colour: actions, focus, selection, and links follow the AI palette.
     primary: "ai",
-    accent: "#8e1b6f",
+    accent: ASSISTANT_ACCENT,
     background: {
-      from: "#8e1b6f",
+      from: ASSISTANT_ACCENT,
       to: "#c4519f",
       angle: 135,
       strength: 14,

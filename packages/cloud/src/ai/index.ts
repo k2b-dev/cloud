@@ -161,7 +161,12 @@ export {
   toAiActionFailureResponse,
   toAiErrorResponse,
 } from "./http";
-export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
+export {
+  AI_IMAGE_INPUT_MAX_BYTES,
+  AI_SIDEBAR_CONVERSATIONS_MAX,
+  AI_TURN_ATTACHMENT_MAX_ITEMS,
+  AI_TURN_IMAGE_MAX_TOTAL_BYTES,
+} from "./limits";
 export { createAiLiveTranscriptionProvider, getLiveDictationStatus, type LiveDictationStatus } from "./live-dictation-model";
 export { aiDictationRoutes, stopLiveDictationSessions } from "./live-dictation-routes";
 export {

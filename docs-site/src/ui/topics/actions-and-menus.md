@@ -61,9 +61,9 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 <Props of="Popover" />
 
-## Not in v2 yet
+## On the phone
 
-A `Popover` in the head has no `keep`: on the phone it leaves with the other head actions, while a `Menu` in the head stays. A filter the phone needs is a `Menu` with ticked entries. Write `// k2b-ui gap: popover keep on the phone` at that place.
+Every control of a head stays on the phone, a `Popover` and a `Menu` alike. Only the twin of `Workspace primary` (`floats`) and a detail's close × beside its way back (`closes`) leave the head there.
 
 ## Do and don't
 

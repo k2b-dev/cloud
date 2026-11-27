@@ -17,8 +17,6 @@ export type AssistantStarterAction = {
   prompt: string;
   icon: string;
   skill?: string;
-  /** The small line above the title: where the suggestion leads. */
-  area?: string;
   /** The bold title; `label` follows below it. */
   title?: string;
 };
@@ -57,7 +55,6 @@ export default function AssistantEmptyChat(props: {
       prompt: t().analyzeFilesPrompt,
       icon: "ti ti-folder",
       skill: "assistant-code-mode",
-      area: t().starterFilesArea,
       title: t().starterFilesTitle,
     },
     {
@@ -65,11 +62,10 @@ export default function AssistantEmptyChat(props: {
       prompt: t().buildAppPrompt,
       icon: "ti ti-code",
       skill: "assistant-code-mode",
-      area: t().starterCodeArea,
       title: t().starterCodeTitle,
     },
-    { label: t().discover, prompt: t().discoverPrompt, icon: "ti ti-sparkles", area: t().starterStartArea, title: t().starterStartTitle },
-    { label: t().followMail, prompt: t().followMailPrompt, icon: "ti ti-mail", area: t().starterMailArea, title: t().starterMailTitle },
+    { label: t().discover, prompt: t().discoverPrompt, icon: "ti ti-sparkles", title: t().starterStartTitle },
+    { label: t().followMail, prompt: t().followMailPrompt, icon: "ti ti-mail", title: t().starterMailTitle },
   ];
   const selectedProject = () => props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
 
@@ -140,7 +136,6 @@ export default function AssistantEmptyChat(props: {
                   <i class={starter.icon} />
                 </span>
                 <span class="assistant-starter__text">
-                  {starter.area ? <small class="assistant-starter__area">{starter.area}</small> : null}
                   {starter.title ? <strong class="assistant-starter__title">{starter.title}</strong> : null}
                   <span class="assistant-starter__hint">{starter.label}</span>
                 </span>

@@ -15,7 +15,7 @@ export const FIXTURE_TIME_ZONE = "Europe/Berlin";
 const DAY = { from: "2026-11-13T23:00:00.000Z", to: "2026-11-14T23:00:00.000Z" };
 
 /** `chat` and `chat-fehlt`: concept "Automationen als Code" v5, scene `a-apps`; `automation`: scene `a-wartet`. */
-export type AppsState = "normal" | "leer" | "laedt" | "fehler" | "lang" | "chat" | "chat-fehlt";
+export type AppsState = "normal" | "leer" | "laedt" | "fehler" | "lang" | "chat" | "chat-fehlt" | "schlimm";
 export type WaitingState = "normal" | "leer" | "laedt" | "fehler" | "lang" | "automation";
 
 const now = Date.parse(FIXTURE_NOW);
@@ -143,6 +143,36 @@ const MANY = (): CodeOverviewItem[] => {
   return kinds.map((item, index) => ({ ...item, id: `c_lang${String(index).padStart(2, "0")}`, title: `${item.title} ${index + 1}` }));
 };
 
+/**
+ * The worst realistic list (break-ui): a long name with its schedule, emoji, non-Latin and one-letter names, a draft
+ * without any version yet, a Code whose last run is unknown, a chat that is gone, and more pages after this one.
+ */
+const WORST = (): CodeOverviewItem[] => {
+  const [on, running, failed, paused] = CARDS() as [CodeOverviewItem, CodeOverviewItem, CodeOverviewItem, CodeOverviewItem];
+  return [
+    {
+      ...on,
+      id: "c_worst1",
+      title: "Wochenabschluss Wareneingang (freitags 14 Uhr) mit Rückfragen an die Lieferanten und Versand der Mahnungen",
+    },
+    { ...running, id: "c_worst2", title: "🧾 Belege sammeln 📎" },
+    { ...failed, id: "c_worst3", title: "仕入先への週次レポート" },
+    { ...paused, id: "c_worst4", title: "Ä" },
+    {
+      ...on,
+      id: "c_worst5",
+      title: "Entwurf ohne Zeitplan",
+      state: "draft",
+      proposedTiming: [],
+      lastRun: null,
+      automations: [],
+      extras: { ...on.extras!, runs: [] },
+    },
+    { ...on, id: "c_worst6", title: "Lauf unbekannt", lastRun: undefined, extras: { ...on.extras!, runs: [] } },
+    BRIEFING(true),
+  ];
+};
+
 /** The morning briefing writes to its own chat every weekday at 07:00; `missing` archived that chat this morning. */
 const BRIEFING = (missing: boolean): CodeOverviewItem => {
   const brief = runs(9, missing ? "ooooooof" : "oooooooo", local("07:00"));
@@ -171,6 +201,7 @@ export const myAppsFixture = (state: AppsState): { initial: CodeOverviewPage | n
   if (state === "leer") return { initial: { items: [], nextCursor: null } };
   if (state === "chat" || state === "chat-fehlt")
     return { initial: { items: [BRIEFING(state === "chat-fehlt"), ...CARDS()], nextCursor: null } };
+  if (state === "schlimm") return { initial: { items: WORST(), nextCursor: "c_worst7" } };
   return { initial: { items: state === "lang" ? MANY() : CARDS(), nextCursor: null } };
 };
 

@@ -42,7 +42,8 @@ const entrySource = `import { LocaleProvider } from "@k2b/ui";
 import { mount } from ${JSON.stringify(resolve(import.meta.dir, "../../../ssr/src/mount.ts"))};
 import { toJSON } from ${JSON.stringify(Bun.resolveSync("seroval", cloud))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
-function Workspace(props) { return <LocaleProvider locale="de"><AssistantWorkspace {...props} /></LocaleProvider>; }
+import AssistantPanel from ${JSON.stringify(resolve(import.meta.dir, "AssistantPanel.island.tsx"))};
+function Workspace(props) { return <LocaleProvider locale="de">{props.embedded ? <AssistantPanel {...props} /> : <AssistantWorkspace {...props} />}</LocaleProvider>; }
 document.getElementById("root").dataset.props = JSON.stringify(toJSON(window.harness));
 mount(Workspace, "#root");`;
 const fakeLiveSource = `export const liveConnection = () => ({ subscribe: (_channel, _scope, handlers) => {

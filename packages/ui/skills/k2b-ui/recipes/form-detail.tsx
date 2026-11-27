@@ -35,7 +35,7 @@ export default function NewAppointment(props: Props) {
         <Bar
           start={<Text type="body">Termine</Text>}
           end={
-            <Button variant="primary" icon="plus" href="#neu">
+            <Button variant="primary" floats icon="plus" href="#neu">
               Neuer Termin
             </Button>
           }
@@ -59,7 +59,7 @@ export default function NewAppointment(props: Props) {
           head={
             <Bar
               start={<Text type="lead">Neuer Termin</Text>}
-              end={<Button variant="ghost" icon="x" label="Schließen" href="#termine" />}
+              end={<Button variant="ghost" icon="x" label="Schließen" href="#termine" closes />}
             />
           }
         >

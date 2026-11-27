@@ -5,7 +5,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { WaitingAutomation } from "../waiting-automations";
 
 /** Texts of the section; only the Waiting for you page carries them. */
-const automationMessages = i18n.define({
+export const automationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {

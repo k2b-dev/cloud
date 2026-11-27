@@ -83,9 +83,11 @@ function QuestionRows(props: {
   );
 }
 
-export default function AssistantApprovalsView(props: AssistantApprovalsViewProps) {
-  const locale = useLocale();
-  const t = () => assistantMessages.resolve([locale()]).t;
+/**
+ * The state of Waiting for you, shared by the v1 view (panel) and the v2 view (page): the approvals, the questions
+ * beyond the row's first page, the person's automations, and loading more. The controller loads on first use.
+ */
+export function createWaitingPage(props: AssistantApprovalsViewProps) {
   const [paging, setPaging] = createSignal<WaitingQuestionsPagingState>({ items: [], cursor: props.questionsPage?.().nextCursor });
   const extraQuestions = createMemo(() => paging().items);
   const [approvals, setApprovals] = createSignal<ApprovalPage | null | undefined>(props.initial);
@@ -177,10 +179,51 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
     secrets().length === 0 &&
     !automationsShow() &&
     !paging().cursor;
+  const setElement = (value: HTMLElement | undefined) => {
+    element = value;
+  };
+  return {
+    approvals,
+    automations,
+    paging,
+    loading,
+    versions,
+    secrets,
+    shownAutomations,
+    automationsShow,
+    empty,
+    retry,
+    loadMore,
+    setElement,
+    loadAutomations: () => void controller().then((loaded) => loaded?.loadAutomations()),
+    refreshAutomations: async () => {
+      await (await controller())?.refreshAutomations();
+    },
+  };
+}
+
+export default function AssistantApprovalsView(props: AssistantApprovalsViewProps) {
+  const locale = useLocale();
+  const t = () => assistantMessages.resolve([locale()]).t;
+  const {
+    approvals,
+    paging,
+    loading,
+    versions,
+    secrets,
+    shownAutomations,
+    automationsShow,
+    empty,
+    retry,
+    loadMore,
+    setElement,
+    loadAutomations,
+    refreshAutomations,
+  } = createWaitingPage(props);
 
   return (
     <ScrollArea class="min-h-0 flex-1">
-      <section ref={element} class="assistant-waiting-page" aria-labelledby="assistant-waiting-title">
+      <section ref={setElement} class="assistant-waiting-page" aria-labelledby="assistant-waiting-title">
         <header class="assistant-page-head">
           <div class="assistant-page-head__copy">
             <h1 id="assistant-waiting-title" class="assistant-page-head__title">
@@ -255,11 +298,9 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
                 <Show when={automationsShow()}>
                   <AssistantWaitingAutomations
                     entries={shownAutomations() ?? null}
-                    onRetry={() => void controller().then((loaded) => loaded?.loadAutomations())}
+                    onRetry={loadAutomations}
                     // A read that fails after the restore shows the section's error with "Try again", never silence.
-                    onChanged={async () => {
-                      await (await controller())?.refreshAutomations();
-                    }}
+                    onChanged={refreshAutomations}
                   />
                 </Show>
               </Show>

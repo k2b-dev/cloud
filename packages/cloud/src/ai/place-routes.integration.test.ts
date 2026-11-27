@@ -50,7 +50,12 @@ suiteFor("database", "valkey")("place chat list API", () => {
       const count = await aiRoutes.request("/conversations/counts", { headers: headers(0) });
       expect(await count.json()).toMatchObject({ unread: 1, places: { total: 1, unread: 1 } });
       const benCount = await aiRoutes.request("/conversations/counts", { headers: headers(1) });
-      expect(await benCount.json()).toEqual({ unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } });
+      expect(await benCount.json()).toEqual({
+        unread: 0,
+        needsAttention: 0,
+        places: { total: 0, unread: 0, needsAttention: 0 },
+        hasArchived: false,
+      });
       const deniedStream = await aiRoutes.request(`/conversations/${chat.shortId}/stream`, { headers: headers(1) });
       expect(deniedStream.status).toBe(404);
       expect(deniedStream.headers.get("Content-Type")).not.toContain("text/event-stream");

@@ -22,9 +22,6 @@ import {
 import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantCommandMessages } from "../commands";
-import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
-import { openAssistantConversationEditor } from "./AssistantConversationEditor";
-import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import type { AssistantArchiveBlocker } from "./archive-blocker";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
@@ -40,6 +37,7 @@ import {
 } from "./conversation-view";
 import { assistantMessages } from "./messages";
 import { placeMessages } from "./place-messages";
+import { openAssistantAllChatsDialog, openAssistantConversationEditor, openAssistantPrefsModal } from "./rare-dialogs";
 import { useAssistantText } from "./ui-copy";
 
 /** List status tones in the shared navigation's intent vocabulary. */

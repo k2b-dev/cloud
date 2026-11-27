@@ -46,6 +46,7 @@ export const assistantProjectHref = (currentHref: string, projectId: string): st
   url.searchParams.delete("question");
   url.searchParams.delete("artifact");
   url.searchParams.set("project", projectId);
+  url.searchParams.delete("settings");
   url.searchParams.delete("approvals");
   url.searchParams.delete("code");
   url.searchParams.delete("q");
@@ -55,6 +56,17 @@ export const assistantProjectHref = (currentHref: string, projectId: string): st
 export const assistantConversationIdFromHref = (href: string): string | null => new URL(href, URL_BASE).searchParams.get("conversation");
 
 export const assistantProjectIdFromHref = (href: string): string | null => new URL(href, URL_BASE).searchParams.get("project");
+
+/** A Project's settings on v2's page: `?project=<id>&settings=1`, so reload and Back keep them. */
+export const assistantProjectSettingsHref = (currentHref: string, projectId: string): string => {
+  const url = new URL(assistantProjectHref(currentHref, projectId), URL_BASE);
+  url.searchParams.set("settings", "1");
+  return relativeHref(url);
+};
+export const assistantProjectSettingsFromHref = (href: string): boolean => {
+  const params = new URL(href, URL_BASE).searchParams;
+  return params.has("project") && params.get("settings") === "1";
+};
 
 export const assistantArtifactHref = (currentHref: string, path: string | null): string => {
   const url = new URL(currentHref, URL_BASE);
@@ -99,6 +111,22 @@ export const assistantMessageSeqFromHref = (href: string): number | null => {
 export const ASSISTANT_APPROVALS_HREF = "/app/assistant?approvals=1";
 
 export const assistantApprovalsOpenFromHref = (href: string): boolean => new URL(href, URL_BASE).searchParams.get("approvals") === "1";
+
+/** The tabs of Gustav's settings, in their order. */
+export const ASSISTANT_PREFS_TABS = ["personalization", "chat", "skills", "system-prompt", "approvals", "api-access"] as const;
+export type AssistantPrefsTab = (typeof ASSISTANT_PREFS_TABS)[number];
+export const assistantPrefsHref = (basePath: string, tab: AssistantPrefsTab) => `${basePath}?prefs=${tab}`;
+
+/**
+ * Gustav's settings on v2's page: `?prefs=<tab>`, so reload and Back keep the tab. Same precedence as the server: a
+ * chat, a Project, the approvals or the Code view wins; an unknown tab is no settings view.
+ */
+export const assistantPrefsTabFromHref = (href: string): AssistantPrefsTab | null => {
+  const params = new URL(href, URL_BASE).searchParams;
+  if (params.has("conversation") || params.has("project") || params.get("approvals") === "1" || params.get("code") === "1") return null;
+  const tab = params.get("prefs");
+  return ASSISTANT_PREFS_TABS.find((entry) => entry === tab) ?? null;
+};
 
 /** The person's own Code: `?code=1`, without a chat or project, so reload and Back keep it. */
 export const ASSISTANT_CODE_HREF = "/app/assistant?code=1";

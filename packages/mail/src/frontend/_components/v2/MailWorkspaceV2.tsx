@@ -409,7 +409,7 @@ export default function MailWorkspaceV2(props: {
                 />
                 <Menu items={mailboxMenu()} />
                 <Show when={c().canWrite() && !c().assignedOnly()}>
-                  <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
+                  <Button variant="primary" floats icon="pencil" href={composeHref()} onClick={compose}>
                     {c().sidebarText().compose}
                   </Button>
                 </Show>

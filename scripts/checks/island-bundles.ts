@@ -25,7 +25,14 @@ const budgets = [
   // Measured 2026-11-07 with the model trigger's level indicator and its load-error card: 3,062,712 B.
   // Measured 2026-11-09 on fbbe964a50 with the toast stack (#2979) and the sheet motion (#2981): 3,078,988 B; about
   // 10 % headroom, rounded up to the next KiB (Valentin go 09.11.).
+  // Measured 2026-11-27 on the test VM after the page moved to v2 and the panel got its own island: 3,295,391 B (main
+  // before it: 3,096,364 B); after merging main with #4333: 3,360,532 B, about 0.8 % headroom. My apps, Personalize and
+  // Project settings stand in the island so their server data is the first picture: a lazy part of an island cannot
+  // keep its server markup until its code arrives (#4419).
   { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 3308 },
+  // The panel's own island since the page moved to v2: the same workspace in v1's frame, without v2's.
+  // Measured 2026-11-26 on the test VM: 2,932,794 B (the page's island 3,081,491 B); about 10 % headroom.
+  { file: "packages/assistant/src/frontend/AssistantPanel.island.tsx", kib: 3150 },
   // The Spaces part: "My tasks", a Space as a list per status, one task with its pickers (status, due date, people),
   // and the shared "+" menu of Spaces with its catalog; the quick add field loads when it opens.
   // Measured 2026-11-05: 1,079,170 B.

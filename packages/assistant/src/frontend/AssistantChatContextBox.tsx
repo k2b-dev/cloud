@@ -368,9 +368,16 @@ export function AssistantChatContextPlaces(props: {
   /** The chat's title, for the head row on phones, where the app's head names only the app. */
   title?: string | null;
   onSheet: () => void;
+  /** Whether the head row with the title and "In diesem Chat" stands above the timeline; the v2 page puts both in its head. */
+  head?: boolean;
 }) {
   const copy = useCopy();
   const host = createChatContextHost({ onSheet: () => props.onSheet() });
+  const contextEmpty = () => {
+    const snapshot = props.state.snapshot();
+    // No snapshot yet (or none at all) is nothing to show either.
+    return !snapshot || (snapshot.results.length === 0 && snapshot.sourceCount === 0 && snapshot.fileCount === 0);
+  };
   createEffect(on(() => props.chatId, host.close, { defer: true }));
   const freeze = createReadingFreeze();
   /** In the popover, every action leaves the box: it closes first. */
@@ -390,30 +397,35 @@ export function AssistantChatContextPlaces(props: {
   return (
     <>
       {/* The button stands in a head row above the timeline, never over it, so it covers no message. */}
-      <div class="assistant-context-head">
-        <Show when={props.title}>
-          {(title) => (
-            <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
-              {title()}
-            </p>
-          )}
-        </Show>
-        <Button
-          ref={host.buttonRef}
-          class="assistant-context-button"
-          data-k2b-primary="ai"
-          size="sm"
-          variant="ghost"
-          aria-label={copy().title}
-          aria-haspopup="dialog"
-          aria-expanded={host.anchor() ? "true" : "false"}
-          onClick={host.toggle}
-        >
-          <i class="ti ti-layout-list" aria-hidden="true" />
-          <span>{copy().title}</span>
-        </Button>
-      </div>
-      <div class="assistant-context-boxcol">
+      <Show when={props.head !== false}>
+        <div class="assistant-context-head">
+          <Show when={props.title}>
+            {(title) => (
+              <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
+                {title()}
+              </p>
+            )}
+          </Show>
+          <Button
+            ref={host.buttonRef}
+            class="assistant-context-button"
+            data-k2b-primary="ai"
+            size="sm"
+            variant="ghost"
+            aria-label={copy().title}
+            aria-haspopup="dialog"
+            aria-expanded={host.anchor() ? "true" : "false"}
+            onClick={host.toggle}
+          >
+            <i class="ti ti-layout-list" aria-hidden="true" />
+            <span>{copy().title}</span>
+          </Button>
+        </div>
+      </Show>
+      {/* On the v2 page (no head row here) the column stands beside the timeline only with something to show: results,
+          sources or files; the chat's Project is named by the page's head. v1 keeps its column as it was, so its head
+          row and column never swap places while a chat streams. */}
+      <div class="assistant-context-boxcol" data-empty={props.head === false && contextEmpty() ? "" : undefined}>
         <AssistantChatContextBox
           variant="island"
           state={props.state}

@@ -98,7 +98,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   const quote = (text: string | null | undefined, max?: number) => (text && text.trim() ? `"${clip(text, max)}"` : "");
   const part = (element: Element | null) => element?.getAttribute("data-k2-part") ?? "";
   const partOf = (element: Element): Element | null => element.parentElement?.closest("[data-k2-part]") ?? null;
-  const hidden = (element: Element) => options.layout === true && element.getClientRects().length === 0;
+  /** Inside a box of no height that clips what overflows it (a head that gave way): drawn, but nobody can see it. */
+  const clippedAway = (element: Element) => {
+    for (let box = element.parentElement; box; box = box.parentElement) {
+      const style = getComputedStyle(box);
+      const clips = /hidden|clip/.test(`${style.overflowX} ${style.overflowY}`);
+      if (clips && box.getBoundingClientRect().height === 0) return true;
+    }
+    return false;
+  };
+  const hidden = (element: Element) => options.layout === true && (element.getClientRects().length === 0 || clippedAway(element));
   const textOf = (element: Element | null | undefined) => clip(element?.textContent ?? "");
   /** Stands directly in the flow of a column, not in a head, a bar or a row. */
   const inFlow = (element: Element) => {
@@ -573,8 +582,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const surface = surfaceOf(button);
     bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
   }
+  // On the phone an open detail is a page of its own, and the list's main action does not float over it on purpose.
+  // (its way back shows only then: beside the list on a wide screen the detail is no page, and the check stays)
+  const detailIsPage = [...root.querySelectorAll('.k2-pane[data-detail] > [data-k2-part="Back"]')].some((back) => !hidden(back));
   if (
     options.layout &&
+    !detailIsPage &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )

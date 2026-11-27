@@ -21,7 +21,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantMemoryLearningActivity } from "./AssistantMemoryLearningActivity";
 import { AssistantSkillEditor, type AssistantSkillEditorRequest, AssistantSkillsSettings } from "./AssistantSkillsSettings";
@@ -34,7 +34,9 @@ const MEMORY_MAX_CHARS = 500;
 type AssistantPrefsTab = "personalization" | "chat" | "skills" | "system-prompt" | "approvals" | "api-access";
 
 /** Present only while the operator offers the OpenAI-compatible API. */
-type OpenAiApiAccess = { baseUrl: string; models: import("@k2b/cloud/ai").AiPeopleModels["options"] };
+export type OpenAiApiAccess = { baseUrl: string; models: import("@k2b/cloud/ai").AiPeopleModels["options"] };
+/** What Gustav's settings page shows first: the person's settings and, when it is on, the OpenAI-compatible API. */
+export type AssistantPrefsSeed = { prefs: AiUserPrefs; access: OpenAiApiAccess | null };
 
 const readApiError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
@@ -47,7 +49,7 @@ const loadApprovalPreferences = async (): Promise<AiApprovalPreferenceView[]> =>
   return (await response.json()).approvals;
 };
 
-function ApprovalPreferences() {
+export function ApprovalPreferences() {
   const text = useAssistantText();
   const copy = useAssistantCopy();
   const [approvals, { refetch }] = createResource(loadApprovalPreferences);
@@ -123,7 +125,7 @@ function ApprovalPreferences() {
 }
 
 /** The tab shows where to connect; keys stay in the profile, so there is one place to review and revoke them. */
-const loadOpenAiApiAccess = async (): Promise<OpenAiApiAccess | null> => {
+export const loadOpenAiApiAccess = async (): Promise<OpenAiApiAccess | null> => {
   const response = await coreClient.ai.status.$get();
   if (!response.ok) return null;
   const status = await response.json();
@@ -134,7 +136,7 @@ const loadOpenAiApiAccess = async (): Promise<OpenAiApiAccess | null> => {
   };
 };
 
-function ApiAccessPanel(props: { access: OpenAiApiAccess }) {
+export function ApiAccessPanel(props: { access: OpenAiApiAccess }) {
   const text = useAssistantText();
   return (
     <div class="flex flex-col gap-6">
@@ -187,7 +189,7 @@ function ApiAccessPanel(props: { access: OpenAiApiAccess }) {
   );
 }
 
-function SystemPromptPanel() {
+export function SystemPromptPanel() {
   const text = useAssistantText();
   const [prompt, { refetch }] = createResource(() => assistantApi.getSystemPromptPreview());
   return (
@@ -284,7 +286,12 @@ const openAddPersonalizationDialog = (): Promise<{ kind: EditableMemoryKind; con
     { title: assistantBrowserText("Add personalization"), icon: "ti ti-user-cog", size: "large" },
   );
 
-function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: boolean) => void }) {
+export function MemorySettings(props: {
+  prefs: AiUserPrefs;
+  onDirtyChange: (dirty: boolean) => void;
+  /** Where Discard and Save stand: the dialog's footer by default; v2's page places them itself. */
+  placeFooter?: (footer: JSX.Element) => JSX.Element;
+}) {
   const text = useAssistantText();
   const copy = useAssistantCopy();
   const locale = useLocale();
@@ -421,19 +428,16 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   return (
     <>
       <div class="flex flex-col gap-6" aria-busy={Boolean(busyId()) || memories.loading}>
-        <SettingsGroup
-          title={text("Use personalization")}
-          description={text("Choose how Gustav uses and learns durable context about you.")}
-        >
+        <SettingsGroup title={text("Usage")} description={text("Choose how Gustav uses and learns durable context about you.")}>
           <Switch
-            label={text("Use personalization in Gustav chats")}
+            label={text("Use in Gustav chats")}
             description={text("Relevant personal facts, preferences, and workflow defaults are added to new turns.")}
             value={memoryEnabled}
             onValueChange={setMemoryEnabled}
             disabled={Boolean(busyId())}
           />
           <Switch
-            label={text("Learn personalization from private chats")}
+            label={text("Learn from private chats")}
             description={text(
               "While this is on, Gustav may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.",
             )}
@@ -576,21 +580,21 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
           </Show>
         </SettingsGroup>
       </div>
-      <SettingsModal.Footer>
+      {(props.placeFooter ?? ((footer: JSX.Element) => <SettingsModal.Footer>{footer}</SettingsModal.Footer>))(
         <SettingsPanelFooter
           changeCount={changeCount}
           loading={() => busyId() === "settings"}
           onDiscard={discardSettings}
           onSave={() => void saveSettings()}
-        />
-      </SettingsModal.Footer>
+        />,
+      )}
     </>
   );
 }
 
 /** Chat helpers that apply at once, as a switch does; a failed save turns the switch back and says so. The dialog owns
  *  the choice, so leaving the tab and coming back shows what was saved. */
-function ChatSettings(props: { suggest: boolean; onSuggestChange: (next: boolean) => void }) {
+export function ChatSettings(props: { suggest: boolean; onSuggestChange: (next: boolean) => void }) {
   const text = useAssistantText();
   const [saving, setSaving] = createSignal(false);
   const change = async (next: boolean) => {

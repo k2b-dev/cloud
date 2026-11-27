@@ -92,11 +92,19 @@ const tabIcon = (tab: WorkspaceTab) =>
         : "ti ti-file-code";
 
 /** The head of every pane: title, one meta line, at most two actions, and "…" with what Cloud can do with the thing. */
-function PaneHead(props: { title: string; meta?: string | null; actions?: JSX.Element; menu: DropdownItem[]; menuLabel: string }) {
+function PaneHead(props: {
+  title: string;
+  /** The title shows; without, it stays for assistive technology only, since the tab chip above already says it. */
+  titleShown?: boolean;
+  meta?: string | null;
+  actions?: JSX.Element;
+  menu: DropdownItem[];
+  menuLabel: string;
+}) {
   return (
     <header class="artifact-pane__head">
       <div class="artifact-pane__heading">
-        <h2 class="artifact-pane__title k2b-truncate-fade" title={props.title}>
+        <h2 class={props.titleShown === false ? "sr-only" : "artifact-pane__title k2b-truncate-fade"} title={props.title}>
           {props.title}
         </h2>
         <p class="artifact-pane__meta k2b-truncate-fade">{props.meta ?? ""}</p>
@@ -133,6 +141,12 @@ export function ChatWorkspace(props: {
   arrangeHintSeen?: boolean;
   /** The operator set up reading web pages: web links of the chat open as reading-view tabs. */
   webReader?: boolean;
+  /** v1's "back to the chat" on the phone; a frame with its own way back (the v2 page's pane) leaves it out. */
+  backToChat?: boolean;
+  /** Whether a pane's head shows its tab's title; the v2 page leaves it to the tab chip above (said once). */
+  paneTitles?: boolean;
+  /** The v2 page: a context tab ("Kontext") shows v2's sections of rows. */
+  contextV2?: boolean;
 }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t,
@@ -201,6 +215,9 @@ export function ChatWorkspace(props: {
         .filter(Boolean)
         .join(" · ");
     }
+    // On the v2 page the context tab's sections say what it holds; a line listing all kinds would name things the chat
+    // does not have.
+    if (tab.kind === "context" && tab.category === "context" && props.contextV2) return null;
     if (tab.kind === "context") return w().metaContext({ category: tab.category });
     return null;
   };
@@ -328,6 +345,7 @@ export function ChatWorkspace(props: {
         onJump={tab.conversationId === props.conversationId ? props.onJump : undefined}
         onOpenSecrets={tab.conversationId === props.conversationId ? props.onOpenSecrets : undefined}
         onOpenWebPage={props.webReader ? (url, title) => props.controller.open(webTab(tab.conversationId, url, title)) : undefined}
+        v2={props.contextV2}
       />
     ) : tab.kind === "view" ? (
       tab.render()
@@ -359,6 +377,7 @@ export function ChatWorkspace(props: {
               {(current) => (
                 <PaneHead
                   title={title(current())}
+                  titleShown={props.paneTitles !== false}
                   meta={meta(current())}
                   actions={actions(current())}
                   menu={menu(current())}
@@ -366,7 +385,11 @@ export function ChatWorkspace(props: {
                 />
               )}
             </Show>
-            <div class="artifact-pane__body">
+            {/* The v2 page's context tab holds v2 sections, which keep their own text edge: the body adds none. */}
+            <div
+              class="artifact-pane__body"
+              data-flush={props.contextV2 && initial.kind === "context" && initial.category === "context" ? "" : undefined}
+            >
               <ErrorBoundary
                 fallback={(_error, reset) => (
                   <Placeholder
@@ -423,10 +446,12 @@ export function ChatWorkspace(props: {
   const layout = createMemo(() => state().layout ?? { version: 2 as const, root: null });
   return (
     <div class="artifact-workspace">
-      <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
-        <i class="ti ti-chevron-left" aria-hidden="true" />
-        {w().backToChat}
-      </Button>
+      <Show when={props.backToChat !== false}>
+        <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
+          <i class="ti ti-chevron-left" aria-hidden="true" />
+          {w().backToChat}
+        </Button>
+      </Show>
       <Panes
         class="artifact-workspace__panes"
         ariaLabel={t().workspace}

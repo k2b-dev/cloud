@@ -32,6 +32,7 @@ const cloudSsr = await import("@k2b/cloud/ssr");
 const { codePageFixture } = await import("@k2b/cloud/ssr/code-page/code-page.fixture");
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: AssistantCodeView } = await import("./AssistantCodeView");
+const { default: AssistantAppsV2 } = await import("./v2/AssistantAppsV2");
 const { default: AssistantCodeDetail } = await import("./AssistantCodeDetail");
 
 /** Only for parsing the HTML: the SSR render itself runs without browser globals. */
@@ -41,13 +42,23 @@ const parser = (() => {
   return new dom.window.DOMParser();
 })();
 /** The Code seed the workspace island carries to the browser. */
+const islandProps = (html: string): ComponentProps<typeof AssistantWorkspace> => {
+  const island = parser
+    .parseFromString(html, "text/html")
+    .querySelector('solid-island:is([data-file="AssistantWorkspace.island.tsx"], [data-file="AssistantPanel.island.tsx"])');
+  return fromJSON(JSON.parse(island?.getAttribute("data-props") ?? "null"));
+};
 const codeSeed = (html: string) => {
-  const island = parser.parseFromString(html, "text/html").querySelector('solid-island[data-file="AssistantWorkspace.island.tsx"]');
+  const island = parser
+    .parseFromString(html, "text/html")
+    .querySelector('solid-island:is([data-file="AssistantWorkspace.island.tsx"], [data-file="AssistantPanel.island.tsx"])');
   const props: ComponentProps<typeof AssistantWorkspace> = fromJSON(JSON.parse(island?.getAttribute("data-props") ?? "null"));
   return props.code;
 };
 /** The Code destinations load their code in the browser; the server renders their loading surface. */
 const codeLoading = '<div class="assistant-deferred-feedback">';
+/** The page's My apps & automations on v2: its pane stands and holds the rows' place while the view's code loads. */
+const appsLoading = /data-k2-part="Pane"[^>]*aria-label="My apps &amp; automations"[\s\S]*?data-k2-part="Loading"/;
 /** What a loaded Code destination shows from its seed, rendered the way the browser does after the code arrives. */
 const renderSeeded = <P extends object>(component: (props: P) => import("solid-js").JSX.Element, props: P) =>
   renderToString(() =>
@@ -164,7 +175,7 @@ const request = (href = "https://cloud.example.test/app/assistant?project=projec
 test("missing or revoked selected project returns opaque HTML404 despite a stale sidebar", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [{ ...project, id: project.shortId }],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -186,7 +197,7 @@ test("missing or revoked selected project returns opaque HTML404 despite a stale
 test("authorized project omitted by sidebar cap remains in the rendered workspace with public IDs", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -232,6 +243,46 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
   expect(html).not.toContain(project.id);
 });
 
+test("a Project's settings at ?project=…&settings=1 draw their models and access on the first picture, without a loader", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [],
+    }),
+  );
+  const admin = { ...project, permission: "admin" as const };
+  const models = {
+    status: "ok" as const,
+    selection: null,
+    effectiveDefault: { class: "balanced" as const },
+    classes: [{ class: "balanced" as const, variantId: "standard" }],
+    options: [],
+  };
+  spies.push(
+    spyOn(ai.aiProjects, "getByShortId").mockResolvedValue(admin),
+    spyOn(ai.aiConversations, "listConversationsPage").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 20, hasNext: false }),
+    spyOn(projectContext, "loadAssistantProjectContextSnapshot").mockResolvedValue({
+      projectId: admin.shortId,
+      knowledge: [],
+      files: [],
+      references: [],
+      skills: { items: [], page: 1, hasNext: false },
+    }),
+    spyOn(ai, "peopleAiModels").mockResolvedValue(models),
+  );
+  const access = spyOn(ai.aiProjects, "listAccess").mockResolvedValue([]);
+  spies.push(access);
+  const html = await (await request("https://cloud.example.test/app/assistant?project=project123&settings=1")).text();
+  expect(access).toHaveBeenCalledWith(admin.id, expect.objectContaining({ accessSubject: { type: "user", userId: user.id } }), "en");
+  expect(islandProps(html).initialProjectSettings).toBe(true);
+  expect(islandProps(html).initialProjectSettingsSeed).toEqual({ models, access: [] });
+  expect(html).toMatch(/data-k2-part="Pane"[^>]*aria-label="Project settings"/);
+  expect(html).not.toMatch(/data-k2-part="Pane"[^>]*aria-label="Project settings"[\s\S]*?data-k2-part="Loading"/);
+});
+
 const chat = {
   id: "chat1",
   shortId: "chat1",
@@ -273,7 +324,7 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
     setSystemTime(new Date("2026-11-07T09:00:00Z"));
     spies.push(
       spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-        counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+        counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
         projects: [],
         doneCount: 0,
         questions: { items: [], count: 0 },
@@ -304,7 +355,7 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
 test("?approvals=1 renders Waiting for you without selecting a chat, and the row stays when nothing waits", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -367,7 +418,7 @@ const mockCodeQueries = (items: unknown[], options: { fail?: boolean } = {}) => 
 test("My apps & automations shows only for a person with Code, and ?code=1 seeds their list from the server", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -390,27 +441,58 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
   const withCode = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(withCode).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  // The server and the first client render show the loading surface; the list arrives with its code.
-  expect(view).toContain(codeLoading);
-  expect(view).toContain("Loading…");
+  // The page's island brings My apps, so the server's list is the first picture: no loader.
+  expect(view).not.toMatch(appsLoading);
+  expect(view).toContain("Weekly sales report");
   expect(view).not.toContain("Your Code runs as you, with your rights and no more.");
   const seed = codeSeed(view);
   expect(seed).toMatchObject({ has: true, open: true, page: { items: [{ id: "c_week01", title: "Weekly sales report" }] } });
-  const list = renderSeeded(AssistantCodeView, {
+  const list = renderSeeded(AssistantAppsV2, {
     userId: user.id,
     timeZone: "UTC",
     initial: seed?.page,
-    onCreateInChat: () => {},
   });
-  expect(list).toContain("Your Code runs as you, with your rights and no more.");
   expect(list).toContain("Weekly sales report");
   expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
+});
+
+test("Gustav's settings at ?prefs=<tab> render as the page's own view, so a reload keeps the tab and opens no chat", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  mockCodeQueries([]);
+  const prefs = {
+    userId: user.id,
+    memoryEnabled: true,
+    suggestNextMessage: false,
+    memoryLearningEnabled: true,
+    selection: null,
+    updatedAt: "2026-11-14T08:00:00.000Z",
+  };
+  spies.push(spyOn(ai.aiUserPrefs, "get").mockResolvedValue(prefs));
+  const html = await (await request("https://cloud.example.test/app/assistant?prefs=chat")).text();
+  // The server reads the settings, so the first picture shows the tab's fields, without a loader; no chat opens behind it.
+  expect(html).not.toMatch(/data-k2-part="Pane"[^>]*aria-label="Personalize"[\s\S]*?data-k2-part="Loading"/);
+  expect(html).toMatch(/data-k2-part="Pane"[^>]*aria-label="Personalize"/);
+  expect(islandProps(html).initialPrefs).toMatchObject({ prefs, access: { baseUrl: "https://cloud.example.test/api/ai/openai/v1" } });
+  expect(islandProps(html).initialPrefsTab).toBe("chat");
+  expect(islandProps(html).initialConversationId).toBeNull();
+  // An unknown tab is no settings view.
+  const unknown = await (await request("https://cloud.example.test/app/assistant?prefs=nothing")).text();
+  expect(islandProps(unknown).initialPrefsTab).toBeNull();
 });
 
 test("an unknown Code answer keeps the entry, and the list shows its error with a way to retry", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -422,19 +504,22 @@ test("an unknown Code answer keeps the entry, and the list shows its error with 
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(plain).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  expect(view).toContain(codeLoading);
+  // The failure is the first picture too: no loader, the error with its way to try again.
+  expect(view).not.toMatch(appsLoading);
+  expect(view).toContain("Your automations could not be loaded.");
   const seed = codeSeed(view);
   // A failed list is part of the seed, so the loaded view shows the error instead of asking Core again.
   expect(seed).toMatchObject({ has: true, open: true, page: null });
-  const list = renderSeeded(AssistantCodeView, { userId: user.id, timeZone: "UTC", initial: null, onCreateInChat: () => {} });
+  const list = renderSeeded(AssistantAppsV2, { userId: user.id, timeZone: "UTC", initial: null });
   expect(list).toContain("Your automations could not be loaded.");
-  expect(list).toContain("Try again");
+  expect(list).toContain('data-k2-part="Failed"');
+  expect(list).toContain("Retry");
 });
 
 test("an existing chat still loads at its old address under the name Gustav", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -460,10 +545,45 @@ test("an existing chat still loads at its old address under the name Gustav", as
   expect(html).toContain(chat.title);
 });
 
+test("a chat with stored tabs and no tab in its address opens on the chat: the server draws no detail", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  mockCodeQueries([]);
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(chat));
+  spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
+  spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
+  spies.push(spyOn(ai, "loadAiStreamState").mockResolvedValue({ type: "state", conversation: chat, messages: [], activeTurn: null }));
+  spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+  const tab = { id: "web-1", key: JSON.stringify(["web", chat.shortId, "https://lieferant.example.org/"]), title: "Lieferant" };
+  spies.push(
+    spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({
+      state: { tabs: [tab], layout: null, front: "web-1" },
+      revision: 1,
+    }),
+  );
+  const response = await request("https://cloud.example.test/app/assistant?conversation=chat1");
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  // The page's island, on v2; the stored tab travels with it, and nothing is the open detail before the person opens it.
+  expect(html).toContain('data-file="AssistantWorkspace.island.tsx"');
+  expect(html).toContain("Lieferant");
+  // The tab's own pane stands beside the chat on the wide page, and it is no detail: the chat stays in front.
+  const tabsPane = /<section[^>]*data-k2-part="Pane"[^>]*aria-label="Open tabs of the chat"[^>]*>/.exec(html)?.[0];
+  expect(tabsPane).toBeDefined();
+  expect(tabsPane).not.toContain("data-detail");
+});
+
 test("the panel starts without selecting an unrelated recent chat and renders no second shell", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -479,6 +599,10 @@ test("the panel starts without selecting an unrelated recent chat and renders no
   expect(lookup).not.toHaveBeenCalled();
   expect(html).toContain("cloud-panel-page");
   expect(html).not.toContain('id="cloud-shell-data"');
+  // The panel is its own island with v1's frame, and its chat pane keeps the class its container query reads.
+  expect(html).toContain('data-file="AssistantPanel.island.tsx"');
+  expect(html).not.toContain('data-file="AssistantWorkspace.island.tsx"');
+  expect(html).toContain("assistant-chat-pane");
   expect(html).toContain('href="/app/assistant/panel?conversation=chat1"');
   // No head row and no suggestions: "All chats" under the composer opens the application in the host window.
   expect(html).not.toContain("Open full view");
@@ -491,7 +615,7 @@ test("the panel starts without selecting an unrelated recent chat and renders no
 test("a panel conversation selector does not bypass ownership or fall back to another chat", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -509,7 +633,7 @@ test("a panel conversation selector does not bypass ownership or fall back to an
 test("the panel names the place's Code from the first paint, through the place's own reader", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -609,7 +733,7 @@ const mailCatalog = (owners: string[]) =>
 const quietSidebar = () =>
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },
@@ -730,7 +854,7 @@ test("Waiting for you renders the row's own list: versions from the shared quest
   };
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [version, automation], count: 2 },
@@ -761,7 +885,7 @@ test("Waiting for you renders the row's own list: versions from the shared quest
 test("live dictation availability reaches the composer only when the platform allows it for this person", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
-      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
       projects: [],
       doneCount: 0,
       questions: { items: [], count: 0 },

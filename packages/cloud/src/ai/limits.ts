@@ -9,6 +9,12 @@ export const AI_DRAFT_QUOTE_MAX_CHARS = 2_000;
  * answer's text, so a quote check reads no more of a turn than search already keeps of one message.
  */
 export const AI_MESSAGE_SEARCH_TEXT_MAX_CHARS = 50_000;
+/**
+ * The open chats a sidebar lists at most, pinned ones first, then the most recently used: about a month of daily use
+ * in its day sections. The list is one bounded statement; older open chats stay reachable through the paged list of
+ * every chat and search.
+ */
+export const AI_SIDEBAR_CONVERSATIONS_MAX = 100;
 export const AI_IMAGE_INPUT_MAX_BYTES = 10 * 1024 * 1024;
 export const AI_TURN_IMAGE_MAX_TOTAL_BYTES = 40 * 1024 * 1024;
 /** One chat file; the upload route refuses larger files. */
