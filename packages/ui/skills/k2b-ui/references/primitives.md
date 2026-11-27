@@ -60,8 +60,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   default again. The sidebar's grip works the same.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
-  the detail is the page, and the title in its head is never cut: beside the
-  actions the head keeps it takes a second line.
+  the detail is the page, and the title in its head takes two lines at most
+  beside the actions the head keeps, then "…", the full name as its hint.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
   the detail (the part `Back`). With `back`, the head's close × needs no
@@ -476,7 +476,10 @@ lines instead of cutting a thing.
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first, each whole and the last first (always on the phone),
   then the name is cut with "…"; the name says the ids on hover, and the
-  head's actions keep their place.
+  head's actions keep their place. On the phone the name takes two lines at
+  most, then "…", and a word without a break breaks at the line's end. A
+  name longer than its line can hold (more than 20 signs) says all of it on
+  hover, and it runs in its own direction (`dir="auto"`).
 
 ## Overlays: Dialog, Menu, Popover, Toast
 

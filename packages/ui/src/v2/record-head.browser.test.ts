@@ -20,13 +20,13 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (width: number, run: (page: Page) => Promise<void>, scenario = "") => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui" data-case="${scenario}"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -74,4 +74,43 @@ for (const width of [1024, 390])
       expect(layout.squeezed).toEqual([]);
       expect(layout.problems).toEqual([]);
     });
+  });
+
+// W8 (Weather #4179): at 390 px a name of 120 signs with a word of 55 without a break ran past the head or broke over
+// several lines and pushed the facts down. The name takes two lines at most, then "…", runs in its own direction, and
+// says all of it on hover; the whole name stays its accessible name, and the head stays two lines high.
+for (const width of [390, 1024])
+  test(`a name of 120 signs stops after two lines and stays readable whole at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const name = await page.locator(".k2-record-name").evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const bar = element.closest(".k2-bar")!.getBoundingClientRect();
+          const line = Number.parseFloat(getComputedStyle(element).lineHeight);
+          return {
+            lines: Math.round(box.height / line),
+            // no word runs past the head: a cut line ends in "…" inside its box
+            inside: box.right <= bar.right + 0.5,
+            hint: element.getAttribute("title") === element.textContent,
+            whole: (element.textContent ?? "").length,
+            direction: element.getAttribute("dir"),
+          };
+        });
+        // on the phone two lines; beside the head's deeds on a wide screen one, cut with "…"
+        expect(name.lines).toBeLessThanOrEqual(width < 768 ? 2 : 1);
+        expect(name.inside).toBe(true);
+        expect(name.hint).toBe(true);
+        expect(name.whole).toBe(120);
+        expect(name.direction).toBe("auto");
+        // on a wide screen the head keeps its height; on the phone it grows by the two lines of the name (bounded above)
+        // and the line of its kinds, as a head there does
+        const head = await page.locator("[data-slot='head'] > .k2-bar").evaluate((bar) => Math.round(bar.getBoundingClientRect().height));
+        if (width >= 768) expect(head).toBeLessThanOrEqual(56);
+        const layout = await measureV2Layout(page, { root: "#root" });
+        expect(layout.squeezed).toEqual([]);
+        expect(layout.problems).toEqual([]);
+      },
+      "weather",
+    );
   });

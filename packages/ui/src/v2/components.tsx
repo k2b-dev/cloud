@@ -854,16 +854,30 @@ export type RecordHeadProps = {
   ids?: readonly RecordId[];
 };
 
-/** The name of a record and its identifiers in words, for the hint of a name whose identifiers may give way. */
-const idsHint = (name: string, ids: readonly RecordId[] | undefined) =>
-  ids?.length ? [name, ...ids.map((id) => [id.label, id.value].filter(Boolean).join(" "))].join(" · ") : undefined;
+/**
+ * The signs a record's name holds in its head without being cut in the narrowest one (beside the head's deeds at 320
+ * px, in the lead type): up to this it needs no hint on hover, so a screen reader does not read it twice.
+ */
+const NAME_FITS = 20;
+
+/**
+ * The hint of a record's name: its identifiers in words when they may give way, else the whole name where it may be
+ * cut (one line on a wide screen, two on the phone, W8 27.11.).
+ */
+const nameHint = (name: string, ids: readonly RecordId[] | undefined) =>
+  ids?.length
+    ? [name, ...ids.map((id) => [id.label, id.value].filter(Boolean).join(" "))].join(" · ")
+    : Array.from(name).length > NAME_FITS
+      ? name
+      : undefined;
 
 /** The identity of a record in its head: avatar, name, kinds, identifiers. Put it in the start of the head `Bar`. */
 export const RecordHead = (props: RecordHeadProps) => (
   <>
     <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
-    {/* identifiers that give way are out of sight, not gone: the name says them on hover */}
-    <h1 class="k2-record-name" data-k2-part="RecordHead" title={idsHint(props.name, props.ids)}>
+    {/* identifiers that give way are out of sight, not gone: the name says them on hover; a name runs in its own
+        direction (an Arabic name in a German page) */}
+    <h1 class="k2-record-name" data-k2-part="RecordHead" title={nameHint(props.name, props.ids)} dir="auto">
       {props.name}
     </h1>
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
