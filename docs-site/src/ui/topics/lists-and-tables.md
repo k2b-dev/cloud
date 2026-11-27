@@ -56,7 +56,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. Rows part with a quiet line, the head with a clear one; the open row takes the tint of its app (`color`), a chosen row the blue of a selection. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content).
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone; a column of states takes `Chip status quiet`, a dot and a word. Rows part with a quiet line, the head with a clear one; the open row takes the tint of its app (`color`), a chosen row the blue of a selection. One column may show each row's data over time as [`Ticks`](/en/ui/v2/content).
 
 <Props of="Table Column" />
 
@@ -68,7 +68,12 @@ Places in levels: a `Nav` group's `tree` (each place a `NavTreeNode`) and a tabl
 
 ### StatusRow
 
-Above the rows: the one statement, key figures and filters; a selection bar while rows are selected.
+Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. An exception
+belongs to the statement as a tinted chip in `marks`, such as `<Chip status="bad">1 ohne Zugriff</Chip>`; it stays on
+the phone. In a narrow row the lead is cut and the figures fold first; the chips give way last, whole, where about a
+word of the lead would no longer fit. A chip that must never leave belongs in the lead itself. Put only chips there, no
+buttons: a chip that gave way is out of sight but still in the page. `missing() > 0 && <Chip …/>` is fine; `false`
+draws nothing, so nothing moves when the exception comes or goes.
 
 <Props of="StatusRow" />
 
@@ -94,7 +99,7 @@ Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui g
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
 - Give every wide table a `phone(row)`.
-- Put the count and key figures in the `StatusRow`.
+- Put the count and key figures in the `StatusRow`, an exception as a tinted chip in its `marks`.
 - Keep row text short; long text is cut with "…".
 
 ### Don't

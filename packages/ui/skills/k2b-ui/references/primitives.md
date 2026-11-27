@@ -67,8 +67,24 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
-- `side`: the info column of a record; quieter sections, a `more` link
-  becomes a row.
+- `side`: the context column (the info column of a record, what a form
+  feeds, a chart beside a table); quieter sections, a `more` link becomes a
+  row. In a `Pane.Split` of exactly one main column and this context column
+  after it, the context stands beside only where the split holds both at
+  their default widths (400 px without a `width`). With less it gives way
+  to the end of the main column, at its full width, and the split scrolls
+  in one piece: the main column is never squeezed and nothing hides; it
+  needs no room of the workspace, so the sidebar never becomes a drawer for
+  it. `side={{ from: 1400 }}` asks for more room, in px of the split, for a
+  main column that needs it (a table: beside only on a large screen). In
+  any other split (a list, its reader and an info column) it stands beside
+  as every column does.
+- A detail that grows on a large screen is the same part: under the
+  detail's one `head` (and what spans both, such as a hero band), a
+  `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
+  side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
+  from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
+  and in reading order below that.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -146,10 +162,13 @@ A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
 `measure` (its head, sentence and rows keep the reading measure of `Prose`,
 720 px of text, so a short list in a wide pane stays together; its line
-still reaches the column's edges), `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+still reaches the column's edges), `more` (one link under the rows, its
+words on their text edge, never at the right: "All deliveries ›"; its
+`meta` shows only in a
 `Pane side`, where the link becomes a row), children. No line under
-the head or between entries, one line at the end. Put `Row`s directly in a
-section, or a `Digest`, `Facts`, `Group`s.
+the head or between entries, one line at the end. A long title (a
+question, a name) wraps onto more lines and the head grows with it; no word
+is cut. Put `Row`s directly in a section, or a `Digest`, `Facts`, `Group`s.
 
 ### Group
 
@@ -292,7 +311,9 @@ inline. Emphasis is a weight, never a size.
 ### Prose
 
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
-safe links only) or children.
+safe links only) or children. A Markdown table reads like a small table
+(cells 12 px apart, the head as a Table head); align a column of numbers
+right (`--:`) and its figures line up.
 
 ### Inline
 
@@ -312,6 +333,10 @@ lines instead of cutting a thing.
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
+  With `status`, `quiet` drops the tinted round: the dot in the colour of
+  the state and the word in the ink of the text ("● Aktiv"), on the chip's
+  height. Use it for a column of states in a dense table or list, where a
+  chip on every line is too loud.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
 - `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
   the writing direction; at most 60 in a table cell, more are cut at its
@@ -327,7 +352,8 @@ lines instead of cutting a thing.
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
-  such as the one a thread is assigned to), `href` (+ `onNavigate`),
+  such as the one a thread is assigned to), `href` (+ `onNavigate`, or
+  `download`: `true` or a file name, the browser saves the file),
   `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
   is about, such as a row's title: its name is its own words, then those;
   `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
@@ -338,7 +364,8 @@ lines instead of cutting a thing.
   is off; not for links or the primary action), `type`, `keep` (stays
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
-  it needs `label`.
+  it needs `label`. With children, `label` is its name only where the
+  words alone do not say enough, and it begins with the words.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), `action` (one quiet deed at the end
@@ -348,8 +375,9 @@ lines instead of cutting a thing.
   form from being sent without a value; the label line shows nothing for
   it, the fields that may stay empty say "optional". After a failed save a
   required field shows `error="Pflichtfeld."`.
-- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
-  `max`, `onInput`; `label` when it stands without a `Field` (a search).
+- `Input`: `value`, `placeholder`, `type`, `icon`, `multiline` (shows
+  `rows` lines at least, 3 by default, or the lines of its value from the
+  server's page on, and grows with its words up to ten lines, then scrolls), `min`, `max`, `onInput`; `label` when it stands without a `Field` (a search).
   `onKeyDown` (Enter to search, Escape to clear; while
   `event.isComposing`, Enter belongs to the input method and must not
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
@@ -415,7 +443,9 @@ lines instead of cutting a thing.
   month's short name, keys move the weeks, the arrows by six. Use it inside a
   popover or sheet; a form field is `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
-  `onChange`, `disabled` (dimmed).
+  `onChange`, `disabled` (dimmed), `description` (a quiet line under the
+  words, such as what turning it on does; it describes the box and is no
+  part of its name).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
@@ -460,13 +490,23 @@ lines instead of cutting a thing.
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
-  where it does not fit before the filters), `loading` (results
+  first where it does not fit, its whole words as a hint on hover),
+  `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
-  the row never refreshes), `facts: { before?, value?, after? }[]` (where
-  they do not fit before the filters, the later ones give way whole, so the
-  filters keep their words; they go on the phone; put what must stay in
-  `lead`),
+  the row never refreshes), `facts: { before?, value?, after? }[]` (they
+  share the room before the filters with the lead, each up to its own width:
+  beside a short lead they take the rest, beside a long lead they keep their
+  width and the lead is cut; where both are long the lead keeps 40 % (60 %
+  below 600 px, where the controls fold) and the later figures give way
+  whole, so the filters keep their words; they go on the phone; put what must
+  stay in `lead`),
+  `marks` (tinted chips of the statement, an exception such as
+  `<Chip status="bad">1 ohne Zugriff</Chip>`: after the lead, they keep their
+  width while the lead is cut, stay on the phone, and give way whole only
+  where about a word of the lead no longer fits; a chip that must never leave
+  belongs in `lead`; chips only, no buttons, as a chip that gave way still
+  takes the focus; `cond && <Chip/>` is fine, `false` draws nothing),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
@@ -531,13 +571,23 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
+  `items` (a submenu to the side), or `panel` (`(close) => …`, a panel
+  beside the entry such as a `DatePicker`: a dialog of its own over the
+  menu, with its own keys and focus, that calls `close` once it picked;
+  Escape closes it first), and `current` (the value set through that
+  submenu or panel, such as a reminder's time: at the end in the app's
+  colour and part of the entry's name; it takes the place of `meta`); or
+  `"separator"` between groups; or a section `{ title, items }` under a
+  quiet heading. A section with `choice` and `onChoose` is one choice
+  (reply kind, sender, order): its entries are options (`value`, else
+  `label`), the chosen one carries the tick, choosing another closes the
+  menu and calls `onChoose`, choosing the ticked one only closes it. A
+  choice whose options say enough by themselves may have the `title` ""
+  (no heading). Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
+  its button; there is no `align`. On the phone it is a sheet from the
+  bottom with entries of 44 px; a submenu is the sheet's next step under
+  its entry, which leads back, and a panel is a sheet of its own.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
   the element. It adds no wrapper, so a `Row` stays a child of its `List`.

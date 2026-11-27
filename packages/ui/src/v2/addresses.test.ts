@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { addressKey, scanAddresses } from "./addresses";
+import { addressKey, addressOf, scanAddresses } from "./addresses";
 
 test("addresses: bare, with a name, with a quoted name that has a comma, and with a name that has one", () => {
   expect(scanAddresses('"Berg, Anna" <anna@werkstatt.example>, jonas@werkstatt.example').found).toEqual([
@@ -84,4 +84,14 @@ test("addresses: Outlook's quoted address as name; an unclosed quote or bracket 
   expect(scanAddresses("jonas@werkstatt.example; <anna@werkstatt.example").found).toEqual(["jonas@werkstatt.example"]);
   expect(scanAddresses("anna@werkstatt.example.").found).toEqual([]);
   expect(scanAddresses("anna@werkstatt..example").found).toEqual([]);
+});
+
+test("addressOf: the bare address of a display form, or the text itself", () => {
+  expect(addressOf('"Berg, Anna" <anna@example.org>')).toBe("anna@example.org");
+  expect(addressOf("Mia Lindqvist <mia@lindqvist.example>")).toBe("mia@lindqvist.example");
+  expect(addressOf("  jonas@werkstatt.example ")).toBe("jonas@werkstatt.example");
+  // a name with an angle in it: the last <…> holds the address
+  expect(addressOf('"Anna <Büro>" <anna@example.org>')).toBe("anna@example.org");
+  // no closing bracket: no address form, the text stays
+  expect(addressOf("Anna <anna@example.org")).toBe("Anna <anna@example.org");
 });
